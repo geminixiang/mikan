@@ -3,6 +3,8 @@
 exports[`public package interface > snapshots the TypeScript declaration surface 1`] = `
 "export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
+export { AgentAuditStore } from "./audit/index.js";
+export type { AgentAuditEventInput, AgentAuditHealth, AgentAuditRun, AgentAuditRunDetail, AgentAuditRunDetailQuery, AgentAuditRunPage, AgentAuditRunQuery, AgentAuditRunSummary, AgentAuditService, AgentAuditStatus, AgentAuditStoreOptions, } from "./audit/index.js";
 export { DEFAULT_HTTP_IDLE_TIMEOUT_MS, configureHttpDispatcher, parseHttpIdleTimeoutMs, } from "./harness/http.js";
 export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
 export { SessionStore } from "./harness/session-store.js";

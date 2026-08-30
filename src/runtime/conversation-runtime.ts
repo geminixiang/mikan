@@ -8,8 +8,9 @@ import type {
   RunningSession,
 } from "../adapter.js";
 import { createOfficeAddress, officeKey, type Workspace } from "../office/index.js";
-import { createRunner } from "../agent/runner.js";
-import type { PiAgentWrapper } from "../types.js";
+import { AgentRunSetupError, createRunner } from "../agent/runner.js";
+import type { AgentAuditRun } from "../audit/index.js";
+import type { AgentRunResult, PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";
 import type { ExtensionBlockAction, ExtensionScheduleCallbackFire } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
@@ -64,6 +65,8 @@ import type {
  * Command handlers guard on `portalBaseUrl` before minting tokens, so this
  * only fires when a portal URL is configured without its backing store.
  */
+function noop(): void {}
+
 function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
   return {
     create: () => {
@@ -83,6 +86,62 @@ function runtimeCwdForSandbox(
   ).runtimeWorkspaceRoot;
   // The office key names the same segment on the host and in the runtime.
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${workspace.office(address).key}`;
+}
+
+function recordRunTerminal(
+  auditRun: AgentAuditRun | undefined,
+  result: AgentRunResult,
+  startedAt: number,
+): void {
+  if (!auditRun) return;
+  const metrics = result.metrics;
+  const budgetExceeded = metrics?.budgetExceededReason !== undefined;
+  const aborted = result.stopReason === "aborted" || budgetExceeded;
+  const failed = result.stopReason === "error";
+  auditRun.record({
+    type: aborted ? "run_aborted" : failed ? "run_failed" : "run_completed",
+    status: budgetExceeded
+      ? "budget_exceeded"
+      : aborted
+        ? "aborted"
+        : failed
+          ? "failed"
+          : result.stopReason === "blocked"
+            ? "blocked"
+            : "completed",
+    stopReason: result.stopReason,
+    durationMs: Date.now() - startedAt,
+    ...(metrics
+      ? {
+          llmCalls: metrics.llmCalls,
+          toolCalls: metrics.toolCalls,
+          usage: {
+            input: metrics.input,
+            output: metrics.output,
+            cacheRead: metrics.cacheRead,
+            cacheWrite: metrics.cacheWrite,
+            totalTokens: metrics.totalTokens,
+            costUsd: metrics.costUsd,
+          },
+        }
+      : {}),
+    ...(failed ? { errorType: "agent_run_error" } : {}),
+    details: { budgetExceeded },
+  });
+}
+
+function recordRunFailure(
+  auditRun: AgentAuditRun | undefined,
+  error: unknown,
+  startedAt: number,
+): void {
+  const setupFailed = error instanceof AgentRunSetupError;
+  auditRun?.record({
+    type: setupFailed ? "run_setup_failed" : "run_failed",
+    status: "failed",
+    durationMs: Date.now() - startedAt,
+    errorType: setupFailed ? "run_setup_error" : "agent_run_error",
+  });
 }
 
 export function createConversationRuntime(
@@ -282,8 +341,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     message: ConversationContext["message"],
     platform: ConversationContext["platform"],
   ): Promise<{ success: boolean; errorMessage?: string }> {
+    const auditRun = this.options.audit?.startRun({
+      officeKey: this.options.workspace.office(state.address).key,
+      address: state.address,
+      sessionKey: state.sessionKey,
+      runKind: "session_dream",
+    });
+    const startedAt = Date.now();
+    auditRun?.record({ type: "run_admitted", status: "admitted" });
     try {
-      const result = await state.runner.dreamSessionMemory(message, platform);
+      const result = await state.runner.dreamSessionMemory(message, platform, auditRun);
+      recordRunTerminal(auditRun, result, startedAt);
       // Only a clean stop means the dream finished its work. Everything else —
       // budget abort, length cutoff, error, blocked — leaves memory unwritten,
       // and treating it as success resets the session and loses it silently.
@@ -296,6 +364,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
       return { success: true };
     } catch (err) {
+      recordRunFailure(auditRun, err, startedAt);
       return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
     }
   }
@@ -513,10 +582,56 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       return;
     }
 
-    const releaseConversationWork = skipRotation
-      ? () => {}
-      : await this.sessions.acquireConversationWork(address);
+    const office = this.options.workspace.office(address);
+    const auditRun = this.options.audit?.startRun({
+      officeKey: office.key,
+      address,
+      sessionKey,
+      runKind: context.message.id.startsWith("event:") ? "event" : "interactive",
+    });
+    const auditStartedAt = Date.now();
+    auditRun?.record({
+      type: "run_admitted",
+      status: "admitted",
+      details: {
+        sourceEventType: event.type,
+        attachmentCount: event.attachments?.length ?? 0,
+      },
+    });
+    let auditSettled = false;
+    let agentRunEntered = false;
+    const settleAuditFailure = (error: unknown): void => {
+      if (auditSettled) return;
+      auditSettled = true;
+      recordRunFailure(auditRun, error, auditStartedAt);
+    };
+    const settleAuditResult = (result: AgentRunResult): void => {
+      if (auditSettled) return;
+      auditSettled = true;
+      recordRunTerminal(auditRun, result, auditStartedAt);
+    };
+    const reportSetupError = (error: unknown): void => {
+      reportUserFacingError(error, {
+        domain: "mikan",
+        surface: "session_setup",
+        operation: "get_or_create_state",
+        severity: "error",
+        platform: context.platform.name,
+        context: {
+          conversationId,
+          sessionKey,
+          runId: auditRun?.runId,
+          messageId: context.message.id,
+          threadTs: context.message.threadTs,
+          attachmentCount: context.message.attachments?.length ?? 0,
+        },
+      });
+    };
+    let releaseConversationWork = noop;
     try {
+      releaseConversationWork = skipRotation
+        ? noop
+        : await this.sessions.acquireConversationWork(address);
       const conversationDir = this.options.workspace.office(address).dir;
       const waitedForParent = await waitForThreadSessionBootstrap({
         parentSessionKey: conversationId,
@@ -554,25 +669,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             { bareName },
           );
           if (handled) {
+            settleAuditResult({ stopReason: "extension_command" });
             state.lastAccessedAt = Date.now();
             return;
           }
         }
       } catch (err) {
-        reportUserFacingError(err, {
-          domain: "mikan",
-          surface: "session_setup",
-          operation: "get_or_create_state",
-          severity: "error",
-          platform: context.platform.name,
-          context: {
-            conversationId,
-            sessionKey,
-            messageId: context.message.id,
-            threadTs: context.message.threadTs,
-            attachmentCount: context.message.attachments?.length ?? 0,
-          },
-        });
+        settleAuditFailure(new AgentRunSetupError(err));
+        reportSetupError(err);
         throw err;
       }
 
@@ -583,21 +687,35 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
 
+      agentRunEntered = true;
       const runPromise = (async () => {
         try {
           const result = await this.runWithInstrumentation(
             context,
-            { conversationId, sessionKey, startedAt: state.startedAt },
+            {
+              conversationId,
+              sessionKey,
+              startedAt: state.startedAt,
+              runId: auditRun?.runId,
+              onError: settleAuditFailure,
+            },
             async () => {
               await context.responder.setTyping(true);
               await context.responder.setWorking(true);
               try {
-                return await state.runner.run(context.message, context.responder, context.platform);
+                return await state.runner.run(
+                  context.message,
+                  context.responder,
+                  context.platform,
+                  auditRun,
+                );
               } finally {
                 await context.responder.setWorking(false);
               }
             },
           );
+
+          if (result) settleAuditResult(result);
 
           if (result?.stopReason === "aborted" && state.stopRequested) {
             if (state.stopMessageTs) {
@@ -625,6 +743,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         this.sessions.onSettlement(address);
         this.sessions.evictIdle();
       }
+    } catch (error) {
+      const reportUninstrumentedSetupError = !auditSettled && !agentRunEntered;
+      settleAuditFailure(agentRunEntered ? error : new AgentRunSetupError(error));
+      if (reportUninstrumentedSetupError) reportSetupError(error);
+      throw error;
     } finally {
       releaseConversationWork();
     }
@@ -636,10 +759,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       conversationId: string;
       sessionKey: string;
       startedAt: number;
+      runId?: string;
+      onError: (error: unknown) => void;
     },
-    body: () => Promise<{ stopReason: string; errorMessage?: string }>,
-  ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
-    const { conversationId, sessionKey, startedAt } = meta;
+    body: () => Promise<AgentRunResult>,
+  ): Promise<AgentRunResult | undefined> {
+    const { conversationId, sessionKey, startedAt, runId, onError } = meta;
     const { message, platform } = context;
 
     const attribution = createRunAttributionAttributes({
@@ -650,6 +775,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       userId: message.userId,
       userName: message.userName,
       threadTs: message.threadTs,
+      runId,
     });
 
     Sentry.metrics.count("agent.run.started", 1, {
@@ -669,6 +795,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             userId: message.userId,
             userName: message.userName,
             threadTs: message.threadTs,
+            runId,
           });
           addLifecycleBreadcrumb("agent.run.started", {
             channel_id: conversationId,
@@ -696,12 +823,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             });
             return result;
           } catch (err) {
+            onError(err);
             scope.setContext("agent_run_error", {
               conversationId,
               sessionKey,
               platform: platform.name,
               messageId: message.id,
               threadTs: message.threadTs,
+              runId,
             });
             reportUserFacingError(err, {
               domain: "mikan",
@@ -712,6 +841,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
               context: {
                 conversationId,
                 sessionKey,
+                runId,
                 messageId: message.id,
                 threadTs: message.threadTs,
                 attachmentCount: message.attachments?.length ?? 0,

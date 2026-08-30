@@ -118,6 +118,7 @@
     "entry": [
       "src/index.ts!",
       "src/main.ts!",
+      "src/audit/worker.ts!",
       "src/cli/download.ts!",
       "src/observability/instrument.ts!",
       "src/harness/index.ts!",

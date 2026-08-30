@@ -12,6 +12,7 @@ import {
 } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { PlatformName } from "../../adapter.js";
+import type { AgentAuditRunQuery, AgentAuditStatus } from "../../audit/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { AdminToken } from "./types.js";
 export type { AdminToken } from "./types.js";
@@ -147,6 +148,18 @@ async function routeApiRequest(
     }
     if (url.pathname === "/admin/api/conversation-usage") {
       await serveConversationUsage(res, url, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/audit/health") {
+      await serveAuditHealth(res, services);
+      return;
+    }
+    if (url.pathname === "/admin/api/audit/runs") {
+      await serveAuditRuns(res, url, services, token);
+      return;
+    }
+    if (url.pathname === "/admin/api/audit/run") {
+      await serveAuditRun(res, url, services);
       return;
     }
     if (url.pathname === "/admin/api/conversation-state") {
@@ -395,6 +408,135 @@ function serveConversationsList(res: ServerResponse, services: AdminServices): v
   }));
 
   jsonRes(res, 200, { conversations });
+}
+
+const AUDIT_STATUSES = new Set<AgentAuditStatus>([
+  "admitted",
+  "running",
+  "completed",
+  "failed",
+  "aborted",
+  "blocked",
+  "cancelled",
+  "timeout",
+  "budget_exceeded",
+  "invalid_output",
+]);
+
+function requireAdminAudit(res: ServerResponse, services: AdminServices) {
+  if (!services.audit) {
+    jsonRes(res, 503, { error: "Agent audit store is not available" });
+    return null;
+  }
+  return services.audit;
+}
+
+function parseAuditTime(value: string | null, field: string): number | undefined {
+  if (!value) return undefined;
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${field} must be an ISO 8601 timestamp`);
+  return parsed;
+}
+
+function auditScopeQuery(url: URL, token: AdminToken): AgentAuditRunQuery {
+  const conversationId = (url.searchParams.get("conversationId") ?? "").trim();
+  const platform = (url.searchParams.get("platform") ?? "").trim();
+  if ((conversationId && !platform) || (!conversationId && platform)) {
+    throw new Error("conversationId and platform must be supplied together");
+  }
+  let scope: AdminConversationScope | undefined;
+  if (conversationId && platform) {
+    scope = resolveConversationScope(conversationId, platform, token);
+    if (scope.error) throw new Error(scope.error);
+  }
+  const rawLimit = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
+  const rawStatus = (url.searchParams.get("status") ?? "").trim();
+  if (rawStatus && !AUDIT_STATUSES.has(rawStatus as AgentAuditStatus)) {
+    throw new Error("Invalid audit status");
+  }
+  const fromMs = parseAuditTime(url.searchParams.get("from"), "from");
+  const toMs = parseAuditTime(url.searchParams.get("to"), "to");
+  if (fromMs !== undefined && toMs !== undefined && fromMs >= toMs) {
+    throw new Error("from must be earlier than to");
+  }
+  return {
+    ...(scope ? { platform: scope.address.platform, conversationId: scope.conversationId } : {}),
+    ...(url.searchParams.get("runId")?.trim()
+      ? { runId: url.searchParams.get("runId")!.trim() }
+      : {}),
+    ...(url.searchParams.get("toolName")?.trim()
+      ? { toolName: url.searchParams.get("toolName")!.trim() }
+      : {}),
+    ...(rawStatus ? { status: rawStatus as AgentAuditStatus } : {}),
+    ...(fromMs !== undefined ? { fromMs } : {}),
+    ...(toMs !== undefined ? { toMs } : {}),
+    ...(Number.isInteger(rawLimit) && rawLimit > 0 ? { limit: rawLimit } : {}),
+    ...(url.searchParams.get("cursor")?.trim()
+      ? { cursor: url.searchParams.get("cursor")!.trim() }
+      : {}),
+  };
+}
+
+async function serveAuditHealth(res: ServerResponse, services: AdminServices): Promise<void> {
+  const audit = requireAdminAudit(res, services);
+  if (!audit) return;
+  try {
+    const { dbPath: _dbPath, ...health } = await audit.getHealth();
+    jsonRes(res, 200, { health });
+  } catch (error) {
+    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function serveAuditRuns(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+  token: AdminToken,
+): Promise<void> {
+  const audit = requireAdminAudit(res, services);
+  if (!audit) return;
+  let query: AgentAuditRunQuery;
+  try {
+    query = auditScopeQuery(url, token);
+  } catch (error) {
+    jsonRes(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
+  try {
+    jsonRes(res, 200, await audit.listRuns(query));
+  } catch (error) {
+    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+async function serveAuditRun(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+): Promise<void> {
+  const audit = requireAdminAudit(res, services);
+  if (!audit) return;
+  const runId = (url.searchParams.get("runId") ?? "").trim();
+  if (!runId) {
+    jsonRes(res, 400, { error: "runId is required" });
+    return;
+  }
+  const beforeRaw = Number.parseInt(url.searchParams.get("beforeSequence") ?? "", 10);
+  const beforeSequence = Number.isInteger(beforeRaw) && beforeRaw > 0 ? beforeRaw : undefined;
+  try {
+    const detail = await audit.getRun(runId, {
+      ...(beforeSequence ? { beforeSequence } : {}),
+      eventLimit: 200,
+    });
+    if (!detail) {
+      jsonRes(res, 404, { error: "Audit run not found" });
+      return;
+    }
+    jsonRes(res, 200, detail);
+  } catch (error) {
+    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
 
 interface SessionUsageRow {
@@ -1940,6 +2082,7 @@ function renderAdminPage(token: AdminToken): string {
   const userLabel = token.platformUserName ?? token.platformUserId;
   const body = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
       <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
+      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-audit" data-tab="audit">Audit</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Global</button>
     </nav>
 
@@ -2048,6 +2191,62 @@ function renderAdminPage(token: AdminToken): string {
         <div id="session-link-result" class="link-result" style="display:none"></div>
         <iframe id="session-frame" class="portal-frame" title="Session View" style="display:none"></iframe>
       </section>
+    </div>
+
+    <div class="tab-panel" id="panel-audit">
+      <section class="audit-hero">
+        <div>
+          <p class="eyebrow">Agent Loop Ledger</p>
+          <h2 class="audit-title">Run audit</h2>
+          <p class="audit-intro">Metadata-only lifecycle evidence. Prompt text, tool arguments/results, model content, and thinking are never stored here.</p>
+        </div>
+        <button class="refresh-btn" onclick="loadAudit()">↻ Refresh</button>
+      </section>
+
+      <section class="audit-health" id="audit-health">
+        <div class="loading-msg">Loading audit health…</div>
+      </section>
+
+      <section class="card audit-filter-card">
+        <div class="audit-filter-grid">
+          <label>Conversation<select id="audit-conversation"><option value="">All conversations</option></select></label>
+          <label>Run ID<input id="audit-run-id" type="text" spellcheck="false" placeholder="exact run UUID" /></label>
+          <label>Tool<input id="audit-tool-name" type="text" spellcheck="false" placeholder="bash, read, subagent…" /></label>
+          <label>Status<select id="audit-status">
+            <option value="">Any status</option>
+            <option value="running">running</option>
+            <option value="completed">completed</option>
+            <option value="failed">failed</option>
+            <option value="aborted">aborted</option>
+            <option value="blocked">blocked</option>
+            <option value="budget_exceeded">budget exceeded</option>
+          </select></label>
+          <label>From<input id="audit-from" type="datetime-local" /></label>
+          <label>To<input id="audit-to" type="datetime-local" /></label>
+        </div>
+        <div class="audit-filter-actions">
+          <button class="primary-action-btn" onclick="loadAuditRuns(true)">Search runs</button>
+          <button class="pkg-btn" onclick="resetAuditFilters()">Reset</button>
+        </div>
+      </section>
+
+      <div class="audit-layout">
+        <section class="card audit-run-list-card">
+          <header class="audit-column-head">
+            <div><p class="eyebrow">Runs</p><h3>Recent activity</h3></div>
+            <span id="audit-run-count" class="audit-count"></span>
+          </header>
+          <div id="audit-runs"><div class="loading-msg">Loading…</div></div>
+          <button id="audit-load-more" class="audit-load-more" onclick="loadMoreAuditRuns()" style="display:none">Load older runs</button>
+        </section>
+        <section class="card audit-detail-card">
+          <div id="audit-detail" class="audit-detail-empty">
+            <span class="audit-empty-mark">⌁</span>
+            <strong>Select a run</strong>
+            <span>Inspect ordered model, tool, retry, compaction, and child-run lifecycle.</span>
+          </div>
+        </section>
+      </div>
     </div>
 
     <div class="tab-panel" id="panel-global">
@@ -2216,6 +2415,12 @@ function renderAdminPage(token: AdminToken): string {
         case 'toggle-timeline-filter':
           toggleTimelineFilter(target.dataset.filterKey || '');
           break;
+        case 'select-audit-run':
+          void loadAuditRun(target.dataset.runId || '');
+          break;
+        case 'select-child-run':
+          void loadAuditRun(target.dataset.runId || '');
+          break;
       }
     });
     async function apiGet(path) {
@@ -2296,6 +2501,7 @@ function renderAdminPage(token: AdminToken): string {
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
       });
       tabPanels.forEach((panel) => panel.classList.toggle('active', panel.id === 'panel-' + tabId));
+      if (tabId === 'audit') initAudit();
       if (tabId === 'global') initGlobal();
     }
     tabBtns.forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
@@ -2982,6 +3188,281 @@ function renderAdminPage(token: AdminToken): string {
       }
     }
 
+    // ── Audit ──────────────────────────────────────────────────────────────────
+
+    let auditLoaded = false;
+    let auditCursor = '';
+    let selectedAuditRunId = '';
+    let auditBeforeSequence = 0;
+    let auditConversationOptionsLoaded = false;
+
+    async function initAudit() {
+      if (auditLoaded) return;
+      auditLoaded = true;
+      await ensureAuditConversationOptions();
+      await loadAudit();
+    }
+
+    async function ensureAuditConversationOptions() {
+      if (auditConversationOptionsLoaded) return;
+      const select = document.getElementById('audit-conversation');
+      const data = await apiGet('/admin/api/conversations');
+      select.innerHTML = '<option value="">All conversations</option>' + data.conversations.map((c) => {
+        const key = c.platform + ':' + c.conversationId;
+        return '<option value="' + escAttr(key) + '">' + escHtml(c.label || key) + '</option>';
+      }).join('');
+      auditConversationOptionsLoaded = true;
+    }
+
+    async function loadAudit() {
+      await Promise.all([loadAuditHealth(), loadAuditRuns(true)]);
+    }
+
+    async function loadAuditHealth() {
+      const container = document.getElementById('audit-health');
+      container.innerHTML = '<div class="loading-msg">Loading audit health…</div>';
+      try {
+        const data = await apiGet('/admin/api/audit/health');
+        const h = data.health;
+        const state = !h.available ? 'offline' : h.degraded ? 'degraded' : 'healthy';
+        const updated = h.lastWriteAtMs ? new Date(h.lastWriteAtMs).toLocaleString() : 'no writes yet';
+        container.innerHTML =
+          '<div class="audit-health-state audit-health-' + state + '"><i></i><span>' + escHtml(state) + '</span></div>' +
+          auditMetric('Events', fmtNum(h.eventCount)) +
+          auditMetric('Runs', fmtNum(h.runCount)) +
+          auditMetric('Queue', fmtNum(h.queueDepth + h.inFlightEvents)) +
+          auditMetric('Dropped', fmtNum(h.droppedEvents)) +
+          auditMetric('Retention', escHtml(h.retentionDays + ' days')) +
+          '<div class="audit-health-foot">' + escHtml(updated) +
+            (h.lastError ? ' · ' + escHtml(h.lastError) : '') + '</div>';
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function auditMetric(label, value) {
+      return '<div class="audit-health-metric"><span>' + escHtml(label) + '</span><strong>' + value + '</strong></div>';
+    }
+
+    function auditDateParam(id) {
+      const value = document.getElementById(id).value;
+      if (!value) return '';
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString();
+    }
+
+    function auditQuery(cursor) {
+      const params = new URLSearchParams();
+      const conversation = document.getElementById('audit-conversation').value;
+      if (conversation) {
+        const scope = scopeOf(conversation);
+        params.set('platform', scope.platform);
+        params.set('conversationId', scope.conversationId);
+      }
+      const fields = [
+        ['runId', 'audit-run-id'],
+        ['toolName', 'audit-tool-name'],
+        ['status', 'audit-status'],
+      ];
+      for (const [key, id] of fields) {
+        const value = document.getElementById(id).value.trim();
+        if (value) params.set(key, value);
+      }
+      const from = auditDateParam('audit-from');
+      const to = auditDateParam('audit-to');
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      if (cursor) params.set('cursor', cursor);
+      params.set('limit', '30');
+      return params;
+    }
+
+    async function loadAuditRuns(reset) {
+      const container = document.getElementById('audit-runs');
+      const more = document.getElementById('audit-load-more');
+      if (reset) {
+        auditCursor = '';
+        selectedAuditRunId = '';
+        container.innerHTML = '<div class="loading-msg">Loading runs…</div>';
+        document.getElementById('audit-detail').innerHTML =
+          '<div class="audit-detail-empty"><span class="audit-empty-mark">⌁</span><strong>Select a run</strong><span>Inspect ordered model, tool, retry, compaction, and child-run lifecycle.</span></div>';
+      }
+      more.style.display = 'none';
+      try {
+        const data = await apiGet('/admin/api/audit/runs?' + auditQuery(reset ? '' : auditCursor).toString());
+        const rows = Array.isArray(data.runs) ? data.runs : [];
+        document.getElementById('audit-run-count').textContent = rows.length + (data.nextCursor ? '+' : '') + ' runs';
+        const html = rows.map(renderAuditRunRow).join('');
+        if (reset) {
+          container.innerHTML = html || '<div class="empty-state">No matching runs</div>';
+        } else if (rows.length) {
+          container.insertAdjacentHTML('beforeend', html);
+        }
+        auditCursor = data.nextCursor || '';
+        more.style.display = auditCursor ? 'block' : 'none';
+      } catch (err) {
+        if (reset) container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    function loadMoreAuditRuns() {
+      if (auditCursor) void loadAuditRuns(false);
+    }
+
+    function resetAuditFilters() {
+      for (const id of ['audit-conversation','audit-run-id','audit-tool-name','audit-status','audit-from','audit-to']) {
+        document.getElementById(id).value = '';
+      }
+      void loadAuditRuns(true);
+    }
+
+    function auditStatusClass(status) {
+      return 'audit-status-' + String(status || 'unknown').replace(/_/g, '-');
+    }
+
+    function formatAuditDuration(value) {
+      const ms = Number(value || 0);
+      if (ms < 1000) return ms + 'ms';
+      if (ms < 60000) return (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + 's';
+      return (ms / 60000).toFixed(1) + 'm';
+    }
+
+    function renderAuditRunRow(run) {
+      const active = run.runId === selectedAuditRunId ? ' active' : '';
+      const usage = run.totalTokens ? fmtNum(run.totalTokens) + ' tok' : 'no token usage';
+      const model = run.modelProvider && run.modelId ? run.modelProvider + '/' + run.modelId : 'model pending';
+      return '<button class="audit-run-row' + active + '" data-admin-action="select-audit-run" data-run-id="' + escAttr(run.runId) + '">' +
+        '<span class="audit-run-rail ' + auditStatusClass(run.status) + '"></span>' +
+        '<span class="audit-run-main">' +
+          '<span class="audit-run-top"><strong>' + escHtml(run.conversationId) + '</strong>' +
+            '<span class="audit-status ' + auditStatusClass(run.status) + '">' + escHtml(run.status) + '</span></span>' +
+          '<span class="audit-run-id">' + escHtml(run.runId.slice(0, 13)) + '</span>' +
+          '<span class="audit-run-meta">' + escHtml(model) + ' · ' + escHtml(formatAuditDuration(run.durationMs)) + ' · ' + escHtml(usage) + '</span>' +
+        '</span>' +
+        '<time>' + escHtml(new Date(run.startedAtMs).toLocaleString()) + '</time>' +
+      '</button>';
+    }
+
+    async function loadAuditRun(runId) {
+      if (!runId) return;
+      selectedAuditRunId = runId;
+      auditBeforeSequence = 0;
+      document.querySelectorAll('.audit-run-row').forEach((row) => {
+        row.classList.toggle('active', row.dataset.runId === runId);
+      });
+      const container = document.getElementById('audit-detail');
+      container.innerHTML = '<div class="loading-msg">Loading run…</div>';
+      try {
+        const data = await apiGet('/admin/api/audit/run?runId=' + encodeURIComponent(runId));
+        if (selectedAuditRunId !== runId) return;
+        auditBeforeSequence = data.nextBeforeSequence || 0;
+        container.innerHTML = renderAuditDetail(data);
+      } catch (err) {
+        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function loadEarlierAuditEvents() {
+      if (!selectedAuditRunId || !auditBeforeSequence) return;
+      const requestedRunId = selectedAuditRunId;
+      const requestedBefore = auditBeforeSequence;
+      const button = document.getElementById('audit-earlier');
+      if (button) { button.disabled = true; button.textContent = 'Loading…'; }
+      try {
+        const data = await apiGet('/admin/api/audit/run?runId=' +
+          encodeURIComponent(requestedRunId) + '&beforeSequence=' + requestedBefore);
+        if (selectedAuditRunId !== requestedRunId || auditBeforeSequence !== requestedBefore) return;
+        const list = document.getElementById('audit-event-list');
+        if (list) list.insertAdjacentHTML('afterbegin', (data.events || []).map(renderAuditEvent).join(''));
+        auditBeforeSequence = data.nextBeforeSequence || 0;
+        if (button) {
+          button.style.display = auditBeforeSequence ? 'block' : 'none';
+          button.disabled = false;
+          button.textContent = 'Load earlier events';
+        }
+      } catch (err) {
+        if (button) { button.disabled = false; button.textContent = err.message; }
+      }
+    }
+
+    function auditDetailStat(label, value) {
+      return '<div class="audit-detail-stat"><span>' + escHtml(label) + '</span><strong>' + escHtml(value) + '</strong></div>';
+    }
+
+    function renderAuditDetail(data) {
+      const run = data.run;
+      const model = run.modelProvider && run.modelId ? run.modelProvider + '/' + run.modelId : '—';
+      const childRuns = (data.childRuns || []).map((child) =>
+        '<button class="audit-child" data-admin-action="select-child-run" data-run-id="' + escAttr(child.runId) + '">' +
+          '<span>↳ ' + escHtml(child.runKind) + '</span><code>' + escHtml(child.runId.slice(0, 13)) + '</code>' +
+          '<span class="audit-status ' + auditStatusClass(child.status) + '">' + escHtml(child.status) + '</span>' +
+        '</button>'
+      ).join('');
+      return '<header class="audit-detail-head">' +
+        '<div><p class="eyebrow">Run detail</p><h3>' + escHtml(run.conversationId) + '</h3>' +
+          '<code>' + escHtml(run.runId) + '</code></div>' +
+        '<span class="audit-status audit-status-large ' + auditStatusClass(run.status) + '">' + escHtml(run.status) + '</span>' +
+      '</header>' +
+      '<div class="audit-detail-stats">' +
+        auditDetailStat('Duration', formatAuditDuration(run.durationMs)) +
+        auditDetailStat('Model', model) +
+        auditDetailStat('LLM calls', String(run.llmCalls || 0)) +
+        auditDetailStat('Tools', String(run.toolCalls || 0)) +
+        auditDetailStat('Tokens', fmtNum(run.totalTokens || 0)) +
+        auditDetailStat('Cost', run.costUsd ? '$' + Number(run.costUsd).toFixed(4) : '—') +
+      '</div>' +
+      (childRuns ? '<div class="audit-children"><p class="eyebrow">Child runs</p>' + childRuns + '</div>' : '') +
+      (data.relatedTruncated ? '<div class="audit-truncated">Related model/tool/child summaries were capped; the event timeline remains pageable.</div>' : '') +
+      '<div class="audit-timeline"><p class="eyebrow">Timeline</p>' +
+        '<button id="audit-earlier" class="audit-earlier" onclick="loadEarlierAuditEvents()"' +
+          (auditBeforeSequence ? '' : ' style="display:none"') + '>Load earlier events</button>' +
+        '<div id="audit-event-list">' + (data.events || []).map(renderAuditEvent).join('') + '</div></div>';
+    }
+
+    function auditEventLabel(event) {
+      const labels = {
+        run_admitted: 'Admitted', run_started: 'Run started', run_completed: 'Run completed',
+        run_failed: 'Run failed', run_aborted: 'Run aborted', run_setup_failed: 'Setup failed',
+        turn_started: 'Turn started', turn_completed: 'Turn completed',
+        model_request_started: 'Model request', model_request_completed: 'Model completed',
+        model_request_failed: 'Model failed', model_request_aborted: 'Model aborted',
+        tool_started: 'Tool started', tool_completed: 'Tool completed', tool_failed: 'Tool failed',
+        tool_blocked: 'Tool blocked', retry_started: 'Retry scheduled', retry_completed: 'Retry settled',
+        compaction_started: 'Compaction started', compaction_completed: 'Compaction completed',
+        compaction_failed: 'Compaction failed', budget_exceeded: 'Budget exceeded',
+        subagent_spawned: 'Subagent spawned', subagent_completed: 'Subagent completed',
+      };
+      return labels[event.eventType] || event.eventType;
+    }
+
+    function auditEventMeta(event) {
+      const parts = [];
+      if (event.toolName) parts.push(event.toolName);
+      if (event.modelProvider && event.modelId) parts.push(event.modelProvider + '/' + event.modelId);
+      if (event.stopReason) parts.push(event.stopReason);
+      if (event.errorType) parts.push(event.errorType);
+      if (event.responseId) parts.push('response ' + event.responseId.slice(0, 18));
+      if (event.toolCallId) parts.push('call ' + event.toolCallId.slice(0, 18));
+      if (event.durationMs !== null) parts.push(formatAuditDuration(event.durationMs));
+      if (event.usage && event.usage.totalTokens) parts.push(fmtNum(event.usage.totalTokens) + ' tokens');
+      if (event.relatedRunId) parts.push('child ' + event.relatedRunId.slice(0, 13));
+      return parts.join(' · ');
+    }
+
+    function renderAuditEvent(event) {
+      const details = event.details || {};
+      const detailText = Object.keys(details).map((key) => key + ': ' + (Array.isArray(details[key]) ? details[key].join(', ') : details[key])).join(' · ');
+      const status = event.status || (event.eventType.endsWith('started') ? 'running' : 'completed');
+      return '<div class="audit-event">' +
+        '<span class="audit-event-dot ' + auditStatusClass(status) + '"></span>' +
+        '<div class="audit-event-body"><div class="audit-event-title"><strong>' + escHtml(auditEventLabel(event)) + '</strong>' +
+          '<time>' + escHtml(new Date(event.occurredAtMs).toLocaleTimeString()) + '</time></div>' +
+          (auditEventMeta(event) ? '<div class="audit-event-meta">' + escHtml(auditEventMeta(event)) + '</div>' : '') +
+          (detailText ? '<div class="audit-event-detail">' + escHtml(detailText) + '</div>' : '') +
+        '</div>' +
+      '</div>';
+    }
+
     // ── Global section ──────────────────────────────────────────────────────────
 
     let globalLoaded = false;
@@ -3008,7 +3489,8 @@ function renderAdminPage(token: AdminToken): string {
         }
         container.innerHTML = '<div class="conv-list">' + data.conversations.map((c) => {
           const last = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : '—';
-          return '<button class="conv-row-btn" data-admin-action="select-conversation" data-conversation-id="' + escAttr(c.conversationId) + '">' +
+          const key = c.platform + ':' + c.conversationId;
+          return '<button class="conv-row-btn" data-admin-action="select-conversation" data-conversation-id="' + escAttr(key) + '">' +
             '<span class="conv-id">' + escHtml(c.label || c.conversationId) + '</span>' +
             (c.running ? '<span class="status-pill running">running</span>' : '') +
             '<span class="conv-last">' + escHtml(last) + '</span>' +
@@ -3410,6 +3892,105 @@ const adminViewStyles = `
   .tab-panel { display: none; flex-direction: column; gap: 14px; }
   .tab-panel.active { display: flex; }
 
+  /* ── Audit ledger ───────────────────────────────────────────────────── */
+
+  .audit-hero {
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 24px;
+    padding: 24px 26px; border: 1px solid #282622; border-radius: 16px;
+    color: #f5f0e6; background:
+      linear-gradient(90deg, rgba(237, 168, 46, 0.09) 1px, transparent 1px),
+      linear-gradient(#1c1b18, #24221d);
+    background-size: 28px 100%, auto;
+  }
+  .audit-hero .eyebrow { color: #d5a84b; }
+  .audit-hero .refresh-btn { color: #f5f0e6; border-color: #555046; background: #302d27; }
+  .audit-title { margin: 4px 0 6px; font: 650 clamp(1.8rem, 4vw, 2.7rem)/1 'Fraunces', Georgia, serif; letter-spacing: -0.035em; }
+  .audit-intro { max-width: 680px; color: #b9b2a5; font-size: 0.86rem; line-height: 1.55; }
+  .audit-health {
+    display: grid; grid-template-columns: auto repeat(5, minmax(90px, 1fr));
+    gap: 1px; overflow: hidden; border: 1px solid var(--border); border-radius: 14px;
+    background: var(--border);
+  }
+  .audit-health > * { background: var(--card); padding: 11px 14px; }
+  .audit-health-state { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+  .audit-health-state i { width: 9px; height: 9px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 4px rgba(22,163,74,0.12); }
+  .audit-health-degraded i { background: #d97706; box-shadow: 0 0 0 4px rgba(217,119,6,0.14); }
+  .audit-health-offline i { background: #dc2626; box-shadow: 0 0 0 4px rgba(220,38,38,0.14); }
+  .audit-health-metric { display: flex; flex-direction: column; gap: 2px; }
+  .audit-health-metric span { color: var(--subtle); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .audit-health-metric strong { font: 600 0.92rem/1.2 'JetBrains Mono', ui-monospace, monospace; }
+  .audit-health-foot { grid-column: 1 / -1; padding: 7px 14px; color: var(--subtle); font-size: 0.7rem; }
+  .audit-filter-card { padding: 16px 18px; }
+  .audit-filter-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+  .audit-filter-grid label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+  .audit-filter-grid input, .audit-filter-grid select {
+    min-width: 0; width: 100%; padding: 8px 9px; border: 1px solid var(--border); border-radius: 7px;
+    background: #fff; color: var(--text); font: 0.78rem/1.2 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .audit-filter-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .audit-layout { display: grid; grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.6fr); gap: 14px; align-items: start; }
+  .audit-run-list-card, .audit-detail-card { padding: 0; overflow: hidden; }
+  .audit-column-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+  .audit-column-head h3 { margin-top: 2px; font: 650 1.15rem/1.2 'Fraunces', Georgia, serif; }
+  .audit-count { font: 0.7rem/1 'JetBrains Mono', ui-monospace, monospace; color: var(--subtle); }
+  #audit-runs { max-height: 720px; overflow: auto; }
+  .audit-run-row {
+    position: relative; display: grid; grid-template-columns: 4px minmax(0, 1fr) auto; gap: 12px;
+    width: 100%; padding: 13px 14px 13px 0; border: 0; border-bottom: 1px solid var(--border);
+    background: #fff; color: var(--text); text-align: left; cursor: pointer;
+  }
+  .audit-run-row:hover { background: #f7f4ed; }
+  .audit-run-row.active { background: #f1eadb; }
+  .audit-run-rail { align-self: stretch; border-radius: 0 3px 3px 0; background: #908b82; }
+  .audit-run-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .audit-run-top { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .audit-run-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .audit-run-id { color: #8b6d2f; font: 0.69rem/1.2 'JetBrains Mono', ui-monospace, monospace; }
+  .audit-run-meta { color: var(--muted); font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .audit-run-row time { color: var(--subtle); font-size: 0.66rem; white-space: nowrap; }
+  .audit-status { display: inline-flex; align-items: center; width: fit-content; padding: 2px 7px; border-radius: 4px; background: #eeece7; color: #5f5b53; font: 650 0.62rem/1.2 'JetBrains Mono', ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.04em; }
+  .audit-status-large { padding: 5px 10px; font-size: 0.7rem; }
+  .audit-status-completed { background: #e4f1e8; color: #24653a; }
+  .audit-status-running { background: #e6edf7; color: #315f98; }
+  .audit-status-failed, .audit-status-aborted, .audit-status-timeout, .audit-status-invalid-output { background: #f6e4e1; color: #9a332b; }
+  .audit-status-blocked, .audit-status-budget-exceeded { background: #f6edda; color: #8a5b18; }
+  .audit-run-rail.audit-status-completed, .audit-event-dot.audit-status-completed { background: #3a8a56; }
+  .audit-run-rail.audit-status-running, .audit-event-dot.audit-status-running { background: #4d7db2; }
+  .audit-run-rail.audit-status-failed, .audit-run-rail.audit-status-aborted, .audit-event-dot.audit-status-failed, .audit-event-dot.audit-status-aborted { background: #b84a40; }
+  .audit-run-rail.audit-status-blocked, .audit-run-rail.audit-status-budget-exceeded, .audit-event-dot.audit-status-blocked, .audit-event-dot.audit-status-budget-exceeded { background: #c38a30; }
+  .audit-load-more { width: 100%; padding: 11px; border: 0; border-top: 1px solid var(--border); background: #f8f6f0; color: #7b6232; cursor: pointer; font-weight: 650; }
+  .audit-detail-card { min-height: 430px; }
+  .audit-detail-empty { min-height: 430px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: var(--subtle); text-align: center; }
+  .audit-detail-empty strong { color: var(--muted); }
+  .audit-empty-mark { font: 3rem/1 Georgia, serif; color: #c7b890; }
+  .audit-detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px; border-bottom: 1px solid var(--border); background: #faf8f3; }
+  .audit-detail-head h3 { margin: 3px 0; font: 650 1.45rem/1.2 'Fraunces', Georgia, serif; }
+  .audit-detail-head code { color: var(--muted); font-size: 0.68rem; word-break: break-all; }
+  .audit-detail-stats { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--border); }
+  .audit-detail-stat { padding: 12px 16px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .audit-detail-stat span { color: var(--subtle); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.07em; }
+  .audit-detail-stat strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 0.78rem/1.2 'JetBrains Mono', ui-monospace, monospace; }
+  .audit-children, .audit-timeline { padding: 18px 22px; }
+  .audit-children { border-bottom: 1px solid var(--border); }
+  .audit-child { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; width: 100%; padding: 8px 10px; margin-top: 7px; border: 1px solid var(--border); border-radius: 7px; background: #faf8f3; cursor: pointer; text-align: left; }
+  .audit-child code { color: #8b6d2f; font-size: 0.68rem; }
+  .audit-timeline > .eyebrow { margin-bottom: 12px; }
+  .audit-earlier {
+    display: block; width: 100%; margin-bottom: 14px; padding: 8px 10px;
+    border: 1px dashed #c6b78f; border-radius: 7px; background: #faf7ef;
+    color: #795d28; font-size: 0.72rem; font-weight: 650; cursor: pointer;
+  }
+  .audit-earlier:disabled { opacity: 0.6; cursor: wait; }
+  .audit-truncated { padding: 9px 22px; border-bottom: 1px solid var(--border); background: #fbf3df; color: #805c19; font-size: 0.72rem; }
+  .audit-event { position: relative; display: grid; grid-template-columns: 13px 1fr; gap: 11px; padding-bottom: 17px; }
+  .audit-event:not(:last-child)::before { content: ''; position: absolute; left: 5px; top: 13px; bottom: 0; width: 1px; background: #ddd7ca; }
+  .audit-event-dot { position: relative; z-index: 1; width: 11px; height: 11px; margin-top: 4px; border-radius: 50%; background: #8f8a80; box-shadow: 0 0 0 3px #fff; }
+  .audit-event-title { display: flex; justify-content: space-between; gap: 12px; }
+  .audit-event-title strong { font-size: 0.82rem; }
+  .audit-event-title time { color: var(--subtle); font: 0.66rem/1.3 'JetBrains Mono', ui-monospace, monospace; }
+  .audit-event-meta { margin-top: 3px; color: #75643f; font: 0.7rem/1.4 'JetBrains Mono', ui-monospace, monospace; }
+  .audit-event-detail { margin-top: 3px; color: var(--subtle); font-size: 0.7rem; }
+
   .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 12px; }
 
   .link-result {
@@ -3732,5 +4313,11 @@ const adminViewStyles = `
     .portal-frame { min-height: 520px; }
     .workspace-split { grid-template-columns: 1fr; }
     .workspace-tree, .workspace-preview { max-height: 260px; }
+    .audit-health { grid-template-columns: 1fr 1fr; }
+    .audit-health-state, .audit-health-foot { grid-column: 1 / -1; }
+    .audit-filter-grid { grid-template-columns: 1fr 1fr; }
+    .audit-layout { grid-template-columns: 1fr; }
+    .audit-detail-stats { grid-template-columns: 1fr 1fr; }
+    .audit-hero { align-items: flex-start; flex-direction: column; }
   }
 `;

@@ -1,4 +1,5 @@
 import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../adapter.js";
+import type { AgentAuditService } from "../../audit/index.js";
 import type { Workspace } from "../../office/index.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
@@ -24,6 +25,8 @@ export interface AdminServices {
   workspace?: Workspace;
   /** Events read/delete go through the owning store, not raw disk parsing. */
   eventStore?: EventStore;
+  /** Metadata-only agent-loop audit queries and health. */
+  audit?: AgentAuditService;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
   botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;

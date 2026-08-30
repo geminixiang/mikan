@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { MessagingBot, PlatformName } from "../adapter.js";
+import type { AgentAuditService } from "../audit/index.js";
 import { resolveLinkBaseUrl } from "../config.js";
 import * as log from "../log.js";
 import type { SandboxConfig } from "../sandbox/index.js";
@@ -36,6 +37,7 @@ interface StartWebServerOptions {
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
+    audit?: AgentAuditService;
   };
   githubWebhook?: GithubWebhookOptions;
 }
@@ -83,6 +85,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
           portalBaseUrl: resolveLinkBaseUrl() ?? undefined,
           workspace: adminOptions.workspace,
           eventStore: adminEventStore,
+          audit: adminOptions.audit,
           runtime: adminOptions.runtime,
           sandbox: adminOptions.sandbox,
           botsByPlatform: adminOptions.botsByPlatform,

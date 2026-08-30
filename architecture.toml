@@ -50,6 +50,13 @@ docs = "src/harness/README.md"
 sources = ["src/harness/"]
 
 [[modules]]
+id = "agent-audit"
+name = "Agent audit"
+kind = "authority"
+docs = "src/audit/README.md"
+sources = ["src/audit/"]
+
+[[modules]]
 id = "extensions"
 name = "Extension host"
 kind = "extension-host"
@@ -175,6 +182,13 @@ owner = "harness"
 consumers = ["agent-runner", "extensions"]
 interface = "MikanAgentSession"
 docs = "src/harness/README.md"
+
+[[seams]]
+id = "audit-recording"
+owner = "agent-audit"
+consumers = ["composition-root", "conversation-runtime", "agent-runner", "harness", "side-services"]
+interface = "AgentAuditService, AgentAuditRun"
+docs = "src/audit/README.md"
 
 [[seams]]
 id = "extension-host"
@@ -309,6 +323,13 @@ classification = "conversation-data"
 docs = "src/sessions/README.md"
 
 [[resources]]
+id = "agent-audit-store"
+authority = "agent-audit"
+scope = "deployment"
+classification = "host-private"
+docs = "src/audit/README.md"
+
+[[resources]]
 id = "platform-log"
 authority = "platform-adapters"
 scope = "conversation"
@@ -366,6 +387,7 @@ path = [
   "composition-root",
   "office",
   "configuration",
+  "agent-audit",
   "conversation-runtime",
   "platform-adapters",
   "side-services",
@@ -378,8 +400,10 @@ path = [
   "platform-adapters",
   "conversation-intake",
   "conversation-runtime",
+  "agent-audit",
   "agent-runner",
   "harness",
+  "agent-audit",
   "platform-adapters",
 ]
 docs = "ARCHITECTURE.md#conversation-run"
@@ -453,6 +477,13 @@ applies_to = ["runner-state", "platform-adapters"]
 docs = "ARCHITECTURE.md#inv-run-settlement"
 
 [[invariants]]
+id = "audit-non-interference"
+owners = ["agent-audit"]
+applies_to = ["agent-audit", "agent-audit-store", "conversation-runtime", "harness"]
+docs = "ARCHITECTURE.md#inv-audit-non-interference"
+adr = "docs/adr/0006-durable-agent-audit-and-diagnostic-traces.md"
+
+[[invariants]]
 id = "projection-coherence"
 owners = ["workspace-projection"]
 applies_to = ["office-directory", "workspace-projection", "agent-runner", "sandbox"]
@@ -461,7 +492,13 @@ docs = "ARCHITECTURE.md#inv-projection-coherence"
 [[invariants]]
 id = "state-dir-host-only"
 owners = ["configuration"]
-applies_to = ["state-dir", "workspace-projection", "vault-store", "package-store"]
+applies_to = [
+  "state-dir",
+  "workspace-projection",
+  "vault-store",
+  "package-store",
+  "agent-audit-store",
+]
 docs = "ARCHITECTURE.md#inv-state-dir-host-only"
 
 [[invariants]]

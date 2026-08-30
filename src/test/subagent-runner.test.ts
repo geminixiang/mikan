@@ -11,6 +11,7 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "@sinclair/typebox";
+import type { AgentAuditEventInput, AgentAuditRun } from "../audit/index.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   DEFAULT_SUBAGENT_BUDGET,
@@ -74,6 +75,31 @@ const THINKER_PROFILES = new Map([
   ],
 ]);
 const THINKER_MENU = new Map([["thinker", { description: "Reasons over supplied input only" }]]);
+
+class CapturedSubagentAuditRun implements AgentAuditRun {
+  readonly events: AgentAuditEventInput[] = [];
+  readonly children: CapturedSubagentAuditRun[] = [];
+
+  constructor(
+    readonly runId = "parent-run",
+    readonly runKind = "interactive" as const,
+    readonly parentRunId?: string,
+  ) {}
+
+  record(event: AgentAuditEventInput): void {
+    this.events.push(event);
+  }
+
+  child(options: { runKind: "subagent"; runId?: string }): AgentAuditRun {
+    const child = new CapturedSubagentAuditRun(
+      options.runId ?? `child-${this.children.length + 1}`,
+      options.runKind,
+      this.runId,
+    );
+    this.children.push(child);
+    return child;
+  }
+}
 
 async function waitFor(condition: () => boolean): Promise<void> {
   const deadline = Date.now() + 1_000;
@@ -716,6 +742,7 @@ describe("runSubagent", () => {
       fauxAssistantMessage("should not run"),
     ]);
 
+    const auditParent = new CapturedSubagentAuditRun();
     const result = await runSubagent({
       request: { task: "Use echo", tools: ["echo"], budget: { maxTurns: 1 } },
       defaultModel: model,
@@ -723,11 +750,16 @@ describe("runSubagent", () => {
       models,
       workspaceDir: dir,
       availableTools: [echoTool],
+      auditIdentity: { parentRun: auditParent },
     });
 
     expect(result.status).toBe("budget_exceeded");
     expect(result.error).toContain("LLM calls");
     expect(result.text ?? "").not.toContain("should not run");
+    expect(auditParent.children[0]?.events.at(-1)).toMatchObject({
+      type: "run_aborted",
+      status: "budget_exceeded",
+    });
   });
 
   test("honors an already-aborted signal without calling the model", async () => {
@@ -736,6 +768,7 @@ describe("runSubagent", () => {
     const controller = new AbortController();
     controller.abort();
 
+    const auditParent = new CapturedSubagentAuditRun();
     const result = await runSubagent({
       request: { task: "Do not run", signal: controller.signal },
       defaultModel: model,
@@ -743,10 +776,15 @@ describe("runSubagent", () => {
       models,
       workspaceDir: dir,
       availableTools: [],
+      auditIdentity: { parentRun: auditParent },
     });
 
     expect(result).toMatchObject({ status: "cancelled", turns: 0 });
     expect(result.text).toBeUndefined();
+    expect(auditParent.children[0]?.events.at(-1)).toMatchObject({
+      type: "run_aborted",
+      status: "cancelled",
+    });
   });
 
   test("tells a subagent with no tools that it has none", async () => {

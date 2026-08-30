@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import * as publicApi from "../index.js";
 
 const EXPECTED_RUNTIME_EXPORTS = [
+  "AgentAuditStore",
   "CURRENT_SESSION_VERSION",
   "ChatHistorySync",
   "DEFAULT_BUDGET_SETTINGS",

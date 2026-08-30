@@ -13,7 +13,9 @@ import type {
   ConversationResponder,
   MessagingInfo,
 } from "../adapter.js";
+import type { AgentAuditEventInput, AgentAuditRun, AgentAuditService } from "../audit/index.js";
 import { MikanModels, SessionStore } from "../harness/index.js";
+import { AgentRunSetupError } from "../agent/runner.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,
@@ -53,10 +55,10 @@ afterEach(() => {
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 
-function makeRuntime(models?: MikanModels) {
+function makeRuntime(models?: MikanModels, audit?: AgentAuditService) {
   const sandbox: SandboxConfig = { type: "host" };
   const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-  return createConversationRuntime({ workspace, sandbox, models });
+  return createConversationRuntime({ workspace, sandbox, models, audit });
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
@@ -169,6 +171,62 @@ function makeThreadEventAndContext(ts: string): {
   result.context.message.threadTs = threadTs;
   result.context.message.sessionKey = result.event.sessionKey;
   return result;
+}
+
+class CapturedAuditRun implements AgentAuditRun {
+  readonly runId: string;
+  readonly runKind: AgentAuditRun["runKind"];
+  readonly parentRunId?: string;
+  readonly events: AgentAuditEventInput[] = [];
+  readonly children: CapturedAuditRun[] = [];
+
+  constructor(runId: string, runKind: AgentAuditRun["runKind"], parentRunId?: string) {
+    this.runId = runId;
+    this.runKind = runKind;
+    this.parentRunId = parentRunId;
+  }
+
+  record(event: AgentAuditEventInput): void {
+    this.events.push(event);
+  }
+
+  child(options: { runKind: AgentAuditRun["runKind"]; runId?: string }): AgentAuditRun {
+    const child = new CapturedAuditRun(
+      options.runId ?? `child-${this.children.length + 1}`,
+      options.runKind,
+      this.runId,
+    );
+    this.children.push(child);
+    return child;
+  }
+}
+
+class CapturedAuditService implements AgentAuditService {
+  readonly runs: CapturedAuditRun[] = [];
+
+  startRun(identity: { runKind: AgentAuditRun["runKind"]; runId?: string }): AgentAuditRun {
+    const run = new CapturedAuditRun(
+      identity.runId ?? `run-${this.runs.length + 1}`,
+      identity.runKind,
+    );
+    this.runs.push(run);
+    return run;
+  }
+
+  async listRuns(): Promise<never> {
+    throw new Error("not used");
+  }
+  async getRun(): Promise<never> {
+    throw new Error("not used");
+  }
+  async getHealth(): Promise<never> {
+    throw new Error("not used");
+  }
+  async flush(): Promise<void> {}
+  async runRetention(): Promise<number> {
+    return 0;
+  }
+  async close(): Promise<void> {}
 }
 
 const bot = {
@@ -335,6 +393,82 @@ describe("ConversationRuntime handleEvent", () => {
     releaseSync();
     await done;
     expect(order).toEqual(["sync:start", "sync:end", "run"]);
+  });
+
+  test("allocates one runtime audit run and settles it with normalized metrics", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("audited")]);
+    const audit = new CapturedAuditService();
+    const runtime = makeRuntime(models, audit);
+    const { event, context } = makeEventAndContext("1000.08");
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(audit.runs).toHaveLength(1);
+    expect(audit.runs[0]).toMatchObject({ runKind: "interactive" });
+    expect(audit.runs[0]?.events.map((item) => item.type)).toEqual([
+      "run_admitted",
+      "run_started",
+      "turn_started",
+      "model_request_started",
+      "model_request_completed",
+      "turn_completed",
+      "run_completed",
+    ]);
+    expect(audit.runs[0]?.events.at(-1)).toMatchObject({
+      status: "completed",
+      llmCalls: 1,
+      toolCalls: 0,
+      usage: expect.objectContaining({ totalTokens: expect.any(Number) }),
+    });
+    expect(JSON.stringify(audit.runs)).not.toContain(event.text);
+
+    await runtime.shutdown();
+  });
+
+  test("records setup failure as the run's only terminal audit event", async () => {
+    const audit = new CapturedAuditService();
+    const runtime = makeRuntime(undefined, audit);
+    const runner = seedRunnerState(runtime, vi.fn().mockResolvedValue(false));
+    vi.mocked(runner.run).mockRejectedValue(new AgentRunSetupError(new Error("setup failed")));
+    const { event, context } = makeEventAndContext("1000.09");
+
+    await runtime.handleEvent(event, bot, context);
+
+    const terminal = audit.runs[0]?.events.filter((item) =>
+      ["run_setup_failed", "run_completed", "run_failed", "run_aborted"].includes(item.type),
+    );
+    expect(terminal).toEqual([
+      expect.objectContaining({ type: "run_setup_failed", status: "failed" }),
+    ]);
+    await runtime.shutdown();
+  });
+
+  test("does not rewrite an agent outcome when stop notification delivery fails", async () => {
+    const audit = new CapturedAuditService();
+    const runtime = makeRuntime(undefined, audit);
+    const runner = seedRunnerState(runtime, vi.fn().mockResolvedValue(false));
+    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
+    vi.mocked(runner.run).mockImplementation(async () => {
+      const state = sessions.get(testAddress, "C123")!;
+      state.stopRequested = true;
+      return { stopReason: "aborted" };
+    });
+    const failingBot = {
+      ...bot,
+      postMessage: vi.fn().mockRejectedValue(new Error("delivery failed")),
+    } as unknown as MessagingBot;
+    const { event, context } = makeEventAndContext("1000.095");
+
+    await expect(runtime.handleEvent(event, failingBot, context)).rejects.toThrow(
+      "delivery failed",
+    );
+
+    const terminal = audit.runs[0]?.events.filter((item) =>
+      ["run_setup_failed", "run_completed", "run_failed", "run_aborted"].includes(item.type),
+    );
+    expect(terminal).toEqual([expect.objectContaining({ type: "run_aborted", status: "aborted" })]);
+    await runtime.shutdown();
   });
 
   test("two events on one session key run serially, not concurrently", async () => {
@@ -979,7 +1113,11 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(...newCommandArgs());
 
-    await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision"));
+    await vi.waitFor(() => {
+      expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision");
+      expect(runtime.isRunning(testAddress, "C123")).toBe(false);
+      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    });
     const freshSession = resolveChannelSessionFile(conversationDir);
     expect(freshSession).not.toBe(originalSession);
     expect(readFileSync(freshSession, "utf-8")).not.toContain("old durable decision");

@@ -38,6 +38,7 @@ The admin portal can:
 - view limited workspace files, skills, and events metadata/files, and create or edit skills at either level
 - list and mutate the package sources for a scope
 - view session and conversation usage
+- query metadata-only agent-run audit runs, timelines, and health across registered conversations
 - delete events for the selected conversation
 - generate a session view link or login/vault link for the target conversation
 
@@ -45,6 +46,8 @@ Door policy can also be set from chat with `/pi-sandbox door`, but never by the 
 conversation settings live under the host-only state dir precisely because conversation directories
 are bind-mounted read-write into the sandbox, and the settings file inside the mount is migrated
 once and then never read again.
+
+The agent audit surface intentionally exposes metadata only: identities, lifecycle types, timings, model/tool names, status, and usage totals. Prompt text, model output, thinking, tool arguments/results, provider payloads, headers, file bodies, and terminal output are not stored by the durable audit subsystem and therefore cannot be revealed by an Admin token.
 
 The admin portal does not directly write secret values. Even when it generates a login link, the real secret write still goes through the one-time token flow of the Login / vault portal.
 

@@ -1,4 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentAuditRun } from "./audit/types.js";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type {
@@ -474,18 +475,40 @@ export interface MessagingEventHandler {
 
 // ── agent ─────────────────────────────────────────────────────────────────────
 
+export interface AgentRunMetrics {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  costUsd: number;
+  llmCalls: number;
+  toolCalls: number;
+  durationMs: number;
+  budgetExceededReason?: string;
+}
+
+export interface AgentRunResult {
+  stopReason: string;
+  errorMessage?: string;
+  /** Real runners provide this; optional keeps lightweight embedder stubs compatible. */
+  metrics?: AgentRunMetrics;
+}
+
 export interface PiAgentWrapper {
   syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,
     responder: ConversationResponder,
     platform: MessagingInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string }>;
+    auditRun?: AgentAuditRun,
+  ): Promise<AgentRunResult>;
   /** Run a hidden Session Dream against the current session before resetting or rotating it. */
   dreamSessionMemory(
     message: ConversationMessage,
     platform: MessagingInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string }>;
+    auditRun?: AgentAuditRun,
+  ): Promise<AgentRunResult>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
   /**
