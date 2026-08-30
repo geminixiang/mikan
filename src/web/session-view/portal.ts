@@ -2083,8 +2083,8 @@ function findThreadAnchorEntryId(
   childEntries: SessionEntry[],
   threadId: string | null,
 ): string | undefined {
-  const threadTimestamp = parseThreadTimestamp(threadId);
-  if (threadTimestamp !== undefined) {
+  const threadTimestamp = threadId ? Number(threadId) * 1000 : undefined;
+  if (threadTimestamp !== undefined && Number.isFinite(threadTimestamp)) {
     const timestampAnchor = findEntryIdByMessageTimestamp(parentEntries, threadTimestamp);
     if (timestampAnchor) return timestampAnchor;
   }
@@ -2108,12 +2108,6 @@ function findThreadAnchorEntryId(
   if (!childRoot) return undefined;
 
   return findParentAnchorByRootMessage(parentEntries, childRoot);
-}
-
-function parseThreadTimestamp(threadId: string | null): number | undefined {
-  if (!threadId) return undefined;
-  const timestamp = Number(threadId) * 1000;
-  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 function findEntryIdByMessageTimestamp(
