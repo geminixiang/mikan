@@ -164,15 +164,10 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
 
 type EnvLookup = (name: string) => string | undefined;
 
-function groupByKey(key: string): EnvGroup {
-  const group = ENV_MANIFEST.find((candidate) => candidate.key === key);
-  if (!group) throw new Error(`Unknown env-manifest group: ${key}`);
-  return group;
-}
-
 /** A platform group activates when all required vars (and one anyOf) are set. */
 export function platformIsActive(key: string, env: EnvLookup = readEnv): boolean {
-  const group = groupByKey(key);
+  const group = ENV_MANIFEST.find((candidate) => candidate.key === key);
+  if (!group) throw new Error(`Unknown env-manifest group: ${key}`);
   const required = group.vars.filter((spec) => spec.required);
   if (!required.every((spec) => env(spec.name))) return false;
   if (group.anyOf && !group.anyOf.some((name) => env(name))) return false;
