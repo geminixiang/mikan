@@ -15,6 +15,7 @@ export interface SentryRunScopeContext {
   userId: string;
   userName?: string;
   threadTs?: string;
+  runId?: string;
   provider?: string;
   model?: string;
 }

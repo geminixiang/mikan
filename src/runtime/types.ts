@@ -1,3 +1,4 @@
+import type { AgentAuditService } from "../audit/index.js";
 import type { PiAgentWrapper } from "../types.js";
 import type {
   MessagingBot,
@@ -80,6 +81,8 @@ export interface ConversationRuntimeOptions extends Omit<
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
+  /** Deployment-owned agent-loop audit service. */
+  audit?: AgentAuditService;
   /** Proactive platform messaging for extensions (`api.notify`). */
   platformNotifier?: PlatformNotifier;
   /** Proactive emoji reactions for extensions (`api.react`). */

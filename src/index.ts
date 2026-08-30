@@ -1,6 +1,30 @@
 export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
 
+export { AgentAuditStore } from "./audit/index.js";
+export type {
+  AgentAuditChildRunOptions,
+  AgentAuditEventDetails,
+  AgentAuditEventInput,
+  AgentAuditEventRecord,
+  AgentAuditEventType,
+  AgentAuditHealth,
+  AgentAuditModelRequestSummary,
+  AgentAuditRun,
+  AgentAuditRunDetail,
+  AgentAuditRunDetailQuery,
+  AgentAuditRunIdentity,
+  AgentAuditRunKind,
+  AgentAuditRunPage,
+  AgentAuditRunQuery,
+  AgentAuditRunSummary,
+  AgentAuditService,
+  AgentAuditStatus,
+  AgentAuditStoreOptions,
+  AgentAuditToolCallSummary,
+  AgentAuditUsage,
+} from "./audit/index.js";
+
 // Public harness interface. Keep this list explicit: adding an internal harness
 // helper must not silently expand the npm package interface.
 export {

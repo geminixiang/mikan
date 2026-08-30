@@ -136,7 +136,7 @@ type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "bud
  */
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
-  hooks?: { onActivity?: (activity: string) => void },
+  hooks?: { onActivity?: (activity: string) => void; parentToolCallId?: string },
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
 
 type PlanMode = "single" | "parallel" | "dag";
@@ -410,13 +410,15 @@ function planRequest(
  * One executor for every mode: wave barriers and a per-invocation concurrency
  * bound. Process-wide slots are acquired by the shared runner seam.
  */
-async function runWaves(
-  plan: Plan,
-  shared: SharedParams,
-  runSubagent: RunSubagent,
-  progress: SubagentProgressTracker,
-  signal?: AbortSignal,
-): Promise<PlanOutcome[]> {
+async function runWaves(options: {
+  plan: Plan;
+  shared: SharedParams;
+  runSubagent: RunSubagent;
+  progress: SubagentProgressTracker;
+  signal?: AbortSignal;
+  parentToolCallId?: string;
+}): Promise<PlanOutcome[]> {
+  const { plan, shared, runSubagent, progress, signal, parentToolCallId } = options;
   const outcomes = new Map<string, PlanOutcome>();
   for (const wave of plan.waves) {
     await forEachConcurrent(wave, plan.concurrency, async (item) => {
@@ -438,6 +440,7 @@ async function runWaves(
       progress.update(item.id, "running");
       result = await runSubagent(planRequest(item, shared, outcomes, signal), {
         onActivity: (activity: string) => progress.activity(item.id, activity),
+        parentToolCallId,
       });
       outcomes.set(item.id, { id: item.id, ...result });
       progress.update(item.id, result.status, {
@@ -513,7 +516,7 @@ export function createSubagentTool(
       `Every task and DAG node must set profile; the profile supplies the prompt, tools, model and budget. Available profiles: ${profileDescription}.`,
     parameters: buildSubagentSchema([...profiles.keys()]),
     execute: async (
-      _toolCallId: string,
+      toolCallId: string,
       params: SubagentParams,
       signal?: AbortSignal,
       onUpdate?: AgentToolUpdateCallback,
@@ -526,7 +529,14 @@ export function createSubagentTool(
         onUpdate,
       );
       progress.emit();
-      const ordered = await runWaves(plan, params, runSubagent, progress, signal);
+      const ordered = await runWaves({
+        plan,
+        shared: params,
+        runSubagent,
+        progress,
+        signal,
+        parentToolCallId: toolCallId,
+      });
 
       switch (plan.mode) {
         case "dag":

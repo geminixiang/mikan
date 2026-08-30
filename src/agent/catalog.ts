@@ -273,6 +273,7 @@ export async function createConfiguredAgentSession(params: {
       extensionScheduleEngine,
       runSubagentService: (request, extensionTools) => {
         const activeParent = session?.isActiveRun ? session : undefined;
+        const auditParent = activeParent?.activeAuditRun;
         return runSubagent({
           request,
           defaultModel: model,
@@ -282,6 +283,11 @@ export async function createConfiguredAgentSession(params: {
           availableTools: [...tools, ...extensionTools],
           profiles: runnableSubagentProfiles,
           slots: globalSubagentSlots,
+          ...(auditParent
+            ? {
+                auditIdentity: { parentRun: auditParent },
+              }
+            : {}),
           ...(activeParent
             ? {
                 parentMessages: [...activeParent.messages],
@@ -321,6 +327,14 @@ export async function createConfiguredAgentSession(params: {
         availableTools: subagentAvailableTools,
         profiles: runnableSubagentProfiles,
         slots: globalSubagentSlots,
+        ...(session!.activeAuditRun
+          ? {
+              auditIdentity: {
+                parentRun: session!.activeAuditRun,
+                parentToolCallId: hooks?.parentToolCallId,
+              },
+            }
+          : {}),
         parentMessages: [...session!.messages],
         onUsage: session!.captureExternalUsageSink(),
       }),

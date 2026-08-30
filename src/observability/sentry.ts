@@ -164,6 +164,7 @@ export function createRunAttributionAttributes(
     platform: context.platform,
     user_id: context.userId,
     thread_ts: context.threadTs,
+    run_id: context.runId,
     provider: context.provider,
     model: context.model,
   });

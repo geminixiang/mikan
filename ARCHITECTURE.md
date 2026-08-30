@@ -67,7 +67,7 @@ platform event
   → platform response
 ```
 
-The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. The harness owns the model/tool loop, append-only session tree, retry, compaction, budgets, skills, and extension hooks.
+The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. The harness owns the model/tool loop, append-only session tree, retry, compaction, budgets, skills, and extension hooks. The deployment-owned Agent audit records metadata-only lifecycle evidence across runtime, runner, harness, and subagents without becoming part of session continuation state.
 
 ### Authority axis
 
@@ -88,7 +88,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
 | Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                  |
-| Agent core              | Harness, Extensions                                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
+| Agent core              | Harness, Extensions, Agent audit                      | [`src/harness/README.md`](src/harness/README.md), [`src/audit/README.md`](src/audit/README.md)                                                                                 |
 | Identity and data       | Office, Sessions, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox, Vault, Packages          | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
 | Control surfaces        | Commands, Web and scheduled-event services            | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
@@ -105,8 +105,8 @@ Daemon boot proceeds conceptually as follows:
 2. Validate deployment settings and the State-dir/workspace relationship.
 3. Construct the Workspace and Office registry.
 4. Complete crash-resumable legacy office migration before accepting events.
-5. Configure sandbox, vault, package, portal, and platform facilities.
-6. Construct the Conversation runtime with capability factories.
+5. Configure sandbox, vault, package, portal, agent-audit, and platform facilities.
+6. Construct the Conversation runtime with capability factories and the deployment audit service.
 7. Start platform bots, web services, the event watcher, and callback scheduler.
 8. On shutdown, reject new runs and wait for existing run settlement up to the configured timeout.
 
@@ -121,11 +121,12 @@ Every platform feeds the same intake and runtime model:
 3. The runtime serializes events by office and session key.
 4. Built-in commands run before runner creation; built-ins take precedence over extension commands.
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
-6. The runtime creates or reuses a conversation runner.
-7. The runner resolves packages, workspace projection, credentials, executor, model, prompt, skills, extensions, and tools.
-8. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
-9. The runner streams and finalizes the response through platform capabilities.
-10. Runtime settlement completes usage, working state, lifecycle barriers, and eviction eligibility.
+6. Runtime admission creates one audit `runId` and records the office/session identity before setup work begins.
+7. The runtime creates or reuses a conversation runner.
+8. The runner resolves packages, workspace projection, credentials, executor, model, prompt, skills, extensions, and tools.
+9. The harness runs model and tool turns while persisting session events, emitting bounded typed audit metadata, enforcing budgets, retrying eligible failures, and compacting context.
+10. The runner streams and finalizes the response through platform capabilities.
+11. Runtime settlement records the terminal audit outcome, then completes usage, working state, lifecycle barriers, and eviction eligibility.
 
 The `stop` magic word is exceptional: it runs before trigger policy and queueing. It is not an ordinary bare command.
 
@@ -182,6 +183,8 @@ Text events and callbacks must not collapse into one generic scheduler: they dif
     └── log.jsonl
 
 <state-dir>/                              host-private authority
+├── audit/
+│   └── audit.sqlite                      metadata-only agent-loop audit + projections
 ├── settings.json
 ├── office-registry.json
 ├── vaults/
@@ -197,7 +200,7 @@ Text events and callbacks must not collapse into one generic scheduler: they dif
 
 The exact paths are owned by the relevant modules, not by this diagram. Code must derive conversation paths from an `Office` value where one is available.
 
-The State dir is never part of a Workspace projection. Package skill contents may be mounted read-only at a dedicated runtime path, but package extension code executes only on the host.
+The State dir is never part of a Workspace projection. The audit directory is owner-only host state; its SQLite database, WAL, and SHM files contain normalized lifecycle metadata, never prompt/model/tool content. Package skill contents may be mounted read-only at a dedicated runtime path, but package extension code executes only on the host.
 
 ## Configuration authority
 
@@ -292,6 +295,14 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 **`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Active or unsettled runners cannot be evicted or invalidated.
 
 Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/`.
+
+### INV audit non-interference
+
+<a id="inv-audit-non-interference"></a>
+
+**`audit-non-interference`** — Audit admission, event reduction, backpressure, persistence, retention, and queries cannot change an agent result or block normal run cleanup. Producers synchronously shape only bounded metadata into a non-throwing queue; SQLite runs in the audit worker. Queue overflow or worker failure drops audit evidence and marks health degraded instead of propagating into runtime, runner, harness, or subagent control flow. Runtime owns top-level `runId`; child runs retain explicit parent-run/tool correlation.
+
+Evidence: `src/audit/`, `src/runtime/conversation-runtime.ts`, `src/harness/runner.ts`, ADR 0006.
 
 ### INV projection coherence
 

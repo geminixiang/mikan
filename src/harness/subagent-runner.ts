@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentAuditRun } from "../audit/index.js";
 import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
@@ -133,6 +134,14 @@ function hydrateSchema(schema: unknown): TSchema {
   }
 }
 
+interface SubagentAuditContext {
+  runId: string;
+  run?: AgentAuditRun;
+  parent?: AgentAuditRun;
+  parentToolCallId?: string;
+  terminalRecorded: boolean;
+}
+
 interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefined> {
   request: SubagentRunRequest<TOutputSchema>;
   defaultModel: Model<Api>;
@@ -147,6 +156,13 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   parentMessages?: AgentMessage[];
   /** Usage attribution sink snapshotted when this invocation begins. */
   onUsage?: SubagentUsageSink;
+  /** Active parent-run identity for child-run correlation. */
+  auditIdentity?: {
+    parentRun: AgentAuditRun;
+    parentToolCallId?: string;
+  };
+  /** Created internally by `runSubagent`; callers supply only `auditIdentity`. */
+  auditContext?: SubagentAuditContext;
   /**
    * Called as the run's visible activity changes, so a caller can show what
    * this subagent is doing rather than only that it started. Best-effort: a
@@ -430,6 +446,68 @@ function assistantText(message: AssistantMessage | undefined): string {
   return message ? contentText(message.content, "") : "";
 }
 
+function beginSubagentAudit<TOutputSchema extends TSchema | undefined>(
+  options: RunSubagentOptions<TOutputSchema>,
+): SubagentAuditContext {
+  const runId = randomUUID();
+  const parent = options.auditIdentity?.parentRun;
+  const parentToolCallId = options.auditIdentity?.parentToolCallId;
+  try {
+    const run = parent?.child({ runKind: "subagent", runId, parentToolCallId });
+    run?.record({ type: "run_admitted", status: "admitted" });
+    parent?.record({
+      type: "subagent_spawned",
+      status: "running",
+      relatedRunId: runId,
+      toolCallId: parentToolCallId,
+    });
+    return { runId, run, parent, parentToolCallId, terminalRecorded: false };
+  } catch (error) {
+    log.logWarning("Subagent audit admission failed", String(error));
+    return { runId, terminalRecorded: false };
+  }
+}
+
+function finishSubagentAudit(
+  context: SubagentAuditContext,
+  result: SubagentRunResult<unknown>,
+): void {
+  if (context.terminalRecorded) return;
+  context.terminalRecorded = true;
+  const failed = result.status === "failed" || result.status === "invalid_output";
+  const aborted =
+    result.status === "cancelled" ||
+    result.status === "timeout" ||
+    result.status === "budget_exceeded";
+  try {
+    context.run?.record({
+      type: aborted ? "run_aborted" : failed ? "run_failed" : "run_completed",
+      status: result.status,
+      durationMs: result.durationMs,
+      llmCalls: result.turns,
+      toolCalls: result.toolCalls,
+      usage: {
+        input: result.usage.input,
+        output: result.usage.output,
+        cacheRead: result.usage.cacheRead,
+        cacheWrite: result.usage.cacheWrite,
+        totalTokens: result.tokens,
+        costUsd: result.costUsd,
+      },
+      ...(failed ? { errorType: "subagent_failure" } : {}),
+    });
+    context.parent?.record({
+      type: "subagent_completed",
+      status: result.status,
+      relatedRunId: context.runId,
+      toolCallId: context.parentToolCallId,
+      durationMs: result.durationMs,
+    });
+  } catch (error) {
+    log.logWarning("Subagent audit settlement failed", String(error));
+  }
+}
+
 /**
  * Execute one non-recursive, fresh subagent run. Never rejects: every
  * failure — including request validation — is a result with a terminal
@@ -440,10 +518,12 @@ function assistantText(message: AssistantMessage | undefined): string {
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
-  const execution = await executeBoundedSubagentRun(options);
+  const auditContext = beginSubagentAudit(options);
+  const execution = await executeBoundedSubagentRun({ ...options, auditContext });
   if (execution.cleanup) {
     void execution.cleanup
       .then(async (result) => {
+        finishSubagentAudit(auditContext, result);
         await reportSubagentUsage(options.onUsage, result.usage);
       })
       .catch((err) => {
@@ -451,6 +531,7 @@ export async function runSubagent<TOutputSchema extends TSchema | undefined = un
       });
     return execution.result;
   }
+  finishSubagentAudit(auditContext, execution.result);
   await reportSubagentUsage(options.onUsage, execution.result.usage);
   return execution.result;
 }
@@ -475,6 +556,8 @@ type BoundedSubagentExecution<TOutput> = {
 async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
+  const auditContext = options.auditContext;
+  if (!auditContext) throw new Error("Subagent audit context was not initialized");
   const startedAt = Date.now();
   let release: (() => void) | undefined;
   try {
@@ -486,7 +569,7 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
         id: options.defaultModel.id,
       };
       return {
-        result: { ...baseRunResult(randomUUID(), model, startedAt), status: "cancelled" },
+        result: { ...baseRunResult(auditContext.runId, model, startedAt), status: "cancelled" },
       };
     }
     throw err;
@@ -588,8 +671,10 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
 async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
-  const request = resolveProfile(options.request, options);
-  const runId = randomUUID();
+  const auditContext = options.auditContext;
+  if (!auditContext) throw new Error("Subagent audit context was not initialized");
+  let request = options.request;
+  const { runId, run: auditRun } = auditContext;
   const startedAt = Date.now();
   let modelSpec: SubagentModelSpec = request.model ?? {
     provider: options.defaultModel.provider,
@@ -611,6 +696,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
   const onAbort = () => abort("cancelled");
 
   try {
+    request = resolveProfile(options.request, options);
     if ((subagentRunDepth.getStore() ?? 0) >= 1) {
       throw new Error("Nested api.subagent.run calls are not allowed");
     }
@@ -649,6 +735,12 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
       settings: { compaction: { enabled: false } },
     });
     sessionRef = session;
+    auditRun?.record({
+      type: "run_started",
+      status: "running",
+      modelProvider: model.provider,
+      modelId: model.id,
+    });
     if (options.onActivity) reportSubagentActivity(session, options.onActivity);
 
     request.signal?.addEventListener("abort", onAbort, { once: true });
@@ -757,6 +849,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
               // cannot). Passing it to both made the terminal status a race
               // between "timeout" and "budget_exceeded".
             },
+            auditRun,
           }),
         )
         .then(
@@ -782,10 +875,11 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
         }),
       ]);
       if (winner.type === "expired") {
+        const provisional = buildResult(true);
         const cleanup = promptOutcome.then((settledOutcome) =>
           settledOutcome.ok ? buildResult() : buildFailureResult(settledOutcome.error),
         );
-        return { result: buildResult(true), cleanup };
+        return { result: provisional, cleanup };
       }
       if (!winner.outcome.ok) throw winner.outcome.error;
     }

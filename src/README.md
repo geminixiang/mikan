@@ -14,7 +14,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, office, vault, and sandbox.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
-- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, and platform bots.
+- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, audit, sandbox, vault, runtime, portal, events, and platform bots.
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
 - `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown; also carries containers through the office-key rename and mount drift without losing their writable layer.
 - `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.
@@ -25,6 +25,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 ## Subdirectories
 
 - `adapters/`: Chat platform adapters and shared adapter utilities.
+- `audit/`: Deployment-owned metadata-only agent-loop audit, SQLite worker/projections, retention, health, and Admin query seam.
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`ext`, `office`, `--download`).
 - `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).

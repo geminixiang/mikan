@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../adapter.js";
+import { AgentAuditStore } from "../audit/index.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createRunner } from "../agent/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
@@ -152,6 +153,62 @@ describe("PiAgentWrapper.run", () => {
     expect(result.diagnostics).toEqual([
       expect.objectContaining({ code: "symlink", path: join(skillsDir, "escaped.md") }),
     ]);
+  });
+
+  test("correlates subagent child runs with their parent tool call", async () => {
+    const { models, faux } = createFauxModels();
+    const office = testOffice();
+    const conversationDir = office.ensure();
+    const sessionDir = officeSessionsDir(conversationDir);
+    const contextFile = createManagedSessionFile(sessionDir, conversationDir);
+    const audit = new AgentAuditStore({
+      stateDir: join(dir, "state"),
+      retentionIntervalMs: 86_400_000,
+    });
+    const runner = await createRunner({
+      sandboxConfig: { type: "host" },
+      sessionKey: "C1",
+      office,
+      sessionScope: { sessionDir, contextFile, threadRootMessage: null },
+      models,
+    });
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("subagent", {
+          task: "inspect",
+          profile: "analysis-only",
+        }),
+      ),
+      fauxAssistantMessage("child result"),
+      fauxAssistantMessage("parent result"),
+    ]);
+    const auditRun = audit.startRun({
+      officeKey: office.key,
+      address: office.address,
+      sessionKey: "C1",
+      runKind: "interactive",
+    });
+
+    await runner.run(makeMessage({ text: "delegate" }), makeResponder(), platform, auditRun);
+    auditRun.record({ type: "run_completed", status: "completed" });
+    await audit.flush();
+
+    const detail = await audit.getRun(auditRun.runId);
+    const parentToolCallId = detail?.tools.find((tool) => tool.toolName === "subagent")?.toolCallId;
+    expect(parentToolCallId).toBeTruthy();
+    expect(detail?.childRuns).toHaveLength(1);
+    expect(detail?.childRuns[0]).toMatchObject({
+      runKind: "subagent",
+      parentRunId: auditRun.runId,
+      parentToolCallId,
+      status: "completed",
+    });
+    expect(JSON.stringify(detail)).not.toContain("delegate");
+    expect(JSON.stringify(detail)).not.toContain("child result");
+    expect(JSON.stringify(detail)).not.toContain("parent result");
+
+    await runner.dispose();
+    await audit.close();
   });
 
   test("surfaces subagent batch progress through the platform-neutral responder", async () => {
@@ -367,7 +424,8 @@ describe("PiAgentWrapper.run", () => {
       platform,
     );
 
-    expect(result).toEqual({ stopReason: "stop", errorMessage: undefined });
+    expect(result).toMatchObject({ stopReason: "stop" });
+    expect(result.errorMessage).toBeUndefined();
     expect(maintenancePrompt).toContain("preserve only durable information");
     expect(maintenancePrompt).toContain("update only the conversation-specific MEMORY.md");
     expect(maintenancePrompt).toContain("Do not modify the workspace-level global MEMORY.md");

@@ -14,6 +14,7 @@
  * and `auto_retry_start/_end`, preserving the event surface mikan's
  * platform adapters already render.
  */
+import { randomUUID } from "node:crypto";
 import {
   Agent,
   calculateContextTokens,
@@ -29,15 +30,20 @@ import {
   type CustomMessage,
 } from "@earendil-works/pi-agent-core";
 import {
+  createAssistantMessageEventStream,
   isContextOverflow,
   isRetryableAssistantError,
   type Api,
   type AssistantMessage,
+  type AssistantMessageEventStream,
+  type Context,
   type ImageContent,
   type Model,
   type Models,
+  type SimpleStreamOptions,
   type Usage,
 } from "@earendil-works/pi-ai";
+import type { AgentAuditRun, AgentAuditUsage } from "../audit/index.js";
 import * as log from "../log.js";
 import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { RunOrigin } from "./extensions/types.js";
@@ -75,6 +81,44 @@ interface RunTally {
   startedAt: number;
 }
 
+function toAuditUsage(usage: Usage): AgentAuditUsage {
+  return {
+    input: usage.input,
+    output: usage.output,
+    cacheRead: usage.cacheRead,
+    cacheWrite: usage.cacheWrite,
+    totalTokens: usage.totalTokens,
+    costUsd: usage.cost.total,
+  };
+}
+
+function modelTerminalType(message: AssistantMessage): {
+  type: "model_request_completed" | "model_request_failed" | "model_request_aborted";
+  status: "completed" | "failed" | "aborted";
+} {
+  if (message.stopReason === "aborted") {
+    return { type: "model_request_aborted", status: "aborted" };
+  }
+  if (message.stopReason === "error") {
+    return { type: "model_request_failed", status: "failed" };
+  }
+  return { type: "model_request_completed", status: "completed" };
+}
+
+function auditStreamFailureMessage(model: Model<Api>, error: unknown): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: createEmptyUsage(),
+    stopReason: "error",
+    errorMessage: error instanceof Error ? error.message : String(error),
+    timestamp: Date.now(),
+  };
+}
+
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -100,6 +144,12 @@ export class MikanAgentSession {
   private readonly settings: HarnessSettings;
   private readonly extensions: ExtensionRegistry | undefined;
   private listeners = new Set<HarnessEventListener>();
+  private auditRun: AgentAuditRun | undefined;
+  private currentTurnId: string | undefined;
+  private currentTurnStartedAt = 0;
+  private currentCompactionReason: CompactionReason | undefined;
+  private readonly toolStartedAt = new Map<string, number>();
+  private readonly blockedToolCalls = new Set<string>();
   private retryAttempt = 0;
   private overflowRecoveryAttempted = false;
   private retryAbortController: AbortController | undefined;
@@ -136,7 +186,7 @@ export class MikanAgentSession {
         return this.extensions.emitContext({ messages, origin: this.runOrigin });
       },
       streamFn: (model, context, streamOptions) =>
-        this.models.models.streamSimple(model, context, streamOptions),
+        this.streamWithAudit(model, context, streamOptions),
       beforeToolCall: async ({ toolCall, args }) => {
         if (!this.extensions?.hasHandlers("tool_call")) return undefined;
         const result = await this.extensions.emit("tool_call", {
@@ -145,6 +195,7 @@ export class MikanAgentSession {
           args,
           origin: this.runOrigin,
         });
+        if (result?.block) this.blockedToolCalls.add(toolCall.id);
         return result ?? undefined;
       },
       afterToolCall: async ({ toolCall, args, result, isError }) => {
@@ -182,6 +233,11 @@ export class MikanAgentSession {
   /** Whether this session currently owns a prompt, including pre-model hooks. */
   get isActiveRun(): boolean {
     return this.runActive;
+  }
+
+  /** Audit parent for a subagent launched during the active prompt. */
+  get activeAuditRun(): AgentAuditRun | undefined {
+    return this.runActive ? this.auditRun : undefined;
   }
 
   /** Resource totals and terminal budget state from the most recent prompt. */
@@ -263,6 +319,7 @@ export class MikanAgentSession {
       budget?: BudgetSettings;
       origin?: RunOrigin;
       tools?: AgentTool[];
+      auditRun?: AgentAuditRun;
     },
   ): Promise<PromptBlockedOutcome | undefined> {
     if (this.runActive) {
@@ -271,12 +328,19 @@ export class MikanAgentSession {
     this.runActive = true;
     const runSystemPrompt = this.agent.state.systemPrompt;
     const runTools = this.agent.state.tools;
+    this.auditRun = options?.auditRun;
+    this.currentTurnId = undefined;
+    this.currentTurnStartedAt = 0;
+    this.currentCompactionReason = undefined;
+    this.toolStartedAt.clear();
+    this.blockedToolCalls.clear();
     if (options?.tools) this.agent.state.tools = options.tools;
     try {
       return await this.runPrompt(text, runSystemPrompt, options);
     } finally {
       this.agent.state.systemPrompt = runSystemPrompt;
       this.agent.state.tools = runTools;
+      this.auditRun = undefined;
       this.runActive = false;
     }
   }
@@ -289,6 +353,7 @@ export class MikanAgentSession {
       budget?: BudgetSettings;
       origin?: RunOrigin;
       tools?: AgentTool[];
+      auditRun?: AgentAuditRun;
     },
   ): Promise<PromptBlockedOutcome | undefined> {
     this.retryAttempt = 0;
@@ -395,7 +460,266 @@ export class MikanAgentSession {
     }
   }
 
+  private async streamWithAudit(
+    model: Model<Api>,
+    context: Context,
+    options?: SimpleStreamOptions,
+  ): Promise<AssistantMessageEventStream> {
+    const auditRun = this.auditRun;
+    if (!auditRun) return this.models.models.streamSimple(model, context, options);
+
+    const modelRequestId = randomUUID();
+    const startedAt = Date.now();
+    auditRun.record({
+      type: "model_request_started",
+      status: "running",
+      turnId: this.currentTurnId,
+      modelRequestId,
+      modelProvider: model.provider,
+      modelId: model.id,
+      details: {
+        purpose: "agent",
+        messageCount: context.messages.length,
+        toolCount: context.tools?.length ?? 0,
+      },
+    });
+
+    let source: AssistantMessageEventStream;
+    try {
+      source = await this.models.models.streamSimple(model, context, options);
+    } catch (error) {
+      auditRun.record({
+        type: "model_request_failed",
+        status: "failed",
+        turnId: this.currentTurnId,
+        modelRequestId,
+        modelProvider: model.provider,
+        modelId: model.id,
+        durationMs: Date.now() - startedAt,
+        errorType: "stream_setup_error",
+      });
+      throw error;
+    }
+
+    const tapped = createAssistantMessageEventStream();
+    void this.pipeAuditStream(source, tapped, {
+      auditRun,
+      model,
+      modelRequestId,
+      turnId: this.currentTurnId,
+      startedAt,
+    });
+    return tapped;
+  }
+
+  private async pipeAuditStream(
+    source: AssistantMessageEventStream,
+    target: AssistantMessageEventStream,
+    context: {
+      auditRun: AgentAuditRun;
+      model: Model<Api>;
+      modelRequestId: string;
+      turnId?: string;
+      startedAt: number;
+    },
+  ): Promise<void> {
+    let terminal = false;
+    try {
+      for await (const event of source) {
+        if (event.type === "done" || event.type === "error") {
+          terminal = true;
+          const message = event.type === "done" ? event.message : event.error;
+          this.recordModelTerminal(context, message);
+        }
+        target.push(event);
+      }
+    } catch (error) {
+      if (!terminal) {
+        context.auditRun.record({
+          type: "model_request_failed",
+          status: "failed",
+          turnId: context.turnId,
+          modelRequestId: context.modelRequestId,
+          modelProvider: context.model.provider,
+          modelId: context.model.id,
+          durationMs: Date.now() - context.startedAt,
+          errorType: "stream_iteration_error",
+        });
+        target.push({
+          type: "error",
+          reason: "error",
+          error: auditStreamFailureMessage(context.model, error),
+        });
+      }
+      return;
+    }
+    if (!terminal) {
+      const error = new Error("Model stream ended without a terminal event");
+      context.auditRun.record({
+        type: "model_request_failed",
+        status: "failed",
+        turnId: context.turnId,
+        modelRequestId: context.modelRequestId,
+        modelProvider: context.model.provider,
+        modelId: context.model.id,
+        durationMs: Date.now() - context.startedAt,
+        errorType: "stream_protocol_error",
+      });
+      target.push({
+        type: "error",
+        reason: "error",
+        error: auditStreamFailureMessage(context.model, error),
+      });
+    }
+  }
+
+  private recordModelTerminal(
+    context: {
+      auditRun: AgentAuditRun;
+      model: Model<Api>;
+      modelRequestId: string;
+      turnId?: string;
+      startedAt: number;
+    },
+    message: AssistantMessage,
+  ): void {
+    const terminal = modelTerminalType(message);
+    context.auditRun.record({
+      ...terminal,
+      turnId: context.turnId,
+      modelRequestId: context.modelRequestId,
+      modelProvider: context.model.provider,
+      modelId: context.model.id,
+      responseId: message.responseId,
+      stopReason: message.stopReason,
+      durationMs: Date.now() - context.startedAt,
+      usage: toAuditUsage(message.usage),
+      ...(terminal.status === "failed" ? { errorType: "provider_error" } : {}),
+      ...(message.responseModel ? { details: { responseModel: message.responseModel } } : {}),
+    });
+  }
+
+  private recordAuditEvent(event: HarnessEvent): void {
+    if (!this.auditRun) return;
+    if (event.type === "turn_start" || event.type === "turn_end") {
+      this.recordTurnAudit(event);
+      return;
+    }
+    if (event.type === "tool_execution_start" || event.type === "tool_execution_end") {
+      this.recordToolAudit(event);
+      return;
+    }
+    this.recordHarnessAudit(event);
+  }
+
+  private recordTurnAudit(event: Extract<AgentEvent, { type: "turn_start" | "turn_end" }>): void {
+    if (event.type === "turn_start") {
+      this.currentTurnId = randomUUID();
+      this.currentTurnStartedAt = Date.now();
+      this.auditRun?.record({
+        type: "turn_started",
+        status: "running",
+        turnId: this.currentTurnId,
+      });
+      return;
+    }
+    const stopReason = event.message.role === "assistant" ? event.message.stopReason : undefined;
+    this.auditRun?.record({
+      type: "turn_completed",
+      status:
+        stopReason === "error" ? "failed" : stopReason === "aborted" ? "aborted" : "completed",
+      turnId: this.currentTurnId,
+      stopReason,
+      durationMs: this.currentTurnStartedAt ? Date.now() - this.currentTurnStartedAt : undefined,
+      details: { toolResultCount: event.toolResults.length },
+    });
+    this.currentTurnId = undefined;
+    this.currentTurnStartedAt = 0;
+  }
+
+  private recordToolAudit(
+    event: Extract<AgentEvent, { type: "tool_execution_start" | "tool_execution_end" }>,
+  ): void {
+    if (event.type === "tool_execution_start") {
+      this.toolStartedAt.set(event.toolCallId, Date.now());
+      this.auditRun?.record({
+        type: "tool_started",
+        status: "running",
+        turnId: this.currentTurnId,
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+      });
+      return;
+    }
+    const blocked = this.blockedToolCalls.delete(event.toolCallId);
+    const startedAt = this.toolStartedAt.get(event.toolCallId);
+    this.toolStartedAt.delete(event.toolCallId);
+    this.auditRun?.record({
+      type: blocked ? "tool_blocked" : event.isError ? "tool_failed" : "tool_completed",
+      status: blocked ? "blocked" : event.isError ? "failed" : "completed",
+      turnId: this.currentTurnId,
+      toolCallId: event.toolCallId,
+      toolName: event.toolName,
+      durationMs: startedAt === undefined ? undefined : Date.now() - startedAt,
+    });
+  }
+
+  private recordHarnessAudit(event: HarnessEvent): void {
+    if (event.type === "auto_retry_start") {
+      this.auditRun?.record({
+        type: "retry_started",
+        status: "running",
+        details: { attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs },
+      });
+    } else if (event.type === "auto_retry_end") {
+      this.auditRun?.record({
+        type: "retry_completed",
+        status: event.success ? "completed" : "failed",
+        details: { attempt: event.attempt, success: event.success },
+      });
+    } else if (event.type === "compaction_start") {
+      this.currentCompactionReason = event.reason;
+      this.auditRun?.record({
+        type: "compaction_started",
+        status: "running",
+        details: { compactionReason: event.reason },
+      });
+    } else if (event.type === "compaction_end") {
+      this.auditRun?.record({
+        type: event.errorMessage ? "compaction_failed" : "compaction_completed",
+        status: event.aborted ? "aborted" : event.errorMessage ? "failed" : "completed",
+        details: {
+          compactionReason: event.reason,
+          aborted: event.aborted,
+          ...(event.result
+            ? {
+                retainedMessages: event.result.retainedMessages,
+                tokensBefore: event.result.tokensBefore,
+              }
+            : {}),
+        },
+      });
+      this.currentCompactionReason = undefined;
+    } else if (event.type === "budget_exceeded") {
+      this.auditRun?.record({
+        type: "budget_exceeded",
+        status: "budget_exceeded",
+        durationMs: event.durationMs,
+        llmCalls: event.llmCalls,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: event.tokens,
+          costUsd: event.costUsd,
+        },
+      });
+    }
+  }
+
   private async emit(event: HarnessEvent): Promise<void> {
+    this.recordAuditEvent(event);
     for (const listener of this.listeners) {
       try {
         await listener(event);
@@ -690,7 +1014,7 @@ export class MikanAgentSession {
               throw new Error("Compaction LLM-call budget exhausted");
             }
 
-            const message = await target.completeSimple(...args);
+            const message = await this.completeCompactionWithAudit(target, args);
             this.recordUsage(message);
             const reason = this.resourceOverBudgetReason();
             if (reason) await this.exceedBudget(reason);
@@ -701,6 +1025,50 @@ export class MikanAgentSession {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
+  }
+
+  private async completeCompactionWithAudit(
+    models: Models,
+    args: Parameters<Models["completeSimple"]>,
+  ): Promise<AssistantMessage> {
+    const auditRun = this.auditRun;
+    if (!auditRun) return models.completeSimple(...args);
+    const model = args[0];
+    const modelRequestId = randomUUID();
+    const startedAt = Date.now();
+    auditRun.record({
+      type: "model_request_started",
+      status: "running",
+      modelRequestId,
+      modelProvider: model.provider,
+      modelId: model.id,
+      details: {
+        purpose: "compaction",
+        ...(this.currentCompactionReason ? { compactionReason: this.currentCompactionReason } : {}),
+      },
+    });
+    try {
+      const message = await models.completeSimple(...args);
+      this.recordModelTerminal({ auditRun, model, modelRequestId, startedAt }, message);
+      return message;
+    } catch (error) {
+      auditRun.record({
+        type: "model_request_failed",
+        status: "failed",
+        modelRequestId,
+        modelProvider: model.provider,
+        modelId: model.id,
+        durationMs: Date.now() - startedAt,
+        errorType: "compaction_model_error",
+        details: {
+          purpose: "compaction",
+          ...(this.currentCompactionReason
+            ? { compactionReason: this.currentCompactionReason }
+            : {}),
+        },
+      });
+      throw error;
+    }
   }
 
   private async prepareRetry(message: AssistantMessage): Promise<boolean> {

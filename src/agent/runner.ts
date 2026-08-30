@@ -1,4 +1,11 @@
-import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
+import type {
+  AgentRunMetrics,
+  AgentRunResult,
+  CreateRunnerOptions,
+  OfficeAddress,
+  PiAgentWrapper,
+} from "../types.js";
+import type { AgentAuditRun } from "../audit/index.js";
 import type { Office } from "../office/index.js";
 import type { MikanAgentSession } from "../harness/index.js";
 import {
@@ -77,6 +84,41 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   if (!text) return undefined;
   const userLabel = message?.userName || message?.user || "unknown";
   return `[${userLabel}]: ${text}`;
+}
+
+export class AgentRunSetupError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "AgentRunSetupError";
+  }
+}
+
+function agentRunMetrics(session: MikanAgentSession): AgentRunMetrics {
+  const stats = session.getLastRunStats();
+  return {
+    input: stats.usage.input,
+    output: stats.usage.output,
+    cacheRead: stats.usage.cacheRead,
+    cacheWrite: stats.usage.cacheWrite,
+    totalTokens: stats.tokens,
+    costUsd: stats.costUsd,
+    llmCalls: stats.llmCalls,
+    toolCalls: stats.toolCalls,
+    durationMs: stats.durationMs,
+    ...(stats.budgetExceededReason ? { budgetExceededReason: stats.budgetExceededReason } : {}),
+  };
+}
+
+function agentRunResult(
+  session: MikanAgentSession,
+  stopReason: string,
+  errorMessage?: string,
+): AgentRunResult {
+  return {
+    stopReason,
+    ...(errorMessage ? { errorMessage } : {}),
+    metrics: agentRunMetrics(session),
+  };
 }
 
 async function reloadSessionMessages(
@@ -427,7 +469,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       message: ConversationMessage,
       responder: ConversationResponder,
       platform: MessagingInfo,
-    ): Promise<{ stopReason: string; errorMessage?: string }> {
+      auditRun?: AgentAuditRun,
+    ): Promise<AgentRunResult> {
       const prepared = await prepareRunContext({
         message,
         responder,
@@ -448,6 +491,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setReactFunction,
         bindPlatformToolPacks,
         pathContext,
+      }).catch((error: unknown) => {
+        throw new AgentRunSetupError(error);
       });
       pathContext = prepared.pathContext;
 
@@ -462,7 +507,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         runState.queue = null;
       }
 
-      async function runPreparedTurn(): Promise<{ stopReason: string; errorMessage?: string }> {
+      async function runPreparedTurn(): Promise<AgentRunResult> {
         if (runState.logCtx) {
           log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
         }
@@ -503,8 +548,21 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
               threadTs: message.threadTs,
               attachments: message.attachments,
             };
+        auditRun?.record({
+          type: "run_started",
+          status: "running",
+          sessionId: sessionUuid,
+          modelProvider: model.provider,
+          modelId: model.id,
+          details: {
+            origin: origin.kind,
+            attachmentCount: message.attachments?.length ?? 0,
+            imageAttachmentCount: prepared.imageAttachments.length,
+          },
+        });
         const outcome = await session.prompt(prepared.userMessage, {
           origin,
+          auditRun,
           ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
           ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
         });
@@ -519,7 +577,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
             event: { kind: "diagnostic", text },
           });
           await responder.respondDiagnostic(text, { style: "muted" });
-          return { stopReason: "blocked" };
+          return agentRunResult(session, "blocked");
         }
 
         // Wait for queued messages
@@ -570,14 +628,15 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           waitForQueue: () => prepared.runQueue.wait(),
         });
 
-        return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+        return agentRunResult(session, runState.stopReason, runState.errorMessage);
       }
     },
 
     async dreamSessionMemory(
       message: ConversationMessage,
       platform: MessagingInfo,
-    ): Promise<{ stopReason: string; errorMessage?: string }> {
+      auditRun?: AgentAuditRun,
+    ): Promise<AgentRunResult> {
       const responder = createNoopResponder();
       const prepared = await prepareRunContext({
         message,
@@ -599,6 +658,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setReactFunction,
         bindPlatformToolPacks,
         pathContext,
+      }).catch((error: unknown) => {
+        throw new AgentRunSetupError(error);
       });
       pathContext = prepared.pathContext;
 
@@ -609,6 +670,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           "MEMORY.md",
         );
         const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);
+        auditRun?.record({
+          type: "run_started",
+          status: "running",
+          sessionId: sessionUuid,
+          modelProvider: model.provider,
+          modelId: model.id,
+          details: { origin: "session_dream" },
+        });
         const outcome = await session.prompt(
           sessionDreamPrompt(
             conversationMemoryPath,
@@ -626,19 +695,21 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
             },
             budget: SESSION_DREAM_BUDGET,
             tools: dreamTools,
+            auditRun,
           },
         );
         if (outcome?.blocked) {
-          return { stopReason: "blocked", errorMessage: outcome.reason };
+          return agentRunResult(session, "blocked", outcome.reason);
         }
         await prepared.runQueue.wait();
         // A budget abort carries its reason in the tally, not in errorMessage,
         // and that reason is the only thing that tells the user why memory was
         // not preserved.
-        return {
-          stopReason: runState.stopReason,
-          errorMessage: runState.errorMessage ?? session.getLastRunStats().budgetExceededReason,
-        };
+        return agentRunResult(
+          session,
+          runState.stopReason,
+          runState.errorMessage ?? session.getLastRunStats().budgetExceededReason,
+        );
       } finally {
         runState.responder = null;
         runState.logCtx = null;

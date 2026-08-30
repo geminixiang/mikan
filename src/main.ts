@@ -27,6 +27,7 @@ import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
+import { AgentAuditStore } from "./audit/index.js";
 import { EventsWatcher } from "./events.js";
 import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
@@ -312,6 +313,7 @@ try {
 // per-conversation Office factory. Constructed after the office migration so
 // every office it materializes lands in the office-key layout.
 const workspace = createWorkspace({ root: workingDir, stateDir });
+const audit = new AgentAuditStore({ stateDir });
 
 const vaultManager = new FileVaultManager(stateDir);
 if (vaultManager.isEnabled()) {
@@ -606,6 +608,7 @@ const handler = createConversationRuntime({
   platformUserLister,
   extensionScheduleEngine,
   platformToolPackFactories: buildPlatformToolPackFactories(),
+  audit,
 });
 
 const sandboxDesc =
@@ -733,7 +736,14 @@ if (LINK_PORT) {
     },
     sessionViewTokenStore,
     sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+    adminOptions: {
+      adminTokenStore,
+      workspace,
+      runtime: handler,
+      sandbox,
+      botsByPlatform,
+      audit,
+    },
     githubWebhook:
       GITHUB_WEBHOOK_SECRET && githubBotForWebhook
         ? {
@@ -758,6 +768,7 @@ async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
   extensionScheduleEngine.stop();
+  await audit.close(5000);
   await Sentry.close(5000);
   process.exit(0);
 }

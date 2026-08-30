@@ -24,6 +24,7 @@ streaming).
 │  MikanAgentSession (runner.ts)                             │
 │    · prompt / subscribe / abort / reloadFromSession        │
 │    · message persistence on message_end                    │
+│    · normalized audit lifecycle reduction (metadata only)  │
 │    · auto-compaction (threshold + overflow recovery)       │
 │    · auto-retry with exponential backoff                   │
 │    · budget circuit breakers (token/cost/time/call caps)   │
@@ -87,6 +88,7 @@ streaming).
   `AgentEvent` passthrough + `compaction_start/_end` + `auto_retry_start/_end` +
   `budget_exceeded`. Adapter renderers need no change (`budget_exceeded` is
   additive; old handlers ignore it).
+- **Audit is an injected metadata seam.** During an audited prompt the harness reduces final agent events into mikan-owned turn, logical-model-request, tool, retry, compaction, and budget facts. It ignores streaming `message_update` snapshots and never records prompts, completions, thinking, tool arguments/results, provider payloads, or headers. Persistence, query projections, retention, and failure health belong to `src/audit/`, not this module.
 
 ## Budget circuit breakers
 
