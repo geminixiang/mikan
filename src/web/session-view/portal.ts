@@ -2152,7 +2152,8 @@ function findSharedContentAnchorEntryId(
       if (
         parentMessage === undefined ||
         childMessage === undefined ||
-        !comparableSessionMessagesMatch(parentMessage, childMessage)
+        parentMessage.role !== childMessage.role ||
+        parentMessage.normalizedText !== childMessage.normalizedText
       ) {
         break;
       }
@@ -2183,13 +2184,6 @@ function getComparableSessionMessage(entry: SessionEntry): ComparableSessionMess
   if (!normalizedText) return null;
 
   return { entryId: entry.id, role, normalizedText };
-}
-
-function comparableSessionMessagesMatch(
-  parent: ComparableSessionMessage,
-  child: ComparableSessionMessage,
-): boolean {
-  return parent.role === child.role && parent.normalizedText === child.normalizedText;
 }
 
 function normalizeComparableSessionText(text: string, role: "user" | "assistant"): string {
