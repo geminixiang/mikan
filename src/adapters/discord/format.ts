@@ -24,10 +24,6 @@ const MAX_FENCED_TABLE_WIDTH = 120;
 /** Stand-in for a horizontal rule, which Discord has no syntax for. */
 const RULE = "─".repeat(30);
 
-function longestLine(text: string): number {
-  return text.split("\n").reduce((max, line) => Math.max(max, line.length), 0);
-}
-
 /**
  * Replace GFM tables with aligned, fenced equivalents.
  *
@@ -48,7 +44,10 @@ function convertTables(source: string): string {
     const rendered = renderMonospaceTable(table);
     // Too wide to align: Discord soft-wraps inside a fence and the columns
     // scatter, which is worse than the pipes. Leave those as they came.
-    if (longestLine(rendered) > MAX_FENCED_TABLE_WIDTH) {
+    if (
+      rendered.split("\n").reduce((max, line) => Math.max(max, line.length), 0) >
+      MAX_FENCED_TABLE_WIDTH
+    ) {
       out.push(...lines.slice(table.startLine, table.endLine));
     } else {
       out.push("```", rendered, "```");
