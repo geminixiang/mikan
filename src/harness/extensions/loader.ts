@@ -178,7 +178,7 @@ function discoverExtensionEntrypoints(dir: string): DiscoveredExtension[] {
  * when neither is present.
  */
 function resolveDirectoryEntrypoint(dir: string): string | undefined {
-  const declared = readMikanManifestEntrypoints(dir)[0];
+  const declared = readPackageJson(dir)?.mikan?.extensions?.[0];
   if (declared) {
     const resolved = join(dir, declared);
     if (existsSync(resolved)) return resolved;
@@ -246,11 +246,6 @@ function readPackageJson(dir: string): ExtensionPackageJson | undefined {
   }
 }
 
-/** Read the `mikan.extensions` entrypoint list from a directory's package.json. */
-function readMikanManifestEntrypoints(dir: string): string[] {
-  return readPackageJson(dir)?.mikan?.extensions ?? [];
-}
-
 /** The one filesystem-safe segment sanitizer for extension identity and schedule names. */
 function sanitizeSegment(value: string): string {
   return value
@@ -258,10 +253,6 @@ function sanitizeSegment(value: string): string {
     .replace(/[^a-z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64);
-}
-
-function sanitizeSlug(base: string): string {
-  return sanitizeSegment(base) || "extension";
 }
 
 /**
@@ -275,9 +266,9 @@ function sanitizeSlug(base: string): string {
  * extension's identity.
  */
 export function extensionSlug(rootDir: string): string {
-  return EXTENSION_FILE_PATTERN.test(basename(rootDir))
-    ? sanitizeSlug(basename(rootDir).replace(EXTENSION_FILE_PATTERN, ""))
-    : sanitizeSlug(basename(rootDir));
+  const name = basename(rootDir);
+  const base = EXTENSION_FILE_PATTERN.test(name) ? name.replace(EXTENSION_FILE_PATTERN, "") : name;
+  return sanitizeSegment(base) || "extension";
 }
 
 /** Sanitize an extension-chosen schedule name into a filename segment. */
