@@ -136,11 +136,6 @@ export function telegramCommandMenu(): { command: string; description: string }[
   }));
 }
 
-function normalizeCommandToken(token: string, options?: { stripMention?: boolean }): string {
-  const command = options?.stripMention ? token.replace(/@\w+$/i, "") : token;
-  return command.toLowerCase();
-}
-
 export function matchCommand<Command extends string>(
   text: string,
   aliases: readonly Command[],
@@ -150,10 +145,9 @@ export function matchCommand<Command extends string>(
   const first = tokens[0];
   if (first === undefined) return null;
 
-  const command = normalizeCommandToken(first, options);
-  return aliases.includes(command as Command)
-    ? { command: command as Command, args: tokens.slice(1) }
-    : null;
+  const token = options?.stripMention ? first.replace(/@\w+$/i, "") : first;
+  const command = token.toLowerCase() as Command;
+  return aliases.includes(command) ? { command, args: tokens.slice(1) } : null;
 }
 
 /**
