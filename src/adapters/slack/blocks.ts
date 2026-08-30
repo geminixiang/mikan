@@ -22,10 +22,6 @@ const FIELD_TEXT_LIMIT = 2000;
 // source contract; system producers may still emit them.
 const LEGACY_MRKDWN_LINK_PATTERN = /<(https?:\/\/[^<>|\s]+)\|([^<>\n]+)>/g;
 
-function convertLegacyMrkdwnLinks(source: string): string {
-  return source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)");
-}
-
 // Slack user/bot-user ids: U/W prefix. Already-native mentions pass through.
 const SLACK_USER_ID_PATTERN = /^[UW][A-Z0-9]{2,}$/;
 const MENTION_PATTERN = /<@([^<>\n]+)>/g;
@@ -115,7 +111,9 @@ function plainTextFallback(tokens: Token[]): string {
 }
 
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
-  const normalized = normalizeMarkdownTables(convertLegacyMrkdwnLinks(source));
+  const normalized = normalizeMarkdownTables(
+    source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)"),
+  );
   const lines = normalized.split("\n");
 
   const tables = extractMarkdownTables(normalized);
