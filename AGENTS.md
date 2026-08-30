@@ -1,7 +1,5 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-06-09
-
 ## OVERVIEW
 
 Project: **mikan** (`@geminixiang/mikan`)
@@ -23,8 +21,9 @@ Stack:
   - `main.ts`: CLI entrypoint; executes the boot plan, loads settings, starts vault/sandbox/runtime/platform bots.
   - `types.ts`: root exported type definitions.
   - `adapter.ts`: platform-neutral bot/message/response interfaces.
-  - `agent.ts`: agent runner integration, prompt, tools, memory, sandbox, vault, response flow.
+  - `agent/`: agent catalog, execution, presentation, prompting, and runner integration.
   - `harness/`: mikan's agent harness (session store, model catalog, run loop, skills, extension system) built on `pi-agent-core`/`pi-ai`.
+  - `mcp/`: settings-declared MCP server connections and tool wrapping.
   - `config.ts`: global and per-conversation settings.
   - `cli/`: argv grammar (`boot.ts`) and the subcommands that run instead of the daemon (`ext`, `office`, `env`, `--download`).
   - `office/`: the Conversation office module — `OfficeAddress`/office keys, the frozen `Workspace`/`Office` layout values, the office registry journal, and the boot-time legacy migration.
@@ -71,16 +70,10 @@ Stack:
 ## CODING STANDARDS
 
 - **Language**: strict TypeScript targeting ES2023 with Node16 module resolution. Use ESM imports/exports and `.js` import specifiers for local TS modules.
-- **Types**:
-  - All exported `interface`, `type`, and `enum` definitions belong in the nearest `types.ts` (`src/types.ts` for root-level exports; module-local `types.ts` for submodules).
-  - Implementation files import exported types from `./types.ts` or `../types.ts`; private non-exported types may stay local.
-  - Avoid `any`; inspect dependency types in `node_modules` instead of guessing external APIs.
 - **Style**:
-  - Existing code uses 2-space indentation, double quotes, semicolons, named functions for non-trivial logic, and top-level imports.
-  - Prefer small, surgical functions; project guidance asks to keep functions under ~50 lines where practical.
-  - Prefer LBYL validation when reliable; use EAFP only for TOCTOU-prone or clearer error handling.
+  - Existing code uses 2-space indentation, double quotes, semicolons, and named functions for non-trivial logic.
+  - Keep functions under ~50 lines where practical.
   - Handle errors explicitly. Do not silently swallow failures.
-  - Avoid thin wrappers and unnecessary indirection; reuse existing helpers before adding abstractions.
 - **File I/O**:
   - Use Node `fs` / `fs/promises` directly for ordinary reads, writes, directory scans, streams, and watchers; do not add a generic FileIO wrapper just to hide `fs`.
   - Reuse `src/utils/file-guards.ts` for common optional text/JSON reads and schema-validated JSON parsing instead of hand-rolling `try readFile + JSON.parse` in multiple places.
@@ -102,12 +95,13 @@ Stack:
 ## WHERE TO LOOK
 
 - **Source map**: `src/README.md` plus per-subdirectory `README.md` files.
-- **Architecture**: `README.md`, `src/content/docs/architecture.md`, `src/content/docs/sessions.mdx`, `src/content/docs/sandbox.mdx`.
+- **Architecture**: `architecture.toml`, `ARCHITECTURE.md`, module-local `src/*/README.md`; user-facing architecture: `src/content/docs/architecture.md`.
 - **Conversation office vocabulary and identity**: `CONTEXT.md`, `docs/adr/0003-isolated-conversation-offices.md`, `docs/adr/0004-persistent-offices-and-ephemeral-factory-floors.md`, `docs/adr/0005-office-address-identity.md`, `src/office/README.md`, tests in `src/test/office-*.test.ts`.
-- **Commands/user behavior**: `src/content/docs/commands.mdx`, `src/commands/`.
+- **Chat commands**: `src/commands/README.md`, `src/commands/manifest.ts`, `src/content/docs/commands.mdx`.
+- **CLI grammar/subcommands**: `src/cli/README.md`, `src/cli/boot.ts`.
 - **Platform adapters**: `src/adapters/{slack,discord,telegram,github}/`.
 - **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `src/test/slack-blockkit-tool.test.ts`.
-- **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `src/test/session-*.test.ts` and `src/test/*session*.test.ts`.
+- **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `src/test/*session*.test.ts`.
 - **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.mdx`.
 - **Door policy / workspace mounts**: `src/workspace-projection/`, `src/test/workspace-projection.test.ts`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`.
@@ -117,7 +111,6 @@ Stack:
 
 ## NOTES
 
-- Read files in full before broad edits or audits. Search snippets are not enough for wide-ranging changes.
 - `dist/` is generated from `src/`; edit `src/` and run build instead of modifying `dist/` directly.
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
@@ -125,7 +118,6 @@ Stack:
 - Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys. GitHub maps one issue or PR to one conversation.
 - Office directories, per-conversation host state, and conversation vault keys are named by office key, never by the raw platform conversation id. Derive paths from an `Office` value (`workspace.office(address)`), and leave the raw-id mapping to the office registry; raw ids belong at platform I/O boundaries.
 - `src/index.ts` is the published package interface (the embedder in `deploy/examples/embedder/` builds against it). Adding an export there widens the npm surface — keep the list explicit and deliberate.
-- Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules
 
@@ -151,7 +143,7 @@ Stack:
 
 - All exported `interface`, `type`, and `enum` definitions live in `types.ts`.
 - Root-level exported types live in `src/types.ts`. Each sub-module (`adapters/`, `sessions/`, `runtime/`, etc.) has its own `types.ts`.
-- Implementation files import types from `./types.ts` (or `../types.ts`) and re-export them for downstream consumers; they do not define exported types inline.
+- Implementation files import types from `./types.js` (or `../types.js`) and re-export them for downstream consumers; they do not define exported types inline.
 - Private (non-exported) types may stay in the file that uses them.
 - Never duplicate a type definition — if a type is needed in multiple files within the same module, it lives in `types.ts`.
 
@@ -176,7 +168,7 @@ Stack:
 - Reuse existing helpers and project patterns before adding new abstractions. For general-purpose helpers, check `@earendil-works/pi-agent-core` / `pi-ai` exports first — do not reimplement what the harness's own dependencies already ship (mikan's `truncate.ts` was an aging copy of pi's).
 - Avoid thin wrappers — functions that only delegate without adding logic, error handling, or meaningful abstraction. Inline them unless they have multiple call sites or encapsulate a non-trivial concern.
 - Delete indirection rather than polish it. If behavior is unchanged, always prefer the simpler structure.
-- Avoid `any` unless there is no practical typed alternative.
+- Do not use `any` in production `src`; in tests, avoid it unless there is no practical typed alternative.
 - Check dependency type definitions in `node_modules` instead of guessing external APIs.
 - Use top-level imports; avoid inline/dynamic imports for normal code and type references.
 - Tool parameter schemas exposed to model providers must be object-rooted (`Type.Object` / top-level `type: "object"`). Do not use a top-level `Type.Union`, `anyOf`, or `oneOf`; OpenAI function tools reject schemas whose root is not explicitly an object. Represent alternate invocation modes as optional object properties, then enforce exclusivity and required-mode rules in runtime validation.
