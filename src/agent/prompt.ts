@@ -11,15 +11,6 @@ import { type RuntimePathContext, type SandboxConfig } from "../sandbox/index.js
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { buildRuntimePaths, collectMessageAttachments } from "./execution.js";
 
-function formatTimestampedUserMessage(message: ConversationMessage): string {
-  return formatHistoryLine({
-    date: new Date(),
-    userName: message.userName,
-    threadTs: message.threadTs,
-    text: message.text,
-  });
-}
-
 export async function buildPromptPayload(
   message: ConversationMessage,
   workspacePath: string,
@@ -29,7 +20,12 @@ export async function buildPromptPayload(
   userMessage: string;
   imageAttachments: ImageContent[];
 }> {
-  let userMessage = formatTimestampedUserMessage(message);
+  let userMessage = formatHistoryLine({
+    date: new Date(),
+    userName: message.userName,
+    threadTs: message.threadTs,
+    text: message.text,
+  });
   const { imageAttachments, nonImagePaths } = await collectMessageAttachments(
     message,
     workspacePath,
