@@ -117,7 +117,6 @@ Stack:
 
 ## NOTES
 
-- Preserve behavior unless explicitly asked to change it; do not remove intentional-looking functionality without asking.
 - Read files in full before broad edits or audits. Search snippets are not enough for wide-ranging changes.
 - `dist/` is generated from `src/`; edit `src/` and run build instead of modifying `dist/` directly.
 - `npm run build` emits declarations and JS to `dist/` and makes `dist/main.js` executable.
@@ -129,6 +128,15 @@ Stack:
 - Cloudflare AI image input note for related Quro work: send raw base64 strings in `images`, not data URIs, when calling `env.AI.run('openai/gpt-image-2', ...)`.
 
 # Development Rules
+
+## Problem Framing and Tool Choice
+
+- Before the first tool call, identify the exact target, failure direction, and requested access path.
+- Apply the user's latest task correction immediately; it overrides conflicting earlier user instructions and assumptions while preserving unaffected requirements.
+- Use the access path the user names, such as SSH, CLI, or API. If that path is unavailable, report it before switching paths. Use Computer Use, desktop UI automation, screen control, or synthetic clicks and keystrokes only when the user explicitly requests UI operation for the current task.
+- Diagnose the named system first; do not inspect or modify adjacent tools merely because they could contribute to the symptom.
+- For troubleshooting, gather evidence before mutation, make one minimal change, verify the original symptom, then stop further mutation and run only the required checks.
+- When the target or direction is genuinely ambiguous, ask one short clarification question before operating external systems.
 
 ## Conversational Style
 
@@ -147,14 +155,24 @@ Stack:
 - Private (non-exported) types may stay in the file that uses them.
 - Never duplicate a type definition — if a type is needed in multiple files within the same module, it lives in `types.ts`.
 
+## Design Simplicity
+
+- Implement the smallest design that satisfies the current requirement. Quality goals such as "perfect", "long-term", "general", or "must not affect anything" do not authorize frameworks, extension points, modes, tiers, schemas, or configuration beyond that requirement.
+- Inside the requested scope, assume breaking changes are acceptable. Add backward compatibility, migration, legacy fallback, or old-data backfill only when the user explicitly requests it.
+- Do not implement future extensions speculatively. If one is relevant to mention, limit it to a one-line final note.
+- Use engineering judgment directly. Do not add validators, closed error-code sets, alias tables, or rule engines to mechanize decisions that instructions and review already cover.
+- Perform each validation, check, or probe once at its owning trusted boundary. Downstream code relies on that result unless it crosses a new untrusted boundary or the guarantee is invalidated; do not duplicate it across layers or maintain parallel bookkeeping that must be reconciled.
+- Before writing code that adds an abstraction layer, a configuration surface, more than about five new files, or any speculative option, present the minimal version and those additions separately; default to the minimal version.
+- VibeGuards U-17/U-29 strictness applies to real error paths within the requested change; it does not justify new validators, checks, compatibility layers, or fallback paths.
+- When the user calls a design over-engineered, remove the excess rather than defending or polishing it.
+
 ## Coding Rules
 
-- Prefer LBYL (Look Before You Leap) in implementation code: validate preconditions before performing operations when those checks are reliable and do not introduce race conditions.
-- Use EAFP only when LBYL would introduce TOCTOU races, duplicate expensive work, or make error handling less clear.
+- Prefer LBYL (Look Before You Leap) for preconditions that remain the responsibility of the current boundary and can be checked without introducing a race.
+- Use EAFP when LBYL would introduce TOCTOU races, duplicate expensive work, or make error handling less clear.
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - Make surgical changes only; avoid unrelated cleanup.
-- Preserve existing behavior unless the user explicitly asks to change it.
-- Do not remove intentional-looking functionality without asking first.
+- Preserve behavior outside the requested change, and do not remove intentional-looking functionality outside that scope without asking first. Inside the requested scope, follow the breaking-change default above.
 - Reuse existing helpers and project patterns before adding new abstractions. For general-purpose helpers, check `@earendil-works/pi-agent-core` / `pi-ai` exports first — do not reimplement what the harness's own dependencies already ship (mikan's `truncate.ts` was an aging copy of pi's).
 - Avoid thin wrappers — functions that only delegate without adding logic, error handling, or meaningful abstraction. Inline them unless they have multiple call sites or encapsulate a non-trivial concern.
 - Delete indirection rather than polish it. If behavior is unchanged, always prefer the simpler structure.
