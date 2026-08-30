@@ -34,18 +34,6 @@ function formatAutoReplyStatus(config: AutoReplyConfig): string {
   return formatCommandSummary("Auto Reply", lines);
 }
 
-function applyAction(current: AutoReplyConfig, action: AutoReplyAction): AutoReplyConfig {
-  switch (action.type) {
-    case "status":
-    case "invalid":
-      return current;
-    case "on":
-      return { ...current, enabled: true };
-    case "off":
-      return { ...current, enabled: false };
-  }
-}
-
 /**
  * @deprecated Auto-reply is kept for compatibility while its future is undecided.
  */
@@ -74,7 +62,9 @@ export class AutoReplyCommandHandler implements CommandHandler {
 
     const conversationDir = context.services.workspace.office(context.address).dir;
     const current = loadConversationAutoReplyConfig(conversationDir);
-    const next = applyAction(current, action);
+    let next = current;
+    if (action.type === "on") next = { ...current, enabled: true };
+    else if (action.type === "off") next = { ...current, enabled: false };
     if (action.type === "on" || (action.type === "off" && current.enabled)) {
       saveConversationAutoReplyConfig(conversationDir, next);
     }
