@@ -402,12 +402,8 @@ function isRenderableConversationMessage(
   excludeMessageId?: string,
 ): boolean {
   if (excludeMessageId && message.ts === excludeMessageId) return false;
-  if (isChatCommandMessage(message)) return false;
+  if (!message.isMessagingBot && isCommandText(message.text ?? "")) return false;
   return !!message.text?.trim();
-}
-
-function isChatCommandMessage(message: ConversationLogMessage): boolean {
-  return !message.isMessagingBot && isCommandText(message.text ?? "");
 }
 
 function dedupeAndSortRecords(records: LogRecord[]): LogRecord[] {
