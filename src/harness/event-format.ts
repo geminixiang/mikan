@@ -113,20 +113,6 @@ export function isValidIsoTimestampWithOffset(value: string): boolean {
 }
 
 /**
- * Resolve an event file's conversation id, honoring the legacy `channelId`
- * alias. Alias knowledge is private to the format module: consumers always
- * see `conversationId` on parsed payloads.
- */
-function resolveEventConversationId(data: {
-  conversationId?: unknown;
-  channelId?: unknown;
-}): string | undefined {
-  if (typeof data.conversationId === "string") return data.conversationId;
-  if (typeof data.channelId === "string") return data.channelId;
-  return undefined;
-}
-
-/**
  * Parse and validate one event file's content into the canonical payload.
  * `filename` appears in error messages. Throws on malformed JSON, wrong
  * field types, and missing required fields (common and per-type).
@@ -137,7 +123,14 @@ export function parseEventPayload(content: string, filename: string): EventFileP
       ? `Expected top-level JSON object in ${filename}`
       : `Malformed event file ${filename}: ${detail}`,
   );
-  const conversationId = resolveEventConversationId(data);
+  // `channelId` is the legacy alias; parsed payloads expose only the
+  // canonical `conversationId` field.
+  const conversationId =
+    typeof data.conversationId === "string"
+      ? data.conversationId
+      : typeof data.channelId === "string"
+        ? data.channelId
+        : undefined;
   const { type, text } = data;
 
   if (!type || !conversationId || !text) {
