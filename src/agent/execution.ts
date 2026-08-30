@@ -109,10 +109,6 @@ const IMAGE_MIME_TYPES: Record<string, string> = {
   webp: "image/webp",
 };
 
-function getImageMimeType(filename: string): string | undefined {
-  return IMAGE_MIME_TYPES[filename.toLowerCase().split(".").pop() || ""];
-}
-
 export async function collectMessageAttachments(
   message: ConversationMessage,
   workspacePath: string,
@@ -125,7 +121,7 @@ export async function collectMessageAttachments(
   for (const attachment of message.attachments || []) {
     const runtimePath = `${workspacePath}/${attachment.localPath}`;
     const hostPath = pathContext?.runtimeToHostPath?.(runtimePath) ?? runtimePath;
-    const mimeType = getImageMimeType(attachment.localPath);
+    const mimeType = IMAGE_MIME_TYPES[attachment.localPath.toLowerCase().split(".").pop() || ""];
 
     if (mimeType && existsSync(hostPath) && readAttachment) {
       try {
