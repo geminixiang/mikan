@@ -261,14 +261,10 @@ function requireString(value: string | undefined, path: string): string {
   return value;
 }
 
-function requireThinkingLevel(value: ThinkingLevel | undefined): ThinkingLevel {
-  return requireString(value, "llm.thinkingLevel") as ThinkingLevel;
-}
-
 function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
-  const thinkingLevel = requireThinkingLevel(fromFile.thinkingLevel);
+  const thinkingLevel = requireString(fromFile.thinkingLevel, "llm.thinkingLevel") as ThinkingLevel;
   const sentryDsn = sentryDsnFrom(fromFile.sentryDsn);
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
