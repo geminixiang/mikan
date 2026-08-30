@@ -14,12 +14,6 @@ export type { McpServerConfig, McpToolsResult } from "./types.js";
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 120_000;
 
-/** `mcp__github__create_issue` — server part keeps tool names collision-free
- *  across servers and visibly foreign next to mikan's own tools. */
-function namespacedToolName(server: string, tool: string): string {
-  return `mcp__${server}__${tool}`;
-}
-
 /** Server names become tool-name segments; keep them to a safe charset so a
  *  settings typo cannot produce an unparseable or provider-rejected tool name. */
 const SERVER_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
@@ -92,7 +86,9 @@ async function connectServer(
   await client.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
   const listed = await client.listTools(undefined, { timeout: CONNECT_TIMEOUT_MS });
   const tools: AgentTool<TSchema>[] = listed.tools.map((mcpTool) => ({
-    name: namespacedToolName(name, mcpTool.name),
+    // Server prefix keeps names collision-free and visibly foreign next to
+    // mikan's own tools: `mcp__github__create_issue`.
+    name: `mcp__${name}__${mcpTool.name}`,
     label: `${name}: ${mcpTool.name}`,
     description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
     // MCP inputSchema is JSON Schema with `"type": "object"` at the root —
