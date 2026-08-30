@@ -10,8 +10,6 @@ import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 // rather than for HTML escapes that no longer happen.
 const MAX_LENGTH = 30000;
 
-const formatTelegramContinuation = (partNum: number): string => `(continued ${partNum})`;
-
 function formatToolResult(result: ChatToolResult): string {
   const argsFormatted = formatToolArgs(result.args);
   const duration = (result.durationMs / 1000).toFixed(1);
@@ -47,7 +45,7 @@ export function createTelegramAdapters(
   const { responder } = createProgressiveRenderer({
     label: "Telegram",
     maxLength: MAX_LENGTH,
-    formatContinuation: formatTelegramContinuation,
+    formatContinuation: (partNum: number): string => `(continued ${partNum})`,
     errorPrefix: "Error: ",
     supportsDeltas: true,
     typing: {
