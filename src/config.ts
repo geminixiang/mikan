@@ -163,10 +163,6 @@ function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined 
   );
 }
 
-function getStateDir(): string {
-  return effectiveStateDir();
-}
-
 function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfig> {
   return {
     ...(config.llm?.provider !== undefined ? { provider: config.llm.provider } : {}),
@@ -244,7 +240,7 @@ function mergeSandboxSettings(
 }
 
 function getSettingsPath(): string {
-  return join(getStateDir(), "settings.json");
+  return join(effectiveStateDir(), "settings.json");
 }
 
 function requireGlobalSettings(): SettingsFileConfig {
@@ -621,7 +617,7 @@ function updateSettingsFile(
 }
 
 export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
-  updateSettingsFile(join(getStateDir(), "settings.json"), patch, ONBOARD_SETTINGS);
+  updateSettingsFile(getSettingsPath(), patch, ONBOARD_SETTINGS);
 }
 
 export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
@@ -689,7 +685,7 @@ export function setConversationWorkspacePolicy(
 }
 
 export function setGlobalWorkspacePolicy(choice: WorkspacePolicyChoice | null): void {
-  writeWorkspacePolicy(join(getStateDir(), "settings.json"), choice, ONBOARD_SETTINGS);
+  writeWorkspacePolicy(getSettingsPath(), choice, ONBOARD_SETTINGS);
 }
 
 /**
