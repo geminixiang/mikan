@@ -6,7 +6,6 @@ import { Worker } from "node:worker_threads";
 import * as log from "../log.js";
 import type {
   AgentAuditChildRunOptions,
-  AgentAuditEventDetails,
   AgentAuditEventEnvelope,
   AgentAuditEventInput,
   AgentAuditHealth,
@@ -19,7 +18,9 @@ import type {
   AgentAuditService,
   AgentAuditStoreOptions,
   AgentAuditUsage,
+  AuditDetailSchema,
   AuditWorkerHealth,
+  AuditWorkerInitData,
   AuditWorkerRequest,
   AuditWorkerResponse,
 } from "./types.js";
@@ -32,7 +33,27 @@ const DEFAULT_RETENTION_INTERVAL_MS = 60 * 60 * 1000;
 const TERMINAL_EVENT_RESERVE = 128;
 const TERMINAL_BYTE_RESERVE = 64 * 1024;
 const MAX_ID_LENGTH = 256;
-const MAX_DETAIL_STRING_LENGTH = 256;
+const AUDIT_DETAIL_SCHEMA: AuditDetailSchema = {
+  enumValues: {
+    purpose: ["agent", "compaction"],
+    origin: ["interactive", "event", "session_dream"],
+    compactionReason: ["threshold", "overflow", "manual"],
+  },
+  stringLimits: { sourceEventType: 64, responseModel: 256 },
+  numberKeys: [
+    "messageCount",
+    "toolCount",
+    "toolResultCount",
+    "attempt",
+    "maxAttempts",
+    "delayMs",
+    "retainedMessages",
+    "tokensBefore",
+    "attachmentCount",
+    "imageAttachmentCount",
+  ],
+  booleanKeys: ["success", "aborted", "budgetExceeded"],
+};
 
 interface PendingWorkerRequest {
   resolve: (response: AuditWorkerResponse) => void;
@@ -78,52 +99,26 @@ function boundedString(value: string | undefined, max = MAX_ID_LENGTH): string |
   return trimmed.length > max ? trimmed.slice(0, max) : trimmed;
 }
 
-function normalizeDetails(details: AgentAuditEventDetails | undefined): AgentAuditEventDetails {
-  if (!details) return {};
-  const normalized: AgentAuditEventDetails = {};
-  if (details.purpose === "agent" || details.purpose === "compaction") {
-    normalized.purpose = details.purpose;
+function normalizeDetails(value: unknown): AgentAuditEventInput["details"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const normalized: Record<string, string | number | boolean> = {};
+  for (const [key, values] of Object.entries(AUDIT_DETAIL_SCHEMA.enumValues)) {
+    const candidate = source[key];
+    if (typeof candidate === "string" && values.includes(candidate)) normalized[key] = candidate;
   }
-  if (
-    details.origin === "interactive" ||
-    details.origin === "event" ||
-    details.origin === "session_dream"
-  ) {
-    normalized.origin = details.origin;
+  for (const [key, limit] of Object.entries(AUDIT_DETAIL_SCHEMA.stringLimits)) {
+    const candidate = boundedString(source[key] as string | undefined, limit);
+    if (candidate) normalized[key] = candidate;
   }
-  if (
-    details.compactionReason === "threshold" ||
-    details.compactionReason === "overflow" ||
-    details.compactionReason === "manual"
-  ) {
-    normalized.compactionReason = details.compactionReason;
+  for (const key of AUDIT_DETAIL_SCHEMA.numberKeys) {
+    const candidate = finiteNonNegative(source[key] as number | undefined);
+    if (candidate !== undefined) normalized[key] = candidate;
   }
-  const sourceEventType = boundedString(details.sourceEventType, 64);
-  if (sourceEventType) normalized.sourceEventType = sourceEventType;
-  const responseModel = boundedString(details.responseModel, MAX_DETAIL_STRING_LENGTH);
-  if (responseModel) normalized.responseModel = responseModel;
-
-  const numberKeys = [
-    "messageCount",
-    "toolCount",
-    "toolResultCount",
-    "attempt",
-    "maxAttempts",
-    "delayMs",
-    "retainedMessages",
-    "tokensBefore",
-    "attachmentCount",
-    "imageAttachmentCount",
-  ] as const;
-  for (const key of numberKeys) {
-    const value = finiteNonNegative(details[key]);
-    if (value !== undefined) normalized[key] = value;
+  for (const key of AUDIT_DETAIL_SCHEMA.booleanKeys) {
+    if (typeof source[key] === "boolean") normalized[key] = source[key];
   }
-  const booleanKeys = ["success", "aborted", "budgetExceeded"] as const;
-  for (const key of booleanKeys) {
-    if (typeof details[key] === "boolean") normalized[key] = details[key];
-  }
-  return normalized;
+  return normalized as AgentAuditEventInput["details"];
 }
 
 function normalizeUsage(usage: AgentAuditUsage | undefined): AgentAuditUsage | undefined {
@@ -497,7 +492,11 @@ export class AgentAuditStore implements AgentAuditService {
 
   private startWorker(): void {
     const worker = new Worker(auditWorkerUrl(), {
-      workerData: { dbPath: this.dbPath, retentionMs: this.retentionMs },
+      workerData: {
+        dbPath: this.dbPath,
+        retentionMs: this.retentionMs,
+        detailSchema: AUDIT_DETAIL_SCHEMA,
+      } satisfies AuditWorkerInitData,
       execArgv: process.execArgv.filter((arg) => !arg.startsWith("--input-type")),
     });
     this.worker = worker;

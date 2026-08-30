@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { Script } from "node:vm";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { AgentAuditStore } from "../audit/index.js";
-import { createOfficeAddress } from "../office/index.js";
+import { createOfficeAddress, createWorkspace, type Workspace } from "../office/index.js";
 import { FileVaultManager } from "../vault/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../web/admin/portal.js";
 import type { AdminServices } from "../web/admin/types.js";
@@ -16,6 +16,8 @@ let server: Server;
 let origin: string;
 let token: string;
 let audit: AgentAuditStore;
+let workspace: Workspace;
+let visibleRunId: string;
 
 function startServer(services: AdminServices): Promise<{ server: Server; origin: string }> {
   const instance = createServer((req, res) => {
@@ -45,12 +47,17 @@ async function get(path: string): Promise<{ status: number; body: unknown }> {
 beforeEach(async () => {
   stateDir = mkdtempSync(join(tmpdir(), "mikan-admin-audit-"));
   audit = new AgentAuditStore({ stateDir, retentionIntervalMs: 86_400_000 });
+  workspace = createWorkspace({ root: join(stateDir, "workspace"), stateDir });
+  const address = createOfficeAddress("slack", "C1");
+  const office = workspace.office(address);
+  office.ensure();
   const run = audit.startRun({
-    officeKey: "v1-C1",
-    address: createOfficeAddress("slack", "C1"),
+    officeKey: office.key,
+    address,
     sessionKey: "C1",
     runKind: "interactive",
   });
+  visibleRunId = run.runId;
   run.record({ type: "run_admitted", status: "admitted", occurredAtMs: 1_000 });
   run.record({
     type: "tool_started",
@@ -80,6 +87,7 @@ beforeEach(async () => {
     linkTokenStore: { create: () => ({ token: "x", expiresAt: 0 }) } as never,
     adminTokenStore,
     audit,
+    workspace,
   });
   server = started.server;
   origin = started.origin;
@@ -88,6 +96,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await audit.close();
+  vi.restoreAllMocks();
   rmSync(stateDir, { recursive: true, force: true });
 });
 
@@ -127,9 +136,10 @@ describe("admin audit API", () => {
   });
 
   test("pages large run timelines through the Admin API", async () => {
+    const address = createOfficeAddress("slack", "C1");
     const run = audit.startRun({
-      officeKey: "v1-C1",
-      address: createOfficeAddress("slack", "C1"),
+      officeKey: workspace.office(address).key,
+      address,
       sessionKey: "C1",
       runKind: "interactive",
     });
@@ -156,15 +166,80 @@ describe("admin audit API", () => {
     expect((earlier.body as { events: unknown[] }).events).toHaveLength(6);
   });
 
-  test("validates time ranges and exposes health", async () => {
-    const invalid = await get("/admin/api/audit/runs?from=not-a-date");
-    expect(invalid.status).toBe(400);
-    expect(invalid.body).toMatchObject({ error: expect.stringContaining("from") });
+  test("validates time ranges and timeline cursors", async () => {
+    const invalidTime = await get("/admin/api/audit/runs?from=not-a-date");
+    expect(invalidTime.status).toBe(400);
+    expect(invalidTime.body).toMatchObject({ error: expect.stringContaining("from") });
+
+    for (const beforeSequence of ["abc", "0", "-1", "1.5"]) {
+      const invalidSequence = await get(
+        `/admin/api/audit/run?runId=${visibleRunId}&beforeSequence=${beforeSequence}`,
+      );
+      expect(invalidSequence.status).toBe(400);
+      expect(invalidSequence.body).toMatchObject({
+        error: expect.stringContaining("beforeSequence"),
+      });
+    }
+  });
+
+  test("limits audit queries to materialized registered offices", async () => {
+    const hiddenAddress = createOfficeAddress("slack", "C2");
+    const hiddenRun = audit.startRun({
+      officeKey: workspace.office(hiddenAddress).key,
+      address: hiddenAddress,
+      sessionKey: "C2",
+      runKind: "interactive",
+    });
+    hiddenRun.record({ type: "run_admitted", status: "admitted" });
+    hiddenRun.record({ type: "run_completed", status: "completed" });
+    await audit.flush();
+
+    const listed = await get("/admin/api/audit/runs");
+    expect(
+      (listed.body as { runs: Array<{ runId: string }> }).runs.map((run) => run.runId),
+    ).toEqual([visibleRunId]);
+
+    const hiddenDetail = await get(`/admin/api/audit/run?runId=${hiddenRun.runId}`);
+    expect(hiddenDetail.status).toBe(404);
+
+    const hiddenScope = await get("/admin/api/audit/runs?platform=slack&conversationId=C2");
+    expect(hiddenScope.status).toBe(400);
+  });
+
+  test("sanitizes audit health failures for Admin clients", async () => {
+    const current = await audit.getHealth();
+    const getHealth = vi.spyOn(audit, "getHealth").mockResolvedValue({
+      ...current,
+      available: false,
+      degraded: true,
+      lastError: "SQLITE_CANTOPEN: /Users/private/.mikan/audit/audit.sqlite",
+    });
 
     const health = await get("/admin/api/audit/health");
     expect(health.status).toBe(200);
     expect(health.body).toMatchObject({
-      health: { available: true, eventCount: 4, runCount: 1 },
+      health: {
+        available: false,
+        lastError: "Agent audit store reported an internal error; check server logs",
+      },
+    });
+    expect(JSON.stringify(health.body)).not.toContain("/Users/private");
+
+    getHealth.mockRejectedValueOnce(
+      new Error("SQLITE_CANTOPEN: /Users/private/.mikan/audit/audit.sqlite"),
+    );
+    const unavailable = await get("/admin/api/audit/health");
+    expect(unavailable).toEqual({
+      status: 503,
+      body: { error: "Agent audit service is unavailable" },
+    });
+  });
+
+  test("exposes healthy audit state", async () => {
+    const health = await get("/admin/api/audit/health");
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({
+      health: { available: true, eventCount: 4, runCount: 1, lastError: null },
     });
   });
 

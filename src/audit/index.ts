@@ -1,15 +1,23 @@
 export { AgentAuditStore } from "./store.js";
 export type {
+  AgentAuditChildRunOptions,
+  AgentAuditEventDetails,
   AgentAuditEventInput,
+  AgentAuditEventRecord,
+  AgentAuditEventType,
   AgentAuditHealth,
+  AgentAuditModelRequestSummary,
   AgentAuditRun,
   AgentAuditRunDetail,
   AgentAuditRunDetailQuery,
+  AgentAuditRunIdentity,
+  AgentAuditRunKind,
   AgentAuditRunPage,
   AgentAuditRunQuery,
   AgentAuditRunSummary,
   AgentAuditService,
   AgentAuditStatus,
   AgentAuditStoreOptions,
+  AgentAuditToolCallSummary,
   AgentAuditUsage,
 } from "./types.js";

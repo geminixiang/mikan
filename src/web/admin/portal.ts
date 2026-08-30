@@ -12,6 +12,7 @@ import {
 } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { PlatformName } from "../../adapter.js";
+import * as log from "../../log.js";
 import type { AgentAuditRunQuery, AgentAuditStatus } from "../../audit/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { AdminToken } from "./types.js";
@@ -431,6 +432,14 @@ function requireAdminAudit(res: ServerResponse, services: AdminServices) {
   return services.audit;
 }
 
+function respondAuditFailure(res: ServerResponse, action: string, error: unknown): void {
+  log.logWarning(
+    `Admin audit ${action} failed`,
+    error instanceof Error ? error.message : String(error),
+  );
+  jsonRes(res, 503, { error: "Agent audit service is unavailable" });
+}
+
 function parseAuditTime(value: string | null, field: string): number | undefined {
   if (!value) return undefined;
   const parsed = Date.parse(value);
@@ -438,16 +447,26 @@ function parseAuditTime(value: string | null, field: string): number | undefined
   return parsed;
 }
 
-function auditScopeQuery(url: URL, token: AdminToken): AgentAuditRunQuery {
+function auditOfficeKeys(workspace: Workspace): string[] {
+  return listAdminOffices(workspace).map((office) => workspace.office(office).key);
+}
+
+function auditScopeQuery(url: URL, token: AdminToken, workspace: Workspace): AgentAuditRunQuery {
   const conversationId = (url.searchParams.get("conversationId") ?? "").trim();
   const platform = (url.searchParams.get("platform") ?? "").trim();
   if ((conversationId && !platform) || (!conversationId && platform)) {
     throw new Error("conversationId and platform must be supplied together");
   }
+  const registeredOfficeKeys = auditOfficeKeys(workspace);
   let scope: AdminConversationScope | undefined;
+  let scopedOfficeKey: string | undefined;
   if (conversationId && platform) {
     scope = resolveConversationScope(conversationId, platform, token);
     if (scope.error) throw new Error(scope.error);
+    scopedOfficeKey = workspace.office(scope.address).key;
+    if (!registeredOfficeKeys.includes(scopedOfficeKey)) {
+      throw new Error("Conversation is not registered");
+    }
   }
   const rawLimit = Number.parseInt(url.searchParams.get("limit") ?? "50", 10);
   const rawStatus = (url.searchParams.get("status") ?? "").trim();
@@ -460,6 +479,7 @@ function auditScopeQuery(url: URL, token: AdminToken): AgentAuditRunQuery {
     throw new Error("from must be earlier than to");
   }
   return {
+    officeKeys: scopedOfficeKey ? [scopedOfficeKey] : registeredOfficeKeys,
     ...(scope ? { platform: scope.address.platform, conversationId: scope.conversationId } : {}),
     ...(url.searchParams.get("runId")?.trim()
       ? { runId: url.searchParams.get("runId")!.trim() }
@@ -481,10 +501,17 @@ async function serveAuditHealth(res: ServerResponse, services: AdminServices): P
   const audit = requireAdminAudit(res, services);
   if (!audit) return;
   try {
-    const { dbPath: _dbPath, ...health } = await audit.getHealth();
-    jsonRes(res, 200, { health });
+    const { dbPath: _dbPath, lastError, ...health } = await audit.getHealth();
+    jsonRes(res, 200, {
+      health: {
+        ...health,
+        lastError: lastError
+          ? "Agent audit store reported an internal error; check server logs"
+          : null,
+      },
+    });
   } catch (error) {
-    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+    respondAuditFailure(res, "health query", error);
   }
 }
 
@@ -496,9 +523,11 @@ async function serveAuditRuns(
 ): Promise<void> {
   const audit = requireAdminAudit(res, services);
   if (!audit) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   let query: AgentAuditRunQuery;
   try {
-    query = auditScopeQuery(url, token);
+    query = auditScopeQuery(url, token, workspace);
   } catch (error) {
     jsonRes(res, 400, { error: error instanceof Error ? error.message : String(error) });
     return;
@@ -506,8 +535,18 @@ async function serveAuditRuns(
   try {
     jsonRes(res, 200, await audit.listRuns(query));
   } catch (error) {
-    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+    respondAuditFailure(res, "run list query", error);
   }
+}
+
+function parseBeforeSequence(value: string | null): number | undefined {
+  if (value === null) return undefined;
+  if (!/^\d+$/.test(value)) throw new Error("beforeSequence must be a positive integer");
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new Error("beforeSequence must be a positive integer");
+  }
+  return parsed;
 }
 
 async function serveAuditRun(
@@ -517,25 +556,32 @@ async function serveAuditRun(
 ): Promise<void> {
   const audit = requireAdminAudit(res, services);
   if (!audit) return;
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
   const runId = (url.searchParams.get("runId") ?? "").trim();
   if (!runId) {
     jsonRes(res, 400, { error: "runId is required" });
     return;
   }
-  const beforeRaw = Number.parseInt(url.searchParams.get("beforeSequence") ?? "", 10);
-  const beforeSequence = Number.isInteger(beforeRaw) && beforeRaw > 0 ? beforeRaw : undefined;
+  let beforeSequence: number | undefined;
+  try {
+    beforeSequence = parseBeforeSequence(url.searchParams.get("beforeSequence"));
+  } catch (error) {
+    jsonRes(res, 400, { error: error instanceof Error ? error.message : String(error) });
+    return;
+  }
   try {
     const detail = await audit.getRun(runId, {
-      ...(beforeSequence ? { beforeSequence } : {}),
+      ...(beforeSequence !== undefined ? { beforeSequence } : {}),
       eventLimit: 200,
     });
-    if (!detail) {
+    if (!detail || !auditOfficeKeys(workspace).includes(detail.run.officeKey)) {
       jsonRes(res, 404, { error: "Audit run not found" });
       return;
     }
     jsonRes(res, 200, detail);
   } catch (error) {
-    jsonRes(res, 503, { error: error instanceof Error ? error.message : String(error) });
+    respondAuditFailure(res, "run detail query", error);
   }
 }
 

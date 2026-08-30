@@ -1,6 +1,6 @@
 import type { OfficeAddress } from "../types.js";
 
-type AgentAuditRunKind = "interactive" | "event" | "session_dream" | "subagent";
+export type AgentAuditRunKind = "interactive" | "event" | "session_dream" | "subagent";
 
 export type AgentAuditStatus =
   | "admitted"
@@ -14,7 +14,7 @@ export type AgentAuditStatus =
   | "budget_exceeded"
   | "invalid_output";
 
-type AgentAuditEventType =
+export type AgentAuditEventType =
   | "run_admitted"
   | "run_started"
   | "run_setup_failed"
@@ -135,6 +135,8 @@ export interface AgentAuditRun {
 
 export interface AgentAuditRunQuery {
   officeKey?: string;
+  /** Restrict a query to the currently authorized office set. An empty set matches no runs. */
+  officeKeys?: readonly string[];
   platform?: string;
   conversationId?: string;
   runId?: string;
@@ -286,9 +288,17 @@ export interface AgentAuditStoreOptions {
   retentionIntervalMs?: number;
 }
 
+export interface AuditDetailSchema {
+  enumValues: Readonly<Record<string, readonly string[]>>;
+  stringLimits: Readonly<Record<string, number>>;
+  numberKeys: readonly string[];
+  booleanKeys: readonly string[];
+}
+
 export interface AuditWorkerInitData {
   dbPath: string;
   retentionMs: number;
+  detailSchema: AuditDetailSchema;
 }
 
 export type AuditWorkerRequest =

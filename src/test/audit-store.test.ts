@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, test } from "vitest";
 import { AgentAuditStore, type AgentAuditEventInput } from "../audit/index.js";
 import { createOfficeAddress } from "../office/index.js";
@@ -203,6 +204,11 @@ describe("AgentAuditStore", () => {
       first,
     ]);
     expect((await store.listRuns({ runId: first })).runs.map((run) => run.runId)).toEqual([first]);
+    expect((await store.listRuns({ officeKeys: ["v1-C1"] })).runs.map((run) => run.runId)).toEqual([
+      second,
+      first,
+    ]);
+    expect((await store.listRuns({ officeKeys: [] })).runs).toEqual([]);
     expect((await store.listRuns({ toolName: "bash" })).runs.map((run) => run.runId)).toEqual([
       second,
     ]);
@@ -251,6 +257,43 @@ describe("AgentAuditStore", () => {
       Array.from({ length: 452 }, (_, index) => index + 1),
     );
     await store.close();
+  });
+
+  test("handles malformed private database rows predictably", async () => {
+    const stateDir = tempStateDir();
+    const store = new AgentAuditStore({ stateDir, retentionIntervalMs: 86_400_000 });
+    const run = startRun(store);
+    run.record({
+      type: "run_admitted",
+      status: "admitted",
+      details: { sourceEventType: "message" },
+    });
+    run.record({ type: "run_completed", status: "completed" });
+    await store.flush();
+    await store.close();
+
+    const database = new DatabaseSync(join(stateDir, "audit", "audit.sqlite"));
+    database
+      .prepare("UPDATE audit_events SET details_json = ? WHERE run_id = ? AND run_sequence = 1")
+      .run('{"prompt":"secret","sourceEventType":" message "}', run.runId);
+    database
+      .prepare("UPDATE audit_events SET details_json = ? WHERE run_id = ? AND run_sequence = 2")
+      .run("{", run.runId);
+    database.close();
+
+    const reopened = new AgentAuditStore({ stateDir, retentionIntervalMs: 86_400_000 });
+    const details = (await reopened.getRun(run.runId))?.events.map((event) => event.details);
+    expect(details).toEqual([{ sourceEventType: "message" }, {}]);
+    expect(JSON.stringify(details)).not.toContain("secret");
+    await reopened.close();
+
+    const corrupt = new DatabaseSync(join(stateDir, "audit", "audit.sqlite"));
+    corrupt.prepare("UPDATE audit_runs SET status = ? WHERE run_id = ?").run("unknown", run.runId);
+    corrupt.close();
+
+    const invalid = new AgentAuditStore({ stateDir, retentionIntervalMs: 86_400_000 });
+    await expect(invalid.listRuns()).rejects.toThrow("Invalid audit database row field: status");
+    await invalid.close();
   });
 
   test("keeps the producer non-throwing and reports bounded queue drops", async () => {

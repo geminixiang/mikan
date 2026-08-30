@@ -5,15 +5,18 @@ import type {
   AgentAuditEventDetails,
   AgentAuditEventEnvelope,
   AgentAuditEventRecord,
+  AgentAuditEventType,
   AgentAuditModelRequestSummary,
   AgentAuditRunDetail,
   AgentAuditRunDetailQuery,
+  AgentAuditRunKind,
   AgentAuditRunPage,
   AgentAuditRunQuery,
   AgentAuditRunSummary,
   AgentAuditStatus,
   AgentAuditToolCallSummary,
   AgentAuditUsage,
+  AuditDetailSchema,
   AuditWorkerHealth,
   AuditWorkerInitData,
   AuditWorkerRequest,
@@ -279,6 +282,52 @@ const RETENTION_RUN_BATCH_SIZE = 100;
 const WAL_RETRY_ATTEMPTS = 100;
 const WAL_RETRY_DELAY_MS = 20;
 const WAL_RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(4));
+const AUDIT_STATUSES = new Set<AgentAuditStatus>([
+  "admitted",
+  "running",
+  "completed",
+  "failed",
+  "aborted",
+  "blocked",
+  "cancelled",
+  "timeout",
+  "budget_exceeded",
+  "invalid_output",
+]);
+const AUDIT_RUN_KINDS = new Set<AgentAuditRunKind>([
+  "interactive",
+  "event",
+  "session_dream",
+  "subagent",
+]);
+const AUDIT_EVENT_TYPES = new Set<AgentAuditEventType>([
+  "run_admitted",
+  "run_started",
+  "run_setup_failed",
+  "run_completed",
+  "run_failed",
+  "run_aborted",
+  "turn_started",
+  "turn_completed",
+  "model_request_started",
+  "model_request_completed",
+  "model_request_failed",
+  "model_request_aborted",
+  "tool_started",
+  "tool_completed",
+  "tool_failed",
+  "tool_blocked",
+  "retry_started",
+  "retry_completed",
+  "compaction_started",
+  "compaction_completed",
+  "compaction_failed",
+  "budget_exceeded",
+  "subagent_spawned",
+  "subagent_completed",
+]);
+
+type SqlRow = Record<string, unknown>;
 
 interface AuditStatements {
   insertEvent: StatementSync;
@@ -545,6 +594,18 @@ function addFilter(
   params[key] = value;
 }
 
+function encodeOfficeScope(values: readonly string[] | undefined): string | undefined {
+  if (values === undefined) return undefined;
+  if (!Array.isArray(values)) throw new Error("officeKeys must be an array");
+  const keys = values.map((value) => {
+    if (typeof value !== "string" || value.length === 0 || value.length > 256) {
+      throw new Error("officeKeys contains an invalid office key");
+    }
+    return value;
+  });
+  return JSON.stringify([...new Set(keys)]);
+}
+
 function buildRunQuery(query: AgentAuditRunQuery): {
   sql: string;
   params: Record<string, SQLInputValue>;
@@ -552,6 +613,11 @@ function buildRunQuery(query: AgentAuditRunQuery): {
 } {
   const clauses: string[] = [];
   const params: Record<string, SQLInputValue> = {};
+  const officeScope = encodeOfficeScope(query.officeKeys);
+  if (officeScope !== undefined) {
+    clauses.push("r.office_key IN (SELECT value FROM json_each($officeKeys))");
+    params.$officeKeys = officeScope;
+  }
   addFilter(clauses, params, "r.office_key = $officeKey", "$officeKey", query.officeKey);
   addFilter(clauses, params, "r.platform = $platform", "$platform", query.platform);
   addFilter(
@@ -607,9 +673,80 @@ function runSelectSql(): string {
     FROM audit_runs r`;
 }
 
+function invalidRow(field: string): never {
+  throw new Error(`Invalid audit database row field: ${field}`);
+}
+
+function rowString(row: SqlRow, field: string): string {
+  const value = row[field];
+  if (typeof value !== "string" || value.length === 0) return invalidRow(field);
+  return value;
+}
+
+function rowNullableString(row: SqlRow, field: string): string | null {
+  const value = row[field];
+  if (value === null) return null;
+  if (typeof value !== "string") return invalidRow(field);
+  return value;
+}
+
+function rowNumber(row: SqlRow, field: string): number {
+  const value = row[field];
+  if (typeof value !== "number" || !Number.isFinite(value)) return invalidRow(field);
+  return value;
+}
+
+function rowNullableNumber(row: SqlRow, field: string): number | null {
+  const value = row[field];
+  if (value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return invalidRow(field);
+  return value;
+}
+
+function rowEnum<T extends string>(row: SqlRow, field: string, values: ReadonlySet<T>): T {
+  const value = rowString(row, field);
+  if (!values.has(value as T)) return invalidRow(field);
+  return value as T;
+}
+
+function rowNullableStatus(row: SqlRow): AgentAuditStatus | null {
+  if (row.status === null) return null;
+  return rowEnum(row, "status", AUDIT_STATUSES);
+}
+
+function mapRunRow(row: SqlRow): AgentAuditRunSummary {
+  return {
+    runId: rowString(row, "runId"),
+    runKind: rowEnum(row, "runKind", AUDIT_RUN_KINDS),
+    officeKey: rowString(row, "officeKey"),
+    platform: rowString(row, "platform"),
+    conversationId: rowString(row, "conversationId"),
+    sessionKey: rowString(row, "sessionKey"),
+    sessionId: rowNullableString(row, "sessionId"),
+    parentRunId: rowNullableString(row, "parentRunId"),
+    parentToolCallId: rowNullableString(row, "parentToolCallId"),
+    status: rowEnum(row, "status", AUDIT_STATUSES),
+    startedAtMs: rowNumber(row, "startedAtMs"),
+    endedAtMs: rowNullableNumber(row, "endedAtMs"),
+    durationMs: rowNullableNumber(row, "durationMs"),
+    modelProvider: rowNullableString(row, "modelProvider"),
+    modelId: rowNullableString(row, "modelId"),
+    stopReason: rowNullableString(row, "stopReason"),
+    input: rowNumber(row, "input"),
+    output: rowNumber(row, "output"),
+    cacheRead: rowNumber(row, "cacheRead"),
+    cacheWrite: rowNumber(row, "cacheWrite"),
+    totalTokens: rowNumber(row, "totalTokens"),
+    costUsd: rowNumber(row, "costUsd"),
+    llmCalls: rowNumber(row, "llmCalls"),
+    toolCalls: rowNumber(row, "toolCalls"),
+    lastEventAtMs: rowNumber(row, "lastEventAtMs"),
+  };
+}
+
 function listRuns(query: AgentAuditRunQuery): AgentAuditRunPage {
   const built = buildRunQuery(query);
-  const rows = db!.prepare(built.sql).all(built.params) as unknown as AgentAuditRunSummary[];
+  const rows = (db!.prepare(built.sql).all(built.params) as unknown as SqlRow[]).map(mapRunRow);
   const hasMore = rows.length > built.limit;
   if (hasMore) rows.pop();
   const last = rows.at(-1);
@@ -619,44 +756,81 @@ function listRuns(query: AgentAuditRunQuery): AgentAuditRunPage {
   };
 }
 
-function eventUsage(row: Record<string, unknown>): AgentAuditUsage | null {
-  if (row.totalTokens === null) return null;
+function eventUsage(row: SqlRow): AgentAuditUsage | null {
+  const totalTokens = rowNullableNumber(row, "totalTokens");
+  if (totalTokens === null) return null;
   return {
-    input: Number(row.input ?? 0),
-    output: Number(row.output ?? 0),
-    cacheRead: Number(row.cacheRead ?? 0),
-    cacheWrite: Number(row.cacheWrite ?? 0),
-    totalTokens: Number(row.totalTokens ?? 0),
-    costUsd: Number(row.costUsd ?? 0),
+    input: rowNumber(row, "input"),
+    output: rowNumber(row, "output"),
+    cacheRead: rowNumber(row, "cacheRead"),
+    cacheWrite: rowNumber(row, "cacheWrite"),
+    totalTokens,
+    costUsd: rowNumber(row, "costUsd"),
   };
 }
 
-function mapEventRow(row: Record<string, unknown>): AgentAuditEventRecord {
-  const details = JSON.parse(String(row.detailsJson ?? "{}")) as AgentAuditEventDetails;
+function normalizeDecodedDetails(
+  value: unknown,
+  schema: AuditDetailSchema,
+): AgentAuditEventDetails {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const source = value as Record<string, unknown>;
+  const normalized: Record<string, string | number | boolean> = {};
+  for (const [key, values] of Object.entries(schema.enumValues)) {
+    const candidate = source[key];
+    if (typeof candidate === "string" && values.includes(candidate)) normalized[key] = candidate;
+  }
+  for (const [key, limit] of Object.entries(schema.stringLimits)) {
+    const candidate = source[key];
+    if (typeof candidate !== "string") continue;
+    const trimmed = candidate.trim();
+    if (trimmed) normalized[key] = trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
+  }
+  for (const key of schema.numberKeys) {
+    const candidate = source[key];
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0) {
+      normalized[key] = candidate;
+    }
+  }
+  for (const key of schema.booleanKeys) {
+    if (typeof source[key] === "boolean") normalized[key] = source[key];
+  }
+  return normalized as AgentAuditEventDetails;
+}
+
+function parseEventDetails(value: unknown): AgentAuditEventDetails {
+  try {
+    return normalizeDecodedDetails(JSON.parse(String(value ?? "{}")) as unknown, init.detailSchema);
+  } catch {
+    return {};
+  }
+}
+
+function mapEventRow(row: SqlRow): AgentAuditEventRecord {
   return {
-    eventId: String(row.eventId),
-    occurredAtMs: Number(row.occurredAtMs),
-    ingestedAtMs: Number(row.ingestedAtMs),
-    runSequence: Number(row.runSequence),
-    runId: String(row.runId),
-    eventType: row.eventType as AgentAuditEventRecord["eventType"],
-    status: row.status as AgentAuditStatus | null,
-    sessionId: row.sessionId as string | null,
-    turnId: row.turnId as string | null,
-    modelRequestId: row.modelRequestId as string | null,
-    toolCallId: row.toolCallId as string | null,
-    relatedRunId: row.relatedRunId as string | null,
-    toolName: row.toolName as string | null,
-    modelProvider: row.modelProvider as string | null,
-    modelId: row.modelId as string | null,
-    responseId: row.responseId as string | null,
-    stopReason: row.stopReason as string | null,
-    errorType: row.errorType as string | null,
-    durationMs: row.durationMs as number | null,
-    llmCalls: row.llmCalls as number | null,
-    toolCalls: row.toolCalls as number | null,
+    eventId: rowString(row, "eventId"),
+    occurredAtMs: rowNumber(row, "occurredAtMs"),
+    ingestedAtMs: rowNumber(row, "ingestedAtMs"),
+    runSequence: rowNumber(row, "runSequence"),
+    runId: rowString(row, "runId"),
+    eventType: rowEnum(row, "eventType", AUDIT_EVENT_TYPES),
+    status: rowNullableStatus(row),
+    sessionId: rowNullableString(row, "sessionId"),
+    turnId: rowNullableString(row, "turnId"),
+    modelRequestId: rowNullableString(row, "modelRequestId"),
+    toolCallId: rowNullableString(row, "toolCallId"),
+    relatedRunId: rowNullableString(row, "relatedRunId"),
+    toolName: rowNullableString(row, "toolName"),
+    modelProvider: rowNullableString(row, "modelProvider"),
+    modelId: rowNullableString(row, "modelId"),
+    responseId: rowNullableString(row, "responseId"),
+    stopReason: rowNullableString(row, "stopReason"),
+    errorType: rowNullableString(row, "errorType"),
+    durationMs: rowNullableNumber(row, "durationMs"),
+    llmCalls: rowNullableNumber(row, "llmCalls"),
+    toolCalls: rowNullableNumber(row, "toolCalls"),
     usage: eventUsage(row),
-    details,
+    details: parseEventDetails(row.detailsJson),
   };
 }
 
@@ -709,13 +883,25 @@ function listToolCalls(runId: string): {
   rows: AgentAuditToolCallSummary[];
   truncated: boolean;
 } {
-  const rows = db!
+  const sourceRows = db!
     .prepare(`SELECT run_id AS runId, tool_call_id AS toolCallId, turn_id AS turnId,
       tool_name AS toolName, status, started_at_ms AS startedAtMs,
       ended_at_ms AS endedAtMs, duration_ms AS durationMs
       FROM audit_tool_calls WHERE run_id = ?
       ORDER BY started_at_ms DESC, tool_call_id DESC LIMIT ?`)
-    .all(runId, RELATED_ROW_LIMIT + 1) as unknown as AgentAuditToolCallSummary[];
+    .all(runId, RELATED_ROW_LIMIT + 1) as unknown as SqlRow[];
+  const rows = sourceRows.map(
+    (row): AgentAuditToolCallSummary => ({
+      runId: rowString(row, "runId"),
+      toolCallId: rowString(row, "toolCallId"),
+      turnId: rowNullableString(row, "turnId"),
+      toolName: rowString(row, "toolName"),
+      status: rowEnum(row, "status", AUDIT_STATUSES),
+      startedAtMs: rowNumber(row, "startedAtMs"),
+      endedAtMs: rowNullableNumber(row, "endedAtMs"),
+      durationMs: rowNullableNumber(row, "durationMs"),
+    }),
+  );
   const truncated = rows.length > RELATED_ROW_LIMIT;
   if (truncated) rows.pop();
   return { rows: rows.toReversed(), truncated };
@@ -734,47 +920,52 @@ function listModelRequests(runId: string): {
       cache_write_tokens AS cacheWrite, total_tokens AS totalTokens, cost_usd AS costUsd
       FROM audit_model_requests WHERE run_id = ?
       ORDER BY started_at_ms DESC, model_request_id DESC LIMIT ?`)
-    .all(runId, RELATED_ROW_LIMIT + 1) as unknown as Array<Record<string, unknown>>;
+    .all(runId, RELATED_ROW_LIMIT + 1) as unknown as SqlRow[];
   const truncated = sourceRows.length > RELATED_ROW_LIMIT;
   if (truncated) sourceRows.pop();
-  const rows = sourceRows.map((row) => ({
-    runId: String(row.runId),
-    modelRequestId: String(row.modelRequestId),
-    turnId: row.turnId as string | null,
-    modelProvider: String(row.modelProvider),
-    modelId: String(row.modelId),
-    responseId: row.responseId as string | null,
-    status: row.status as AgentAuditStatus,
-    startedAtMs: Number(row.startedAtMs),
-    endedAtMs: row.endedAtMs as number | null,
-    durationMs: row.durationMs as number | null,
-    stopReason: row.stopReason as string | null,
-    usage: eventUsage(row) ?? {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      costUsd: 0,
-    },
-  }));
+  const rows = sourceRows.map(
+    (row): AgentAuditModelRequestSummary => ({
+      runId: rowString(row, "runId"),
+      modelRequestId: rowString(row, "modelRequestId"),
+      turnId: rowNullableString(row, "turnId"),
+      modelProvider: rowString(row, "modelProvider"),
+      modelId: rowString(row, "modelId"),
+      responseId: rowNullableString(row, "responseId"),
+      status: rowEnum(row, "status", AUDIT_STATUSES),
+      startedAtMs: rowNumber(row, "startedAtMs"),
+      endedAtMs: rowNullableNumber(row, "endedAtMs"),
+      durationMs: rowNullableNumber(row, "durationMs"),
+      stopReason: rowNullableString(row, "stopReason"),
+      usage: eventUsage(row) ?? {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        costUsd: 0,
+      },
+    }),
+  );
   return { rows: rows.toReversed(), truncated };
 }
 
 function getRun(runId: string, query: AgentAuditRunDetailQuery): AgentAuditRunDetail | null {
-  const run = db!.prepare(`${runSelectSql()} WHERE r.run_id = ?`).get(runId) as unknown as
-    | AgentAuditRunSummary
+  const sourceRun = db!.prepare(`${runSelectSql()} WHERE r.run_id = ?`).get(runId) as unknown as
+    | SqlRow
     | undefined;
-  if (!run) return null;
+  if (!sourceRun) return null;
+  const run = mapRunRow(sourceRun);
   const eventPage = listRunEvents(runId, query);
   const tools = listToolCalls(runId);
   const modelRequests = listModelRequests(runId);
-  const childRuns = db!
-    .prepare(
-      `${runSelectSql()} WHERE r.parent_run_id = ?
+  const childRuns = (
+    db!
+      .prepare(
+        `${runSelectSql()} WHERE r.parent_run_id = ?
        ORDER BY r.started_at_ms DESC, r.run_id DESC LIMIT ?`,
-    )
-    .all(runId, RELATED_ROW_LIMIT + 1) as unknown as AgentAuditRunSummary[];
+      )
+      .all(runId, RELATED_ROW_LIMIT + 1) as unknown as SqlRow[]
+  ).map(mapRunRow);
   const childRunsTruncated = childRuns.length > RELATED_ROW_LIMIT;
   if (childRunsTruncated) childRuns.pop();
   return {
