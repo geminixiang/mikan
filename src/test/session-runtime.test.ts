@@ -978,8 +978,16 @@ describe("ConversationRuntime lifecycle", () => {
     });
 
     await runtime.handleNewCommand(...newCommandArgs());
+    const state = (runtime as unknown as { sessions: SessionLifecycle }).sessions.get(
+      testAddress,
+      "C123",
+    );
+    const settlement = state?.runSettlement;
+    expect(settlement).toBeDefined();
+    await settlement;
+    await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(false));
 
-    await vi.waitFor(() => expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision"));
+    expect(readFileSync(memoryPath, "utf-8")).toBe("durable decision");
     const freshSession = resolveChannelSessionFile(conversationDir);
     expect(freshSession).not.toBe(originalSession);
     expect(readFileSync(freshSession, "utf-8")).not.toContain("old durable decision");
@@ -1014,8 +1022,11 @@ describe("ConversationRuntime lifecycle", () => {
     sessions.set(state);
 
     await runtime.handleNewCommand(...newCommandArgs(responder));
-
+    const settlement = state.runSettlement;
+    expect(settlement).toBeDefined();
+    await settlement;
     await vi.waitFor(() => expect(runtime.isRunning(testAddress, "C123")).toBe(false));
+
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
     expect(responder.respondDiagnostic).toHaveBeenCalledWith(
       expect.stringContaining("was not reset"),
