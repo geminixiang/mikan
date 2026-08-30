@@ -79,16 +79,6 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   return `[${userLabel}]: ${text}`;
 }
 
-async function reloadSessionMessages(
-  session: MikanAgentSession,
-  conversationId: string,
-): Promise<void> {
-  const reloaded = await session.reloadFromSession();
-  if (reloaded > 0) {
-    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
-  }
-}
-
 async function prepareRunContext(params: {
   message: ConversationMessage;
   responder: ConversationResponder;
@@ -149,7 +139,10 @@ async function prepareRunContext(params: {
     pathContext = getPathContext();
   }
 
-  await reloadSessionMessages(session, conversationId);
+  const reloaded = await session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
+  }
 
   const projection = resolveWorkspaceProjection(office);
   const memory = await getMemory(projection);
