@@ -29,7 +29,12 @@ import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { officeStateDir } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
-import { listInstalledExtensions, loadSkillsFromDir, validateExtension } from "../harness/index.js";
+import {
+  defaultExtensionDirs,
+  listInstalledExtensions,
+  loadSkillsFromDir,
+  validateExtension,
+} from "../harness/index.js";
 import { loadGlobalSettings, resolveConversationSettings } from "../config.js";
 import { applyConversationSettings, applyGlobalSettings } from "../settings-mutation.js";
 
@@ -777,7 +782,10 @@ export function resolveConversationPackages(options: ResolvePackagesOptions): Re
   const targets = packages.map(packageExtensionTargets);
   return {
     packages,
-    extensionDirs: [...scopeConventionDirs(options), ...targets.flatMap((target) => target.dirs)],
+    extensionDirs: [
+      ...defaultExtensionDirs(options.office.address, options.office.workspace.stateDir),
+      ...targets.flatMap((target) => target.dirs),
+    ],
     extensionRoots: targets.flatMap((target) => target.roots),
     skillDirs: packages.flatMap(packageSkillDir),
     errors,
@@ -820,23 +828,6 @@ function materialize(
     errors.push({ source: declaration.source, message: messageOf(err) });
     return undefined;
   }
-}
-
-/**
- * The convention directories that need no declaration:
- * `<stateDir>/global/extensions` and
- * `<stateDir>/conversations/<id>/extensions`. These are the directories
- * `mikan ext install` writes into, so CLI installs and portal-declared
- * packages coexist.
- */
-function scopeConventionDirs(options: ResolvePackagesOptions): string[] {
-  return [
-    join(
-      packageScopeDir("global", undefined, options.office.workspace.stateDir),
-      EXTENSIONS_SUBDIR,
-    ),
-    join(options.office.stateDir, EXTENSIONS_SUBDIR),
-  ];
 }
 
 /**
