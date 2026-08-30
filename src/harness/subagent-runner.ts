@@ -426,10 +426,6 @@ function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined 
   return undefined;
 }
 
-function assistantText(message: AssistantMessage | undefined): string {
-  return message ? contentText(message.content, "") : "";
-}
-
 /**
  * Execute one non-recursive, fresh subagent run. Never rejects: every
  * failure — including request validation — is a result with a terminal
@@ -661,7 +657,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => {
       const stats = session.getLastRunStats();
       const assistant = finalAssistant(session.messages);
-      const text = assistantText(assistant);
+      const text = assistant ? contentText(assistant.content, "") : "";
       const base = {
         ...baseRunResult(runId, modelSpec, startedAt, stats),
         ...(text ? { text } : {}),
