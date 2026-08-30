@@ -154,7 +154,11 @@ export class ChatHistorySync {
         sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
         excludeMessageId: options.currentMessageId,
       }),
-      this.historyWindow(),
+      {
+        recentDays: this.recentDays,
+        maxMessages: this.maxTopLevelMessages,
+        now: this.now(),
+      },
     );
   }
 
@@ -241,10 +245,6 @@ export class ChatHistorySync {
       }),
     );
     return sessionFile;
-  }
-
-  private historyWindow(): HistoryWindow {
-    return { recentDays: this.recentDays, maxMessages: this.maxTopLevelMessages, now: this.now() };
   }
 
   private async resolveThreadSessionScope(options: {
