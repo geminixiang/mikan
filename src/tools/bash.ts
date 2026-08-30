@@ -10,16 +10,6 @@ import {
   truncateTail,
 } from "@earendil-works/pi-agent-core";
 
-/**
- * Spill path for oversized bash output, inside the runtime workspace so the
- * model can actually read the file it is pointed at (a host tmpdir path is a
- * dead pointer inside sandbox containers — see src/sandbox/README.md).
- */
-function getSpillPath(runtimeWorkspaceRoot: string): string {
-  const id = randomBytes(8).toString("hex");
-  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/.mikan/bash-output/${id}.log`;
-}
-
 const bashSchema = Type.Object({
   label: Type.String({
     description: "Brief description of what this command does (shown to user)",
@@ -69,7 +59,8 @@ export function createBashTool(
         const runtimeRoot = executor.getPathContext(
           options?.hostWorkspaceRoot ?? process.cwd(),
         ).runtimeWorkspaceRoot;
-        const spillPath = getSpillPath(runtimeRoot);
+        const id = randomBytes(8).toString("hex");
+        const spillPath = `${runtimeRoot.replace(/\/+$/, "")}/.mikan/bash-output/${id}.log`;
         try {
           await executor.writeFile(spillPath, output, { signal });
           tempFilePath = spillPath;
