@@ -42,6 +42,8 @@ const OFFICE_KEY_DOMAIN = "office-address-v1";
 const OFFICE_KEY_DIGEST_LENGTH = 16;
 const READABLE_ID_LENGTH = 32;
 const PLATFORM_NAMES = new Set<PlatformName>(["slack", "discord", "telegram", "github"]);
+const OFFICE_KEY_PATTERN =
+  /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/;
 
 /** Construct the canonical identity used by future office consumers. */
 export function createOfficeAddress(platform: PlatformName, conversationId: string): OfficeAddress {
@@ -136,13 +138,14 @@ export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
 
 /** Validate a persisted or externally supplied office key. */
 export function assertOfficeKey(value: string): OfficeKey {
-  const pattern = /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/;
-  if (!pattern.test(value)) throw new Error(`Invalid office key: ${JSON.stringify(value)}`);
+  if (!OFFICE_KEY_PATTERN.test(value)) {
+    throw new Error(`Invalid office key: ${JSON.stringify(value)}`);
+  }
   return value as OfficeKey;
 }
 
 export function isOfficeKey(value: unknown): value is OfficeKey {
-  return typeof value === "string" && patternMatchesOfficeKey(value);
+  return typeof value === "string" && OFFICE_KEY_PATTERN.test(value);
 }
 
 function readableConversationId(conversationId: string): string {
@@ -153,10 +156,6 @@ function readableConversationId(conversationId: string): string {
     .slice(0, READABLE_ID_LENGTH)
     .replace(/-+$/g, "");
   return readable || "conversation";
-}
-
-function patternMatchesOfficeKey(value: string): boolean {
-  return /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/.test(value);
 }
 
 // ── Workspace/Office layout ───────────────────────────────────────────────────

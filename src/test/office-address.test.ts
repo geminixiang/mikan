@@ -128,6 +128,7 @@ describe("office address", () => {
       /conversation id must be a string/,
     );
     expect(isOfficeKey("v1-slack-c123-not-a-key")).toBe(false);
+    expect(() => assertOfficeKey("v1-slack-c123-not-a-key")).toThrow(/Invalid office key/);
   });
 
   describe("office dir seam (office-key layout)", () => {
