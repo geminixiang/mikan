@@ -2250,11 +2250,9 @@ function normalizeComparableUserText(text: string): string {
     /^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\]\s+(?=\[[^\]]+\](?:\s+\[in-thread:[^\]]+\])?:\s)/,
     "",
   );
-  return stripSlackAttachmentBlock(withoutTimestamp).trim();
-}
-
-function stripSlackAttachmentBlock(text: string): string {
-  return text.replace(/\n*<slack_attachments>\n[\s\S]*?\n<\/slack_attachments>\s*$/g, "");
+  return withoutTimestamp
+    .replace(/\n*<slack_attachments>\n[\s\S]*?\n<\/slack_attachments>\s*$/g, "")
+    .trim();
 }
 
 function extractSessionSummary(entries: SessionEntry[]): string | undefined {
