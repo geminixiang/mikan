@@ -20,12 +20,6 @@ import type {
 /** CI job logs are tail-truncated to this many characters. */
 const MAX_LOG_CHARS = 20000;
 
-function truncateLogTail(logText: string): string {
-  return logText.length > MAX_LOG_CHARS
-    ? `…(truncated to the last ${MAX_LOG_CHARS} chars)\n${logText.slice(-MAX_LOG_CHARS)}`
-    : logText;
-}
-
 /** Whether the conversation's issue is a PR, for callers where the triggering
  *  item didn't carry that knowledge. Errs toward plain issue. */
 export async function fetchIsPr(
@@ -418,6 +412,8 @@ export class GithubOps implements PlatformGithubOps {
       }
       throw err;
     }
-    return truncateLogTail(logText);
+    return logText.length > MAX_LOG_CHARS
+      ? `…(truncated to the last ${MAX_LOG_CHARS} chars)\n${logText.slice(-MAX_LOG_CHARS)}`
+      : logText;
   }
 }
