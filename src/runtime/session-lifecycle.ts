@@ -134,10 +134,6 @@ export class SessionLifecycle {
     return barrier;
   }
 
-  isRunning(address: OfficeAddress, sessionKey: string): boolean {
-    return this.get(address, sessionKey)?.running === true;
-  }
-
   runningStates(): ConversationRuntimeState[] {
     return Array.from(this.states.values()).filter((state) => state.running);
   }

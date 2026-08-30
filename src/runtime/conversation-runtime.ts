@@ -119,7 +119,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   isRunning(address: OfficeAddress, sessionKey: string): boolean {
-    return this.sessions.isRunning(address, sessionKey);
+    return this.sessions.get(address, sessionKey)?.running === true;
   }
 
   getRunningSessions(): RunningSession[] {
