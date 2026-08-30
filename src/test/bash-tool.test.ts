@@ -83,6 +83,22 @@ describe("createBashTool", () => {
     expect(result.details?.truncation?.outputLines).toBeLessThanOrEqual(DEFAULT_MAX_LINES);
   });
 
+  test("reports partial-line byte truncation", async () => {
+    const tool = createBashTool(new HostExecutor(), { hostWorkspaceRoot: dir });
+    const command = `node -e 'process.stdout.write("中".repeat(20000) + "TAIL")'`;
+    const result = await tool.execute("1", { label: "long line", command });
+    const text = textOf(result);
+
+    expect(result.details?.truncation?.lastLinePartial).toBe(true);
+    expect(text).toContain("Showing last 50.0KB of line 1");
+    expect(text).toContain("TAIL");
+    expect(text).not.toContain("�");
+    const spillPath = result.details?.fullOutputPath;
+    expect(spillPath).toBeDefined();
+    expect(text).toContain(`Full output: ${spillPath}`);
+    expect(readFileSync(spillPath!, "utf-8")).toBe(`${"中".repeat(20000)}TAIL`);
+  });
+
   test("notes when spilling the full output fails", async () => {
     const host = new HostExecutor();
     const failingWrites: Executor = {
