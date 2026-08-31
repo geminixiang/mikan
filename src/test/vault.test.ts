@@ -325,12 +325,12 @@ describe("ActorExecutionResolver image mode", () => {
       workspace(),
     );
 
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(executor.getSandboxConfig()).toEqual({
+    expect(decision.executor.getSandboxConfig()).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -354,12 +354,12 @@ describe("ActorExecutionResolver image mode", () => {
       undefined,
       workspace(),
     );
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(executor.getSandboxConfig()).toEqual({
+    expect(decision.executor.getSandboxConfig()).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -456,13 +456,13 @@ describe("ActorExecutionResolver image mode", () => {
     });
 
     const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, workspace());
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
 
     expect(vaultKey).toBe(officeKey(createOfficeAddress("slack", "D123")));
-    expect(executor.getSandboxConfig()).toEqual({
+    expect(decision.executor.getSandboxConfig()).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -510,11 +510,11 @@ describe("ActorExecutionResolver image mode", () => {
       workspace(),
     );
 
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
-    await executor.exec("pwd");
+    await decision.executor.exec("pwd");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
       containerName: `mikan-sandbox-${D123_OFFICE}`,
@@ -549,11 +549,11 @@ describe("ActorExecutionResolver image mode", () => {
       workspace(),
     );
 
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
-    await executor.exec("pwd");
+    await decision.executor.exec("pwd");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
       containerName: `mikan-sandbox-${D123_OFFICE}`,

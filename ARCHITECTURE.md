@@ -108,7 +108,7 @@ Daemon boot proceeds conceptually as follows:
 5. Configure sandbox, vault, package, portal, and platform facilities.
 6. Construct the Conversation runtime with capability factories.
 7. Start platform bots, web services, the event watcher, and callback scheduler.
-8. On shutdown, reject new runs and wait for existing run settlement up to the configured timeout.
+8. On shutdown, reject new runner acquisitions; Session lifecycle waits for active leases and settlements, aborts overdue runs, and disposes every materialized runner.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
 
@@ -121,11 +121,11 @@ Every platform feeds the same intake and runtime model:
 3. The runtime serializes events by office and session key.
 4. Built-in commands run before runner creation; built-ins take precedence over extension commands.
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
-6. The runtime creates or reuses a conversation runner.
-7. The runner resolves packages, workspace projection, credentials, executor, model, prompt, skills, extensions, and tools.
+6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use.
+7. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
 8. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
 9. The runner streams and finalizes the response through platform capabilities.
-10. Runtime settlement completes usage, working state, lifecycle barriers, and eviction eligibility.
+10. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
 
 The `stop` magic word is exceptional: it runs before trigger policy and queueing. It is not an ordinary bare command.
 
@@ -133,7 +133,7 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 `src/agent/` is the run-level orchestration module. It deliberately does not own conversation queueing or the underlying model loop. `runner.ts` is its composition root; prompt policy, resource catalog, execution binding, and response presentation live behind the neighboring authority modules.
 
-A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
+A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, package skills, concrete executor, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
 The presenter owns response delivery. The Conversation runtime invokes and settles the runner, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction.
 
@@ -143,12 +143,12 @@ Execution authority is resolved for every agent environment rather than inferred
 
 1. Workspace projection resolves the effective Door policy into both runtime mounts and authorized prompt sources.
 2. Package resolution supplies trusted extension roots and read-only skill mounts.
-3. The execution resolver combines actor identity, office, sandbox configuration, workspace projection, package targets, and vault routing.
+3. The execution resolver combines actor identity, office, sandbox configuration, that projection and package result, and vault routing exactly once for the run.
 4. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
 5. Sandbox capability checks reject policies the selected backend cannot enforce, including isolated projections and read-only shared memory.
-6. The concrete executor receives the final non-overlapping mount and credential set.
+6. The resulting execution decision carries the concrete executor, runtime path context, projection, and packages to the runner; that executor was created from the same final non-overlapping mounts and credential grant.
 
-Prompt authorization and filesystem authorization originate from the same projection result. This prevents host-side memory or skills from bypassing an isolated filesystem view.
+For every provider call, prompt authorization and filesystem authorization consume the same execution decision. Runner construction uses a bootstrap prompt to initialize the harness, but replaces it from the actor-specific decision before the model can see it. This prevents host-side memory or skills from bypassing an isolated filesystem view and prevents package skill prompt paths from drifting from their read-only mounts.
 
 ### Scheduled execution
 
@@ -281,7 +281,7 @@ Evidence: `src/adapters/intake.ts`.
 
 <a id="inv-session-serialization"></a>
 
-**`session-serialization`** — Events sharing an office and session key execute serially. Different session keys may progress independently. Runner creation, extension callback dispatch, and invalidation respect the same lifecycle barriers.
+**`session-serialization`** — Events sharing an office and session key execute serially. Different session keys may progress independently. Session lifecycle single-flights runner materialization, grants leases for every runner use, and prevents invalidation, disposal, or eviction until those leases and settlements complete.
 
 Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.ts`.
 
@@ -289,7 +289,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 <a id="inv-run-settlement"></a>
 
-**`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Active or unsettled runners cannot be evicted or invalidated.
+**`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Session lifecycle owns the settlement record and runner lease; deferred invalidation and eviction run only after both are released.
 
 Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/`.
 
@@ -297,7 +297,7 @@ Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/`.
 
 <a id="inv-projection-coherence"></a>
 
-**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision. An isolated policy always resolves to conversation-only data.
+**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. An isolated policy always resolves to conversation-only data, and callers cannot independently recompute prompt visibility after executor resolution.
 
 Evidence: `src/workspace-projection/index.ts`.
 
@@ -329,7 +329,7 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 <a id="inv-settings-runner-coherence"></a>
 
-**`settings-runner-coherence`** — Runner-baked conversation settings are changed only after cache invalidation succeeds; otherwise the mutation is refused. Busy runners affected by global changes refresh before their next turn.
+**`settings-runner-coherence`** — Runner-baked conversation settings are changed only after lifecycle invalidation succeeds; otherwise the mutation is refused. Global changes mark leased or settling runners for deferred invalidation, which disposes them immediately after their last active lease settles.
 
 Evidence: `src/settings-mutation.ts`.
 

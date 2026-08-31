@@ -25,6 +25,7 @@ import type {
 } from "../types.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
 import { packageSkillRuntimeDir, resolveConversationPackages } from "../packages/index.js";
+import type { ResolvedPackages } from "../packages/types.js";
 import * as log from "../log.js";
 import type { VaultManager } from "../vault/index.js";
 import { HostEventStore } from "../tools/event.js";
@@ -42,6 +43,7 @@ export function loadMikanSkills(
   office: Office,
   workspacePath: string,
   projection: WorkspaceProjection,
+  packages: ResolvedPackages,
 ): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const skillMap = new Map<string, MikanSkill>();
 
@@ -67,7 +69,7 @@ export function loadMikanSkills(
   // so the agent can read the files — including any scripts or templates the
   // skill ships alongside its SKILL.md, which inlining could never carry.
   const mounted = workspacePath !== hostWorkspacePath;
-  for (const { slug, dir } of resolveConversationPackages({ office }).skillDirs) {
+  for (const { slug, dir } of packages.skillDirs) {
     const runtimeDir = packageSkillRuntimeDir(slug);
     for (const skill of loadSkillsFromDir({ dir, source: `package:${slug}` }).skills) {
       // In host mode there is no mount, so the host path is already the path

@@ -154,7 +154,7 @@ interface ConversationContext {
 
 来源：`src/runtime/types.ts` 与 `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` 返回 `ConversationRuntime`，它是 per-session 串行化、命令分发、runner 缓存、stop/reset 行为、闲置回收和优雅关闭的唯一所有者。
+`createConversationRuntime(options)` 返回公开的 `ConversationRuntime` 编排接口。在 `src/runtime/` 内，`SessionLifecycle` 是 runner 资源的单一 authority：它拥有 per-session 串行化、materialization、lease、settlement、invalidation、disposal、闲置回收和关闭；runtime 编排器负责命令、stop/reset、rotation 与平台工作流。
 
 ### 输入方法
 
@@ -179,7 +179,7 @@ interface ConversationContext {
 
 `ConversationRuntimeOptions` 提供一个 `workspace`（来自 `createWorkspace` 的 `Workspace` 值）、沙箱/资源服务、可选的 portal token store、可选的命令、模型注册表、主动式平台操作以及平台工具包工厂。缺失的 vault 与 portal store 会降级为禁用实现；在设置了 portal URL 但没有其 store 的情况下使用时会报错。
 
-并发不变式：对于一个办公室加一个会话密钥的调用是串行的；不同的会话密钥可以并发运行。因此平台工具包是 per-runner 创建的，绝不全局共享，因为 `bindRun` 会修改其运行绑定。
+并发不变式：对于一个办公室加一个会话密钥的调用是串行的；不同的会话密钥可以并发运行。每次使用 runner 都持有内部 lifecycle lease，因此设置失效、回收与关闭不会在操作途中 dispose 它。平台工具包仍按 runner 创建，绝不全局共享。
 
 ## 4. 命令接口
 
@@ -284,9 +284,10 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 凭证流程为：
 
 1. 运行时提供平台信任、对话、用户和沙箱拓扑。
-2. 执行解析器选择 actor/vault 身份。
-3. `VaultManager` 解析 env 和 mount。
-4. 具体的 executor 只接收为该运行时准备的凭证。
+2. 执行解析器只解析一次 Workspace projection 与 packages，然后选择 actor/vault 身份。
+3. `VaultManager` 解析 env 和 mount；collision 与 backend capability checks 验证完整 grant。
+4. 单个 execution decision 返回 projection、packages、runtime path context，以及只带本次 run 所需凭证的 concrete executor。
+5. 提示词 memory/skills 与文件系统执行使用同一份 decision，不再分别重算 authorization。
 
 Host 沙箱执行绝不接收 vault 注入。开放触发平台绝不接收环境共享 vault。这些是安全不变式，而非便利默认值。
 

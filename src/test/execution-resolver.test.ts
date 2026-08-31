@@ -110,14 +110,20 @@ describe("ActorExecutionResolver", () => {
       workspace(),
     );
 
-    const executor = await resolver.resolve({
+    const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "C123"),
     });
 
     // Image mode resolves to the office's dedicated container; the mount
     // layout itself is covered by workspace-projection.test.ts.
-    expect(executor.getSandboxConfig().type).toBe("container");
+    expect(decision.executor.getSandboxConfig().type).toBe("container");
+    expect(decision.pathContext).toMatchObject({
+      hostWorkspaceRoot: workspaceDir,
+      runtimeWorkspaceRoot: "/workspace",
+    });
+    expect(decision.projection.doorPolicy).toBe("isolated");
+    expect(decision.packages.skillDirs).toEqual([]);
     expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 

@@ -21,8 +21,8 @@ import type {
   PlatformName,
 } from "../adapter.js";
 import { resolveConversationSettings } from "../config.js";
+import { resolveConversationPackages } from "../packages/index.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
-import type { ActorExecutionResolver } from "../execution-resolver.js";
 import * as log from "../log.js";
 import { loadMcpTools } from "../mcp/loader.js";
 import {
@@ -87,9 +87,7 @@ async function prepareRunContext(params: {
   sessionUuid: string;
   runState: RunnerSessionState;
   executor: Executor;
-  executionResolver?: ActorExecutionResolver;
-  resolveExecutorForRun: RunnerExecutionContext["resolveExecutorForRun"];
-  getPathContext: () => RuntimePathContext;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
   session: MikanAgentSession;
   extensionSkills?: MikanSkill[];
   setEventContext: (context: {
@@ -103,7 +101,6 @@ async function prepareRunContext(params: {
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
-  pathContext: RuntimePathContext;
 }): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
   const {
     message,
@@ -113,9 +110,7 @@ async function prepareRunContext(params: {
     sessionUuid,
     runState,
     executor,
-    executionResolver,
-    resolveExecutorForRun,
-    getPathContext,
+    resolveForRun,
     session,
     setEventContext,
     setSandboxContext,
@@ -125,18 +120,18 @@ async function prepareRunContext(params: {
     bindPlatformToolPacks,
   } = params;
   const conversationId = office.address.conversationId;
-  let pathContext = params.pathContext;
   const sessionConversation = conversationIdOf(message.sessionKey);
 
   await mkdir(join(office.dir, "scratch"), { recursive: true });
 
-  if (executionResolver) {
-    await resolveExecutorForRun({
-      address: message.address,
-      userId: message.userId,
-      trustModel: platform.trustModel,
-    });
-    pathContext = getPathContext();
+  const decision = await resolveForRun({
+    address: message.address,
+    userId: message.userId,
+    trustModel: platform.trustModel,
+  });
+  const { pathContext, projection, packages } = decision;
+  for (const error of packages.errors) {
+    log.logWarning(`Package unavailable: ${error.source}`, error.message);
   }
 
   const reloaded = await session.reloadFromSession();
@@ -144,12 +139,12 @@ async function prepareRunContext(params: {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
   }
 
-  const projection = resolveWorkspaceProjection(office);
   const memory = await getMemory(projection);
   const conversationSkillLoad = loadMikanSkills(
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
+    packages,
   );
   const skills = mergeExtensionSkills(conversationSkillLoad.skills, params.extensionSkills ?? []);
   const triggerAttribution = resolveTriggerAttribution(message);
@@ -283,13 +278,19 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const agentConfig = resolveConversationSettings(office);
 
   const projection = resolveWorkspaceProjection(office);
+  // Bootstrap validation fails runner creation early. resolveForRun repeats
+  // the check against the actor-specific decision before any provider call.
   assertSandboxSupportsWorkspacePolicy(
     sandboxConfig,
     projection.doorPolicy,
     projection.promptSources.globalMemoryReadOnly === true,
   );
-  const { executionResolver, executor, getPathContext, resolveExecutorForRun } =
-    createRunnerExecutionContext(sandboxConfig, vaultManager, provisioner, office.workspace);
+  const { executor, resolveForRun } = createRunnerExecutionContext(
+    sandboxConfig,
+    vaultManager,
+    provisioner,
+    office.workspace,
+  );
   let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
 
   const modelRegistry = options.models ?? MikanModels.create();
@@ -328,6 +329,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
+    resolveConversationPackages({ office }),
   );
   const emptyPlatform: MessagingInfo = {
     name: "chat",
@@ -429,9 +431,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         sessionUuid,
         runState,
         executor,
-        executionResolver,
-        resolveExecutorForRun,
-        getPathContext,
+        resolveForRun,
         session,
         extensionSkills,
         setEventContext,
@@ -440,7 +440,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setImageUploadFunction,
         setReactFunction,
         bindPlatformToolPacks,
-        pathContext,
       });
       pathContext = prepared.pathContext;
 
@@ -580,9 +579,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         sessionUuid,
         runState,
         executor,
-        executionResolver,
-        resolveExecutorForRun,
-        getPathContext,
+        resolveForRun,
         session,
         extensionSkills,
         setEventContext,
@@ -591,7 +588,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         setImageUploadFunction,
         setReactFunction,
         bindPlatformToolPacks,
-        pathContext,
       });
       pathContext = prepared.pathContext;
 

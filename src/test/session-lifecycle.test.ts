@@ -43,6 +43,107 @@ describe("SessionLifecycle", () => {
     expect(order).toEqual(["first:start", "first:end", "second"]);
   });
 
+  test("acquires one materialized runner lease and releases it idempotently", async () => {
+    const lifecycle = new SessionLifecycle();
+    const materialized = state("C1");
+    const create = vi.fn(async () => materialized);
+
+    const lease = await lifecycle.acquire(slack, "C1", () => undefined, create);
+
+    expect(lease.state).toBe(materialized);
+    expect(create).toHaveBeenCalledOnce();
+    expect(lifecycle.clearConversation(slack)).toBe(false);
+    lease.release();
+    lease.release();
+    expect(lifecycle.clearConversation(slack)).toBe(true);
+    expect(materialized.runner.dispose).toHaveBeenCalledOnce();
+  });
+
+  test("disposes a stale materialization and retries at the new generation", async () => {
+    const lifecycle = new SessionLifecycle();
+    const firstState = state("C1");
+    const secondState = state("C1");
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const create = vi
+      .fn<() => Promise<ConversationRuntimeState>>()
+      .mockImplementationOnce(async () => {
+        await firstGate;
+        return firstState;
+      })
+      .mockResolvedValueOnce(secondState);
+
+    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    expect(lifecycle.invalidateConversation(slack)).toBe(true);
+    releaseFirst();
+    const lease = await acquisition;
+
+    expect(lease.state).toBe(secondState);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(firstState.runner.dispose).toHaveBeenCalledOnce();
+    lease.release();
+    await lifecycle.closeAll();
+  });
+
+  test("defers invalidation until settlement releases its runner lease", async () => {
+    const lifecycle = new SessionLifecycle();
+    const active = state("C1");
+    const lease = await lifecycle.acquire(
+      slack,
+      "C1",
+      () => undefined,
+      async () => active,
+    );
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    const settlement = lifecycle.settle(active, "run", () => gate);
+    lease.release();
+
+    expect(lifecycle.invalidateAll().busy).toEqual([slack]);
+    expect(active.runner.dispose).not.toHaveBeenCalled();
+    finish();
+    await settlement;
+
+    expect(lifecycle.get(slack, "C1")).toBeUndefined();
+    expect(active.runner.dispose).toHaveBeenCalledOnce();
+  });
+
+  test("disposes a runner that finishes materializing during shutdown", async () => {
+    const lifecycle = new SessionLifecycle();
+    const materialized = state("C1");
+    let releaseCreate!: () => void;
+    const gate = new Promise<void>((resolve) => (releaseCreate = resolve));
+    const create = vi.fn(async () => {
+      await gate;
+      return materialized;
+    });
+
+    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const shutdown = lifecycle.shutdown(1_000);
+    releaseCreate();
+
+    await expect(acquisition).rejects.toThrow("Session lifecycle is shutting down");
+    await shutdown;
+    expect(lifecycle.get(slack, "C1")).toBeUndefined();
+    expect(materialized.runner.dispose).toHaveBeenCalledOnce();
+  });
+
+  test("rejects new acquisitions after shutdown", async () => {
+    const lifecycle = new SessionLifecycle();
+    await lifecycle.shutdown(0);
+
+    await expect(
+      lifecycle.acquire(
+        slack,
+        "C1",
+        () => undefined,
+        async () => state("C1"),
+      ),
+    ).rejects.toThrow("Session lifecycle is shutting down");
+  });
+
   test("clears idle conversation states and disposes runners through its interface", async () => {
     const lifecycle = new SessionLifecycle();
     const top = state("C1");

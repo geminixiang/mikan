@@ -7,7 +7,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../adapter.js";
-import { createOfficeAddress, officeKey, type Workspace } from "../office/index.js";
+import { createOfficeAddress, type Workspace } from "../office/index.js";
 import { createRunner } from "../agent/runner.js";
 import type { PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";
@@ -93,14 +93,10 @@ export function createConversationRuntime(
 
 class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly sessions = new SessionLifecycle();
-  private readonly inFlightRuns = new Set<Promise<void>>();
-  private readonly sessionDreamSettlements = new Set<Promise<void>>();
   private readonly chatSessionManager = new ChatHistorySync();
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private readonly resolvedModels: MikanModels;
-  private globalRunnerGeneration = 0;
-  private readonly conversationRunnerGenerations = new Map<string, number>();
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
@@ -169,8 +165,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     responder: ConversationContext["responder"],
     platform: ConversationContext["platform"],
   ): Promise<void> {
-    // The message's address is the authority; the raw id is still passed for
-    // filesystem layout, so a disagreement must fail loudly, not pick one.
     const address = message.address;
     if (conversationId !== address.conversationId) {
       throw new Error(
@@ -181,11 +175,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
     const activeState = this.sessions.get(address, sessionKey);
     if (
-      activeState?.running ||
-      (activeState?.runSettlement && this.sessionDreamSettlements.has(activeState.runSettlement))
+      activeState &&
+      (activeState.running || this.sessions.isDreamSettlement(activeState.runSettlement))
     ) {
       const activeSettlement = activeState.runSettlement;
-      if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
+      if (this.sessions.isDreamSettlement(activeSettlement)) {
         await activeSettlement;
         return;
       }
@@ -194,87 +188,54 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       await activeSettlement;
     }
 
-    const state = await this.getOrCreateState({ address, sessionKey });
-    // Scope resolution only materializes; the Session Dream below reads the
-    // session, so bring it up to date with the log first.
-    await state.runner.syncChatHistory(message.id);
-    if (
-      state.running ||
-      (state.runSettlement && this.sessionDreamSettlements.has(state.runSettlement))
-    ) {
-      const activeSettlement = state.runSettlement;
-      if (activeSettlement && this.sessionDreamSettlements.has(activeSettlement)) {
-        await activeSettlement;
-        return;
-      }
-      state.stopRequested = true;
-      state.runner.abort();
-      await activeSettlement;
-      return this.handleNewCommand(sessionKey, conversationId, bot, message, responder, platform);
-    }
-    const dreamSettlement = this.startSessionDream(state, async () => {
-      let working = false;
-      try {
-        await responder.setWorking(true);
-        working = true;
-        const result = await this.dreamSessionMemory(state, message, platform);
-        if (!result.success) {
-          const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
-          await responder.respondDiagnostic(
-            `Could not preserve memory, so the current conversation was not reset.${detail}`,
-            { style: "error" },
-          );
+    const lease = await this.acquireState({ address, sessionKey });
+    try {
+      const { state } = lease;
+      await state.runner.syncChatHistory(message.id);
+      if (state.running || this.sessions.isDreamSettlement(state.runSettlement)) {
+        const activeSettlement = state.runSettlement;
+        if (this.sessions.isDreamSettlement(activeSettlement)) {
+          await activeSettlement;
           return;
         }
-
-        await responder.setWorking(false);
-        working = false;
-        await this.resetSession(state, bot);
-      } finally {
-        if (working) await responder.setWorking(false);
+        state.stopRequested = true;
+        state.runner.abort();
+        await activeSettlement;
+        return this.handleNewCommand(sessionKey, conversationId, bot, message, responder, platform);
       }
-    });
-    void dreamSettlement
-      .catch((err) => {
+
+      const dreamSettlement = this.sessions.settle(state, "dream", async () => {
+        let working = false;
+        try {
+          await responder.setWorking(true);
+          working = true;
+          const result = await this.dreamSessionMemory(state, message, platform);
+          if (!result.success) {
+            const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
+            await responder.respondDiagnostic(
+              `Could not preserve memory, so the current conversation was not reset.${detail}`,
+              { style: "error" },
+            );
+            return;
+          }
+
+          await responder.setWorking(false);
+          working = false;
+          await this.resetSession(state, bot);
+        } finally {
+          if (working) await responder.setWorking(false);
+        }
+      });
+      void dreamSettlement.catch((err) => {
         reportUserFacingError(err, {
           domain: "mikan",
           surface: "session_dream",
           operation: "run_new_command_in_background",
         });
-      })
-      .finally(() => this.finishSessionDream(state, dreamSettlement));
-  }
-
-  private startSessionDream(
-    state: ConversationState,
-    dream: () => Promise<void>,
-    markRunning = true,
-  ): Promise<void> {
-    if (markRunning) {
-      state.running = true;
-      state.stopRequested = false;
-      state.startedAt = Date.now();
-      state.lastActivityAt = Date.now();
+      });
+    } finally {
+      lease.release();
     }
-
-    const settlement = Promise.resolve().then(dream);
-    state.runSettlement = settlement;
-    this.sessionDreamSettlements.add(settlement);
-    this.inFlightRuns.add(settlement);
-    return settlement;
-  }
-
-  private finishSessionDream(state: ConversationState, settlement: Promise<void>): void {
-    this.sessionDreamSettlements.delete(settlement);
-    this.inFlightRuns.delete(settlement);
-    if (state.runSettlement !== settlement) return;
-
-    state.runSettlement = undefined;
-    state.running = false;
-    state.startedAt = 0;
-    state.lastAccessedAt = Date.now();
-    this.sessions.onSettlement(state.address);
-    this.sessions.evictIdle();
   }
 
   private async dreamSessionMemory(
@@ -320,46 +281,49 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           return;
         }
 
-        const state = await this.getOrCreateState({
+        const lease = await this.acquireState({
           address,
           sessionKey,
           currentMessageId: message.id,
         });
-        // The rotation Dream summarizes the session; sync the log into it
-        // first (scope resolution only materializes).
-        await state.runner.syncChatHistory(message.id);
-        const dreamSettlement = this.startSessionDream(
-          state,
-          async () => {
-            const result = await this.dreamSessionMemory(state, message, platform);
-            if (!result.success) {
-              const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
-              log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
-              return;
-            }
-
-            const runtimeCwd = runtimeCwdForSandbox(
-              this.options.sandbox,
-              this.options.workspace,
-              address,
-            );
-            await this.chatSessionManager.resetSession({
-              conversationDir,
-              sessionKey,
-              cwd: runtimeCwd,
-            });
-            await this.sessions.discardAndWait(address, sessionKey);
-            log.logInfo(
-              `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
-            );
-          },
-          false,
-        );
+        let dreamSettlement: Promise<void>;
         try {
-          await dreamSettlement;
+          const { state } = lease;
+          // The rotation Dream summarizes the session; sync the log into it
+          // first (scope resolution only materializes).
+          await state.runner.syncChatHistory(message.id);
+          dreamSettlement = this.sessions.settle(
+            state,
+            "dream",
+            async () => {
+              const result = await this.dreamSessionMemory(state, message, platform);
+              if (!result.success) {
+                const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
+                log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
+                return;
+              }
+
+              const runtimeCwd = runtimeCwdForSandbox(
+                this.options.sandbox,
+                this.options.workspace,
+                address,
+              );
+              await this.chatSessionManager.resetSession({
+                conversationDir,
+                sessionKey,
+                cwd: runtimeCwd,
+              });
+              await this.sessions.discardAndWait(address, sessionKey);
+              log.logInfo(
+                `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
+              );
+            },
+            { markRunning: false },
+          );
         } finally {
-          this.finishSessionDream(state, dreamSettlement);
+          lease.release();
         }
+        await dreamSettlement;
         await this.runSession({ event, bot, context }, true);
       })
       .catch((err) => {
@@ -415,13 +379,17 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     let consumed = false;
     await this.sessions.enqueue(address, sessionKey, async () => {
       try {
-        const state = await this.getOrCreateState({
+        const lease = await this.acquireState({
           address,
           sessionKey,
           currentMessageId: action.messageTs ?? sessionKey,
         });
-        consumed = await state.runner.tryExtensionAction(slug, action);
-        if (consumed) state.lastAccessedAt = Date.now();
+        try {
+          consumed = await lease.state.runner.tryExtensionAction(slug, action);
+          if (consumed) lease.state.lastAccessedAt = Date.now();
+        } finally {
+          lease.release();
+        }
       } catch (err) {
         log.logWarning(
           `[${conversationId}] Extension action dispatch failed (${slug}:${action.actionId})`,
@@ -449,16 +417,24 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     let consumed = false;
     await this.sessions.enqueue(address, sessionKey, async () => {
       try {
-        const state = await this.getOrCreateState({
+        const lease = await this.acquireState({
           address,
           sessionKey,
           currentMessageId: `extsched:${fire.slug}.${fire.scheduleName}`,
         });
-        consumed = await state.runner.tryExtensionScheduleCallback(fire.slug, fire.callback, {
-          scheduleName: fire.scheduleName,
-          ...(fire.args !== undefined ? { args: fire.args } : {}),
-        });
-        if (consumed) state.lastAccessedAt = Date.now();
+        try {
+          consumed = await lease.state.runner.tryExtensionScheduleCallback(
+            fire.slug,
+            fire.callback,
+            {
+              scheduleName: fire.scheduleName,
+              ...(fire.args !== undefined ? { args: fire.args } : {}),
+            },
+          );
+          if (consumed) lease.state.lastAccessedAt = Date.now();
+        } finally {
+          lease.release();
+        }
       } catch (err) {
         log.logWarning(
           `[${conversationId}] Extension schedule dispatch failed (${fire.slug}.${fire.scheduleName} → ${fire.callback})`,
@@ -530,22 +506,21 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         );
       }
 
-      let state: ConversationState;
+      let lease: { state: ConversationState; release: () => void } | undefined;
       try {
-        state = await this.getOrCreateState({
+        lease = await this.acquireState({
           address,
           sessionKey,
           currentMessageId: event.ts,
         });
+        const { state } = lease;
         await state.runner.syncChatHistory(event.ts);
 
         // Extension-contributed commands: deterministic dispatch, no agent run.
         // Built-in commands already had their chance above, so extensions can
         // never shadow them; unmatched text falls through to the agent.
-        //
-        // Where the platform eats the slash before we ever see it, the leading
-        // name alone is enough — otherwise those commands would be unreachable
-        // rather than merely awkward.
+        // Where the platform eats the slash before we see it, the leading name
+        // alone is enough; otherwise those commands would be unreachable.
         const bareName = context.platform.bareExtensionCommands === true;
         if (bareName || event.text.trim().startsWith("/")) {
           const handled = await state.runner.tryExtensionCommand(
@@ -555,10 +530,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           );
           if (handled) {
             state.lastAccessedAt = Date.now();
+            lease.release();
             return;
           }
         }
       } catch (err) {
+        lease?.release();
         reportUserFacingError(err, {
           domain: "mikan",
           surface: "session_setup",
@@ -576,14 +553,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         throw err;
       }
 
-      state.running = true;
-      state.stopRequested = false;
-      state.startedAt = Date.now();
-      state.lastActivityAt = Date.now();
-
+      const { state } = lease;
       log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
-
-      const runPromise = (async () => {
+      const runPromise = this.sessions.settle(state, "run", async () => {
         try {
           const result = await this.runWithInstrumentation(
             context,
@@ -608,23 +580,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             }
           }
         } finally {
-          state.running = false;
-          state.lastAccessedAt = Date.now();
-          Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size - 1);
+          Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount() - 1);
         }
-      })();
-
-      this.inFlightRuns.add(runPromise);
-      state.runSettlement = runPromise;
-      Sentry.metrics.gauge("agent.sessions.active", this.inFlightRuns.size);
-      try {
-        await runPromise;
-      } finally {
-        this.inFlightRuns.delete(runPromise);
-        if (state.runSettlement === runPromise) state.runSettlement = undefined;
-        this.sessions.onSettlement(address);
-        this.sessions.evictIdle();
-      }
+      });
+      lease.release();
+      Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount());
+      await runPromise;
     } finally {
       releaseConversationWork();
     }
@@ -731,111 +692,86 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   }
 
   switchConversationModel(address: OfficeAddress, _provider: string, _model: string): boolean {
-    this.bumpConversationRunnerGeneration(address);
-    return this.clearOffice(address, "Model switched");
+    return this.invalidateOffice(address, "Model switched");
   }
 
   refreshConversationEnvironment(address: OfficeAddress): boolean {
-    this.bumpConversationRunnerGeneration(address);
-    return this.clearOffice(address, "Environment refreshed");
+    return this.invalidateOffice(address, "Environment refreshed");
   }
 
   refreshAllConversations(): { busy: OfficeAddress[] } {
-    this.globalRunnerGeneration++;
-    const busy: OfficeAddress[] = [];
-    for (const address of this.sessions.offices()) {
-      if (!this.clearOffice(address, "Global settings changed")) {
-        this.sessions.deferConversationClear(address);
-        busy.push(address);
-      }
+    const offices = this.sessions.offices();
+    const result = this.sessions.invalidateAll();
+    const busyKeys = new Set(
+      result.busy.map((address) => `${address.platform}:${address.conversationId}`),
+    );
+    for (const address of offices) {
+      if (busyKeys.has(`${address.platform}:${address.conversationId}`)) continue;
+      log.logInfo(
+        `[${address.conversationId}] Global settings changed; cleared cached session runners`,
+      );
     }
-    return { busy };
+    return result;
   }
 
-  private clearOffice(address: OfficeAddress, reason: string): boolean {
-    const cleared = this.sessions.clearConversation(address);
+  private invalidateOffice(address: OfficeAddress, reason: string): boolean {
+    const cleared = this.sessions.invalidateConversation(address);
     if (cleared) {
       log.logInfo(`[${address.conversationId}] ${reason}; cleared cached session runners`);
     }
     return cleared;
   }
 
-  private bumpConversationRunnerGeneration(address: OfficeAddress): void {
-    const key = officeKey(address);
-    this.conversationRunnerGenerations.set(
-      key,
-      (this.conversationRunnerGenerations.get(key) ?? 0) + 1,
-    );
-  }
-
-  private runnerGeneration(address: OfficeAddress): string {
-    return `${this.globalRunnerGeneration}:${this.conversationRunnerGenerations.get(officeKey(address)) ?? 0}`;
-  }
-
   private async createCurrentRunner(
     options: SessionStateOptions,
     sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
   ): Promise<PiAgentWrapper> {
-    while (true) {
-      const generation = this.runnerGeneration(options.address);
-      const runner = await createRunner({
-        sandboxConfig: this.options.sandbox,
-        sessionKey: options.sessionKey,
-        office: this.options.workspace.office(options.address),
-        sessionScope,
-        vaultManager: this.options.vaultManager,
-        provisioner: this.options.provisioner,
-        resourceController: this.options.resourceController,
-        sessionView: this.options.sessionViewTokenStore
-          ? {
-              tokenStore: this.options.sessionViewTokenStore,
-              portalBaseUrl: this.options.portalBaseUrl,
-            }
-          : undefined,
-        platformNotifier: this.options.platformNotifier,
-        platformReactor: this.options.platformReactor,
-        platformUploader: this.options.platformUploader,
-        platformBlockKit: this.options.platformBlockKit,
-        platformDmOpener: this.options.platformDmOpener,
-        platformHistoryFetcher: this.options.platformHistoryFetcher,
-        platformUserLister: this.options.platformUserLister,
-        extensionScheduleEngine: this.options.extensionScheduleEngine,
-        platformToolPackFactories: this.options.platformToolPackFactories,
-        models: this.resolvedModels,
-      });
-      if (generation === this.runnerGeneration(options.address)) return runner;
-      await runner.dispose();
-    }
+    return createRunner({
+      sandboxConfig: this.options.sandbox,
+      sessionKey: options.sessionKey,
+      office: this.options.workspace.office(options.address),
+      sessionScope,
+      vaultManager: this.options.vaultManager,
+      provisioner: this.options.provisioner,
+      resourceController: this.options.resourceController,
+      sessionView: this.options.sessionViewTokenStore
+        ? {
+            tokenStore: this.options.sessionViewTokenStore,
+            portalBaseUrl: this.options.portalBaseUrl,
+          }
+        : undefined,
+      platformNotifier: this.options.platformNotifier,
+      platformReactor: this.options.platformReactor,
+      platformUploader: this.options.platformUploader,
+      platformBlockKit: this.options.platformBlockKit,
+      platformDmOpener: this.options.platformDmOpener,
+      platformHistoryFetcher: this.options.platformHistoryFetcher,
+      platformUserLister: this.options.platformUserLister,
+      extensionScheduleEngine: this.options.extensionScheduleEngine,
+      platformToolPackFactories: this.options.platformToolPackFactories,
+      models: this.resolvedModels,
+    });
   }
 
-  private async getOrCreateState(
-    options: SessionStateOptions & { currentMessageId?: string },
-  ): Promise<ConversationState> {
-    return this.sessions.transition(options.address, options.sessionKey, () =>
-      this.getOrCreateStateExclusive(options),
+  private acquireState(options: SessionStateOptions & { currentMessageId?: string }) {
+    const { address, sessionKey } = options;
+    const conversationDir = this.options.workspace.office(address).dir;
+    return this.sessions.acquire(
+      address,
+      sessionKey,
+      () =>
+        sessionKey === address.conversationId
+          ? resolveChannelSessionFile(conversationDir)
+          : tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey)),
+      () => this.materializeState(options, conversationDir),
     );
   }
 
-  private async getOrCreateStateExclusive(
+  private async materializeState(
     options: SessionStateOptions & { currentMessageId?: string },
+    conversationDir: string,
   ): Promise<ConversationState> {
     const { address, sessionKey, currentMessageId } = options;
-    await this.sessions.waitForClose(address, sessionKey);
-    const existing = this.sessions.get(address, sessionKey);
-    // A cached runner is the sole writable pi v4 session handle for its file:
-    // reuse it before scope resolution can open the same path a second time.
-    const conversationDir = this.options.workspace.office(address).dir;
-    const expectedFile =
-      sessionKey === address.conversationId
-        ? resolveChannelSessionFile(conversationDir)
-        : tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
-    if (existing && expectedFile === existing.sessionFile) {
-      existing.lastAccessedAt = Date.now();
-      return existing;
-    }
-    if (existing?.running) return existing;
-    if (existing) await this.sessions.discardAndWait(address, sessionKey);
-
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
       conversationDir,
@@ -843,8 +779,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       cwd: runtimeCwd,
       currentMessageId,
     });
-
-    const state: ConversationState = {
+    return {
       address,
       sessionKey,
       running: false,
@@ -854,36 +789,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
-    this.sessions.set(state);
-    return state;
   }
 
   async shutdown(timeoutMs = 30_000): Promise<void> {
     if (this.isShuttingDown) return;
     this.isShuttingDown = true;
     log.logInfo("Shutting down gracefully...");
-
-    const timeout = Date.now() + timeoutMs;
-    while (this.inFlightRuns.size > 0 && Date.now() < timeout) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    if (this.inFlightRuns.size > 0) {
-      log.logWarning(
-        `Aborting ${this.inFlightRuns.size} runs after shutdown timeout`,
-        `${timeoutMs}ms`,
-      );
-      for (const state of this.sessions.runningStates()) state.runner.abort();
-      const closeDeadline = Date.now() + 5_000;
-      while (this.inFlightRuns.size > 0 && Date.now() < closeDeadline) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      if (this.inFlightRuns.size > 0) {
-        throw new Error(
-          `Shutdown could not settle ${this.inFlightRuns.size} aborted runs within 5000ms`,
-        );
-      }
-    }
-    await this.sessions.closeAll();
+    await this.sessions.shutdown(timeoutMs);
   }
 }

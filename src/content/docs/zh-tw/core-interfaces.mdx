@@ -115,7 +115,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 來源：`src/runtime/types.ts` 與 `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` 回傳 `ConversationRuntime`，也就是 per-session serialization、command dispatch、runner caching、stop/reset 行為、idle eviction 與 graceful shutdown 的唯一擁有者。
+`createConversationRuntime(options)` 回傳公開的 `ConversationRuntime` 協調介面。在 `src/runtime/` 內，`SessionLifecycle` 是 runner 資源的單一 authority：它擁有 per-session serialization、materialization、lease、settlement、invalidation、disposal、idle eviction 與 shutdown；runtime 協調器則擁有 command、stop/reset、rotation 與平台工作流程。
 
 ### 輸入方法
 
@@ -140,7 +140,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 `ConversationRuntimeOptions` 提供 `workspace`（來自 `createWorkspace` 的 `Workspace` 值）、sandbox/資源服務、選用的 portal token store、選用的指令、model registry、主動式平台操作，以及平台 tool-pack factory。缺少 vault 與 portal store 會退化為停用的實作；設定了 portal URL 卻沒有對應 store，在使用時會是錯誤。
 
-並行不變式：同一個 office 與 session key 的呼叫為序列；不同 session key 可並行執行。因此平台 tool pack 是 per-runner 建立的，絕不全域共享，因為 `bindRun` 會變更其 run binding。
+並行不變式：同一個 office 與 session key 的呼叫為序列；不同 session key 可並行執行。每次使用 runner 都持有內部 lifecycle lease，因此 settings invalidation、eviction 與 shutdown 不會在操作途中 dispose 它。平台 tool pack 仍是 per-runner 建立，絕不全域共享。
 
 ## 4. Command 介面
 
@@ -245,9 +245,10 @@ Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 
 憑證流程為：
 
 1. Runtime 提供平台信任、conversation、user 與 sandbox 拓撲。
-2. execution resolver 選出 actor/vault identity。
-3. `VaultManager` 解析 env 與 mount。
-4. 具體的 executor 只收到該 runtime 所需的憑證。
+2. execution resolver 只解析一次 Workspace projection 與 packages，接著選出 actor/vault identity。
+3. `VaultManager` 解析 env 與 mount；collision 與 backend capability checks 驗證完整 grant。
+4. 單一 execution decision 回傳 projection、packages、runtime path context，以及只帶本次 run 所需憑證的 concrete executor。
+5. Prompt memory/skills 與 filesystem execution 使用同一份 decision，不再各自重算 authorization。
 
 Host sandbox 執行絕不會收到 vault injection。Open-trigger 平台絕不會收到環境式的 shared vault。這些是安全不變式，不是為了方便的預設值。
 

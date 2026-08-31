@@ -5,8 +5,9 @@ import { type ExtensionRegistry, type MikanSkill } from "../harness/index.js";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
 import type { PlatformTrustModel } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";
-import type { ActorExecutionResolver } from "../execution-resolver.js";
+import type { ResolvedPackages } from "../packages/types.js";
 import { type Executor, type RuntimePathContext } from "../sandbox/index.js";
+import type { WorkspaceProjection } from "../workspace-projection/types.js";
 
 export interface RunnerSessionState {
   responder: ConversationResponder | null;
@@ -56,14 +57,16 @@ export interface UsageReportContext {
 }
 
 export interface RunnerExecutionContext {
-  executionResolver?: ActorExecutionResolver;
   executor: Executor;
-  getPathContext: () => RuntimePathContext;
-  resolveExecutorForRun(context: {
+  resolveForRun(context: {
     address: OfficeAddress;
     userId: string;
     trustModel?: PlatformTrustModel;
-  }): Promise<void>;
+  }): Promise<{
+    pathContext: RuntimePathContext;
+    projection: WorkspaceProjection;
+    packages: ResolvedPackages;
+  }>;
 }
 
 export interface PreparedRunContext {

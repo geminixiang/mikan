@@ -6,6 +6,8 @@ import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
 
+type SettlementKind = "run" | "dream";
+
 interface ConversationBarrier {
   activeWork: number;
   pendingMaintenance: number;
@@ -14,16 +16,7 @@ interface ConversationBarrier {
   workWaiters: Array<() => void>;
 }
 
-/**
- * Runtime state is addressed by office, not by session key alone.
- *
- * A session key is a platform value: a Discord channel and a Telegram chat can
- * legitimately produce the same string, and every platform shares this one
- * lifecycle. The internal map key therefore prefixes the office key, which
- * carries the platform plus a digest of the raw conversation id. Callers only
- * ever pass `(address, sessionKey)`; the composite never leaves this module,
- * so nothing downstream can parse it or invent one.
- */
+/** Runtime state is addressed by office plus the platform session key. */
 function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
   return `${officeKey(address)}|${sessionKey}`;
 }
@@ -33,11 +26,20 @@ export class SessionLifecycle {
   private readonly closing = new Map<string, Promise<void>>();
   private readonly transitions = new Map<string, Promise<void>>();
   private readonly queues = new Map<string, Promise<void>>();
+  private readonly leases = new Map<string, number>();
+  private readonly settlements = new Set<Promise<void>>();
+  private readonly settlementKinds = new Map<
+    Promise<void>,
+    { kind: SettlementKind; sessionId: string }
+  >();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
+  private readonly conversationGenerations = new Map<string, number>();
   private readonly maxSessions: number;
   private readonly idleTimeoutMs: number;
   private readonly now: () => number;
+  private globalGeneration = 0;
+  private shuttingDown = false;
 
   constructor(options: SessionLifecycleOptions = {}) {
     this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
@@ -49,9 +51,117 @@ export class SessionLifecycle {
     return this.states.get(runtimeSessionId(address, sessionKey));
   }
 
-  /** The state carries its own identity, so it cannot be filed under another. */
+  /** Test/support insertion. Production materialization goes through acquire(). */
   set(state: ConversationRuntimeState): void {
     this.states.set(runtimeSessionId(state.address, state.sessionKey), state);
+  }
+
+  async acquire(
+    address: OfficeAddress,
+    sessionKey: string,
+    expectedFile: () => string | null | undefined,
+    materialize: () => Promise<ConversationRuntimeState>,
+  ): Promise<{ state: ConversationRuntimeState; release: () => void }> {
+    if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
+    return this.transition(address, sessionKey, async () => {
+      const state = await this.materializeExclusive(address, sessionKey, expectedFile, materialize);
+      const id = runtimeSessionId(address, sessionKey);
+      this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
+      return { state, release: this.createLeaseRelease(id, address) };
+    });
+  }
+
+  private async materializeExclusive(
+    address: OfficeAddress,
+    sessionKey: string,
+    expectedFile: () => string | null | undefined,
+    materialize: () => Promise<ConversationRuntimeState>,
+  ): Promise<ConversationRuntimeState> {
+    const id = runtimeSessionId(address, sessionKey);
+    while (true) {
+      if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
+      await this.waitForClose(address, sessionKey);
+      const existing = this.states.get(id);
+      if (existing && expectedFile() === existing.sessionFile) {
+        existing.lastAccessedAt = this.now();
+        return existing;
+      }
+      if (existing && this.isStateActive(id, existing)) return existing;
+      if (existing) await this.discardAndWait(address, sessionKey);
+
+      const generation = this.generation(address);
+      const state = await materialize();
+      if (!this.shuttingDown && generation === this.generation(address)) {
+        this.states.set(id, state);
+        return state;
+      }
+      await state.runner.dispose();
+      if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
+    }
+  }
+
+  private createLeaseRelease(id: string, address: OfficeAddress): () => void {
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.releaseLease(id, address);
+    };
+  }
+
+  private releaseLease(id: string, address: OfficeAddress): void {
+    const count = this.leases.get(id) ?? 0;
+    if (count <= 1) this.leases.delete(id);
+    else this.leases.set(id, count - 1);
+    this.applyDeferredClear(address);
+  }
+
+  settle(
+    state: ConversationRuntimeState,
+    kind: SettlementKind,
+    work: () => Promise<void>,
+    options: { markRunning?: boolean } = {},
+  ): Promise<void> {
+    const id = runtimeSessionId(state.address, state.sessionKey);
+    this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
+    if (options.markRunning !== false) {
+      state.running = true;
+      state.stopRequested = false;
+      state.startedAt = this.now();
+      state.lastActivityAt = this.now();
+    }
+
+    let settlement!: Promise<void>;
+    settlement = Promise.resolve()
+      .then(work)
+      .finally(() => this.finishSettlement(state, settlement, id));
+    state.runSettlement = settlement;
+    this.settlements.add(settlement);
+    this.settlementKinds.set(settlement, { kind, sessionId: id });
+    return settlement;
+  }
+
+  private finishSettlement(
+    state: ConversationRuntimeState,
+    settlement: Promise<void>,
+    id: string,
+  ): void {
+    this.settlements.delete(settlement);
+    this.settlementKinds.delete(settlement);
+    if (state.runSettlement === settlement) state.runSettlement = undefined;
+    state.running = false;
+    state.startedAt = 0;
+    state.lastAccessedAt = this.now();
+    this.releaseLease(id, state.address);
+    this.evictIdle();
+  }
+
+  isDreamSettlement(settlement: Promise<void> | undefined): boolean {
+    return settlement !== undefined && this.settlementKinds.get(settlement)?.kind === "dream";
+  }
+
+  settlementCount(): number {
+    return this.settlements.size;
   }
 
   async enqueue(
@@ -75,7 +185,6 @@ export class SessionLifecycle {
     while (barrier.pendingMaintenance > 0) {
       await new Promise<void>((resolve) => barrier.workWaiters.push(resolve));
     }
-
     barrier.activeWork++;
     let released = false;
     return () => {
@@ -95,7 +204,6 @@ export class SessionLifecycle {
   ): Promise<T> {
     const barrier = this.getConversationBarrier(address);
     barrier.pendingMaintenance++;
-
     const previousMaintenance = barrier.maintenanceTail;
     let finishMaintenance!: () => void;
     const maintenanceTurn = new Promise<void>((resolve) => (finishMaintenance = resolve));
@@ -105,7 +213,6 @@ export class SessionLifecycle {
     if (barrier.activeWork > 0) {
       await new Promise<void>((resolve) => barrier.activeWaiters.push(resolve));
     }
-
     try {
       return await maintenance();
     } finally {
@@ -122,7 +229,6 @@ export class SessionLifecycle {
     const key = officeKey(address);
     const existing = this.conversationBarriers.get(key);
     if (existing) return existing;
-
     const barrier: ConversationBarrier = {
       activeWork: 0,
       pendingMaintenance: 0,
@@ -138,25 +244,35 @@ export class SessionLifecycle {
     return Array.from(this.states.values()).filter((state) => state.running);
   }
 
-  /** Every office holding runtime state, deduplicated by office key. */
   offices(): OfficeAddress[] {
     const offices = new Map<string, OfficeAddress>();
     for (const state of this.states.values()) offices.set(officeKey(state.address), state.address);
     return Array.from(offices.values());
   }
 
-  /**
-   * Resolve the offices behind a raw conversation id. Settings, the filesystem,
-   * and Admin scope still address offices by raw id (ADR 0005), so this is the
-   * bridge until they carry an `OfficeAddress`. Two platforms sharing a raw id
-   * yield both offices, matching the raw-id scope those callers expect today.
-   */
   officesForConversationId(conversationId: string): OfficeAddress[] {
     return this.offices().filter((address) => address.conversationId === conversationId);
   }
 
+  invalidateConversation(address: OfficeAddress): boolean {
+    const key = officeKey(address);
+    this.conversationGenerations.set(key, (this.conversationGenerations.get(key) ?? 0) + 1);
+    return this.clearConversation(address);
+  }
+
+  invalidateAll(): { busy: OfficeAddress[] } {
+    this.globalGeneration++;
+    const busy: OfficeAddress[] = [];
+    for (const address of this.offices()) {
+      if (this.clearConversation(address)) continue;
+      this.deferConversationClear(address);
+      busy.push(address);
+    }
+    return { busy };
+  }
+
   clearConversation(address: OfficeAddress): boolean {
-    if (this.hasActiveRun(address)) return false;
+    if (this.hasActiveWork(address)) return false;
     this.pendingConversationClears.delete(officeKey(address));
     this.discardConversation(address);
     return true;
@@ -166,26 +282,24 @@ export class SessionLifecycle {
     this.pendingConversationClears.add(officeKey(address));
   }
 
-  onSettlement(address: OfficeAddress): void {
+  private applyDeferredClear(address: OfficeAddress): void {
     const key = officeKey(address);
-    if (!this.pendingConversationClears.has(key)) return;
-    if (this.hasActiveRun(address)) return;
-
+    if (!this.pendingConversationClears.has(key) || this.hasActiveWork(address)) return;
     this.pendingConversationClears.delete(key);
     this.discardConversation(address);
   }
 
-  private hasActiveRun(address: OfficeAddress): boolean {
+  private hasActiveWork(address: OfficeAddress): boolean {
     const key = officeKey(address);
     for (const state of this.states.values()) {
-      if (
-        officeKey(state.address) === key &&
-        (state.running || state.runSettlement !== undefined)
-      ) {
-        return true;
-      }
+      const id = runtimeSessionId(state.address, state.sessionKey);
+      if (officeKey(state.address) === key && this.isStateActive(id, state)) return true;
     }
     return false;
+  }
+
+  private isStateActive(id: string, state: ConversationRuntimeState): boolean {
+    return (this.leases.get(id) ?? 0) > 0 || state.running || state.runSettlement !== undefined;
   }
 
   private discardConversation(address: OfficeAddress): void {
@@ -195,12 +309,10 @@ export class SessionLifecycle {
     }
   }
 
-  /**
-   * Serialize `work` with every other transition for the same runtime
-   * session. Runner creation, replacement, and writer handover must be
-   * single-flight per key; owning that here keeps the composite identity
-   * grammar (and the queue that guards it) in one module.
-   */
+  private generation(address: OfficeAddress): string {
+    return `${this.globalGeneration}:${this.conversationGenerations.get(officeKey(address)) ?? 0}`;
+  }
+
   async transition<T>(
     address: OfficeAddress,
     sessionKey: string,
@@ -221,6 +333,7 @@ export class SessionLifecycle {
     }
   }
 
+  /** Explicit reset/replacement path; caller guarantees the runner will not be used again. */
   async discardAndWait(address: OfficeAddress, sessionKey: string): Promise<void> {
     const id = runtimeSessionId(address, sessionKey);
     const state = this.states.get(id);
@@ -248,7 +361,7 @@ export class SessionLifecycle {
     await Promise.all(this.closing.values());
   }
 
-  discard(address: OfficeAddress, sessionKey: string): void {
+  private discard(address: OfficeAddress, sessionKey: string): void {
     const id = runtimeSessionId(address, sessionKey);
     const state = this.states.get(id);
     if (!state) return;
@@ -274,20 +387,57 @@ export class SessionLifecycle {
   evictIdle(): void {
     const now = this.now();
     for (const state of Array.from(this.states.values())) {
-      if (
-        !state.running &&
-        state.runSettlement === undefined &&
-        now - state.lastAccessedAt > this.idleTimeoutMs
-      ) {
+      const id = runtimeSessionId(state.address, state.sessionKey);
+      if (!this.isStateActive(id, state) && now - state.lastAccessedAt > this.idleTimeoutMs) {
         this.discard(state.address, state.sessionKey);
       }
     }
     if (this.states.size <= this.maxSessions) return;
 
     const idle = Array.from(this.states.values())
-      .filter((state) => !state.running && state.runSettlement === undefined)
+      .filter(
+        (state) => !this.isStateActive(runtimeSessionId(state.address, state.sessionKey), state),
+      )
       .toSorted((left, right) => left.lastAccessedAt - right.lastAccessedAt);
     const toEvict = this.states.size - this.maxSessions;
     for (const state of idle.slice(0, toEvict)) this.discard(state.address, state.sessionKey);
+  }
+
+  async shutdown(timeoutMs: number): Promise<void> {
+    if (this.shuttingDown) return;
+    this.shuttingDown = true;
+    const timeout = Date.now() + timeoutMs;
+    await this.waitForActiveWork(timeout, 500);
+
+    if (this.activeWorkCount() > 0) {
+      log.logWarning(
+        `Aborting ${this.activeWorkCount()} runs after shutdown timeout`,
+        `${timeoutMs}ms`,
+      );
+      for (const state of this.runningStates()) state.runner.abort();
+      await this.waitForActiveWork(Date.now() + 5_000, 100);
+      if (this.activeWorkCount() > 0) {
+        throw new Error(
+          `Shutdown could not settle ${this.activeWorkCount()} aborted runs within 5000ms`,
+        );
+      }
+    }
+
+    await Promise.all(this.transitions.values());
+    await this.closeAll();
+  }
+
+  private async waitForActiveWork(deadline: number, intervalMs: number): Promise<void> {
+    while (this.activeWorkCount() > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  private activeWorkCount(): number {
+    const sessionIds = new Set(this.leases.keys());
+    for (const settlement of this.settlementKinds.values()) {
+      sessionIds.add(settlement.sessionId);
+    }
+    return sessionIds.size;
   }
 }

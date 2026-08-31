@@ -72,9 +72,9 @@ describe("conversationPackageSkillMounts", () => {
   test("mounts a package's skills read-only", () => {
     const source = makeSkillPackage();
     globalPackages([source]);
-    resolveConversationPackages({ ...options(), fetchMissing: true });
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
 
-    const mounts = conversationPackageSkillMounts(options());
+    const mounts = conversationPackageSkillMounts(resolved);
     expect(mounts).toHaveLength(1);
     expect(mounts[0].readOnly).toBe(true);
     expect(mounts[0].source.endsWith("skills")).toBe(true);
@@ -82,9 +82,9 @@ describe("conversationPackageSkillMounts", () => {
 
   test("mount targets live outside /workspace so full mode cannot shadow them", () => {
     globalPackages([makeSkillPackage()]);
-    resolveConversationPackages({ ...options(), fetchMissing: true });
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
 
-    const [mount] = conversationPackageSkillMounts(options());
+    const [mount] = conversationPackageSkillMounts(resolved);
     expect(mount.target.startsWith("/workspace")).toBe(false);
     expect(mount.target.startsWith("/mikan/packages/")).toBe(true);
     expect(mount.target.endsWith("/skills")).toBe(true);
@@ -94,7 +94,7 @@ describe("conversationPackageSkillMounts", () => {
     globalPackages([makeSkillPackage()]);
     const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
 
-    const [mount] = conversationPackageSkillMounts(options());
+    const [mount] = conversationPackageSkillMounts(resolved);
     expect(mount.target).toBe(packageSkillRuntimeDir(resolved.skillDirs[0].slug));
   });
 
@@ -107,16 +107,17 @@ describe("conversationPackageSkillMounts", () => {
       cwd: repo,
     });
     globalPackages([`file://${repo}`]);
-    resolveConversationPackages({ ...options(), fetchMissing: true });
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
 
-    expect(conversationPackageSkillMounts(options())).toEqual([]);
+    expect(conversationPackageSkillMounts(resolved)).toEqual([]);
   });
 
   test("building the mount list never reaches the network", () => {
     // Declared but never fetched: an offline resolve yields no mounts rather
     // than blocking a container start on a clone.
     globalPackages([makeSkillPackage()]);
-    expect(conversationPackageSkillMounts(options())).toEqual([]);
+    const resolved = resolveConversationPackages(options());
+    expect(conversationPackageSkillMounts(resolved)).toEqual([]);
   });
 
   test("two long identities sharing a prefix get distinct mount targets", () => {
@@ -138,9 +139,9 @@ describe("conversationPackageSkillMounts", () => {
       return `file://${repo}`;
     });
     globalPackages(repos);
-    resolveConversationPackages({ ...options(), fetchMissing: true });
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
 
-    const mounts = conversationPackageSkillMounts(options());
+    const mounts = conversationPackageSkillMounts(resolved);
     expect(mounts).toHaveLength(2);
     expect(mounts[0].target).not.toBe(mounts[1].target);
   });
@@ -148,7 +149,7 @@ describe("conversationPackageSkillMounts", () => {
   test("assets shipped beside SKILL.md are inside the mounted directory", () => {
     globalPackages([makeSkillPackage()]);
     const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
-    const [mount] = conversationPackageSkillMounts(options());
+    const [mount] = conversationPackageSkillMounts(resolved);
 
     // The whole skills/ tree is mounted, so triage.sh is reachable at a
     // runtime path — the thing inlining a SKILL.md body could never provide.

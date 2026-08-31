@@ -6,14 +6,17 @@ import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import type { ConversationMessage } from "../adapter.js";
 import { ActorExecutionResolver } from "../execution-resolver.js";
+import { resolveConversationPackages } from "../packages/index.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import {
+  assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   type Executor,
   type RuntimePathContext,
   type SandboxConfig,
 } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
+import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import type { RunnerExecutionContext } from "./types.js";
 
 function isWithinPathRoot(path: string, root: string): boolean {
@@ -193,12 +196,30 @@ export function createRunnerExecutionContext(
   };
 
   return {
-    executionResolver,
     executor,
-    getPathContext: () => executor.getPathContext(workspace.root),
-    async resolveExecutorForRun(context): Promise<void> {
-      if (!executionResolver) return;
-      activeExecutor = await executionResolver.resolve(context);
+    async resolveForRun(context) {
+      if (executionResolver) {
+        const decision = await executionResolver.resolve(context);
+        activeExecutor = decision.executor;
+        return {
+          pathContext: decision.pathContext,
+          projection: decision.projection,
+          packages: decision.packages,
+        };
+      }
+
+      const office = workspace.office(context.address);
+      const projection = resolveWorkspaceProjection(office);
+      assertSandboxSupportsWorkspacePolicy(
+        sandboxConfig,
+        projection.doorPolicy,
+        projection.promptSources.globalMemoryReadOnly === true,
+      );
+      return {
+        pathContext: executor.getPathContext(workspace.root),
+        projection,
+        packages: resolveConversationPackages({ office }),
+      };
     },
   };
 }

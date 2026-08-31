@@ -236,12 +236,12 @@ describe("ConversationRuntime handleEvent", () => {
     );
     const runtime = makeRuntime(models);
     const internal = runtime as unknown as {
-      getOrCreateState(options: {
+      acquireState(options: {
         address: typeof testAddress;
         conversationId: string;
         sessionKey: string;
         conversationKind: "shared";
-      }): Promise<ConversationRuntimeState>;
+      }): Promise<{ state: ConversationRuntimeState; release: () => void }>;
       createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
     };
     const originalCreate = internal.createCurrentRunner.bind(internal);
@@ -258,14 +258,16 @@ describe("ConversationRuntime handleEvent", () => {
       conversationKind: "shared" as const,
     };
 
-    const first = internal.getOrCreateState(options);
-    const second = internal.getOrCreateState(options);
+    const first = internal.acquireState(options);
+    const second = internal.acquireState(options);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
     releaseCreate();
     const [left, right] = await Promise.all([first, second]);
 
-    expect(left).toBe(right);
+    expect(left.state).toBe(right.state);
     expect(create).toHaveBeenCalledOnce();
+    left.release();
+    right.release();
     await runtime.shutdown();
   });
 

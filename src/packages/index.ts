@@ -737,12 +737,12 @@ export function packageSkillRuntimeDir(slug: string): string {
  * edit would be silently discarded on the next refresh. Making the filesystem
  * refuse the write turns a confusing data-loss bug into an obvious error.
  *
- * Resolution is offline, so building the mount list never reaches the network.
+ * This pure step consumes an already resolved package set and never reaches the network.
  */
 export function conversationPackageSkillMounts(
-  options: ResolvePackagesOptions,
+  packages: ResolvedPackages,
 ): Array<{ source: string; target: string; readOnly: true }> {
-  return resolveConversationPackages(options).skillDirs.map(({ slug, dir }) => ({
+  return packages.skillDirs.map(({ slug, dir }) => ({
     source: dir,
     target: packageSkillRuntimeDir(slug),
     readOnly: true,

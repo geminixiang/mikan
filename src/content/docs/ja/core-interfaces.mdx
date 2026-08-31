@@ -115,7 +115,7 @@ host に面した platform port です。次を組み合わせます:
 
 ソース: `src/runtime/types.ts` と `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` は `ConversationRuntime` を返します。これは per-session の直列化、command dispatch、runner caching、stop/reset の挙動、idle eviction、graceful shutdown を単独で所有します。
+`createConversationRuntime(options)` は公開の `ConversationRuntime` オーケストレーターを返します。`src/runtime/` 内では `SessionLifecycle` が runner resource の単一 authority であり、per-session の直列化、materialization、lease、settlement、invalidation、disposal、idle eviction、shutdown を所有します。runtime オーケストレーターは command、stop/reset、rotation、platform-facing workflow を所有します。
 
 ### Input メソッド
 
@@ -140,7 +140,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 `ConversationRuntimeOptions` は、`workspace`（`createWorkspace` が返す `Workspace`）、sandbox/resource サービス、任意の portal token stores、任意の commands、model registry、proactive な platform 操作、platform tool-pack factories を供給します。vault と portal stores が欠けている場合は無効化された実装に degrade します。portal URL を設定しつつその store を設定しない場合、使用時にエラーになります。
 
-並行性の不変条件: 1 つの office と session key の組に対する呼び出しは直列で、異なる session keys は並行して実行され得ます。したがって platform tool pack は runner ごとに作成され、決してグローバルに共有されません。`bindRun` がその run binding を変更するためです。
+並行性の不変条件: 1 つの office と session key の組に対する呼び出しは直列で、異なる session keys は並行して実行され得ます。runner を使う各操作は内部 lifecycle lease を保持するため、settings invalidation、eviction、shutdown が操作途中で runner を dispose することはありません。platform tool pack は引き続き runner ごとに作成されます。
 
 ## 4. Command インターフェース
 
@@ -245,9 +245,10 @@ adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意�
 Credential フローは次のとおりです:
 
 1. runtime が platform trust、conversation、user、sandbox topology を供給する。
-2. execution resolver が actor/vault identity を選択する。
-3. `VaultManager` が env と mounts を解決する。
-4. 具体的な executor は、その runtime を意図した credentials のみを受け取る。
+2. execution resolver が Workspace projection と packages を一度だけ解決し、actor/vault identity を選択する。
+3. `VaultManager` が env と mounts を解決し、collision と backend capability checks が grant 全体を検証する。
+4. 1 つの execution decision が projection、packages、runtime path context、およびその run 用 credentials だけを持つ concrete executor を返す。
+5. Prompt memory/skills と filesystem execution は同じ decision を使い、authorization を別々に再計算しない。
 
 Host sandbox 実行は決して vault 注入を受け取りません。Open-trigger platforms は決して ambient shared vault を受け取りません。これらはセキュリティの不変条件であり、便宜的な既定値ではありません。
 

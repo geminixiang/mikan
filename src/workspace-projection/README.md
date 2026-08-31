@@ -1,6 +1,6 @@
 # src/workspace-projection
 
-Resolves one conversation office's complete data view: the effective door policy, concrete runtime mounts, and the host-side memory/skill sources authorized for prompt construction. Keeping those outputs together prevents the prompt from bypassing filesystem isolation.
+Resolves one conversation office's complete data view: the effective door policy, concrete runtime mounts, and the host-side memory/skill sources authorized for prompt construction. Execution resolution carries this one projection decision through the executor, runtime paths, and prompt construction for a run, preventing the prompt from bypassing filesystem isolation.
 
 ## Policies
 
