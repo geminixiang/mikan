@@ -119,7 +119,6 @@ Door policy と layout は一緒に解決されます。`isolated` は常に `co
 | `mikan --download <channel-id>`                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
 | `mikan --version`                                                  | インストール済み version を表示                                                       |
 | `mikan --help`                                                     | CLI の使い方と platform-token のサマリーを表示                                        |
-| `mikan ext ...`                                                    | harness extensions を管理。subcommands は `mikan ext` で確認                          |
 | `mikan office list`                                                | 登録済み office、有効なプラットフォーム、保留中の legacy migration を一覧表示         |
 | `mikan office claim <conversationId> <platform>`                   | boot が帰属を判定できなかった legacy な生 id directory の所有プラットフォームを指定   |
 

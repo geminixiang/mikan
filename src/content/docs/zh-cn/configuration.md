@@ -119,7 +119,6 @@ Onboarding 不会写入 `sandbox.workspace`。没有显式的全局或对话覆�
 | `mikan --download <channel-id>`                                    | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`              |
 | `mikan --version`                                                  | 输出已安装版本                                               |
 | `mikan --help`                                                     | 显示 CLI 用法与平台令牌摘要                                  |
-| `mikan ext ...`                                                    | 管理框架扩展；运行 `mikan ext` 查看子命令                    |
 | `mikan office list`                                                | 列出已注册的办公室、已启用的平台，以及待处理的旧版迁移       |
 | `mikan office claim <conversationId> <platform>`                   | 为启动时无法归属的旧版原始 id 目录指明其所属平台             |
 

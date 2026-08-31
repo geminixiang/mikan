@@ -556,7 +556,7 @@ export class SessionStore implements SessionInspection {
     return this.mutate(async () => (await this.live()).appendMessage(toDurable(message)));
   }
 
-  /** Append an extension/application data entry (never sent to the LLM). */
+  /** Append a custom application data entry (never sent to the LLM). */
   async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
     return this.mutate(async () =>
       (await this.live()).appendCustomEntry(customType, toDurable(data)),

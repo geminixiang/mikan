@@ -19,7 +19,6 @@ export type {
   HarnessEvent,
   HarnessEventListener,
   MikanAgentSessionOptions,
-  PromptBlockedOutcome,
 } from "./types.js";
 export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./skills.js";
 export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
@@ -48,67 +47,6 @@ export type {
   OneShotEventPayload,
   PeriodicEventPayload,
 } from "./types.js";
-export { ExtensionRegistry, parseCommandInput } from "./extensions/registry.js";
-export { EXT_ACTION_PREFIX, namespaceActionIds, parseExtActionId } from "./extensions/registry.js";
-export {
-  defaultExtensionDirs,
-  extensionSlug,
-  listInstalledExtensions,
-  loadExtensions,
-  validateExtension,
-} from "./extensions/loader.js";
-export type {
-  ExtensionValidation,
-  InstalledExtensionInfo,
-  LoadExtensionsOptions,
-  LoadExtensionsResult,
-} from "./extensions/types.js";
-export type {
-  AgentErrorHookEvent,
-  BeforeAgentStartHookEvent,
-  BeforeAgentStartHookResult,
-  BudgetExceededHookEvent,
-  ContextHookEvent,
-  ContextHookResult,
-  SubagentApi,
-  ExtensionBlockAction,
-  ExtensionBlockActionHandler,
-  ExtensionBlockKitMessage,
-  ExtensionCallbackScheduleSpec,
-  ExtensionCallbackScheduleStore,
-  ExtensionCommand,
-  ExtensionCommandContext,
-  ExtensionDisposer,
-  ExtensionHostServices,
-  ExtensionLoadError,
-  ExtensionManifest,
-  ExtensionScheduleAction,
-  ExtensionScheduleCallbackEvent,
-  ExtensionScheduleCallbackFire,
-  ExtensionScheduleCallbackHandler,
-  ExtensionScheduleEngine,
-  ExtensionScheduleInfo,
-  ExtensionSchedulePayload,
-  ExtensionScheduleSpec,
-  ExtensionScheduleStore,
-  ExtensionSecretDeclaration,
-  ExtensionTextScheduleSpec,
-  LoadedExtension,
-  MessageEndHookEvent,
-  MessageEndHookResult,
-  MikanExtensionActivate,
-  MikanExtensionApi,
-  MikanExtensionModule,
-  MikanHookMap,
-  MikanHookName,
-  RunOrigin,
-  SessionCompactHookEvent,
-  ToolCallHookEvent,
-  ToolCallHookResult,
-  ToolResultHookEvent,
-  ToolResultHookResult,
-  TurnEndHookEvent,
-} from "./extensions/types.js";
 export {
   type SubagentModelSpec,
   type SubagentProfile,

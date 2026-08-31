@@ -25,7 +25,7 @@ npm run build
 | `src/content/docs/`       | このドキュメントサイト（Starlight）と、`ja/`、`zh-cn/`、`zh-tw/` の各ロケール            |
 | `src/tsconfig.build.json` | build 用の TypeScript project。root の `tsconfig.json` はエディタ向けツールを対象にする  |
 | `.config/`                | ツール設定: Astro、Vitest（unit と E2E）、oxlint、oxfmt                                  |
-| `deploy/`                 | デプロイ用アセット: `pm2/`、`docker/`、`examples/`（embedder、extensions、bridges）      |
+| `deploy/`                 | デプロイ用アセット: `pm2/`、`docker/`、`examples/`（embedder、bridges）                  |
 | `e2e/`                    | 実プラットフォームのエンドツーエンド suite。`npm test` からは除外される                  |
 | `docs/adr/`               | アーキテクチャ決定記録                                                                   |
 | `scripts/`                | npm scripts から呼び出される保守・検証スクリプト                                         |

@@ -57,7 +57,7 @@ Responsibilities:
 
 - create `PiAgentWrapper`
 - load model, skills, memory, and session context
-- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-agent-core` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and extension hooks
+- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-agent-core` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
 

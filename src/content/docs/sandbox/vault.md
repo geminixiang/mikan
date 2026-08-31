@@ -22,7 +22,7 @@ Important contents include:
 └── vaults/
     ├── <office-key>/          # one conversation's credentials
     ├── shared/<name>/         # shared login profiles
-    └── extensions/<slug>/     # extension secrets (host-side only)
+    └── extensions/           # legacy reserved namespace; never loaded or mounted
 ```
 
 You can also specify it with `--state-dir`:
@@ -75,7 +75,7 @@ Vault material is not one undifferentiated class of secret:
 - **A conversation's own vault is meant to reach the guest.** Its `env` entries become environment variables for tool commands, and its credential files are projected to their target paths (by default under `/root`). That is the whole point: the agent runs `gh`, `gcloud`, or `ssh` as the person who logged in.
 - **The vault directory itself is never bulk-mounted.** Only the individual credential files that a resolved vault declares are projected, one mount per file, and only for the conversation whose key resolved.
 - **Daemon tokens never reach the guest.** Platform bot tokens (`SLACK_BOT_TOKEN`, the GitHub App private key, and friends) are read by the mikan host process and are not part of any vault injection.
-- **Extension secrets never reach the guest.** `vaults/extensions/<slug>/env` is read host-side through the extension API; it is not a user vault and is not mounted or injected.
+- **Legacy extension secrets stay inert.** `vaults/extensions/` remains reserved so old files are not mistaken for user vaults; mikan no longer loads them and never mounts or injects them.
 
 This is a data boundary, not an execution boundary. Anything the conversation's own credentials can do, its agent can do — scope the credentials you store accordingly.
 

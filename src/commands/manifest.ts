@@ -93,12 +93,6 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     slackRoute: { thread: true },
   },
   {
-    name: "extensions",
-    description: "List extensions installed for this conversation",
-    slackCommand: "/pi-extensions",
-    slackRoute: { includeText: true },
-  },
-  {
     name: "auto-reply",
     description: "Enable, disable, or show auto-reply for this channel",
     aliases: ["autoreply"],

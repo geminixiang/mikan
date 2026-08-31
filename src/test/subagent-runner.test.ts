@@ -29,7 +29,7 @@ import { SubagentSlotPool } from "../harness/subagent-slots.js";
 let dir: string;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "mikan-extension-agent-test-"));
+  dir = mkdtempSync(join(tmpdir(), "mikan-subagent-test-"));
 });
 
 afterEach(() => {

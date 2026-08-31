@@ -5,7 +5,7 @@
  * than `chat.postMessage`, and every streamed reply spends one of each — so
  * the binding constraint is the number of *streams started*, not the number
  * of tokens appended. A workspace answering a burst of mentions, or an
- * extension firing a batch of scheduled runs, reaches that ceiling long
+ * process firing a batch of scheduled runs, reaches that ceiling long
  * before it reaches any posting limit.
  *
  * Exceeding it is not fatal — the renderer catches the failure and falls back

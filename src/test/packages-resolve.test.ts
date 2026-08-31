@@ -31,19 +31,15 @@ function conversationSettings(packages: string[]): void {
   });
 }
 
-/** A package repo whose extensions live in the `extensions/` collection dir. */
 function makeCollectionRepo(marker: string): string {
   const repo = mkdtempSync(join(base, "repo-collection-"));
-  const extDir = join(repo, "extensions", "reporter");
-  mkdirSync(extDir, { recursive: true });
-  writeFileSync(join(extDir, "index.mjs"), `export function activate() {} // ${marker}`);
+  writeFileSync(join(repo, "README.md"), marker);
   mkdirSync(join(repo, "skills", "triage"), { recursive: true });
   writeFileSync(join(repo, "skills", "triage", "SKILL.md"), "---\nname: triage\n---\nbody");
   return repo;
 }
 
-/** A repo that is itself one extension — the shape a dev's working copy has. */
-function makeSingleExtensionRepo(name: string): string {
+function makePackageWithoutSkills(name: string): string {
   const repo = join(base, name);
   mkdirSync(repo, { recursive: true });
   writeFileSync(join(repo, "index.mjs"), "export function activate() {}");
@@ -105,28 +101,10 @@ afterEach(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-describe("scope convention directories", () => {
-  test("both scopes are always scanned, even with no packages declared", () => {
-    const result = resolve();
-    expect(result.extensionDirs).toEqual([
-      join(stateDir, "global", "extensions"),
-      join(stateDir, "conversations", officeKey(CONVERSATION_ADDRESS), "extensions"),
-    ]);
-    expect(result.errors).toEqual([]);
-  });
-
-  test("the global convention dir is scanned before the conversation's", () => {
-    const dirs = resolve().extensionDirs;
-    expect(dirs.indexOf(join(stateDir, "global", "extensions"))).toBeLessThan(
-      dirs.indexOf(join(stateDir, "conversations", officeKey(CONVERSATION_ADDRESS), "extensions")),
-    );
-  });
-});
-
 describe("scopes are additive", () => {
   test("a conversation's packages do not replace the global ones", () => {
     const globalPkg = gitify(makeCollectionRepo("global"));
-    const conversationPkg = gitify(makeSingleExtensionRepo("channel-only"));
+    const conversationPkg = gitify(makePackageWithoutSkills("channel-only"));
     globalSettings([globalPkg]);
     conversationSettings([conversationPkg]);
 
@@ -187,20 +165,6 @@ describe("ref-keyed checkouts", () => {
 });
 
 describe("package layouts", () => {
-  test("a package with extensions/ is scanned as a collection", () => {
-    globalSettings([gitify(makeCollectionRepo("c"))]);
-    const result = resolve({ fetchMissing: true });
-    expect(result.extensionDirs.some((dir) => dir.endsWith(join("extensions")))).toBe(true);
-    expect(result.extensionRoots).toEqual([]);
-  });
-
-  test("a package that is itself an extension is loaded as a root", () => {
-    globalSettings([gitify(makeSingleExtensionRepo("solo-ext"))]);
-    const result = resolve({ fetchMissing: true });
-    expect(result.extensionRoots).toHaveLength(1);
-    expect(result.extensionRoots[0].endsWith("solo-ext")).toBe(true);
-  });
-
   test("a package skills/ directory is reported with a slug", () => {
     globalSettings([gitify(makeCollectionRepo("c"))]);
     const result = resolve({ fetchMissing: true });
@@ -210,7 +174,7 @@ describe("package layouts", () => {
   });
 
   test("a package without skills/ contributes no skill dir", () => {
-    globalSettings([gitify(makeSingleExtensionRepo("no-skills"))]);
+    globalSettings([gitify(makePackageWithoutSkills("no-skills"))]);
     expect(resolve({ fetchMissing: true }).skillDirs).toEqual([]);
   });
 });
@@ -247,9 +211,8 @@ describe("failures never take a conversation down", () => {
     expect(resolve().packages).toHaveLength(1);
   });
 
-  test("the convention dirs survive an unreadable global settings file", () => {
+  test("an unreadable settings file yields no packages", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ not json");
-    const result = resolve();
-    expect(result.extensionDirs).toHaveLength(2);
+    expect(resolve().packages).toEqual([]);
   });
 });

@@ -99,12 +99,6 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--worker-token"])).toThrow(/Unknown flag: --worker-token/);
   });
 
-  test("ext short-circuits before flag parsing", () => {
-    const plan = resolveBoot(["ext", "install", "--sandbox=not-a-real-spec"]);
-    expect(plan.mode).toBe("ext");
-    expect(plan.extArgs).toEqual(["install", "--sandbox=not-a-real-spec"]);
-  });
-
   test("office subcommand short-circuits with its own argv", () => {
     const plan = resolveBoot(["office", "claim", "C123", "slack"]);
     expect(plan.mode).toBe("office");

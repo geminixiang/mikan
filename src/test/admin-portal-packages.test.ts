@@ -83,9 +83,12 @@ beforeEach(async () => {
   );
 
   repo = mkdtempSync(join(base, "repo-"));
-  const ext = join(repo, "extensions", "reporter");
-  mkdirSync(ext, { recursive: true });
-  writeFileSync(join(ext, "index.mjs"), "export function activate() {}");
+  const skill = join(repo, "skills", "reporter");
+  mkdirSync(skill, { recursive: true });
+  writeFileSync(
+    join(skill, "SKILL.md"),
+    "---\nname: reporter\ndescription: Report package status\n---\nreport",
+  );
   execFileSync("git", ["init", "-q"], { cwd: repo });
   execFileSync("git", ["add", "-A"], { cwd: repo });
   execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], {
@@ -140,7 +143,7 @@ describe("POST /admin/api/packages/mutate", () => {
     expect(globalPackages()).toEqual([source]);
 
     const { body } = await get("/admin/api/packages");
-    expect(body.global[0]).toMatchObject({ ready: true, extensions: ["reporter"] });
+    expect(body.global[0]).toMatchObject({ ready: true, skills: ["reporter"] });
   });
 
   test("a bad source answers 400 with git's message and persists nothing", async () => {

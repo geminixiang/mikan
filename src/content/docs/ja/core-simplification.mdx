@@ -16,7 +16,7 @@ description: 挙動を変えずに mikan の public 面と内部結合を減ら�
 5. 意図的に分離された 1 つの session store と 1 つの platform log store；
 6. すべての tool I/O のための 1 つの executor インターフェース；
 7. 1 つの credential-resolution の seam；
-8. 任意の platform、command、tool、extension、sandbox の機能のための registries。
+8. 任意の platform、command、tool、sandbox の機能のための registries。
 
 ## 発見事項
 
@@ -29,7 +29,7 @@ description: 挙動を変えずに mikan の public 面と内部結合を減ら�
 | P1     | Sandbox の拡張性が名目上のものにすぎない                        | `SandboxAdapter` は export されているが、`sandbox/index.ts` の閉じた配列が parsing/creation を所有している                                                              | registry を追加するか adapter を internal にする。実験的な backends を default core assembly の外へ移す                        |
 | P1     | Runtime 構築が command 実装の詳細を漏らしている                 | `ConversationRuntimeOptions` は `Omit<CommandServices, ...>` であり、内部で command services を再構築している                                                           | 明示的な runtime 依存を定義し、command adapter で `CommandServices` を構築する                                                 |
 | P1     | Commands にまだ 2 つのインベントリがある                        | manifest が platform registration を所有し、registry が handlers を所有する。command の追加には両方が必要                                                               | `CommandDefinition` が manifest メタデータと handler factory/reference を含むべき                                              |
-| P1     | harness が public SDK であり内部エンジンでもある                | root が session parsing、credentials、settings、loader、event schema、hooks、runner の詳細を一緒に export している                                                      | `./extension`、`./runtime`、任意で `./harness` の subpaths を、別々の安定性ポリシーとともに publish する                       |
+| P1     | harness が public SDK であり内部エンジンでもある                | root が session parsing、credentials、settings、event schema、runner の詳細を一緒に export している                                                                     | `./runtime`、任意で `./harness` の subpaths を、別々の安定性ポリシーとともに publish する                                      |
 | P2     | いくつかの capability インターフェースが任意メソッドを使う      | `MessagingBot` と `ConversationResponder` が `?` メソッドの追加で成長する                                                                                               | 名前付き capability オブジェクト（`reactions`、`uploads`、`streaming`）を使い、不在と要件を明示的にする                        |
 | P2     | HTTP route の契約が手動で dispatch され、ほぼ型付けされていない | `web/server.ts` と portal modules が method/path で分岐する。payload types がローカル                                                                                   | UI API は internal のままにしつつ、payload がモジュールをまたぐ箇所で route descriptors と request/response schemas を集約する |
 
@@ -45,7 +45,6 @@ description: 挙動を変えずに mikan の public 面と内部結合を減ら�
 - per-session queues を保つ。グローバルな直列化は並行性を無駄にし、直列化なしは conversation の順序を破壊する。
 - platform trust policy を明示的に保つ。platform 名から credential の安全性を推測するのは危険。
 - executor が所有する file transport を保つ。これを shell snippets に置き換えると、quoting、サイズ、partial-write の失敗が再び入り込む。
-- extension code を host-only に、sandbox workspace data を分離して保つ。
 
 ## 提案するインターフェース
 
@@ -88,7 +87,7 @@ interface PlatformPort {
 }
 ```
 
-これにより、任意のメソッド名による feature detection がなくなり、commands/extensions が必要とする正確な機能を要求できるようになります。
+これにより、任意のメソッド名による feature detection がなくなり、commands が必要とする正確な機能を要求できるようになります。
 
 ### 明示的な runtime 依存
 
@@ -142,7 +141,7 @@ interface SandboxRegistry {
 
 1. `MessagingBot` から message、reaction、upload、private-message の各 port を抽出する。
 2. 既存の bots を、その SDK コードを変えずに適応させる。
-3. bot 全体ではなく、狭い capabilities を commands、extensions、events、admin に渡す。
+3. bot 全体ではなく、狭い capabilities を commands、events、admin に渡す。
 4. 未使用になった浅い `ChatAdapter` インターフェースを廃止する。（完了）
 
 ### Phase 4 — runtime 構築と commands を簡素化する

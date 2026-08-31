@@ -24,11 +24,11 @@ describe("parseSource", () => {
   });
 
   test("ref and subpath parse together", () => {
-    expect(parseSource("github:owner/repo@v1.2.0#examples/agent-pm")).toEqual({
+    expect(parseSource("github:owner/repo@v1.2.0#skills/triage")).toEqual({
       type: "git",
       url: "https://github.com/owner/repo.git",
       ref: "v1.2.0",
-      subpath: "examples/agent-pm",
+      subpath: "skills/triage",
     });
   });
 
@@ -55,11 +55,11 @@ describe("parseSource", () => {
   });
 
   test("absolute and relative paths are local sources, resolved", () => {
-    expect(parseSource("/srv/ext/agent-pm")).toEqual({
+    expect(parseSource("/srv/packages/triage")).toEqual({
       type: "local",
-      path: "/srv/ext/agent-pm",
+      path: "/srv/packages/triage",
     });
-    expect(parseSource("./agent-pm").type).toBe("local");
+    expect(parseSource("./triage").type).toBe("local");
   });
 
   test("a bare host/owner/repo is rejected as ambiguous with a path", () => {
@@ -108,7 +108,7 @@ describe("sourceIdentity", () => {
   });
 
   test("local identity is the resolved path", () => {
-    expect(sourceIdentity(parseSource("/srv/ext/agent-pm"))).toBe("local:/srv/ext/agent-pm");
+    expect(sourceIdentity(parseSource("/srv/packages/triage"))).toBe("local:/srv/packages/triage");
   });
 });
 
@@ -132,7 +132,7 @@ describe("formatSource", () => {
       "https://github.com/owner/repo.git",
       "https://github.com/owner/repo.git@v1",
       "https://github.com/owner/repo.git@v1#examples/ext",
-      "/srv/ext/agent-pm",
+      "/srv/packages/triage",
     ]) {
       expect(formatSource(parseSource(source))).toBe(source);
     }

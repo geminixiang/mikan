@@ -19,10 +19,10 @@ authenticates as is decided by `credentialAuthorizationKey`
 | `host`                                    | a user-derived key (the host has no execution isolation to scope to)                                                            |
 | `container`                               | a key derived from the deployment-chosen container name                                                                         |
 
-Two top-level names are reserved namespaces rather than vault keys:
-`shared/<name>` for named shared login profiles, and `extensions/<slug>` for
-extension secrets — read host-side through the harness `api.secrets` and
-never mounted into a sandbox.
+`shared/<name>` is a reserved namespace for named shared login profiles.
+`extensions/` also remains reserved as a legacy namespace: executable
+extensions are no longer loaded, but old secret files are left untouched and
+must never be mistaken for user vaults or mounted into a Sandbox.
 
 Only exact pre-hash host/shared-container keys remain readable as a legacy
 fallback. Lossy managed-sandbox keys cannot prove ownership and are not

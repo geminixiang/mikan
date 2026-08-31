@@ -33,9 +33,9 @@ describe("materializeSource", () => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-pkg-state-"));
     source = `file://${repo}`;
 
-    const extDir = join(repo, "extensions", "agent-pm");
-    mkdirSync(extDir, { recursive: true });
-    writeFileSync(join(extDir, "index.mjs"), "export default function activate() {}");
+    const skillDir = join(repo, "skills", "toolkit");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: toolkit\n---\nmanage");
     writeFileSync(join(repo, "marker"), "v1");
     run(repo, ["init", "-q"]);
     run(repo, ["add", "-A"]);
@@ -81,11 +81,11 @@ describe("materializeSource", () => {
   });
 
   test("a #subpath resolves to the directory inside the clone", () => {
-    const result = materializeSource(`${source}#extensions/agent-pm`, {
+    const result = materializeSource(`${source}#skills/toolkit`, {
       scope: "global",
       stateDir,
     });
-    expect(existsSync(join(result.dir, "index.mjs"))).toBe(true);
+    expect(existsSync(join(result.dir, "SKILL.md"))).toBe(true);
   });
 
   test("a missing subpath reports the subpath, not a git error", () => {

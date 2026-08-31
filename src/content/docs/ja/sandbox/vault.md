@@ -22,7 +22,7 @@ state directory のデフォルトは次のとおりです：
 └── vaults/
     ├── <office-key>/          # 1 つの conversation の認証情報
     ├── shared/<name>/         # 共有 login profiles
-    └── extensions/<slug>/     # extension secrets（host 側のみ）
+    └── extensions/            # legacy reserved namespace。load/mount されない
 ```
 
 `--state-dir` で指定することもできます：
@@ -73,7 +73,7 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 - **conversation 自身の vault は guest に届くことが意図されています。** その `env` エントリは tool command の環境変数になり、credential file は target path（既定では `/root` 配下）へ投影されます。それこそが目的です。agent はログインした本人として `gh`、`gcloud`、`ssh` を実行します。
 - **vault directory 自体がまとめて mount されることはありません。** 解決された vault が宣言する個々の credential file だけが、1 ファイルにつき 1 mount で、しかもその key が解決した conversation に対してのみ投影されます。
 - **Daemon の token は guest に届きません。** プラットフォームの bot token（`SLACK_BOT_TOKEN`、GitHub App の private key など）は mikan の host プロセスが読み取るもので、vault 注入の対象ではありません。
-- **Extension secrets は guest に届きません。** `vaults/extensions/<slug>/env` は extension API を通じて host 側で読み取られます。user vault ではなく、mount も注入もされません。
+- **Legacy extension secrets は無効のままです。** `vaults/extensions/` は古いファイルを user vault と誤認しないための予約 namespace です。mikan は load、mount、inject しません。
 
 これはデータの境界であって、実行の境界ではありません。その conversation 自身の認証情報でできることは、その agent にもできます。保存する認証情報の範囲は、それを踏まえて絞ってください。
 

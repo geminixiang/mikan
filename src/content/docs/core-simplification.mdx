@@ -16,7 +16,7 @@ The smallest coherent mikan core is:
 5. one session store and one platform log store, intentionally separate;
 6. one executor interface for all tool I/O;
 7. one credential-resolution seam;
-8. registries for optional platform, command, tool, extension, and sandbox capabilities.
+8. registries for optional platform, command, tool, and sandbox capabilities.
 
 Web portals, particular chat SDKs, Docker provisioning, Cloudflare execution, and GitHub-specific tools are products or plugins around this core.
 
@@ -31,7 +31,7 @@ Web portals, particular chat SDKs, Docker provisioning, Cloudflare execution, an
 | P1       | Sandbox extensibility is only nominal                           | `SandboxAdapter` is exported, but a closed array in `sandbox/index.ts` owns parsing/creation                                                                | Add a registry or make adapters internal; move experimental backends out of the default core assembly                |
 | P1       | Runtime construction leaks command implementation details       | `ConversationRuntimeOptions` is an `Omit<CommandServices, ...>` and reconstructs command services internally                                                | Define explicit runtime dependencies, then build `CommandServices` in a command adapter                              |
 | P1       | Commands still have two inventories                             | The manifest owns platform registration while the registry owns handlers; adding a command requires both                                                    | A `CommandDefinition` should contain manifest metadata and a handler factory/reference                               |
-| P1       | The harness is both a public SDK and an internal engine         | Root exports session parsing, credentials, settings, loader, event schema, hooks, and runner details together                                               | Publish `./extension`, `./runtime`, and optionally `./harness` subpaths with separate stability policies             |
+| P1       | The harness is both a public SDK and an internal engine         | Root exports session parsing, credentials, settings, event schema, and runner details together                                                              | Publish `./runtime` and optionally `./harness` subpaths with separate stability policies                             |
 | P2       | Optional runtime products are compiled into the central CLI     | Platform SDKs, portals, and four sandbox modes are assembled in `main.ts`                                                                                   | Make `main.ts` a composition root over registries; lazy/optional product modules become replaceable                  |
 | P2       | Several capability interfaces use optional methods              | `MessagingBot` and `ConversationResponder` grow by adding `?` methods                                                                                       | Use named capability objects (`reactions`, `uploads`, `streaming`) so absence and requirements are explicit          |
 | P2       | HTTP route contracts are manually dispatched and mostly untyped | `web/server.ts` and portal modules branch on method/path; payload types are local                                                                           | Keep the UI API internal, but centralize route descriptors and request/response schemas where payloads cross modules |
@@ -48,7 +48,6 @@ Some apparent duplication protects important semantics:
 - Keep per-session queues. Global serialization would waste concurrency; no serialization would corrupt conversation order.
 - Keep platform trust policy explicit. Inferring credential safety from platform names is unsafe.
 - Keep executor-owned file transport. Replacing it with shell snippets reintroduces quoting, size, and partial-write failures.
-- Keep extension code host-only and sandbox workspace data separate.
 
 ## Proposed interfaces
 
@@ -91,7 +90,7 @@ interface PlatformPort {
 }
 ```
 
-This removes feature detection by arbitrary method name and lets commands/extensions request the exact capability they need.
+This removes feature detection by arbitrary method name and lets commands request the exact capability they need.
 
 ### Explicit runtime dependencies
 
@@ -147,7 +146,7 @@ This should remove consistency bugs around `ts` versus `message.id`, `thread_ts`
 
 1. Extract message, reaction, upload, and private-message ports from `MessagingBot`.
 2. Adapt existing bots without changing their SDK code.
-3. Pass narrow capabilities to commands, extensions, events, and admin instead of the whole bot.
+3. Pass narrow capabilities to commands, events, and admin instead of the whole bot.
 4. Retire the now-unused `ChatAdapter` shallow interface. (Completed.)
 
 ### Phase 4 — simplify runtime construction and commands

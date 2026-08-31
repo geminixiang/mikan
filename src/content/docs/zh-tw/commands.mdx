@@ -30,7 +30,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/auto-reply` / `/pi-auto-reply on\|off\|status`                     | 控制目前群組／頻道中的 auto-reply。                                                                    |
 | `stop` / `/stop`                                                     | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
 | `/admin` / `/pi-admin`                                               | 開啟 30 分鐘有效的管理 portal。                                                                        |
-| `/extensions` / `/pi-extensions`                                     | 列出全域與對話 extensions、版本及其提供的 skills。                                                     |
 | `/sandbox` / `/pi-sandbox`                                           | 顯示目前 sandbox 的限制，以及這個 office 的 door policy 與 workspace layout。                          |
 | `/pi-sandbox boost`                                                  | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
 | `/pi-sandbox door`                                                   | 回報這個 office 生效中的 door policy 與 layout，並列出可用的值。                                       |
@@ -57,7 +56,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
   application commands 與 Telegram 的指令選單會在啟動時由它派生，Slack 的路由也辨識清單中的 `/pi-*`
   名稱。由於 Discord 會拒絕長度超過 100 個字元的 option description，清單中的參數說明會由 command
   測試檢查長度。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、
-  `/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions`、`/pi-admin`）仍需在 Slack App 設定中手動更新。
 </Aside>
 
 ## 共享 vault 指令

@@ -146,7 +146,6 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 | `mikan --download <channel-id>`                                          | Download Slack channel history; requires `SLACK_BOT_TOKEN`                                |
 | `mikan --version`                                                        | Print the installed version                                                               |
 | `mikan --help`                                                           | Show CLI usage and the platform-token summary                                             |
-| `mikan ext ...`                                                          | Manage harness extensions; run `mikan ext` for subcommands                                |
 | `mikan office list`                                                      | List registered offices, enabled platforms, and pending legacy migrations                 |
 | `mikan office claim <conversationId> <platform>`                         | Name the owning platform of a legacy raw-id directory boot could not attribute            |
 

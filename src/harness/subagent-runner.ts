@@ -141,7 +141,7 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   workspaceDir: string;
   availableTools: AgentTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
-  /** Process-wide launch pool shared by tool and extension invocations. */
+  /** Process-wide launch pool shared by all parent runs. */
   slots?: SubagentSlotPool;
   /** Host-snapshotted parent transcript; never sourced from the public request. */
   parentMessages?: AgentMessage[];

@@ -21,7 +21,6 @@ Slack 适配器主要处理：
 
 - `app_mention`
 - `message`
-- slash commands：`/pi-login`、`/pi-session`、`/pi-model`、`/pi-sandbox`、`/pi-new`、`/pi-admin`、`/pi-extensions`、`/pi-auto-reply`——注册与路由都派生自 `src/commands/manifest.ts`，不过 Slack App manifest 本身仍需手动更新
 - Block Kit 操作
 - assistant 话题/状态 API
 

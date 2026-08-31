@@ -181,15 +181,11 @@ const bot = {
  * Seed a live shared-session state whose runner is entirely stubbed, so a test
  * can assert on the dispatch gate without standing up a model.
  */
-function seedRunnerState(
-  runtime: ConversationRuntime,
-  tryExtensionCommand: ReturnType<typeof vi.fn>,
-): PiAgentWrapper {
+function seedRunnerState(runtime: ConversationRuntime): PiAgentWrapper {
   const runner = {
     dreamSessionMemory: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     syncChatHistory: vi.fn(),
-    tryExtensionCommand,
     abort: vi.fn(),
     dispose: vi.fn().mockResolvedValue(undefined),
     getCurrentStep: vi.fn(),
@@ -304,10 +300,9 @@ describe("ConversationRuntime handleEvent", () => {
     );
   });
 
-  test("waits for chat history persistence before extension dispatch and agent run", async () => {
+  test("waits for chat history persistence before the agent run", async () => {
     const runtime = makeRuntime();
-    const tryExtensionCommand = vi.fn().mockResolvedValue(false);
-    const runner = seedRunnerState(runtime, tryExtensionCommand);
+    const runner = seedRunnerState(runtime);
     let releaseSync!: () => void;
     const syncGate = new Promise<void>((resolve) => {
       releaseSync = resolve;
@@ -319,10 +314,6 @@ describe("ConversationRuntime handleEvent", () => {
       await syncGate;
       order.push("sync:end");
     });
-    vi.mocked(runner.tryExtensionCommand).mockImplementation(async () => {
-      order.push("extension");
-      return false;
-    });
     vi.mocked(runner.run).mockImplementation(async () => {
       order.push("run");
       return { stopReason: "stop" };
@@ -331,7 +322,6 @@ describe("ConversationRuntime handleEvent", () => {
 
     const done = runtime.handleEvent(event, bot, context);
     await vi.waitFor(() => expect(order).toEqual(["sync:start"]));
-    expect(runner.tryExtensionCommand).not.toHaveBeenCalled();
     expect(runner.run).not.toHaveBeenCalled();
 
     releaseSync();
@@ -426,55 +416,6 @@ describe("ConversationRuntime handleEvent", () => {
     const serialized = JSON.stringify(entries);
     expect(serialized.match(/between turns/g)).toHaveLength(1);
     expect(serialized).toContain("second reply");
-  });
-
-  test("a platform that eats the slash dispatches extension commands bare", async () => {
-    const runtime = makeRuntime();
-    const tryExtensionCommand = vi.fn().mockResolvedValue(true);
-    seedRunnerState(runtime, tryExtensionCommand);
-
-    const { event, context } = makeEventAndContext("1100.1");
-    event.text = "pm status";
-    context.message.text = event.text;
-    context.platform = { ...testPlatform, bareExtensionCommands: true };
-
-    await runtime.handleEvent(event, bot, context);
-
-    expect(tryExtensionCommand).toHaveBeenCalledWith(context.message, context.responder, {
-      bareName: true,
-    });
-  });
-
-  test("without the capability, unslashed text never reaches extension dispatch", async () => {
-    const runtime = makeRuntime();
-    const tryExtensionCommand = vi.fn().mockResolvedValue(false);
-    seedRunnerState(runtime, tryExtensionCommand);
-
-    const { event, context } = makeEventAndContext("1100.2");
-    event.text = "pm status";
-    context.message.text = event.text;
-    context.platform = { ...testPlatform, bareExtensionCommands: undefined };
-
-    await runtime.handleEvent(event, bot, context);
-
-    expect(tryExtensionCommand).not.toHaveBeenCalled();
-  });
-
-  test("a slash command still dispatches with bare matching off", async () => {
-    const runtime = makeRuntime();
-    const tryExtensionCommand = vi.fn().mockResolvedValue(true);
-    seedRunnerState(runtime, tryExtensionCommand);
-
-    const { event, context } = makeEventAndContext("1100.3");
-    event.text = "/pm status";
-    context.message.text = event.text;
-    context.platform = { ...testPlatform, bareExtensionCommands: undefined };
-
-    await runtime.handleEvent(event, bot, context);
-
-    expect(tryExtensionCommand).toHaveBeenCalledWith(context.message, context.responder, {
-      bareName: false,
-    });
   });
 });
 
@@ -836,7 +777,6 @@ describe("ConversationRuntime lifecycle", () => {
       }),
       run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       syncChatHistory: vi.fn(),
-      tryExtensionCommand: vi.fn().mockResolvedValue(false),
       abort: vi.fn(),
       dispose: vi.fn().mockResolvedValue(undefined),
       getCurrentStep: vi.fn(),
@@ -879,7 +819,6 @@ describe("ConversationRuntime lifecycle", () => {
       }),
       run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       syncChatHistory: vi.fn(),
-      tryExtensionCommand: vi.fn().mockResolvedValue(false),
       abort: vi.fn(),
       dispose: vi.fn().mockResolvedValue(undefined),
       getCurrentStep: vi.fn(),
@@ -919,7 +858,6 @@ describe("ConversationRuntime lifecycle", () => {
       dreamSessionMemory: vi.fn(() => maintenanceGate),
       run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
       syncChatHistory: vi.fn(),
-      tryExtensionCommand: vi.fn().mockResolvedValue(false),
       abort: vi.fn(),
       dispose: vi.fn().mockResolvedValue(undefined),
       getCurrentStep: vi.fn(),

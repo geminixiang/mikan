@@ -21,7 +21,6 @@ Slack adapter 主要處理：
 
 - `app_mention`
 - `message`
-- slash commands：`/pi-login`、`/pi-session`、`/pi-model`、`/pi-sandbox`、`/pi-new`、`/pi-admin`、`/pi-extensions`、`/pi-auto-reply`——註冊與路由都衍生自 `src/commands/manifest.ts`，不過 Slack App manifest 本身仍需手動更新
 - Block Kit actions
 - assistant thread / status APIs
 

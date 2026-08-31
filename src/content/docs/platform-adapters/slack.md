@@ -21,7 +21,6 @@ The Slack adapter mainly handles:
 
 - `app_mention`
 - `message`
-- slash commands: `/pi-login`, `/pi-session`, `/pi-model`, `/pi-sandbox`, `/pi-new`, `/pi-admin`, `/pi-extensions`, `/pi-auto-reply` — registration and routing both derive from `src/commands/manifest.ts`, though the Slack App manifest itself still has to be updated by hand
 - Block Kit actions
 - assistant thread / status APIs
 

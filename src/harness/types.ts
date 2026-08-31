@@ -19,7 +19,6 @@ import type {
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
-import type { ExtensionRegistry } from "./extensions/registry.js";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
@@ -254,11 +253,7 @@ export interface MikanSkill {
   source: string;
   /** Exclude from model-visible skill lists. */
   disableModelInvocation?: boolean;
-  /**
-   * Embed the skill body in the prompt instead of referencing its file path.
-   * Used for skills whose files the agent cannot read at runtime (e.g.
-   * extension skills under the host-only state dir in sandbox modes).
-   */
+  /** Embed the skill body in the prompt instead of referencing its file path. */
   inline?: boolean;
 }
 
@@ -348,12 +343,6 @@ export type HarnessEvent =
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
-/** Outcome of a `prompt()` call that an extension blocked before the model ran. */
-export interface PromptBlockedOutcome {
-  blocked: true;
-  reason?: string;
-}
-
 export interface MikanAgentSessionOptions {
   systemPrompt: string;
   model: Model<Api>;
@@ -366,5 +355,4 @@ export interface MikanAgentSessionOptions {
     retry?: Partial<RetrySettings>;
     budget?: Partial<BudgetSettings>;
   };
-  extensions?: ExtensionRegistry;
 }

@@ -67,16 +67,16 @@ platform event
   → platform response
 ```
 
-The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. The harness owns the model/tool loop, append-only session tree, retry, compaction, budgets, skills, and extension hooks.
+The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. The harness owns the model/tool loop, append-only session tree, retry, compaction, budgets, skills, and bounded subagents.
 
 ### Authority axis
 
 mikan separates four kinds of authority:
 
 1. **Conversation data** — office files and sessions visible according to Door policy.
-2. **Host-authoritative state** — settings, registry, packages, callback schedules, and extension data under the State dir.
+2. **Host-authoritative state** — settings, registry, and package checkouts under the State dir.
 3. **Credential authority** — vault contents injected only after actor and sandbox resolution.
-4. **Host capabilities** — platform clients and trusted extension code that never become ambient sandbox authority.
+4. **Host capabilities** — platform clients and repository-defined services that never become ambient sandbox authority.
 
 The Open network is not an authority boundary. A Sandbox runtime may reach the network; access comes from explicit credentials and capabilities.
 
@@ -88,7 +88,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
 | Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                  |
-| Agent core              | Harness, Extensions                                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
+| Agent core              | Harness                                               | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
 | Identity and data       | Office, Sessions, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox, Vault, Packages          | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
 | Control surfaces        | Commands, Web and scheduled-event services            | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
@@ -107,7 +107,7 @@ Daemon boot proceeds conceptually as follows:
 4. Complete crash-resumable legacy office migration before accepting events.
 5. Configure sandbox, vault, package, portal, and platform facilities.
 6. Construct the Conversation runtime with capability factories.
-7. Start platform bots, web services, the event watcher, and callback scheduler.
+7. Start platform bots, web services, and the event watcher.
 8. On shutdown, reject new runner acquisitions; Session lifecycle waits for active leases and settlements, aborts overdue runs, and disposes every materialized runner.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
@@ -119,7 +119,7 @@ Every platform feeds the same intake and runtime model:
 1. A platform adapter creates an `OfficeAddress`, session key, normalized message/context, and responder capabilities.
 2. Conversation intake applies the fixed order: magic word, trigger policy, attachments, platform log, busy policy, queue, dispatch.
 3. The runtime serializes events by office and session key.
-4. Built-in commands run before runner creation; built-ins take precedence over extension commands.
+4. Built-in commands run before runner creation; unmatched slash-prefixed text remains an agent prompt.
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use.
 7. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
@@ -142,7 +142,7 @@ The presenter owns response delivery. The Conversation runtime invokes and settl
 Execution authority is resolved for every agent environment rather than inferred from a filesystem path:
 
 1. Workspace projection resolves the effective Door policy into both runtime mounts and authorized prompt sources.
-2. Package resolution supplies trusted extension roots and read-only skill mounts.
+2. Package resolution supplies read-only skill mounts.
 3. The execution resolver combines actor identity, office, sandbox configuration, that projection and package result, and vault routing exactly once for the run.
 4. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
 5. Sandbox capability checks reject policies the selected backend cannot enforce, including isolated projections and read-only shared memory.
@@ -152,19 +152,16 @@ For every provider call, prompt authorization and filesystem authorization consu
 
 ### Scheduled execution
 
-mikan intentionally has two different scheduling authorities.
+The workspace `events/` directory is an agent-writable, workspace-wide
+scheduling bus. A due file is converted into a normal conversation event,
+submitted through the target platform bot, and enters the regular runtime
+path. It therefore shares session context, queueing, credentials, tools, stop
+behavior, and platform settlement with normal chat.
 
-#### Text events
-
-The workspace `events/` directory is an agent-writable, workspace-wide scheduling bus. A due file is converted into a normal conversation event, submitted through the target platform bot, and enters the regular runtime path. It therefore shares session context, queueing, credentials, tools, stop behavior, and platform settlement with normal chat.
-
-An isolated office does not mount shared events and therefore cannot self-schedule. Trusted layouts may expose the bus. Cross-conversation scheduling is intentional and is not a file-isolation guarantee.
-
-#### Extension callbacks
-
-An extension callback schedule is host-private trusted state. When due, the scheduler calls the Conversation runtime, which serializes the target session, materializes its runner and extensions, then invokes the registered callback directly. No model turn is synthesized.
-
-Text events and callbacks must not collapse into one generic scheduler: they differ in storage trust, invocation path, and execution authority.
+An isolated office does not mount shared events and therefore cannot
+self-schedule. Trusted layouts may expose the bus. Cross-conversation
+scheduling is intentional and is not a file-isolation guarantee. Event text
+must never contain secrets.
 
 ## Storage and authority map
 
@@ -185,19 +182,15 @@ Text events and callbacks must not collapse into one generic scheduler: they dif
 ├── settings.json
 ├── office-registry.json
 ├── vaults/
-├── extensions/
-├── packages/
+├── global/git/                           global package checkouts
 └── conversations/<office-key>/
     ├── settings.json
-    ├── extensions/
-    ├── extension-data/
-    ├── extension-schedules/
-    └── packages/
+    └── git/                              conversation package checkouts
 ```
 
 The exact paths are owned by the relevant modules, not by this diagram. Code must derive conversation paths from an `Office` value where one is available.
 
-The State dir is never part of a Workspace projection. Package skill contents may be mounted read-only at a dedicated runtime path, but package extension code executes only on the host.
+The State dir is never part of a Workspace projection. Resolved package skill directories may be mounted read-only at a dedicated runtime path; package modules are not imported or executed by mikan.
 
 ## Configuration authority
 
@@ -227,11 +220,17 @@ An `isolated` Door policy produces a conversation-only projection. Without an ex
 
 Vault selection is independent from runtime resource naming. Open-trigger conversations do not inherit an ambient shared default vault. Credential mounts may not shadow workspace or package targets. Host execution does not inject conversation vault environment by default.
 
-### Trusted host code
+### Package skills
 
-Extensions run with mikan process authority. They load only from host-controlled directories, including explicitly approved package roots, never from agent-writable workspace directories. Package installation may execute dependency lifecycle scripts and therefore is an administrator trust decision, not a sandbox boundary.
+Package repositories are host-private materialized content, not executable
+plugins. Conversation resolution is offline. Fetch and refresh are explicit
+Admin operations. Global and conversation package lists are additive, but a
+conversation-scoped package identity shadows the same global package before
+skill discovery.
 
-Conversation package loading is offline. Fetch and refresh are explicit Admin operations. Global and conversation package lists are additive, but a conversation-scoped package identity shadows the same global package before any extension import.
+Only resolved `skills/` directories cross the Sandbox boundary, through
+read-only mounts outside `/workspace`. mikan never imports package modules into
+the host process. See [ADR 0006](docs/adr/0006-remove-executable-extensions.md).
 
 ## Cross-module invariants
 
@@ -332,22 +331,6 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 **`settings-runner-coherence`** — Runner-baked conversation settings are changed only after lifecycle invalidation succeeds; otherwise the mutation is refused. Global changes mark leased or settling runners for deferred invalidation, which disposes them immediately after their last active lease settles.
 
 Evidence: `src/settings-mutation.ts`.
-
-### INV extension code trust
-
-<a id="inv-extension-code-trust"></a>
-
-**`extension-code-trust`** — Host-executed extension code originates only from host-controlled state or administrator-approved package roots. Agent-writable Workspace directories are never extension-loader roots.
-
-Evidence: `src/harness/extensions/loader.ts`, `src/packages/`.
-
-### INV schedule authority separation
-
-<a id="inv-schedule-authority-separation"></a>
-
-**`schedule-authority-separation`** — Agent-visible text schedules use the Workspace event bus and re-enter normal runtime; trusted callbacks use host-private state and invoke registered extension code through runtime serialization.
-
-Evidence: `src/events.ts`, `src/extension-schedules.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV session format compatibility
 

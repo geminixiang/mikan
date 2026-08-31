@@ -46,9 +46,8 @@ stays on as the missed-delivery backstop.
 (`C…`/`D…`) or other platforms. Owner and repo are **lowercased**: GitHub
 names are case-insensitive, and the id has two spelling sources (the
 `GITHUB_REPOS` env var and API payloads), so unlike Slack's platform-issued
-ids this is a mikan-derived slug — and LAYOUT.md § Casing lowercases derived
-slugs so one issue can never split into two conversation dirs on
-case-sensitive filesystems.
+ids this is a mikan-derived slug. Lowercasing ensures one issue cannot split
+into two conversation identities on case-sensitive filesystems.
 
 The separator is `_`, not the `gh:<owner>/<repo>#<number>` spelling this
 design first proposed: ids are used verbatim as a single path segment, so `/`
@@ -105,17 +104,6 @@ commenter must also hold write permission or better on the repo, and GitHub
 intake runs with auto-reply evaluation off, so auto-reply rules do not widen the
 trigger here (see README.md § Behavior notes).
 
-## What this removes from agent-pm
-
-agent-pm's `github_monitor` (~2637 lines: GitHub API client, User/Repo/Issue/
-PR/Commit models, SyncRun/SyncCheckpoint, daily activity sync) exists largely
-to pull GitHub activity into a database. With a GitHub adapter, that activity
-arrives as mikan conversations/messages, and agent-pm keeps only the parts
-that are genuinely its business — computing metrics and deciding what to say —
-on top of sqlite (`api.paths.dataDir`), not a Django ORM. The adapter absorbs
-the sync/schema/client boilerplate; agent-pm shrinks toward its ~2000-line
-business core.
-
 ## Fallback: GitHub as a tool, not only a conversation
 
 The conversation abstraction is the ambitious path (session + memory in a
@@ -127,10 +115,9 @@ Both can coexist.
 
 ## Explicitly out of scope
 
-- Cross-platform identity mapping (Slack↔GitHub↔Member) — that is agent-pm's
-  business model, not a platform capability.
+- Cross-platform identity mapping (Slack↔GitHub↔Member) — not a platform capability.
 - A GitHub REST/webhook server — polling only, proactive model preserved.
-- An ORM / Postgres layer — extensions use sqlite via `api.paths`.
+- An ORM / Postgres layer — platform message state does not require one.
 
 ## Decided
 

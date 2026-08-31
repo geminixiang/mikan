@@ -4,7 +4,7 @@
  * the grammar that actually drives the daemon is testable without spawning a
  * process; main.ts just executes the plan.
  *
- * Modes, highest priority first: `ext`, `office`, `sessions`, `env` (own grammars, never
+ * Modes, highest priority first: `office`, `sessions`, `env` (own grammars, never
  * flag-parsed here), `help`, `version`, `onboard`, `download`, `run`.
  */
 import { join, resolve } from "node:path";
@@ -17,10 +17,9 @@ import { defaultStateDir, resolveStateDir, takeValueFlag } from "./arg-grammar.j
 export type { BootPlan } from "./types.js";
 
 export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
-  if (args[0] === "ext" || args[0] === "office" || args[0] === "sessions" || args[0] === "env") {
+  if (args[0] === "office" || args[0] === "sessions" || args[0] === "env") {
     return {
       mode: args[0],
-      ...(args[0] === "ext" ? { extArgs: args.slice(1) } : {}),
       ...(args[0] === "office" ? { officeArgs: args.slice(1) } : {}),
       ...(args[0] === "sessions" ? { sessionsArgs: args.slice(1) } : {}),
       stateDir: defaultStateDir(),
@@ -89,8 +88,6 @@ export function helpText(): string {
 Usage:
   mikan [options] [working-directory]
       Start the daemon. The working directory defaults to <state-dir>/workspace.
-  mikan ext <install|validate|list|remove> …
-      Manage extensions (run \`mikan ext\` for details).
   mikan office <list|claim> …
       Inspect conversation offices and claim legacy directories for a platform.
   mikan sessions migrate …
@@ -102,7 +99,7 @@ Usage:
       Writes settings.json, ~/.mikan/mikan.env, and models.json as needed.
 
 Options:
-  --state-dir <dir>      State directory (settings.json, vaults, extensions).
+  --state-dir <dir>      State directory (settings.json, vaults, packages).
                          Default: ~/.mikan
   --sandbox <spec>       Execution sandbox. One of:
                            host

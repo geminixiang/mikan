@@ -6,7 +6,6 @@ import type { MessagingBot, ConversationResponder } from "../adapter.js";
 import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "../commands/admin.js";
 import { AutoReplyCommandHandler } from "../commands/auto-reply.js";
-import { ExtensionsCommandHandler } from "../commands/extensions.js";
 import {
   conversationSettingsPath,
   createGlobalSettingsFile,
@@ -672,126 +671,6 @@ describe("LoginCommandHandler", () => {
 });
 
 // ── SandboxCommandHandler ───────────────────────────────────────────────────
-
-describe("ExtensionsCommandHandler", () => {
-  const handler = new ExtensionsCommandHandler();
-  let stateDir: string;
-
-  beforeEach(() => {
-    stateDir = join(tmpdir(), `cmd-ext-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    mkdirSync(stateDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
-  });
-
-  afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
-    rmSync(stateDir, { recursive: true, force: true });
-  });
-
-  test("ignores unrelated commands", async () => {
-    const ctx = buildContext({ commandText: "/pi-sandbox" });
-    expect(await handler.tryHandle(ctx)).toBe(false);
-  });
-
-  test("reports when nothing is installed", async () => {
-    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("沒有安裝任何 extension");
-    expect(ctx.responder.responses[0]).toContain(join(stateDir, "global", "extensions"));
-  });
-
-  test("warns about an index file at the scope root instead of listing it wrongly", async () => {
-    const convDir = join(
-      stateDir,
-      "conversations",
-      officeKey(createOfficeAddress("slack", "C123")),
-      "extensions",
-    );
-    mkdirSync(convDir, { recursive: true });
-    // Mis-install: extension contents copied into the scope dir itself.
-    writeFileSync(join(convDir, "index.mjs"), "export default function activate() {}\n");
-
-    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const text = ctx.responder.responses[0];
-    expect(text).toContain("位於範圍根目錄");
-    expect(text).toContain("具名子目錄");
-  });
-
-  test("lists global and conversation extensions with manifest metadata and skills", async () => {
-    // global: directory form with manifest + a bundled skill
-    const globalExt = join(stateDir, "global", "extensions", "agent-pm");
-    mkdirSync(join(globalExt, "skills", "triage"), { recursive: true });
-    writeFileSync(join(globalExt, "index.mjs"), "export default function activate() {}\n");
-    writeFileSync(
-      join(globalExt, "manifest.json"),
-      JSON.stringify({ name: "agent-pm", version: "0.2.0", description: "follow-ups" }),
-    );
-    writeFileSync(
-      join(globalExt, "skills", "triage", "SKILL.md"),
-      "---\nname: triage\ndescription: d\n---\nbody\n",
-    );
-    // conversation-scoped: bare file form
-    const convDir = join(
-      stateDir,
-      "conversations",
-      officeKey(createOfficeAddress("slack", "C123")),
-      "extensions",
-    );
-    mkdirSync(convDir, { recursive: true });
-    writeFileSync(join(convDir, "audit.mjs"), "export default function activate() {}\n");
-    // side-effect canary: activation must NOT run during listing
-    writeFileSync(
-      join(convDir, "canary.mjs"),
-      `import { writeFileSync } from "node:fs"; export default function activate() { writeFileSync(${JSON.stringify(join(stateDir, "activated"))}, "x"); }\n`,
-    );
-
-    const ctx = buildContext({ commandText: "/pi-extensions", conversationId: "C123" });
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const text = ctx.responder.responses[0];
-    expect(text).toContain("*agent-pm*@0.2.0 — global");
-    expect(text).toContain("follow-ups");
-    expect(text).toContain("skills: triage");
-    expect(text).toContain("*audit* — this conversation");
-    expect(text).toContain("/pi-new");
-    // discovery-only: the canary's activate must not have executed
-    expect(existsSync(join(stateDir, "activated"))).toBe(false);
-  });
-
-  test("lists packages declared in settings, not only copied extensions", async () => {
-    // A portal-installed extension is a git checkout under <scope>/git/, not a
-    // copy under <scope>/extensions/. Reporting only the latter made a
-    // portal install look like it had never happened.
-    // Package resolution reads both scopes, so the global file has to exist —
-    // as it always does in a booted deployment.
-    createGlobalSettingsFile(stateDir);
-    const officeDir = join(
-      stateDir,
-      "conversations",
-      officeKey(createOfficeAddress("slack", "C123")),
-    );
-    mkdirSync(officeDir, { recursive: true });
-    writeFileSync(
-      join(officeDir, "settings.json"),
-      JSON.stringify({ packages: ["https://github.com/example/widgets.git#extensions/thing"] }),
-    );
-
-    // The office reads settings from its workspace's state dir, so bind the
-    // workspace to the same one the settings were written into.
-    const ctx = buildContext({
-      commandText: "/pi-extensions",
-      conversationId: "C123",
-      services: { workspace: createWorkspace({ root: join(stateDir, "work"), stateDir }) },
-    });
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const text = ctx.responder.responses[0];
-    expect(text).toContain("https://github.com/example/widgets.git#extensions/thing");
-    expect(text).toContain("package, this conversation");
-    // Resolution is offline, so an un-fetched checkout is reported as a
-    // problem rather than quietly fetched from a chat command.
-    expect(text).toContain("⚠️");
-  });
-});
 
 describe("SandboxCommandHandler", () => {
   const handler = new SandboxCommandHandler();

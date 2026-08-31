@@ -21,26 +21,12 @@ export {
   resolveHarnessSettings,
 } from "./harness/settings.js";
 export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./harness/event-format.js";
-export { ExtensionRegistry, parseCommandInput } from "./harness/extensions/registry.js";
-export {
-  EXT_ACTION_PREFIX,
-  namespaceActionIds,
-  parseExtActionId,
-} from "./harness/extensions/registry.js";
-export {
-  defaultExtensionDirs,
-  extensionSlug,
-  listInstalledExtensions,
-  loadExtensions,
-  validateExtension,
-} from "./harness/extensions/loader.js";
 export type { CreateMikanModelsOptions } from "./harness/models.js";
 export type {
   CompactionReason,
   HarnessEvent,
   HarnessEventListener,
   MikanAgentSessionOptions,
-  PromptBlockedOutcome,
 } from "./harness/runner.js";
 export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./harness/skills.js";
 export type {
@@ -62,49 +48,6 @@ export type {
   OneShotEventPayload,
   PeriodicEventPayload,
 } from "./harness/event-format.js";
-export type {
-  ExtensionValidation,
-  InstalledExtensionInfo,
-  LoadExtensionsOptions,
-  LoadExtensionsResult,
-} from "./harness/extensions/loader.js";
-export type {
-  AgentErrorHookEvent,
-  BeforeAgentStartHookEvent,
-  BeforeAgentStartHookResult,
-  BudgetExceededHookEvent,
-  ContextHookEvent,
-  ContextHookResult,
-  ExtensionBlockAction,
-  ExtensionBlockActionHandler,
-  ExtensionBlockKitMessage,
-  ExtensionCommand,
-  ExtensionCommandContext,
-  ExtensionDisposer,
-  ExtensionHostServices,
-  ExtensionLoadError,
-  ExtensionManifest,
-  ExtensionScheduleInfo,
-  ExtensionSchedulePayload,
-  ExtensionScheduleSpec,
-  ExtensionScheduleStore,
-  LoadedExtension,
-  MessageEndHookEvent,
-  MessageEndHookResult,
-  MikanExtensionActivate,
-  MikanExtensionApi,
-  MikanExtensionModule,
-  MikanHookMap,
-  MikanHookName,
-  RunOrigin,
-  SessionCompactHookEvent,
-  SubagentApi,
-  ToolCallHookEvent,
-  ToolCallHookResult,
-  ToolResultHookEvent,
-  ToolResultHookResult,
-  TurnEndHookEvent,
-} from "./harness/extensions/types.js";
 export type {
   BranchSummaryEntry,
   CompactionEntry,

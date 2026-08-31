@@ -57,7 +57,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 - 创建 `PiAgentWrapper`
 - 加载模型、技能、记忆和会话上下文
-- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-agent-core` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试和扩展 hook
+- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-agent-core` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
 - 将工具调用连接到本地 `read/bash/edit/write/event/attach`
 - 将工具结果写回会话，并通过适配器返回回复
 

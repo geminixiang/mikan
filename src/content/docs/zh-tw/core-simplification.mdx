@@ -16,7 +16,7 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 5. 一個 session store 與一個平台 log store，刻意分開；
 6. 一個供所有工具 I/O 使用的 executor 介面；
 7. 一個憑證解析 seam；
-8. 供選用的 platform、command、tool、extension 與 sandbox 能力使用的 registry。
+8. 供選用的 platform、command、tool 與 sandbox 能力使用的 registry。
 
 ## 發現
 
@@ -28,7 +28,7 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 | P1     | Sandbox 的可擴充性只是名義上的       | `SandboxAdapter` 已匯出，但 `sandbox/index.ts` 內的封閉陣列擁有 parsing/creation                                                             | 加入 registry，或讓 adapter 內部化；把實驗性 backend 移出預設核心組裝                     |
 | P1     | Runtime 建構洩漏了指令的實作細節     | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，並在內部重建 command service                                                   | 定義明確的 runtime 相依，再於 command adapter 中建構 `CommandServices`                    |
 | P1     | 指令仍有兩份清單                     | manifest 擁有平台註冊，而 registry 擁有 handler；新增一個指令需要同時改兩者                                                                  | `CommandDefinition` 應同時包含 manifest metadata 與 handler factory/reference             |
-| P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、loader、event schema、hook 與 runner 細節一起匯出                                            | 發布 `./extension`、`./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策 |
+| P1     | Harness 同時是 public SDK 與內部引擎 | root 把 session parsing、credentials、settings、event schema 與 runner 細節一起匯出                                                          | 發布 `./runtime`，以及選擇性的 `./harness` subpath，並各有獨立的穩定度政策                |
 | P2     | 多個能力介面使用選用方法             | `MessagingBot` 與 `ConversationResponder` 靠新增 `?` 方法而成長                                                                              | 使用具名的能力物件（`reactions`、`uploads`、`streaming`），讓「缺席」與「需求」都變得明確 |
 | P2     | HTTP 路由契約靠手動分派且大多未定型  | `web/server.ts` 與 portal 模組依 method/path 分支；payload 型別是區域性的                                                                    | 保持 UI API 內部化，但在 payload 跨模組之處集中路由描述符與 request/response schema       |
 
@@ -44,7 +44,6 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 - 保留 per-session queue。全域序列化會浪費並行；不序列化則會破壞對話順序。
 - 讓平台信任政策保持明確。從平台名稱推斷憑證安全性是不安全的。
 - 保留由 executor 擁有的檔案傳輸。用 shell 片段取代它會重新引入 quoting、size 與 partial-write 的失敗。
-- 讓擴充功能程式碼僅限 host，並與 sandbox workspace 資料分開。
 
 ## 提議的介面
 
@@ -87,7 +86,7 @@ interface PlatformPort {
 }
 ```
 
-這移除了依任意方法名稱做的 feature detection，並讓 command/extension 得以請求它們確切需要的能力。
+這移除了依任意方法名稱做的 feature detection，並讓 command 得以請求它們確切需要的能力。
 
 ### 明確的 runtime 相依
 
@@ -141,7 +140,7 @@ interface SandboxRegistry {
 
 1. 從 `MessagingBot` 抽出 message、reaction、upload 與 private-message port。
 2. 在不改動 SDK 程式碼的情況下調整既有 bot。
-3. 把窄化的能力傳給 command、extension、event 與 admin，而非整個 bot。
+3. 把窄化的能力傳給 command、event 與 admin，而非整個 bot。
 4. 退役已無使用者的淺層 `ChatAdapter` 介面。（已完成）
 
 ### Phase 4 — 簡化 runtime 建構與指令

@@ -6,12 +6,6 @@ import type {
   OneShotEventPayload,
   PeriodicEventPayload,
 } from "./harness/event-format.js";
-import type {
-  ExtensionBlockAction,
-  ExtensionScheduleCallbackEvent,
-  ExtensionScheduleCallbackFire,
-  ExtensionScheduleEngine,
-} from "./harness/extensions/types.js";
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
@@ -187,17 +181,6 @@ export interface MessagingInfo {
    * explicitly so vault policy does not key off platform name strings.
    */
   trustModel?: PlatformTrustModel;
-  /**
-   * Whether the leading slash is optional for extension-contributed commands.
-   *
-   * Slack's client keeps every `/`-prefixed line for commands declared in the
-   * Slack app itself, so an extension's `/pm` never leaves the user's machine —
-   * and an extension cannot declare one there, because `apps.manifest.update`
-   * needs an app configuration token that expires twice a day and is bound to
-   * one person in one workspace. Set on platforms where the slash form cannot
-   * arrive at all; left unset, the slash stays required.
-   */
-  bareExtensionCommands?: boolean;
   diagnostics?: {
     showUsageSummary?: boolean;
   };
@@ -330,84 +313,6 @@ export interface PlatformUserInfo {
   isBot: boolean;
 }
 
-/**
- * Post a plain message to a conversation without triggering an agent run,
- * resolving to the platform message id of what was posted. Backs extension
- * `api.notify`; implemented in main.ts over the platform bots. `platform` is
- * required only when more than one platform is running; `threadTs` targets a
- * platform thread on adapters that support it.
- */
-export type PlatformNotifier = (
-  conversationId: string,
-  text: string,
-  options?: { platform?: string; threadTs?: string },
-) => Promise<string>;
-
-/**
- * Open the direct-message conversation with a platform user, returning its
- * conversation id. Backs extension `api.openDm`; implemented in main.ts over
- * the platform bots.
- */
-export type PlatformDmOpener = (userId: string, platform?: string) => Promise<string>;
-
-/**
- * Fetch recent messages from a conversation without triggering an agent run.
- * Backs extension `api.fetchHistory`; implemented in main.ts over the
- * platform bots.
- */
-export type PlatformHistoryFetcher = (
-  conversationId: string,
-  options?: PlatformHistoryOptions & { platform?: string },
-) => Promise<PlatformHistoryMessage[]>;
-
-/**
- * List a platform workspace's active users. Backs extension `api.listUsers`;
- * implemented in main.ts over the platform bots.
- */
-export type PlatformUserLister = (platform?: string) => Promise<PlatformUserInfo[]>;
-
-/**
- * Add an emoji reaction to a message without triggering an agent run. Backs
- * extension `api.react`; implemented in main.ts over the platform bots.
- */
-export type PlatformReactor = (
-  conversationId: string,
-  messageTs: string,
-  emoji: string,
-  platform?: string,
-) => Promise<void>;
-
-/**
- * Upload a host-side file into a conversation without triggering an agent
- * run. Backs extension `api.uploadFile`; implemented in main.ts over the
- * platform bots. `platform` is required only when more than one is running.
- */
-export type PlatformUploader = (
-  conversationId: string,
-  filePath: string,
-  title?: string,
-  platform?: string,
-) => Promise<void>;
-
-/**
- * Post and update interactive Block Kit messages without triggering an agent
- * run. Backs extension `api.blockkit`; implemented in main.ts over the
- * platform bots (Slack-only today — other platforms throw).
- */
-export interface PlatformBlockKit {
-  postBlocks(
-    conversationId: string,
-    message: { text: string; blocks: object[]; threadTs?: string },
-    platform?: string,
-  ): Promise<{ ts: string }>;
-  updateBlocks(
-    conversationId: string,
-    messageTs: string,
-    message: { text: string; blocks: object[] },
-    platform?: string,
-  ): Promise<void>;
-}
-
 /** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
   /** Canonical identity for the office handling this turn. */
@@ -449,27 +354,6 @@ export interface MessagingEventHandler {
     responder: ConversationResponder,
     platform: MessagingInfo,
   ): Promise<void>;
-  /**
-   * Dispatch an extension-owned interactive block action (`ext:<slug>:`
-   * namespaced) to its onAction handler — deterministic, no agent run. The
-   * extension decides whether to involve the model (`triggerRun`). Returns
-   * true when an extension consumed the action; namespaced actions never
-   * fall through to the model, so the adapter drops unconsumed ones.
-   */
-  handleExtensionAction(params: {
-    address: OfficeAddress;
-    sessionKey: string;
-    conversationKind: ConversationKind;
-    slug: string;
-    action: ExtensionBlockAction;
-  }): Promise<boolean>;
-  /**
-   * Dispatch a fired extension callback schedule to its registered
-   * `onCallback` handler — deterministic, no agent run, no model call.
-   * Returns true when a handler consumed the fire; false when nothing is
-   * registered (e.g. the extension was removed but its schedule remains).
-   */
-  handleExtensionScheduleCallback(fire: ExtensionScheduleCallbackFire): Promise<boolean>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -488,27 +372,6 @@ export interface PiAgentWrapper {
   ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
-  /**
-   * Dispatch a leading-slash message to an extension-registered command.
-   * Returns true when a command consumed the message (no agent run follows).
-   */
-  tryExtensionCommand(
-    message: ConversationMessage,
-    responder: ConversationResponder,
-    options?: { bareName?: boolean },
-  ): Promise<boolean>;
-  /**
-   * Dispatch an extension-owned interactive block action to its onAction
-   * handler. Returns true when a handler consumed it (no agent run follows).
-   */
-  tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean>;
-  /** Run an extension's registered schedule callback; false when unregistered. */
-  tryExtensionScheduleCallback(
-    slug: string,
-    callback: string,
-    event: ExtensionScheduleCallbackEvent,
-  ): Promise<boolean>;
-  /** Run extension disposers. Call once when this wrapper is discarded. */
   dispose(): Promise<void>;
 }
 
@@ -801,15 +664,6 @@ export interface CreateRunnerOptions {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   };
-  platformNotifier?: PlatformNotifier;
-  platformReactor?: PlatformReactor;
-  platformUploader?: PlatformUploader;
-  platformBlockKit?: PlatformBlockKit;
-  platformDmOpener?: PlatformDmOpener;
-  platformHistoryFetcher?: PlatformHistoryFetcher;
-  platformUserLister?: PlatformUserLister;
-  /** Host-authoritative callback-schedule engine (`api.schedules` callbacks). */
-  extensionScheduleEngine?: ExtensionScheduleEngine;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models?: MikanModels;
 }

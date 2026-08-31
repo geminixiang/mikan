@@ -462,12 +462,11 @@ export function isPathInside(child: string, parent: string): boolean {
 }
 
 /**
- * The state dir (extensions code, extension data, vaults) must
- * never live inside the working dir: conversation opt-in "full" mode mounts
- * the entire working dir read-write into sandbox containers, and a mounted
- * state dir would let sandboxed code plant extension modules that the host
- * process later imports — a sandbox escape. Fatal under sandboxed modes;
- * host mode has no mounts, so only warn about the bad hygiene.
+ * The state dir (settings, package checkouts, vaults) must never live inside
+ * the working dir: conversation opt-in "full" mode mounts the entire working
+ * dir read-write into sandbox containers, which would expose host-authoritative
+ * state and credentials. Fatal under sandboxed modes; host mode has no mounts,
+ * so only warn about the bad hygiene.
  */
 export function assertStateDirOutsideWorkspace(
   stateDir: string,
@@ -478,7 +477,7 @@ export function assertStateDirOutsideWorkspace(
   const message =
     `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
     `sandbox containers mount the working directory, and a mounted state dir ` +
-    `would expose extensions, vaults, and credentials to sandboxed code.`;
+    `would expose settings, package checkouts, vaults, and credentials to sandboxed code.`;
   if (sandboxType === "host") {
     log.logWarning("Insecure state dir location", message);
     return;

@@ -25,7 +25,7 @@ npm run build
 | `src/content/docs/`       | 本文档站点（Starlight），以及 `ja/`、`zh-cn/` 和 `zh-tw/` 语言树           |
 | `src/tsconfig.build.json` | 构建用的 TypeScript project；根 `tsconfig.json` 覆盖编辑器工具             |
 | `.config/`                | 工具配置：Astro、Vitest（单元与 E2E）、oxlint、oxfmt                       |
-| `deploy/`                 | 部署资源：`pm2/`、`docker/` 和 `examples/`（embedder、扩展、bridge）       |
+| `deploy/`                 | 部署资源：`pm2/`、`docker/` 和 `examples/`（embedder、bridge）             |
 | `e2e/`                    | 真实平台端到端套件，不包含在 `npm test` 中                                 |
 | `docs/adr/`               | 架构决策记录                                                               |
 | `scripts/`                | 由 npm script 调用的维护与验证脚本                                         |

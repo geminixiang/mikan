@@ -31,7 +31,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/auto-reply` / `/pi-auto-reply on\|off\|status`                     | 現在の group/channel の auto-reply を制御します。                                                                                |
 | `stop` / `/stop`                                                     | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。            |
 | `/admin` / `/pi-admin`                                               | 30 分間有効な admin portal を開きます。                                                                                          |
-| `/extensions` / `/pi-extensions`                                     | global と conversation extensions、versions、提供される skills を一覧表示します。                                                |
 | `/sandbox` / `/pi-sandbox`                                           | 現在の sandbox の制限と、この office の door policy・workspace layout を表示します。                                             |
 | `/pi-sandbox boost`                                                  | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                   |
 | `/pi-sandbox door`                                                   | office の実効 door policy と layout を、指定可能な値とあわせて表示します。                                                       |
@@ -57,7 +56,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
   起動時にそこから導出されます。Slack の routing は manifest の `/pi-*` 名を認識します。Discord は
   100 文字を超える option description を拒否するため、manifest の引数 description は command tests
   で長さが検証されます。Slack の App manifest（`/pi-login`、`/pi-session`、`/pi-new`、
-  `/pi-model`、`/pi-auto-reply`、`/pi-sandbox`、`/pi-extensions`、`/pi-admin`）は引き続き Slack App
   設定で手動更新が必要です。
 </Aside>
 

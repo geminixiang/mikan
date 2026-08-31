@@ -18,17 +18,17 @@ npm run build
 
 ## Repository layout
 
-| Path                      | Contents                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------- |
-| `src/`                    | TypeScript source; each subdirectory has its own `README.md` describing its files     |
-| `src/test/`               | The Vitest suite. `.config/vitest.config.ts` includes only `src/test/**/*.test.ts`    |
-| `src/content/docs/`       | This documentation site (Starlight), plus the `ja/`, `zh-cn/`, and `zh-tw/` locales   |
-| `src/tsconfig.build.json` | The build's TypeScript project; the root `tsconfig.json` covers editor tooling        |
-| `.config/`                | Tool configuration: Astro, Vitest (unit and E2E), oxlint, oxfmt                       |
-| `deploy/`                 | Deployment assets: `pm2/`, `docker/`, and `examples/` (embedder, extensions, bridges) |
-| `e2e/`                    | Real-platform end-to-end suites, excluded from `npm test`                             |
-| `docs/adr/`               | Architecture decision records                                                         |
-| `scripts/`                | Maintenance and verification scripts invoked from npm scripts                         |
+| Path                      | Contents                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| `src/`                    | TypeScript source; each subdirectory has its own `README.md` describing its files   |
+| `src/test/`               | The Vitest suite. `.config/vitest.config.ts` includes only `src/test/**/*.test.ts`  |
+| `src/content/docs/`       | This documentation site (Starlight), plus the `ja/`, `zh-cn/`, and `zh-tw/` locales |
+| `src/tsconfig.build.json` | The build's TypeScript project; the root `tsconfig.json` covers editor tooling      |
+| `.config/`                | Tool configuration: Astro, Vitest (unit and E2E), oxlint, oxfmt                     |
+| `deploy/`                 | Deployment assets: `pm2/`, `docker/`, and `examples/` (embedder, bridges)           |
+| `e2e/`                    | Real-platform end-to-end suites, excluded from `npm test`                           |
+| `docs/adr/`               | Architecture decision records                                                       |
+| `scripts/`                | Maintenance and verification scripts invoked from npm scripts                       |
 
 ## Checks
 

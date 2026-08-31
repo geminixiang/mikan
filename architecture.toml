@@ -50,13 +50,6 @@ docs = "src/harness/README.md"
 sources = ["src/harness/"]
 
 [[modules]]
-id = "extensions"
-name = "Extension host"
-kind = "extension-host"
-docs = "src/harness/README.md#extension-system"
-sources = ["src/harness/extensions/", "src/extension-schedules.ts"]
-
-[[modules]]
 id = "office"
 name = "Conversation office"
 kind = "authority"
@@ -114,7 +107,7 @@ sources = ["src/commands/"]
 
 [[modules]]
 id = "packages"
-name = "Extension and skill packages"
+name = "Skill packages"
 kind = "authority"
 docs = "src/packages/README.md"
 sources = ["src/packages/"]
@@ -124,7 +117,7 @@ id = "side-services"
 name = "Web and scheduled-event services"
 kind = "infrastructure"
 docs = "src/web/README.md"
-sources = ["src/web/", "src/events.ts", "src/extension-schedules.ts"]
+sources = ["src/web/", "src/events.ts"]
 
 # A seam is a stable relationship callers depend on. Interface names refer to
 # source-level contracts or authority entry points; details stay in docs/code.
@@ -172,16 +165,9 @@ docs = "ARCHITECTURE.md#agent-execution"
 [[seams]]
 id = "harness-session"
 owner = "harness"
-consumers = ["agent-runner", "extensions"]
+consumers = ["agent-runner"]
 interface = "MikanAgentSession"
 docs = "src/harness/README.md"
-
-[[seams]]
-id = "extension-host"
-owner = "extensions"
-consumers = ["harness", "agent-runner", "conversation-runtime", "side-services", "packages"]
-interface = "MikanExtensionApi, ExtensionRegistry"
-docs = "src/harness/README.md#extension-system"
 
 [[seams]]
 id = "office-resolution"
@@ -259,7 +245,7 @@ docs = "src/commands/README.md"
 [[seams]]
 id = "package-resolution"
 owner = "packages"
-consumers = ["agent-runner", "extensions", "execution-resolver", "configuration", "side-services"]
+consumers = ["agent-runner", "execution-resolver", "configuration", "side-services"]
 interface = "resolveConversationPackages"
 docs = "src/packages/README.md"
 
@@ -340,7 +326,7 @@ docs = "src/runtime/README.md"
 id = "package-store"
 authority = "packages"
 scope = "deployment-and-conversation"
-classification = "trusted-host-code"
+classification = "host-private"
 docs = "src/packages/README.md"
 
 [[resources]]
@@ -349,16 +335,6 @@ authority = "side-services"
 scope = "workspace"
 classification = "agent-writable-scheduling"
 docs = "ARCHITECTURE.md#scheduled-execution"
-
-[[resources]]
-id = "extension-callback-schedules"
-authority = "extensions"
-scope = "conversation-extension"
-classification = "host-private"
-docs = "ARCHITECTURE.md#scheduled-execution"
-
-# Flow paths are topology, not function-level traces. Branches, ordering,
-# failures, and security semantics live at the linked Markdown anchor.
 
 [[flows]]
 id = "boot"
@@ -399,14 +375,6 @@ path = [
   "platform-adapters",
 ]
 docs = "ARCHITECTURE.md#scheduled-execution"
-
-[[flows]]
-id = "extension-callback"
-path = ["side-services", "conversation-runtime", "extensions"]
-docs = "ARCHITECTURE.md#scheduled-execution"
-
-# Cross-module invariants are named here for global discovery. Their complete
-# statement, rationale, evidence, and exceptions live in ARCHITECTURE.md.
 
 [[invariants]]
 id = "identity-office-address"
@@ -481,18 +449,6 @@ id = "settings-runner-coherence"
 owners = ["configuration", "conversation-runtime"]
 applies_to = ["settings", "runner-state"]
 docs = "ARCHITECTURE.md#inv-settings-runner-coherence"
-
-[[invariants]]
-id = "extension-code-trust"
-owners = ["extensions", "packages"]
-applies_to = ["package-store", "state-dir"]
-docs = "ARCHITECTURE.md#inv-extension-code-trust"
-
-[[invariants]]
-id = "schedule-authority-separation"
-owners = ["extensions", "side-services"]
-applies_to = ["events-bus", "extension-callback-schedules"]
-docs = "ARCHITECTURE.md#inv-schedule-authority-separation"
 
 [[invariants]]
 id = "session-format-compatibility"

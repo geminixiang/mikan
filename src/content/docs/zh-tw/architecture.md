@@ -57,7 +57,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 - 建立 `PiAgentWrapper`
 - 載入模型、skills、memory、session context
-- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-agent-core` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 extension hooks
+- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-agent-core` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 結果回寫 session，並透過 adapter 回傳給平台
 

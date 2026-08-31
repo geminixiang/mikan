@@ -1,7 +1,6 @@
 import type { OfficeAddress } from "../types.js";
-import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import type { MikanAgentSession } from "../harness/index.js";
-import { type ExtensionRegistry, type MikanSkill } from "../harness/index.js";
+import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
 import type { PlatformTrustModel } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";
@@ -78,14 +77,4 @@ export interface PreparedRunContext {
   userMessage: string;
   imageAttachments: ImageContent[];
   triggerAttribution?: string;
-}
-
-export interface ConfiguredAgentSession {
-  session: MikanAgentSession;
-  /** Skills contributed by extensions, merged into each run's system prompt. */
-  extensionSkills: MikanSkill[];
-  /** Registry backing extension command dispatch for this harness instance. */
-  extensionRegistry: ExtensionRegistry;
-  /** Runs extension disposers; call once when the runner is discarded. */
-  disposeExtensions: () => Promise<void>;
 }

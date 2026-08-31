@@ -8,7 +8,6 @@
  * - automatic context compaction (threshold and overflow recovery), using
  *   pi-agent-core's compaction pipeline over the session tree
  * - automatic retry with exponential backoff on transient provider errors
- * - extension hook dispatch ({@link ExtensionRegistry})
  *
  * Events mirror the agent's lifecycle events plus `compaction_start/_end`
  * and `auto_retry_start/_end`, preserving the event surface mikan's
@@ -36,23 +35,18 @@ import {
   type ImageContent,
   type Model,
   type Models,
-  type Usage,
 } from "@earendil-works/pi-ai";
 import * as log from "../log.js";
-import type { ExtensionRegistry } from "./extensions/registry.js";
-import type { RunOrigin } from "./extensions/types.js";
 import type { MikanModels } from "./models.js";
 import { resolveHarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
 import type {
   BudgetSettings,
-  CompactionEntry,
   CompactionReason,
   HarnessEvent,
   HarnessEventListener,
   HarnessSettings,
   MikanAgentSessionOptions,
-  PromptBlockedOutcome,
   SubagentUsage,
   SubagentUsageSink,
 } from "./types.js";
@@ -62,7 +56,6 @@ export type {
   HarnessEvent,
   HarnessEventListener,
   MikanAgentSessionOptions,
-  PromptBlockedOutcome,
 } from "./types.js";
 import { addUsage, copyUsage, createEmptyUsage } from "./usage.js";
 
@@ -98,7 +91,6 @@ export class MikanAgentSession {
   readonly sessionStore: SessionStore;
   private readonly models: MikanModels;
   private readonly settings: HarnessSettings;
-  private readonly extensions: ExtensionRegistry | undefined;
   private listeners = new Set<HarnessEventListener>();
   private retryAttempt = 0;
   private overflowRecoveryAttempted = false;
@@ -114,55 +106,22 @@ export class MikanAgentSession {
   };
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
-  private runOrigin: RunOrigin | undefined;
 
   constructor(options: MikanAgentSessionOptions) {
     this.models = options.models;
     this.sessionStore = options.sessionStore;
     this.settings = resolveHarnessSettings(options.settings);
-    this.extensions = options.extensions;
 
-    const tools = [...options.tools, ...(options.extensions?.getContributedTools() ?? [])];
     this.agent = new Agent({
       initialState: {
         systemPrompt: options.systemPrompt,
         model: options.model,
         thinkingLevel: options.thinkingLevel,
-        tools,
+        tools: options.tools,
       },
       convertToLlm,
-      transformContext: async (messages) => {
-        if (!this.extensions?.hasHandlers("context")) return messages;
-        return this.extensions.emitContext({ messages, origin: this.runOrigin });
-      },
       streamFn: (model, context, streamOptions) =>
         this.models.models.streamSimple(model, context, streamOptions),
-      beforeToolCall: async ({ toolCall, args }) => {
-        if (!this.extensions?.hasHandlers("tool_call")) return undefined;
-        const result = await this.extensions.emit("tool_call", {
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          args,
-          origin: this.runOrigin,
-        });
-        return result ?? undefined;
-      },
-      afterToolCall: async ({ toolCall, args, result, isError }) => {
-        if (!this.extensions?.hasHandlers("tool_result")) return undefined;
-        // Chained extension rewrites (redaction, truncation) become a
-        // pi-agent-core AfterToolCallResult override; undefined keeps the
-        // executed result untouched.
-        return this.extensions.emitToolResult({
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          args,
-          content: result.content,
-          details: result.details,
-          isError,
-          usage: (result as typeof result & { usage?: Usage }).usage,
-          origin: this.runOrigin,
-        });
-      },
     });
 
     this.agent.subscribe(async (event) => {
@@ -246,34 +205,27 @@ export class MikanAgentSession {
 
   /**
    * Send a user prompt and run the agent loop to completion, including
-   * automatic retries and compaction. Resolves when the turn (and any
-   * recovery continuations) settles. Returns a blocked outcome when a
-   * `before_agent_start` extension blocked the turn — the model was never
-   * called and nothing was persisted.
+   * automatic retries and compaction.
    *
    * @param options.budget Per-run resource ceilings that override the session
-   *   defaults. Autonomous (event / trigger) runs should pass a budget so a
-   *   runaway loop is stopped even with no human watching.
-   * @param options.origin Platform provenance forwarded to extension hooks.
+   *   defaults. Autonomous event runs should pass a budget so a runaway loop
+   *   is stopped even with no human watching.
    */
   async prompt(
     text: string,
     options?: {
       images?: ImageContent[];
       budget?: BudgetSettings;
-      origin?: RunOrigin;
       tools?: AgentTool[];
     },
-  ): Promise<PromptBlockedOutcome | undefined> {
-    if (this.runActive) {
-      throw new Error("Agent is already processing a prompt");
-    }
+  ): Promise<void> {
+    if (this.runActive) throw new Error("Agent is already processing a prompt");
     this.runActive = true;
     const runSystemPrompt = this.agent.state.systemPrompt;
     const runTools = this.agent.state.tools;
     if (options?.tools) this.agent.state.tools = options.tools;
     try {
-      return await this.runPrompt(text, runSystemPrompt, options);
+      await this.runPrompt(text, options);
     } finally {
       this.agent.state.systemPrompt = runSystemPrompt;
       this.agent.state.tools = runTools;
@@ -283,14 +235,12 @@ export class MikanAgentSession {
 
   private async runPrompt(
     text: string,
-    runSystemPrompt: string,
     options?: {
       images?: ImageContent[];
       budget?: BudgetSettings;
-      origin?: RunOrigin;
       tools?: AgentTool[];
     },
-  ): Promise<PromptBlockedOutcome | undefined> {
+  ): Promise<void> {
     this.retryAttempt = 0;
     this.overflowRecoveryAttempted = false;
     this.runBudget = { ...this.settings.budget, ...options?.budget };
@@ -302,43 +252,6 @@ export class MikanAgentSession {
       toolCallCounts: {},
       startedAt: Date.now(),
     };
-    this.runOrigin = options?.origin;
-
-    // The hook contract promises a blocked turn calls no model and persists
-    // nothing, so it must run before the auth check and before any pre-turn
-    // compaction — both of which touch the provider or the session file.
-    let promptText = text;
-    let systemPrompt = runSystemPrompt;
-    if (this.extensions?.hasHandlers("before_agent_start")) {
-      const result = await this.extensions.emitBeforeAgentStart({
-        prompt: promptText,
-        images: options?.images,
-        systemPrompt,
-        origin: this.runOrigin,
-      });
-      if (result?.block) {
-        // Blocked before agent.prompt(): the user message never enters the
-        // transcript or session store, so the blocked turn leaves no trace.
-        log.logInfo(`Extension blocked turn${result.reason ? `: ${result.reason}` : ""}`);
-        return { blocked: true, reason: result.reason };
-      }
-      if (result?.prompt !== undefined && result.prompt !== promptText) {
-        log.logInfo(
-          `Extension rewrote user prompt: ${promptText.length} → ${result.prompt.length} chars`,
-        );
-        promptText = result.prompt;
-      }
-      if (result?.systemPrompt && result.systemPrompt !== systemPrompt) {
-        // An extension rewrote the system prompt for this turn. Log the new
-        // size so the diagnostic in agent.ts (which logs the pre-hook prompt)
-        // isn't mistaken for the final prompt sent to the model.
-        log.logInfo(
-          `Extension rewrote system prompt: ${systemPrompt.length} → ${result.systemPrompt.length} chars`,
-        );
-        systemPrompt = result.systemPrompt;
-        this.agent.state.systemPrompt = systemPrompt;
-      }
-    }
 
     await this.ensureAuthConfigured(this.agent.state.model);
 
@@ -351,32 +264,12 @@ export class MikanAgentSession {
 
     const userMessage: AgentMessage = {
       role: "user",
-      content: [{ type: "text", text: promptText }, ...(options?.images ?? [])],
+      content: [{ type: "text", text }, ...(options?.images ?? [])],
       timestamp: Date.now(),
     };
 
     await this.agent.prompt([userMessage]);
-    while (await this.handlePostRun()) {
-      await this.agent.continue();
-    }
-
-    // The turn settled on an error (retries exhausted or not retryable):
-    // give monitoring extensions the final failure, once per turn.
-    const settled = this.findLastAssistantMessage();
-    if (settled?.stopReason === "error" && this.extensions?.hasHandlers("agent_error")) {
-      await this.extensions.emit("agent_error", {
-        errorMessage: settled.errorMessage || "Unknown error",
-        origin: this.runOrigin,
-      });
-    }
-
-    if (this.extensions?.hasHandlers("turn_end")) {
-      await this.extensions.emit("turn_end", {
-        messages: this.agent.state.messages,
-        origin: this.runOrigin,
-      });
-    }
-    return undefined;
+    while (await this.handlePostRun()) await this.agent.continue();
   }
 
   /** Abort the active run, pending retry backoff, and in-flight compaction. */
@@ -419,17 +312,7 @@ export class MikanAgentSession {
       return;
     }
 
-    let message = event.message;
-    if (this.extensions?.hasHandlers("message_end")) {
-      const result = await this.extensions.emitMessageEnd({ message, origin: this.runOrigin });
-      if (result?.message) {
-        for (const key of Object.keys(message)) {
-          delete (message as unknown as Record<string, unknown>)[key];
-        }
-        Object.assign(message, result.message);
-      }
-    }
-
+    const message = event.message;
     if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
       await this.sessionStore.appendMessage(message);
     } else if (message.role === "custom") {
@@ -473,7 +356,7 @@ export class MikanAgentSession {
     await this.exceedBudget(reason);
   }
 
-  /** Mark the run over budget, notify listeners and extensions, abort the agent. */
+  /** Mark the run over budget, notify listeners, and abort the agent. */
   private async exceedBudget(reason: string): Promise<void> {
     if (this.budgetExceededReason) return;
     this.budgetExceededReason = reason;
@@ -485,16 +368,6 @@ export class MikanAgentSession {
       llmCalls: this.tally.llmCalls,
       durationMs: Date.now() - this.tally.startedAt,
     });
-    if (this.extensions?.hasHandlers("budget_exceeded")) {
-      await this.extensions.emit("budget_exceeded", {
-        reason,
-        tokens: this.tally.usage.totalTokens,
-        costUsd: this.tally.usage.cost.total,
-        llmCalls: this.tally.llmCalls,
-        durationMs: Date.now() - this.tally.startedAt,
-        origin: this.runOrigin,
-      });
-    }
     log.logWarning("Run budget exceeded — aborting", reason);
     this.agent.abort();
   }
@@ -615,7 +488,7 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_end", reason, aborted: true });
         return false;
       }
-      const entryId = await this.sessionStore.appendCompaction(
+      await this.sessionStore.appendCompaction(
         result.summary,
         result.retainedTail,
         result.tokensBefore,
@@ -623,16 +496,6 @@ export class MikanAgentSession {
       );
       const context = await this.sessionStore.buildSessionContext();
       this.agent.state.messages = context.messages;
-
-      if (this.extensions?.hasHandlers("session_compact")) {
-        const entry = await this.sessionStore.getEntry(entryId);
-        if (entry?.type === "compaction") {
-          await this.extensions.emit("session_compact", {
-            entry: entry as CompactionEntry,
-            reason,
-          });
-        }
-      }
 
       await this.emit({
         type: "compaction_end",

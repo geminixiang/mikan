@@ -1,6 +1,6 @@
 ---
 title: 核心介面
-description: mikan 的 platform、runtime、harness、session、execution、vault、extension 與 host 各層之間受支援的邊界。
+description: mikan 的 platform、runtime、harness、session、execution、vault、package 與 host 各層之間受支援的邊界。
 ---
 
 本頁記錄 mikan 的**架構介面**：跨越子系統、行程、持久化或套件邊界的契約。它並非每個已匯出 helper 的清單。只在單一子系統內部使用的 helper 屬於實作細節，即使 TypeScript 目前把它標為 `export` 也一樣。
@@ -9,7 +9,7 @@ description: mikan 的 platform、runtime、harness、session、execution、vaul
 
 | 層級             | 意義                                             | 相容性期望                                 |
 | ---------------- | ------------------------------------------------ | ------------------------------------------ |
-| Public           | 由 npm 消費者或擴充功能作者匯入                  | 保留，或有意識地做版本管理                 |
+| Public           | 由 npm 消費者匯入                                | 保留，或有意識地做版本管理                 |
 | Host integration | 用來內嵌 runtime 或新增 platform/runtime backend | 只要該整合存在就保留                       |
 | Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送                  | 明確 migrate；讀取端應容忍受支援的較舊格式 |
 | Internal         | 連接 mikan CLI 內部的各模組                      | 可在協調好呼叫端與測試的情況下變更         |
@@ -30,7 +30,6 @@ flowchart TD
   O["Office identity and layout"] --> R
   O --> S
   O --> V
-  X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
 
@@ -49,7 +48,6 @@ npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
 | Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | Platform adapter 與 embedder                                       |
 | Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 新增確定性指令的 host                                              |
 | Execution            | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | Runtime backend 與 host                                            |
-| Extensions           | `MikanExtensionApi`、hook/event 型別、subagent 型別                                                        | 受信任的擴充功能作者                                               |
 | Harness embedding    | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings 與 event-format 函式                          | 進階 embedder；不適用於一般 bot 整合                               |
 
 只有套件 `exports` map 宣告的路徑是 public。匯入其他 `dist/` 產生路徑或 `src/` 原始碼路徑皆不受支援。
@@ -136,7 +134,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 | `refreshConversationEnvironment(address)` | 重新解析已快取的 runner 環境                                  |
 | `shutdown(timeoutMs?)`                    | 拒絕新工作、停止 runner，並在期限內等待進行中的工作           |
 
-每個以 session 為範圍的進入點都接受一個 `OfficeAddress`。這裡沒有 raw-conversation-id 的橋接：只有 raw id 的呼叫端必須先透過 registry 解析（`resolveOwnedOfficeAddress`），那是 CLI 與 admin 介面才會走的冷路徑。
+每個以 session 為範圍的進入點都接受一個 `OfficeAddress`。這裡沒有 raw-conversation-id 的橋接；platform 與 Admin 介面會明確攜帶 platform-scoped address。
 
 `ConversationRuntimeOptions` 提供 `workspace`（來自 `createWorkspace` 的 `Workspace` 值）、sandbox/資源服務、選用的 portal token store、選用的指令、model registry、主動式平台操作，以及平台 tool-pack factory。缺少 vault 與 portal store 會退化為停用的實作；設定了 portal URL 卻沒有對應 store，在使用時會是錯誤。
 
@@ -148,7 +146,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 `COMMAND_MANIFEST` 是面向平台的清單，用來推導 slash 形式與原生註冊。`CommandHandler.tryHandle(context)` 是執行契約。Handler 依序執行，第一個回傳 `true` 的結果會消耗掉該訊息。
 
-內建指令會在擴充功能指令之前執行。未匹配的 slash 前綴訊息仍是一般 agent prompt。`stop` 是平台 intake 的 magic word，不是 `CommandHandler`；`session` 是唯一被接受的裸指令。
+已識別的內建指令會在 runner 建立前處理。未匹配的 slash 前綴訊息仍是一般 agent prompt。`stop` 是平台 intake 的 magic word，不是 `CommandHandler`；`session` 是唯一被接受的裸指令。
 
 `CommandContext` 包含正規化的 actor/conversation identity、response 與 bot port、指令文字、privacy 狀態，以及 `CommandServices`。指令 handler 不得深入平台 SDK event。
 
@@ -158,7 +156,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### `MikanAgentSession`
 
-擁有 model turn loop、訊息持久化、重試、compaction、預算 circuit breaker、擴充功能 hook 與 abort 行為。其對外有意義的操作是 prompt/run、subscribe、abort、session reload、model/thinking 選擇與 disposal。
+擁有 model turn loop、訊息持久化、重試、compaction、預算 circuit breaker、skill、有界 subagent 與 abort 行為。其對外有意義的操作是 prompt/run、subscribe、abort、session reload、model/thinking 選擇與 disposal。
 
 ### `SessionStore`
 
@@ -176,32 +174,7 @@ Subagent 一律以具名的 profile 啟動——不支援自由格式的 per-run
 
 Harness listener 會觀察 model/tool lifecycle event。預算設定會限制 token、成本、耗時與 LLM 呼叫。預算觸發會中止該次執行並發出 `budget_exceeded`；這是終止結果，不是重試訊號。
 
-## 6. Extension 介面
-
-來源：`src/harness/extensions/types.ts`。完整的撰寫範例在[擴充功能開發](/zh-tw/extension-development/)。
-
-擴充功能是受信任的 host 程式碼，會匯出 `activate(api)`。它會在每個 conversation harness 實例中被啟用，且可回傳 disposer。
-
-### `MikanExtensionApi`
-
-| 面向                              | 契約                                                                      |
-| --------------------------------- | ------------------------------------------------------------------------- |
-| `on`                              | 為 prompt、tool、message、compaction、error 與 budget event 註冊有序 hook |
-| `registerTool`                    | 為此 runner 新增一個 `pi-agent-core` 工具                                 |
-| `registerCommand`                 | 在內建指令之後新增確定性的 `/name` 處理                                   |
-| `onDispose`                       | 在 reset、eviction 或 shutdown 時釋放資源；LIFO 順序                      |
-| `context`                         | 唯讀的 conversation/workspace/model identity                              |
-| `paths`                           | 對話私有與明確共享的僅限 host 資料目錄                                    |
-| `secrets`                         | 依名稱唯讀取用擴充功能 secret                                             |
-| `schedules` / `triggerRun`        | 持久化或觸發自主的 event-file 執行                                        |
-| `subagent.run`                    | 帶有明確工具、schema 與預算的全新隔離執行                                 |
-| `notify` / `react` / `uploadFile` | 選用的 host 平台能力                                                      |
-
-Hook 錯誤會被記錄並略過。`before_agent_start` 與 `tool_result` 的改寫採串接；`tool_call` 以第一個非 undefined 的結果為準。被擋下的 pre-start hook 會阻止 model 呼叫與 session 持久化。
-
-擴充功能的排程與立即執行不會繼承對話歷史。其任務文字必須內容完備，且不得包含 secret。
-
-## 7. Tool 與平台能力介面
+## 6. Tool 與平台能力介面
 
 來源：`src/tools/types.ts`。
 
@@ -209,7 +182,7 @@ Hook 錯誤會被記錄並略過。`before_agent_start` 與 `tool_result` 的改
 
 `PlatformToolPackFactory` 會為每個 runner 建立一個私有的 `PlatformToolPack`。`bindRun` 會選擇其工具是否套用於目前的 platform/conversation。這個 factory 邊界讓 GitHub 專屬工具不進入核心工具清單，同時避免跨對話的可變 binding。
 
-## 8. Sandbox 與 executor 介面
+## 7. Sandbox 與 executor 介面
 
 來源：`src/sandbox/types.ts` 與 `src/sandbox/index.ts`。
 
@@ -236,7 +209,7 @@ Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 
 
 雖然此型別已匯出，adapter 註冊目前是 `src/sandbox/index.ts` 內部的封閉清單；外部消費者無法為 `parseSandboxArg` 或 `createExecutor` 新增 adapter。
 
-## 9. Vault 與 execution-resolution 介面
+## 8. Vault 與 execution-resolution 介面
 
 來源：`src/vault/types.ts`；policy 在 `src/vault/index.ts`。
 
@@ -252,7 +225,7 @@ Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 
 
 Host sandbox 執行絕不會收到 vault injection。Open-trigger 平台絕不會收到環境式的 shared vault。這些是安全不變式，不是為了方便的預設值。
 
-## 10. Office、session、chat 與 identity 介面
+## 9. Office、session、chat 與 identity 介面
 
 來源：`src/office/*`、`src/sessions/*`、`src/adapters/shared.ts` 與 `src/sandbox/identity.ts`。
 
@@ -296,7 +269,7 @@ Session key 使用 `conversationId[:suffix]`，而且維持**原始平台值**�
 
 `src/adapters/shared.ts` 中的 `saveIncomingAttachments(office, items)` 是 attachment 慣例的唯一擁有者：在 `office.attachmentsDir` 底下使用清理過的 `<timestamp>_<name>` 檔名，並回傳 agent 讀取用、相對於 workspace 的 `<officeKey>/attachments/<file>` 路徑。它會在第一次寫入之前實體化該 office，並且是逐項回傳失敗而不是拋出例外，因此每個 adapter 都能保有自己的失敗策略。
 
-## 11. Event-file 介面
+## 10. Event-file 介面
 
 來源：`src/harness/event-format.ts`。
 
@@ -313,7 +286,7 @@ type EventFilePayload =
 
 這個 bus 依設計是共享且 agent 可寫的。Ownership 前綴是協作性的，不是授權邊界。
 
-## 12. 持久化檔案系統介面
+## 11. 持久化檔案系統介面
 
 | 路徑                                                  | 擁有者                | 可見性 / 相容性                         |
 | ----------------------------------------------------- | --------------------- | --------------------------------------- |
@@ -322,7 +295,6 @@ type EventFilePayload =
 | `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 僅限 host 的對話覆寫                    |
 | `<state-dir>/models.json`                             | harness model catalog | 僅限 host 的自訂 provider/model         |
 | `<state-dir>/vaults/**`                               | vault/login           | 僅限 host 的 secret 與 mount file       |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 受信任的 host 程式碼                    |
 | `<workspace>/MEMORY.md`                               | agent/user            | Sandbox 可見的持久記憶                  |
 | `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox 可見的 prompt 指示              |
 | `<workspace>/events/*.json`                           | event store/watcher   | 共享的排程 wire format                  |
@@ -334,7 +306,7 @@ type EventFilePayload =
 
 state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態檔使用 atomic 私有寫入；append-only log 使用 append 語意。
 
-## 13. HTTP 介面
+## 12. HTTP 介面
 
 來源：`src/web/server.ts` 與 portal 模組。這些路由支援 mikan 隨附的 UI；它們不是一般公用的 REST API。
 

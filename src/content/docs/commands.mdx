@@ -31,7 +31,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/auto-reply` / `/pi-auto-reply on\|off\|status`                     | Control auto-reply in the current group/channel.                                                                           |
 | `stop` / `/stop`                                                     | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
 | `/admin` / `/pi-admin`                                               | Open the 30-minute admin portal.                                                                                           |
-| `/extensions` / `/pi-extensions`                                     | List global and conversation extensions, versions, and contributed skills.                                                 |
 | `/sandbox` / `/pi-sandbox`                                           | Show the current sandbox limits plus this office's door policy and workspace layout.                                       |
 | `/pi-sandbox boost`                                                  | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
 | `/pi-sandbox door`                                                   | Report the office's effective door policy and layout, with the available values.                                           |
@@ -59,7 +58,6 @@ The change takes effect on the next message, when the sandbox runtime is rebuilt
   from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names. Because Discord
   rejects an option description longer than 100 characters, the manifest's argument descriptions are
   length-checked by the command tests. Slack's App manifest (`/pi-login`, `/pi-session`, `/pi-new`,
-  `/pi-model`, `/pi-auto-reply`, `/pi-sandbox`, `/pi-extensions`, `/pi-admin`) must still be updated
   in the Slack App configuration by hand.
 </Aside>
 

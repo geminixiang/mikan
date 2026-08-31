@@ -15,8 +15,8 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 ## Host / sandbox path boundary (image mode)
 
 mikan's primary deployment is `image:*`: the mikan process (LLM calls, session
-persistence, extensions, platform bots) runs on the **host**, while agent tool
-commands execute inside a per-conversation **container**.
+persistence, package resolution, platform bots) runs on the **host**, while
+agent tool commands execute inside a per-conversation **container**.
 
 Host paths that belong to one conversation are keyed by its **office key**
 (`v1-<platform>-<readable>-<16 hex>`, see `src/office/README.md`), not by the
@@ -26,20 +26,20 @@ trust classes:
 
 ### Host-only — under the state dir (`~/.mikan`), never mounted
 
-| Path                                                           | Contents                                                                                                                                                      |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`                                                | global settings                                                                                                                                               |
-| `conversations/<office key>/settings.json`                     | conversation settings (model, door policy, …)                                                                                                                 |
-| `models.json`                                                  | model catalog                                                                                                                                                 |
-| `global/extensions/`, `conversations/<office key>/extensions/` | extension **code** (runs in the host process)                                                                                                                 |
-| `global/`, `conversations/<office key>/`                       | extension code (`extensions/`), data (`extension-data/`), callback schedules (`extension-schedules/`), and packages (`git/`) per scope; see harness LAYOUT.md |
-| `vaults/…`                                                     | credentials; the conversation vault key is the office key, and `vaults/extensions/<slug>/env` holds extension secrets                                         |
-| `office-registry.json`                                         | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                                              |
+| Path                                             | Contents                                                                                                                                  |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                                  | global settings                                                                                                                           |
+| `conversations/<office key>/settings.json`       | conversation settings (model, door policy, …)                                                                                             |
+| `models.json`                                    | model catalog                                                                                                                             |
+| `global/git/`, `conversations/<office key>/git/` | materialized package repositories; only resolved `skills/` directories are mounted read-only into a Sandbox                               |
+| `vaults/…`                                       | credentials; the conversation vault key is the office key. The legacy `vaults/extensions/` namespace remains reserved but is never loaded |
+| `office-registry.json`                           | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                          |
 
 Rules enforced in code:
 
-- Extension code loads only from the state dir (`defaultExtensionDirs`);
-  loading from a mounted path would let sandboxed code run on the host.
+- Package repositories remain under the host-only state dir. mikan does not
+  import package modules; only resolved skill directories cross into a Sandbox
+  as read-only mounts.
 - Conversation settings are read from the state dir only. They historically
   lived at `<office dir>/settings.json` — which is bind-mounted rw — so a
   sandboxed agent could widen its own door policy and remount the whole
@@ -100,31 +100,23 @@ Consequences to keep in mind:
 - **Session files are agent-writable.** A corrupted session header makes
   `SessionStore.open` throw instead of silently starting a fresh session
   (which would erase history on the next append); `/new` recovers.
-- **Extension `text` schedules are agent-visible and agent-tamperable**: they
-  are event files in the shared events dir. Ownership prefixes are
-  cooperative, not a security boundary — never put secrets in schedule text.
-  Extension **callback** schedules are the deliberate opposite: a fire runs
-  trusted host-side code, so they persist under the host-only state dir
-  (`conversations/<office key>/extension-schedules/`) where the sandbox
-  cannot reach them.
 - **The events dir is a workspace-level scheduling bus — by design.** It is
-  global and agent-writable, so any conversation's agent (or extension, or
-  admin) can schedule runs in _any_ conversation. This is deliberate: one
-  mikan workspace is one trust domain for scheduling, and cross-conversation
-  events are exactly how PM-style workflows post reminders into other
-  channels (e.g. agent-pm). Do not "fix" this by scoping events per
-  conversation. Note it is only mounted under `trusted` + `shared-support`
-  or `full`; an `isolated` office cannot self-schedule.
+  global and agent-writable, so an authorized conversation agent or host
+  administrator can schedule runs in _any_ conversation. One mikan workspace
+  is one trust domain for scheduling. Do not scope events per conversation
+  without changing that domain rule. The directory is mounted only under
+  `trusted` + `shared-support` or `full`; an `isolated` office cannot
+  self-schedule. Event text is agent-visible and must never contain secrets.
 - Auto-reply config files live in the office dir and are therefore
   agent-toggleable (feature is deprecated).
 
 ### Paths in prompts and tool output
 
-The model only ever sees **runtime** paths (`/workspace/…`); the host only
-ever touches **host** paths. `createMountedRuntimePathContext` (`utils.ts`) translates between them
-(skill locations, upload paths). Extension-shipped skills are the exception:
-their files live under the host-only state dir, so their bodies are inlined
-into the system prompt instead of referenced by path.
+The model only ever sees **runtime** paths (`/workspace/…` or
+`/mikan/packages/…`); the host only ever touches **host** paths.
+`createMountedRuntimePathContext` (`utils.ts`) translates between them for
+skill locations and upload paths. Package skills remain files and are
+referenced through their read-only runtime mount.
 
 ### File transport
 

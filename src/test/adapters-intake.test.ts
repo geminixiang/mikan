@@ -36,7 +36,6 @@ function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
     handleStop: vi.fn().mockResolvedValue(undefined),
     forceStop: vi.fn(),
     handleNewCommand: vi.fn().mockResolvedValue(undefined),
-    handleExtensionAction: vi.fn().mockResolvedValue(false),
   };
 }
 

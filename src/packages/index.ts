@@ -29,12 +29,7 @@ import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { officeStateDir } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
-import {
-  defaultExtensionDirs,
-  listInstalledExtensions,
-  loadSkillsFromDir,
-  validateExtension,
-} from "../harness/index.js";
+import { loadSkillsFromDir } from "../harness/index.js";
 import { loadGlobalSettings, resolveConversationSettings } from "../config.js";
 import { applyConversationSettings, applyGlobalSettings } from "../settings-mutation.js";
 
@@ -71,21 +66,6 @@ import { applyConversationSettings, applyGlobalSettings } from "../settings-muta
 
 const PROTOCOL_PREFIXES = ["https://", "http://", "ssh://", "git://", "file://"];
 const SCP_LIKE = /^[^@/\s]+@[^:/\s]+:/;
-
-/**
- * Whether a source string spells a git source (vs a local path) — the one
- * home of the prefix rule. Classification only; `parseSource` still owns
- * validation and error messages.
- */
-export function isGitSourceString(source: string): boolean {
-  const locator = source.trim();
-  return (
-    locator.startsWith("github:") ||
-    locator.startsWith("git:") ||
-    isProtocolUrl(locator) ||
-    SCP_LIKE.test(locator)
-  );
-}
 
 /**
  * Parse a source string. Throws with a user-facing message rather than
@@ -184,7 +164,7 @@ function assertSafeRelativePath(value: string, label: string): void {
  * Deliberate choices:
  * - The ref is excluded: the same repo pinned to two refs in two scopes is one
  *   package installed twice, and the narrower scope wins.
- * - The subpath is included: two extensions living at different paths in one
+ * - The subpath is included: two skill packages living at different paths in one
  *   monorepo are two packages.
  * - Transport is excluded: `git@github.com:o/r`, `https://github.com/o/r.git`
  *   and `ssh://git@github.com/o/r` all identify the same package, so mixing
@@ -283,8 +263,7 @@ const MATERIALIZED_REF_FILE = "mikan-ref";
 /**
  * Root of a scope's host-only assets: `<stateDir>/global` or
  * `<stateDir>/conversations/<id>`. The two are isomorphic by design — both
- * hold `extensions/`, `extension-data/`, and now `git/`. See
- * `src/harness/extensions/LAYOUT.md`.
+ * hold conversation-scoped settings and package checkouts.
  */
 export function packageScopeDir(
   scope: PackageScope,
@@ -488,7 +467,7 @@ function resolveSubpath(cloneDir: string, parsed: Extract<ParsedSource, { type: 
     throw new Error(`Subpath not found in repository: ${parsed.subpath}`);
   }
   // A symlink inside the repository must not select files outside the clone:
-  // the returned directory is imported (extensions) or mounted, so follow
+  // the returned directory is mounted into the runtime, so follow
   // links before deciding the subpath stayed inside.
   const relation = relative(realpathSync(cloneDir), realpathSync(dir));
   if (isAbsolute(relation) || relation === ".." || relation.startsWith(`..${sep}`)) {
@@ -625,7 +604,7 @@ async function describe(
   options: ResolvePackagesOptions,
   shadowedBy: Set<string>,
 ): Promise<PackageStatus> {
-  const base: PackageStatus = { source, scope, ready: false, extensions: [], skills: [] };
+  const base: PackageStatus = { source, scope, ready: false, skills: [] };
 
   let identity: string;
   try {
@@ -651,24 +630,8 @@ async function describe(
     ready: true,
     dir,
     ...(shadowedBy.has(identity) ? { shadowed: true } : {}),
-    extensions: await contributedExtensions(dir),
     skills: contributedSkills(dir),
   };
-}
-
-/**
- * Mirrors the loader's two accepted layouts (an `extensions/` collection, or a
- * package that is itself one extension) so the portal reports exactly what
- * would activate — including the slug, which is the name the extension's data
- * dir, secrets, and schedules are keyed by.
- */
-async function contributedExtensions(dir: string): Promise<string[]> {
-  const collection = listInstalledExtensions([join(dir, "extensions")]);
-  if (collection.length > 0) return collection.map((info) => info.slug);
-  // Single-extension layout: validate the root itself rather than scanning its
-  // parent, which would report unrelated siblings.
-  const validated = await validateExtension(dir);
-  return validated.ok ? [validated.slug] : [];
 }
 
 function contributedSkills(dir: string): string[] {
@@ -681,7 +644,7 @@ function contributedSkills(dir: string): string[] {
 /**
  * What a conversation actually loads: the two scopes' declared packages
  * combined, collisions resolved, and each surviving package turned into the
- * directories the extension loader and the skill loader consume.
+ * skill directories the runner consumes.
  *
  * Two rules do all the work here:
  *
@@ -702,8 +665,7 @@ function contributedSkills(dir: string): string[] {
 
 export type { ResolvePackagesOptions, ResolvedPackages } from "./types.js";
 
-/** Conventional resource directories inside a package, mirroring pi's layout. */
-const EXTENSIONS_SUBDIR = "extensions";
+/** Conventional resource directory inside a package, mirroring pi's layout. */
 const SKILLS_SUBDIR = "skills";
 /** Slug length cap; long identities keep a digest tail instead of colliding. */
 const SLUG_MAX_LENGTH = 96;
@@ -779,14 +741,8 @@ export function resolveConversationPackages(options: ResolvePackagesOptions): Re
   }
 
   const packages = [...byIdentity.values()].toSorted(scopeOrder);
-  const targets = packages.map(packageExtensionTargets);
   return {
     packages,
-    extensionDirs: [
-      ...defaultExtensionDirs(options.office.address, options.office.workspace.stateDir),
-      ...targets.flatMap((target) => target.dirs),
-    ],
-    extensionRoots: targets.flatMap((target) => target.roots),
     skillDirs: packages.flatMap(packageSkillDir),
     errors,
   };
@@ -828,28 +784,6 @@ function materialize(
     errors.push({ source: declaration.source, message: messageOf(err) });
     return undefined;
   }
-}
-
-/**
- * How a package contributes extensions. Two shapes are accepted, and which one
- * applies is decided by the package's own layout rather than by configuration:
- *
- * - **Collection**: an `extensions/` subdirectory, scanned for named children.
- *   This is the shape a repository shipping several extensions has.
- * - **Single extension**: no `extensions/` subdirectory, but the package root
- *   is itself a loadable extension (an index file, or a `package.json` with
- *   `mikan.extensions`). This is what a one-extension repo looks like, and it
- *   is what a developer's working copy looks like — so `mikan ext dev` needs
- *   no special case.
- *
- * The slug comes from the package directory name in the single-extension
- * shape, so a repo named for its extension gets the identity its author
- * expects.
- */
-function packageExtensionTargets(pkg: MaterializedPackage): { dirs: string[]; roots: string[] } {
-  const collection = join(pkg.dir, EXTENSIONS_SUBDIR);
-  if (existsSync(collection)) return { dirs: [collection], roots: [] };
-  return { dirs: [], roots: [pkg.dir] };
 }
 
 function packageSkillDir(pkg: MaterializedPackage): PackageSkillDir[] {
@@ -899,12 +833,9 @@ function messageOf(err: unknown): string {
  * The ordering here is the whole point: **materialize first, persist second.**
  * A source is fetched and validated while the person who typed it is still
  * looking at the form, so a typo, a private repo, a bad `#subpath`, or a repo
- * with no extension in it fails in front of them. Persisting first and
+ * with no skills in it fails in front of them. Persisting first and
  * fetching at load time would turn every one of those into "the bot just
- * doesn't have the feature", discovered later and usually by someone else.
- *
- * Activation stays where it was: the next harness instance (`/pi-new`) picks
- * up what is on disk. Only the failure reporting moves earlier.
+ * doesn't have the skill", discovered later and usually by someone else.
  */
 
 export type { PackageAdminContext, PackageWriteResult } from "./types.js";

@@ -1,6 +1,6 @@
 ---
 title: コアインターフェース
-description: mikan の platform、runtime、harness、session、execution、vault、extension、host の各レイヤー間でサポートされる境界。
+description: mikan の platform、runtime、harness、session、execution、vault、package、host の各レイヤー間でサポートされる境界。
 ---
 
 このページでは、mikan の**アーキテクチャ上のインターフェース**、すなわちサブシステム、プロセス、永続化、パッケージのいずれかの境界をまたぐ契約を説明します。エクスポートされたヘルパーをすべて列挙したものではありません。1 つのサブシステム内でのみ使われるヘルパーは、TypeScript が現在 `export` としてマークしていても実装の詳細です。
@@ -9,7 +9,7 @@ description: mikan の platform、runtime、harness、session、execution、vaul
 
 | レベル           | 意味                                                              | 互換性の期待                                                  |
 | ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| Public           | npm consumers または extension authors によって import される     | 保持するか、意図的にバージョン管理する                        |
+| Public           | npm consumers によって import される                              | 保持するか、意図的にバージョン管理する                        |
 | Host integration | runtime を埋め込む、または platform/runtime backend を追加する    | integration が存在する限り保持する                            |
 | Wire / persisted | ディスクに保存されるか、プロセス/ネットワーク境界を越えて送られる | 明示的に移行する。reader はサポート対象の古い形式を許容すべき |
 | Internal         | mikan CLI 内部のモジュールを接続する                              | call sites と tests を協調させれば変更してよい                |
@@ -30,7 +30,6 @@ flowchart TD
   O["Office identity and layout"] --> R
   O --> S
   O --> V
-  X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
 
@@ -49,7 +48,6 @@ npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` に
 | Platform contract   | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | platform adapters と embedders                                               |
 | Commands            | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 決定的な commands を追加する host                                            |
 | Execution           | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | runtime backends と host                                                     |
-| Extensions          | `MikanExtensionApi`、hook/event types、subagent types                                                      | 信頼された extension authors                                                 |
 | Harness embedding   | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings および event-format functions                 | 上級の embedders。通常の bot integration ではありません                      |
 
 パッケージの `exports` map が宣言するパスだけが public です。それ以外の生成済み `dist/` パスや `src/` ソースパスの import はサポートされません。
@@ -136,7 +134,7 @@ host に面した platform port です。次を組み合わせます:
 | `refreshConversationEnvironment(address)` | cached runner の環境を再解決する                                        |
 | `shutdown(timeoutMs?)`                    | 新しい作業を拒否し、runners を停止し、期限まで in-flight の作業を待つ   |
 
-session スコープのエントリポイントはすべて `OfficeAddress` を受け取ります。生の conversation id からの bridge はありません。生 id しか持たない呼び出し側は、まず registry 経由で解決します（`resolveOwnedOfficeAddress`）。これは CLI と admin 面向けの cold path です。
+session スコープのエントリポイントはすべて `OfficeAddress` を受け取ります。raw conversation id の bridge はなく、platform と Admin surface が platform-scoped address を明示的に運びます。
 
 `ConversationRuntimeOptions` は、`workspace`（`createWorkspace` が返す `Workspace`）、sandbox/resource サービス、任意の portal token stores、任意の commands、model registry、proactive な platform 操作、platform tool-pack factories を供給します。vault と portal stores が欠けている場合は無効化された実装に degrade します。portal URL を設定しつつその store を設定しない場合、使用時にエラーになります。
 
@@ -148,7 +146,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 `COMMAND_MANIFEST` は、slash 形式とネイティブ登録を導出するために使われる platform 向けのインベントリです。`CommandHandler.tryHandle(context)` は実行の契約です。handlers は順に実行され、最初に `true` を返したものが message を消費します。
 
-組み込み commands は extension commands より先に実行されます。どのコマンドにも一致しないスラッシュ付き message は、依然として通常の agent prompt です。`stop` は platform intake の magic word であり `CommandHandler` ではありません。`session` は唯一受け付けられる bare command です。
+認識された組み込み commands は runner 作成前に処理されます。どのコマンドにも一致しないスラッシュ付き message は、依然として通常の agent prompt です。`stop` は platform intake の magic word であり `CommandHandler` ではありません。`session` は唯一受け付けられる bare command です。
 
 `CommandContext` は、正規化された actor/conversation identity、response と bot の port、command text、プライバシー状態、`CommandServices` を含みます。command handlers は platform SDK event に手を伸ばしてはなりません。
 
@@ -158,7 +156,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 ### `MikanAgentSession`
 
-model turn loop、message 永続化、retries、compaction、budget circuit breakers、extension hooks、abort の挙動を所有します。外部から意味のある操作は、prompt/run、subscribe、abort、session reload、model/thinking 選択、disposal です。
+model turn loop、message 永続化、retries、compaction、budget circuit breakers、abort の挙動を所有します。外部から意味のある操作は、prompt/run、subscribe、abort、session reload、model/thinking 選択、disposal です。
 
 ### `SessionStore`
 
@@ -176,32 +174,7 @@ subagent は必ず名前付きの profile で起動されます。実行ごと�
 
 Harness listeners は model/tool のライフサイクルイベントを観測します。Budget settings は tokens、cost、duration、LLM calls に上限を設けます。budget の超過は run を abort し `budget_exceeded` を emit します。これは終端の結果であり、retry のシグナルではありません。
 
-## 6. Extension インターフェース
-
-ソース: `src/harness/extensions/types.ts`。完全な作成例は [拡張機能開発](/extension-development/) にあります。
-
-extension は `activate(api)` を export する信頼された host code です。会話ごとの harness インスタンスで活性化され、disposer を返せます。
-
-### `MikanExtensionApi`
-
-| 面                                | 契約                                                                                     |
-| --------------------------------- | ---------------------------------------------------------------------------------------- |
-| `on`                              | prompt、tool、message、compaction、error、budget の各イベントに順序付き hooks を登録する |
-| `registerTool`                    | この runner に `pi-agent-core` tool を追加する                                           |
-| `registerCommand`                 | 組み込みの後に決定的な `/name` の処理を追加する                                          |
-| `onDispose`                       | reset、eviction、shutdown 時にリソースを解放する。LIFO 順                                |
-| `context`                         | 読み取り専用の conversation/workspace/model identity                                     |
-| `paths`                           | conversation-private および明示的に共有される host-only のデータディレクトリ             |
-| `secrets`                         | 名前による読み取り専用の extension secrets                                               |
-| `schedules` / `triggerRun`        | 自律的な event-file の実行を永続化または発火する                                         |
-| `subagent.run`                    | 明示的な tools、schema、budget を持つ新しい隔離された実行                                |
-| `notify` / `react` / `uploadFile` | 任意の host platform 機能                                                                |
-
-Hook のエラーはログに記録されスキップされます。`before_agent_start` と `tool_result` の書き換えは chain します。`tool_call` は最初の undefined でない結果を使います。ブロックされた pre-start hook は、model call と session 永続化を防ぎます。
-
-Extension の schedules と即時の実行は会話履歴を継承しません。その task text は自己完結していなければならず、secrets を含んではなりません。
-
-## 7. Tool と platform capability のインターフェース
+## 6. Tool と platform capability のインターフェース
 
 ソース: `src/tools/types.ts`。
 
@@ -209,7 +182,7 @@ Core tools は、runner が供給する executor と host services を使いま�
 
 `PlatformToolPackFactory` は runner ごとに private な `PlatformToolPack` を作成します。`bindRun` は、その tools が現在の platform/conversation に適用されるかどうかを選択します。この factory 境界は、GitHub 固有の tools を core tool list から締め出しつつ、conversation をまたぐ mutable な binding を防ぎます。
 
-## 8. Sandbox と executor のインターフェース
+## 7. Sandbox と executor のインターフェース
 
 ソース: `src/sandbox/types.ts` と `src/sandbox/index.ts`。
 
@@ -236,7 +209,7 @@ adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意�
 
 型は export されていますが、adapter 登録は現在 `src/sandbox/index.ts` 内部の閉じたリストです。外部の consumers は `parseSandboxArg` や `createExecutor` に adapter を追加できません。
 
-## 9. Vault と execution-resolution のインターフェース
+## 8. Vault と execution-resolution のインターフェース
 
 ソース: `src/vault/types.ts`。ポリシーは `src/vault/index.ts`。
 
@@ -252,7 +225,7 @@ Credential フローは次のとおりです:
 
 Host sandbox 実行は決して vault 注入を受け取りません。Open-trigger platforms は決して ambient shared vault を受け取りません。これらはセキュリティの不変条件であり、便宜的な既定値ではありません。
 
-## 10. Office、session、chat、identity のインターフェース
+## 9. Office、session、chat、identity のインターフェース
 
 ソース: `src/office/*`、`src/sessions/*`、`src/adapters/shared.ts`、`src/sandbox/identity.ts`。
 
@@ -296,7 +269,7 @@ Session keys は `conversationId[:suffix]` を使い、**生の platform 値の�
 
 `src/adapters/shared.ts` の `saveIncomingAttachments(office, items)` が attachment の規約を単独で所有します: `office.attachmentsDir` 配下のサニタイズ済み `<timestamp>_<name>` ファイル名と、agent が読む workspace 相対の `<officeKey>/attachments/<file>` path です。最初の書き込みの前に office を materialize し、throw する代わりに item ごとの失敗を返すため、各 adapter は自身の失敗ポリシーを保てます。
 
-## 11. Event-file インターフェース
+## 10. Event-file インターフェース
 
 ソース: `src/harness/event-format.ts`。
 
@@ -313,7 +286,7 @@ type EventFilePayload =
 
 この bus は設計上、共有され agent が書き込み可能です。所有権の prefix は協調的なものであり、認可の境界ではありません。
 
-## 12. 永続化されたファイルシステムのインターフェース
+## 11. 永続化されたファイルシステムのインターフェース
 
 | パス                                                  | 所有者                | 可視性 / 互換性                                |
 | ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
@@ -322,7 +295,6 @@ type EventFilePayload =
 | `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only の conversation override             |
 | `<state-dir>/models.json`                             | harness model catalog | Host-only のカスタム providers/models          |
 | `<state-dir>/vaults/**`                               | vault/login           | Host-only の secrets と mount files            |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 信頼された host code                           |
 | `<workspace>/MEMORY.md`                               | agent/user            | Sandbox から見える永続 memory                  |
 | `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox から見える prompt instructions         |
 | `<workspace>/events/*.json`                           | event store/watcher   | 共有 scheduling の wire format                 |
@@ -334,7 +306,7 @@ type EventFilePayload =
 
 state directory は sandbox から見える workspace 内に置いてはなりません。重要な state files は atomic な private write を使い、append-only logs は append セマンティクスを使います。
 
-## 13. HTTP インターフェース
+## 12. HTTP インターフェース
 
 ソース: `src/web/server.ts` と portal modules。これらのルートは mikan の同梱 UI を支えるものであり、汎用の public REST API ではありません。
 

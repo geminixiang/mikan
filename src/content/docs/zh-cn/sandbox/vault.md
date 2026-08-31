@@ -22,7 +22,7 @@ description: mikan 如何在 state directory 中存储凭证，并按沙箱模�
 └── vaults/
     ├── <office-key>/          # one conversation's credentials
     ├── shared/<name>/         # shared login profiles
-    └── extensions/<slug>/     # extension secrets (host-side only)
+    └── extensions/            # 旧版保留 namespace；不会加载或挂载
 ```
 
 也可以使用 `--state-dir` 指定：
@@ -73,7 +73,7 @@ Vault 中的材料并不是同一类无差别的 secret：
 - **对话自己的 vault 本就应该进入 guest。** 它的 `env` 条目会成为工具命令的环境变量，它的凭证文件会被投影到各自的目标路径（默认位于 `/root` 下）。这正是它的意义所在：代理以登录者本人的身份运行 `gh`、`gcloud` 或 `ssh`。
 - **vault 目录本身绝不会被整体挂载。** 只有已解析的 vault 所声明的单个凭证文件会被投影，每个文件一个 mount，而且只针对该 key 所解析到的那个对话。
 - **Daemon token 绝不会进入 guest。** 平台 bot token（`SLACK_BOT_TOKEN`、GitHub App private key 等）由 mikan 主机进程读取，不属于任何 vault 注入。
-- **扩展 secret 绝不会进入 guest。** `vaults/extensions/<slug>/env` 通过扩展 API 在主机侧读取；它不是用户 vault，不会被挂载或注入。
+- **旧版扩展 secret 保持停用。** `vaults/extensions/` 仍是保留 namespace，避免旧文件被误认为用户 vault；mikan 不再加载、挂载或注入它们。
 
 这是数据边界，而不是执行边界。凡是该对话自己的凭证能做的事，它的代理都能做——请据此限定你所存储的凭证权限范围。
 

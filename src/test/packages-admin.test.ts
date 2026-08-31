@@ -61,9 +61,6 @@ beforeEach(() => {
   );
 
   repo = mkdtempSync(join(base, "repo-"));
-  const ext = join(repo, "extensions", "reporter");
-  mkdirSync(ext, { recursive: true });
-  writeFileSync(join(ext, "index.mjs"), "export function activate() {}");
   mkdirSync(join(repo, "skills", "triage"), { recursive: true });
   writeFileSync(
     join(repo, "skills", "triage", "SKILL.md"),
@@ -133,7 +130,7 @@ describe("addPackage", () => {
 
   test("adding a second, different package keeps the first", () => {
     const other = mkdtempSync(join(base, "repo2-"));
-    writeFileSync(join(other, "index.mjs"), "export function activate() {}");
+    writeFileSync(join(other, "README.md"), "package two");
     execFileSync("git", ["init", "-q"], { cwd: other });
     execFileSync("git", ["add", "-A"], { cwd: other });
     execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], {
@@ -152,8 +149,8 @@ describe("removePackage", () => {
     expect(removePackage("global", added.source, context())).toBe(true);
     expect(readPackages(globalSettingsFile())).toEqual([]);
     // Still on disk: re-adding must not need the network again.
-    expect(readFileSync(join(added.dir, "extensions", "reporter", "index.mjs"), "utf-8")).toContain(
-      "activate",
+    expect(readFileSync(join(added.dir, "skills", "triage", "SKILL.md"), "utf-8")).toContain(
+      "triage",
     );
   });
 
@@ -165,19 +162,14 @@ describe("removePackage", () => {
 describe("refreshPackage", () => {
   test("moves an unpinned package to the new head", () => {
     const added = addPackage("global", source, context());
-    writeFileSync(
-      join(repo, "extensions", "reporter", "index.mjs"),
-      "export function activate() {} // v2",
-    );
+    writeFileSync(join(repo, "skills", "triage", "SKILL.md"), "---\nname: triage\n---\nv2");
     execFileSync("git", ["add", "-A"], { cwd: repo });
     execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "two"], {
       cwd: repo,
     });
 
     refreshPackage("global", added.source, context());
-    expect(readFileSync(join(added.dir, "extensions", "reporter", "index.mjs"), "utf-8")).toContain(
-      "v2",
-    );
+    expect(readFileSync(join(added.dir, "skills", "triage", "SKILL.md"), "utf-8")).toContain("v2");
   });
 
   test("refusing to refresh something the scope never declared", () => {
@@ -192,7 +184,6 @@ describe("inspectConversationPackages", () => {
 
     expect(inventory.global).toHaveLength(1);
     expect(inventory.global[0].ready).toBe(true);
-    expect(inventory.global[0].extensions).toEqual(["reporter"]);
     expect(inventory.global[0].skills).toEqual(["triage"]);
   });
 
@@ -224,20 +215,5 @@ describe("inspectConversationPackages", () => {
     addPackage("global", source, context());
     const inventory = await inspectConversationPackages(context());
     expect(inventory.global[0].shadowed).toBeUndefined();
-  });
-
-  test("a single-extension package reports its root slug", async () => {
-    const solo = join(base, "solo-tool");
-    mkdirSync(solo, { recursive: true });
-    writeFileSync(join(solo, "index.mjs"), "export function activate() {}");
-    execFileSync("git", ["init", "-q"], { cwd: solo });
-    execFileSync("git", ["add", "-A"], { cwd: solo });
-    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], {
-      cwd: solo,
-    });
-
-    addPackage("global", `file://${solo}`, context());
-    const inventory = await inspectConversationPackages(context());
-    expect(inventory.global[0].extensions).toEqual(["solo-tool"]);
   });
 });

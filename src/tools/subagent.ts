@@ -131,7 +131,7 @@ type DagNode = NonNullable<SubagentParams["dag"]>["nodes"][number];
 type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "budget">;
 /**
  * `hooks` carries host-side callbacks rather than widening the request: the
- * request is the public shape an extension or the model asks for, and a
+ * request is the public shape the model asks for, and a
  * progress sink belongs to whoever is displaying the run.
  */
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(

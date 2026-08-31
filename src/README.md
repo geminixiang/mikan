@@ -25,13 +25,13 @@ This directory is the TypeScript source root for mikan; the entries below descri
 ## Subdirectories
 
 - `adapters/`: Chat platform adapters and shared adapter utilities.
-- `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`ext`, `office`, `--download`).
+- `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
 - `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
-- `harness/`: mikan's agent harness — session store, model catalog, run loop, skills, subagents, and the extension system.
+- `harness/`: mikan's agent harness — session store, model catalog, run loop, skills, and subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
-- `packages/`: Git-sourced packages that ship extensions and skills — source grammar, materialization, per-conversation resolution, and the admin write path.
+- `packages/`: Git-sourced skill packages — source grammar, materialization, per-conversation resolution, read-only mounts, and the admin write path.
 - `runtime/`: Conversation and session runtime orchestration.
 - `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors.
 - `sessions/`: Chat-history synchronization, session file management, and session policy.

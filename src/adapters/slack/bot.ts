@@ -23,7 +23,6 @@ import {
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
-import { parseExtActionId } from "../../harness/extensions/registry.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";
@@ -766,7 +765,6 @@ export class SlackMessagingBot implements MessagingBot {
     return {
       name: "slack",
       trustModel: "membership",
-      bareExtensionCommands: true,
       formattingGuide:
         "## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.",
       channels: this.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
@@ -1672,42 +1670,6 @@ export class SlackMessagingBot implements MessagingBot {
       : undefined;
     const threadTs = container.thread_ts;
     const sessionKey = resolveSlackSessionKey(channelId, threadTs);
-
-    // Extension-owned actions (ext:<slug>: namespaced by api.blockkit.post)
-    // dispatch exclusively to the extension's onAction handler — no agent
-    // run, no chat-history entry. They never fall through to the model: an
-    // unconsumed namespaced action means the extension is gone, and its
-    // routing id would only confuse an agent run.
-    const extAction = parseExtActionId(action.action_id ?? "");
-    if (extAction) {
-      this.getQueue(this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
-        const consumed = await this.handler.handleExtensionAction({
-          address: createOfficeAddress("slack", channelId),
-          sessionKey,
-          conversationKind: channelId.startsWith("D") ? "direct" : "shared",
-          slug: extAction.slug,
-          action: {
-            actionId: extAction.actionId,
-            value: action.value ?? selectedOption?.value ?? selectedOption?.text?.text,
-            selectedValues: selectedOptions?.map(
-              (option) => option.value ?? option.text?.text ?? "",
-            ),
-            userId,
-            userName: body.user?.username ?? body.user?.name,
-            conversationId: channelId,
-            messageTs: container.message_ts,
-            threadTs,
-          },
-        });
-        if (!consumed) {
-          log.logWarning(
-            `[${channelId}] Dropped extension action ${action.action_id}`,
-            `no handler registered by extension "${extAction.slug}"`,
-          );
-        }
-      });
-      return;
-    }
 
     const selectedText = selectedOption?.text?.text ?? selectedOption?.value;
     const selectedTexts = selectedOptions?.map((option) => option.text?.text ?? option.value);

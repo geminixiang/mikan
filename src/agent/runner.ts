@@ -1,15 +1,7 @@
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import type { Office } from "../office/index.js";
 import type { MikanAgentSession } from "../harness/index.js";
-import {
-  DEFAULT_EVENT_BUDGET,
-  type ExtensionBlockAction,
-  type ExtensionScheduleCallbackEvent,
-  MikanModels,
-  type MikanSkill,
-  parseCommandInput,
-  type RunOrigin,
-} from "../harness/index.js";
+import { DEFAULT_EVENT_BUDGET, MikanModels } from "../harness/index.js";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join, posix } from "node:path";
@@ -41,7 +33,7 @@ import {
 } from "../sessions/store.js";
 import { createMikanTools } from "../tools/index.js";
 import type { PlatformToolRunContext } from "../tools/types.js";
-import { createConfiguredAgentSession, loadMikanSkills, mergeExtensionSkills } from "./catalog.js";
+import { createConfiguredAgentSession, loadMikanSkills } from "./catalog.js";
 import {
   createRunnerExecutionContext,
   normalizeAttachRuntimePath,
@@ -89,7 +81,6 @@ async function prepareRunContext(params: {
   executor: Executor;
   resolveForRun: RunnerExecutionContext["resolveForRun"];
   session: MikanAgentSession;
-  extensionSkills?: MikanSkill[];
   setEventContext: (context: {
     platform: string;
     conversationId: string;
@@ -146,7 +137,7 @@ async function prepareRunContext(params: {
     projection,
     packages,
   );
-  const skills = mergeExtensionSkills(conversationSkillLoad.skills, params.extensionSkills ?? []);
+  const skills = conversationSkillLoad.skills;
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt(
     pathContext.runtimeWorkspaceRoot,
@@ -164,10 +155,7 @@ async function prepareRunContext(params: {
   // Cache diagnosis: a byte-stable system prompt is the precondition for
   // provider prompt caching. If this hash changes between turns of one
   // conversation, something turn-varying leaked into the prompt; if it is
-  // stable and cacheRead stays 0, the miss is provider-side (e.g. OpenRouter
-  // routing the model across upstream hosts). This is the base prompt mikan
-  // builds; a `before_agent_start` extension may still rewrite it per turn
-  // (logged separately by the runner).
+  // stable and cacheRead stays 0, the miss is provider-side.
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
   log.logInfo(
     `[${conversationId}] System prompt (base): ${systemPrompt.length} chars, sha ${promptHash}`,
@@ -262,14 +250,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     provisioner,
     resourceController,
     sessionView,
-    platformNotifier,
-    platformReactor,
-    platformUploader,
-    platformBlockKit,
-    platformDmOpener,
-    platformHistoryFetcher,
-    platformUserLister,
-    extensionScheduleEngine,
     platformToolPackFactories,
   } = options;
   const conversationId = office.address.conversationId;
@@ -384,25 +364,15 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   }
   const toolsWithMcp = [...tools, ...mcpResult.tools];
 
-  const { session, extensionSkills, extensionRegistry, disposeExtensions } =
-    await createConfiguredAgentSession({
-      office,
-      systemPrompt,
-      model,
-      thinkingLevel: agentConfig.thinkingLevel,
-      tools: toolsWithMcp,
-      sessionStore: sessionManager,
-      models: modelRegistry,
-      vaultManager,
-      platformNotifier,
-      platformReactor,
-      platformUploader,
-      platformBlockKit,
-      platformDmOpener,
-      platformHistoryFetcher,
-      platformUserLister,
-      extensionScheduleEngine,
-    });
+  const session = await createConfiguredAgentSession({
+    workspaceDir,
+    systemPrompt,
+    model,
+    thinkingLevel: agentConfig.thinkingLevel,
+    tools: toolsWithMcp,
+    sessionStore: sessionManager,
+    models: modelRegistry,
+  });
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
@@ -433,7 +403,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         executor,
         resolveForRun,
         session,
-        extensionSkills,
         setEventContext,
         setSandboxContext,
         setUploadFunction,
@@ -479,40 +448,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           event: { kind: "sessionStart" },
         });
 
-        // Autonomous (event/trigger) runs get an explicit resource ceiling since
-        // no human is watching the loop; interactive turns stay human-gated.
+        // Autonomous event runs get an explicit resource ceiling since no
+        // human is watching the loop; interactive turns stay human-gated.
         const isEventRun = message.id.startsWith("event:");
-        // Event runs have no triggering platform message, so identity fields
-        // stay unset and extensions must null-check them.
-        const origin: RunOrigin = isEventRun
-          ? { kind: "event", platform: platform.name }
-          : {
-              kind: "interactive",
-              platform: platform.name,
-              messageTs: message.id,
-              userId: message.userId,
-              userName: message.userName,
-              threadTs: message.threadTs,
-              attachments: message.attachments,
-            };
-        const outcome = await session.prompt(prepared.userMessage, {
-          origin,
+        await session.prompt(prepared.userMessage, {
           ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
           ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
         });
-
-        if (outcome?.blocked) {
-          const text = outcome.reason
-            ? `_Turn blocked by an extension: ${outcome.reason}_`
-            : "_Turn blocked by an extension._";
-          sendAgentEvent({
-            sessionId: sessionUuid,
-            actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
-            event: { kind: "diagnostic", text },
-          });
-          await responder.respondDiagnostic(text, { style: "muted" });
-          return { stopReason: "blocked" };
-        }
 
         // Wait for queued messages
         await prepared.runQueue.wait();
@@ -581,7 +523,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         executor,
         resolveForRun,
         session,
-        extensionSkills,
         setEventContext,
         setSandboxContext,
         setUploadFunction,
@@ -598,28 +539,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
           "MEMORY.md",
         );
         const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);
-        const outcome = await session.prompt(
+        await session.prompt(
           sessionDreamPrompt(
             conversationMemoryPath,
             dreamTools.map((tool) => tool.name),
           ),
-          {
-            origin: {
-              kind: "interactive",
-              platform: platform.name,
-              messageTs: message.id,
-              userId: message.userId,
-              userName: message.userName,
-              threadTs: message.threadTs,
-              attachments: message.attachments,
-            },
-            budget: SESSION_DREAM_BUDGET,
-            tools: dreamTools,
-          },
+          { budget: SESSION_DREAM_BUDGET, tools: dreamTools },
         );
-        if (outcome?.blocked) {
-          return { stopReason: "blocked", errorMessage: outcome.reason };
-        }
         await prepared.runQueue.wait();
         // A budget abort carries its reason in the tally, not in errorMessage,
         // and that reason is the only thing that tells the user why memory was
@@ -639,44 +565,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       session.abort();
     },
 
-    async tryExtensionCommand(
-      message: ConversationMessage,
-      responder: ConversationResponder,
-      parseOptions: { bareName?: boolean } = {},
-    ): Promise<boolean> {
-      const parsed = parseCommandInput(message.text, parseOptions);
-      if (!parsed) return false;
-      return extensionRegistry.dispatchCommand(parsed.name, {
-        args: parsed.args,
-        conversationId,
-        userId: message.userId,
-        userName: message.userName,
-        threadTs: message.threadTs,
-        respond: (text: string) => responder.respond(text),
-      });
-    },
-
-    async tryExtensionAction(slug: string, action: ExtensionBlockAction): Promise<boolean> {
-      return extensionRegistry.dispatchAction(slug, action);
-    },
-
-    async tryExtensionScheduleCallback(
-      slug: string,
-      callback: string,
-      event: ExtensionScheduleCallbackEvent,
-    ): Promise<boolean> {
-      return extensionRegistry.dispatchScheduleCallback(slug, callback, event);
-    },
-
     async dispose(): Promise<void> {
       try {
-        await disposeExtensions();
+        await mcpResult.dispose();
       } finally {
-        try {
-          await mcpResult.dispose();
-        } finally {
-          await sessionManager.close();
-        }
+        await sessionManager.close();
       }
     },
 

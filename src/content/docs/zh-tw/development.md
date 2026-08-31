@@ -18,17 +18,17 @@ npm run build
 
 ## Repository 佈局
 
-| 路徑                      | 內容                                                                        |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `src/`                    | TypeScript 原始碼；每個子目錄都有自己的 `README.md` 說明其中的檔案          |
-| `src/test/`               | Vitest suite。`.config/vitest.config.ts` 只納入 `src/test/**/*.test.ts`     |
-| `src/content/docs/`       | 這個文件站台（Starlight），以及 `ja/`、`zh-cn/`、`zh-tw/` 語系              |
-| `src/tsconfig.build.json` | build 使用的 TypeScript project；根目錄的 `tsconfig.json` 供編輯器工具用    |
-| `.config/`                | 工具設定：Astro、Vitest（unit 與 E2E）、oxlint、oxfmt                       |
-| `deploy/`                 | 部署資產：`pm2/`、`docker/` 與 `examples/`（embedder、extensions、bridges） |
-| `e2e/`                    | 真實平台的端對端 suites，不包含在 `npm test` 中                             |
-| `docs/adr/`               | 架構決策紀錄                                                                |
-| `scripts/`                | 由 npm scripts 呼叫的維護與驗證腳本                                         |
+| 路徑                      | 內容                                                                     |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `src/`                    | TypeScript 原始碼；每個子目錄都有自己的 `README.md` 說明其中的檔案       |
+| `src/test/`               | Vitest suite。`.config/vitest.config.ts` 只納入 `src/test/**/*.test.ts`  |
+| `src/content/docs/`       | 這個文件站台（Starlight），以及 `ja/`、`zh-cn/`、`zh-tw/` 語系           |
+| `src/tsconfig.build.json` | build 使用的 TypeScript project；根目錄的 `tsconfig.json` 供編輯器工具用 |
+| `.config/`                | 工具設定：Astro、Vitest（unit 與 E2E）、oxlint、oxfmt                    |
+| `deploy/`                 | 部署資產：`pm2/`、`docker/` 與 `examples/`（embedder、bridges）          |
+| `e2e/`                    | 真實平台的端對端 suites，不包含在 `npm test` 中                          |
+| `docs/adr/`               | 架構決策紀錄                                                             |
+| `scripts/`                | 由 npm scripts 呼叫的維護與驗證腳本                                      |
 
 ## 檢查
 

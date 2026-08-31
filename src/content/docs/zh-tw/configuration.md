@@ -119,7 +119,6 @@ Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversatio
 | `mikan --download <channel-id>`                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
 | `mikan --version`                                                  | 顯示已安裝版本                                                         |
 | `mikan --help`                                                     | 顯示 CLI 用法與平台 token 摘要                                         |
-| `mikan ext ...`                                                    | 管理 harness extensions；執行 `mikan ext` 查看子指令                   |
 | `mikan office list`                                                | 列出已註冊的 office、已啟用的平台，以及待處理的 legacy 遷移            |
 | `mikan office claim <conversationId> <platform>`                   | 指定開機時無法歸屬的 legacy raw-id 目錄屬於哪個平台                    |
 

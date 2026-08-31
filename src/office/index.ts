@@ -118,7 +118,7 @@ export function officeDir(workspaceRoot: string, address: OfficeAddress): string
 /**
  * Resolve the host-only state directory for an office.
  *
- * Transitional: settings/packages/extension callers that only hold a
+ * Transitional: settings/package callers that only hold a
  * `stateDir` string keep using this until their option bags carry an
  * `Office` value (which exposes the same path as `stateDir`).
  */
@@ -921,53 +921,6 @@ function sleepSync(milliseconds: number): void {
 
 // ── raw-id lookups (cold paths: CLI, Admin enumeration) ──────────────────────
 
-/**
- * Resolve the office behind a raw conversation id for surfaces that name
- * offices by raw id (CLI operators). The registry is the only authority:
- * office records first, then a committed migration's owner, then the sole
- * enabled platform. Two platforms sharing the raw id make the scope
- * genuinely ambiguous, and an unknown id has no office to resolve — both
- * fail loudly rather than guessing a directory.
- *
- * Constructs a registry per call, which re-reads the journal from disk; this
- * is a one-shot CLI/Admin surface, never a per-message path (those go
- * through the Workspace value's cached registry in `layout.ts`).
- */
-export function resolveOwnedOfficeAddress(
-  rawConversationId: string,
-  stateDir: string,
-): OfficeAddress {
-  assertConversationId(rawConversationId);
-  const registry = new OfficeRegistry(stateDir);
-
-  const matches = registry
-    .getState()
-    .offices.filter((record) => record.conversationId === rawConversationId);
-  const single = matches.length === 1 ? matches[0] : undefined;
-  if (single !== undefined) {
-    return { platform: single.platform, conversationId: rawConversationId };
-  }
-  if (matches.length > 1) {
-    throw new Error(
-      `Conversation id ${JSON.stringify(rawConversationId)} names offices on several platforms; ` +
-        "use a platform-scoped surface instead",
-    );
-  }
-
-  const migration = registry.getMigration(rawConversationId);
-  if (migration?.ownerPlatform) {
-    return { platform: migration.ownerPlatform, conversationId: rawConversationId };
-  }
-  const { enabledPlatforms } = registry.getState();
-  const onlyPlatform = enabledPlatforms.length === 1 ? enabledPlatforms[0] : undefined;
-  if (onlyPlatform !== undefined) {
-    return { platform: onlyPlatform, conversationId: rawConversationId };
-  }
-  throw new Error(
-    `No office is registered for conversation id ${JSON.stringify(rawConversationId)}`,
-  );
-}
-
 /** Current office inventory, read fresh from disk for cross-process freshness. */
 export function listRegisteredOffices(stateDir: string): readonly OfficeRecord[] {
   return new OfficeRegistry(stateDir).getOffices();
@@ -1028,7 +981,7 @@ export interface OfficeMigrationRunSummary {
   vaultKeysMigrated: string[];
   /** Raw ids whose legacy and office-key vault dirs both exist (manual merge). */
   vaultConflicts: string[];
-  /** Raw ids whose host state dirs (settings, extensions, data) moved. */
+  /** Raw ids whose host state directories moved. */
   stateDirsMigrated: string[];
   /** Raw ids whose legacy and office-key state dirs both exist (manual merge). */
   stateDirConflicts: string[];
@@ -1161,8 +1114,8 @@ function claimAndMoveLegacyDirs(
 }
 
 /**
- * Move each registered office's host state tree — settings.json, extensions,
- * extension-data, git checkouts — from `conversations/<rawId>` to
+ * Move each registered office's host state tree from
+ * `conversations/<rawId>` to
  * `conversations/<officeKey>` in one rename. Conflicts are reported for
  * manual merge, never clobbered.
  */

@@ -26,8 +26,7 @@ interface GitSource {
 
 /**
  * A directory on the mikan host, used by reference — never copied. Editing the
- * directory is picked up by the next harness instance, which is what makes
- * host-side development of an extension bearable.
+ * directory is picked up by the next runner materialization.
  */
 interface LocalSource {
   type: "local";
@@ -67,8 +66,6 @@ export interface PackageError {
 
 export interface ResolvedPackages {
   packages: MaterializedPackage[];
-  extensionDirs: string[];
-  extensionRoots: string[];
   skillDirs: PackageSkillDir[];
   errors: PackageError[];
 }
@@ -100,7 +97,6 @@ export interface PackageStatus {
   error?: string;
   dir?: string;
   shadowed?: boolean;
-  extensions: string[];
   skills: string[];
 }
 

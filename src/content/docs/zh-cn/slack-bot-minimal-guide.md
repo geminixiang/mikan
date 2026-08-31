@@ -83,7 +83,6 @@ Token 以 `xoxb-` 开头。
 - `/pi-model` → 切换此对话的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
 - `/pi-auto-reply` → 管理群组/频道自动回复规则
 - `/pi-sandbox` → 检查或调整此对话的沙箱
-- `/pi-extensions` → 列出已安装的扩展
 - `/pi-admin` → 打开管理 portal
 
 Slash commands 是可选的，因为文本命令也能在支持的上下文中使用。请将 `stop` 保留为文本命令（`stop` 或 `/stop`），以便话题本地的停止路由能够指向正确的会话。

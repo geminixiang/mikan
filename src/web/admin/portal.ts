@@ -2,13 +2,10 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
 import {
-  defaultExtensionDirs,
-  listInstalledExtensions,
   MikanModels,
   parseFrontmatter,
   SessionStore,
   validateEventFilename,
-  type InstalledExtensionInfo,
 } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { PlatformName } from "../../adapter.js";
@@ -181,10 +178,6 @@ async function routeApiRequest(
       await servePackagesList(res, url, services, token);
       return;
     }
-    if (url.pathname === "/admin/api/extension-secrets") {
-      serveExtensionSecretsList(res, url, services, token);
-      return;
-    }
     if (url.pathname === "/admin/api/mcp-servers") {
       serveMcpServersList(res, url, services, token);
       return;
@@ -249,10 +242,6 @@ async function routeApiRequest(
   }
   if (url.pathname === "/admin/api/packages/mutate") {
     servePackageMutation(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/extension-secrets/mutate") {
-    serveExtensionSecretMutation(res, body, services);
     return;
   }
   if (url.pathname === "/admin/api/settings/model") {
@@ -1469,91 +1458,6 @@ async function servePackagesList(
   }
 }
 
-const EXTENSION_SLUG_PATTERN = /^[a-z0-9_-]{1,64}$/;
-const EXTENSION_SECRET_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-/**
- * Declared + provisioned secrets for every extension visible to the selected
- * conversation (global scope plus the conversation's own installs, deduped by
- * slug — the vault is keyed by slug, so two scopes share one secret set).
- * Values never leave the server; only key names and provisioning status do.
- */
-function serveExtensionSecretsList(
-  res: ServerResponse,
-  url: URL,
-  services: AdminServices,
-  token: AdminToken,
-): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
-  const infosBySlug = new Map<string, InstalledExtensionInfo>();
-  for (const info of listInstalledExtensions(
-    defaultExtensionDirs(scope.address, workspace.stateDir),
-  )) {
-    infosBySlug.set(info.slug, info);
-  }
-  const extensions = [...infosBySlug.values()]
-    .toSorted((left, right) => left.slug.localeCompare(right.slug))
-    .map((info) => {
-      const provisioned = Object.keys(
-        services.vaultManager.resolve(`extensions/${info.slug}`)?.env ?? {},
-      ).toSorted();
-      const declaredKeys = new Set(info.secrets.map((secret) => secret.key));
-      return {
-        slug: info.slug,
-        name: info.name,
-        declared: info.secrets.map((secret) => ({
-          ...secret,
-          provisioned: provisioned.includes(secret.key),
-        })),
-        extraProvisioned: provisioned.filter((key) => !declaredKeys.has(key)),
-      };
-    });
-  jsonRes(res, 200, { extensions });
-}
-
-/** Set or delete one extension secret. Values are write-only through here. */
-function serveExtensionSecretMutation(
-  res: ServerResponse,
-  body: Record<string, unknown>,
-  services: AdminServices,
-): void {
-  const action = body.action;
-  if (action !== "set" && action !== "delete") {
-    jsonRes(res, 400, { error: "action must be 'set' or 'delete'" });
-    return;
-  }
-  const slug = typeof body.slug === "string" ? body.slug : "";
-  if (!EXTENSION_SLUG_PATTERN.test(slug)) {
-    jsonRes(res, 400, { error: "invalid extension slug" });
-    return;
-  }
-  const key = typeof body.key === "string" ? body.key : "";
-  if (!EXTENSION_SECRET_KEY_PATTERN.test(key)) {
-    jsonRes(res, 400, { error: "invalid secret key (expected an env-style name)" });
-    return;
-  }
-  const vaultKey = `extensions/${slug}`;
-  if (action === "set") {
-    const value = typeof body.value === "string" ? body.value : "";
-    if (!value) {
-      jsonRes(res, 400, { error: "value is required" });
-      return;
-    }
-    services.vaultManager.upsertEnv(vaultKey, { [key]: value });
-  } else if (!services.vaultManager.deleteEnvKey(vaultKey, key)) {
-    jsonRes(res, 404, { error: "Not provisioned." });
-    return;
-  }
-  const provisioned = Object.keys(services.vaultManager.resolve(vaultKey)?.env ?? {}).toSorted();
-  jsonRes(res, 200, { ok: true, provisioned });
-}
-
 /**
  * Add / remove / refresh, in one route because they share validation and all
  * three answer with the freshly re-read inventory: the panel never has to
@@ -1986,8 +1890,8 @@ function renderAdminPage(token: AdminToken): string {
       <section class="card sect" id="sect-packages" data-section="packages">
         <header class="sect-head">
           <div>
-            <p class="eyebrow">Extensions</p>
-            <h2 class="card-title">此對話的 extension 套件</h2>
+            <p class="eyebrow">Skill Packages</p>
+            <h2 class="card-title">此對話的 skill 套件</h2>
           </div>
           <button class="refresh-btn" onclick="loadPackages()">↻</button>
         </header>
@@ -2094,8 +1998,8 @@ function renderAdminPage(token: AdminToken): string {
       <section class="card sect">
         <header class="sect-head">
           <div>
-            <p class="eyebrow">Global Extensions</p>
-            <h2 class="card-title">所有對話都會載入的 extension 套件</h2>
+            <p class="eyebrow">Global Skill Packages</p>
+            <h2 class="card-title">所有對話都會載入的 skill 套件</h2>
           </div>
           <button class="refresh-btn" onclick="loadPackages()">↻</button>
         </header>
@@ -2120,18 +2024,6 @@ function renderAdminPage(token: AdminToken): string {
         </header>
         <div id="mcp-global-msg" class="pkg-msg" style="display:none"></div>
         <div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Extension Secrets</p>
-            <h2 class="card-title">Extension 密鑰(依 slug 全域共用)</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadExtensionSecrets()">↻</button>
-        </header>
-        <div id="ext-secrets-msg" class="pkg-msg" style="display:none"></div>
-        <div id="ext-secrets-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
       <section class="card sect">
@@ -2553,16 +2445,11 @@ function renderAdminPage(token: AdminToken): string {
         return;
       }
       container.innerHTML = '<div class="pkg-list">' + rows.map((p) => {
-        const provides = []
-          .concat(p.extensions.map((s) => 'ext: ' + s))
-          .concat(p.skills.map((s) => 'skill: ' + s));
+        const provides = p.skills.map((s) => 'skill: ' + s);
         const status = p.error
           ? '<span class="pkg-badge pkg-badge-err">' + escHtml(p.error) + '</span>'
           : p.shadowed
             ? '<span class="pkg-badge pkg-badge-warn">被此對話的同名套件覆蓋，不會載入</span>'
-            // "downloaded", not "ready": this status means the checkout is on
-            // disk and was inspected, which is not the same as activated. The
-            // extension loads on the conversation's next harness instance.
             : '<span class="pkg-badge pkg-badge-ok">已下載</span>'
               + '<span class="pkg-badge pkg-badge-warn">需 /pi-new 才會載入</span>';
         return '<div class="pkg-row">' +
@@ -2571,7 +2458,7 @@ function renderAdminPage(token: AdminToken): string {
           '</div>' +
           (provides.length > 0
             ? '<div class="pkg-provides">' + provides.map((t) => '<span class="pkg-chip">' + escHtml(t) + '</span>').join('') + '</div>'
-            : '<div class="pkg-provides pkg-provides-empty">此套件沒有提供 extension 或 skill</div>') +
+            : '<div class="pkg-provides pkg-provides-empty">此套件沒有提供 skill</div>') +
           '<div class="pkg-actions">' +
             '<button class="pkg-btn" data-pkg-action="refresh" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Update</button>' +
             '<button class="pkg-btn pkg-btn-danger" data-pkg-action="remove" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Remove</button>' +
@@ -2741,94 +2628,6 @@ function renderAdminPage(token: AdminToken): string {
       void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
     });
 
-    // ── Extension secrets ───────────────────────────────────────────────────────
-
-    function extSecretsMessage(text, kind) {
-      const el = document.getElementById('ext-secrets-msg');
-      if (!el) return;
-      el.style.display = 'block';
-      el.className = 'pkg-msg pkg-msg-' + kind;
-      el.textContent = text;
-    }
-
-    function renderSecretRow(slug, key, meta) {
-      return '<div class="pkg-row">' +
-        '<div class="pkg-row-main"><span class="pkg-source">' + escHtml(key) + '</span>' +
-        (meta.required ? '<span class="pkg-badge pkg-badge-warn">required</span>' : '') +
-        (meta.provisioned
-          ? '<span class="pkg-badge pkg-badge-ok">provisioned</span>'
-          : '<span class="pkg-badge pkg-badge-err">missing</span>') +
-        '</div>' +
-        (meta.description ? '<div class="skill-desc">' + escHtml(meta.description) + '</div>' : '') +
-        '<div class="pkg-actions">' +
-          '<button class="pkg-btn" data-secret-action="set" data-secret-slug="' + escAttr(slug) + '" data-secret-key="' + escAttr(key) + '">Set</button>' +
-          (meta.provisioned
-            ? '<button class="pkg-btn pkg-btn-danger" data-secret-action="delete" data-secret-slug="' + escAttr(slug) + '" data-secret-key="' + escAttr(key) + '">Delete</button>'
-            : '') +
-        '</div>' +
-      '</div>';
-    }
-
-    async function loadExtensionSecrets() {
-      const container = document.getElementById('ext-secrets-content');
-      if (!container) return;
-      container.innerHTML = '<div class="loading-msg">Loading…</div>';
-      try {
-        const data = await apiGet('/admin/api/extension-secrets?' + scopeQuery());
-        if (data.extensions.length === 0) {
-          container.innerHTML = '<div class="empty-state">No extensions installed</div>';
-          return;
-        }
-        container.innerHTML = data.extensions.map((ext) => {
-          const declared = ext.declared.map((s) => renderSecretRow(ext.slug, s.key, s)).join('');
-          const extras = ext.extraProvisioned
-            .map((key) => renderSecretRow(ext.slug, key, { provisioned: true }))
-            .join('');
-          return '<div class="pkg-group">' +
-            '<div class="pkg-group-head"><strong>' + escHtml(ext.name) + '</strong>' +
-              '<span class="pkg-source">' + escHtml(ext.slug) + '</span>' +
-              '<button class="pkg-btn" data-secret-action="add" data-secret-slug="' + escAttr(ext.slug) + '">Add key</button>' +
-            '</div>' +
-            '<div class="pkg-list">' +
-              (declared + extras || '<div class="pkg-provides-empty">No secrets declared</div>') +
-            '</div>' +
-          '</div>';
-        }).join('');
-      } catch (err) {
-        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-      }
-    }
-
-    document.addEventListener('click', async (event) => {
-      const btn = event.target.closest('[data-secret-action]');
-      if (!btn) return;
-      const slug = btn.dataset.secretSlug;
-      const action = btn.dataset.secretAction;
-      let key = btn.dataset.secretKey;
-      if (action === 'add') {
-        key = (prompt('Secret key for ' + slug + '(e.g. SLACK_BOT_TOKEN)') || '').trim();
-        if (!key) return;
-      }
-      if (action === 'delete' && !confirm('Delete ' + key + ' from ' + slug + '?')) return;
-      let value;
-      if (action !== 'delete') {
-        value = prompt('Value for ' + key + '(' + slug + ')');
-        if (!value) return;
-      }
-      try {
-        await apiPost('/admin/api/extension-secrets/mutate', {
-          action: action === 'delete' ? 'delete' : 'set',
-          slug: slug,
-          key: key,
-          value: value,
-        });
-        extSecretsMessage('已更新。對話輸入 /pi-new 生效。', 'ok');
-        await loadExtensionSecrets();
-      } catch (err) {
-        extSecretsMessage(err.message, 'err');
-      }
-    });
-
     async function loadSkills() {
       const container = document.getElementById('skills-content');
       const previewEl = document.getElementById('skills-preview');
@@ -2993,7 +2792,6 @@ function renderAdminPage(token: AdminToken): string {
       loadGlobalSettings();
       loadGlobalSkills();
       loadEvents();
-      loadExtensionSecrets();
       loadMcpServers();
     }
 

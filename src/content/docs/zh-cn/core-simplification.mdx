@@ -16,22 +16,22 @@ description: 一份基于证据的方案，在不改变行为的前提下缩减 
 5. 一个会话 store 和一个平台日志 store，有意保持分离；
 6. 一个用于所有工具 I/O 的 executor 接口；
 7. 一个凭证解析缝隙；
-8. 用于可选平台、命令、工具、扩展和沙箱能力的注册表。
+8. 用于可选平台、命令、工具和沙箱能力的注册表。
 
 ## 发现
 
-| 优先级 | 发现                                | 证据                                                                                                                                         | 简化方案                                                                             |
-| ------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Done   | npm 边界已明确并有回归测试          | `src/index.ts` 明列 root export；`package.json` 声明 root、harness 与 sandbox entry point；`src/test/public-api.test.ts` 快照 runtime export | 新增 export 视为兼容性决策，必须有意更新 contract test                               |
-| Done   | 对话身份与路径派生只有一个所有者    | `src/office/` 拥有 `OfficeAddress`/`OfficeKey`、`Workspace`/`Office` 值、注册表和旧版迁移；消费者接受值而非字符串                            | 把路径运算留在模块内部；新的消费者接收一个 `Office`，而不是一个根目录加一个 id       |
-| P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递                          | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                            |
-| P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                                                        | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                       |
-| P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                                                   | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                           |
-| P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                                                   | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                       |
-| P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                                              | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用                 |
-| P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、loader、事件 schema、hook 和 runner 细节一同导出                                                          | 发布 `./extension`、`./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略 |
-| P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                                            | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化      |
-| P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                                                      | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema            |
+| 优先级 | 发现                                | 证据                                                                                                                                         | 简化方案                                                                        |
+| ------ | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Done   | npm 边界已明确并有回归测试          | `src/index.ts` 明列 root export；`package.json` 声明 root、harness 与 sandbox entry point；`src/test/public-api.test.ts` 快照 runtime export | 新增 export 视为兼容性决策，必须有意更新 contract test                          |
+| Done   | 对话身份与路径派生只有一个所有者    | `src/office/` 拥有 `OfficeAddress`/`OfficeKey`、`Workspace`/`Office` 值、注册表和旧版迁移；消费者接受值而非字符串                            | 把路径运算留在模块内部；新的消费者接收一个 `Office`，而不是一个根目录加一个 id  |
+| P0     | 平台输入有两种重叠的规范形态        | `ConversationEvent` 和 `ConversationMessage` 重复了 id/session/kind/user/text/attachments/thread 字段，并被一起传递                          | 引入一个 `ConversationInput` 信封；在迁移期间派生兼容视图                       |
+| P0     | `MessagingBot` 有太多变更理由       | 生命周期、输出、上传/reaction、私密诊断、事件队列和元数据都是一个接口                                                                        | 将规范化的平台端口与可选能力拆分；保留一个组合它们的适配器对象                  |
+| P1     | 沙箱可扩展性只是名义上的            | `SandboxAdapter` 已导出，但 `sandbox/index.ts` 中一个封闭数组拥有解析/创建                                                                   | 添加注册表或让适配器变为内部；把实验性后端移出默认核心组装                      |
+| P1     | 运行时构造泄露了命令实现细节        | `ConversationRuntimeOptions` 是 `Omit<CommandServices, ...>`，并在内部重建 command service                                                   | 定义显式的运行时依赖，然后在命令适配器中构建 `CommandServices`                  |
+| P1     | 命令仍有两份清单                    | manifest 拥有平台注册，而 registry 拥有处理器；添加命令需要两者                                                                              | 一个 `CommandDefinition` 应包含 manifest 元数据和一个处理器工厂/引用            |
+| P1     | 框架既是公开 SDK 又是内部引擎       | 根 exports 将会话解析、凭证、设置、事件 schema 和 runner 细节一同导出                                                                        | 发布 `./runtime` 及可选的 `./harness` subpath，各自有独立的稳定性策略           |
+| P2     | 多个能力接口使用可选方法            | `MessagingBot` 和 `ConversationResponder` 通过添加 `?` 方法而增长                                                                            | 使用命名的能力对象（`reactions`、`uploads`、`streaming`），使缺失和需求都显式化 |
+| P2     | HTTP 路由契约是手动分发且大多无类型 | `web/server.ts` 和 portal 模块按 method/path 分支；payload 类型是局部的                                                                      | 保持 UI API 内部化，但在 payload 跨模块处集中路由描述符和请求/响应 schema       |
 
 ## 不应被简化掉的部分
 
@@ -45,7 +45,6 @@ description: 一份基于证据的方案，在不改变行为的前提下缩减 
 - 保留 per-session 队列。全局串行化会浪费并发；没有串行化会破坏对话顺序。
 - 让平台信任策略保持显式。从平台名称推断凭证安全性是不安全的。
 - 保留 executor 拥有的文件传输。用 shell 片段替代它会重新引入引用、大小和部分写入的故障。
-- 让扩展代码保持仅主机，并与沙箱工作区数据分离。
 
 ## 提议的接口
 
@@ -88,7 +87,7 @@ interface PlatformPort {
 }
 ```
 
-这消除了按任意方法名进行的特性检测，并让命令/扩展能请求它们所需的确切能力。
+这消除了按任意方法名进行的特性检测，并让命令能请求它们所需的确切能力。
 
 ### 显式的运行时依赖
 
@@ -142,7 +141,7 @@ interface SandboxRegistry {
 
 1. 从 `MessagingBot` 提取 message、reaction、upload 和 private-message 端口。
 2. 在不更改 SDK 代码的情况下适配现有 bot。
-3. 将窄能力传给命令、扩展、事件和 admin，而非整个 bot。
+3. 将窄能力传给命令、事件和 admin，而非整个 bot。
 4. 淘汰已无调用方的浅层 `ChatAdapter` 接口。（已完成）
 
 ### 阶段 4 — 简化运行时构造与命令

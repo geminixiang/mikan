@@ -15,7 +15,7 @@ export type {
 /**
  * Single home for the scheduled-event file format (`events/*.json`, the
  * workspace scheduling bus). Every reader and writer — the EventsWatcher
- * scheduler, the agent `event` tool, and the extension schedule API — must go
+ * scheduler and the agent `event` tool — must go
  * through this module: one schema, one payload union, one parser, one
  * builder. Per-type field rules (`at` for one-shot, `schedule` + `timezone`
  * for periodic) live here and nowhere else.
@@ -80,7 +80,7 @@ export function validateEventFilename(filename: string): string {
   return trimmed;
 }
 
-export function isValidIsoTimestampWithOffset(value: string): boolean {
+function isValidIsoTimestampWithOffset(value: string): boolean {
   const match = ISO_TIMESTAMP_WITH_OFFSET.exec(value);
   if (!match) return false;
 

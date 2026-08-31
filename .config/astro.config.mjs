@@ -62,20 +62,6 @@ export default defineConfig({
           ],
         },
         {
-          // The second audience: people who talk to mikan rather than deploy
-          // it. Everything above and below is written for operators; this is
-          // where pages for the people actually using it belong.
-          label: "Using mikan",
-          translations: { "zh-TW": "使用 mikan", "zh-CN": "使用 mikan", ja: "mikan を使う" },
-          items: [
-            {
-              label: "agent-pm",
-              translations: { "zh-TW": "agent-pm", "zh-CN": "agent-pm", ja: "agent-pm" },
-              link: "/agent-pm/",
-            },
-          ],
-        },
-        {
           label: "Runtime",
           translations: { "zh-TW": "執行階段", "zh-CN": "运行时", ja: "ランタイム" },
           items: [
@@ -197,15 +183,6 @@ export default defineConfig({
               label: "Skills",
               translations: { "zh-TW": "技能", "zh-CN": "技能", ja: "スキル" },
               link: "/skills/",
-            },
-            {
-              label: "Extension Development",
-              translations: {
-                "zh-TW": "Extension 開發與安裝",
-                "zh-CN": "Extension 开发与安装",
-                ja: "Extension の開発とインストール",
-              },
-              link: "/extension-development/",
             },
           ],
         },

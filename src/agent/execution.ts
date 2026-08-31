@@ -223,10 +223,3 @@ export function createRunnerExecutionContext(
     },
   };
 }
-
-/**
- * Extension host services over mikan's runtime infrastructure: schedules
- * become event files under `<workspaceDir>/events` (picked up live by
- * EventsWatcher), secrets come from `vaults/extensions/<slug>/env`, and
- * notify posts through the platform bots when main.ts provides a notifier.
- */

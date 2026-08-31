@@ -174,13 +174,13 @@ export function createSlackResponseContext({
    */
   const flushContinuation = async (): Promise<void> => {
     if (!pendingContinuation || pendingContinuation === continuationSent) return;
-    const isExtension = pendingContinuation.startsWith(continuationSent);
-    const unsent = isExtension
+    const extendsSentPrefix = pendingContinuation.startsWith(continuationSent);
+    const unsent = extendsSentPrefix
       ? pendingContinuation.slice(continuationSent.length)
       : pendingContinuation;
     if (!unsent.trim()) return;
     await postThreadDiagnostic(
-      isExtension && continuationSent
+      extendsSentPrefix && continuationSent
         ? unsent
         : `_(continued from truncated message)_\n\n${unsent}`,
       {},

@@ -10,7 +10,7 @@ This is a boundary rule, not only a statement about Cloudflare: isolation is not
 
 ## Considered Options
 
-- **Task executor tool (chosen)** — the agent or an extension calls it with a command and env and gets stdout/stderr/exit code back. This is already the exact shape of the bridge's `/exec` payload, so the change moves an existing RPC out of a position it was forced into rather than adding an abstraction.
+- **Task executor tool (chosen)** — the agent calls it with a command and env and gets stdout/stderr/exit code back. This is already the exact shape of the bridge's `/exec` payload, so the change moves an existing RPC out of a position it was forced into rather than adding an abstraction.
 - **Make remote execution persist the workspace** — the `gondolin:remote` path: NFS-export the host workspace to the worker. Built, shipped, live-verified with two daemons, then deleted. Same-LAN worked; high-latency links did not, and no admission gate makes that safe enough to promise. Rejected.
 - **Leave `cloudflare:*` in `SandboxConfig`** — the status quo, in which the type claims a workspace the runtime never receives. `ActorExecutionResolver` resolves mounts (`src/execution-resolver.ts:65`) and the Cloudflare branch discards them (`:99-104`); the payload has no mount concept; `credentials.fileMounts` is `false`; and `getPathContext` returns a host/runtime root pair with no translation between them. Rejected: the union membership is what invites the next mistake.
 

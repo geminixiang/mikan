@@ -199,9 +199,9 @@ describe("formatSkillsForPrompt", () => {
         name: "triage",
         description: "Triage follow-ups",
         content: "Always triage <first>.",
-        filePath: "/state/extensions/global/agent-pm/skills/triage/SKILL.md",
-        baseDir: "/state/extensions/global/agent-pm/skills/triage",
-        source: "extension:agent-pm",
+        filePath: "/state/packages/toolkit/skills/triage/SKILL.md",
+        baseDir: "/state/packages/toolkit/skills/triage",
+        source: "package:toolkit",
         inline: true,
       },
     ]);

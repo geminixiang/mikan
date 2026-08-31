@@ -2,16 +2,14 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
-  ConversationKind,
   OfficeAddress,
   PlatformName,
   RunningSession,
 } from "../adapter.js";
-import { createOfficeAddress, type Workspace } from "../office/index.js";
+import type { Workspace } from "../office/index.js";
 import { createRunner } from "../agent/runner.js";
 import type { PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";
-import type { ExtensionBlockAction, ExtensionScheduleCallbackFire } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
 import type { CommandHandler, CommandServices } from "../commands/types.js";
 import { isPrivateConversation } from "../commands/utils.js";
@@ -360,91 +358,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  /**
-   * Dispatch an extension-owned interactive block action: materialize the
-   * conversation's harness instance (activating its extensions) and run the
-   * matching onAction handler — deterministic, no agent run. Serialized on
-   * the session queue so rapid interactions (votes) never interleave.
-   */
-  async handleExtensionAction(params: {
-    address: OfficeAddress;
-    sessionKey: string;
-    conversationKind: ConversationKind;
-    slug: string;
-    action: ExtensionBlockAction;
-  }): Promise<boolean> {
-    if (this.isShuttingDown) return false;
-    const { address, sessionKey, slug, action } = params;
-    const conversationId = address.conversationId;
-    let consumed = false;
-    await this.sessions.enqueue(address, sessionKey, async () => {
-      try {
-        const lease = await this.acquireState({
-          address,
-          sessionKey,
-          currentMessageId: action.messageTs ?? sessionKey,
-        });
-        try {
-          consumed = await lease.state.runner.tryExtensionAction(slug, action);
-          if (consumed) lease.state.lastAccessedAt = Date.now();
-        } finally {
-          lease.release();
-        }
-      } catch (err) {
-        log.logWarning(
-          `[${conversationId}] Extension action dispatch failed (${slug}:${action.actionId})`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    });
-    return consumed;
-  }
-
-  /**
-   * Dispatch a fired extension callback schedule: materialize the
-   * conversation's harness instance (activating its extensions) and run the
-   * matching `onCallback` handler — deterministic, no agent run, no model
-   * call. Serialized on the session queue so fires never interleave with
-   * block actions or runs in the same conversation.
-   */
-  async handleExtensionScheduleCallback(fire: ExtensionScheduleCallbackFire): Promise<boolean> {
-    if (this.isShuttingDown) return false;
-    const address = createOfficeAddress(fire.platform as PlatformName, fire.conversationId);
-    const conversationId = fire.conversationId;
-    // Schedules belong to the conversation, not a thread: use the top-level
-    // session scope, like the schedules that fire agent runs.
-    const sessionKey = conversationId;
-    let consumed = false;
-    await this.sessions.enqueue(address, sessionKey, async () => {
-      try {
-        const lease = await this.acquireState({
-          address,
-          sessionKey,
-          currentMessageId: `extsched:${fire.slug}.${fire.scheduleName}`,
-        });
-        try {
-          consumed = await lease.state.runner.tryExtensionScheduleCallback(
-            fire.slug,
-            fire.callback,
-            {
-              scheduleName: fire.scheduleName,
-              ...(fire.args !== undefined ? { args: fire.args } : {}),
-            },
-          );
-          if (consumed) lease.state.lastAccessedAt = Date.now();
-        } finally {
-          lease.release();
-        }
-      } catch (err) {
-        log.logWarning(
-          `[${conversationId}] Extension schedule dispatch failed (${fire.slug}.${fire.scheduleName} → ${fire.callback})`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    });
-    return consumed;
-  }
-
   async runSession(
     { event, bot, context }: RunSessionOptions,
     skipRotation = false,
@@ -515,25 +428,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         });
         const { state } = lease;
         await state.runner.syncChatHistory(event.ts);
-
-        // Extension-contributed commands: deterministic dispatch, no agent run.
-        // Built-in commands already had their chance above, so extensions can
-        // never shadow them; unmatched text falls through to the agent.
-        // Where the platform eats the slash before we see it, the leading name
-        // alone is enough; otherwise those commands would be unreachable.
-        const bareName = context.platform.bareExtensionCommands === true;
-        if (bareName || event.text.trim().startsWith("/")) {
-          const handled = await state.runner.tryExtensionCommand(
-            context.message,
-            context.responder,
-            { bareName },
-          );
-          if (handled) {
-            state.lastAccessedAt = Date.now();
-            lease.release();
-            return;
-          }
-        }
       } catch (err) {
         lease?.release();
         reportUserFacingError(err, {
@@ -740,14 +634,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             portalBaseUrl: this.options.portalBaseUrl,
           }
         : undefined,
-      platformNotifier: this.options.platformNotifier,
-      platformReactor: this.options.platformReactor,
-      platformUploader: this.options.platformUploader,
-      platformBlockKit: this.options.platformBlockKit,
-      platformDmOpener: this.options.platformDmOpener,
-      platformHistoryFetcher: this.options.platformHistoryFetcher,
-      platformUserLister: this.options.platformUserLister,
-      extensionScheduleEngine: this.options.extensionScheduleEngine,
       platformToolPackFactories: this.options.platformToolPackFactories,
       models: this.resolvedModels,
     });

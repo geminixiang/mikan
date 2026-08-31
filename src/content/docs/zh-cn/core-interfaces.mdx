@@ -1,6 +1,6 @@
 ---
 title: 核心接口
-description: mikan 在平台、运行时、框架、会话、执行、vault、扩展与主机各层之间受支持的边界。
+description: mikan 在平台、运行时、框架、会话、执行、vault、package 与主机各层之间受支持的边界。
 ---
 
 本页记录 mikan 的**架构接口**：跨越子系统、进程、持久化或包边界的契约。它不是每个导出辅助函数的清单。仅在单个子系统内部使用的辅助函数属于实现细节，即使 TypeScript 当前将其标记为 `export`。
@@ -9,7 +9,7 @@ description: mikan 在平台、运行时、框架、会话、执行、vault、�
 
 | 级别             | 含义                                | 兼容性预期                           |
 | ---------------- | ----------------------------------- | ------------------------------------ |
-| Public           | 被 npm 使用方或扩展作者导入         | 保持不变或有意进行版本管理           |
+| Public           | 被 npm 使用方导入                   | 保持不变或有意进行版本管理           |
 | Host integration | 用于嵌入运行时或添加平台/运行时后端 | 只要该集成存在就保持不变             |
 | Wire / persisted | 存储在磁盘上或跨进程/网络边界发送   | 显式迁移；读取方应容忍受支持的旧格式 |
 | Internal         | 连接 mikan CLI 内部的模块           | 在协调好调用点和测试的情况下可以更改 |
@@ -30,7 +30,6 @@ flowchart TD
   O["Office identity and layout"] --> R
   O --> S
   O --> V
-  X["Host extensions"] --> H
   W["Web and events"] --> R
 ```
 
@@ -40,17 +39,17 @@ flowchart TD
 
 以下七个归属范围是长期的职责划分。所有者可以在其端口背后自由更改实现，但更改端口需要同时更新两侧以及下文列出的契约测试。这些范围描述的是代码归属，而非进程或权限隔离。
 
-| 归属范围               | 主要模块                                                                                  | 拥有                                                                                                | 交付                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Platform entry**     | `src/adapters/`、`src/types.ts`                                                           | SDK 规范化、接收顺序、平台响应传输，以及包含 `trustModel` 的 `MessagingInfo`                        | 平台中立的 `ConversationEvent`、`ConversationContext` 和能力端口       |
-| **Office identity**    | `src/office/`                                                                             | `OfficeAddress`/`OfficeKey` 派生、`Workspace`/`Office` 布局值、办公室物化、注册表日志，以及旧版迁移 | 路径已预先计算的冻结 `Office` 值；持久的原始 id ↔ 办公室映射           |
-| **Runtime/session**    | `src/runtime/`、`src/sessions/`                                                           | 会话密钥语法、per-session 串行化、聊天/会话同步、runner 生命周期、stop/reset 和关闭                 | 交给 runner 的已验证事件；交给执行解析的办公室与 actor 输入            |
-| **Harness/tools**      | `src/harness/`、`src/tools/`、`src/agent/`                                                | 模型轮次、会话树持久化、扩展 hook、预算、工具 schema 和主机能力调用                                 | `ConversationResponder` 输出与 `Executor` 操作；它不接收平台 SDK 对象  |
-| **Sandbox/workspace**  | `src/sandbox/`、`src/workspace-projection/`、`src/provisioner.ts`                         | Executor 实现、mount 拓扑、runtime/主机路径上下文、资源生命周期和文件传输                           | 一个声明了路径与凭证能力的具体 `Executor`                              |
-| **Vault/web/security** | `src/vault/`、`src/web/`、`src/execution-resolver.ts`、`src/sandbox/identity.ts`          | 凭证身份与注入策略、仅主机的 portal/token 界面、mount 冲突检查，以及安全敏感的授权决策              | 交给 vault 策略的 actor/信任输入；凭证只交给选定的 executor            |
-| **Config/CLI/package** | `src/config.ts`、`src/settings-mutation.ts`、`src/cli/`、`src/commands/`、`src/packages/` | 启动/flag 语法、设置持久化、命令清单、package 物化与范围解析                                        | 生效设置、确定性的命令清单、扩展根目录，以及只读的 package skill mount |
+| 归属范围               | 主要模块                                                                                  | 拥有                                                                                                | 交付                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Platform entry**     | `src/adapters/`、`src/types.ts`                                                           | SDK 规范化、接收顺序、平台响应传输，以及包含 `trustModel` 的 `MessagingInfo`                        | 平台中立的 `ConversationEvent`、`ConversationContext` 和能力端口      |
+| **Office identity**    | `src/office/`                                                                             | `OfficeAddress`/`OfficeKey` 派生、`Workspace`/`Office` 布局值、办公室物化、注册表日志，以及旧版迁移 | 路径已预先计算的冻结 `Office` 值；持久的原始 id ↔ 办公室映射          |
+| **Runtime/session**    | `src/runtime/`、`src/sessions/`                                                           | 会话密钥语法、per-session 串行化、聊天/会话同步、runner 生命周期、stop/reset 和关闭                 | 交给 runner 的已验证事件；交给执行解析的办公室与 actor 输入           |
+| **Harness/tools**      | `src/harness/`、`src/tools/`、`src/agent/`                                                | 模型轮次、会话树持久化、预算、工具 schema、skill、subagent 和主机能力调用                           | `ConversationResponder` 输出与 `Executor` 操作；它不接收平台 SDK 对象 |
+| **Sandbox/workspace**  | `src/sandbox/`、`src/workspace-projection/`、`src/provisioner.ts`                         | Executor 实现、mount 拓扑、runtime/主机路径上下文、资源生命周期和文件传输                           | 一个声明了路径与凭证能力的具体 `Executor`                             |
+| **Vault/web/security** | `src/vault/`、`src/web/`、`src/execution-resolver.ts`、`src/sandbox/identity.ts`          | 凭证身份与注入策略、仅主机的 portal/token 界面、mount 冲突检查，以及安全敏感的授权决策              | 交给 vault 策略的 actor/信任输入；凭证只交给选定的 executor           |
+| **Config/CLI/package** | `src/config.ts`、`src/settings-mutation.ts`、`src/cli/`、`src/commands/`、`src/packages/` | 启动/flag 语法、设置持久化、命令清单、package 物化与范围解析                                        | 生效设置、确定性的命令清单，以及只读的 package skill mount            |
 
-一个对话的框架实例与其他实例是上下文隔离的，但那不是文件系统或进程沙箱：扩展以主机权限运行在 mikan 主机进程中，而 `sharedDataDir` 明确是多对话数据，其作者必须自行分区。同样地，沙箱 executor 改变的是工具在哪里运行以及它们接收哪些 mount；`host` 模式和 `full` 工作区投影并不是额外的安全保证。审查缝隙时请把这些关注点分开。
+一个对话的框架实例与其他实例是上下文隔离的，但那不是文件系统或进程沙箱。同样地，沙箱 executor 改变的是工具在哪里运行以及它们接收哪些 mount；`host` 模式和 `full` 工作区投影并不是额外的安全保证。审查缝隙时请把这些关注点分开。
 
 ### 跨归属缝隙
 
@@ -61,7 +60,7 @@ flowchart TD
 | Platform intake           | Platform entry → Runtime/session                                            | 接收顺序为**魔法词 → trigger policy → 附件 → 日志 → busy policy → 排队 → 分发**。`stop` 会绕过 trigger policy、附件处理和排队。无效对话或外来会话身份会在排队前失败；附件失败会向上传播。                                                                                                                                                                         |
 | Office identity           | Platform entry → Office identity → Runtime/session、store、vault 与设置     | 适配器在接收时产生一个 `OfficeAddress`，并据此校验兼容用的原始 id。消费者接受 `Office`/`Workspace` 值，绝不接受目录名。`Office.ensure()` 会**先**把办公室记入注册表，再创建目录，因此不存在注册表无法枚举的办公室目录。                                                                                                                                           |
 | Session identity          | Platform entry / Runtime/session → Runtime/session、框架与 store            | `src/sessions/session-key.ts` 拥有 `conversationId[:suffix]`，它是一个原始平台值。平台覆盖值只有在属于该对话时才被接受；否则派生会抛出异常。运行时状态按办公室**加**会话密钥标识，因此一个会话密钥永远无法选中另一间办公室的状态。任何消费者都不得直接切分会话密钥。                                                                                              |
-| Command inventory         | Config/CLI/package → Platform entry、Runtime/session 与 web/会话查看器      | `COMMAND_MANIFEST` 是唯一的清单。内置命令在扩展命令之前运行；未匹配的斜杠文本仍是代理提示词；`stop` 是魔法词，而非处理器。                                                                                                                                                                                                                                        |
+| Command inventory         | Config/CLI/package → Platform entry、Runtime/session 与 web/会话查看器      | `COMMAND_MANIFEST` 是唯一的清单。已识别的内置命令会被优先处理；未匹配的斜杠文本仍是代理提示词；`stop` 是魔法词，而非处理器。                                                                                                                                                                                                                                      |
 | Runtime to harness        | Runtime/session → Harness/tools                                             | `handleEvent` 派生密钥并对一个密钥串行化，同时允许其他密钥并发运行。话题引导会等待正在运行的父会话封存。平台工具包是 per-runner 创建的，因为 `bindRun` 是可变的。                                                                                                                                                                                                 |
 | Run output                | Harness/tools → Platform entry                                              | 框架发出的是**响应源**：平台中立的 Markdown/GFM，用户 mention 写作 `<@userName>`。把它转换成原生呈现完全是适配器的职责——Slack 在每条出站路径上把 `<@userName>` 解析为 `<@U…>`，且任何适配器都不得引导模型产出平台原生标记。可选的 responder 能力需特性检测。对于单次运行，响应操作保持调用顺序；适配器可以缓冲或流式输出，但不得向框架暴露框架持久化或 SDK 对象。 |
 | Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                         | 运行时提供主机工作区和一个 `<runtime workspace root>/<officeKey>` 形式的 runtime cwd；office key 在两侧命名同一个路径段，因此路径在边界处不会改变含义。Executor 提供 `getWorkspacePath`/`getPathContext`。提示词和工具输出使用 runtime 路径，而主机侧附件转换使用已声明的上下文。映射根之外的路径不会被转换。这是路径契约，而非文件系统隔离的声明。               |
@@ -88,7 +87,6 @@ npm 入口点是 `@geminixiang/mikan`，由 `src/index.ts` 实现。
 | Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | 平台适配器与嵌入者                                              |
 | Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 添加确定性命令的主机                                            |
 | Execution            | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | 运行时后端与主机                                                |
-| Extensions           | `MikanExtensionApi`、hook/event 类型、subagent 类型                                                        | 受信任的扩展作者                                                |
 | Harness embedding    | `MikanAgentSession`、`SessionStore`、`MikanModels`、设置与 event-format 函数                               | 高级嵌入者；不适用于普通 bot 集成                               |
 
 只有包 `exports` 映射声明的路径是公开路径。导入其他 `dist/` 生成路径或 `src/` 源码路径均不受支持。
@@ -175,7 +173,7 @@ interface ConversationContext {
 | `refreshConversationEnvironment(address)` | 重新解析缓存的 runner 环境                              |
 | `shutdown(timeoutMs?)`                    | 拒绝新工作、停止 runner，并在截止期限内等待进行中的工作 |
 
-每个会话范围的入口点都接受一个 `OfficeAddress`。不存在原始对话 id 的桥接：只持有原始 id 的调用方必须先通过注册表解析（`resolveOwnedOfficeAddress`），这对 CLI 和管理界面来说是冷路径。
+每个会话范围的入口点都接受一个 `OfficeAddress`。不存在原始对话 id 的桥接；平台与 Admin 介面会明确携带带平台范围的地址。
 
 `ConversationRuntimeOptions` 提供一个 `workspace`（来自 `createWorkspace` 的 `Workspace` 值）、沙箱/资源服务、可选的 portal token store、可选的命令、模型注册表、主动式平台操作以及平台工具包工厂。缺失的 vault 与 portal store 会降级为禁用实现；在设置了 portal URL 但没有其 store 的情况下使用时会报错。
 
@@ -187,7 +185,7 @@ interface ConversationContext {
 
 `COMMAND_MANIFEST` 是面向平台的清单，用于派生斜杠形式和原生注册。`CommandHandler.tryHandle(context)` 是执行契约。处理器按顺序运行，第一个返回 `true` 的结果会消费该消息。
 
-内置命令在扩展命令之前运行。未匹配的斜杠前缀消息仍然是一个普通的代理提示词。`stop` 是一个平台接收魔法词，而非 `CommandHandler`；`session` 是唯一被接受的裸命令。
+已识别的内置命令会在 runner 创建前处理。未匹配的斜杠前缀消息仍然是一个普通的代理提示词。`stop` 是一个平台接收魔法词，而非 `CommandHandler`；`session` 是唯一被接受的裸命令。
 
 `CommandContext` 包含规范化的执行者/对话身份、响应与 bot 端口、命令文本、隐私状态以及 `CommandServices`。命令处理器不得深入平台 SDK 事件。
 
@@ -197,7 +195,7 @@ interface ConversationContext {
 
 ### `MikanAgentSession`
 
-拥有模型轮次循环、消息持久化、重试、compaction、预算断路器、扩展 hook 和中止行为。其外部有意义的操作是 prompt/run、subscribe、abort、会话重载、模型/thinking 选择和 disposal。
+拥有模型轮次循环、消息持久化、重试、compaction、预算断路器、skill、有界 subagent 和中止行为。其外部有意义的操作是 prompt/run、subscribe、abort、会话重载、模型/thinking 选择和 disposal。
 
 ### `SessionStore`
 
@@ -215,32 +213,7 @@ subagent 始终以一个具名 profile 启动——按运行自由配置不是�
 
 框架监听器观察模型/工具生命周期事件。预算设置为 token、成本、耗时和 LLM 调用设置上限。预算触发会中止运行并发出 `budget_exceeded`；它是一个终态结果，而非重试信号。
 
-## 6. 扩展接口
-
-来源：`src/harness/extensions/types.ts`。完整的编写示例见[扩展开发](/zh-cn/extension-development/)。
-
-扩展是导出 `activate(api)` 的受信任主机代码。它按每个对话框架实例激活，并可返回一个 disposer。
-
-### `MikanExtensionApi`
-
-| 界面                              | 契约                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `on`                              | 为 prompt、tool、message、compaction、error 和 budget 事件注册有序 hook |
-| `registerTool`                    | 向该 runner 添加一个 `pi-agent-core` 工具                               |
-| `registerCommand`                 | 在内置命令之后添加确定性的 `/name` 处理                                 |
-| `onDispose`                       | 在重置、回收或关闭时释放资源；LIFO 顺序                                 |
-| `context`                         | 只读的对话/工作区/模型身份                                              |
-| `paths`                           | 对话私有以及显式共享的仅主机数据目录                                    |
-| `secrets`                         | 按名称读取的只读扩展 secret                                             |
-| `schedules` / `triggerRun`        | 持久化或触发自主的事件文件运行                                          |
-| `subagent.run`                    | 带显式工具、schema 和预算的全新隔离运行                                 |
-| `notify` / `react` / `uploadFile` | 可选的主机平台能力                                                      |
-
-Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重写会链式进行；`tool_call` 使用第一个非 undefined 的结果。被阻止的 pre-start hook 会阻止模型调用和会话持久化。
-
-扩展的调度和立即运行不继承对话历史记录。它们的任务文本必须是自包含的，并且不得包含 secret。
-
-## 7. 工具与平台能力接口
+## 6. 工具与平台能力接口
 
 来源：`src/tools/types.ts`。
 
@@ -248,7 +221,7 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 `PlatformToolPackFactory` 为每个 runner 创建一个私有的 `PlatformToolPack`。`bindRun` 选择其工具是否适用于当前平台/对话。工厂边界将 GitHub 专用工具排除在核心工具列表之外，同时防止跨对话的可变绑定。
 
-## 8. 沙箱与 executor 接口
+## 7. 沙箱与 executor 接口
 
 来源：`src/sandbox/types.ts` 与 `src/sandbox/index.ts`。
 
@@ -275,7 +248,7 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 尽管该类型已导出，适配器注册目前是 `src/sandbox/index.ts` 内部的一个封闭列表；外部使用方无法向 `parseSandboxArg` 或 `createExecutor` 添加适配器。
 
-## 9. Vault 与执行解析接口
+## 8. Vault 与执行解析接口
 
 来源：`src/vault/types.ts`；策略在 `src/vault/index.ts` 中。
 
@@ -291,7 +264,7 @@ Hook 错误会被记录并跳过。`before_agent_start` 和 `tool_result` 的重
 
 Host 沙箱执行绝不接收 vault 注入。开放触发平台绝不接收环境共享 vault。这些是安全不变式，而非便利默认值。
 
-## 10. 办公室、会话、聊天与身份接口
+## 9. 办公室、会话、聊天与身份接口
 
 来源：`src/office/*`、`src/sessions/*`、`src/adapters/shared.ts` 与 `src/sandbox/identity.ts`。
 
@@ -335,7 +308,7 @@ const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
 
 `src/adapters/shared.ts` 中的 `saveIncomingAttachments(office, items)` 是附件约定的唯一所有者：`office.attachmentsDir` 下经过清洗的 `<timestamp>_<name>` 文件名，以及代理读取的工作区相对路径 `<officeKey>/attachments/<file>`。它在首次写入前物化办公室，并按条目返回失败而不是抛出异常，因此各适配器保留自己的失败策略。
 
-## 11. 事件文件接口
+## 10. 事件文件接口
 
 来源：`src/harness/event-format.ts`。
 
@@ -352,7 +325,7 @@ type EventFilePayload =
 
 该总线按设计是共享且代理可写的。所有权前缀是协作性的，而非授权边界。
 
-## 12. 持久化文件系统接口
+## 11. 持久化文件系统接口
 
 | 路径                                                  | 所有者                | 可见性 / 兼容性                   |
 | ----------------------------------------------------- | --------------------- | --------------------------------- |
@@ -361,7 +334,6 @@ type EventFilePayload =
 | `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 仅主机的对话覆盖                  |
 | `<state-dir>/models.json`                             | harness model catalog | 仅主机的自定义 provider/模型      |
 | `<state-dir>/vaults/**`                               | vault/login           | 仅主机的 secret 与 mount 文件     |
-| `<state-dir>/{global,conversations}/**/extensions`    | extension loader      | 受信任的主机代码                  |
 | `<workspace>/MEMORY.md`                               | agent/user            | 沙箱可见的持久记忆                |
 | `<workspace>/skills/**/SKILL.md`                      | skills                | 沙箱可见的提示词指令              |
 | `<workspace>/events/*.json`                           | event store/watcher   | 共享的调度 wire 格式              |
@@ -373,7 +345,7 @@ type EventFilePayload =
 
 state directory 不得位于沙箱可见的工作区内部。重要的状态文件使用原子私密写入；仅追加日志使用追加语义。
 
-## 13. HTTP 接口
+## 12. HTTP 接口
 
 来源：`src/web/server.ts` 与 portal 模块。这些路由支撑 mikan 捆绑的 UI；它们不是通用的公开 REST API。
 

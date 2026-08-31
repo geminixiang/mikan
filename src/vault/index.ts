@@ -19,9 +19,9 @@ import type { PlatformTrustModel } from "../types.js";
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
 /**
- * Top-level vault namespaces that are not user vaults: `shared/<name>` holds
- * shared login profiles, `extensions/<slug>` holds extension secrets (read
- * host-side via the harness `api.secrets`, never mounted into sandboxes).
+ * Top-level vault namespaces that are not user vaults. `extensions` remains
+ * reserved so data left by removed executable extensions is never mistaken
+ * for a user credential vault.
  */
 const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 

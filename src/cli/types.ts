@@ -9,9 +9,7 @@ export interface OnboardIo {
 }
 
 export interface BootPlan {
-  mode: "ext" | "office" | "sessions" | "env" | "help" | "version" | "onboard" | "download" | "run";
-  /** argv after `ext`, handed to runExtCommand. Only set for mode "ext". */
-  extArgs?: string[];
+  mode: "office" | "sessions" | "env" | "help" | "version" | "onboard" | "download" | "run";
   /** argv after `office`, handed to runOfficeCommand. Only set for mode "office". */
   officeArgs?: string[];
   /** argv after `sessions`, handed to runSessionsCommand. Only set for mode "sessions". */

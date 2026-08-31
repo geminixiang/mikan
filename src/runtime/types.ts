@@ -5,13 +5,6 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   OfficeAddress,
-  PlatformBlockKit,
-  PlatformDmOpener,
-  PlatformHistoryFetcher,
-  PlatformNotifier,
-  PlatformReactor,
-  PlatformUploader,
-  PlatformUserLister,
 } from "../adapter.js";
 import type {
   AdminTokenStoreLike,
@@ -20,7 +13,7 @@ import type {
   LinkTokenStoreLike,
   SessionViewTokenStoreLike,
 } from "../commands/types.js";
-import type { ExtensionScheduleEngine, MikanModels } from "../harness/index.js";
+import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import type { VaultManager } from "../vault/index.js";
 
@@ -80,22 +73,6 @@ export interface ConversationRuntimeOptions extends Omit<
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
-  /** Proactive platform messaging for extensions (`api.notify`). */
-  platformNotifier?: PlatformNotifier;
-  /** Proactive emoji reactions for extensions (`api.react`). */
-  platformReactor?: PlatformReactor;
-  /** Proactive file uploads for extensions (`api.uploadFile`). */
-  platformUploader?: PlatformUploader;
-  /** Interactive Block Kit posting/updating for extensions (`api.blockkit`). */
-  platformBlockKit?: PlatformBlockKit;
-  /** Direct-message conversation resolution for extensions (`api.openDm`). */
-  platformDmOpener?: PlatformDmOpener;
-  /** Conversation history reads for extensions (`api.fetchHistory`). */
-  platformHistoryFetcher?: PlatformHistoryFetcher;
-  /** Workspace user listings for extensions (`api.listUsers`). */
-  platformUserLister?: PlatformUserLister;
-  /** Host-authoritative callback-schedule engine (`api.schedules` callbacks). */
-  extensionScheduleEngine?: ExtensionScheduleEngine;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as
    * factories — each runner instantiates its own pack because bind state is

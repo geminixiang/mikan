@@ -29,7 +29,6 @@ function makeHandler(running: Array<{ address: OfficeAddress; sessionKey: string
     handleStop: vi.fn(),
     forceStop: vi.fn(),
     handleNewCommand: vi.fn(),
-    handleExtensionAction: vi.fn(),
   } satisfies MessagingEventHandler;
 }
 

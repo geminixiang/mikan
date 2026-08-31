@@ -6,17 +6,7 @@ import { join } from "node:path";
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join as pathJoin } from "node:path";
-import type {
-  MessagingBot,
-  PlatformBlockKit,
-  PlatformDmOpener,
-  PlatformHistoryFetcher,
-  PlatformName,
-  PlatformNotifier,
-  PlatformReactor,
-  PlatformUploader,
-  PlatformUserLister,
-} from "./adapter.js";
+import type { MessagingBot, PlatformName } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
@@ -28,7 +18,6 @@ import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { EventsWatcher } from "./events.js";
-import { ExtensionCallbackScheduler } from "./extension-schedules.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/portal.js";
@@ -54,7 +43,6 @@ import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { runOnboardCommand } from "./cli/onboard.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import { FileVaultManager } from "./vault/index.js";
-import { runExtCommand } from "./cli/ext.js";
 import { runOfficeCommand } from "./cli/office.js";
 import { runSessionsCommand } from "./cli/sessions.js";
 import {
@@ -172,13 +160,6 @@ try {
   plan = resolveBoot();
 } catch (error) {
   handleStartupError(error);
-}
-
-// `mikan ext …` manages extensions and exits; handle it before the normal
-// bot-mode startup (which requires platform tokens).
-if (plan.mode === "ext") {
-  const code = await runExtCommand(plan.extArgs ?? []);
-  process.exit(code);
 }
 
 // `mikan office …` inspects/claims conversation offices and exits.
@@ -402,88 +383,6 @@ if (provisioner) {
 
 const botsByPlatform: Record<string, MessagingBot> = {};
 
-/**
- * Resolve which platform bot to use: an explicit platform, or the sole
- * running one. Mirrors event-file platform resolution.
- */
-function resolvePlatformBot(op: string, platform: string | undefined): [string, MessagingBot] {
-  const available = Object.keys(botsByPlatform);
-  const key = platform?.trim().toLowerCase() || (available.length === 1 ? available[0] : undefined);
-  const bot = key ? botsByPlatform[key] : undefined;
-  if (!bot) {
-    throw new Error(
-      platform
-        ? `${op}: unknown platform '${platform}' (available: ${available.join(", ") || "none"})`
-        : `${op}: multiple platforms active (${available.join(", ")}); specify platform`,
-    );
-  }
-  return [key!, bot];
-}
-
-/** Extension `api.notify` backend: post into a conversation without a run. */
-const platformNotifier: PlatformNotifier = async (conversationId, text, options) => {
-  const [key, bot] = resolvePlatformBot("notify", options?.platform);
-  let messageTs: string;
-  if (options?.threadTs) {
-    if (!bot.postInThread) {
-      throw new Error(`notify: platform '${key}' does not support threaded posts`);
-    }
-    messageTs = await bot.postInThread(conversationId, options.threadTs, text);
-  } else {
-    messageTs = await bot.postMessage(conversationId, text);
-  }
-  log.logInfo(`[notify] posted to ${key}/${conversationId} (${text.length} chars)`);
-  return messageTs;
-};
-
-/** Extension `api.openDm` backend: resolve a user's DM conversation id. */
-const platformDmOpener: PlatformDmOpener = async (userId, platform) => {
-  const [key, bot] = resolvePlatformBot("openDm", platform);
-  if (!bot.openDirectConversation) {
-    throw new Error(`openDm: platform '${key}' does not support opening direct messages`);
-  }
-  return bot.openDirectConversation(userId);
-};
-
-/** Extension `api.fetchHistory` backend: read recent conversation messages. */
-const platformHistoryFetcher: PlatformHistoryFetcher = async (conversationId, options) => {
-  const [key, bot] = resolvePlatformBot("fetchHistory", options?.platform);
-  if (!bot.fetchHistory) {
-    throw new Error(`fetchHistory: platform '${key}' does not support history reads`);
-  }
-  const { platform: _platform, ...historyOptions } = options ?? {};
-  return bot.fetchHistory(conversationId, historyOptions);
-};
-
-/** Extension `api.listUsers` backend: list the workspace's active users. */
-const platformUserLister: PlatformUserLister = async (platform) => {
-  const [key, bot] = resolvePlatformBot("listUsers", platform);
-  if (!bot.listUsers) {
-    throw new Error(`listUsers: platform '${key}' does not support user listings`);
-  }
-  return bot.listUsers();
-};
-
-/** Extension `api.react` backend: add a reaction to a message. */
-const platformReactor: PlatformReactor = async (conversationId, messageTs, emoji, platform) => {
-  const [key, bot] = resolvePlatformBot("react", platform);
-  if (!bot.addReaction) {
-    throw new Error(`react: platform '${key}' does not support reactions`);
-  }
-  await bot.addReaction(conversationId, messageTs, emoji);
-  log.logInfo(`[react] :${emoji}: on ${key}/${conversationId}`);
-};
-
-/** Extension `api.uploadFile` backend: send a host file into a conversation. */
-const platformUploader: PlatformUploader = async (conversationId, filePath, title, platform) => {
-  const [key, bot] = resolvePlatformBot("upload", platform);
-  if (!bot.uploadFile) {
-    throw new Error(`upload: platform '${key}' does not support file uploads`);
-  }
-  await bot.uploadFile(conversationId, filePath, title);
-  log.logInfo(`[upload] ${filePath} to ${key}/${conversationId}`);
-};
-
 /** github_* tool backends: PR push/create and CI checks, host-side. */
 function requireGithubBot(op: string): GithubMessagingBot {
   const bot = botsByPlatform.github as GithubMessagingBot | undefined;
@@ -501,31 +400,6 @@ function requireSlackBot(op: string): SlackMessagingBotClass {
   }
   return bot;
 }
-
-/** Extension `api.blockkit` backend: interactive Block Kit, Slack-only today. */
-const platformBlockKit: PlatformBlockKit = {
-  postBlocks: async (conversationId, message, platform) => {
-    if (platform && platform !== "slack") {
-      throw new Error(`blockkit: platform '${platform}' does not support Block Kit`);
-    }
-    const bot = requireSlackBot("blockkit");
-    const ts = message.threadTs
-      ? await bot.postInThreadBlocks(conversationId, message.threadTs, message.text, message.blocks)
-      : await bot.postMessageBlocks(conversationId, message.text, message.blocks);
-    return { ts };
-  },
-  updateBlocks: async (conversationId, messageTs, message, platform) => {
-    if (platform && platform !== "slack") {
-      throw new Error(`blockkit: platform '${platform}' does not support Block Kit`);
-    }
-    await requireSlackBot("blockkit").updateMessageBlocks(
-      conversationId,
-      messageTs,
-      message.text,
-      message.blocks,
-    );
-  },
-};
 
 /**
  * Platform capability pack factories — only when the corresponding bot is
@@ -579,14 +453,6 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   return factories;
 }
 
-// Host-authoritative engine for extension callback schedules. Dispatch routes
-// through the runtime so fires run against the conversation's activated
-// extensions; created before the runtime, wired after (mutual reference).
-const extensionScheduleEngine = new ExtensionCallbackScheduler({
-  stateDir,
-  dispatch: (fire) => handler.handleExtensionScheduleCallback(fire),
-});
-
 const handler = createConversationRuntime({
   workspace,
   sandbox,
@@ -597,14 +463,6 @@ const handler = createConversationRuntime({
   sessionViewTokenStore,
   adminTokenStore,
   portalBaseUrl: portalBaseUrl(),
-  platformNotifier,
-  platformReactor,
-  platformUploader,
-  platformBlockKit,
-  platformDmOpener,
-  platformHistoryFetcher,
-  platformUserLister,
-  extensionScheduleEngine,
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 
@@ -751,13 +609,11 @@ if (slackMessagingBot) {
   slackMessagingBot.setEventsWatcher(eventsWatcher);
 }
 eventsWatcher.start();
-extensionScheduleEngine.start();
 
 // Handle shutdown
 async function shutdown(): Promise<void> {
   await handler.shutdown();
   eventsWatcher.stop();
-  extensionScheduleEngine.stop();
   await Sentry.close(5000);
   process.exit(0);
 }

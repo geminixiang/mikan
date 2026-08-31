@@ -142,7 +142,6 @@ The example manifest includes common control slash commands:
 - `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, for example `anthropic/claude-sonnet-4-6:off`)
 - `/pi-auto-reply` → manage group/channel auto-reply rules
 - `/pi-sandbox` → inspect or tune this conversation's sandbox
-- `/pi-extensions` → list installed extensions
 - `/pi-admin` → open the admin portal
 
 Slash commands are optional because text commands also work in supported contexts. Keep `stop` as a text command (`stop` or `/stop`) so thread-local stop routing can point at the correct session.

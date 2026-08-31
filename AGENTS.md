@@ -22,7 +22,7 @@ Stack:
   - `types.ts`: root exported type definitions.
   - `adapter.ts`: platform-neutral bot/message/response interfaces.
   - `agent/`: agent catalog, execution, presentation, prompting, and runner integration.
-  - `harness/`: mikan's agent harness (session store, model catalog, run loop, skills, extension system) built on `pi-agent-core`/`pi-ai`.
+  - `harness/`: mikan's agent harness (session store, model catalog, run loop, skills, bounded subagents) built on `pi-agent-core`/`pi-ai`.
   - `mcp/`: settings-declared MCP server connections and tool wrapping.
   - `config.ts`: global and per-conversation settings.
   - `cli/`: argv grammar (`boot.ts`) and the subcommands that run instead of the daemon (`ext`, `office`, `env`, `--download`).
@@ -34,7 +34,7 @@ Stack:
   - `sandbox/`: host/container/image/cloudflare execution backends.
   - `execution-resolver.ts`: resolves the concrete executor, credential key, and mounts for an actor plus office.
   - `workspace-projection/`: resolves an office's door policy into concrete sandbox mounts and authorized prompt sources.
-  - `packages/`: git/host-directory packages that ship extensions and skills into a deployment.
+  - `packages/`: git/host-directory packages that ship read-only skills into a deployment.
   - `tools/`: agent tool implementations (`read`, `bash`, `edit`, `write`, `event`, `sandbox`).
   - `vault/`: file-backed credential vault and routing.
   - `web/`: admin, login/OAuth, and session-view portals.
@@ -47,7 +47,7 @@ Stack:
 - `docs/`: repository-internal documentation — `adr/` (accepted architecture decisions), `research/`, `testing/`, `reports/`. Product documentation lives in `src/content/docs/`.
 - `.config/`: tool configuration — Vitest (unit + e2e), oxlint, oxfmt, Astro.
 - `scripts/`: maintenance and migration scripts.
-- `deploy/`: deployment assets — `pm2/` process template, `docker/` sandbox image, and `examples/` (Slack app manifests, embedder, extensions, cloudflare bridge).
+- `deploy/`: deployment assets — `pm2/` process template, `docker/` sandbox image, and `examples/` (Slack app manifests, embedder, cloudflare bridge).
 - `dist/`: generated build output; do not edit manually.
 
 ## COMMANDS
