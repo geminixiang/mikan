@@ -174,12 +174,12 @@ function seedRunnerState(runtime: ConversationRuntime): PiAgentWrapper {
   return runner;
 }
 
-function newCommandArgs(responder = makeResponder()) {
-  return [
-    "C123",
-    "C123",
+function newCommandOptions(responder = makeResponder()) {
+  return {
+    sessionKey: "C123",
+    conversationId: "C123",
     bot,
-    {
+    message: {
       address: testAddress,
       id: "memory:C123",
       sessionKey: "C123",
@@ -189,8 +189,8 @@ function newCommandArgs(responder = makeResponder()) {
       text: "/new",
     },
     responder,
-    testPlatform,
-  ] as const;
+    platform: testPlatform,
+  };
 }
 
 describe("ConversationRuntime handleEvent", () => {
@@ -481,7 +481,7 @@ describe("ConversationRuntime lifecycle", () => {
     const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
     sessions.set(state);
 
-    const reset = runtime.handleNewCommand(...newCommandArgs());
+    const reset = runtime.handleNewCommand(newCommandOptions());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
 
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
@@ -537,7 +537,7 @@ describe("ConversationRuntime lifecycle", () => {
     const memoryPath = join(conversationDir, "MEMORY.md");
     writeFileSync(memoryPath, "stable anchor\n");
 
-    await runtime.handleNewCommand(...newCommandArgs());
+    await runtime.handleNewCommand(newCommandOptions());
 
     expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
     expect(readFileSync(memoryPath, "utf-8")).toBe("stable anchor\n");
@@ -551,7 +551,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new can reset an unmaterialized session without creating a runner", async () => {
     const runtime = makeRuntime();
 
-    await runtime.handleNewCommand(...newCommandArgs());
+    await runtime.handleNewCommand(newCommandOptions());
 
     expect(resolveChannelSessionFile(conversationDir)).not.toBeNull();
     expect(runtime.getRunningSessions()).toEqual([]);
@@ -633,7 +633,7 @@ describe("ConversationRuntime lifecycle", () => {
       conversationDir,
     );
 
-    await runtime.handleNewCommand(...newCommandArgs());
+    await runtime.handleNewCommand(newCommandOptions());
 
     await vi.waitFor(() => {
       expect(bot.postMessage).toHaveBeenCalledWith(

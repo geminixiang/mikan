@@ -1,5 +1,24 @@
 import type { OfficeAddress, OfficeKey } from "../types.js";
 
+export interface OfficeMigrationRunSummary {
+  /** Raw ids whose directories moved to the office-key layout this run. */
+  migrated: string[];
+  /** Raw ids whose interrupted moves were completed from the journal. */
+  recovered: string[];
+  /** Raw ids that still need an explicit owner (`mikan office claim`). */
+  unowned: string[];
+  /** Raw ids whose records are failed and need operator repair. */
+  failed: string[];
+  /** Raw ids whose conversation vault directories moved to office keys. */
+  vaultKeysMigrated: string[];
+  /** Raw ids whose legacy and office-key vault dirs both exist (manual merge). */
+  vaultConflicts: string[];
+  /** Raw ids whose host state directories moved. */
+  stateDirsMigrated: string[];
+  /** Raw ids whose legacy and office-key state dirs both exist (manual merge). */
+  stateDirConflicts: string[];
+}
+
 /**
  * One mikan deployment's agent world on the host: the workspace root, the
  * workspace-global surfaces, and the factory for per-conversation offices.

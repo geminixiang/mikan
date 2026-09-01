@@ -32,6 +32,11 @@ export interface ResolveSessionKeyOptions {
 
 // ── session store ────────────────────────────────────────────────────────────
 
+export interface ParentSessionRef {
+  path: string;
+  id: string;
+}
+
 export interface ThreadRootMessage {
   text?: string;
   userName?: string;
@@ -108,4 +113,12 @@ export interface ThreadBootstrapWaitOptions {
   isParentRunning: () => boolean;
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;
+}
+
+// ── v3 migration ─────────────────────────────────────────────────────────────
+
+export interface MigrateResult {
+  file: string;
+  status: "migrated" | "already-v4" | "skipped";
+  detail?: string;
 }

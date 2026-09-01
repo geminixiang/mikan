@@ -55,6 +55,15 @@ export interface ResolveStopTargetInput {
   sessionKey?: string;
 }
 
+export interface HandleTooLongInput {
+  text: string;
+  operation: "render" | "replace";
+  options: { createOverflowLink?: () => string } | undefined;
+  responseId: string | null;
+  write: (text: string) => Promise<void>;
+  getResponseId: () => string | null;
+}
+
 interface ProgressiveStreamTransport {
   start(text: string): Promise<string>;
   append(messageId: string, delta: string): Promise<void>;
@@ -132,14 +141,7 @@ export interface ProgressiveRendererPlatform {
    */
   isTooLongError?: (err: unknown) => boolean;
   /** Handle a Slack-style length rejection and return the canonical fallback text. */
-  handleTooLong?: (
-    text: string,
-    operation: "render" | "replace",
-    options: { createOverflowLink?: () => string } | undefined,
-    responseId: string | null,
-    write: (text: string) => Promise<void>,
-    getResponseId: () => string | null,
-  ) => Promise<{ text: string; prefixLength?: number }>;
+  handleTooLong?: (input: HandleTooLongInput) => Promise<{ text: string; prefixLength?: number }>;
 }
 
 /** How intake resolved a message. Callers branch on this instead of passing callbacks. */

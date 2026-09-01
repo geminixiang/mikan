@@ -2,10 +2,9 @@
 
 import "./observability/instrument.js";
 
-import { join } from "node:path";
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirname, join as pathJoin } from "node:path";
 import type { MessagingBot, PlatformName } from "./adapter.js";
 import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
@@ -36,7 +35,6 @@ import {
   defaultModelsJsonPath,
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
-import { existsSync, readFileSync } from "node:fs";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
@@ -58,10 +56,11 @@ import * as Sentry from "@sentry/node";
 
 function getVersion(): string {
   // Try to find package.json in the dist directory or parent
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
   const possiblePaths = [
-    pathJoin(dirname(fileURLToPath(import.meta.url)), "package.json"),
-    pathJoin(dirname(fileURLToPath(import.meta.url)), "..", "package.json"),
-    pathJoin(process.cwd(), "package.json"),
+    join(moduleDir, "package.json"),
+    join(dirname(moduleDir), "package.json"),
+    join(process.cwd(), "package.json"),
   ];
 
   for (const pkgPath of possiblePaths) {

@@ -35,6 +35,7 @@ interface ContainerState {
 }
 
 export type {
+  ContainerBindTranslator,
   ContainerMount,
   DockerContainerManagerOptions,
   ProvisionOptions,
@@ -42,20 +43,13 @@ export type {
   SandboxLimitStatus,
 } from "./types.js";
 import type {
+  ContainerBindTranslator,
   ContainerMount,
   DockerContainerManagerOptions,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
 } from "./types.js";
-
-/**
- * Rewrites one docker bind spec (`src:dst[:ro]`) from the legacy raw-id
- * layout to the office-key layout. Returns the spec unchanged when nothing in
- * it needs translation; a container whose binds are all unchanged is already
- * on the current layout.
- */
-export type ContainerBindTranslator = (bindSpec: string) => string;
 
 /** Parse `src:dst[:ro]` back into a ContainerMount for signature computation. */
 function bindSpecToMount(bindSpec: string): ContainerMount {

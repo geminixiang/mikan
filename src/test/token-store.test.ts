@@ -150,14 +150,32 @@ describe("InMemorySessionViewTokenStore", () => {
 
   test("create stores token and peek returns it", () => {
     const store = new InMemorySessionViewTokenStore();
-    const t = store.create("slack", "U1", "D1", "D1", "/path/session.jsonl");
+    const t = store.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D1",
+      sessionKey: "D1",
+      sessionFile: "/path/session.jsonl",
+    });
     expect(store.peek(t.token)).toMatchObject({ sessionFile: "/path/session.jsonl" });
   });
 
   test("multiple tokens coexist (no dedup on create)", () => {
     const store = new InMemorySessionViewTokenStore();
-    const a = store.create("slack", "U1", "D1", "D1", "/a.jsonl");
-    const b = store.create("slack", "U1", "D1", "D1", "/b.jsonl");
+    const a = store.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D1",
+      sessionKey: "D1",
+      sessionFile: "/a.jsonl",
+    });
+    const b = store.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D1",
+      sessionKey: "D1",
+      sessionFile: "/b.jsonl",
+    });
 
     // SessionViewTokenStore intentionally does NOT dedup on create
     expect(store.peek(a.token)).toBeDefined();
@@ -168,7 +186,13 @@ describe("InMemorySessionViewTokenStore", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const store = new InMemorySessionViewTokenStore();
-    const t = store.create("slack", "U1", "D1", "D1", "/session.jsonl");
+    const t = store.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D1",
+      sessionKey: "D1",
+      sessionFile: "/session.jsonl",
+    });
 
     vi.setSystemTime(new Date("2026-01-02T01:00:00Z")); // TTL is 24 h
     expect(store.peek(t.token)).toBeUndefined();

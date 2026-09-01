@@ -1,20 +1,11 @@
 import { createHash } from "node:crypto";
 import { officeKey } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
-import type { SandboxConfig } from "./types.js";
+import type { CredentialScope, SandboxConfig } from "./types.js";
+
+export type { CredentialScope } from "./types.js";
 
 const IDENTITY_HASH_LENGTH = 12;
-
-/** Identity a run authenticates as when resolving credentials. */
-export interface CredentialScope {
-  userId: string;
-  /**
-   * Office whose credentials the run may use — the vault-routing address
-   * (`vaultConversationId` substituted where a command targets another
-   * conversation's vault on the same platform).
-   */
-  address: OfficeAddress;
-}
 
 /**
  * Vault key for a run. Conversation-scoped sandboxes (image, cloudflare)

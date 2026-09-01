@@ -1,5 +1,6 @@
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import type { Office } from "../office/index.js";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MikanAgentSession } from "../harness/index.js";
 import { DEFAULT_EVENT_BUDGET, MikanModels } from "../harness/index.js";
 import { createHash } from "node:crypto";
@@ -67,7 +68,7 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   return `[${userLabel}]: ${text}`;
 }
 
-async function prepareRunContext(params: {
+type PrepareRunParams = {
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -88,29 +89,18 @@ async function prepareRunContext(params: {
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
-}): Promise<PreparedRunContext & { pathContext: RuntimePathContext }> {
-  const {
-    message,
-    responder,
-    platform,
-    office,
-    sessionUuid,
-    runState,
-    executor,
-    resolveForRun,
-    session,
-    setEventContext,
-    setSandboxContext,
-    setUploadFunction,
-    setImageUploadFunction,
-    setReactFunction,
-    bindPlatformToolPacks,
-  } = params;
+};
+
+type RunPromptContext = {
+  pathContext: RuntimePathContext;
+  memory: string;
+  systemPrompt: string;
+  triggerAttribution: string | undefined;
+};
+
+async function preparePromptContext(params: PrepareRunParams): Promise<RunPromptContext> {
+  const { message, platform, office, executor, resolveForRun, session } = params;
   const conversationId = office.address.conversationId;
-  const sessionConversation = conversationIdOf(message.sessionKey);
-
-  await mkdir(join(office.dir, "scratch"), { recursive: true });
-
   const decision = await resolveForRun({
     address: message.address,
     userId: message.userId,
@@ -133,72 +123,82 @@ async function prepareRunContext(params: {
     projection,
     packages,
   );
-  const skills = conversationSkillLoad.skills;
   const triggerAttribution = resolveTriggerAttribution(message);
-  const systemPrompt = buildSystemPrompt(
-    pathContext.runtimeWorkspaceRoot,
+  const systemPrompt = buildSystemPrompt({
+    workspacePath: pathContext.runtimeWorkspaceRoot,
     office,
-    message.conversationKind,
-    message.userId,
     memory,
-    executor.getSandboxConfig(),
+    sandboxConfig: executor.getSandboxConfig(),
     platform,
-    skills,
+    skills: conversationSkillLoad.skills,
     projection,
-    conversationSkillLoad.skippedSkillLinks,
-  );
+    skippedSkillLinks: conversationSkillLoad.skippedSkillLinks,
+  });
   session.agent.state.systemPrompt = systemPrompt;
-  // Cache diagnosis: a byte-stable system prompt is the precondition for
-  // provider prompt caching. If this hash changes between turns of one
-  // conversation, something turn-varying leaked into the prompt; if it is
-  // stable and cacheRead stays 0, the miss is provider-side.
+  // A stable hash across turns verifies that turn-specific data did not leak
+  // into the provider-cacheable system prompt.
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
   log.logInfo(
     `[${conversationId}] System prompt (base): ${systemPrompt.length} chars, sha ${promptHash}`,
   );
+  return { pathContext, memory, systemPrompt, triggerAttribution };
+}
 
+function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathContext): void {
+  const {
+    message,
+    responder,
+    platform,
+    office,
+    executor,
+    setEventContext,
+    setSandboxContext,
+    setUploadFunction,
+    setImageUploadFunction,
+    setReactFunction,
+    bindPlatformToolPacks,
+  } = params;
   setEventContext({
     platform: platform.name,
-    conversationId,
+    conversationId: office.address.conversationId,
     conversationKind: message.conversationKind,
     userId: message.userId,
   });
   setSandboxContext({ address: message.address, userId: message.userId });
-
   setUploadFunction(async (filePath: string, title?: string) => {
     const runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);
     await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
       responder.uploadFile(stagedPath, title),
     );
   });
-
-  // generate_image writes its file host-side, so it uploads by host path —
-  // no staging through the sandbox, where the file may not be mounted.
+  // Generated images already live host-side and must not be staged through a sandbox.
   setImageUploadFunction(async (hostPath: string, title?: string) => {
     await responder.uploadFile(hostPath, title);
   });
-
-  // The react tool is available only when the responder supports reactions
-  // (interactive turns on platforms with reaction support); otherwise unset
-  // so the tool reports it is unavailable rather than silently no-op'ing.
+  // Unset reaction support when the active responder cannot react.
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
-
-  // Platform capability packs (e.g. GitHub PR/CI) enable themselves per run;
-  // core does not branch on platform name here.
   bindPlatformToolPacks({
-    conversationId,
+    conversationId: office.address.conversationId,
     platformName: platform.name,
     threadTs: message.threadTs,
   });
+}
 
-  resetRunState(
-    runState,
+async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunContext> {
+  const { message, responder, platform, office, sessionUuid, runState, executor } = params;
+  const sessionConversation = conversationIdOf(message.sessionKey);
+  await mkdir(join(office.dir, "scratch"), { recursive: true });
+  const { pathContext, memory, systemPrompt, triggerAttribution } =
+    await preparePromptContext(params);
+  bindRunCapabilities(params, pathContext);
+
+  resetRunState(runState, {
     responder,
     sessionConversation,
-    message.userName,
+    userName: message.userName,
     sessionUuid,
     triggerAttribution,
-  );
+  });
   const runQueue = createRunQueue(responder, runState);
   runState.queue = runQueue.queue;
 
@@ -225,7 +225,316 @@ async function prepareRunContext(params: {
     userMessage: finalUserMessage,
     imageAttachments,
     triggerAttribution,
-    pathContext,
+  };
+}
+
+async function buildInitialSystemPrompt(params: {
+  office: Office;
+  pathContext: RuntimePathContext;
+  projection: ReturnType<typeof resolveWorkspaceProjection>;
+  sandboxConfig: CreateRunnerOptions["sandboxConfig"];
+}): Promise<string> {
+  const { office, pathContext, projection, sandboxConfig } = params;
+  const memory = await getMemory(projection);
+  const { skills, skippedSkillLinks } = loadMikanSkills(
+    office,
+    pathContext.runtimeWorkspaceRoot,
+    projection,
+    resolveConversationPackages({ office }),
+  );
+  return buildSystemPrompt({
+    workspacePath: pathContext.runtimeWorkspaceRoot,
+    office,
+    memory,
+    sandboxConfig,
+    platform: {
+      name: "chat",
+      formattingGuide: "",
+      channels: [],
+      users: [],
+      trustModel: "membership",
+    },
+    skills,
+    projection,
+    skippedSkillLinks,
+  });
+}
+
+async function openRunnerSessionManager(params: {
+  contextFile: string;
+  runtimeWorkspaceRoot: string;
+  sessionKey: string;
+  threadRootMessage: ThreadRootMessage | null;
+}) {
+  const { contextFile, runtimeWorkspaceRoot, sessionKey, threadRootMessage } = params;
+  const sessionManager = await openManagedSession(contextFile, runtimeWorkspaceRoot);
+  const threadSessionName = buildThreadSessionName(threadRootMessage);
+  if (
+    isThreadSessionKey(sessionKey) &&
+    threadSessionName &&
+    (await sessionManager.getSessionName()) !== threadSessionName
+  ) {
+    await sessionManager.setSessionName(threadSessionName);
+  }
+  return sessionManager;
+}
+
+async function createRunnerAgentSession(params: {
+  workspaceDir: string;
+  systemPrompt: string;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  tools: ReturnType<typeof createMikanTools>["tools"];
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  modelRegistry: MikanModels;
+  conversationId: string;
+}) {
+  const { workspaceDir, systemPrompt, model, agentConfig, tools, sessionManager, modelRegistry } =
+    params;
+  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {});
+  for (const mcpError of mcpResult.errors) {
+    log.logWarning(
+      `[${params.conversationId}] MCP server unavailable: ${mcpError.server}`,
+      mcpError.error,
+    );
+  }
+  if (mcpResult.tools.length > 0) {
+    log.logInfo(`[${params.conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
+  }
+  const session = await createConfiguredAgentSession({
+    workspaceDir,
+    systemPrompt,
+    model,
+    thinkingLevel: agentConfig.thinkingLevel,
+    tools: [...tools, ...mcpResult.tools],
+    sessionStore: sessionManager,
+    models: modelRegistry,
+  });
+  return { mcpResult, session };
+}
+
+type PreparedTurnParams = {
+  prepared: PreparedRunContext;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
+  runState: RunnerSessionState;
+  session: MikanAgentSession;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  sessionUuid: string;
+  conversationId: string;
+  contextFile: string;
+  sessionView: CreateRunnerOptions["sessionView"];
+};
+
+async function runPreparedTurn(params: PreparedTurnParams): Promise<{
+  stopReason: string;
+  errorMessage?: string;
+}> {
+  const {
+    prepared,
+    message,
+    responder,
+    platform,
+    runState,
+    session,
+    model,
+    agentConfig,
+    sessionUuid,
+    conversationId,
+    contextFile,
+    sessionView,
+  } = params;
+  if (runState.logCtx) {
+    log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
+  }
+
+  updateActiveSpanAttribution({
+    provider: model.provider,
+    model: agentConfig.model,
+    channel_id: prepared.sessionConversation,
+    session_id: sessionUuid,
+  });
+  addLifecycleBreadcrumb("agent.prompt.sent", {
+    provider: model.provider,
+    model: agentConfig.model,
+    channel_id: prepared.sessionConversation,
+    session_id: sessionUuid,
+    attachment_count: message.attachments?.length ?? 0,
+    image_attachment_count: prepared.imageAttachments.length,
+  });
+  sendAgentEvent({
+    sessionId: sessionUuid,
+    actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+    event: { kind: "sessionStart" },
+  });
+
+  const isEventRun = message.id.startsWith("event:");
+  await session.prompt(prepared.userMessage, {
+    ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
+    ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+  });
+  await prepared.runQueue.wait();
+
+  const sessionViewTokenStore = sessionView?.tokenStore;
+  const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
+  let sessionViewLink: string | undefined;
+  const createSessionViewLink =
+    sessionViewTokenStore && sessionViewPortalBaseUrl
+      ? () => {
+          if (!sessionViewLink) {
+            const token = sessionViewTokenStore.create({
+              platform: platform.name as PlatformName,
+              platformUserId: message.userId,
+              conversationId,
+              sessionKey: message.sessionKey,
+              sessionFile: contextFile,
+              platformUserName: message.userName,
+            });
+            sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+          }
+          return sessionViewLink;
+        }
+      : undefined;
+
+  await finalizeRunResponse(responder, session, runState, {
+    triggerAttribution: prepared.triggerAttribution,
+    triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
+      ? createSessionViewLink?.()
+      : undefined,
+    createOverflowLink: createSessionViewLink,
+    platform: platform.name,
+    model,
+    sessionConversation: prepared.sessionConversation,
+    sessionUuid,
+  });
+  await reportUsageSummary({
+    session,
+    runState,
+    responder,
+    platform,
+    model,
+    agentConfig,
+    sessionConversation: prepared.sessionConversation,
+    sessionUuid,
+    waitForQueue: () => prepared.runQueue.wait(),
+  });
+  return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+}
+
+type MikanToolBindings = ReturnType<typeof createMikanTools>;
+
+type RunnerInterfaceParams = {
+  conversationId: string;
+  conversationDir: string;
+  sessionKey: string;
+  office: Office;
+  sessionUuid: string;
+  contextFile: string;
+  sessionView: CreateRunnerOptions["sessionView"];
+  runState: RunnerSessionState;
+  executor: Executor;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  session: MikanAgentSession;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  chatSessionManager: ChatHistorySync;
+  mcpResult: Awaited<ReturnType<typeof loadMcpTools>>;
+  toolBindings: MikanToolBindings;
+};
+
+function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
+  const {
+    conversationId,
+    conversationDir,
+    sessionKey,
+    office,
+    sessionUuid,
+    contextFile,
+    sessionView,
+    runState,
+    executor,
+    resolveForRun,
+    session,
+    model,
+    agentConfig,
+    sessionManager,
+    chatSessionManager,
+    mcpResult,
+    toolBindings,
+  } = params;
+  return {
+    async syncChatHistory(currentMessageId?: string): Promise<void> {
+      await chatSessionManager.syncSessionManager({
+        conversationDir,
+        sessionKey,
+        sessionManager,
+        currentMessageId,
+      });
+    },
+
+    async run(message, responder, platform) {
+      const prepared = await prepareRunContext({
+        message,
+        responder,
+        platform,
+        office,
+        sessionUuid,
+        runState,
+        executor,
+        resolveForRun,
+        session,
+        setEventContext: toolBindings.setEventContext,
+        setSandboxContext: toolBindings.setSandboxContext,
+        setUploadFunction: toolBindings.setUploadFunction,
+        setImageUploadFunction: toolBindings.setImageUploadFunction,
+        setReactFunction: toolBindings.setReactFunction,
+        bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
+      });
+      try {
+        return await runPreparedTurn({
+          prepared,
+          message,
+          responder,
+          platform,
+          runState,
+          session,
+          model,
+          agentConfig,
+          sessionUuid,
+          conversationId,
+          contextFile,
+          sessionView,
+        });
+      } finally {
+        runState.responder = null;
+        runState.logCtx = null;
+        runState.queue = null;
+      }
+    },
+
+    abort(): void {
+      session.abort();
+    },
+
+    async dispose(): Promise<void> {
+      try {
+        await mcpResult.dispose();
+      } finally {
+        await sessionManager.close();
+      }
+    },
+
+    getCurrentStep(): { toolName?: string; label?: string } | undefined {
+      const first = runState.pendingTools.values().next().value;
+      if (!first) return undefined;
+      return {
+        toolName: first.toolName,
+        label: (first.args as { label?: string })?.label,
+      };
+    },
   };
 }
 
@@ -260,7 +569,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     provisioner,
     office.workspace,
   );
-  let pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
+  const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
 
   const modelRegistry = options.models ?? MikanModels.create();
   if (modelRegistry.getError()) {
@@ -269,15 +578,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
 
   // Create tools (per-runner, with per-runner upload function setter)
-  const {
-    tools,
-    setUploadFunction,
-    setImageUploadFunction,
-    setReactFunction,
-    bindPlatformToolPacks,
-    setEventContext,
-    setSandboxContext,
-  } = createMikanTools(
+  const toolBindings = createMikanTools(
     executor,
     workspaceDir,
     { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
@@ -292,232 +593,53 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     },
   );
 
-  // Initial system prompt (will be updated each run with fresh memory/channels/users/skills)
-  const memory = await getMemory(projection);
-  const { skills, skippedSkillLinks } = loadMikanSkills(
+  const systemPrompt = await buildInitialSystemPrompt({
     office,
-    pathContext.runtimeWorkspaceRoot,
+    pathContext,
     projection,
-    resolveConversationPackages({ office }),
-  );
-  const emptyPlatform: MessagingInfo = {
-    name: "chat",
-    formattingGuide: "",
-    channels: [],
-    users: [],
-    trustModel: "membership",
-  };
-  const systemPrompt = buildSystemPrompt(
-    pathContext.runtimeWorkspaceRoot,
-    office,
-    "shared",
-    undefined,
-    memory,
     sandboxConfig,
-    emptyPlatform,
-    skills,
-    projection,
-    skippedSkillLinks,
-  );
-
-  // Create session manager and settings manager. Top-level/private sessions
-  // use the conversation's current pointer; scoped sessions use fixed files.
-  // Platform-specific scope behavior is resolved before runner creation.
-  const isThread = isThreadSessionKey(sessionKey);
+  });
   const { contextFile, threadRootMessage } = sessionScope;
-  const sessionManager = await openManagedSession(contextFile, pathContext.runtimeWorkspaceRoot);
-  const threadSessionName = buildThreadSessionName(threadRootMessage);
-  if (
-    isThread &&
-    threadSessionName &&
-    (await sessionManager.getSessionName()) !== threadSessionName
-  ) {
-    await sessionManager.setSessionName(threadSessionName);
-  }
-
+  const sessionManager = await openRunnerSessionManager({
+    contextFile,
+    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
+    sessionKey,
+    threadRootMessage,
+  });
   const sessionUuid = extractSessionUuid(contextFile);
   const chatSessionManager = new ChatHistorySync();
-
-  // MCP tools run host-side: credentials live in server config (settings) and
-  // the server process, never in the sandbox or the model's context. Loaded
-  // per-runner so a settings change is picked up on the next runner build.
-  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {});
-  for (const mcpError of mcpResult.errors) {
-    log.logWarning(
-      `[${conversationId}] MCP server unavailable: ${mcpError.server}`,
-      mcpError.error,
-    );
-  }
-  if (mcpResult.tools.length > 0) {
-    log.logInfo(`[${conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
-  }
-  const toolsWithMcp = [...tools, ...mcpResult.tools];
-
-  const session = await createConfiguredAgentSession({
+  const { mcpResult, session } = await createRunnerAgentSession({
     workspaceDir,
     systemPrompt,
     model,
-    thinkingLevel: agentConfig.thinkingLevel,
-    tools: toolsWithMcp,
-    sessionStore: sessionManager,
-    models: modelRegistry,
+    agentConfig,
+    tools: toolBindings.tools,
+    sessionManager,
+    modelRegistry,
+    conversationId,
   });
 
   // Mutable per-run state - event handler references this
   const runState = createRunState();
   attachSessionEventHandlers({ session, runState, model, agentConfig });
 
-  return {
-    async syncChatHistory(currentMessageId?: string): Promise<void> {
-      await chatSessionManager.syncSessionManager({
-        conversationDir,
-        sessionKey,
-        sessionManager,
-        currentMessageId,
-      });
-    },
-
-    async run(
-      message: ConversationMessage,
-      responder: ConversationResponder,
-      platform: MessagingInfo,
-    ): Promise<{ stopReason: string; errorMessage?: string }> {
-      const prepared = await prepareRunContext({
-        message,
-        responder,
-        platform,
-        office,
-        sessionUuid,
-        runState,
-        executor,
-        resolveForRun,
-        session,
-        setEventContext,
-        setSandboxContext,
-        setUploadFunction,
-        setImageUploadFunction,
-        setReactFunction,
-        bindPlatformToolPacks,
-      });
-      pathContext = prepared.pathContext;
-
-      try {
-        return await runPreparedTurn();
-      } finally {
-        // Ownership must return to the pool on every exit; otherwise a throw
-        // would leave the runner permanently "busy" with a stale responder.
-        runState.responder = null;
-        runState.logCtx = null;
-        runState.queue = null;
-      }
-
-      async function runPreparedTurn(): Promise<{ stopReason: string; errorMessage?: string }> {
-        if (runState.logCtx) {
-          log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
-        }
-
-        updateActiveSpanAttribution({
-          provider: model.provider,
-          model: agentConfig.model,
-          channel_id: prepared.sessionConversation,
-          session_id: sessionUuid,
-        });
-        addLifecycleBreadcrumb("agent.prompt.sent", {
-          provider: model.provider,
-          model: agentConfig.model,
-          channel_id: prepared.sessionConversation,
-          session_id: sessionUuid,
-          attachment_count: message.attachments?.length ?? 0,
-          image_attachment_count: prepared.imageAttachments.length,
-        });
-        sendAgentEvent({
-          sessionId: sessionUuid,
-          actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
-          event: { kind: "sessionStart" },
-        });
-
-        // Autonomous event runs get an explicit resource ceiling since no
-        // human is watching the loop; interactive turns stay human-gated.
-        const isEventRun = message.id.startsWith("event:");
-        await session.prompt(prepared.userMessage, {
-          ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
-          ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
-        });
-
-        // Wait for queued messages
-        await prepared.runQueue.wait();
-
-        const sessionViewTokenStore = sessionView?.tokenStore;
-        const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
-        let sessionViewLink: string | undefined;
-        const createSessionViewLink =
-          sessionViewTokenStore && sessionViewPortalBaseUrl
-            ? () => {
-                if (!sessionViewLink) {
-                  const token = sessionViewTokenStore.create(
-                    platform.name as PlatformName,
-                    message.userId,
-                    conversationId,
-                    message.sessionKey,
-                    contextFile,
-                    message.userName,
-                  );
-                  sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
-                }
-                return sessionViewLink;
-              }
-            : undefined;
-
-        await finalizeRunResponse(responder, session, runState, {
-          triggerAttribution: prepared.triggerAttribution,
-          triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
-            ? createSessionViewLink?.()
-            : undefined,
-          createOverflowLink: createSessionViewLink,
-          platform: platform.name,
-          model,
-          sessionConversation: prepared.sessionConversation,
-          sessionUuid,
-        });
-
-        await reportUsageSummary({
-          session,
-          runState,
-          responder,
-          platform,
-          model,
-          agentConfig,
-          sessionConversation: prepared.sessionConversation,
-          sessionUuid,
-          waitForQueue: () => prepared.runQueue.wait(),
-        });
-
-        return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
-      }
-    },
-
-    abort(): void {
-      session.abort();
-    },
-
-    async dispose(): Promise<void> {
-      try {
-        await mcpResult.dispose();
-      } finally {
-        await sessionManager.close();
-      }
-    },
-
-    getCurrentStep(): { toolName?: string; label?: string } | undefined {
-      const pending = runState.pendingTools;
-      if (pending.size === 0) return undefined;
-      // Get the first pending tool
-      const first = pending.values().next().value;
-      if (!first) return undefined;
-      return {
-        toolName: first.toolName,
-        label: (first.args as { label?: string })?.label,
-      };
-    },
-  };
+  return createRunnerInterface({
+    conversationId,
+    conversationDir,
+    sessionKey,
+    office,
+    sessionUuid,
+    contextFile,
+    sessionView,
+    runState,
+    executor,
+    resolveForRun,
+    session,
+    model,
+    agentConfig,
+    sessionManager,
+    chatSessionManager,
+    mcpResult,
+    toolBindings,
+  });
 }

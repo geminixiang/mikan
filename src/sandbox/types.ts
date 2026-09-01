@@ -1,3 +1,5 @@
+import type { OfficeAddress } from "../types.js";
+
 export type SandboxConfig =
   | HostSandboxConfig
   | ContainerSandboxConfig
@@ -90,6 +92,17 @@ export interface ExecResult {
 export interface SandboxCredentialCapabilities {
   env: boolean;
   fileMounts: boolean;
+}
+
+/** Identity a run authenticates as when resolving credentials. */
+export interface CredentialScope {
+  userId: string;
+  /**
+   * Office whose credentials the run may use — the vault-routing address
+   * (`vaultConversationId` substituted where a command targets another
+   * conversation's vault on the same platform).
+   */
+  address: OfficeAddress;
 }
 
 interface SandboxWorkspaceCapabilities {

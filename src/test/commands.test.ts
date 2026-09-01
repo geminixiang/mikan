@@ -116,14 +116,8 @@ function fakeSessionViewTokenStore() {
   const created: { sessionFile: string }[] = [];
   return {
     created,
-    create(
-      _platform: "slack" | "discord" | "telegram",
-      _userId: string,
-      _conversationId: string,
-      _sessionKey: string,
-      sessionFile: string,
-    ) {
-      created.push({ sessionFile });
+    create(options: { sessionFile: string }) {
+      created.push({ sessionFile: options.sessionFile });
       return { token: "tok-sv" };
     },
   };
@@ -988,13 +982,11 @@ describe("NewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith(
-      "D123",
-      "D123",
-      ctx.bot,
-      expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
-      ctx.responder,
-      expect.objectContaining({ name: "slack" }),
-    );
+    expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith({
+      sessionKey: "D123",
+      conversationId: "D123",
+      bot: ctx.bot,
+      message: expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
+    });
   });
 });

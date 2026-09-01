@@ -1,5 +1,5 @@
 import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
-import type { MikanAgentSession } from "../harness/index.js";
+import type { HarnessEvent, MikanAgentSession } from "../harness/index.js";
 import {
   mergeSubagentProgress,
   parseSubagentProgressSnapshot,
@@ -56,18 +56,20 @@ export function createRunState(): RunnerSessionState {
 
 export function resetRunState(
   runState: RunnerSessionState,
-  responder: ConversationResponder,
-  sessionConversation: string,
-  userName: string | undefined,
-  sessionUuid: string,
-  triggerAttribution: string | undefined,
+  context: {
+    responder: ConversationResponder;
+    sessionConversation: string;
+    userName: string | undefined;
+    sessionUuid: string;
+    triggerAttribution: string | undefined;
+  },
 ): void {
-  runState.responder = responder;
+  runState.responder = context.responder;
   runState.logCtx = {
-    conversationId: sessionConversation,
-    userName,
+    conversationId: context.sessionConversation,
+    userName: context.userName,
     conversationName: undefined,
-    sessionId: sessionUuid,
+    sessionId: context.sessionUuid,
   };
   runState.pendingTools.clear();
   runState.toolProgress.clear();
@@ -85,7 +87,7 @@ export function resetRunState(
   runState.errorMessage = undefined;
   runState.reportedLlmError = false;
   runState.finalResponseHandledByTool = false;
-  runState.triggerAttribution = triggerAttribution;
+  runState.triggerAttribution = context.triggerAttribution;
 }
 
 export function createRunQueue(
@@ -237,6 +239,56 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
   return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
 }
 
+async function finalizeErrorResponse(
+  responder: ConversationResponder,
+  runState: RunnerSessionState,
+  options?: {
+    platform?: string;
+    model?: Model<Api>;
+    sessionConversation?: string;
+    sessionUuid?: string;
+  },
+): Promise<void> {
+  if (!runState.reportedLlmError) {
+    runState.reportedLlmError = true;
+    reportUserFacingError(new Error("LLM run completed with error stop reason"), {
+      domain: "llm",
+      surface: "assistant_response",
+      operation: "llm_turn",
+      severity: "error",
+      platform: options?.platform,
+      provider: options?.model?.provider,
+      model: options?.model?.name,
+      stopReason: runState.stopReason,
+      context: {
+        sessionConversation: options?.sessionConversation,
+        sessionUuid: options?.sessionUuid,
+        hasErrorMessage: true,
+        llmCallCount: runState.llmCallCount,
+      },
+    });
+  }
+  try {
+    await responder.replaceResponse("_Sorry, something went wrong_");
+    await responder.respondDiagnostic(`Error: ${runState.errorMessage}`, { style: "error" });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log.logWarning("Failed to post error message", errMsg);
+    reportUserFacingError(err, {
+      domain: "chat_platform",
+      surface: "final_response",
+      operation: "finalize_error_response",
+      severity: "error",
+      platform: options?.platform,
+      context: {
+        sessionConversation: options?.sessionConversation,
+        sessionUuid: options?.sessionUuid,
+        stopReason: runState.stopReason,
+      },
+    });
+  }
+}
+
 export async function finalizeRunResponse(
   responder: ConversationResponder,
   session: MikanAgentSession,
@@ -252,46 +304,7 @@ export async function finalizeRunResponse(
   },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
-    if (!runState.reportedLlmError) {
-      runState.reportedLlmError = true;
-      reportUserFacingError(new Error("LLM run completed with error stop reason"), {
-        domain: "llm",
-        surface: "assistant_response",
-        operation: "llm_turn",
-        severity: "error",
-        platform: options?.platform,
-        provider: options?.model?.provider,
-        model: options?.model?.name,
-        stopReason: runState.stopReason,
-        context: {
-          sessionConversation: options?.sessionConversation,
-          sessionUuid: options?.sessionUuid,
-          hasErrorMessage: true,
-          llmCallCount: runState.llmCallCount,
-        },
-      });
-    }
-    try {
-      await responder.replaceResponse("_Sorry, something went wrong_");
-      await responder.respondDiagnostic(`Error: ${runState.errorMessage}`, {
-        style: "error",
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      log.logWarning("Failed to post error message", errMsg);
-      reportUserFacingError(err, {
-        domain: "chat_platform",
-        surface: "final_response",
-        operation: "finalize_error_response",
-        severity: "error",
-        platform: options?.platform,
-        context: {
-          sessionConversation: options?.sessionConversation,
-          sessionUuid: options?.sessionUuid,
-          stopReason: runState.stopReason,
-        },
-      });
-    }
+    await finalizeErrorResponse(responder, runState, options);
     return;
   }
 
@@ -458,6 +471,349 @@ export function sendAgentEvent(payload: {
 }
 
 // ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
+type PresenterEventContext = {
+  runState: RunnerSessionState;
+  responder: ConversationResponder;
+  logCtx: NonNullable<RunnerSessionState["logCtx"]>;
+  queue: NonNullable<RunnerSessionState["queue"]>;
+  pendingTools: RunnerSessionState["pendingTools"];
+  baseAttrs: { channel_id: string; session_id: string | undefined };
+  agentEventSessionId: string;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+};
+
+type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
+type ToolUpdateEvent = Extract<HarnessEvent, { type: "tool_execution_update" }>;
+type ToolEndEvent = Extract<HarnessEvent, { type: "tool_execution_end" }>;
+type MessageStartEvent = Extract<HarnessEvent, { type: "message_start" }>;
+type MessageUpdateEvent = Extract<HarnessEvent, { type: "message_update" }>;
+type MessageEndEvent = Extract<HarnessEvent, { type: "message_end" }>;
+type AssistantMessage = Extract<MessageEndEvent["message"], { role: "assistant" }>;
+type LifecycleEvent = Extract<
+  HarnessEvent,
+  { type: "compaction_start" | "compaction_end" | "auto_retry_start" | "budget_exceeded" }
+>;
+
+function handleToolStart(event: ToolStartEvent, context: PresenterEventContext): void {
+  const { runState, responder, logCtx, queue, pendingTools, baseAttrs, agentEventSessionId } =
+    context;
+  const args = (event.args ?? {}) as { label?: string };
+  const label = args.label || event.toolName;
+  sendAgentEvent({
+    sessionId: agentEventSessionId,
+    actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+    event: {
+      kind: "toolStart",
+      toolId: event.toolCallId,
+      toolName: event.toolName,
+      input: { label },
+    },
+  });
+  pendingTools.set(event.toolCallId, {
+    toolName: event.toolName,
+    args: event.args,
+    startTime: Date.now(),
+  });
+  runState.toolProgress.set(event.toolCallId, {
+    label: extractToolLabel(event.toolName, event.args),
+    status: "running",
+  });
+  if (event.toolName === "subagent") {
+    runState.subagentToolCalls.add(event.toolCallId);
+  } else {
+    queue.enqueue(
+      () => replaceResponseWithToolProgress(responder, runState),
+      "tool progress update",
+    );
+  }
+  addLifecycleBreadcrumb("agent.tool.started", { tool: event.toolName, ...baseAttrs });
+  log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
+}
+
+function handleToolUpdate(event: ToolUpdateEvent, context: PresenterEventContext): void {
+  const subagentProgress = extractSubagentProgress(event.partialResult);
+  if (!subagentProgress) return;
+  context.runState.subagentProgress.set(event.toolCallId, subagentProgress);
+  context.runState.subagentToolCalls.add(event.toolCallId);
+  context.runState.suppressResponseDeltas = true;
+  scheduleToolProgressUpdate(context.responder, context.runState);
+}
+
+function recordToolMetrics(
+  event: ToolEndEvent,
+  durationMs: number,
+  context: PresenterEventContext,
+): void {
+  Sentry.metrics.count("agent.tool.calls", 1, {
+    attributes: metricAttributes({
+      tool: event.toolName,
+      error: String(event.isError),
+      ...context.baseAttrs,
+    }),
+  });
+  Sentry.metrics.distribution("agent.tool.duration", durationMs, {
+    unit: "millisecond",
+    attributes: metricAttributes({ tool: event.toolName, ...context.baseAttrs }),
+  });
+  addLifecycleBreadcrumb("agent.tool.completed", {
+    tool: event.toolName,
+    error: event.isError,
+    duration_ms: durationMs,
+    ...context.baseAttrs,
+  });
+}
+
+function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): void {
+  const { runState, responder, logCtx, pendingTools, agentEventSessionId } = context;
+  const resultStr = extractToolResultText(event.result);
+  const pending = pendingTools.get(event.toolCallId);
+  sendAgentEvent({
+    sessionId: agentEventSessionId,
+    actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
+    event: { kind: "toolEnd", toolId: event.toolCallId },
+  });
+  const progress = runState.toolProgress.get(event.toolCallId);
+  if (progress) progress.status = event.isError ? "error" : "done";
+  const subagentProgress = runState.subagentProgress.get(event.toolCallId);
+  if (subagentProgress) {
+    runState.subagentProgress.set(
+      event.toolCallId,
+      settleSubagentProgress(subagentProgress, event.isError),
+    );
+  }
+  flushToolProgressUpdate(responder, runState);
+  const completedProgress = runState.subagentProgress.get(event.toolCallId);
+  if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
+  runState.subagentProgress.delete(event.toolCallId);
+  pendingTools.delete(event.toolCallId);
+  const durationMs = pending ? Date.now() - pending.startTime : 0;
+  recordToolMetrics(event, durationMs, context);
+  if (event.isError) {
+    log.logToolError(logCtx, event.toolName, durationMs, resultStr);
+    return;
+  }
+  log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
+  if (event.toolName === "slack_blockkit") runState.finalResponseHandledByTool = true;
+}
+
+function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
+  if (event.message.role !== "assistant") return;
+  context.runState.llmCallCount += 1;
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event: { kind: "sessionStart" },
+  });
+  addLifecycleBreadcrumb("agent.llm.call.started", {
+    call_index: context.runState.llmCallCount,
+    provider: context.model.provider,
+    model: context.agentConfig.model,
+    ...context.baseAttrs,
+  });
+  log.logResponseStart(context.logCtx);
+}
+
+function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventContext): void {
+  const update = event.assistantMessageEvent;
+  if (update.type !== "text_delta" || !update.delta) return;
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event: { kind: "responseDelta", delta: update.delta },
+  });
+  if (context.responder.appendResponseDelta && !context.runState.suppressResponseDeltas) {
+    context.queue.enqueue(async () => {
+      await context.responder.appendResponseDelta?.(update.delta);
+    }, "response delta");
+  }
+}
+
+function recordAssistantUsage(message: AssistantMessage, context: PresenterEventContext): void {
+  if (!message.usage) return;
+  const { totalUsage } = context.runState;
+  totalUsage.input += message.usage.input;
+  totalUsage.output += message.usage.output;
+  totalUsage.cacheRead += message.usage.cacheRead;
+  totalUsage.cacheWrite += message.usage.cacheWrite;
+  totalUsage.cost.input += message.usage.cost.input;
+  totalUsage.cost.output += message.usage.cost.output;
+  totalUsage.cost.cacheRead += message.usage.cost.cacheRead;
+  totalUsage.cost.cacheWrite += message.usage.cost.cacheWrite;
+  totalUsage.cost.total += message.usage.cost.total;
+
+  const attributes = metricAttributes({
+    provider: context.model.provider,
+    model: context.agentConfig.model,
+    ...context.baseAttrs,
+    stop_reason: message.stopReason,
+    error: Boolean(message.errorMessage),
+  });
+  Sentry.metrics.count("agent.llm.calls", 1, { attributes });
+  Sentry.metrics.distribution("agent.llm.tokens_in", message.usage.input, { attributes });
+  Sentry.metrics.distribution("agent.llm.tokens_out", message.usage.output, { attributes });
+  if (message.usage.cacheRead > 0) {
+    Sentry.metrics.distribution("agent.llm.cache_read", message.usage.cacheRead, { attributes });
+  }
+  if (message.usage.cacheWrite > 0) {
+    Sentry.metrics.distribution("agent.llm.cache_write", message.usage.cacheWrite, { attributes });
+  }
+  Sentry.metrics.distribution("agent.llm.cost_per_turn", message.usage.cost.total, { attributes });
+  addLifecycleBreadcrumb("agent.llm.call.completed", {
+    call_index: context.runState.llmCallCount,
+    provider: context.model.provider,
+    model: context.agentConfig.model,
+    stop_reason: message.stopReason,
+    error: Boolean(message.errorMessage),
+    input_tokens: message.usage.input,
+    output_tokens: message.usage.output,
+    cost_total_usd: message.usage.cost.total,
+  });
+}
+
+function presentAssistantMessage(message: AssistantMessage, context: PresenterEventContext): void {
+  const thinkingParts: string[] = [];
+  const textParts: string[] = [];
+  const hasToolCall = message.content.some((part) =>
+    ["tool_use", "toolCall", "tool-call"].includes((part as { type?: string }).type ?? ""),
+  );
+  for (const part of message.content) {
+    if (part.type === "thinking") thinkingParts.push(part.thinking);
+    else if (part.type === "text") textParts.push(part.text);
+  }
+  for (const thinking of thinkingParts) {
+    log.logThinking(context.logCtx, thinking);
+    context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
+    context.queue.enqueue(
+      () => context.responder.respondDiagnostic(`_${thinking}_`),
+      "thinking diagnostic",
+    );
+  }
+
+  const text = textParts.join("\n");
+  if (!text.trim() || hasToolCall || context.runState.finalResponseHandledByTool) return;
+  const finalText = appendTriggerAttribution(
+    formatResponseWithToolProgress(text, context.runState),
+    context.runState.triggerAttribution,
+  );
+  log.logResponse(context.logCtx, text);
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event: { kind: "responseFinal", text: finalText },
+  });
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event: { kind: "turnEnd" },
+  });
+  // Subagent dashboard finalization must preserve "dashboard, blank line, answer".
+  if (context.runState.completedSubagentProgress.length > 0) return;
+  if (context.responder.finishResponse) {
+    context.queue.enqueue(async () => {
+      await context.responder.finishResponse?.(finalText);
+    }, "response finish");
+  } else {
+    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
+  }
+}
+
+function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext): void {
+  if (event.message.role !== "assistant") return;
+  const message = event.message;
+  if (message.stopReason) {
+    context.runState.stopReason = message.stopReason;
+    // The settling message clears any stale error left by a recovered retry.
+    context.runState.errorMessage = message.errorMessage;
+  }
+  recordAssistantUsage(message, context);
+  presentAssistantMessage(message, context);
+}
+
+function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventContext): void {
+  if (event.type === "compaction_start") {
+    const text = "_Compacting context..._";
+    log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
+    sendAgentEvent({
+      sessionId: context.agentEventSessionId,
+      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+      event: { kind: "diagnostic", text },
+    });
+    context.queue.enqueue(() => context.responder.respond(text), "compaction start");
+    return;
+  }
+  if (event.type === "compaction_end") {
+    if (event.result) {
+      log.logInfo(`Auto-compaction complete: ${event.result.tokensBefore} tokens compacted`);
+    } else if (event.aborted) {
+      log.logInfo("Auto-compaction aborted");
+    }
+    return;
+  }
+  if (event.type === "auto_retry_start") {
+    log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
+    sendAgentEvent({
+      sessionId: context.agentEventSessionId,
+      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+      event: { kind: "sessionStart" },
+    });
+    const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
+    sendAgentEvent({
+      sessionId: context.agentEventSessionId,
+      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+      event: { kind: "diagnostic", text },
+    });
+    context.queue.enqueue(() => context.responder.respond(text), "retry");
+    return;
+  }
+
+  log.logWarning(
+    "Run stopped by budget circuit breaker",
+    `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
+  );
+  const text = `_Stopped: run budget exceeded (${event.reason})_`;
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event: { kind: "diagnostic", text },
+  });
+  context.queue.enqueue(
+    () => context.responder.respondDiagnostic(text, { style: "error" }),
+    "budget exceeded",
+  );
+}
+
+function handlePresenterEvent(event: HarnessEvent, context: PresenterEventContext): void {
+  switch (event.type) {
+    case "tool_execution_start":
+      handleToolStart(event, context);
+      return;
+    case "tool_execution_update":
+      handleToolUpdate(event, context);
+      return;
+    case "tool_execution_end":
+      handleToolEnd(event, context);
+      return;
+    case "message_start":
+      handleMessageStart(event, context);
+      return;
+    case "message_update":
+      handleMessageUpdate(event, context);
+      return;
+    case "message_end":
+      handleMessageEnd(event, context);
+      return;
+    case "compaction_start":
+    case "compaction_end":
+    case "auto_retry_start":
+    case "budget_exceeded":
+      handleLifecycleEvent(event, context);
+      return;
+    default:
+      return;
+  }
+}
+
 export function attachSessionEventHandlers(params: {
   session: MikanAgentSession;
   runState: RunnerSessionState;
@@ -465,327 +821,21 @@ export function attachSessionEventHandlers(params: {
   agentConfig: ReturnType<typeof resolveConversationSettings>;
 }): void {
   const { session, runState, model, agentConfig } = params;
-  session.subscribe(async (event) => {
+  session.subscribe((event) => {
     if (!runState.responder || !runState.logCtx || !runState.queue) return;
-
-    const { responder, logCtx, queue, pendingTools } = runState;
-    const baseAttrs = { channel_id: logCtx.conversationId, session_id: logCtx.sessionId };
-    const agentEventSessionId = logCtx.sessionId ?? logCtx.conversationId;
-
-    if (event.type === "tool_execution_start") {
-      const args = (event.args ?? {}) as { label?: string };
-      const label = args.label || event.toolName;
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: {
-          kind: "toolStart",
-          toolId: event.toolCallId,
-          toolName: event.toolName,
-          input: { label },
-        },
-      });
-
-      pendingTools.set(event.toolCallId, {
-        toolName: event.toolName,
-        args: event.args,
-        startTime: Date.now(),
-      });
-      runState.toolProgress.set(event.toolCallId, {
-        label: extractToolLabel(event.toolName, event.args),
-        status: "running",
-      });
-      if (event.toolName === "subagent") {
-        runState.subagentToolCalls.add(event.toolCallId);
-      } else {
-        queue.enqueue(
-          () => replaceResponseWithToolProgress(responder, runState),
-          "tool progress update",
-        );
-      }
-      addLifecycleBreadcrumb("agent.tool.started", {
-        tool: event.toolName,
-        ...baseAttrs,
-      });
-
-      log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
-      return;
-    }
-
-    if (event.type === "tool_execution_update") {
-      const subagentProgress = extractSubagentProgress(event.partialResult);
-      if (subagentProgress) {
-        runState.subagentProgress.set(event.toolCallId, subagentProgress);
-        runState.subagentToolCalls.add(event.toolCallId);
-        runState.suppressResponseDeltas = true;
-        scheduleToolProgressUpdate(responder, runState);
-      }
-      return;
-    }
-
-    if (event.type === "tool_execution_end") {
-      const resultStr = extractToolResultText(event.result);
-      const pending = pendingTools.get(event.toolCallId);
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "toolEnd", toolId: event.toolCallId },
-      });
-      const progress = runState.toolProgress.get(event.toolCallId);
-      if (progress) progress.status = event.isError ? "error" : "done";
-      const subagentProgress = runState.subagentProgress.get(event.toolCallId);
-      if (subagentProgress) {
-        runState.subagentProgress.set(
-          event.toolCallId,
-          settleSubagentProgress(subagentProgress, event.isError),
-        );
-      }
-      flushToolProgressUpdate(responder, runState);
-      const completedProgress = runState.subagentProgress.get(event.toolCallId);
-      if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
-      runState.subagentProgress.delete(event.toolCallId);
-      pendingTools.delete(event.toolCallId);
-      const durationMs = pending ? Date.now() - pending.startTime : 0;
-
-      Sentry.metrics.count("agent.tool.calls", 1, {
-        attributes: metricAttributes({
-          tool: event.toolName,
-          error: String(event.isError),
-          ...baseAttrs,
-        }),
-      });
-      Sentry.metrics.distribution("agent.tool.duration", durationMs, {
-        unit: "millisecond",
-        attributes: metricAttributes({
-          tool: event.toolName,
-          ...baseAttrs,
-        }),
-      });
-      addLifecycleBreadcrumb("agent.tool.completed", {
-        tool: event.toolName,
-        error: event.isError,
-        duration_ms: durationMs,
-        ...baseAttrs,
-      });
-
-      if (event.isError) {
-        log.logToolError(logCtx, event.toolName, durationMs, resultStr);
-      } else {
-        log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
-        if (event.toolName === "slack_blockkit") {
-          runState.finalResponseHandledByTool = true;
-        }
-      }
-
-      return;
-    }
-
-    if (event.type === "message_start") {
-      if (event.message.role === "assistant") {
-        runState.llmCallCount += 1;
-        sendAgentEvent({
-          sessionId: agentEventSessionId,
-          actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-          event: { kind: "sessionStart" },
-        });
-        addLifecycleBreadcrumb("agent.llm.call.started", {
-          call_index: runState.llmCallCount,
-          provider: model.provider,
-          model: agentConfig.model,
-          ...baseAttrs,
-        });
-        log.logResponseStart(logCtx);
-      }
-      return;
-    }
-
-    if (event.type === "message_update") {
-      const assistantMessageEvent = (
-        event as {
-          assistantMessageEvent?: { type?: string; delta?: string };
-        }
-      ).assistantMessageEvent;
-      if (assistantMessageEvent?.type === "text_delta" && assistantMessageEvent.delta) {
-        sendAgentEvent({
-          sessionId: agentEventSessionId,
-          actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-          event: { kind: "responseDelta", delta: assistantMessageEvent.delta },
-        });
-        if (responder.appendResponseDelta && !runState.suppressResponseDeltas) {
-          queue.enqueue(async () => {
-            await responder.appendResponseDelta?.(assistantMessageEvent.delta ?? "");
-          }, "response delta");
-        }
-      }
-      return;
-    }
-
-    if (event.type === "message_end") {
-      if (event.message.role === "assistant") {
-        const assistantMsg = event.message;
-
-        if (assistantMsg.stopReason) {
-          runState.stopReason = assistantMsg.stopReason;
-          // The settling message is the authority for both fields: a retry
-          // that recovered must clear the earlier attempt's error, or the
-          // run would report success and a stale errorMessage together.
-          runState.errorMessage = assistantMsg.errorMessage;
-        }
-
-        if (assistantMsg.usage) {
-          runState.totalUsage.input += assistantMsg.usage.input;
-          runState.totalUsage.output += assistantMsg.usage.output;
-          runState.totalUsage.cacheRead += assistantMsg.usage.cacheRead;
-          runState.totalUsage.cacheWrite += assistantMsg.usage.cacheWrite;
-          runState.totalUsage.cost.input += assistantMsg.usage.cost.input;
-          runState.totalUsage.cost.output += assistantMsg.usage.cost.output;
-          runState.totalUsage.cost.cacheRead += assistantMsg.usage.cost.cacheRead;
-          runState.totalUsage.cost.cacheWrite += assistantMsg.usage.cost.cacheWrite;
-          runState.totalUsage.cost.total += assistantMsg.usage.cost.total;
-
-          const llmAttributes = metricAttributes({
-            provider: model.provider,
-            model: agentConfig.model,
-            ...baseAttrs,
-            stop_reason: assistantMsg.stopReason,
-            error: Boolean(assistantMsg.errorMessage),
-          });
-          Sentry.metrics.count("agent.llm.calls", 1, { attributes: llmAttributes });
-          Sentry.metrics.distribution("agent.llm.tokens_in", assistantMsg.usage.input, {
-            attributes: llmAttributes,
-          });
-          Sentry.metrics.distribution("agent.llm.tokens_out", assistantMsg.usage.output, {
-            attributes: llmAttributes,
-          });
-          if (assistantMsg.usage.cacheRead > 0) {
-            Sentry.metrics.distribution("agent.llm.cache_read", assistantMsg.usage.cacheRead, {
-              attributes: llmAttributes,
-            });
-          }
-          if (assistantMsg.usage.cacheWrite > 0) {
-            Sentry.metrics.distribution("agent.llm.cache_write", assistantMsg.usage.cacheWrite, {
-              attributes: llmAttributes,
-            });
-          }
-          Sentry.metrics.distribution("agent.llm.cost_per_turn", assistantMsg.usage.cost.total, {
-            attributes: llmAttributes,
-          });
-          addLifecycleBreadcrumb("agent.llm.call.completed", {
-            call_index: runState.llmCallCount,
-            provider: model.provider,
-            model: agentConfig.model,
-            stop_reason: assistantMsg.stopReason,
-            error: Boolean(assistantMsg.errorMessage),
-            input_tokens: assistantMsg.usage.input,
-            output_tokens: assistantMsg.usage.output,
-            cost_total_usd: assistantMsg.usage.cost.total,
-          });
-        }
-
-        const thinkingParts: string[] = [];
-        const textParts: string[] = [];
-        const hasToolCall = assistantMsg.content.some((part) =>
-          ["tool_use", "toolCall", "tool-call"].includes((part as { type?: string }).type ?? ""),
-        );
-        for (const part of assistantMsg.content) {
-          if (part.type === "thinking") {
-            thinkingParts.push(part.thinking);
-          } else if (part.type === "text") {
-            textParts.push(part.text);
-          }
-        }
-
-        const text = textParts.join("\n");
-
-        for (const thinking of thinkingParts) {
-          log.logThinking(logCtx, thinking);
-          queue.enqueue(() => responder.respond(`_${thinking}_`), "thinking main");
-          queue.enqueue(() => responder.respondDiagnostic(`_${thinking}_`), "thinking diagnostic");
-        }
-
-        if (text.trim() && !hasToolCall) {
-          if (runState.finalResponseHandledByTool) return;
-          const finalText = appendTriggerAttribution(
-            formatResponseWithToolProgress(text, runState),
-            runState.triggerAttribution,
-          );
-          log.logResponse(logCtx, text);
-          sendAgentEvent({
-            sessionId: agentEventSessionId,
-            actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-            event: { kind: "responseFinal", text: finalText },
-          });
-          sendAgentEvent({
-            sessionId: agentEventSessionId,
-            actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-            event: { kind: "turnEnd" },
-          });
-          // A run that produced a subagent dashboard finalizes through it:
-          // finalizeRunResponse renders "dashboard, blank line, answer", and a
-          // finish here would first overwrite the dashboard with the bare
-          // answer on every platform.
-          if (runState.completedSubagentProgress.length > 0) return;
-          if (responder.finishResponse) {
-            queue.enqueue(async () => {
-              await responder.finishResponse?.(finalText);
-            }, "response finish");
-          } else {
-            queue.enqueue(() => responder.respond(finalText), "response main");
-          }
-        }
-      }
-      return;
-    }
-
-    if (event.type === "compaction_start") {
-      const text = "_Compacting context..._";
-      log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "diagnostic", text },
-      });
-      queue.enqueue(() => responder.respond(text), "compaction start");
-      return;
-    }
-
-    if (event.type === "compaction_end") {
-      if (event.result) {
-        log.logInfo(`Auto-compaction complete: ${event.result.tokensBefore} tokens compacted`);
-      } else if (event.aborted) {
-        log.logInfo("Auto-compaction aborted");
-      }
-      return;
-    }
-
-    if (event.type === "auto_retry_start") {
-      log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "sessionStart" },
-      });
-      const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "diagnostic", text },
-      });
-      queue.enqueue(() => responder.respond(text), "retry");
-    }
-
-    if (event.type === "budget_exceeded") {
-      log.logWarning(
-        "Run stopped by budget circuit breaker",
-        `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
-      );
-      const text = `_Stopped: run budget exceeded (${event.reason})_`;
-      sendAgentEvent({
-        sessionId: agentEventSessionId,
-        actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-        event: { kind: "diagnostic", text },
-      });
-      queue.enqueue(() => responder.respondDiagnostic(text, { style: "error" }), "budget exceeded");
-    }
+    handlePresenterEvent(event, {
+      runState,
+      responder: runState.responder,
+      logCtx: runState.logCtx,
+      queue: runState.queue,
+      pendingTools: runState.pendingTools,
+      baseAttrs: {
+        channel_id: runState.logCtx.conversationId,
+        session_id: runState.logCtx.sessionId,
+      },
+      agentEventSessionId: runState.logCtx.sessionId ?? runState.logCtx.conversationId,
+      model,
+      agentConfig,
+    });
   });
 }

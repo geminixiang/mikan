@@ -10,9 +10,13 @@ import {
 } from "../utils/file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
-export type { ResolvedSessionScope, ThreadRootMessage } from "./types.js";
-export type { MikanSessionHeader } from "./types.js";
-import type { MikanSessionHeader } from "./types.js";
+export type {
+  MikanSessionHeader,
+  ParentSessionRef,
+  ResolvedSessionScope,
+  ThreadRootMessage,
+} from "./types.js";
+import type { MikanSessionHeader, ParentSessionRef } from "./types.js";
 
 export function isPlatformHistorySession(sessionFile: string): boolean {
   try {
@@ -148,11 +152,6 @@ function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {
 /**
  * Creates or overwrites a fixed-path session file with a valid session header.
  */
-export interface ParentSessionRef {
-  path: string;
-  id: string;
-}
-
 export function createManagedSessionFileAtPath(
   sessionFile: string,
   cwd: string,

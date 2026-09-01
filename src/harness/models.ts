@@ -24,7 +24,6 @@
  * }
  * ```
  */
-import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -44,6 +43,7 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import { readJsonFileIfExists } from "../utils/file-guards.js";
 import type { CreateMikanModelsOptions } from "./types.js";
 
 export type { CreateMikanModelsOptions } from "./types.js";
@@ -89,7 +89,7 @@ interface CustomProviderConfig {
 }
 
 interface ModelsJsonConfig {
-  providers: Record<string, CustomProviderConfig>;
+  providers?: Record<string, CustomProviderConfig>;
 }
 
 /** Default location of mikan's models.json. */
@@ -97,13 +97,12 @@ export function defaultModelsJsonPath(): string {
   return join(homedir(), ".mikan", "models.json");
 }
 
-function parseModelsJson(path: string): ModelsJsonConfig | undefined {
-  const parsed: unknown = JSON.parse(readFileSync(path, "utf-8"));
+function isModelsJsonConfig(parsed: unknown): parsed is ModelsJsonConfig {
   if (!parsed || typeof parsed !== "object") {
     throw new Error("models.json must be a JSON object");
   }
   const providers = (parsed as { providers?: unknown }).providers;
-  if (providers === undefined) return undefined;
+  if (providers === undefined) return true;
   if (!providers || typeof providers !== "object" || Array.isArray(providers)) {
     throw new Error('models.json "providers" must be an object');
   }
@@ -129,7 +128,7 @@ function parseModelsJson(path: string): ModelsJsonConfig | undefined {
       }
     }
   }
-  return parsed as ModelsJsonConfig;
+  return true;
 }
 
 function envVarNameFor(providerName: string): string {
@@ -146,9 +145,12 @@ function applyModelsJson(
   models: ReturnType<typeof builtinModels>,
   modelsJsonPath: string,
 ): string | undefined {
-  if (!existsSync(modelsJsonPath)) return undefined;
   try {
-    const config = parseModelsJson(modelsJsonPath);
+    const config = readJsonFileIfExists(
+      modelsJsonPath,
+      isModelsJsonConfig,
+      (detail) => `models.json is invalid: ${detail}`,
+    );
     for (const [providerName, providerConfig] of Object.entries(config?.providers ?? {})) {
       if (providerConfig.models && providerConfig.models.length > 0) {
         models.setProvider(buildCustomProvider(providerName, providerConfig));

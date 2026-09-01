@@ -223,17 +223,15 @@ describe("system prompt memory guidance", () => {
     const office = createWorkspace({ root: workspaceDir, stateDir }).office(
       createOfficeAddress("slack", "C123"),
     );
-    const prompt = buildSystemPrompt(
-      workspaceDir,
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
       office,
-      "shared",
-      "U1",
-      "(no memory)",
-      { type: "container", container: "c1" },
-      PLATFORM,
-      [],
+      memory: "(no memory)",
+      sandboxConfig: { type: "container", container: "c1" },
+      platform: PLATFORM,
+      skills: [],
       projection,
-    );
+    });
 
     expect(prompt).toContain("Write important shared knowledge to");
     expect(prompt).not.toContain("mounted read-only");
@@ -244,17 +242,15 @@ describe("system prompt memory guidance", () => {
     const office = createWorkspace({ root: workspaceDir, stateDir }).office(
       createOfficeAddress("slack", "C123"),
     );
-    const prompt = buildSystemPrompt(
-      workspaceDir,
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
       office,
-      "shared",
-      "U1",
-      "(no memory)",
-      { type: "container", container: "c1" },
-      PLATFORM,
-      [],
+      memory: "(no memory)",
+      sandboxConfig: { type: "container", container: "c1" },
+      platform: PLATFORM,
+      skills: [],
       projection,
-    );
+    });
 
     expect(prompt).toContain("mounted read-only for this office (private visibility)");
     expect(prompt).toContain("writes to it are rejected");
@@ -266,17 +262,15 @@ describe("system prompt memory guidance", () => {
     const office = createWorkspace({ root: workspaceDir, stateDir }).office(
       createOfficeAddress("slack", "C123"),
     );
-    const prompt = buildSystemPrompt(
-      workspaceDir,
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
       office,
-      "shared",
-      "U1",
-      "(no memory)",
-      { type: "container", container: "c1" },
-      PLATFORM,
-      [],
+      memory: "(no memory)",
+      sandboxConfig: { type: "container", container: "c1" },
+      platform: PLATFORM,
+      skills: [],
       projection,
-    );
+    });
 
     expect(prompt).toContain("compact, revisable orientation anchor");
     expect(prompt).toContain("transcript or final truth");

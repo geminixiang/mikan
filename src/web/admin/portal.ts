@@ -129,138 +129,103 @@ async function routeApiRequest(
   services: AdminServices,
 ): Promise<void> {
   if (req.method === "GET") {
-    const token = services.adminTokenStore.peek(url.searchParams.get("token") ?? "");
-    if (!token) {
-      jsonRes(res, 403, { error: "Unauthorized" });
-      return;
-    }
-    if (url.pathname === "/admin/api/conversations") {
-      serveConversationsList(res, services);
-      return;
-    }
-    if (url.pathname === "/admin/api/session-usage") {
-      await serveSessionUsage(res, services);
-      return;
-    }
-    if (url.pathname === "/admin/api/conversation-usage") {
-      await serveConversationUsage(res, url, services);
-      return;
-    }
-    if (url.pathname === "/admin/api/conversation-state") {
-      serveConversationState(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/settings/global") {
-      serveGlobalSettings(res);
-      return;
-    }
-    if (url.pathname === "/admin/api/models") {
-      void serveModelsList(res);
-      return;
-    }
-    if (url.pathname === "/admin/api/workspace/tree") {
-      serveWorkspaceTree(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/workspace/file") {
-      serveWorkspaceFile(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/skills") {
-      serveSkillsList(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/skills/file") {
-      serveSkillFile(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/packages") {
-      await servePackagesList(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/mcp-servers") {
-      serveMcpServersList(res, url, services, token);
-      return;
-    }
-    if (url.pathname === "/admin/api/events") {
-      await serveEventsList(res, services);
-      return;
-    }
-    if (url.pathname === "/admin/api/conversations/events") {
-      await serveConversationEventsList(res, url, services, token);
-      return;
-    }
-    jsonRes(res, 404, { error: "Not found" });
+    await routeGetApiRequest(res, url, services);
     return;
   }
-
   if (req.method !== "POST") {
     jsonRes(res, 405, { error: "Method not allowed" });
     return;
   }
+  await routePostApiRequest(req, res, url, services);
+}
 
-  const body = await readJsonBody(req, res, 32 * 1024);
-  if (!body) return;
-
-  const rawToken = typeof body.token === "string" ? body.token : "";
-  const token = services.adminTokenStore.peek(rawToken);
+async function routeGetApiRequest(
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+): Promise<void> {
+  const token = services.adminTokenStore.peek(url.searchParams.get("token") ?? "");
   if (!token) {
     jsonRes(res, 403, { error: "Unauthorized" });
     return;
   }
-  if (url.pathname === "/admin/api/conversations/model") {
-    serveConversationModelUpdate(res, body, services, token);
+  switch (url.pathname) {
+    case "/admin/api/conversations":
+      return serveConversationsList(res, services);
+    case "/admin/api/session-usage":
+      return serveSessionUsage(res, services);
+    case "/admin/api/conversation-usage":
+      return serveConversationUsage(res, url, services);
+    case "/admin/api/conversation-state":
+      return serveConversationState(res, url, services, token);
+    case "/admin/api/settings/global":
+      return serveGlobalSettings(res);
+    case "/admin/api/models":
+      return serveModelsList(res);
+    case "/admin/api/workspace/tree":
+      return serveWorkspaceTree(res, url, services, token);
+    case "/admin/api/workspace/file":
+      return serveWorkspaceFile(res, url, services, token);
+    case "/admin/api/skills":
+      return serveSkillsList(res, url, services, token);
+    case "/admin/api/skills/file":
+      return serveSkillFile(res, url, services, token);
+    case "/admin/api/packages":
+      return servePackagesList(res, url, services, token);
+    case "/admin/api/mcp-servers":
+      return serveMcpServersList(res, url, services, token);
+    case "/admin/api/events":
+      return serveEventsList(res, services);
+    case "/admin/api/conversations/events":
+      return serveConversationEventsList(res, url, services, token);
+    default:
+      jsonRes(res, 404, { error: "Not found" });
+  }
+}
+
+async function routePostApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  services: AdminServices,
+): Promise<void> {
+  const body = await readJsonBody(req, res, 32 * 1024);
+  if (!body) return;
+  const token = services.adminTokenStore.peek(typeof body.token === "string" ? body.token : "");
+  if (!token) {
+    jsonRes(res, 403, { error: "Unauthorized" });
     return;
   }
-  if (url.pathname === "/admin/api/conversations/sandbox") {
-    serveConversationSandboxUpdate(res, body, services, token);
-    return;
+  switch (url.pathname) {
+    case "/admin/api/conversations/model":
+      return serveConversationModelUpdate(res, body, services, token);
+    case "/admin/api/conversations/sandbox":
+      return serveConversationSandboxUpdate(res, body, services, token);
+    case "/admin/api/conversations/auto-reply":
+      return serveConversationAutoReplyUpdate(res, body, services, token);
+    case "/admin/api/conversations/slack":
+      return serveConversationSlackUpdate(res, body, services, token);
+    case "/admin/api/conversations/session-link":
+      return serveConversationSessionLink(res, body, services, token);
+    case "/admin/api/conversations/login-link":
+      return serveConversationLoginLink(res, body, services, token);
+    case "/admin/api/conversations/events/delete":
+      return serveConversationEventDelete(res, body, services, token);
+    case "/admin/api/mcp-servers/mutate":
+      return serveMcpServerMutation(res, body, services, token);
+    case "/admin/api/packages/mutate":
+      return servePackageMutation(res, body, services, token);
+    case "/admin/api/settings/model":
+      return serveGlobalModelUpdate(res, body, services);
+    case "/admin/api/settings/workspace":
+      return serveGlobalWorkspaceUpdate(res, body, services);
+    case "/admin/api/settings/sandbox":
+      return serveGlobalSandboxUpdate(res, body, services);
+    case "/admin/api/settings/slack":
+      return serveGlobalSlackUpdate(res, body, services);
+    default:
+      jsonRes(res, 404, { error: "Not found" });
   }
-  if (url.pathname === "/admin/api/conversations/auto-reply") {
-    serveConversationAutoReplyUpdate(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/conversations/slack") {
-    serveConversationSlackUpdate(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/conversations/session-link") {
-    serveConversationSessionLink(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/conversations/login-link") {
-    serveConversationLoginLink(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/conversations/events/delete") {
-    await serveConversationEventDelete(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/mcp-servers/mutate") {
-    serveMcpServerMutation(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/packages/mutate") {
-    servePackageMutation(res, body, services, token);
-    return;
-  }
-  if (url.pathname === "/admin/api/settings/model") {
-    serveGlobalModelUpdate(res, body, services);
-    return;
-  }
-  if (url.pathname === "/admin/api/settings/workspace") {
-    serveGlobalWorkspaceUpdate(res, body, services);
-    return;
-  }
-  if (url.pathname === "/admin/api/settings/sandbox") {
-    serveGlobalSandboxUpdate(res, body, services);
-    return;
-  }
-  if (url.pathname === "/admin/api/settings/slack") {
-    serveGlobalSlackUpdate(res, body, services);
-    return;
-  }
-  jsonRes(res, 404, { error: "Not found" });
 }
 
 // ── Scope helpers ──────────────────────────────────────────────────────────────
@@ -970,14 +935,14 @@ function serveConversationSessionLink(
   }
 
   try {
-    const { token: viewToken } = services.sessionViewTokenStore.create(
-      token.platform,
-      token.platformUserId,
-      scope.conversationId,
-      scope.conversationId,
+    const { token: viewToken } = services.sessionViewTokenStore.create({
+      platform: token.platform,
+      platformUserId: token.platformUserId,
+      conversationId: scope.conversationId,
+      sessionKey: scope.conversationId,
       sessionFile,
-      token.platformUserName,
-    );
+      platformUserName: token.platformUserName,
+    });
     const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;
     jsonRes(res, 200, { ok: true, url });
   } catch (err) {
@@ -1840,9 +1805,7 @@ const esc = escapeHtml;
 
 // ── HTML ───────────────────────────────────────────────────────────────────────
 
-function renderAdminPage(token: AdminToken): string {
-  const userLabel = token.platformUserName ?? token.platformUserId;
-  const body = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
+const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
       <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
       <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Global</button>
     </nav>
@@ -2049,12 +2012,7 @@ function renderAdminPage(token: AdminToken): string {
       </section>
     </div>`;
 
-  const script = `
-    const adminToken = ${JSON.stringify(token.token)};
-    // Conversation ids never contain ":" (session-key grammar), so
-    // "platform:id" is a safe composite scope key for the UI.
-    const defaultConversationKey = ${JSON.stringify(`${token.platform}:${token.conversationId}`)};
-    let activeConversationKey = defaultConversationKey;
+const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     function scopeOf(key) {
       const sep = key.indexOf(':');
       return { platform: key.slice(0, sep), conversationId: key.slice(sep + 1) };
@@ -3160,12 +3118,21 @@ function renderAdminPage(token: AdminToken): string {
     });
   `;
 
+function renderAdminPage(token: AdminToken): string {
+  const userLabel = token.platformUserName ?? token.platformUserId;
+  const script = `
+    const adminToken = ${JSON.stringify(token.token)};
+    // Conversation ids never contain ":" (session-key grammar), so
+    // "platform:id" is a safe composite scope key for the UI.
+    const defaultConversationKey = ${JSON.stringify(`${token.platform}:${token.conversationId}`)};
+${adminViewScript}`;
+
   return renderPortalShell({
     activeView: "admin",
     pageTitle: "Admin",
     identity: { primary: token.platform, secondary: userLabel },
     conversationSwitcher: { currentId: token.conversationId },
-    body,
+    body: adminViewBody,
     extraStyles: adminViewStyles,
     inlineScript: script,
   });

@@ -11,6 +11,7 @@ export type {
   ConversationContext,
   ConversationEvent,
   MessagingEventHandler,
+  HandleNewCommandOptions,
   ConversationMessage,
   ConversationResponder,
   ChatToolResult,

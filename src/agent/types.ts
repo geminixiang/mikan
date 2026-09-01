@@ -1,12 +1,24 @@
 import type { OfficeAddress } from "../types.js";
-import type { MikanAgentSession } from "../harness/index.js";
+import type { MikanAgentSession, MikanSkill } from "../harness/index.js";
 import { type Api, type ImageContent, type Model } from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
 import type { PlatformTrustModel } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";
 import type { ResolvedPackages } from "../packages/types.js";
-import { type Executor, type RuntimePathContext } from "../sandbox/index.js";
+import { type Executor, type RuntimePathContext, type SandboxConfig } from "../sandbox/index.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
+import type { Office } from "../office/index.js";
+
+export interface BuildSystemPromptOptions {
+  workspacePath: string;
+  office: Office;
+  memory: string;
+  sandboxConfig: SandboxConfig;
+  platform: MessagingInfo;
+  skills: MikanSkill[];
+  projection: WorkspaceProjection;
+  skippedSkillLinks?: string[];
+}
 
 export interface RunnerSessionState {
   responder: ConversationResponder | null;

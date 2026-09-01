@@ -1,11 +1,18 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { MessagingBot, ConversationContext, OfficeAddress, PlatformName } from "../adapter.js";
+import type {
+  ConversationContext,
+  HandleNewCommandOptions,
+  MessagingBot,
+  OfficeAddress,
+  PlatformName,
+} from "../adapter.js";
 import type { Workspace } from "../office/index.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { SandboxResourceController } from "../types.js";
 import type { VaultManager } from "../vault/index.js";
+import type { SessionViewTokenCreateOptions } from "../web/session-view/types.js";
 
 interface CommandArgSpec {
   name: string;
@@ -68,14 +75,7 @@ export interface LinkTokenStoreLike {
 }
 
 export interface SessionViewTokenStoreLike {
-  create(
-    platform: PlatformName,
-    platformUserId: string,
-    conversationId: string,
-    sessionKey: string,
-    sessionFile: string,
-    platformUserName?: string,
-  ): { token: string };
+  create(options: SessionViewTokenCreateOptions): { token: string };
 }
 
 export interface AdminTokenStoreLike {
@@ -88,14 +88,7 @@ export interface AdminTokenStoreLike {
 }
 
 interface CommandRuntimeBridge {
-  handleNewCommand(
-    sessionKey: string,
-    conversationId: string,
-    bot: MessagingBot,
-    message: ConversationContext["message"],
-    responder: ConversationContext["responder"],
-    platform: ConversationContext["platform"],
-  ): Promise<void>;
+  handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
   refreshConversationEnvironment(address: OfficeAddress): boolean;
 }

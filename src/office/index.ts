@@ -28,8 +28,8 @@ import type {
   OfficeRegistryState,
   PlatformName,
 } from "../types.js";
-import type { Office, Workspace } from "./types.js";
-export type { Office, Workspace } from "./types.js";
+import type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
+export type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
 import { parseGithubConversationId } from "../adapters/github/ids.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
@@ -968,25 +968,6 @@ function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
 }
 
 // ── Boot-time legacy migration ────────────────────────────────────────────────
-export interface OfficeMigrationRunSummary {
-  /** Raw ids whose directories moved to the office-key layout this run. */
-  migrated: string[];
-  /** Raw ids whose interrupted moves were completed from the journal. */
-  recovered: string[];
-  /** Raw ids that still need an explicit owner (`mikan office claim`). */
-  unowned: string[];
-  /** Raw ids whose records are failed and need operator repair. */
-  failed: string[];
-  /** Raw ids whose conversation vault directories moved to office keys. */
-  vaultKeysMigrated: string[];
-  /** Raw ids whose legacy and office-key vault dirs both exist (manual merge). */
-  vaultConflicts: string[];
-  /** Raw ids whose host state directories moved. */
-  stateDirsMigrated: string[];
-  /** Raw ids whose legacy and office-key state dirs both exist (manual merge). */
-  stateDirConflicts: string[];
-}
-
 /**
  * Move every legacy raw-id office directory under the workspace root to the
  * canonical office-key layout, journaling each move through the office

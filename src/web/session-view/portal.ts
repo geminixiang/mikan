@@ -15,14 +15,18 @@ import {
 } from "../../sessions/store.js";
 import { isPlatformHistorySession } from "../../sessions/store.js";
 import type { SessionHeader } from "../../harness/types.js";
-import type { SessionViewItem, SessionViewRelation, SessionViewModel } from "./types.js";
-export type { SessionViewModel } from "./types.js";
+import type {
+  SessionViewItem,
+  SessionViewRelation,
+  SessionViewModel,
+  SessionViewToken,
+  SessionViewTokenCreateOptions,
+} from "./types.js";
+export type { SessionViewModel, SessionViewToken, SessionViewTokenCreateOptions } from "./types.js";
 import { basename } from "node:path";
 import { InMemoryTokenStore } from "../token-store.js";
-import type { SessionViewToken } from "./types.js";
-export type { SessionViewToken } from "./types.js";
 import MarkdownIt from "markdown-it";
-import type { ConversationResponder, PlatformName } from "../../adapter.js";
+import type { ConversationResponder } from "../../adapter.js";
 import {
   createConversationEvent,
   createConversationMessage,
@@ -43,21 +47,14 @@ import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.j
 const SESSION_VIEW_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionViewToken> {
-  create(
-    platform: PlatformName,
-    platformUserId: string,
-    conversationId: string,
-    sessionKey: string,
-    sessionFile: string,
-    platformUserName?: string,
-  ): SessionViewToken {
+  create(options: SessionViewTokenCreateOptions): SessionViewToken {
     return this.createRecord(SESSION_VIEW_TOKEN_TTL_MS, {
-      platform,
-      platformUserId,
-      ...(platformUserName ? { platformUserName } : {}),
-      conversationId,
-      sessionKey,
-      sessionFile,
+      platform: options.platform,
+      platformUserId: options.platformUserId,
+      ...(options.platformUserName ? { platformUserName: options.platformUserName } : {}),
+      conversationId: options.conversationId,
+      sessionKey: options.sessionKey,
+      sessionFile: options.sessionFile,
     });
   }
 }
@@ -169,14 +166,14 @@ export async function handleSessionViewRequest(
       "Cache-Control": "no-store",
     });
     res.end(
-      renderSessionPage(
+      renderSessionPage({
         model,
-        entry.token,
-        entry.expiresAt,
+        token: entry.token,
+        expiresAt: entry.expiresAt,
         isRunning,
         displayedSessionKey,
-        entry.conversationId,
-      ),
+        conversationId: entry.conversationId,
+      }),
     );
   } catch (error) {
     log.logWarning(
@@ -297,24 +294,15 @@ function renderTimelineItems(items: SessionViewItem[], token: string): string {
     : `<div class="system-event"><span class="event-dot"></span><span class="event-text">No messages yet — send one to the bot, then refresh.</span></div>`;
 }
 
-function renderSessionPage(
-  model: {
-    title: string;
-    sessionId: string;
-    fileName: string;
-    createdAt: string;
-    updatedAt: string;
-    entryCount: number;
-    items: SessionViewItem[];
-    parent?: SessionViewRelation;
-    threads: SessionViewRelation[];
-  },
-  token: string,
-  expiresAt: number,
-  isRunning: boolean,
-  displayedSessionKey: string,
-  conversationId: string,
-): string {
+function renderSessionPage(options: {
+  model: SessionViewModel;
+  token: string;
+  expiresAt: number;
+  isRunning: boolean;
+  displayedSessionKey: string;
+  conversationId: string;
+}): string {
+  const { model, token, expiresAt, isRunning, displayedSessionKey, conversationId } = options;
   const items = renderTimelineItems(model.items, token);
 
   const relatedSections = model.parent
@@ -646,6 +634,29 @@ async function handleSessionMessageRequest(
     return;
   }
 
+  await dispatchSessionViewMessage({
+    res,
+    interactive,
+    token,
+    text,
+    activeSessionKey,
+    entry,
+    targetSessionFile,
+  });
+}
+
+interface SessionViewMessageDispatch {
+  res: ServerResponse;
+  interactive: SessionViewInteractiveOptions;
+  token: string;
+  text: string;
+  activeSessionKey: string;
+  entry: SessionViewToken;
+  targetSessionFile: string;
+}
+
+async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Promise<void> {
+  const { res, interactive, token, text, activeSessionKey, entry, targetSessionFile } = input;
   const bot = interactive.botsByPlatform[entry.platform];
   if (!bot) {
     json(res, 503, { ok: false, error: `No bot configured for ${entry.platform}.` });
@@ -2295,24 +2306,26 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
   }
 }
 
+interface SessionMessagePayload extends Record<string, unknown> {
+  role?: string;
+  content?: unknown;
+  provider?: string;
+  model?: string;
+  toolName?: string;
+  isError?: boolean;
+  command?: string;
+  output?: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  truncated?: boolean;
+  stopReason?: string;
+  errorMessage?: string;
+  customType?: string;
+  summary?: string;
+}
+
 function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
-  const message = entry.message as unknown as Record<string, unknown> & {
-    role?: string;
-    content?: unknown;
-    provider?: string;
-    model?: string;
-    toolName?: string;
-    isError?: boolean;
-    command?: string;
-    output?: string;
-    exitCode?: number;
-    cancelled?: boolean;
-    truncated?: boolean;
-    stopReason?: string;
-    errorMessage?: string;
-    customType?: string;
-    summary?: string;
-  };
+  const message = entry.message as unknown as SessionMessagePayload;
 
   switch (message.role) {
     case "user":

@@ -581,27 +581,219 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
   };
 }
 
+type TerminalSignal = "cancelled" | "timeout";
+
+type PreparedSubagentRun<TOutputSchema extends TSchema | undefined> = {
+  request: SubagentRunRequest<TOutputSchema>;
+  runId: string;
+  startedAt: number;
+  modelSpec: SubagentModelSpec;
+  session: MikanAgentSession;
+  budget: ReturnType<typeof resolveBudget>;
+  invokedTools: Set<string>;
+  task: string;
+};
+
+function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
+  options: RunSubagentOptions<TOutputSchema>,
+  request: SubagentRunRequest<TOutputSchema>,
+  runId: string,
+  startedAt: number,
+): PreparedSubagentRun<TOutputSchema> {
+  const model = request.model
+    ? options.models.resolve(request.model.provider, request.model.id)
+    : options.defaultModel;
+  const invokedTools = new Set<string>();
+  const granted = selectTools(request.tools, options.availableTools);
+  const missingRequiredTools = (request.requiredTools ?? []).filter(
+    (name) => !granted.some((tool) => tool.name === name),
+  );
+  if (missingRequiredTools.length > 0) {
+    throw new Error(`Required subagent tools were not granted: ${missingRequiredTools.join(", ")}`);
+  }
+  const task = formatTask(
+    request.task,
+    request.input,
+    normalizedParentContext(request, options.parentMessages),
+  );
+  const session = new MikanAgentSession({
+    systemPrompt: buildSystemPrompt(
+      request.systemPrompt,
+      request.outputSchema,
+      granted.map((tool) => tool.name),
+    ),
+    model,
+    thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
+    tools: granted.map((tool) => witnessToolUse(tool, invokedTools)),
+    models: options.models,
+    sessionStore: SessionStore.inMemory(options.workspaceDir),
+    settings: { compaction: { enabled: false } },
+  });
+  if (options.onActivity) reportSubagentActivity(session, options.onActivity);
+  return {
+    request,
+    runId,
+    startedAt,
+    modelSpec: { provider: model.provider, id: model.id },
+    session,
+    budget: resolveBudget(request.budget),
+    invokedTools,
+    task,
+  };
+}
+
+function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
+  run: PreparedSubagentRun<TOutputSchema>,
+  terminalSignal: TerminalSignal | undefined,
+  cleanupPending = false,
+): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
+  const { session, request, invokedTools, budget } = run;
+  const stats = session.getLastRunStats();
+  const assistant = finalAssistant(session.messages);
+  const text = assistant ? contentText(assistant.content, "") : "";
+  const base = {
+    ...baseRunResult(run.runId, run.modelSpec, run.startedAt, stats),
+    ...(text ? { text } : {}),
+    ...(cleanupPending ? { cleanupPending: true as const } : {}),
+  };
+
+  if (terminalSignal) {
+    return {
+      ...base,
+      status: terminalSignal,
+      ...(terminalSignal === "timeout"
+        ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
+        : {}),
+    };
+  }
+  if (stats.budgetExceededReason) {
+    return { ...base, status: "budget_exceeded", error: stats.budgetExceededReason };
+  }
+  const unusedRequiredTools = (request.requiredTools ?? []).filter(
+    (name) => !invokedTools.has(name),
+  );
+  if (unusedRequiredTools.length > 0) {
+    return {
+      ...base,
+      status: "failed",
+      error: `Required tool not used: ${unusedRequiredTools.join(", ")}`,
+    };
+  }
+  if (assistant?.stopReason === "error") {
+    return { ...base, status: "failed", error: assistant.errorMessage || "Subagent failed" };
+  }
+  if (!assistant) {
+    return { ...base, status: "failed", error: "Subagent produced no assistant response" };
+  }
+  if (!request.outputSchema) {
+    return text
+      ? { ...base, status: "completed", output: text as SubagentRunOutput<TOutputSchema> }
+      : { ...base, status: "failed", error: "Subagent produced no text output" };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ...base, status: "invalid_output", error: "Subagent output is not valid JSON" };
+  }
+  if (!Value.Check(hydrateSchema(request.outputSchema), parsed)) {
+    return {
+      ...base,
+      status: "invalid_output",
+      error: "Subagent output does not match the requested schema",
+    };
+  }
+  return {
+    ...base,
+    status: "completed",
+    output: parsed as SubagentRunOutput<TOutputSchema>,
+  };
+}
+
+function buildSubagentFailure<TOutputSchema extends TSchema | undefined>(
+  run: PreparedSubagentRun<TOutputSchema>,
+  terminalSignal: TerminalSignal | undefined,
+  err: unknown,
+): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
+  return {
+    ...baseRunResult(run.runId, run.modelSpec, run.startedAt, run.session.getLastRunStats()),
+    status: terminalSignal ?? "failed",
+    error: err instanceof Error ? err.message : String(err),
+  };
+}
+
+async function executeSubagentPrompt<TOutputSchema extends TSchema | undefined>(
+  run: PreparedSubagentRun<TOutputSchema>,
+  abortRequested: Promise<void>,
+  terminalSignal: () => TerminalSignal | undefined,
+): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>> | undefined> {
+  if (terminalSignal()) return undefined;
+  const promptOutcome = subagentRunDepth
+    .run(1, () =>
+      run.session.prompt(run.task, {
+        budget: {
+          maxLlmCalls: run.budget.maxTurns,
+          maxTokens: run.budget.maxTokens,
+          maxCostUsd: run.budget.maxCostUsd,
+        },
+      }),
+    )
+    .then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
+  const winner = await Promise.race([
+    promptOutcome.then((outcome) => ({ type: "settled" as const, outcome })),
+    abortRequested.then(async () => {
+      let graceTimer: NodeJS.Timeout | undefined;
+      const graceExpired = new Promise<"expired">((resolve) => {
+        graceTimer = setTimeout(() => resolve("expired"), SUBAGENT_ABORT_GRACE_MS);
+      });
+      const outcome = await Promise.race([
+        promptOutcome.then((settledOutcome) => ({
+          type: "settled" as const,
+          outcome: settledOutcome,
+        })),
+        graceExpired.then((value) => ({ type: value as "expired" })),
+      ]);
+      if (graceTimer) clearTimeout(graceTimer);
+      return outcome;
+    }),
+  ]);
+  if (winner.type === "expired") {
+    const cleanup = promptOutcome.then((outcome) =>
+      outcome.ok
+        ? buildSubagentResult(run, terminalSignal())
+        : buildSubagentFailure(run, terminalSignal(), outcome.error),
+    );
+    return { result: buildSubagentResult(run, terminalSignal(), true), cleanup };
+  }
+  if (!winner.outcome.ok) throw winner.outcome.error;
+  return undefined;
+}
+
 async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
   const request = resolveProfile(options.request, options);
   const runId = randomUUID();
   const startedAt = Date.now();
-  let modelSpec: SubagentModelSpec = request.model ?? {
+  const initialModelSpec = request.model ?? {
     provider: options.defaultModel.provider,
     id: options.defaultModel.id,
   };
-  let sessionRef: MikanAgentSession | undefined;
-  let terminalSignal: "cancelled" | "timeout" | undefined;
+  let run: PreparedSubagentRun<TOutputSchema> | undefined;
+  let terminalSignal: TerminalSignal | undefined;
   let timeout: NodeJS.Timeout | undefined;
   let notifyAbort: () => void = noop;
   const abortRequested = new Promise<void>((resolve) => {
     notifyAbort = resolve;
   });
-  const abort = (reason: "cancelled" | "timeout") => {
+  const abort = (reason: TerminalSignal) => {
     if (terminalSignal) return;
     terminalSignal = reason;
-    sessionRef?.abort();
+    run?.session.abort();
     notifyAbort();
   };
   const onAbort = () => abort("cancelled");
@@ -610,190 +802,23 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     if ((subagentRunDepth.getStore() ?? 0) >= 1) {
       throw new Error("Nested api.subagent.run calls are not allowed");
     }
-    const model = request.model
-      ? options.models.resolve(request.model.provider, request.model.id)
-      : options.defaultModel;
-    modelSpec = { provider: model.provider, id: model.id };
-    const invokedTools = new Set<string>();
-    const granted = selectTools(request.tools, options.availableTools);
-    const missingRequiredTools = (request.requiredTools ?? []).filter(
-      (name) => !granted.some((tool) => tool.name === name),
-    );
-    if (missingRequiredTools.length > 0) {
-      throw new Error(
-        `Required subagent tools were not granted: ${missingRequiredTools.join(", ")}`,
-      );
-    }
-    const tools = granted.map((tool) => witnessToolUse(tool, invokedTools));
-    const task = formatTask(
-      request.task,
-      request.input,
-      normalizedParentContext(request, options.parentMessages),
-    );
-    const budget = resolveBudget(request.budget);
-    const session = new MikanAgentSession({
-      systemPrompt: buildSystemPrompt(
-        request.systemPrompt,
-        request.outputSchema,
-        granted.map((tool) => tool.name),
-      ),
-      model,
-      thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
-      tools,
-      models: options.models,
-      sessionStore: SessionStore.inMemory(options.workspaceDir),
-      settings: { compaction: { enabled: false } },
-    });
-    sessionRef = session;
-    if (options.onActivity) reportSubagentActivity(session, options.onActivity);
-
+    run = prepareSubagentRun(options, request, runId, startedAt);
     request.signal?.addEventListener("abort", onAbort, { once: true });
     if (request.signal?.aborted) abort("cancelled");
-    timeout = setTimeout(() => abort("timeout"), budget.maxDurationMs);
+    timeout = setTimeout(() => abort("timeout"), run.budget.maxDurationMs);
     timeout.unref();
 
-    const buildResult = (
-      cleanupPending = false,
-    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => {
-      const stats = session.getLastRunStats();
-      const assistant = finalAssistant(session.messages);
-      const text = assistant ? contentText(assistant.content, "") : "";
-      const base = {
-        ...baseRunResult(runId, modelSpec, startedAt, stats),
-        ...(text ? { text } : {}),
-        ...(cleanupPending ? { cleanupPending: true as const } : {}),
-      };
-
-      if (terminalSignal) {
-        return {
-          ...base,
-          status: terminalSignal,
-          ...(terminalSignal === "timeout"
-            ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
-            : {}),
-        };
-      }
-      if (stats.budgetExceededReason) {
-        return {
-          ...base,
-          status: "budget_exceeded",
-          error: stats.budgetExceededReason,
-        };
-      }
-      const unusedRequiredTools = (request.requiredTools ?? []).filter(
-        (name) => !invokedTools.has(name),
-      );
-      if (unusedRequiredTools.length > 0) {
-        return {
-          ...base,
-          status: "failed",
-          error: `Required tool not used: ${unusedRequiredTools.join(", ")}`,
-        };
-      }
-      if (assistant?.stopReason === "error") {
-        return {
-          ...base,
-          status: "failed",
-          error: assistant.errorMessage || "Subagent failed",
-        };
-      }
-      if (!assistant) {
-        return { ...base, status: "failed", error: "Subagent produced no assistant response" };
-      }
-
-      if (request.outputSchema) {
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          return { ...base, status: "invalid_output", error: "Subagent output is not valid JSON" };
-        }
-        if (!Value.Check(hydrateSchema(request.outputSchema), parsed)) {
-          return {
-            ...base,
-            status: "invalid_output",
-            error: "Subagent output does not match the requested schema",
-          };
-        }
-        return {
-          ...base,
-          status: "completed",
-          output: parsed as SubagentRunOutput<TOutputSchema>,
-        };
-      }
-
-      if (!text) {
-        return { ...base, status: "failed", error: "Subagent produced no text output" };
-      }
-      return {
-        ...base,
-        status: "completed",
-        output: text as SubagentRunOutput<TOutputSchema>,
-      };
-    };
-    const buildFailureResult = (
-      err: unknown,
-    ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> => ({
-      ...baseRunResult(runId, modelSpec, startedAt, session.getLastRunStats()),
-      status: terminalSignal ?? "failed",
-      error: err instanceof Error ? err.message : String(err),
-    });
-
-    if (!terminalSignal) {
-      const promptOutcome = subagentRunDepth
-        .run(1, () =>
-          session.prompt(task, {
-            budget: {
-              maxLlmCalls: budget.maxTurns,
-              maxTokens: budget.maxTokens,
-              maxCostUsd: budget.maxCostUsd,
-              // maxDurationMs deliberately not passed down: the hard-deadline
-              // timer above owns wall-clock enforcement (it can also abort a
-              // stalled provider call, which a per-message budget check
-              // cannot). Passing it to both made the terminal status a race
-              // between "timeout" and "budget_exceeded".
-            },
-          }),
-        )
-        .then(
-          () => ({ ok: true as const }),
-          (error: unknown) => ({ ok: false as const, error }),
-        );
-      const winner = await Promise.race([
-        promptOutcome.then((outcome) => ({ type: "settled" as const, outcome })),
-        abortRequested.then(async () => {
-          let graceTimer: NodeJS.Timeout | undefined;
-          const graceExpired = new Promise<"expired">((resolve) => {
-            graceTimer = setTimeout(() => resolve("expired"), SUBAGENT_ABORT_GRACE_MS);
-          });
-          const graceOutcome = await Promise.race([
-            promptOutcome.then((settledOutcome) => ({
-              type: "settled" as const,
-              outcome: settledOutcome,
-            })),
-            graceExpired.then((value) => ({ type: value as "expired" })),
-          ]);
-          if (graceTimer) clearTimeout(graceTimer);
-          return graceOutcome;
-        }),
-      ]);
-      if (winner.type === "expired") {
-        const cleanup = promptOutcome.then((settledOutcome) =>
-          settledOutcome.ok ? buildResult() : buildFailureResult(settledOutcome.error),
-        );
-        return { result: buildResult(true), cleanup };
-      }
-      if (!winner.outcome.ok) throw winner.outcome.error;
-    }
-
-    return { result: buildResult() };
+    const earlyResult = await executeSubagentPrompt(run, abortRequested, () => terminalSignal);
+    return earlyResult ?? { result: buildSubagentResult(run, terminalSignal) };
   } catch (err) {
     return {
-      result: {
-        ...baseRunResult(runId, modelSpec, startedAt, sessionRef?.getLastRunStats()),
-        status: terminalSignal ?? "failed",
-        error: err instanceof Error ? err.message : String(err),
-      },
+      result: run
+        ? buildSubagentFailure(run, terminalSignal, err)
+        : {
+            ...baseRunResult(runId, initialModelSpec, startedAt),
+            status: terminalSignal ?? "failed",
+            error: err instanceof Error ? err.message : String(err),
+          },
     };
   } finally {
     if (timeout) clearTimeout(timeout);

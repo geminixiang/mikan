@@ -302,20 +302,20 @@ export function createLoginRequestHandler(
 
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
       res.end(
-        renderCredentialPage(
-          rawToken,
-          oauthServiceHint ? `${oauthServiceHint.label} OAuth` : "Store Secret",
+        renderCredentialPage({
+          token: rawToken,
+          title: oauthServiceHint ? `${oauthServiceHint.label} OAuth` : "Store Secret",
           defaultMode,
-          "",
-          "Secret value",
-          "sk-...",
-          oauthServiceHint
+          initialEnvKey: "",
+          secretLabel: "Secret value",
+          placeholder: "sk-...",
+          helpText: oauthServiceHint
             ? `Authorize ${oauthServiceHint.label} and store tokens in your vault.`
             : "Set any environment variable key/value pair in your vault.",
           oauthServices,
-          oauthServiceHint?.id,
+          oauthServiceIdHint: oauthServiceHint?.id,
           existingSecrets,
-        ),
+        }),
       );
       return true;
     }
@@ -351,7 +351,7 @@ export function createLoginRequestHandler(
     }
 
     if (req.method === "GET" && url.pathname === "/oauth/callback") {
-      void handleOAuthCallback(
+      void handleOAuthCallback({
         url,
         req,
         linkTokenStore,
@@ -359,7 +359,7 @@ export function createLoginRequestHandler(
         notify,
         oauthStates,
         res,
-      ).catch((err: Error) => {
+      }).catch((err: Error) => {
         log.logWarning("OAuth callback failed", err.message);
         reportUserFacingError(err, {
           domain: "login",
@@ -911,56 +911,8 @@ function renderManualProviderCard(
   </section>`;
 }
 
-function renderCredentialPage(
-  token: string,
-  title: string,
-  defaultMode: LoginCredentialKind,
-  initialEnvKey: string,
-  secretLabel: string,
-  placeholder: string,
-  helpText: string,
-  oauthServices: OAuthService[],
-  oauthServiceIdHint: string | undefined,
-  existingSecrets: ExistingSecretsSummary,
-): string {
-  const oauthOptions = oauthServices
-    .map((service) => {
-      const selected = service.id === oauthServiceIdHint ? ' selected="selected"' : "";
-      return `<option value="${esc(service.id)}"${selected}>${esc(service.label)}</option>`;
-    })
-    .join("\n");
-  const presetCards = SECRET_PRESETS.map(renderPresetProviderCard).join("\n");
-
-  return renderHtmlDocument(
-    "Login",
-    `<section class="card stack">
-  <p class="eyebrow">${PRODUCT_NAME}</p>
-  <h1 class="page-title">${esc(title)}</h1>
-  <p>Your personal sandbox is already provisioned automatically.</p>
-  <p>${esc(helpText)}</p>
-  ${renderSecretsSummary(existingSecrets)}
-  <div class="mode">
-    <label><input type="radio" name="mode" value="api_key" ${defaultMode === "api_key" ? "checked" : ""}> Secrets / API tokens</label>
-    <label><input type="radio" name="mode" value="oauth" ${defaultMode === "oauth" ? "checked" : ""}> OAuth login</label>
-  </div>
-</section>
-
-<div id="api-panel" class="panel">
-  ${presetCards}
-  ${renderManualProviderCard(initialEnvKey, secretLabel, placeholder)}
-</div>
-
-<div id="oauth-panel" class="panel card stack">
-  <label for="oauthService">OAuth service</label>
-  <select id="oauthService" name="oauthService">${oauthOptions}</select>
-  <p class="panel-note">You'll be redirected to the selected service's authorization page.</p>
-</div>
-
-<div>
-  <button id="btn" class="primary-button" onclick="connect()">Continue</button>
-  <div id="result" class="result" aria-live="polite"></div>
-</div>
-  <script>
+const CREDENTIAL_PAGE_TOKEN = "__MIKAN_LOGIN_TOKEN__";
+const CREDENTIAL_PAGE_SCRIPT = `  <script>
     const envKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
     function selectedMode() {
@@ -1044,7 +996,7 @@ function renderCredentialPage(
       const r = await fetch('/api/oauth/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: '${esc(token)}', serviceId }),
+        body: JSON.stringify({ token: '__MIKAN_LOGIN_TOKEN__', serviceId }),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -1066,7 +1018,7 @@ function renderCredentialPage(
       const r = await fetch('/api/link/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: '${esc(token)}', mode: 'api_key', env: payload.env }),
+        body: JSON.stringify({ token: '__MIKAN_LOGIN_TOKEN__', mode: 'api_key', env: payload.env }),
       });
       const data = await r.json();
       if (r.ok) {
@@ -1127,7 +1079,76 @@ function renderCredentialPage(
         resetContinueButton();
       }
     }
-  </script>`,
+  </script>`;
+
+function renderCredentialPageScript(token: string): string {
+  return CREDENTIAL_PAGE_SCRIPT.replaceAll(CREDENTIAL_PAGE_TOKEN, () => esc(token));
+}
+
+interface CredentialPageOptions {
+  token: string;
+  title: string;
+  defaultMode: LoginCredentialKind;
+  initialEnvKey: string;
+  secretLabel: string;
+  placeholder: string;
+  helpText: string;
+  oauthServices: OAuthService[];
+  oauthServiceIdHint: string | undefined;
+  existingSecrets: ExistingSecretsSummary;
+}
+
+function renderCredentialPage(options: CredentialPageOptions): string {
+  const {
+    token,
+    title,
+    defaultMode,
+    initialEnvKey,
+    secretLabel,
+    placeholder,
+    helpText,
+    oauthServices,
+    oauthServiceIdHint,
+    existingSecrets,
+  } = options;
+  const oauthOptions = oauthServices
+    .map((service) => {
+      const selected = service.id === oauthServiceIdHint ? ' selected="selected"' : "";
+      return `<option value="${esc(service.id)}"${selected}>${esc(service.label)}</option>`;
+    })
+    .join("\n");
+  const presetCards = SECRET_PRESETS.map(renderPresetProviderCard).join("\n");
+
+  return renderHtmlDocument(
+    "Login",
+    `<section class="card stack">
+  <p class="eyebrow">${PRODUCT_NAME}</p>
+  <h1 class="page-title">${esc(title)}</h1>
+  <p>Your personal sandbox is already provisioned automatically.</p>
+  <p>${esc(helpText)}</p>
+  ${renderSecretsSummary(existingSecrets)}
+  <div class="mode">
+    <label><input type="radio" name="mode" value="api_key" ${defaultMode === "api_key" ? "checked" : ""}> Secrets / API tokens</label>
+    <label><input type="radio" name="mode" value="oauth" ${defaultMode === "oauth" ? "checked" : ""}> OAuth login</label>
+  </div>
+</section>
+
+<div id="api-panel" class="panel">
+  ${presetCards}
+  ${renderManualProviderCard(initialEnvKey, secretLabel, placeholder)}
+</div>
+
+<div id="oauth-panel" class="panel card stack">
+  <label for="oauthService">OAuth service</label>
+  <select id="oauthService" name="oauthService">${oauthOptions}</select>
+  <p class="panel-note">You'll be redirected to the selected service's authorization page.</p>
+</div>
+
+<div>
+  <button id="btn" class="primary-button" onclick="connect()">Continue</button>
+  <div id="result" class="result" aria-live="polite"></div>
+</div>
+${renderCredentialPageScript(token)}`,
   );
 }
 
@@ -1379,94 +1400,99 @@ async function handleOAuthStart(
   res.end(JSON.stringify({ ok: true, redirectUrl: authorizeUrl.toString() }));
 }
 
-async function handleOAuthCallback(
-  url: URL,
-  req: IncomingMessage,
-  linkTokenStore: InMemoryLinkTokenStore,
-  vaultManager: VaultManager,
-  notify: NotifyFn,
-  oauthStates: Map<string, PendingOAuthState>,
-  res: ServerResponse,
-): Promise<void> {
+interface OAuthCallbackOptions {
+  url: URL;
+  req: IncomingMessage;
+  linkTokenStore: InMemoryLinkTokenStore;
+  vaultManager: VaultManager;
+  notify: NotifyFn;
+  oauthStates: Map<string, PendingOAuthState>;
+  res: ServerResponse;
+}
+
+interface ResolvedOAuthCallback {
+  code: string;
+  codeVerifier: string;
+  service: OAuthService;
+  clientId: string;
+  clientSecret: string;
+  linkToken: LinkToken;
+}
+
+function resolveOAuthCallback(options: OAuthCallbackOptions): ResolvedOAuthCallback | undefined {
+  const { url, oauthStates, linkTokenStore, res } = options;
   const state = url.searchParams.get("state") ?? "";
   const code = url.searchParams.get("code") ?? "";
   const oauthError = url.searchParams.get("error");
 
   // Atomic pop: whatever path we take from here, this state is spent.
-  // Done before any `await` to close the TOCTOU window between the state
-  // lookup and the final delete.
   const pending = oauthStates.get(state);
   if (pending) oauthStates.delete(state);
 
   if (oauthError) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage(`OAuth authorization failed: ${oauthError}`));
-    return;
+    return undefined;
   }
-
   if (!pending || Date.now() > pending.expiresAt) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("OAuth state is invalid or expired. Please run /login again."));
-    return;
+    return undefined;
   }
-
   if (!code) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Missing OAuth authorization code."));
-    return;
+    return undefined;
   }
 
   const service = resolveOAuthService(pending.serviceId);
   if (!service) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Unsupported OAuth service."));
-    return;
+    return undefined;
   }
-
   const clientId = readEnv(service.clientIdEnvKey);
   const clientSecret = readEnv(service.clientSecretEnvKey);
   if (!clientId || !clientSecret) {
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("OAuth service is not configured on server."));
-    return;
+    return undefined;
   }
 
-  // Atomic consume: pairs with the callback being one-shot. Two concurrent
-  // callbacks for the same state would previously both pass `peek` and both
-  // run `exchangeOAuthCode` across the await; only one reaches `consume`.
+  // Atomic consume keeps the callback one-shot across the token exchange await.
   const linkToken = linkTokenStore.consume(pending.linkToken);
   if (!linkToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("Login link is invalid or expired. Please run /login again."));
-    return;
+    return undefined;
   }
+  return { code, codeVerifier: pending.codeVerifier, service, clientId, clientSecret, linkToken };
+}
 
-  const redirectUri = `${requestBaseUrl(req)}/oauth/callback`;
-  const tokenResp = await exchangeOAuthCode(
-    service,
-    code,
-    clientId,
-    clientSecret,
-    redirectUri,
-    pending.codeVerifier,
-  );
+interface StoreOAuthCredentialsOptions {
+  tokenResponse: Record<string, string>;
+  service: OAuthService;
+  clientId: string;
+  clientSecret: string;
+  linkToken: LinkToken;
+  vaultManager: VaultManager;
+  res: ServerResponse;
+}
 
-  const accessToken = tokenResp.access_token?.trim();
-  const refreshToken = tokenResp.refresh_token?.trim();
-
+function storeOAuthCredentials(options: StoreOAuthCredentialsOptions): string[] | undefined {
+  const { tokenResponse, service, clientId, clientSecret, linkToken, vaultManager, res } = options;
+  const accessToken = tokenResponse.access_token?.trim();
+  const refreshToken = tokenResponse.refresh_token?.trim();
   if (!accessToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
     res.end(renderErrorPage("OAuth token exchange did not return an access_token."));
-    return;
+    return undefined;
   }
 
   const updates: Record<string, string> = {};
-  for (const key of service.accessTokenEnvKeys ?? []) {
-    updates[key] = accessToken;
-  }
-  if (refreshToken && service.refreshTokenEnvKey) {
+  for (const key of service.accessTokenEnvKeys ?? []) updates[key] = accessToken;
+  if (refreshToken && service.refreshTokenEnvKey)
     updates[service.refreshTokenEnvKey] = refreshToken;
-  }
 
   const fileOutput = service.fileOutput;
   let mountedPath: string | undefined;
@@ -1479,16 +1505,11 @@ async function handleOAuthCallback(
             "Retry after revoking prior consent or ensure prompt=consent is applied.",
         ),
       );
-      return;
+      return undefined;
     }
-
     mountedPath = fileOutput.targetPath ?? defaultVaultTargetPath(fileOutput.relativePath);
-    if (fileOutput.envKey) {
-      updates[fileOutput.envKey] = mountedPath;
-    }
-    for (const key of fileOutput.additionalEnvKeys ?? []) {
-      updates[key] = mountedPath;
-    }
+    if (fileOutput.envKey) updates[fileOutput.envKey] = mountedPath;
+    for (const key of fileOutput.additionalEnvKeys ?? []) updates[key] = mountedPath;
   }
 
   const storedTargets: string[] = [];
@@ -1531,47 +1552,79 @@ async function handleOAuthCallback(
         "OAuth tokens were received but could not be stored on the server. Fix the server issue and run /login again.",
       ),
     );
-    return;
+    return undefined;
   }
+  return storedTargets;
+}
+
+async function handleOAuthCallback(options: OAuthCallbackOptions): Promise<void> {
+  const resolved = resolveOAuthCallback(options);
+  if (!resolved) return;
+  const { service, code, clientId, clientSecret, codeVerifier, linkToken } = resolved;
+  const redirectUri = `${requestBaseUrl(options.req)}/oauth/callback`;
+  const tokenResponse = await exchangeOAuthCode({
+    service,
+    code,
+    clientId,
+    clientSecret,
+    redirectUri,
+    codeVerifier,
+  });
+  const storedTargets = storeOAuthCredentials({
+    tokenResponse,
+    service,
+    clientId,
+    clientSecret,
+    linkToken,
+    vaultManager: options.vaultManager,
+    res: options.res,
+  });
+  if (!storedTargets) return;
 
   log.logInfo(
     `Stored [${storedTargets.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId} in vault:${linkToken.vaultId}`,
   );
-
-  notify(
-    linkToken.platform,
-    linkToken.conversationId,
-    `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
-  ).catch((err: Error) => {
-    log.logWarning("Failed to notify user after OAuth login", err.message);
-    reportUserFacingError(err, {
-      domain: "login",
-      surface: "oauth",
-      operation: "notify_user",
-      severity: "warning",
-      platform: linkToken.platform,
-      context: {
-        conversationId: linkToken.conversationId,
-        vaultId: linkToken.vaultId,
-        serviceId: service.id,
-        credentialMode: "oauth",
-        storedTargetCount: storedTargets.length,
-      },
+  options
+    .notify(
+      linkToken.platform,
+      linkToken.conversationId,
+      `${service.label} OAuth stored (${storedTargets.join(", ")}) in vault \`${linkToken.vaultId}\`.`,
+    )
+    .catch((err: Error) => {
+      log.logWarning("Failed to notify user after OAuth login", err.message);
+      reportUserFacingError(err, {
+        domain: "login",
+        surface: "oauth",
+        operation: "notify_user",
+        severity: "warning",
+        platform: linkToken.platform,
+        context: {
+          conversationId: linkToken.conversationId,
+          vaultId: linkToken.vaultId,
+          serviceId: service.id,
+          credentialMode: "oauth",
+          storedTargetCount: storedTargets.length,
+        },
+      });
     });
-  });
 
-  res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  res.end(renderSuccessPage(`${service.label} OAuth connected successfully.`));
+  options.res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+  options.res.end(renderSuccessPage(`${service.label} OAuth connected successfully.`));
+}
+
+interface ExchangeOAuthCodeOptions {
+  service: OAuthService;
+  code: string;
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  codeVerifier: string;
 }
 
 async function exchangeOAuthCode(
-  service: OAuthService,
-  code: string,
-  clientId: string,
-  clientSecret: string,
-  redirectUri: string,
-  codeVerifier: string,
+  options: ExchangeOAuthCodeOptions,
 ): Promise<Record<string, string>> {
+  const { service, code, clientId, clientSecret, redirectUri, codeVerifier } = options;
   const params = new URLSearchParams();
   params.set("grant_type", "authorization_code");
   params.set("code", code);

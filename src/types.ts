@@ -331,6 +331,13 @@ export interface RunningSession {
   currentTool?: string;
 }
 
+export interface HandleNewCommandOptions {
+  sessionKey: string;
+  conversationId: string;
+  bot: MessagingBot;
+  message: ConversationMessage;
+}
+
 /**
  * Runtime state is addressed by an office plus that office's platform session
  * reference. The session key alone is a platform value and is not unique
@@ -346,14 +353,7 @@ export interface MessagingEventHandler {
   ): Promise<void>;
   handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void>;
   forceStop(address: OfficeAddress, sessionKey: string): void;
-  handleNewCommand(
-    sessionKey: string,
-    conversationId: string,
-    bot: MessagingBot,
-    message: ConversationMessage,
-    responder: ConversationResponder,
-    platform: MessagingInfo,
-  ): Promise<void>;
+  handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
 }
 
 // ── agent ─────────────────────────────────────────────────────────────────────
@@ -374,6 +374,11 @@ export interface PiAgentWrapper {
 
 export type WorkspaceDoorPolicy = "isolated" | "trusted";
 export type WorkspaceLayout = "conversation" | "shared-support" | "full";
+/** An explicit office door-policy selection. */
+export type WorkspacePolicyChoice =
+  | { doorPolicy: "isolated" }
+  | { doorPolicy: "trusted"; layout: "full" }
+  | { doorPolicy: "trusted"; layout: "shared-support"; visibility?: WorkspaceVisibility };
 /**
  * Read/write posture for the workspace-global MEMORY.md a `shared-support`
  * office mounts, modeled on Claude Tag's public/private channel memory:
@@ -532,6 +537,9 @@ export interface PortalShellOptions {
 }
 
 // ── provisioner ───────────────────────────────────────────────────────────────
+
+/** Rewrites one Docker bind spec (`src:dst[:ro]`) during layout migration. */
+export type ContainerBindTranslator = (bindSpec: string) => string;
 
 export interface ContainerMount {
   source: string;

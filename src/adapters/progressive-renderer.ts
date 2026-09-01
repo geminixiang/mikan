@@ -57,500 +57,505 @@ interface RendererState {
  */
 const DEFAULT_FLUSH_INTERVAL_MS = 1000;
 
-export function createProgressiveRenderer(platform: ProgressiveRendererPlatform): {
-  responder: ConversationResponder;
-} {
-  const state: RendererState = {
-    responseId: platform.initialResponseId ?? null,
-    source: "",
-    working: true,
-    streamActive: false,
-    streamUnavailable: false,
-    streamedSource: "",
-    pendingChars: 0,
-    lastFlushAt: 0,
-    resetDelta: false,
-    typingInterval: null,
-    typingFailureWarned: false,
-    extraIds: [],
-    continuationIds: [],
-  };
-  const sanitize = platform.sanitize ?? ((text: string) => text);
-  const reportResponseError = platform.responseErrorContext
-    ? createChatResponseErrorReporter(() => platform.responseErrorContext!(state.responseId))
-    : undefined;
-  const now = Date.now;
-  const flushIntervalMs = platform.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
+class ProgressiveRenderer {
+  readonly responder: ConversationResponder;
+  private readonly state: RendererState;
+  private readonly sanitize: (text: string) => string;
+  private readonly reportResponseError;
+  private readonly now = Date.now;
+  private readonly flushIntervalMs: number;
+  private queueTail = Promise.resolve();
 
-  function stopTyping(): void {
-    if (state.typingInterval !== null) {
-      clearInterval(state.typingInterval);
-      state.typingInterval = null;
+  constructor(private readonly platform: ProgressiveRendererPlatform) {
+    this.state = {
+      responseId: platform.initialResponseId ?? null,
+      source: "",
+      working: true,
+      streamActive: false,
+      streamUnavailable: false,
+      streamedSource: "",
+      pendingChars: 0,
+      lastFlushAt: 0,
+      resetDelta: false,
+      typingInterval: null,
+      typingFailureWarned: false,
+      extraIds: [],
+      continuationIds: [],
+    };
+    this.sanitize = platform.sanitize ?? ((text: string) => text);
+    this.reportResponseError = platform.responseErrorContext
+      ? createChatResponseErrorReporter(() => platform.responseErrorContext!(this.state.responseId))
+      : undefined;
+    this.flushIntervalMs = platform.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
+    this.responder = this.createResponder();
+  }
+
+  private createResponder(): ConversationResponder {
+    return {
+      respond: (text) => this.respond(text),
+      appendResponseDelta:
+        this.platform.supportsDeltas || this.platform.stream
+          ? (delta) => this.appendDelta(delta)
+          : undefined,
+      finishResponse:
+        this.platform.supportsDeltas || this.platform.stream
+          ? (finalText) => this.finishResponse(finalText)
+          : undefined,
+      replaceResponse: (text, options) => this.replaceResponse(text, options),
+      replaceSubagentProgress: this.platform.formatSubagentProgress
+        ? (progress, finalText) => this.replaceSubagentProgress(progress, finalText)
+        : undefined,
+      respondDiagnostic: (text, options) => this.respondDiagnostic(text, options),
+      respondToolResult: (result) => this.respondToolResult(result),
+      setTyping: (isTyping) => this.setTyping(isTyping),
+      setWorking: (working) => this.setWorking(working),
+      uploadFile: (filePath, title) => this.uploadFile(filePath, title),
+      ...(this.platform.react ? { react: this.platform.react } : {}),
+      deleteResponse: () => this.deleteResponse(),
+    };
+  }
+
+  private stopTyping(): void {
+    if (this.state.typingInterval !== null) {
+      clearInterval(this.state.typingInterval);
+      this.state.typingInterval = null;
     }
   }
 
-  function provisional(text: string, working: boolean): string {
-    if (platform.formatProvisional) return platform.formatProvisional(text, working);
-    return working && platform.workingIndicator ? text + platform.workingIndicator : text;
+  private provisional(text: string, working: boolean): string {
+    if (this.platform.formatProvisional) return this.platform.formatProvisional(text, working);
+    return working && this.platform.workingIndicator ? text + this.platform.workingIndicator : text;
   }
 
-  function split(text: string): string[] {
-    return splitText(text, platform.maxLength, platform.formatContinuation);
+  private split(text: string): string[] {
+    return splitText(text, this.platform.maxLength, this.platform.formatContinuation);
   }
 
-  async function postOrUpdate(text: string): Promise<void> {
-    if (state.responseId !== null) {
-      await platform.update(state.responseId, text);
+  private async postOrUpdate(text: string): Promise<void> {
+    if (this.state.responseId !== null) {
+      await this.platform.update(this.state.responseId, text);
       return;
     }
-    if (platform.typing?.stopOnSend) stopTyping();
-    state.responseId = await platform.post(text);
+    if (this.platform.typing?.stopOnSend) this.stopTyping();
+    this.state.responseId = await this.platform.post(text);
   }
 
-  /**
-   * Render `text` as a head message plus however many overflow messages it
-   * needs.
-   *
-   * The overflow is *edited* on later redraws, not re-posted. A streaming
-   * response redraws roughly once a second, and re-posting meant every redraw
-   * past the length limit dropped another copy of the tail into the channel —
-   * a single long answer arrived as one correct message followed by six
-   * partial duplicates of itself.
-   *
-   * Reuse is positional: overflow N always lives in the same message, so the
-   * text a reader has already scrolled past does not move. A platform whose
-   * `postExtra` reports no id cannot be edited, and falls back to the old
-   * behaviour rather than losing the content.
-   */
-  async function postSplit(text: string): Promise<void> {
-    const [head = text, ...tail] = split(text);
-    await postOrUpdate(head);
+  private async postSplit(text: string): Promise<void> {
+    const [head = text, ...tail] = this.split(text);
+    await this.postOrUpdate(head);
     for (const [index, part] of tail.entries()) {
-      const existing = state.continuationIds[index];
+      const existing = this.state.continuationIds[index];
       if (existing !== undefined) {
-        await platform.update(String(existing), part);
+        await this.platform.update(String(existing), part);
         continue;
       }
-      if (platform.typing?.stopOnSend) stopTyping();
-      const id = await platform.postExtra(part, state.responseId);
-      if (id !== undefined && id !== null) state.continuationIds[index] = id;
+      if (this.platform.typing?.stopOnSend) this.stopTyping();
+      const id = await this.platform.postExtra(part, this.state.responseId);
+      if (id !== undefined && id !== null) this.state.continuationIds[index] = id;
     }
   }
 
-  async function postExtra(text: string): Promise<void> {
-    if (platform.typing?.stopOnSend) stopTyping();
-    await platform.postExtra(text, state.responseId);
+  private async postExtra(text: string): Promise<void> {
+    if (this.platform.typing?.stopOnSend) this.stopTyping();
+    await this.platform.postExtra(text, this.state.responseId);
   }
 
-  async function stopNativeStream(): Promise<void> {
-    if (!state.streamActive || state.responseId === null || !platform.stream) return;
-    const streamId = state.responseId;
-    state.streamActive = false;
-    state.streamedSource = "";
-    await platform.stream.stop(streamId);
+  private async stopNativeStream(): Promise<void> {
+    if (!this.state.streamActive || this.state.responseId === null || !this.platform.stream) return;
+    const streamId = this.state.responseId;
+    this.state.streamActive = false;
+    this.state.streamedSource = "";
+    await this.platform.stream.stop(streamId);
   }
 
-  async function abandonNativeStream(): Promise<void> {
-    if (!platform.stream || state.responseId === null) return;
-    const streamId = state.responseId;
-    state.streamActive = false;
-    state.streamedSource = "";
-    await platform.stream.stop(streamId).catch(() => undefined);
-    if (state.responseId === streamId) state.responseId = null;
+  private async abandonNativeStream(): Promise<void> {
+    if (!this.platform.stream || this.state.responseId === null) return;
+    const streamId = this.state.responseId;
+    this.state.streamActive = false;
+    this.state.streamedSource = "";
+    await this.platform.stream.stop(streamId).catch(() => undefined);
+    if (this.state.responseId === streamId) this.state.responseId = null;
   }
 
-  async function renderRaw(
+  private async renderRaw(
     text: string,
     operation: "render" | "replace",
     options?: { createOverflowLink?: () => string },
     canonicalText = text,
   ): Promise<string> {
     try {
-      await postSplit(text);
+      await this.postSplit(text);
       return canonicalText;
     } catch (err) {
-      if (!platform.handleTooLong) throw err;
-      // Only a length rejection may take the truncating path. Treating every
-      // failure as "too long" turned a transient rate limit into a response
-      // cut to a few thousand characters under a notice blaming its length,
-      // and the retry it triggered kept the limit alive.
-      if (platform.isTooLongError && !platform.isTooLongError(err)) throw err;
-      const fallback = await platform.handleTooLong(
-        canonicalText,
+      if (!this.platform.handleTooLong) throw err;
+      if (this.platform.isTooLongError && !this.platform.isTooLongError(err)) throw err;
+      const fallback = await this.platform.handleTooLong({
+        text: canonicalText,
         operation,
         options,
-        state.responseId,
-        postSplit,
-        () => state.responseId,
-      );
+        responseId: this.state.responseId,
+        write: (fallbackText) => this.postSplit(fallbackText),
+        getResponseId: () => this.state.responseId,
+      });
       return fallback.text;
     }
   }
 
-  async function renderDelta(text: string): Promise<string> {
-    if (state.working && !text.trim()) return text;
-    const prepared = platform.prepareSource?.(text, state.working) ?? text;
-    const stream = platform.stream;
-    const display = provisional(prepared, state.working);
-    if (!stream || state.streamUnavailable) {
-      await renderRaw(display, "render", undefined, prepared);
+  private async renderDelta(text: string): Promise<string> {
+    if (this.state.working && !text.trim()) return text;
+    const prepared = this.platform.prepareSource?.(text, this.state.working) ?? text;
+    const stream = this.platform.stream;
+    const display = this.provisional(prepared, this.state.working);
+    if (!stream || this.state.streamUnavailable) {
+      await this.renderRaw(display, "render", undefined, prepared);
       return prepared;
     }
-    if (state.responseId !== null && !state.streamActive) {
-      await renderRaw(display, "render", undefined, prepared);
+    if (this.state.responseId !== null && !this.state.streamActive) {
+      await this.renderRaw(display, "render", undefined, prepared);
       return prepared;
     }
     if (
-      state.responseId !== null &&
-      state.streamActive &&
-      !prepared.startsWith(state.streamedSource)
+      this.state.responseId !== null &&
+      this.state.streamActive &&
+      !prepared.startsWith(this.state.streamedSource)
     ) {
-      await abandonNativeStream();
-      await renderRaw(display, "render", undefined, prepared);
+      await this.abandonNativeStream();
+      await this.renderRaw(display, "render", undefined, prepared);
       return prepared;
     }
 
     try {
-      if (state.responseId !== null) {
-        const delta = prepared.slice(state.streamedSource.length);
-        // Below the threshold the delta stays pending: `state.streamedSource`
-        // does not advance, so the next tick recomputes it from the same base
-        // and `renderFinal` flushes the remainder before stopping.
+      if (this.state.responseId !== null) {
+        const delta = prepared.slice(this.state.streamedSource.length);
         if (delta && delta.length >= (stream.minDeltaChars ?? 0)) {
-          await stream.append(state.responseId, delta);
-          state.streamedSource = prepared;
+          await stream.append(this.state.responseId, delta);
+          this.state.streamedSource = prepared;
         }
         return prepared;
       }
-      state.responseId = await stream.start(prepared);
-      state.streamActive = true;
-      state.streamedSource = prepared;
+      this.state.responseId = await stream.start(prepared);
+      this.state.streamActive = true;
+      this.state.streamedSource = prepared;
       return prepared;
     } catch (err) {
-      state.streamUnavailable = true;
+      this.state.streamUnavailable = true;
       log.logWarning(
         "Native response streaming unavailable; falling back to message updates",
         err instanceof Error ? err.message : String(err),
       );
-      await abandonNativeStream();
-      await renderRaw(display, "render", undefined, prepared);
+      await this.abandonNativeStream();
+      await this.renderRaw(display, "render", undefined, prepared);
       return prepared;
     }
   }
 
-  async function renderFinal(text: string): Promise<string> {
-    const stream = platform.stream;
-    if (stream && state.streamActive && state.responseId !== null) {
+  private async renderFinal(text: string): Promise<string> {
+    const stream = this.platform.stream;
+    if (stream && this.state.streamActive && this.state.responseId !== null) {
       let streamed = false;
       try {
-        if (text.startsWith(state.streamedSource)) {
-          const delta = text.slice(state.streamedSource.length);
-          if (delta) await stream.append(state.responseId, delta);
-          await stream.stop(state.responseId);
+        if (text.startsWith(this.state.streamedSource)) {
+          const delta = text.slice(this.state.streamedSource.length);
+          if (delta) await stream.append(this.state.responseId, delta);
+          await stream.stop(this.state.responseId);
           streamed = true;
         }
       } catch (err) {
-        state.streamUnavailable = true;
+        this.state.streamUnavailable = true;
         log.logWarning(
           "Native response streaming unavailable; falling back to message updates",
           err instanceof Error ? err.message : String(err),
         );
       }
-      state.streamActive = false;
-      state.streamedSource = "";
+      this.state.streamActive = false;
+      this.state.streamedSource = "";
       if (streamed) {
-        if (platform.needsCanonicalRender?.(text)) await renderRaw(text, "render");
+        if (this.platform.needsCanonicalRender?.(text)) await this.renderRaw(text, "render");
         return text;
       }
-      await abandonNativeStream();
+      await this.abandonNativeStream();
     }
-    if (state.responseId !== null || text) return renderRaw(text, "render");
+    if (this.state.responseId !== null || text) return this.renderRaw(text, "render");
     return text;
   }
 
-  async function run(
+  private async run(
     label: string,
     operation: ChatResponseErrorOperation,
     work: () => Promise<void>,
     extra: () => Record<string, unknown>,
   ): Promise<void> {
-    const operationPromise = queueTail.then(work);
+    const operationPromise = this.queueTail.then(work);
     const handled = operationPromise.catch(async (err) => {
       const message = err instanceof Error ? err.message : String(err);
-      log.logWarning(`${platform.label} ${label} error`, message);
-      reportResponseError?.(err, operation, extra());
-      if (platform.notifySendFailure) {
+      log.logWarning(`${this.platform.label} ${label} error`, message);
+      this.reportResponseError?.(err, operation, extra());
+      if (this.platform.notifySendFailure) {
         try {
-          await platform.notifySendFailure(message);
+          await this.platform.notifySendFailure(message);
         } catch {
           // A secondary notification must not poison the response queue.
         }
       }
     });
-    queueTail = handled.catch(() => undefined);
+    this.queueTail = handled.catch(() => undefined);
     return handled;
   }
 
-  let queueTail = Promise.resolve();
-
-  async function appendDelta(delta: string): Promise<void> {
-    await run(
+  private async appendDelta(delta: string): Promise<void> {
+    await this.run(
       "appendResponseDelta",
       "respond",
       async () => {
         if (!delta) return;
-        if (state.resetDelta) {
-          state.source = "";
-          state.pendingChars = 0;
-          state.resetDelta = false;
+        if (this.state.resetDelta) {
+          this.state.source = "";
+          this.state.pendingChars = 0;
+          this.state.resetDelta = false;
         }
-        const sanitized = sanitize(delta);
-        state.source += sanitized;
-        state.pendingChars += sanitized.length;
-        const elapsed = now() - state.lastFlushAt;
-        // A character threshold must not bypass the interval. When it did, a
-        // fast stream redrew every eighty characters — well over a hundred
-        // edits for a long answer — and the platform started refusing them.
-        if (state.lastFlushAt === 0 || (elapsed >= flushIntervalMs && state.pendingChars > 0)) {
-          state.pendingChars = 0;
-          state.source = await renderDelta(state.source);
-          // Stamp on completion: a slow or retrying send pushes the next
-          // redraw out by however long it took, so pressure never compounds.
-          state.lastFlushAt = now();
+        const sanitized = this.sanitize(delta);
+        this.state.source += sanitized;
+        this.state.pendingChars += sanitized.length;
+        const elapsed = this.now() - this.state.lastFlushAt;
+        if (
+          this.state.lastFlushAt === 0 ||
+          (elapsed >= this.flushIntervalMs && this.state.pendingChars > 0)
+        ) {
+          this.state.pendingChars = 0;
+          this.state.source = await this.renderDelta(this.state.source);
+          this.state.lastFlushAt = this.now();
         }
       },
-      () => ({ textLength: delta.length, accumulatedLength: state.source.length }),
+      () => ({ textLength: delta.length, accumulatedLength: this.state.source.length }),
     );
   }
 
-  const responder: ConversationResponder = {
-    respond: async (text: string) => {
-      await run(
-        "respond",
-        "respond",
-        async () => {
-          const sanitized = sanitize(text);
-          state.source = state.source ? `${state.source}\n${sanitized}` : sanitized;
-          state.pendingChars = 0;
-          state.source = await renderDelta(state.source);
-          if (state.responseId !== null && platform.logIntermediateResponses) {
-            platform.logBotResponse?.(text, state.responseId);
-          }
-        },
-        () => ({
-          phase: state.responseId ? "update" : "initial_post",
-          textLength: text.length,
-          accumulatedLength: state.source.length,
-        }),
-      );
-    },
-
-    appendResponseDelta: platform.supportsDeltas || platform.stream ? appendDelta : undefined,
-
-    finishResponse:
-      platform.supportsDeltas || platform.stream
-        ? async (finalText?: string) => {
-            await run(
-              "finishResponse",
-              "set_working",
-              async () => {
-                if (finalText !== undefined) state.source = sanitize(finalText);
-                state.resetDelta = false;
-                state.pendingChars = 0;
-                stopTyping();
-                state.working = false;
-                state.source = await renderFinal(state.source);
-                if (state.responseId !== null)
-                  platform.logBotResponse?.(state.source, state.responseId);
-                await platform.onFinish?.(state.source, state.responseId);
-              },
-              () => ({ finalTextLength: finalText?.length }),
-            );
-          }
-        : undefined,
-
-    replaceResponse: async (text: string, options?: { createOverflowLink?: () => string }) => {
-      await run(
-        "replaceResponse",
-        "replace_response",
-        async () => {
-          state.source = sanitize(text);
-          state.pendingChars = 0;
-          state.resetDelta = true;
-          if (state.streamActive) await stopNativeStream();
-          if (state.working && !state.source.trim()) return;
-          // Prepare here too, not only on the delta path. This render is the
-          // last word on the response, so skipping it let the canonical
-          // replace overwrite prepared text with the raw source — a Discord
-          // table converted during streaming reverted to literal pipes the
-          // moment the run finished.
-          const prepared = platform.prepareSource?.(state.source, state.working) ?? state.source;
-          state.source = await renderRaw(
-            provisional(prepared, state.working),
-            "replace",
-            options,
-            // The prepared text is what was sent, so it is also what the
-            // renderer must remember it sent.
-            prepared,
-          );
-        },
-        () => ({
-          textLength: text.length,
-          hadExistingResponse: Boolean(state.responseId),
-        }),
-      );
-    },
-
-    replaceSubagentProgress: platform.formatSubagentProgress
-      ? async (progress: SubagentProgressSnapshot, finalText?: string) => {
-          const dashboard = platform.formatSubagentProgress!(progress);
-          await responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
+  private async respond(text: string): Promise<void> {
+    await this.run(
+      "respond",
+      "respond",
+      async () => {
+        const sanitized = this.sanitize(text);
+        this.state.source = this.state.source ? `${this.state.source}\n${sanitized}` : sanitized;
+        this.state.pendingChars = 0;
+        this.state.source = await this.renderDelta(this.state.source);
+        if (this.state.responseId !== null && this.platform.logIntermediateResponses) {
+          this.platform.logBotResponse?.(text, this.state.responseId);
         }
-      : undefined,
+      },
+      () => ({
+        phase: this.state.responseId ? "update" : "initial_post",
+        textLength: text.length,
+        accumulatedLength: this.state.source.length,
+      }),
+    );
+  }
 
-    respondDiagnostic: async (text, options = {}) => {
-      await run(
-        "respondDiagnostic",
-        "respond_diagnostic",
-        async () => {
-          const ids = platform.postDiagnostic
-            ? await platform.postDiagnostic(text, options, state.responseId)
-            : await postDefaultDiagnostic(text, options);
-          state.extraIds.push(...ids);
-        },
-        () => ({ textLength: text.length, style: options.style }),
-      );
-    },
+  private async finishResponse(finalText?: string): Promise<void> {
+    await this.run(
+      "finishResponse",
+      "set_working",
+      async () => {
+        if (finalText !== undefined) this.state.source = this.sanitize(finalText);
+        this.state.resetDelta = false;
+        this.state.pendingChars = 0;
+        this.stopTyping();
+        this.state.working = false;
+        this.state.source = await this.renderFinal(this.state.source);
+        if (this.state.responseId !== null) {
+          this.platform.logBotResponse?.(this.state.source, this.state.responseId);
+        }
+        await this.platform.onFinish?.(this.state.source, this.state.responseId);
+      },
+      () => ({ finalTextLength: finalText?.length }),
+    );
+  }
 
-    respondToolResult: async (result: ChatToolResult) => {
-      await responder.respondDiagnostic(platform.formatToolResult(result));
-    },
+  private async replaceResponse(
+    text: string,
+    options?: { createOverflowLink?: () => string },
+  ): Promise<void> {
+    await this.run(
+      "replaceResponse",
+      "replace_response",
+      async () => {
+        this.state.source = this.sanitize(text);
+        this.state.pendingChars = 0;
+        this.state.resetDelta = true;
+        if (this.state.streamActive) await this.stopNativeStream();
+        if (this.state.working && !this.state.source.trim()) return;
+        const prepared =
+          this.platform.prepareSource?.(this.state.source, this.state.working) ?? this.state.source;
+        this.state.source = await this.renderRaw(
+          this.provisional(prepared, this.state.working),
+          "replace",
+          options,
+          prepared,
+        );
+      },
+      () => ({ textLength: text.length, hadExistingResponse: Boolean(this.state.responseId) }),
+    );
+  }
 
-    setTyping: async (isTyping: boolean) => {
-      await run(
-        "setTyping",
-        "set_working",
-        async () => {
-          if (platform.setTyping) {
-            await platform.setTyping(isTyping, state.responseId);
-            return;
-          }
-          const typing = platform.typing;
-          if (!typing) return;
-          const onTypingError = (err: unknown): void => {
-            if (state.typingFailureWarned) return;
-            state.typingFailureWarned = true;
-            log.logWarning(
-              `${platform.label} sendTyping failed (further occurrences suppressed for this session)`,
-              err instanceof Error ? err.message : String(err),
-            );
-          };
-          if (isTyping && state.typingInterval === null) {
+  private async replaceSubagentProgress(
+    progress: SubagentProgressSnapshot,
+    finalText?: string,
+  ): Promise<void> {
+    const dashboard = this.platform.formatSubagentProgress!(progress);
+    await this.responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
+  }
+
+  private async respondDiagnostic(
+    text: string,
+    options: { style?: "muted" | "error" } = {},
+  ): Promise<void> {
+    await this.run(
+      "respondDiagnostic",
+      "respond_diagnostic",
+      async () => {
+        const ids = this.platform.postDiagnostic
+          ? await this.platform.postDiagnostic(text, options, this.state.responseId)
+          : await this.postDefaultDiagnostic(text, options);
+        this.state.extraIds.push(...ids);
+      },
+      () => ({ textLength: text.length, style: options.style }),
+    );
+  }
+
+  private async respondToolResult(result: ChatToolResult): Promise<void> {
+    await this.responder.respondDiagnostic(this.platform.formatToolResult(result));
+  }
+
+  private async setTyping(isTyping: boolean): Promise<void> {
+    await this.run(
+      "setTyping",
+      "set_working",
+      async () => {
+        if (this.platform.setTyping) {
+          await this.platform.setTyping(isTyping, this.state.responseId);
+          return;
+        }
+        const typing = this.platform.typing;
+        if (!typing) return;
+        const onTypingError = (err: unknown): void => {
+          if (this.state.typingFailureWarned) return;
+          this.state.typingFailureWarned = true;
+          log.logWarning(
+            `${this.platform.label} sendTyping failed (further occurrences suppressed for this session)`,
+            err instanceof Error ? err.message : String(err),
+          );
+        };
+        if (isTyping && this.state.typingInterval === null) {
+          typing.send().catch(onTypingError);
+          this.state.typingInterval = setInterval(() => {
             typing.send().catch(onTypingError);
-            state.typingInterval = setInterval(() => {
-              typing.send().catch(onTypingError);
-            }, typing.intervalMs);
-          } else if (!isTyping) {
-            stopTyping();
+          }, typing.intervalMs);
+        } else if (!isTyping) {
+          this.stopTyping();
+        }
+      },
+      () => ({ working: isTyping }),
+    );
+  }
+
+  private async setWorking(working: boolean): Promise<void> {
+    await this.run(
+      "setWorking",
+      "set_working",
+      async () => {
+        this.state.working = working;
+        if (!working) this.stopTyping();
+        await this.platform.onWorkingChanged?.(working, this.state.responseId);
+        if (
+          this.state.responseId === null ||
+          (!this.platform.workingIndicator && !this.platform.stream)
+        ) {
+          return;
+        }
+        if (working && !this.state.source.trim()) return;
+        if (this.state.streamActive && !working) {
+          await this.stopNativeStream();
+          return;
+        }
+        if (this.state.responseId !== null) {
+          this.state.source = await this.renderRaw(
+            this.provisional(this.state.source, working),
+            "render",
+            undefined,
+            this.state.source,
+          );
+        }
+      },
+      () => ({ working }),
+    );
+  }
+
+  private async uploadFile(filePath: string, title?: string): Promise<void> {
+    if (this.platform.uploadFile) {
+      await this.platform.uploadFile(filePath, title);
+      return;
+    }
+    const note = this.platform.uploadFallbackNote?.(title ?? filePath);
+    if (note === undefined) return;
+    await this.run(
+      "uploadFile",
+      "respond_diagnostic",
+      () => this.postExtra(note),
+      () => ({ filePath }),
+    );
+  }
+
+  private async deleteResponse(): Promise<void> {
+    await this.run(
+      "deleteResponse",
+      "respond",
+      async () => {
+        this.stopTyping();
+        if (this.state.streamActive) await this.stopNativeStream().catch(() => undefined);
+        for (const id of [...this.state.extraIds, ...this.state.continuationIds]) {
+          try {
+            await this.platform.deleteExtra?.(id);
+          } catch {
+            // Deleting diagnostics is best effort.
           }
-        },
-        () => ({ working: isTyping }),
-      );
-    },
-
-    setWorking: async (working: boolean) => {
-      await run(
-        "setWorking",
-        "set_working",
-        async () => {
-          state.working = working;
-          if (!working) stopTyping();
-          await platform.onWorkingChanged?.(working, state.responseId);
-          if (state.responseId === null || (!platform.workingIndicator && !platform.stream)) return;
-          if (working && !state.source.trim()) return;
-
-          if (state.streamActive && !working) {
-            await stopNativeStream();
-            return;
+        }
+        this.state.extraIds = [];
+        this.state.continuationIds = [];
+        if (this.state.responseId !== null) {
+          try {
+            await this.platform.delete?.(this.state.responseId);
+          } catch {
+            // Deleting the main response is best effort.
           }
-          if (state.responseId !== null) {
-            state.source = await renderRaw(
-              provisional(state.source, working),
-              "render",
-              undefined,
-              state.source,
-            );
-          }
-        },
-        () => ({ working }),
-      );
-    },
+        }
+        this.state.responseId = null;
+        this.state.source = "";
+        this.state.streamUnavailable = false;
+        this.state.streamedSource = "";
+        this.state.streamActive = false;
+        this.state.resetDelta = false;
+        this.state.working = true;
+      },
+      () => ({}),
+    );
+  }
 
-    uploadFile: async (filePath: string, title?: string) => {
-      if (platform.uploadFile) {
-        await platform.uploadFile(filePath, title);
-        return;
-      }
-      const note = platform.uploadFallbackNote?.(title ?? filePath);
-      if (note === undefined) return;
-      await run(
-        "uploadFile",
-        "respond_diagnostic",
-        () => postExtra(note),
-        () => ({ filePath }),
-      );
-    },
-
-    ...(platform.react ? { react: platform.react } : {}),
-
-    deleteResponse: async () => {
-      await run(
-        "deleteResponse",
-        "respond",
-        async () => {
-          stopTyping();
-          if (state.streamActive) await stopNativeStream().catch(() => undefined);
-          for (const id of [...state.extraIds, ...state.continuationIds]) {
-            try {
-              await platform.deleteExtra?.(id);
-            } catch {
-              // Deleting diagnostics is best effort.
-            }
-          }
-          state.extraIds = [];
-          state.continuationIds = [];
-          if (state.responseId !== null) {
-            try {
-              await platform.delete?.(state.responseId);
-            } catch {
-              // Deleting the main response is best effort.
-            }
-          }
-          state.responseId = null;
-          state.source = "";
-          state.streamUnavailable = false;
-          state.streamedSource = "";
-          state.streamActive = false;
-          state.resetDelta = false;
-          state.working = true;
-        },
-        () => ({}),
-      );
-    },
-  };
-
-  async function postDefaultDiagnostic(
+  private async postDefaultDiagnostic(
     text: string,
     options: { style?: "muted" | "error" },
   ): Promise<Array<string | number>> {
-    const prefix = options.style === "error" ? platform.errorPrefix : "";
+    const prefix = options.style === "error" ? this.platform.errorPrefix : "";
     const ids: Array<string | number> = [];
-    for (const part of split(sanitize(`${prefix}${text}`))) {
-      const id = await platform.postExtra(part, state.responseId);
+    for (const part of this.split(this.sanitize(`${prefix}${text}`))) {
+      const id = await this.platform.postExtra(part, this.state.responseId);
       if (typeof id === "string" || typeof id === "number") ids.push(id);
     }
     return ids;
   }
+}
 
-  return { responder };
+export function createProgressiveRenderer(platform: ProgressiveRendererPlatform): {
+  responder: ConversationResponder;
+} {
+  return { responder: new ProgressiveRenderer(platform).responder };
 }

@@ -28,6 +28,8 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { SessionStore } from "../harness/session-store.js";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
+import type { MigrateResult } from "./types.js";
+export type { MigrateResult } from "./types.js";
 
 // ── v3 shapes ────────────────────────────────────────────────────────────────
 
@@ -412,12 +414,6 @@ function encodeV4File(file: V3SessionFile): string {
 }
 
 // ── migration driver ────────────────────────────────────────────────────────
-
-export interface MigrateResult {
-  file: string;
-  status: "migrated" | "already-v4" | "skipped";
-  detail?: string;
-}
 
 async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promise<void> {
   const store = await SessionStore.inspect(v4Path);

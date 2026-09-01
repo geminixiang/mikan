@@ -20,9 +20,6 @@ import {
   resolveParentSessionForThread,
   tryResolveCurrentSession,
   tryResolveThreadSession,
-  type ParentSessionRef,
-  type ResolvedSessionScope,
-  type ThreadRootMessage,
 } from "./store.js";
 
 const DEFAULT_RECENT_DAYS = 14;
@@ -51,6 +48,9 @@ import type {
   ThreadBootstrapWaitOptions,
   ChatSyncReport,
   LogRecord,
+  ParentSessionRef,
+  ResolvedSessionScope,
+  ThreadRootMessage,
 } from "./types.js";
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {

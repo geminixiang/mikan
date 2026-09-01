@@ -2,6 +2,7 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
+  HandleNewCommandOptions,
   OfficeAddress,
   PlatformName,
   RunningSession,
@@ -168,14 +169,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  async handleNewCommand(
-    sessionKey: string,
-    conversationId: string,
-    bot: MessagingBot,
-    message: ConversationContext["message"],
-    _responder: ConversationContext["responder"],
-    _platform: ConversationContext["platform"],
-  ): Promise<void> {
+  async handleNewCommand({
+    sessionKey,
+    conversationId,
+    bot,
+    message,
+  }: HandleNewCommandOptions): Promise<void> {
     const address = message.address;
     if (conversationId !== address.conversationId) {
       throw new Error(
@@ -283,23 +282,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const sessionKey = deriveSessionKey(event);
-    if (!skipRotation) {
-      const privateConversation = isPrivateConversation(event);
-      const handledCommand = await dispatchCommand(this.commandHandlers, {
-        bot,
-        responder: context.responder,
-        platform: context.platform.name as PlatformName,
-        address: event.address,
-        platformUserId: event.user,
-        platformUserName: context.message.userName,
-        conversationId,
-        vaultConversationId: event.vaultConversationId,
-        sessionKey,
-        commandText: event.text,
-        privateConversation,
-        services: this.commandServices,
-      });
-      if (handledCommand) return;
+    if (!skipRotation && (await this.dispatchSessionCommand({ event, bot, context }, sessionKey))) {
+      return;
     }
 
     const address = event.address;
@@ -319,17 +303,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       : await this.sessions.acquireConversationWork(address);
     try {
       const conversationDir = this.options.workspace.office(address).dir;
-      const waitedForParent = await waitForThreadSessionBootstrap({
-        parentSessionKey: conversationId,
-        sessionKey,
-        hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
-        isParentRunning: () => this.sessions.get(address, conversationId)?.running === true,
-      });
-      if (waitedForParent) {
-        log.logInfo(
-          `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
-        );
-      }
+      await this.waitForParentSession(address, sessionKey, conversationDir);
 
       let lease: { state: ConversationState; release: () => void } | undefined;
       try {
@@ -395,6 +369,45 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     } finally {
       releaseConversationWork();
     }
+  }
+
+  private async waitForParentSession(
+    address: OfficeAddress,
+    sessionKey: string,
+    conversationDir: string,
+  ): Promise<void> {
+    const conversationId = address.conversationId;
+    const waited = await waitForThreadSessionBootstrap({
+      parentSessionKey: conversationId,
+      sessionKey,
+      hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
+      isParentRunning: () => this.sessions.get(address, conversationId)?.running === true,
+    });
+    if (waited) {
+      log.logInfo(
+        `[${conversationId}] Delayed thread bootstrap until parent session sealed: ${sessionKey}`,
+      );
+    }
+  }
+
+  private async dispatchSessionCommand(
+    { event, bot, context }: RunSessionOptions,
+    sessionKey: string,
+  ): Promise<boolean> {
+    return dispatchCommand(this.commandHandlers, {
+      bot,
+      responder: context.responder,
+      platform: context.platform.name as PlatformName,
+      address: event.address,
+      platformUserId: event.user,
+      platformUserName: context.message.userName,
+      conversationId: event.conversationId,
+      vaultConversationId: event.vaultConversationId,
+      sessionKey,
+      commandText: event.text,
+      privateConversation: isPrivateConversation(event),
+      services: this.commandServices,
+    });
   }
 
   private async runWithInstrumentation(

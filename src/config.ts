@@ -15,13 +15,19 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, AutoReplyConfig, JudgeModelConfig, SandboxSettings } from "./types.js";
+export type {
+  AgentConfig,
+  AutoReplyConfig,
+  JudgeModelConfig,
+  SandboxSettings,
+  WorkspacePolicyChoice,
+} from "./types.js";
 import type {
   AgentConfig,
   AutoReplyConfig,
   JudgeModelConfig,
   SandboxSettings,
-  WorkspaceVisibility,
+  WorkspacePolicyChoice,
 } from "./types.js";
 import type { McpServerConfig } from "./mcp/types.js";
 import type { OnboardLlmChoice } from "./types.js";
@@ -633,18 +639,6 @@ export function loadScopeMcpServers(office: Office): {
     conversation: loadSettingsFile(conversationSettingsPath(office))?.mcpServers ?? {},
   };
 }
-
-/**
- * An explicit office door-policy selection; `layout` only exists behind a
- * trusted door. `visibility` only applies to `shared-support` (it gates
- * read/write access to the workspace-global MEMORY.md that layout mounts);
- * `full` mounts the whole workspace as one read-write bind and has no
- * separate memory file to gate, so it carries no visibility choice.
- */
-export type WorkspacePolicyChoice =
-  | { doorPolicy: "isolated" }
-  | { doorPolicy: "trusted"; layout: "full" }
-  | { doorPolicy: "trusted"; layout: "shared-support"; visibility?: WorkspaceVisibility };
 
 /**
  * The conversation's own door-policy override (legacy `image.workspaceMount`

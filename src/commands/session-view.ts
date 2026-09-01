@@ -55,14 +55,14 @@ export class SessionViewCommandHandler implements CommandHandler {
       .users.find((user) => user.id === context.platformUserId);
     const platformUserName = platformUser?.userName || platformUser?.displayName;
 
-    const token = context.services.sessionViewTokenStore.create(
-      context.platform,
-      context.platformUserId,
-      context.conversationId,
-      context.sessionKey,
+    const token = context.services.sessionViewTokenStore.create({
+      platform: context.platform,
+      platformUserId: context.platformUserId,
+      conversationId: context.conversationId,
+      sessionKey: context.sessionKey,
       sessionFile,
       platformUserName,
-    );
+    });
 
     await replyPrivatelyWithContext(
       context,

@@ -125,6 +125,7 @@ export type {
   ConversationKind,
   ConversationMessage,
   ConversationResponder,
+  HandleNewCommandOptions,
   MessagingBot,
   OfficeAddress,
   OfficeKey,

@@ -6,6 +6,7 @@ import {
   Partials,
   type ChatInputCommandInteraction,
   type Collection,
+  type Interaction,
   type Message,
   type Attachment,
   type TextChannel,
@@ -465,183 +466,186 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private setupEventHandlers(): void {
-    this.client.on(Events.InteractionCreate, async (interaction) => {
-      if (!interaction.isChatInputCommand()) return;
-      const manifestEntry = COMMAND_MANIFEST.find(
-        (entry) => entry.discord && entry.name === interaction.commandName,
-      );
-      if (!manifestEntry) return;
+    this.client.on(Events.InteractionCreate, this.handleInteractionCreate.bind(this));
+    this.client.on(Events.MessageCreate, this.handleMessageCreate.bind(this));
+  }
 
-      const isDM = !interaction.inGuild();
-      const { conversationId, threadTs } = this.resolveConversationContext({
-        channelId: interaction.channelId,
-        inGuild: interaction.inGuild(),
-        isThread: interaction.channel?.isThread() ?? false,
-        parentChannelId:
-          interaction.channel && "parentId" in interaction.channel
-            ? interaction.channel.parentId
-            : null,
-      });
-      const sessionKey = resolveChatSessionKey({
-        conversationId,
-        conversationKind: isDM ? "direct" : "shared",
-        messageId: interaction.id,
-        persistentTopLevel: true,
-        threadTs,
-      });
-      const commandArg = manifestEntry.arg
-        ? interaction.options.getString(manifestEntry.arg.name)?.trim()
-        : undefined;
-      const commandText = commandArg
-        ? `/${interaction.commandName} ${commandArg}`
-        : `/${interaction.commandName}`;
+  private async handleInteractionCreate(interaction: Interaction): Promise<void> {
+    if (!interaction.isChatInputCommand()) return;
+    const manifestEntry = COMMAND_MANIFEST.find(
+      (entry) => entry.discord && entry.name === interaction.commandName,
+    );
+    if (!manifestEntry) return;
 
-      this.logToFile(conversationId, {
-        date: new Date(interaction.createdTimestamp).toISOString(),
-        ts: interaction.id,
-        ...(threadTs ? { threadTs } : {}),
-        user: interaction.user.id,
-        userName: interaction.user.username,
-        text: commandText,
-        attachments: [],
-        isMessagingBot: false,
-      });
+    const isDM = !interaction.inGuild();
+    const { conversationId, threadTs } = this.resolveConversationContext({
+      channelId: interaction.channelId,
+      inGuild: interaction.inGuild(),
+      isThread: interaction.channel?.isThread() ?? false,
+      parentChannelId:
+        interaction.channel && "parentId" in interaction.channel
+          ? interaction.channel.parentId
+          : null,
+    });
+    const sessionKey = resolveChatSessionKey({
+      conversationId,
+      conversationKind: isDM ? "direct" : "shared",
+      messageId: interaction.id,
+      persistentTopLevel: true,
+      threadTs,
+    });
+    const commandArg = manifestEntry.arg
+      ? interaction.options.getString(manifestEntry.arg.name)?.trim()
+      : undefined;
+    const commandText = commandArg
+      ? `/${interaction.commandName} ${commandArg}`
+      : `/${interaction.commandName}`;
 
-      const context = this.createSlashCommandAdapters(
-        interaction,
-        commandText,
-        sessionKey,
-        conversationId,
-      );
-      try {
-        // Magic words are conversation-intake controls, not command handlers;
-        // the manifest's metadata routes them (today only `stop`).
-        if (manifestEntry.magicWord) {
-          const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
-          if (stopTarget) {
-            await this.handler.handleStop(
-              createOfficeAddress("discord", conversationId),
-              stopTarget,
-              this,
-            );
-            await context.responder.respond("Stopped the current conversation.");
-          } else {
-            await context.responder.respond(formatNothingRunning("discord"));
-          }
-          return;
-        }
-
-        const event = createConversationEvent({
-          platform: "discord",
-          type: "dm",
-          conversationId,
-          conversationKind: isDM ? "direct" : "shared",
-          ts: interaction.id,
-          thread_ts: threadTs,
-          sessionKey,
-          user: interaction.user.id,
-          text: commandText,
-          attachments: [],
-        });
-
-        await this.handler.handleEvent(event, this, context);
-      } catch (err) {
-        log.logWarning(
-          "Discord slash command error",
-          err instanceof Error ? err.message : String(err),
-        );
-        if (!interaction.replied && !interaction.deferred) {
-          await interaction.reply({
-            content: `${interaction.commandName} command failed. Please try again later.`,
-            ephemeral: !isDM,
-          });
-        }
-      }
+    this.logToFile(conversationId, {
+      date: new Date(interaction.createdTimestamp).toISOString(),
+      ts: interaction.id,
+      ...(threadTs ? { threadTs } : {}),
+      user: interaction.user.id,
+      userName: interaction.user.username,
+      text: commandText,
+      attachments: [],
+      isMessagingBot: false,
     });
 
-    this.client.on(Events.MessageCreate, async (msg: Message) => {
-      // Skip messages from before startup
-      if (msg.createdTimestamp < this.startupTime) return;
-      // Skip bot messages
-      if (msg.author.bot) return;
-      const isDM = msg.channel.type === 1; // ChannelType.DM = 1
-      const isInThread = msg.channel.isThread();
-      const referencedMsgId = msg.reference?.messageId;
-      const isThreadReply = isInThread || !!referencedMsgId;
-      const isMentioned = msg.mentions.users.has(this.botUserId ?? "");
-      const isAutoReplyCandidate = !isDM && !isMentioned && !isThreadReply;
-
-      const { conversationId, threadTs } = this.resolveConversationContext({
-        channelId: msg.channelId,
-        inGuild: !isDM,
-        isThread: isInThread,
-        parentChannelId: "parentId" in msg.channel ? msg.channel.parentId : null,
-        referencedMsgId,
-      });
-      const userId = msg.author.id;
-      const userName = msg.author.username;
-      const msgId = msg.id;
-
-      // Track user
-      this.users.set(userId, {
-        id: userId,
-        userName,
-        displayName: msg.member?.displayName ?? userName,
-      });
-
-      // Track channel
-      if (!this.channels.has(conversationId) && "name" in msg.channel) {
-        const ch = msg.channel as TextChannel | NewsChannel;
-        this.channels.set(conversationId, { id: conversationId, name: ch.name });
+    const context = this.createSlashCommandAdapters(
+      interaction,
+      commandText,
+      sessionKey,
+      conversationId,
+    );
+    try {
+      // Magic words are conversation-intake controls, not command handlers;
+      // the manifest's metadata routes them (today only `stop`).
+      if (manifestEntry.magicWord) {
+        const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
+        if (stopTarget) {
+          await this.handler.handleStop(
+            createOfficeAddress("discord", conversationId),
+            stopTarget,
+            this,
+          );
+          await context.responder.respond("Stopped the current conversation.");
+        } else {
+          await context.responder.respond(formatNothingRunning("discord"));
+        }
+        return;
       }
 
-      const conversationKind = isDM ? "direct" : "shared";
-      const sessionKey = resolveChatSessionKey({
-        conversationId,
-        conversationKind,
-        messageId: msgId,
-        persistentTopLevel: true,
-        threadTs,
-      });
-
-      const cleanedText = this.stripMessagingBotMention(msg.content);
-
-      const eventBase = createConversationEvent({
+      const event = createConversationEvent({
         platform: "discord",
-        type: isDM ? "dm" : "mention",
+        type: "dm",
         conversationId,
-        conversationKind,
-        ts: msgId,
+        conversationKind: isDM ? "direct" : "shared",
+        ts: interaction.id,
         thread_ts: threadTs,
         sessionKey,
+        user: interaction.user.id,
+        text: commandText,
+        attachments: [],
+      });
+
+      await this.handler.handleEvent(event, this, context);
+    } catch (err) {
+      log.logWarning(
+        "Discord slash command error",
+        err instanceof Error ? err.message : String(err),
+      );
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: `${interaction.commandName} command failed. Please try again later.`,
+          ephemeral: !isDM,
+        });
+      }
+    }
+  }
+
+  private async handleMessageCreate(msg: Message): Promise<void> {
+    // Skip messages from before startup
+    if (msg.createdTimestamp < this.startupTime) return;
+    // Skip bot messages
+    if (msg.author.bot) return;
+    const isDM = msg.channel.type === 1; // ChannelType.DM = 1
+    const isInThread = msg.channel.isThread();
+    const referencedMsgId = msg.reference?.messageId;
+    const isThreadReply = isInThread || !!referencedMsgId;
+    const isMentioned = msg.mentions.users.has(this.botUserId ?? "");
+    const isAutoReplyCandidate = !isDM && !isMentioned && !isThreadReply;
+
+    const { conversationId, threadTs } = this.resolveConversationContext({
+      channelId: msg.channelId,
+      inGuild: !isDM,
+      isThread: isInThread,
+      parentChannelId: "parentId" in msg.channel ? msg.channel.parentId : null,
+      referencedMsgId,
+    });
+    const userId = msg.author.id;
+    const userName = msg.author.username;
+    const msgId = msg.id;
+
+    // Track user
+    this.users.set(userId, {
+      id: userId,
+      userName,
+      displayName: msg.member?.displayName ?? userName,
+    });
+
+    // Track channel
+    if (!this.channels.has(conversationId) && "name" in msg.channel) {
+      const ch = msg.channel as TextChannel | NewsChannel;
+      this.channels.set(conversationId, { id: conversationId, name: ch.name });
+    }
+
+    const conversationKind = isDM ? "direct" : "shared";
+    const sessionKey = resolveChatSessionKey({
+      conversationId,
+      conversationKind,
+      messageId: msgId,
+      persistentTopLevel: true,
+      threadTs,
+    });
+
+    const cleanedText = this.stripMessagingBotMention(msg.content);
+
+    const eventBase = createConversationEvent({
+      platform: "discord",
+      type: isDM ? "dm" : "mention",
+      conversationId,
+      conversationKind,
+      ts: msgId,
+      thread_ts: threadTs,
+      sessionKey,
+      user: userId,
+      userName,
+      text: cleanedText,
+    }) as DiscordEvent;
+
+    await processMessageIntake({
+      eventBase,
+      office: this.workspace.office(eventBase.address),
+      isAutoReplyCandidate,
+      magicWord: { addressed: !isAutoReplyCandidate, scopeFallback: "top-level" },
+      busyPolicy: "queue",
+      logEntryBase: {
+        date: msg.createdAt.toISOString(),
+        ts: msgId,
+        ...(!isDM && threadTs ? { threadTs } : {}),
         user: userId,
         userName,
         text: cleanedText,
-      }) as DiscordEvent;
-
-      await processMessageIntake({
-        eventBase,
-        office: this.workspace.office(eventBase.address),
-        isAutoReplyCandidate,
-        magicWord: { addressed: !isAutoReplyCandidate, scopeFallback: "top-level" },
-        busyPolicy: "queue",
-        logEntryBase: {
-          date: msg.createdAt.toISOString(),
-          ts: msgId,
-          ...(!isDM && threadTs ? { threadTs } : {}),
-          user: userId,
-          userName,
-          text: cleanedText,
-          isMessagingBot: false,
-        },
-        log: (entry) => this.logToFile(conversationId, entry),
-        processAttachments: () => this.processAttachments(conversationId, msg.attachments),
-        queueKey: sessionKey,
-        enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
-        handler: this.handler,
-        bot: this,
-        createContext: (event) => createDiscordAdapters(event, this),
-      });
+        isMessagingBot: false,
+      },
+      log: (entry) => this.logToFile(conversationId, entry),
+      processAttachments: () => this.processAttachments(conversationId, msg.attachments),
+      queueKey: sessionKey,
+      enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+      handler: this.handler,
+      bot: this,
+      createContext: (event) => createDiscordAdapters(event, this),
     });
   }
 

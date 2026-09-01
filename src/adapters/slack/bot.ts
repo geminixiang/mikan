@@ -76,6 +76,34 @@ import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
+type SlackIncomingMessage = {
+  text?: string;
+  channel: string;
+  user?: string;
+  ts: string;
+  thread_ts?: string;
+  channel_type?: string;
+  subtype?: string;
+  bot_id?: string;
+  app_id?: string;
+  username?: string;
+  bot_profile?: { id?: string; app_id?: string; name?: string; real_name?: string };
+  blocks?: unknown[];
+  attachments?: unknown[];
+  files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
+};
+
+type CommandAdapterInput = {
+  conversationId: string;
+  userId: string;
+  userName: string | undefined;
+  text: string;
+  ts: string;
+  ephemeralChannelId?: string;
+  threadTs?: string;
+  sessionKey?: string;
+};
+
 /**
  * Slack's per-call limit on `markdown_text`: "Limit this field to 12,000
  * characters." mikan allows far more in a message, so streamed text is split
@@ -956,6 +984,110 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
+  private appendRunningTasks(blocks: object[]): void {
+    const runningSessions = this.handler.getRunningSessions();
+    blocks.push(
+      { type: "divider" },
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `Running Tasks (${runningSessions.length})`,
+          emoji: true,
+        },
+      },
+    );
+    if (runningSessions.length === 0) {
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: "_No tasks running right now._" }],
+      });
+      return;
+    }
+
+    const stuckThresholdMs = 10 * 60 * 1000;
+    for (const session of runningSessions) {
+      const channelId = conversationIdOf(session.sessionKey);
+      const channelName = this.channels.get(channelId)?.name;
+      const elapsed = Math.floor((Date.now() - session.startedAt) / 60000);
+      const elapsedStr = elapsed < 1 ? "<1 min" : `${elapsed} min`;
+      const lastActivity = session.lastActivityAt ? Date.now() - session.lastActivityAt : 0;
+      const isStuck = lastActivity > stuckThresholdMs;
+      let statusLine = `${isStuck ? "_stuck_" : "_running_"} · ${elapsedStr}`;
+      if (session.currentTool) statusLine += ` · ${session.currentTool}`;
+      if (isStuck) statusLine += ` · idle ${Math.floor(lastActivity / 60000)}m`;
+      blocks.push({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: `*${channelName ? `#${channelName}` : channelId}* · ${statusLine}`,
+          },
+        ],
+      });
+      if (isStuck) {
+        blocks.push({
+          type: "context",
+          elements: [
+            { type: "mrkdwn", text: " " },
+            {
+              type: "button",
+              text: { type: "plain_text", text: "Force Stop", emoji: true },
+              // `value` preserves the raw key; action_id is only a unique route.
+              action_id: `force_stop_${session.sessionKey.replace(/:/g, "_")}`,
+              value: session.sessionKey,
+              style: "danger",
+            },
+          ],
+        });
+      }
+    }
+  }
+
+  private appendScheduledJobs(blocks: object[]): void {
+    const periodicEvents = this.eventsWatcher?.getPeriodicEvents() ?? [];
+    blocks.push(
+      { type: "divider" },
+      {
+        type: "header",
+        text: {
+          type: "plain_text",
+          text: `Scheduled Jobs (${periodicEvents.length})`,
+          emoji: true,
+        },
+      },
+    );
+    if (periodicEvents.length === 0) {
+      blocks.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: "_No scheduled jobs._" }],
+      });
+      return;
+    }
+
+    for (const event of periodicEvents) {
+      const channel =
+        event.platform === "slack" ? this.channels.get(event.conversationId) : undefined;
+      const channelId = channel ? `#${channel.name}` : event.conversationId;
+      const channelLabel = `${event.platform}:${channelId}`;
+      const nextRun = event.nextRun
+        ? new Date(event.nextRun).toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "—";
+      blocks.push({
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${event.text}*\n└ \`${event.schedule}\` · ${channelLabel} · Next: ${nextRun}`,
+        },
+      });
+    }
+  }
+
   private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
     const blocks: object[] = [
       {
@@ -971,141 +1103,8 @@ export class SlackMessagingBot implements MessagingBot {
         },
       },
     ];
-
-    // --- Running tasks ---
-    const runningSessions = this.handler.getRunningSessions();
-
-    blocks.push(
-      { type: "divider" },
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `Running Tasks (${runningSessions.length})`,
-          emoji: true,
-        },
-      },
-    );
-
-    if (runningSessions.length === 0) {
-      blocks.push({
-        type: "context",
-        elements: [{ type: "mrkdwn", text: "_No tasks running right now._" }],
-      });
-    } else {
-      // Threshold for "stuck" detection (10 minutes)
-      const STUCK_THRESHOLD_MS = 10 * 60 * 1000;
-
-      for (const session of runningSessions) {
-        const channelId = conversationIdOf(session.sessionKey);
-        const channel = this.channels.get(channelId);
-        const channelName = channel ? `#${channel.name}` : channelId;
-        const elapsed = Math.floor((Date.now() - session.startedAt) / 60000);
-        const elapsedStr = elapsed < 1 ? "<1 min" : `${elapsed} min`;
-
-        // Check if task might be stuck
-        const lastActivity = session.lastActivityAt ? Date.now() - session.lastActivityAt : 0;
-        const isStuck = lastActivity > STUCK_THRESHOLD_MS;
-        const statusText = isStuck ? "_stuck_" : "_running_";
-
-        // Build status line: channel · status · time · step
-        let statusLine = `${statusText} · ${elapsedStr}`;
-        if (session.currentTool) {
-          statusLine += ` · ${session.currentTool}`;
-        }
-        if (isStuck && lastActivity > 0) {
-          const inactiveMin = Math.floor(lastActivity / 60000);
-          statusLine += ` · idle ${inactiveMin}m`;
-        }
-
-        // Use context block for gray small text (like "No scheduled jobs.")
-        blocks.push({
-          type: "context",
-          elements: [
-            {
-              type: "mrkdwn",
-              text: `*${channelName}* · ${statusLine}`,
-            },
-          ],
-        });
-
-        // Add Force Stop button as separate element if stuck
-        if (isStuck) {
-          blocks.push({
-            type: "context",
-            elements: [
-              {
-                type: "mrkdwn",
-                text: " ",
-              },
-              {
-                type: "button",
-                text: { type: "plain_text", text: "Force Stop", emoji: true },
-                // The raw session key travels in `value` (Slack returns it
-                // verbatim); the action_id only routes and must be unique per
-                // view, so it carries a sanitized copy of the key. Never
-                // decode the key from the action_id — the `:`↔`_` rewrite is
-                // irreversible for conversation ids that contain `_` (GitHub's
-                // GH_owner_repo_number do, by design).
-                action_id: `force_stop_${session.sessionKey.replace(/:/g, "_")}`,
-                value: session.sessionKey,
-                style: "danger",
-              },
-            ],
-          });
-        }
-      }
-    }
-
-    // --- Cron jobs ---
-    const periodicEvents = this.eventsWatcher?.getPeriodicEvents() ?? [];
-
-    blocks.push(
-      { type: "divider" },
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `Scheduled Jobs (${periodicEvents.length})`,
-          emoji: true,
-        },
-      },
-    );
-
-    if (periodicEvents.length === 0) {
-      blocks.push({
-        type: "context",
-        elements: [{ type: "mrkdwn", text: "_No scheduled jobs._" }],
-      });
-    } else {
-      for (const ev of periodicEvents) {
-        const channelLabel =
-          ev.platform === "slack"
-            ? (() => {
-                const channel = this.channels.get(ev.conversationId);
-                const channelName = channel ? `#${channel.name}` : ev.conversationId;
-                return `${ev.platform}:${channelName}`;
-              })()
-            : `${ev.platform}:${ev.conversationId}`;
-        const nextStr = ev.nextRun
-          ? new Date(ev.nextRun).toLocaleString("en-US", {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "—";
-        blocks.push({
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*${ev.text}*\n└ \`${ev.schedule}\` · ${channelLabel} · Next: ${nextStr}`,
-          },
-        });
-      }
-    }
-
-    // --- Footer ---
+    this.appendRunningTasks(blocks);
+    this.appendScheduledJobs(blocks);
     blocks.push(
       { type: "divider" },
       {
@@ -1115,18 +1114,11 @@ export class SlackMessagingBot implements MessagingBot {
         ],
       },
     );
-
     return { type: "home", blocks: blocks as KnownBlock[] };
   }
 
-  private createCommandAdapters(
-    conversationId: string,
-    userId: string,
-    userName: string | undefined,
-    text: string,
-    ts: string,
-    options: { ephemeralChannelId?: string; threadTs?: string; sessionKey?: string } = {},
-  ): ConversationContext {
+  private createCommandAdapters(input: CommandAdapterInput): ConversationContext {
+    const { conversationId, userId, userName, text, ts, ...options } = input;
     const message = createConversationMessage({
       platform: "slack",
       conversationId,
@@ -1254,16 +1246,16 @@ export class SlackMessagingBot implements MessagingBot {
       sessionKey,
     });
 
-    const context = this.createCommandAdapters(
+    const context = this.createCommandAdapters({
       conversationId,
-      payload.user_id,
+      userId: payload.user_id,
       userName,
-      commandText,
-      eventTs,
-      isDirectMessage
+      text: commandText,
+      ts: eventTs,
+      ...(isDirectMessage
         ? { threadTs, sessionKey }
-        : { ephemeralChannelId: conversationId, threadTs, sessionKey },
-    );
+        : { ephemeralChannelId: conversationId, threadTs, sessionKey }),
+    });
 
     return { event, context };
   }
@@ -1395,69 +1387,53 @@ export class SlackMessagingBot implements MessagingBot {
     ack();
   }
 
+  private admitHumanMessage(
+    event: SlackIncomingMessage,
+    ack: () => void,
+  ): event is SlackIncomingMessage & { user: string } {
+    const hasSlackContent =
+      !!event.text ||
+      !!event.files?.length ||
+      !!event.blocks?.length ||
+      !!event.attachments?.length;
+    const isOwnMessage =
+      event.user === this.botUserId || (!!this.botId && event.bot_id === this.botId);
+    if (isOwnMessage) {
+      ack();
+      return false;
+    }
+
+    // User-token posts carry bot_id/app_id beside the human user. Only unknown
+    // authors and known bot users take the external-bot loop-protection path.
+    const authorIsKnownHuman = !!event.user && this.users.get(event.user)?.isBot === false;
+    const isExternalMessage =
+      event.subtype === "bot_message" || (!!event.bot_id && !authorIsKnownHuman);
+    if (isExternalMessage) {
+      const supportedSubtype =
+        event.subtype === undefined ||
+        event.subtype === "bot_message" ||
+        event.subtype === "file_share";
+      if (supportedSubtype && hasSlackContent) {
+        void this.logExternalMessagingBotMessage(event).catch((err) => {
+          log.logWarning("Failed to log Slack bot message", String(err));
+        });
+      }
+      ack();
+      return false;
+    }
+
+    const isSupportedUserMessage =
+      !!event.user &&
+      (event.subtype === undefined || event.subtype === "file_share") &&
+      hasSlackContent;
+    if (isSupportedUserMessage) return true;
+    ack();
+    return false;
+  }
+
   private handleMessageEvent({ event, ack }: { event: unknown; ack: () => void }): void {
-    const e = event as {
-      text?: string;
-      channel: string;
-      user?: string;
-      ts: string;
-      thread_ts?: string;
-      channel_type?: string;
-      subtype?: string;
-      bot_id?: string;
-      app_id?: string;
-      username?: string;
-      bot_profile?: { id?: string; app_id?: string; name?: string; real_name?: string };
-      blocks?: unknown[];
-      attachments?: unknown[];
-      files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-    };
-
-    const hasFiles = !!e.files && e.files.length > 0;
-    const hasSlackContent = !!e.text || hasFiles || !!e.blocks?.length || !!e.attachments?.length;
-    const isOwnMessagingBotMessage =
-      (!!e.user && e.user === this.botUserId) || (!!this.botId && e.bot_id === this.botId);
-    if (isOwnMessagingBotMessage) {
-      ack();
-      return;
-    }
-
-    // API posts made with a user token carry the posting app's bot_id/app_id
-    // alongside the human `user` — bot_id alone does not make the author a
-    // bot. Only treat the message as bot-authored when the author is not a
-    // known human user (bot users have is_bot=true; unknown authors stay on
-    // the conservative bot path so loop protection holds).
-    const authorIsKnownHuman = !!e.user && this.users.get(e.user)?.isBot === false;
-    const isExternalMessagingBotMessage =
-      e.subtype === "bot_message" || (!!e.bot_id && !authorIsKnownHuman);
-    if (isExternalMessagingBotMessage) {
-      if (e.subtype !== undefined && e.subtype !== "bot_message" && e.subtype !== "file_share") {
-        ack();
-        return;
-      }
-      if (!hasSlackContent) {
-        ack();
-        return;
-      }
-      void this.logExternalMessagingBotMessage(e).catch((err) => {
-        log.logWarning("Failed to log Slack bot message", String(err));
-      });
-      ack();
-      return;
-    }
-
-    if (!e.user) {
-      ack();
-      return;
-    }
-    if (e.subtype !== undefined && e.subtype !== "file_share") {
-      ack();
-      return;
-    }
-    if (!hasSlackContent) {
-      ack();
-      return;
-    }
+    const e = event as SlackIncomingMessage;
+    if (!this.admitHumanMessage(e, ack)) return;
 
     // message.im normally carries channel_type "im", but fall back to the
     // D-prefix convention (used by handleAppMention and session keys) so a

@@ -49,6 +49,15 @@ export interface SessionViewModel {
 
 // ── store ────────────────────────────────────────────────────────────────────
 
+export interface SessionViewTokenCreateOptions {
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+  sessionKey: string;
+  sessionFile: string;
+  platformUserName?: string;
+}
+
 export interface SessionViewToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;

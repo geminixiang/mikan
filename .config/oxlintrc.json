@@ -63,28 +63,6 @@
       "rules": {
         "node/no-process-env": "off"
       }
-    },
-    {
-      "files": [
-        "**/src/agent/*.ts",
-        "**/src/adapters/discord/bot.ts",
-        "**/src/adapters/progressive-renderer.ts",
-        "**/src/adapters/slack/bot.ts",
-        "**/src/adapters/slack/response-lifecycle.ts",
-        "**/src/adapters/telegram/bot.ts",
-        "**/src/adapters/types.ts",
-        "**/src/commands/sandbox.ts",
-        "**/src/harness/extensions/loader.ts",
-        "**/src/harness/subagent-runner.ts",
-        "**/src/runtime/conversation-runtime.ts",
-        "**/src/web/admin/portal.ts",
-        "**/src/web/login/portal.ts",
-        "**/src/web/session-view/portal.ts"
-      ],
-      "rules": {
-        "eslint/max-lines-per-function": "off",
-        "eslint/max-params": "off"
-      }
     }
   ]
 }

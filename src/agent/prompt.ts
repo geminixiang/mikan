@@ -1,14 +1,16 @@
-import type { Office } from "../office/index.js";
 import { type ImageContent } from "@earendil-works/pi-ai";
-import { formatSkillsForPrompt, type MikanSkill } from "../harness/index.js";
+import { formatSkillsForPrompt } from "../harness/index.js";
 import { lstatSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { ConversationKind, ConversationMessage, MessagingInfo } from "../adapter.js";
+import type { ConversationMessage } from "../adapter.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
 import * as log from "../log.js";
 import { type RuntimePathContext, type SandboxConfig } from "../sandbox/index.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { buildRuntimePaths, collectMessageAttachments } from "./execution.js";
+import type { BuildSystemPromptOptions } from "./types.js";
+
+export type { BuildSystemPromptOptions } from "./types.js";
 
 export async function buildPromptPayload(
   message: ConversationMessage,
@@ -121,61 +123,20 @@ export function resolveTriggerAttribution(
   return undefined;
 }
 
-export function buildSystemPrompt(
-  workspacePath: string,
-  office: Office,
-  conversationKind: ConversationKind,
-  currentUserId: string | undefined,
-  memory: string,
-  sandboxConfig: SandboxConfig,
-  platform: MessagingInfo,
-  skills: MikanSkill[],
-  projection: WorkspaceProjection,
-  skippedSkillLinks: string[] = [],
-): string {
-  const { workspaceRoot, conversationPath, scratchPath } = buildRuntimePaths(workspacePath, office);
-  const sandboxType = sandboxConfig.type;
-  const isContainerLike = sandboxType === "container" || sandboxType === "image";
+type RuntimePromptPaths = ReturnType<typeof buildRuntimePaths>;
 
-  // Format channel mappings
+function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
+  const { platform, sandboxConfig } = input;
+  const { workspaceRoot, conversationPath, scratchPath } = paths;
   const channelMappings =
     platform.channels.length > 0
       ? platform.channels.map((c) => `${c.id}\t#${c.name}`).join("\n")
       : "(no channels loaded)";
-
-  // Format user mappings
   const userMappings =
     platform.users.length > 0
       ? platform.users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`).join("\n")
       : "(no users loaded)";
-
-  const envDescription = buildEnvDescription(sandboxType, workspaceRoot);
-  // Per-turn instructions (event-trigger mode, attribution) are delivered with
-  // the user message via buildTurnInstructions(), not baked in here, so this
-  // system prompt stays byte-stable across a conversation's turns and keeps the
-  // provider prompt cache warm (a changing system prefix invalidates the cache
-  // for the whole request, including the far larger conversation history).
-  const workspaceLayout =
-    projection.layout === "full"
-      ? `${workspaceRoot}/ contains the complete trusted workspace.`
-      : projection.layout === "shared-support"
-        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, events/, and this conversation's directory.`
-        : `${conversationPath}/ is the only conversation workspace mounted; global memory, skills, and events are not available.`;
-  const skillStorageGuidance =
-    projection.doorPolicy === "trusted"
-      ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
-      : `Store skills in \`${conversationPath}/skills/<name>/\`; this office cannot access workspace-global skills.`;
-  const globalMemoryReadOnly = projection.promptSources.globalMemoryReadOnly === true;
-  const memoryGuidance =
-    projection.doorPolicy === "trusted"
-      ? globalMemoryReadOnly
-        ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this office (private visibility): you can read what other offices have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
-        : `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
-      : `Write durable knowledge only to \`${conversationPath}/MEMORY.md\`; this office cannot access workspace-global memory.`;
-  const systemLogPath =
-    projection.layout === "conversation"
-      ? `${conversationPath}/SYSTEM.md`
-      : `${workspaceRoot}/SYSTEM.md`;
+  const envDescription = buildEnvDescription(sandboxConfig.type, workspaceRoot);
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
@@ -209,9 +170,27 @@ When mentioning users, write <@userName> using the exact userName from the Users
 ## Environment
 ${envDescription}
 - Default place for clones, downloads, and experiments: ${scratchPath}
-- Do not use host-only paths unless you are running in host mode and verified they exist.
+- Do not use host-only paths unless you are running in host mode and verified they exist.`;
+}
 
-## Workspace Layout
+function buildWorkspaceSkillsPrompt(
+  input: BuildSystemPromptOptions,
+  paths: RuntimePromptPaths,
+): string {
+  const { office, projection, skills, skippedSkillLinks = [] } = input;
+  const { workspaceRoot, conversationPath, scratchPath } = paths;
+  const workspaceLayout =
+    projection.layout === "full"
+      ? `${workspaceRoot}/ contains the complete trusted workspace.`
+      : projection.layout === "shared-support"
+        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, events/, and this conversation's directory.`
+        : `${conversationPath}/ is the only conversation workspace mounted; global memory, skills, and events are not available.`;
+  const skillStorageGuidance =
+    projection.doorPolicy === "trusted"
+      ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
+      : `Store skills in \`${conversationPath}/skills/<name>/\`; this office cannot access workspace-global skills.`;
+
+  return `## Workspace Layout
 ${workspaceLayout}
 ${
   projection.layout === "conversation"
@@ -257,9 +236,26 @@ ${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)
     skippedSkillLinks.length > 0
       ? `\n\nNote: these skill entries were skipped because they are symlinks, which the host never follows when reading this conversation's skills: ${skippedSkillLinks.join(", ")}. Replace each with a real file or directory (for example \`cp -rL\`) to load it.`
       : ""
-  }
+  }`;
+}
 
-## Events
+function buildOperatingPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
+  const { memory, projection, sandboxConfig } = input;
+  const { workspaceRoot, conversationPath } = paths;
+  const isContainerLike = sandboxConfig.type === "container" || sandboxConfig.type === "image";
+  const globalMemoryReadOnly = projection.promptSources.globalMemoryReadOnly === true;
+  const memoryGuidance =
+    projection.doorPolicy === "trusted"
+      ? globalMemoryReadOnly
+        ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this office (private visibility): you can read what other offices have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
+        : `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
+      : `Write durable knowledge only to \`${conversationPath}/MEMORY.md\`; this office cannot access workspace-global memory.`;
+  const systemLogPath =
+    projection.layout === "conversation"
+      ? `${conversationPath}/SYSTEM.md`
+      : `${workspaceRoot}/SYSTEM.md`;
+
+  return `## Events
 Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It writes to the host-side mikan control plane and fills routing fields for the current conversation automatically.
 
 Write event \`text\` as a self-contained future task with needed context, tone, and constraints because events do not inherit normal conversation history.
@@ -330,6 +326,13 @@ ls -1 sessions/
 
 Each tool requires a "label" parameter (shown to user).
 `;
+}
+
+export function buildSystemPrompt(input: BuildSystemPromptOptions): string {
+  const paths = buildRuntimePaths(input.workspacePath, input.office);
+  // Per-turn instructions stay in buildTurnInstructions(), keeping this prompt
+  // byte-stable across a conversation so the provider cache remains warm.
+  return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}`;
 }
 
 /**

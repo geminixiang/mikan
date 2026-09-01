@@ -33,11 +33,11 @@ export class NewCommandHandler implements CommandHandler {
       return true;
     }
 
-    await context.services.runtime.handleNewCommand(
-      context.sessionKey,
-      context.conversationId,
-      context.bot,
-      createConversationMessage({
+    await context.services.runtime.handleNewCommand({
+      sessionKey: context.sessionKey,
+      conversationId: context.conversationId,
+      bot: context.bot,
+      message: createConversationMessage({
         platform: context.address.platform,
         conversationId: context.address.conversationId,
         address: context.address,
@@ -48,9 +48,7 @@ export class NewCommandHandler implements CommandHandler {
         userName: context.platformUserName,
         text: context.commandText,
       }),
-      context.responder,
-      context.bot.getMessagingInfo(),
-    );
+    });
     return true;
   }
 }
