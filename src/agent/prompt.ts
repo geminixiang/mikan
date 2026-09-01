@@ -1,5 +1,4 @@
 import type { Office } from "../office/index.js";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type ImageContent } from "@earendil-works/pi-ai";
 import { formatSkillsForPrompt, type MikanSkill } from "../harness/index.js";
 import { lstatSync } from "node:fs";
@@ -275,10 +274,13 @@ For periodic events where there's nothing to report, respond with exactly \`[SIL
 ${memoryGuidance}
 Update it when you learn something important or when asked to remember something.
 
-Memory is a curated note, not a transcript. Before writing an entry, ask whether it is a
-stable fact (a decision, a convention, an owner, a recurring constraint) or a one-off event
-that belongs in \`log.jsonl\` instead; only write the former. Keep entries short — a long
-running log of events crowds out the facts that matter.
+Memory is a compact, revisable orientation anchor backed by conversation evidence, not a transcript or final truth.
+When memory conflicts with newer conversation evidence, prefer the newer evidence.
+For mutable external state, query the Live source or current API in this run and prefer that fresh result over memory or older API observations. If the source cannot be queried successfully, say that the current state could not be verified; do not fall back to memory as current truth. A later Dream can revise the anchor.
+
+Before writing an entry, ask whether it is a stable fact (a decision, a convention, an owner,
+a recurring constraint) or a one-off event that belongs in \`log.jsonl\` instead; only write
+the former. Keep entries short — a long running log of events crowds out the facts that matter.
 
 Querying, correcting, and forgetting memory are normal, expected requests, not edge cases:
 - If asked what you remember, read the memory file(s) above and list the entries plainly.
@@ -377,43 +379,4 @@ export function appendTriggerAttribution(
     ? trimmed.slice(0, -legacySuffix.length).trimEnd()
     : trimmed;
   return `${body}\n\n${suffix}`;
-}
-
-export function sessionDreamPrompt(conversationMemoryPath: string, toolNames: string[]): string {
-  // read/edit/write are core tools, so an empty grant does not arise today;
-  // the fallback only keeps this sentence coherent if that ever changes.
-  const grant =
-    toolNames.length === 0
-      ? "You have no tools in this run and cannot change memory. Say so and stop."
-      : `Your tools this run: ${toolNames.join(", ")}. Nothing else will execute, including tools used earlier in this transcript. ${conversationMemoryPath} is the only path you may write.`;
-  return [
-    "Before this conversation is reset or rotated, preserve only durable information worth carrying into future sessions of this same conversation.",
-    `Review the existing transcript and update only the conversation-specific MEMORY.md at ${conversationMemoryPath}.`,
-    grant,
-    "Do not modify the workspace-level global MEMORY.md. Information from one DM or channel must not be promoted into memory shared with other conversations by this maintenance run.",
-    "Preserve durable decisions, preferences, facts, and ongoing work specific to this conversation. Preserve the concrete values and details needed to resume the work; do not replace them with abstract categories, summaries of retention rules, or statements that merely say a kind of information is durable. An explicit user statement that a fact, preference, or decision should persist is strong evidence that its exact content is worth preserving.",
-    "Deduplicate against existing conversation memory. Do not preserve transient discussion, tool noise, secrets, speculative details, or test scaffolding. If there is nothing new worth preserving, make no changes. Do no unrelated work.",
-  ].join("\n");
-}
-
-export const SESSION_DREAM_BUDGET = {
-  maxDurationMs: 2 * 60 * 1000,
-  maxLlmCalls: 10,
-};
-
-export function sessionDreamTools(tools: AgentTool[], conversationMemoryPath: string): AgentTool[] {
-  return tools
-    .filter((tool) => tool.name === "read" || tool.name === "edit" || tool.name === "write")
-    .map((tool) => {
-      if (tool.name === "read") return tool;
-      return Object.assign({}, tool, {
-        execute: async (...args: Parameters<AgentTool["execute"]>) => {
-          const params = args[1] as { path?: unknown };
-          if (params.path !== conversationMemoryPath) {
-            throw new Error(`Session Dream may only modify ${conversationMemoryPath}`);
-          }
-          return tool.execute(...args);
-        },
-      });
-    });
 }

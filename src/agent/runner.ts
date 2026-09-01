@@ -4,7 +4,7 @@ import type { MikanAgentSession } from "../harness/index.js";
 import { DEFAULT_EVENT_BUDGET, MikanModels } from "../harness/index.js";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
-import { join, posix } from "node:path";
+import { join } from "node:path";
 import type {
   ConversationKind,
   ConversationMessage,
@@ -45,13 +45,9 @@ import {
   buildTurnInstructions,
   getMemory,
   resolveTriggerAttribution,
-  SESSION_DREAM_BUDGET,
-  sessionDreamPrompt,
-  sessionDreamTools,
 } from "./prompt.js";
 import {
   attachSessionEventHandlers,
-  createNoopResponder,
   createRunQueue,
   createRunState,
   finalizeRunResponse,
@@ -233,13 +229,6 @@ async function prepareRunContext(params: {
   };
 }
 
-/**
- * The dream run reads a transcript in which the agent held its full tool set,
- * but `sessionDreamTools` has since narrowed it. Left to infer its grant from
- * the transcript, the model calls a tool it no longer holds and burns one of
- * its five turns on the failure — so the grant is stated, and derived from the
- * tools actually handed to the run rather than restated by hand.
- */
 export async function createRunner(options: CreateRunnerOptions): Promise<PiAgentWrapper> {
   const {
     sandboxConfig,
@@ -415,9 +404,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       try {
         return await runPreparedTurn();
       } finally {
-        // Ownership must return to the pool on every exit — a throw anywhere
-        // in the turn (dreamSessionMemory already does this) would otherwise
-        // leave the runner permanently "busy" with a stale responder.
+        // Ownership must return to the pool on every exit; otherwise a throw
+        // would leave the runner permanently "busy" with a stale responder.
         runState.responder = null;
         runState.logCtx = null;
         runState.queue = null;
@@ -505,59 +493,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
         });
 
         return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
-      }
-    },
-
-    async dreamSessionMemory(
-      message: ConversationMessage,
-      platform: MessagingInfo,
-    ): Promise<{ stopReason: string; errorMessage?: string }> {
-      const responder = createNoopResponder();
-      const prepared = await prepareRunContext({
-        message,
-        responder,
-        platform,
-        office,
-        sessionUuid,
-        runState,
-        executor,
-        resolveForRun,
-        session,
-        setEventContext,
-        setSandboxContext,
-        setUploadFunction,
-        setImageUploadFunction,
-        setReactFunction,
-        bindPlatformToolPacks,
-      });
-      pathContext = prepared.pathContext;
-
-      try {
-        const conversationMemoryPath = posix.join(
-          prepared.pathContext.runtimeWorkspaceRoot,
-          office.key,
-          "MEMORY.md",
-        );
-        const dreamTools = sessionDreamTools(session.agent.state.tools, conversationMemoryPath);
-        await session.prompt(
-          sessionDreamPrompt(
-            conversationMemoryPath,
-            dreamTools.map((tool) => tool.name),
-          ),
-          { budget: SESSION_DREAM_BUDGET, tools: dreamTools },
-        );
-        await prepared.runQueue.wait();
-        // A budget abort carries its reason in the tally, not in errorMessage,
-        // and that reason is the only thing that tells the user why memory was
-        // not preserved.
-        return {
-          stopReason: runState.stopReason,
-          errorMessage: runState.errorMessage ?? session.getLastRunStats().budgetExceededReason,
-        };
-      } finally {
-        runState.responder = null;
-        runState.logCtx = null;
-        runState.queue = null;
       }
     },
 

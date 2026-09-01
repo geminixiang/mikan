@@ -17,6 +17,7 @@ import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./tools/types.js";
 import { downloadChannel } from "./cli/download.js";
+import { DreamScheduler } from "./dream/index.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
 import { startWebServer } from "./web/server.js";
@@ -609,11 +610,14 @@ if (slackMessagingBot) {
   slackMessagingBot.setEventsWatcher(eventsWatcher);
 }
 eventsWatcher.start();
+const dreamScheduler = new DreamScheduler(workspace, handler);
+dreamScheduler.start();
 
 // Handle shutdown
 async function shutdown(): Promise<void> {
-  await handler.shutdown();
   eventsWatcher.stop();
+  await dreamScheduler.stop();
+  await handler.shutdown();
   await Sentry.close(5000);
   process.exit(0);
 }

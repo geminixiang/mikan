@@ -14,7 +14,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, office, vault, and sandbox.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
-- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, and platform bots.
+- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, scheduled Dream maintenance, and platform bots.
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
 - `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown; also carries containers through the office-key rename and mount drift without losing their writable layer.
 - `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.
@@ -28,6 +28,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
 - `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
+- `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
 - `harness/`: mikan's agent harness — session store, model catalog, run loop, skills, and subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.

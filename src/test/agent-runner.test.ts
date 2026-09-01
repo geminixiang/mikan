@@ -8,7 +8,7 @@ import type { ConversationMessage, ConversationResponder, MessagingInfo } from "
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createRunner } from "../agent/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
-import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
@@ -331,82 +331,6 @@ describe("PiAgentWrapper.run", () => {
     expect(second.errorMessage).toBeUndefined();
     expect(secondResponder.replaceResponse.mock.calls[0]?.[0]).toContain("second run ok");
     expect(secondResponder.respondDiagnostic).not.toHaveBeenCalled();
-  });
-
-  test("hidden session Dream sees the old transcript and writes memory", async () => {
-    const promptSpy = vi.spyOn(MikanAgentSession.prototype, "prompt");
-    const { runner, faux } = await createTestRunner();
-    const memoryPath = testOffice().memoryPath;
-    const setupResponder = makeResponder();
-    let maintenancePrompt = "";
-    faux.setResponses([
-      fauxAssistantMessage("recorded old turn"),
-      (context) => {
-        const messages = JSON.stringify(context.messages);
-        expect(messages).toContain("durable launch decision");
-        maintenancePrompt = messages;
-        return fauxAssistantMessage(
-          fauxToolCall("write", {
-            label: "preserve memory",
-            path: memoryPath,
-            content: "Launch decision: use the staged rollout.",
-          }),
-        );
-      },
-      fauxAssistantMessage("memory updated"),
-    ]);
-    await runner.run(
-      makeMessage({ text: "durable launch decision: use a staged rollout" }),
-      setupResponder,
-      platform,
-    );
-    const visibleCallsBeforeMaintenance = setupResponder.replaceResponse.mock.calls.length;
-
-    const result = await runner.dreamSessionMemory(
-      makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
-      platform,
-    );
-
-    expect(result).toEqual({ stopReason: "stop", errorMessage: undefined });
-    expect(maintenancePrompt).toContain("preserve only durable information");
-    expect(maintenancePrompt).toContain("update only the conversation-specific MEMORY.md");
-    expect(maintenancePrompt).toContain("Do not modify the workspace-level global MEMORY.md");
-    expect(maintenancePrompt).toContain("Preserve the concrete values and details needed");
-    expect(maintenancePrompt).toContain("exact content is worth preserving");
-    // The transcript this run reads was written while the agent held its full
-    // tool set, so the narrowed grant has to be stated or the model calls a
-    // tool it no longer holds and spends a turn on the failure.
-    expect(maintenancePrompt).toContain("Your tools this run: read, edit, write.");
-    expect(maintenancePrompt).toContain("including tools used earlier in this transcript");
-    expect(maintenancePrompt).not.toContain("bash");
-    expect(promptSpy.mock.calls.at(-1)?.[1]).toMatchObject({
-      budget: { maxDurationMs: 120_000, maxLlmCalls: 10 },
-    });
-    expect(setupResponder.replaceResponse).toHaveBeenCalledTimes(visibleCallsBeforeMaintenance);
-    expect(readFileSync(memoryPath, "utf-8")).toBe("Launch decision: use the staged rollout.");
-  });
-
-  test("session Dream cannot write global memory", async () => {
-    const { runner, faux } = await createTestRunner();
-    const globalMemoryPath = join(dir, "workspace", "MEMORY.md");
-    writeFileSync(globalMemoryPath, "global stays unchanged");
-    faux.setResponses([
-      fauxAssistantMessage(
-        fauxToolCall("write", {
-          label: "incorrectly promote memory",
-          path: globalMemoryPath,
-          content: "should not be written",
-        }),
-      ),
-      fauxAssistantMessage("could not update global memory"),
-    ]);
-
-    await runner.dreamSessionMemory(
-      makeMessage({ id: "memory:C1", conversationKind: "direct", text: "/new" }),
-      platform,
-    );
-
-    expect(readFileSync(globalMemoryPath, "utf-8")).toBe("global stays unchanged");
   });
 
   test("a successful Slack Block Kit call owns the final visible response", async () => {

@@ -445,21 +445,6 @@ function extractToolResultText(result: unknown): string {
   return JSON.stringify(result);
 }
 
-async function noopResponderMethod(): Promise<void> {}
-
-export function createNoopResponder(): ConversationResponder {
-  return {
-    respond: noopResponderMethod,
-    replaceResponse: noopResponderMethod,
-    respondDiagnostic: noopResponderMethod,
-    respondToolResult: noopResponderMethod,
-    setTyping: noopResponderMethod,
-    setWorking: noopResponderMethod,
-    uploadFile: noopResponderMethod,
-    deleteResponse: noopResponderMethod,
-  };
-}
-
 export function formatAgentActorName(userName: string | undefined, fallback: string): string {
   return userName ? `DM:${userName}` : fallback;
 }

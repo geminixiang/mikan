@@ -261,7 +261,7 @@ describe("system prompt memory guidance", () => {
     expect(prompt).toContain("it never leaves this conversation");
   });
 
-  test("always instructs the agent that memory is curated and queryable/correctable", () => {
+  test("treats memory as a revisable anchor below newer and Live evidence", () => {
     const projection = projectionFor("public");
     const office = createWorkspace({ root: workspaceDir, stateDir }).office(
       createOfficeAddress("slack", "C123"),
@@ -278,7 +278,13 @@ describe("system prompt memory guidance", () => {
       projection,
     );
 
-    expect(prompt).toContain("curated note, not a transcript");
+    expect(prompt).toContain("compact, revisable orientation anchor");
+    expect(prompt).toContain("transcript or final truth");
+    expect(prompt).toContain("prefer the newer evidence");
+    expect(prompt).toContain("query the Live source or current API in this run");
+    expect(prompt).toContain("prefer that fresh result over memory or older API observations");
+    expect(prompt).toContain("current state could not be verified");
+    expect(prompt).toContain("do not fall back to memory as current truth");
     expect(prompt).toContain("normal, expected requests");
   });
 });

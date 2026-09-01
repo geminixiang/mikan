@@ -6,8 +6,6 @@ import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
 
-type SettlementKind = "run" | "dream";
-
 interface ConversationBarrier {
   activeWork: number;
   pendingMaintenance: number;
@@ -28,10 +26,7 @@ export class SessionLifecycle {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly leases = new Map<string, number>();
   private readonly settlements = new Set<Promise<void>>();
-  private readonly settlementKinds = new Map<
-    Promise<void>,
-    { kind: SettlementKind; sessionId: string }
-  >();
+  private readonly settlementSessions = new Map<Promise<void>, string>();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
   private readonly conversationGenerations = new Map<string, number>();
@@ -118,7 +113,6 @@ export class SessionLifecycle {
 
   settle(
     state: ConversationRuntimeState,
-    kind: SettlementKind,
     work: () => Promise<void>,
     options: { markRunning?: boolean } = {},
   ): Promise<void> {
@@ -137,7 +131,7 @@ export class SessionLifecycle {
       .finally(() => this.finishSettlement(state, settlement, id));
     state.runSettlement = settlement;
     this.settlements.add(settlement);
-    this.settlementKinds.set(settlement, { kind, sessionId: id });
+    this.settlementSessions.set(settlement, id);
     return settlement;
   }
 
@@ -147,17 +141,13 @@ export class SessionLifecycle {
     id: string,
   ): void {
     this.settlements.delete(settlement);
-    this.settlementKinds.delete(settlement);
+    this.settlementSessions.delete(settlement);
     if (state.runSettlement === settlement) state.runSettlement = undefined;
     state.running = false;
     state.startedAt = 0;
     state.lastAccessedAt = this.now();
     this.releaseLease(id, state.address);
     this.evictIdle();
-  }
-
-  isDreamSettlement(settlement: Promise<void> | undefined): boolean {
-    return settlement !== undefined && this.settlementKinds.get(settlement)?.kind === "dream";
   }
 
   settlementCount(): number {
@@ -435,8 +425,8 @@ export class SessionLifecycle {
 
   private activeWorkCount(): number {
     const sessionIds = new Set(this.leases.keys());
-    for (const settlement of this.settlementKinds.values()) {
-      sessionIds.add(settlement.sessionId);
+    for (const sessionId of this.settlementSessions.values()) {
+      sessionIds.add(sessionId);
     }
     return sessionIds.size;
   }

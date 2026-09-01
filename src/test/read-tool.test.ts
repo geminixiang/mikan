@@ -125,8 +125,8 @@ describe("createReadTool", () => {
   });
 
   test("never names a tool the caller may not hold", async () => {
-    // Session Dream grants only read/edit/write, so pointing at bash here
-    // costs the run a turn on `Tool bash not found`.
+    // A caller may have a narrowed tool grant, so pointing at bash here can
+    // cost the run a turn on `Tool bash not found`.
     const path = join(dir, "oneline.txt");
     writeFileSync(path, "a".repeat(60_000));
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "../harness/index.js";
 import {
   atomicWritePrivateFile,
@@ -118,9 +118,25 @@ export function openManagedSession(sessionFile: string, cwd: string): Promise<Se
   return SessionStore.open(sessionFile, cwd);
 }
 
-function createSessionFilename(sessionId = randomUUID()): string {
+function createSessionFilename(sessionId: string = randomUUID()): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `${timestamp}_${sessionId.slice(0, 8)}.jsonl`;
+}
+
+/** Preserve a fixed-path session before recreating that scope at the same path. */
+export function archiveManagedSessionFile(sessionFile: string): string | null {
+  if (!existsSync(sessionFile)) return null;
+  let archiveName: string;
+  try {
+    const sessionId = SessionStore.readHeader(sessionFile)?.id;
+    if (!sessionId) throw new Error("missing header");
+    archiveName = `scoped-archive-${createSessionFilename(sessionId)}`;
+  } catch {
+    archiveName = `scoped-archive-${createSessionFilename()}.corrupt`;
+  }
+  const archive = join(dirname(sessionFile), archiveName);
+  renameSync(sessionFile, archive);
+  return archive;
 }
 
 function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {

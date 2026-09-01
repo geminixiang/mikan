@@ -1,5 +1,13 @@
 import { officeSessionsDir } from "../office/index.js";
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -387,9 +395,9 @@ describe("fixed thread sessions", () => {
 });
 
 describe("top-level session rotation", () => {
-  // The biweekly clock rule lives in rotation.ts; the rotation *workflow*
-  // (Session Dream → reset → re-run) is the runtime's alone. Scope
-  // resolution never rotates — it reuses whatever session is current.
+  // The biweekly clock rule lives in rotation.ts; the reset-and-re-run
+  // workflow is the runtime's alone. Scope resolution never rotates — it
+  // reuses whatever session is current.
   test("clock rule: rotates across biweekly Sunday buckets, not within one", () => {
     const sessionDir = officeSessionsDir(channelDir);
     const staleFile = createManagedSessionFile(sessionDir, channelDir);
@@ -473,8 +481,8 @@ describe("top-level session rotation", () => {
   });
 
   test("keeps old log messages out after a runtime rotation reset", async () => {
-    // The runtime rotates by calling resetSession (after Session Dream);
-    // the fresh session's chat_sync watermark must fence out log messages
+    // The runtime rotates by calling resetSession; the fresh session's
+    // chat_sync watermark must fence out log messages
     // that predate the reset.
     const sessionDir = officeSessionsDir(channelDir);
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
@@ -526,20 +534,52 @@ describe("session-scoped /new reset", () => {
     expect(readFileSync(threadFile, "utf-8")).toContain("thread");
   });
 
-  test("thread /new resets the same fixed file and keeps channel plus sibling thread intact", async () => {
+  test("thread /new recovers a corrupt fixed-path session while preserving the raw file", async () => {
+    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    mkdirSync(officeSessionsDir(channelDir), { recursive: true });
+    writeFileSync(threadFile, "not a session\n");
+
+    const sync = new ChatHistorySync();
+    await sync.resetSession({
+      conversationDir: channelDir,
+      sessionKey: "C123:1000.0001",
+      cwd: channelDir,
+    });
+
+    expect(SessionStore.readHeader(threadFile)?.id).toBeDefined();
+    const corruptArchive = readdirSync(officeSessionsDir(channelDir)).find((name) =>
+      name.endsWith(".jsonl.corrupt"),
+    );
+    expect(corruptArchive).toBeDefined();
+    expect(readFileSync(join(officeSessionsDir(channelDir), corruptArchive!), "utf-8")).toBe(
+      "not a session\n",
+    );
+  });
+
+  test("thread /new archives old evidence and keeps channel plus sibling thread intact", async () => {
     const sessionDir = officeSessionsDir(channelDir);
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
     const channelSM = await openManagedSession(channelFile, channelDir);
     await channelSM.appendMessage(makeUserMessage("channel"));
     await channelSM.appendMessage(makeAssistantMessage("channel reply"));
+    const channelId = SessionStore.readHeader(channelFile)!.id;
 
     const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
     const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
     await seedManagedSession(thread1File, sessionDir, channelDir, "thread1");
     await seedManagedSession(thread2File, sessionDir, channelDir, "thread2");
+    const oldThreadId = SessionStore.readHeader(thread1File)!.id;
 
-    createManagedSessionFileAtPath(thread1File, channelDir);
+    const sync = new ChatHistorySync();
+    await sync.resetSession({
+      conversationDir: channelDir,
+      sessionKey: "C123:1000.0001",
+      cwd: channelDir,
+    });
 
+    const archive = readdirSync(sessionDir).find((name) => name.includes(oldThreadId.slice(0, 8)));
+    expect(archive).toBeDefined();
+    expect(readFileSync(join(sessionDir, archive!), "utf-8")).toContain("thread1");
     expect(tryResolveThreadSession(thread1File)).toBe(thread1File);
     expect(readFileSync(thread1File, "utf-8")).not.toContain("thread1");
     expect(readFileSync(thread2File, "utf-8")).toContain("thread2");
@@ -547,6 +587,14 @@ describe("session-scoped /new reset", () => {
       "channel",
     );
     expect(countSessionHeaders(thread1File)).toBe(1);
+
+    const laterThreadKey = `C123:${(Date.now() / 1000 + 60).toFixed(4)}`;
+    const later = await sync.resolveSessionScope({
+      conversationDir: channelDir,
+      sessionKey: laterThreadKey,
+      cwd: channelDir,
+    });
+    expect(SessionStore.readHeader(later.contextFile)?.parentSessionId).toBe(channelId);
   });
 });
 

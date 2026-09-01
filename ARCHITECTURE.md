@@ -84,14 +84,14 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                                         |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                             |
-| Orchestration           | Composition root, Conversation runtime, Agent runner  | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                  |
-| Agent core              | Harness                                               | [`src/harness/README.md`](src/harness/README.md)                                                                                                                               |
-| Identity and data       | Office, Sessions, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
-| Execution and authority | Execution resolver, Sandbox, Vault, Packages          | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                             |
-| Control surfaces        | Commands, Web and scheduled-event services            | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                   |
+| Group                   | Modules                                                      | Detailed documentation                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform edge           | Platform adapters, Conversation intake                       | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                                           |
+| Orchestration           | Composition root, Conversation runtime, Agent runner         | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                                                                |
+| Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
+| Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
+| Execution and authority | Execution resolver, Sandbox, Vault, Packages                 | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                                                                           |
+| Control surfaces        | Commands, Web and scheduled-event services                   | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                                                 |
 
 ## Main flows
 
@@ -107,8 +107,8 @@ Daemon boot proceeds conceptually as follows:
 4. Complete crash-resumable legacy office migration before accepting events.
 5. Configure sandbox, vault, package, portal, and platform facilities.
 6. Construct the Conversation runtime with capability factories.
-7. Start platform bots, web services, and the event watcher.
-8. On shutdown, reject new runner acquisitions; Session lifecycle waits for active leases and settlements, aborts overdue runs, and disposes every materialized runner.
+7. Start platform bots, web services, the event watcher, and the Dream scheduler.
+8. On shutdown, stop new scheduled work, drain the currently active Dream office without starting the remaining sweep, then reject new runner acquisitions; Session lifecycle waits for active leases and settlements, aborts overdue runs, and disposes every materialized runner.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
 
@@ -163,6 +163,16 @@ self-schedule. Trusted layouts may expose the bus. Cross-conversation
 scheduling is intentional and is not a file-isolation guarantee. Event text
 must never contain secrets.
 
+### Dream maintenance
+
+Dream is a host-scheduled, per-office maintenance flow, not a chat command or a session-rotation hook. Every ten minutes during Taiwan time 02:00–05:00, the scheduler visits registered offices. The Conversation runtime places each attempt behind the office maintenance barrier, so collection begins only after active session work settles and new work waits until maintenance finishes.
+
+The Dream authority reads every office session file and compares its stable session UUID with the host-private `dream.json` checkpoint. It calls the model only when at least one entry follows a saved `throughEntryId` and the newest settled entry in the office is at least five hours old. Evidence is admitted in bounded batches, with explicitly marked bounded head/tail representations for oversized individual entries and checkpoints advancing only through entries included in the successful batch, so a large backlog drains over later eligible sweeps instead of producing an unbounded prompt. The model runs against an in-memory harness session, combines the batch with the existing Memory anchor, and returns the complete replacement `MEMORY.md`; an absolute 120-second deadline aborts the session and propagates its abort signal to the provider, while the caller rejects generation and prevents a commit even if the provider completes late. Its own prompt and response never become office evidence.
+
+Commit ordering is deliberate: atomically replace `MEMORY.md`, then atomically replace `dream.json`. A generation, model, or memory-write failure leaves the checkpoint unchanged, so evidence is retried rather than silently skipped. `/new` and biweekly rotation only create Clean sessions; neither invokes Dream. Resetting a fixed-path scoped session archives its prior JSONL first, so scheduled Dream can still inspect evidence from before the reset.
+
+The Memory anchor is revisable orientation rather than final truth. Newer conversation evidence outranks it, and mutable external facts require a fresh Live-source or current-API read in the answering run.
+
 ## Storage and authority map
 
 ```text
@@ -185,6 +195,7 @@ must never contain secrets.
 ├── global/git/                           global package checkouts
 └── conversations/<office-key>/
     ├── settings.json
+    ├── dream.json                        per-session Dream checkpoints
     └── git/                              conversation package checkouts
 ```
 
@@ -307,6 +318,14 @@ Evidence: `src/workspace-projection/index.ts`.
 **`state-dir-host-only`** — The State dir is host-private, outside the Workspace root, and never projected into a Sandbox. Important state writes are private and atomic where readers must not observe partial content.
 
 Evidence: `src/config.ts`, `src/utils/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
+
+### INV Dream commit order
+
+<a id="inv-dream-commit-order"></a>
+
+**`dream-commit-order`** — Dream runs only after office session work settles, processes entries strictly after each session UUID's durable `throughEntryId`, and invokes no model when there is no eligible new evidence. Generation has a 120-second absolute deadline that aborts the session, propagates its abort signal to the provider, and fails the caller closed, including on a late provider completion. A successful update atomically writes the office Memory anchor before atomically advancing the host-private checkpoint. Dream generation uses an in-memory session so maintenance output cannot recursively become new evidence.
+
+Evidence: `src/dream/`, `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV execution policy enforcement
 

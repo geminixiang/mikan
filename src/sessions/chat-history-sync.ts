@@ -10,6 +10,7 @@ import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {
+  archiveManagedSessionFile,
   createManagedSessionFile,
   createManagedSessionFileAtPath,
   extractSessionSuffix,
@@ -193,6 +194,7 @@ export class ChatHistorySync {
               options.conversationDir,
               extractSessionSuffix(options.sessionKey),
             ) ?? undefined;
+          archiveManagedSessionFile(threadFile);
           return createManagedSessionFileAtPath(threadFile, cwd, parent);
         })()
       : createManagedSessionFile(officeSessionsDir(options.conversationDir), cwd);

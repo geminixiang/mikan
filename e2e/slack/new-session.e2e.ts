@@ -1,11 +1,14 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { createOfficeAddress, officeDir } from "../../src/office/index.js";
+import { resolveChannelSessionFile } from "../../src/sessions/store.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
   openDmChannel,
   postLocallyDeliveredMessage,
   sleep,
-  summarizeMessage,
   waitForBotReply,
 } from "./helpers/slack.js";
 
@@ -58,10 +61,9 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     }
   });
 
-  it("S-024 /new preserves durable memory but discards transient context", async () => {
+  it("S-024 /new creates a Clean session without changing durable memory", async () => {
     const dmChannel = await openDmChannel(client, botUserId);
     const nonce = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const projectCodename = `Mikan-Orbit-${nonce}`;
     const scratchNonce = `scratch-${nonce}`;
 
     const setupStartedAt = nowSeconds();
@@ -70,10 +72,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       channel: dmChannel,
       workingDir: env.workingDir,
       text: (deliveryMarker) =>
-        `這個對話所屬專案的長期代號是 ${projectCodename}。這是精確且持久的專案偏好，` +
-        "在 /new 後仍必須使用；請將完整代號保存在此對話的 MEMORY.md，而非全域 MEMORY.md。" +
-        `目前草稿的暫時註記是 ${scratchNonce}，只供這個 session 使用，不得寫入任何 MEMORY.md，` +
-        `也不得在 reset 後保留。請只簡短回覆 OK，並原樣附上 ${deliveryMarker}。`,
+        `這個 session 的暫時註記是 ${scratchNonce}。請只簡短回覆 OK，並原樣附上 ${deliveryMarker}。`,
       timeoutMs: Math.max(env.timeoutMs, 15_000),
       pollMs: env.pollMs,
     });
@@ -87,11 +86,18 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       pollMs: env.pollMs,
       textIncludes: setupMarker,
     });
-    expect(setupReply, "no acknowledgement to the memory setup turn").not.toBeNull();
+    expect(setupReply, "no acknowledgement to the setup turn").not.toBeNull();
+
+    const conversationDir = officeDir(env.workingDir, createOfficeAddress("slack", dmChannel));
+    const memoryPath = join(conversationDir, "MEMORY.md");
+    const memoryAnchor = `# E2E Memory anchor\n\nStable nonce: ${nonce}\n`;
+    writeFileSync(memoryPath, memoryAnchor);
+    const originalSession = resolveChannelSessionFile(conversationDir);
+    expect(originalSession, "no active session before /new").not.toBeNull();
+    expect(readFileSync(originalSession!, "utf-8")).toContain(scratchNonce);
 
     // Slack does not let this QA Web API client invoke another app's slash command.
-    // A literal /pi-new DM is accepted by mikan's normal command parser and reaches
-    // the same NewCommandHandler and ConversationRuntime reset path.
+    // A literal /pi-new DM reaches the same command and reset path.
     const { ts: resetTs } = await postLocallyDeliveredMessage({
       client,
       channel: dmChannel,
@@ -104,68 +110,18 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       dmChannel,
       botUserId,
       resetTs,
-      Math.max(env.timeoutMs, 150_000),
+      Math.max(env.timeoutMs, 60_000),
       env.pollMs,
     );
-    expect(resetResult, "timed out waiting for /pi-new maintenance and reset").not.toBeNull();
+    expect(resetResult, "timed out waiting for /pi-new reset").not.toBeNull();
     expect(resetResult?.success, `reset failed: ${resetResult?.text ?? "no result"}`).toBe(true);
     expect(resetResult?.text.trim()).toBe(RESET_SUCCESS);
 
-    const expected = `CODENAME=${projectCodename}; SCRATCH=UNKNOWN`;
-    const probe =
-      "請從此對話已保存的長期記憶找出專案代號，並判斷先前草稿的暫時註記是否已知。" +
-      "整個回覆必須嚴格為：CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN";
-    const probeStartedAt = nowSeconds();
-    const { ts: probeTs } = await postLocallyDeliveredMessage({
-      client,
-      channel: dmChannel,
-      workingDir: env.workingDir,
-      text: () => probe,
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
-      pollMs: env.pollMs,
-    });
-    let probeReply = await waitForBotReply({
-      client,
-      channel: dmChannel,
-      botUserId,
-      rootTs: probeTs,
-      startedAt: probeStartedAt,
-      timeoutMs: Math.max(env.timeoutMs, 45_000),
-      pollMs: env.pollMs,
-      textIncludes: expected,
-    });
-
-    if (!probeReply) {
-      const retryStartedAt = nowSeconds();
-      const { ts: retryTs } = await postLocallyDeliveredMessage({
-        client,
-        channel: dmChannel,
-        workingDir: env.workingDir,
-        text: () =>
-          "請修正格式並從此對話的長期記憶取得專案代號。" +
-          "只回覆 CODENAME=<已保存的完整專案代號>; SCRATCH=UNKNOWN，" +
-          "不要猜測、輸出暫時註記、加入其他文字或使用 Markdown。",
-        timeoutMs: Math.max(env.timeoutMs, 15_000),
-        pollMs: env.pollMs,
-      });
-      probeReply = await waitForBotReply({
-        client,
-        channel: dmChannel,
-        botUserId,
-        rootTs: retryTs,
-        startedAt: retryStartedAt,
-        timeoutMs: Math.max(env.timeoutMs, 45_000),
-        pollMs: env.pollMs,
-        textIncludes: expected,
-      });
-      expect(
-        probeReply,
-        `no exact post-reset reply after format repair: ${expected}`,
-      ).not.toBeNull();
-    }
-
-    expect(probeReply?.text ?? "", "scratch nonce leaked after reset").not.toContain(scratchNonce);
-    expect(probeReply?.text ?? "").toContain(expected);
-    console.log(`new-session probe ts=${probeReply!.ts}: ${summarizeMessage(probeReply!)}`);
-  }, 300_000);
+    const cleanSession = resolveChannelSessionFile(conversationDir);
+    expect(cleanSession, "no active session after /new").not.toBeNull();
+    expect(cleanSession).not.toBe(originalSession);
+    expect(existsSync(originalSession!)).toBe(true);
+    expect(readFileSync(cleanSession!, "utf-8")).not.toContain(scratchNonce);
+    expect(readFileSync(memoryPath, "utf-8")).toBe(memoryAnchor);
+  }, 180_000);
 });

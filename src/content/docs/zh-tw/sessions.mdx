@@ -54,19 +54,17 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
 
 Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
 
-## Bootstrap、rotation、重設與 Session Dream
+## Bootstrap、rotation、Clean session 與 Dream
 
 新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Shared channel 的 top-level session 以每兩週一次的星期日邊界輪替。Rotation 採 lazy 機制而非 cron：跨過邊界後，第一則符合條件的訊息抵達時，mikan 才會檢查目前 session 的 timestamp。
 
-在 `/new` 重設 private conversation 前，或 biweekly shared-channel rotation 切換 active session 前，mikan 會執行一個隱藏的 **Session Dream**。它會檢視舊 structured transcript，只將值得長期保留的決策、偏好、事實與進行中工作寫入該 conversation 的 `MEMORY.md`。Dream 可以讀取 context，但只能修改 conversation-specific memory file；不能修改 workspace-global `MEMORY.md`，也不能把資訊提升到其他 conversation。
+`/new` 會立即建立 **Clean session**。Biweekly rotation 也只切換 active session file。兩者都不會摘要前一個 session、執行 Dream、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
 
-```text
-舊 session → Session Dream → conversation/MEMORY.md → 新 session → 目前訊息
-```
+**Dream** 是由系統排程的 office maintenance。台灣時間 02:00–05:00 期間，mikan 會檢查每個已登錄的 Conversation office；當最新 evidence 已閒置五小時後，Dream 會一次處理該 office 所有 top-level、rotated、thread 與 event sessions 新累積的 settled entries。成功後會先完整取代 conversation `MEMORY.md`，再推進 host-private 的 per-session checkpoint；沒有新 evidence 時不會呼叫 model。
 
-若 Session Dream 失敗或被 blocked，mikan 會保留舊 session，不進行 rotation 或 reset。`/new` 會向使用者回報失敗；自動 rotation 則記錄錯誤、在舊 session 處理目前訊息，並可能在之後的訊息再次嘗試。成功 rotation 會變更使用中的 structured context file，但不會刪除舊的 JSONL 檔案。
+產生的 **Memory anchor** 是精簡且可修訂的導向資訊，不是最終真相。較新的 conversation evidence 優先。可變的外部狀態必須在回答當次從 Live source 或 current API 驗證；若來源無法使用，mikan 應說明目前無法驗證，而不是把 memory 當成當前真相。
 
 <Aside type="tip" title="保留可稽核紀錄">
-  在 private chat 中使用 `new` / `/new`，會先執行 Dream 再重設目前 session。除非手動移除，先前的
-  session files 會留在磁碟上供檢查。
+  在 private chat 中使用 `new` / `/new` 可立即重新開始。除非手動移除，先前的 session files
+  仍會留在磁碟上供檢查。
 </Aside>

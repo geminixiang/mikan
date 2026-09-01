@@ -8,6 +8,7 @@ import type {
 } from "../adapter.js";
 import type { Workspace } from "../office/index.js";
 import { createRunner } from "../agent/runner.js";
+import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
 import type { PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
@@ -133,6 +134,18 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     return sessions;
   }
 
+  async runDream(address: OfficeAddress, now = new Date()): Promise<boolean> {
+    return this.sessions.runConversationMaintenance(address, async () => {
+      const office = this.options.workspace.office(address);
+      const plan = await prepareOfficeDream(office, now);
+      if (!plan) return false;
+      const memory = await generateMemoryAnchor(office, plan, this.resolvedModels);
+      commitOfficeDream(office, plan, memory);
+      log.logInfo(`[${address.conversationId}] Dream updated the Memory anchor`);
+      return true;
+    });
+  }
+
   async handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
     const state = this.sessions.get(address, sessionKey);
@@ -160,8 +173,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     conversationId: string,
     bot: MessagingBot,
     message: ConversationContext["message"],
-    responder: ConversationContext["responder"],
-    platform: ConversationContext["platform"],
+    _responder: ConversationContext["responder"],
+    _platform: ConversationContext["platform"],
   ): Promise<void> {
     const address = message.address;
     if (conversationId !== address.conversationId) {
@@ -171,92 +184,19 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       );
     }
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+
     const activeState = this.sessions.get(address, sessionKey);
-    if (
-      activeState &&
-      (activeState.running || this.sessions.isDreamSettlement(activeState.runSettlement))
-    ) {
-      const activeSettlement = activeState.runSettlement;
-      if (this.sessions.isDreamSettlement(activeSettlement)) {
-        await activeSettlement;
-        return;
+    if (activeState?.runSettlement) {
+      if (activeState.running) {
+        activeState.stopRequested = true;
+        activeState.runner.abort();
       }
-      activeState.stopRequested = true;
-      activeState.runner.abort();
-      await activeSettlement;
+      await activeState.runSettlement;
     }
 
-    const lease = await this.acquireState({ address, sessionKey });
-    try {
-      const { state } = lease;
-      await state.runner.syncChatHistory(message.id);
-      if (state.running || this.sessions.isDreamSettlement(state.runSettlement)) {
-        const activeSettlement = state.runSettlement;
-        if (this.sessions.isDreamSettlement(activeSettlement)) {
-          await activeSettlement;
-          return;
-        }
-        state.stopRequested = true;
-        state.runner.abort();
-        await activeSettlement;
-        return this.handleNewCommand(sessionKey, conversationId, bot, message, responder, platform);
-      }
-
-      const dreamSettlement = this.sessions.settle(state, "dream", async () => {
-        let working = false;
-        try {
-          await responder.setWorking(true);
-          working = true;
-          const result = await this.dreamSessionMemory(state, message, platform);
-          if (!result.success) {
-            const detail = result.errorMessage ? ` ${result.errorMessage}` : "";
-            await responder.respondDiagnostic(
-              `Could not preserve memory, so the current conversation was not reset.${detail}`,
-              { style: "error" },
-            );
-            return;
-          }
-
-          await responder.setWorking(false);
-          working = false;
-          await this.resetSession(state, bot);
-        } finally {
-          if (working) await responder.setWorking(false);
-        }
-      });
-      void dreamSettlement.catch((err) => {
-        reportUserFacingError(err, {
-          domain: "mikan",
-          surface: "session_dream",
-          operation: "run_new_command_in_background",
-        });
-      });
-    } finally {
-      lease.release();
-    }
-  }
-
-  private async dreamSessionMemory(
-    state: ConversationState,
-    message: ConversationContext["message"],
-    platform: ConversationContext["platform"],
-  ): Promise<{ success: boolean; errorMessage?: string }> {
-    try {
-      const result = await state.runner.dreamSessionMemory(message, platform);
-      // Only a clean stop means the dream finished its work. Everything else —
-      // budget abort, length cutoff, error, blocked — leaves memory unwritten,
-      // and treating it as success resets the session and loses it silently.
-      // Listed as a whitelist so a new stop reason fails safe.
-      if (result.stopReason !== "stop") {
-        return {
-          success: false,
-          errorMessage: result.errorMessage ?? `Session Dream stopped early (${result.stopReason})`,
-        };
-      }
-      return { success: true };
-    } catch (err) {
-      return { success: false, errorMessage: err instanceof Error ? err.message : String(err) };
-    }
+    await this.sessions.runConversationMaintenance(address, async () => {
+      await this.resetSession(address, sessionKey, bot);
+    });
   }
 
   private scheduleSharedSessionRotation(
@@ -264,8 +204,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionKey: string,
   ): boolean {
     const { address, conversationId } = event;
-    const { message, platform } = context;
-    if (message.conversationKind !== "shared" || sessionKey !== conversationId) return false;
+    if (context.message.conversationKind !== "shared" || sessionKey !== conversationId)
+      return false;
 
     const conversationDir = this.options.workspace.office(address).dir;
     const currentSession = resolveChannelSessionFile(conversationDir);
@@ -279,63 +219,35 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           return;
         }
 
-        const lease = await this.acquireState({
+        const runtimeCwd = runtimeCwdForSandbox(
+          this.options.sandbox,
+          this.options.workspace,
           address,
+        );
+        await this.chatSessionManager.resetSession({
+          conversationDir,
           sessionKey,
-          currentMessageId: message.id,
+          cwd: runtimeCwd,
         });
-        let dreamSettlement: Promise<void>;
-        try {
-          const { state } = lease;
-          // The rotation Dream summarizes the session; sync the log into it
-          // first (scope resolution only materializes).
-          await state.runner.syncChatHistory(message.id);
-          dreamSettlement = this.sessions.settle(
-            state,
-            "dream",
-            async () => {
-              const result = await this.dreamSessionMemory(state, message, platform);
-              if (!result.success) {
-                const detail = result.errorMessage ? `: ${result.errorMessage}` : "";
-                log.logWarning(`[${conversationId}] Automatic Session Dream failed${detail}`);
-                return;
-              }
-
-              const runtimeCwd = runtimeCwdForSandbox(
-                this.options.sandbox,
-                this.options.workspace,
-                address,
-              );
-              await this.chatSessionManager.resetSession({
-                conversationDir,
-                sessionKey,
-                cwd: runtimeCwd,
-              });
-              await this.sessions.discardAndWait(address, sessionKey);
-              log.logInfo(
-                `[${conversationId}] Session Dream completed; rotated session: ${sessionKey}`,
-              );
-            },
-            { markRunning: false },
-          );
-        } finally {
-          lease.release();
-        }
-        await dreamSettlement;
+        await this.sessions.discardAndWait(address, sessionKey);
+        log.logInfo(`[${conversationId}] Rotated session: ${sessionKey}`);
         await this.runSession({ event, bot, context }, true);
       })
       .catch((err) => {
         reportUserFacingError(err, {
           domain: "mikan",
-          surface: "session_dream",
+          surface: "session_rotation",
           operation: "rotate_shared_session_in_background",
         });
       });
     return true;
   }
 
-  private async resetSession(state: ConversationState, bot: MessagingBot): Promise<void> {
-    const { address, sessionKey } = state;
+  private async resetSession(
+    address: OfficeAddress,
+    sessionKey: string,
+    bot: MessagingBot,
+  ): Promise<void> {
     const conversationId = address.conversationId;
     const conversationDir = this.options.workspace.office(address).dir;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
@@ -449,7 +361,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       const { state } = lease;
       log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
-      const runPromise = this.sessions.settle(state, "run", async () => {
+      const runPromise = this.sessions.settle(state, async () => {
         try {
           const result = await this.runWithInstrumentation(
             context,

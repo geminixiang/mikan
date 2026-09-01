@@ -138,8 +138,8 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
 
       if (truncation.firstLineExceedsLimit) {
         // Serve the line in byte-addressed slices rather than pointing at
-        // another tool: the caller may not hold one (Session Dream grants only
-        // read/edit/write), and a dead end there costs a whole run.
+        // another tool: the caller may not hold one, and a dead end there
+        // costs a whole run.
         const lineBuffer = Buffer.from(selectedContent.split("\n")[0] ?? "", "utf-8");
         const start = Math.max(0, Math.min(byteOffset ?? 0, lineBuffer.length));
         const slice = trimToCharBoundary(lineBuffer.subarray(start, start + DEFAULT_MAX_BYTES));

@@ -18,7 +18,7 @@ Stack:
 ## STRUCTURE
 
 - `src/`: TypeScript source root (unit/integration tests live in `src/test/`, run by `npm test`).
-  - `main.ts`: CLI entrypoint; executes the boot plan, loads settings, starts vault/sandbox/runtime/platform bots.
+  - `main.ts`: CLI entrypoint; executes the boot plan, loads settings, and starts vault/sandbox/runtime, platform bots, events, and scheduled Dream maintenance.
   - `types.ts`: root exported type definitions.
   - `adapter.ts`: platform-neutral bot/message/response interfaces.
   - `agent/`: agent catalog, execution, presentation, prompting, and runner integration.
@@ -29,6 +29,7 @@ Stack:
   - `office/`: the Conversation office module — `OfficeAddress`/office keys, the frozen `Workspace`/`Office` layout values, the office registry journal, and the boot-time legacy migration.
   - `runtime/`: conversation/session orchestration.
   - `sessions/`: chat-history sync and persisted session files.
+  - `dream/`: scheduled Conversation-office memory maintenance and durable evidence checkpoints.
   - `adapters/`: Slack, Discord, Telegram, and GitHub adapters plus shared adapter utilities.
   - `commands/`: chat command parsing and handlers (`login`, `model`, `new`, `session`, `sandbox`, etc.); `manifest.ts` is the single command inventory that adapters derive registration/routing from.
   - `sandbox/`: host/container/image/cloudflare execution backends.
@@ -102,6 +103,7 @@ Stack:
 - **Platform adapters**: `src/adapters/{slack,discord,telegram,github}/`.
 - **Slack Block Kit/tools**: `src/adapters/slack/tools/`, `src/test/slack-blockkit-tool.test.ts`.
 - **Runtime/session logic**: `src/runtime/`, `src/sessions/`, related tests in `src/test/*session*.test.ts`.
+- **Dream/Memory anchor maintenance**: `src/dream/`, `src/test/dream.test.ts`, `src/content/docs/sessions.mdx`.
 - **Sandbox execution**: `src/sandbox/`, `src/execution-resolver.ts`, `src/provisioner.ts`, `src/content/docs/sandbox.mdx`.
 - **Door policy / workspace mounts**: `src/workspace-projection/`, `src/test/workspace-projection.test.ts`.
 - **Vault/login/OAuth**: `src/vault/`, `src/web/login/`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`.

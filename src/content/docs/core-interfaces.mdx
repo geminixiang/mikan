@@ -369,7 +369,7 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 ### Path, cache, and package safety
 
 - `attach` is fail-closed: paths must stay inside the runtime workspace and are read through the active `Executor`, then staged in a host-private file before the platform uploader receives them. Host paths are never passed through from model input, and remote sandboxes use the same executor transport instead of a host-path fallback.
-- Conversation-scoped cached-runner changes clear idle runners before writing and refuse busy writes. Global LLM changes persist first, mark busy conversations for invalidation, and discard their runners only after all run or Session Dream settlements finish.
+- Conversation-scoped cached-runner changes clear idle runners before writing and refuse busy writes. Global LLM changes persist first, mark busy conversations for invalidation, and discard their runners only after active run settlements finish.
 - Package git checkouts are keyed by repository and ref. Different subpaths may share a checkout only when they use the same ref; ref changes rematerialize before settings persist. Git package subpaths must remain inside their canonical checkout, including through symlinks.
 - Every vault key is one safe path segment. Reads fail closed, and writes or shared-vault copies reject invalid keys before filesystem access.
 

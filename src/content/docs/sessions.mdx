@@ -56,19 +56,17 @@ A session key always belongs to exactly one conversation. Platform adapters may 
 
 A scoped session records the top-level session it was created from in its header, as `parentSession` (path) and `parentSessionId` (uuid). The link survives a reset: resetting a scoped session rebuilds its file but keeps the original parent rather than re-binding to whichever top-level session is current now. Sessions written before lineage metadata existed are left alone rather than recreated.
 
-## Bootstrap, rotation, reset, and Session Dream
+## Bootstrap, rotation, Clean sessions, and Dream
 
 A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Shared top-level channel sessions rotate on biweekly Sunday boundaries. Rotation is lazy rather than cron-driven: mikan checks the current session timestamp when the first applicable message arrives after a boundary.
 
-Before `/new` resets a private conversation, or before a biweekly shared-channel rotation changes the active session, mikan runs a hidden **Session Dream**. It reviews the old structured transcript and preserves only durable decisions, preferences, facts, and ongoing work in that conversation's `MEMORY.md`. The Dream can read context but can modify only the conversation-specific memory file; it cannot modify the workspace-global `MEMORY.md` or promote information into other conversations.
+`/new` immediately creates a **Clean session**. Biweekly rotation also changes only the active session file. Neither operation summarizes the predecessor, invokes Dream, waits for memory processing, or deletes older JSONL files. The existing conversation `MEMORY.md` remains available independently.
 
-```text
-old session → Session Dream → conversation/MEMORY.md → new session → current message
-```
+**Dream** is system-scheduled office maintenance. During Taiwan time 02:00–05:00, mikan checks each registered Conversation office and processes all newly accumulated settled entries across its top-level, rotated, thread, and event sessions once the newest evidence has been idle for five hours. A successful run replaces the complete conversation `MEMORY.md` and then advances a host-private per-session checkpoint; without new evidence, no model is called.
 
-If Session Dream fails or is blocked, mikan keeps the old session active instead of rotating or resetting it. `/new` reports the failure to the user; automatic rotation logs the failure, handles the message in the old session, and may try again on a later message. A successful rotation changes the active structured context file but does not delete older JSONL files.
+The resulting **Memory anchor** is compact, revisable orientation rather than final truth. Newer conversation evidence takes precedence. Mutable external state must be verified from its Live source or current API in the answering run; if that source is unavailable, mikan should report that it cannot verify the current value rather than treating memory as current truth.
 
 <Aside type="tip" title="Keep an audit trail">
-  Use `new` / `/new` in a private chat to Dream and reset the current session. Unless you remove
-  them manually, previous session files stay on disk for inspection.
+  Use `new` / `/new` in a private chat to start fresh immediately. Previous session files stay on
+  disk for inspection unless you remove them manually.
 </Aside>

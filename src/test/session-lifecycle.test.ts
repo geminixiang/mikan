@@ -97,7 +97,7 @@ describe("SessionLifecycle", () => {
     );
     let finish!: () => void;
     const gate = new Promise<void>((resolve) => (finish = resolve));
-    const settlement = lifecycle.settle(active, "run", () => gate);
+    const settlement = lifecycle.settle(active, () => gate);
     lease.release();
 
     expect(lifecycle.invalidateAll().busy).toEqual([slack]);

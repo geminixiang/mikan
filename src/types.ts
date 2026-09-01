@@ -365,11 +365,6 @@ export interface PiAgentWrapper {
     responder: ConversationResponder,
     platform: MessagingInfo,
   ): Promise<{ stopReason: string; errorMessage?: string }>;
-  /** Run a hidden Session Dream against the current session before resetting or rotating it. */
-  dreamSessionMemory(
-    message: ConversationMessage,
-    platform: MessagingInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
   dispose(): Promise<void>;
