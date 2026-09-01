@@ -122,6 +122,8 @@ Each entry uses exactly one transport: `command` (+ optional `args`, `env`) spaw
 
 Global and per-conversation `mcpServers` merge per server name: a conversation entry overrides (or disables) the same-name global entry and other global entries stay available. The admin portal has panels for both scopes; changes take effect on the next response. An unreachable server logs a warning and the rest still load.
 
+The Admin MCP panels also include a small repository-owned Marketplace. Installing a reviewed preset shows its exact host command or remote endpoint, credential requirements, source, target scope, and security warning before writing an ordinary `mcpServers` entry. Local package versions are pinned. Marketplace installation does not create a separate installed database, run an automatic updater, or treat catalog inclusion as a security certification. Local stdio presets execute on the mikan host; remote presets receive the tool calls and data sent to them.
+
 ## Platform credentials
 
 At least one complete platform credential set is required for normal bot mode:

@@ -96,6 +96,30 @@ Onboarding 不会写入 `sandbox.workspace`。没有显式的全局或对话覆�
 
 旧版 `sandbox.image.workspaceMount` 仍可读取以便迁移：旧的 `workspaceMount: "private"` 为维持原行为，表示 `trusted` + `shared-support` 且可见性为 **public/read-write**；它与新的 `sandbox.workspace.visibility: "private"` 不同，后者会将共享记忆设为只读。旧的 `workspaceMount: "full"` 表示 `trusted` + `full`。
 
+## MCP servers
+
+`mcpServers` 可连接 stdio 或 Streamable HTTP MCP server，并将工具公开为 `mcp__<server>__<tool>`。MCP server 在 host 端执行或连接，`env`／`headers` 中的凭证不会暴露给模型或 sandbox。
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "package@fixed-version"],
+      "env": { "API_TOKEN": "..." }
+    },
+    "internal-docs": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}
+```
+
+每个 entry 必须只使用一种 transport：`command`（可搭配 `args`、`env`）或 `url`（可搭配 `headers`）。`disabled: true` 可在不删除设置的情况下停用 server。全局和对话设置按 server name 合并；对话设置可以覆盖或停用同名的全局 server，其他全局 entries 仍会保留。
+
+Admin 的 MCP 面板提供 repository-owned 的精选 Marketplace。安装前会显示完整 host command 或 remote endpoint、所需凭证、来源、目标 scope 和安全警告；确认后只会创建普通的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自动更新服务，也不把 catalog 收录视为安全认证。Local stdio preset 会在 mikan host 执行代码；remote preset 则会收到发往其工具的调用和数据。
+
 ## 平台凭证
 
 正常 bot 模式至少需要一套完整的平台凭证：

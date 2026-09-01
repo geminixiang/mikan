@@ -26,6 +26,30 @@ export interface McpServerConfig {
   disabled?: boolean;
 }
 
+type McpPresetCredentialTarget = "env" | "header";
+
+interface McpPresetCredential {
+  key: string;
+  label: string;
+  description: string;
+  target: McpPresetCredentialTarget;
+  required: boolean;
+  secret: boolean;
+  valuePrefix?: string;
+}
+
+export interface McpPreset {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  serverName: string;
+  sourceUrl: string;
+  setupUrl: string;
+  server: McpServerConfig;
+  credentials: McpPresetCredential[];
+}
+
 export interface McpLoadError {
   server: string;
   error: string;

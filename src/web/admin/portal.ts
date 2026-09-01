@@ -45,6 +45,7 @@ import {
   type SandboxSettings,
   type WorkspacePolicyChoice,
 } from "../../config.js";
+import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../mcp/catalog.js";
 import type { McpServerConfig } from "../../mcp/types.js";
 import {
   applyConversationSettings,
@@ -1499,6 +1500,7 @@ function serveMcpServersList(
   const servers = loadScopeMcpServers(workspace.office(scope.address));
   jsonRes(res, 200, {
     conversationId: scope.conversationId,
+    presets: listMcpPresets(),
     global: redactMcpServers(servers.global),
     conversation: redactMcpServers(servers.conversation),
   });
@@ -1570,12 +1572,20 @@ function serveMcpServerMutation(
   token: AdminToken,
 ): void {
   const action = body.action;
-  if (action !== "set" && action !== "remove" && action !== "toggle") {
-    jsonRes(res, 400, { error: "action must be 'set', 'remove', or 'toggle'" });
+  if (action !== "set" && action !== "install" && action !== "remove" && action !== "toggle") {
+    jsonRes(res, 400, { error: "action must be 'set', 'install', 'remove', or 'toggle'" });
+    return;
+  }
+  const preset =
+    action === "install" && typeof body.presetId === "string"
+      ? findMcpPreset(body.presetId)
+      : undefined;
+  if (action === "install" && !preset) {
+    jsonRes(res, 400, { error: "unknown MCP preset" });
     return;
   }
   const mutationScope = body.scope === "global" ? "global" : "conversation";
-  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const name = preset?.serverName ?? (typeof body.name === "string" ? body.name.trim() : "");
   if (!MCP_SERVER_NAME_PATTERN.test(name)) {
     jsonRes(res, 400, {
       error: "invalid server name (letters, digits, '_' or '-', starting with a letter)",
@@ -1610,6 +1620,13 @@ function serveMcpServerMutation(
         ? { headers: existing.headers }
         : {}),
     };
+  } else if (action === "install") {
+    try {
+      next[name] = materializeMcpPreset(preset!, mcpStringMap(body.credentials) ?? {});
+    } catch (err) {
+      jsonRes(res, 400, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
   } else if (action === "remove") {
     if (!(name in next)) {
       jsonRes(res, 404, { error: "Not declared here." });
@@ -2010,7 +2027,23 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
         </header>
         <div id="global-events-content"><div class="loading-msg">Loading…</div></div>
       </section>
-    </div>`;
+    </div>
+
+    <dialog id="mcp-install-dialog" class="mcp-dialog" aria-labelledby="mcp-dialog-title">
+      <div class="mcp-dialog-head">
+        <div>
+          <p class="eyebrow">Install MCP preset</p>
+          <h2 id="mcp-dialog-title" class="card-title"></h2>
+        </div>
+        <button class="mcp-dialog-close" type="button" aria-label="Close" onclick="closeMcpInstall()">×</button>
+      </div>
+      <div id="mcp-dialog-content"></div>
+      <div id="mcp-dialog-error" class="inline-result err" style="display:none"></div>
+      <div class="mcp-dialog-actions">
+        <button class="pkg-btn" type="button" onclick="closeMcpInstall()">Cancel</button>
+        <button id="mcp-dialog-install" class="primary-action-btn" type="button" onclick="installMcpPreset(this)">Install preset</button>
+      </div>
+    </dialog>`;
 
 const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     function scopeOf(key) {
@@ -2028,6 +2061,9 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     }
     let availableModels = [];
     let modelsLoaded = false;
+    let mcpPresets = [];
+    let mcpServersByScope = { conversation: {}, global: {} };
+    let pendingMcpInstall = null;
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2493,10 +2529,14 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       el.textContent = text;
     }
 
+    function mcpTransport(server) {
+      return server.command
+        ? server.command + (server.args && server.args.length ? ' ' + server.args.join(' ') : '')
+        : (server.url || '');
+    }
+
     function renderMcpServer(scope, name, server) {
-      const transport = server.command
-        ? 'stdio: ' + server.command + (server.args && server.args.length ? ' ' + server.args.join(' ') : '')
-        : 'http: ' + (server.url || '');
+      const transport = (server.command ? 'stdio: ' : 'http: ') + mcpTransport(server);
       const keys = [];
       if (server.envKeys && server.envKeys.length) keys.push('env: ' + server.envKeys.join(', '));
       if (server.headerKeys && server.headerKeys.length) keys.push('headers: ' + server.headerKeys.join(', '));
@@ -2512,16 +2552,41 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       '</div>';
     }
 
+    function renderMcpPreset(scope, preset, servers) {
+      const installed = Boolean(servers[preset.serverName]);
+      const transport = preset.server.command ? 'Runs on host' : 'Remote service';
+      return '<article class="mcp-preset">' +
+        '<div class="mcp-preset-top">' +
+          '<span class="mcp-preset-category">' + escHtml(preset.category) + '</span>' +
+          (installed ? '<span class="pkg-badge pkg-badge-ok">Installed here</span>' : '') +
+        '</div>' +
+        '<h3>' + escHtml(preset.name) + '</h3>' +
+        '<p>' + escHtml(preset.description) + '</p>' +
+        '<div class="mcp-preset-meta">' + escHtml(transport) + ' · <code>' + escHtml(preset.serverName) + '</code></div>' +
+        '<div class="mcp-preset-actions">' +
+          '<a href="' + escAttr(preset.sourceUrl) + '" target="_blank" rel="noopener">Source ↗</a>' +
+          '<button class="primary-action-btn" data-mcp-action="preset" data-mcp-scope="' + scope + '" data-mcp-preset="' + escAttr(preset.id) + '">' + (installed ? 'Review' : 'Install') + '</button>' +
+        '</div>' +
+      '</article>';
+    }
+
     function renderMcpScope(el, scope, servers) {
+      const presets = mcpPresets.map((preset) => renderMcpPreset(scope, preset, servers)).join('');
       const rows = Object.entries(servers).map(([name, server]) => renderMcpServer(scope, name, server)).join('');
       el.innerHTML =
-        '<div class="pkg-list">' + (rows || '<div class="pkg-provides-empty">No MCP servers</div>') + '</div>' +
-        '<div class="pkg-add" style="margin-top:10px">' +
-          '<input id="mcp-' + scope + '-name" class="pkg-input pkg-input-ref" type="text" spellcheck="false" placeholder="name" />' +
-          '<input id="mcp-' + scope + '-target" class="pkg-input" type="text" spellcheck="false" placeholder="npx -y @modelcontextprotocol/server-github 或 https://host/mcp" />' +
-          '<input id="mcp-' + scope + '-env" class="pkg-input" type="text" spellcheck="false" placeholder="KEY=value KEY2=value2（可留空；HTTP 則為 header）" />' +
-          '<button class="primary-action-btn" data-mcp-action="add" data-mcp-scope="' + scope + '">Add</button>' +
-        '</div>';
+        '<div class="mcp-market-head"><div><h3>Explore presets</h3><p>Reviewed recipes that install into this scope.</p></div><span>' + mcpPresets.length + ' available</span></div>' +
+        '<div class="mcp-preset-grid">' + presets + '</div>' +
+        '<details class="mcp-installed" open><summary>Installed in this scope</summary>' +
+          '<div class="pkg-list">' + (rows || '<div class="pkg-provides-empty">No MCP servers installed here</div>') + '</div>' +
+        '</details>' +
+        '<details class="mcp-manual"><summary>Advanced: add a custom server</summary>' +
+          '<div class="pkg-add">' +
+            '<input id="mcp-' + scope + '-name" class="pkg-input pkg-input-ref" type="text" spellcheck="false" placeholder="name" />' +
+            '<input id="mcp-' + scope + '-target" class="pkg-input" type="text" spellcheck="false" placeholder="npx -y package@version 或 https://host/mcp" />' +
+            '<input id="mcp-' + scope + '-env" class="pkg-input" type="text" spellcheck="false" placeholder="KEY=value（HTTP 則為 header）" />' +
+            '<button class="primary-action-btn" data-mcp-action="add" data-mcp-scope="' + scope + '">Add custom</button>' +
+          '</div>' +
+        '</details>';
     }
 
     async function loadMcpServers() {
@@ -2531,8 +2596,10 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       if (globalEl) globalEl.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
         const data = await apiGet('/admin/api/mcp-servers?' + scopeQuery());
-        if (convEl) renderMcpScope(convEl, 'conversation', data.conversation);
-        if (globalEl) renderMcpScope(globalEl, 'global', data.global);
+        mcpPresets = Array.isArray(data.presets) ? data.presets : [];
+        mcpServersByScope = { conversation: data.conversation || {}, global: data.global || {} };
+        if (convEl) renderMcpScope(convEl, 'conversation', mcpServersByScope.conversation);
+        if (globalEl) renderMcpScope(globalEl, 'global', mcpServersByScope.global);
       } catch (err) {
         if (convEl) convEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
         if (globalEl) globalEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2553,6 +2620,68 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         await loadMcpServers();
       } catch (err) {
         mcpMessage(scope, err.message, 'err');
+      }
+    }
+
+    function openMcpPreset(scope, presetId) {
+      const preset = mcpPresets.find((item) => item.id === presetId);
+      if (!preset) return;
+      pendingMcpInstall = { scope: scope, preset: preset };
+      const local = Boolean(preset.server.command);
+      const installed = Boolean(mcpServersByScope[scope][preset.serverName]);
+      const credentials = preset.credentials.map((credential, index) =>
+        '<label class="mcp-credential"><span>' + escHtml(credential.label) + (credential.required ? ' *' : '') + '</span>' +
+          '<input data-mcp-credential="' + index + '" type="' + (credential.secret ? 'password' : 'text') + '" autocomplete="off" />' +
+          '<small>' + escHtml(credential.description) + '</small></label>'
+      ).join('');
+      document.getElementById('mcp-dialog-title').textContent = preset.name;
+      const dialogError = document.getElementById('mcp-dialog-error');
+      dialogError.style.display = 'none';
+      dialogError.textContent = '';
+      document.getElementById('mcp-dialog-content').innerHTML =
+        '<p class="mcp-dialog-desc">' + escHtml(preset.description) + '</p>' +
+        '<div class="mcp-install-preview"><span>' + (local ? 'Host command' : 'Remote endpoint') + '</span><code>' + escHtml(mcpTransport(preset.server)) + '</code></div>' +
+        '<div class="mcp-security-note ' + (local ? 'local' : 'remote') + '">' +
+          (local
+            ? '<strong>Host code execution.</strong> This command runs outside the conversation sandbox with the mikan process user permissions.'
+            : '<strong>External service.</strong> Tool calls and selected data will be sent to this remote origin.') +
+        '</div>' +
+        (installed ? '<div class="mcp-replace-note">Installing again replaces the existing <code>' + escHtml(preset.serverName) + '</code> entry in this scope.</div>' : '') +
+        (credentials || '<p class="mcp-no-credentials">No credentials required.</p>') +
+        '<p class="mcp-secret-note">Credentials are stored in host-private settings and are not shown to the model or sandbox.</p>' +
+        '<a class="mcp-setup-link" href="' + escAttr(preset.setupUrl) + '" target="_blank" rel="noopener">Setup documentation ↗</a>';
+      document.getElementById('mcp-install-dialog').showModal();
+    }
+
+    function closeMcpInstall() {
+      pendingMcpInstall = null;
+      document.getElementById('mcp-install-dialog').close();
+    }
+
+    async function installMcpPreset(btn) {
+      if (!pendingMcpInstall) return;
+      const { scope, preset } = pendingMcpInstall;
+      const credentials = {};
+      document.querySelectorAll('[data-mcp-credential]').forEach((input) => {
+        const descriptor = preset.credentials[Number(input.dataset.mcpCredential)];
+        if (descriptor) credentials[descriptor.key] = input.value;
+      });
+      btn.disabled = true;
+      btn.textContent = 'Installing…';
+      try {
+        await apiPost('/admin/api/mcp-servers/mutate', {
+          action: 'install', scope: scope, presetId: preset.id, credentials: credentials, ...scopeBody(),
+        });
+        closeMcpInstall();
+        mcpMessage(scope, preset.name + ' installed. It will be available on the next response.', 'ok');
+        await loadMcpServers();
+      } catch (err) {
+        const dialogError = document.getElementById('mcp-dialog-error');
+        dialogError.textContent = err.message;
+        dialogError.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Install preset';
       }
     }
 
@@ -2583,6 +2712,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       const btn = event.target.closest('[data-mcp-action]');
       if (!btn) return;
       if (btn.dataset.mcpAction === 'add') { addMcpServer(btn.dataset.mcpScope); return; }
+      if (btn.dataset.mcpAction === 'preset') { openMcpPreset(btn.dataset.mcpScope, btn.dataset.mcpPreset); return; }
       void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
     });
 
@@ -3363,6 +3493,111 @@ const adminViewStyles = `
   }
   .pkg-group-head .pkg-btn { margin-left: auto; }
 
+  /* ── MCP marketplace ───────────────────────────────────────────────── */
+
+  .mcp-market-head {
+    display: flex; align-items: end; justify-content: space-between; gap: 16px;
+    margin-bottom: 12px;
+  }
+  .mcp-market-head h3 { margin: 0; font-size: 1rem; }
+  .mcp-market-head p { margin: 3px 0 0; color: var(--muted); font-size: 0.8rem; }
+  .mcp-market-head > span {
+    color: var(--subtle); font: 500 0.72rem/1.2 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .mcp-preset-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+  }
+  .mcp-preset {
+    min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px;
+    background:
+      linear-gradient(145deg, rgba(255,255,255,0.85), rgba(247,245,238,0.72)),
+      var(--card);
+    display: flex; flex-direction: column; min-height: 190px;
+  }
+  .mcp-preset-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .mcp-preset-category {
+    color: var(--accent); font-size: 0.66rem; font-weight: 700;
+    letter-spacing: 0.09em; text-transform: uppercase;
+  }
+  .mcp-preset h3 { margin: 14px 0 5px; font-size: 1.06rem; letter-spacing: -0.02em; }
+  .mcp-preset p { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+  .mcp-preset-meta {
+    margin-top: 12px; color: var(--subtle); font-size: 0.72rem;
+  }
+  .mcp-preset-meta code { color: var(--text); background: transparent; }
+  .mcp-preset-actions {
+    margin-top: auto; padding-top: 16px; display: flex; align-items: center;
+    justify-content: space-between; gap: 10px;
+  }
+  .mcp-preset-actions a, .mcp-setup-link {
+    color: var(--muted); font-size: 0.76rem; text-decoration: none;
+  }
+  .mcp-preset-actions a:hover, .mcp-setup-link:hover { color: var(--text); text-decoration: underline; }
+  .mcp-preset-actions .primary-action-btn { padding: 6px 12px; }
+  .mcp-installed, .mcp-manual {
+    margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;
+  }
+  .mcp-installed > summary, .mcp-manual > summary {
+    cursor: pointer; color: var(--muted); font-size: 0.8rem; font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .mcp-manual .pkg-add { margin: 12px 0 0; }
+
+  .mcp-dialog {
+    width: min(620px, calc(100vw - 28px)); max-height: calc(100vh - 40px);
+    border: 1px solid var(--border); border-radius: 18px; padding: 22px;
+    color: var(--text); background: #fbfaf6; box-shadow: 0 28px 90px rgba(18,18,16,0.24);
+  }
+  .mcp-dialog::backdrop { background: rgba(20,20,18,0.5); backdrop-filter: blur(3px); }
+  .mcp-dialog-head {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  }
+  .mcp-dialog-head .card-title { margin: 4px 0 0; }
+  .mcp-dialog-close {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    font-size: 1.6rem; line-height: 1; padding: 2px 5px;
+  }
+  .mcp-dialog-desc { color: var(--muted); line-height: 1.55; font-size: 0.88rem; }
+  .mcp-install-preview {
+    display: grid; gap: 6px; padding: 12px; border-radius: 10px;
+    background: #1d211f; color: #f5f2e9;
+  }
+  .mcp-install-preview span {
+    color: #aeb8b1; font-size: 0.66rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  .mcp-install-preview code {
+    color: #f5f2e9; background: transparent; word-break: break-all; font-size: 0.78rem;
+  }
+  .mcp-security-note, .mcp-replace-note {
+    margin-top: 12px; padding: 10px 12px; border-radius: 9px;
+    font-size: 0.78rem; line-height: 1.5;
+  }
+  .mcp-security-note.local {
+    background: rgba(220,38,38,0.08); border: 1px solid rgba(185,28,28,0.18); color: #991b1b;
+  }
+  .mcp-security-note.remote {
+    background: rgba(59,130,246,0.08); border: 1px solid rgba(29,78,216,0.16); color: #1e40af;
+  }
+  .mcp-replace-note { background: rgba(217,119,6,0.1); color: #92400e; }
+  .mcp-credential { display: grid; gap: 5px; margin-top: 14px; }
+  .mcp-credential span { font-size: 0.78rem; font-weight: 650; }
+  .mcp-credential input {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; color: var(--text); font: 0.8rem/1.3 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .mcp-credential small, .mcp-secret-note, .mcp-no-credentials {
+    color: var(--subtle); font-size: 0.72rem; line-height: 1.45;
+  }
+  .mcp-secret-note { margin: 14px 0 8px; }
+  .mcp-no-credentials { margin: 14px 0 0; }
+  #mcp-dialog-error { margin-top: 14px; }
+  .mcp-dialog-actions {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+    padding-top: 14px; border-top: 1px solid var(--border);
+  }
+
   /* ── Events ─────────────────────────────────────────────────────────── */
 
   .events-list { display: flex; flex-direction: column; gap: 8px; }
@@ -3497,5 +3732,7 @@ const adminViewStyles = `
     .portal-frame { min-height: 520px; }
     .workspace-split { grid-template-columns: 1fr; }
     .workspace-tree, .workspace-preview { max-height: 260px; }
+    .mcp-preset-grid { grid-template-columns: 1fr; }
+    .mcp-dialog { padding: 18px; }
   }
 `;

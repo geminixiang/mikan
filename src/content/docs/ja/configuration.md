@@ -96,6 +96,30 @@ Door policy と layout は一緒に解決されます。`isolated` は常に `co
 
 旧来の `sandbox.image.workspaceMount` は移行のために引き続き読み取られます。legacy の `workspaceMount: "private"` は旧動作を維持するため、`trusted` + `shared-support` の **public/read-write** visibility を意味します。shared memory を読み取り専用にする新しい `sandbox.workspace.visibility: "private"` とは別物です。legacy の `workspaceMount: "full"` は `trusted` + `full` を意味します。
 
+## MCP servers
+
+`mcpServers` は stdio または Streamable HTTP MCP server に接続し、tool を `mcp__<server>__<tool>` として公開します。MCP server は host 側で実行または接続され、`env`／`headers` の credential は model や sandbox に公開されません。
+
+```json
+{
+  "mcpServers": {
+    "github": {
+      "command": "npx",
+      "args": ["-y", "package@fixed-version"],
+      "env": { "API_TOKEN": "..." }
+    },
+    "internal-docs": {
+      "url": "https://mcp.example.com/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}
+```
+
+各 entry は 1 種類の transport だけを使用します。`command` は `args`／`env`、`url` は `headers` と組み合わせられます。`disabled: true` は entry を削除せずに server を無効化します。global と conversation の設定は server name 単位で merge され、conversation 設定は同名の global server を上書きまたは無効化し、他の global entries はそのまま残ります。
+
+Admin の MCP panel には repository-owned の curated Marketplace があります。install 前に完全な host command または remote endpoint、必要な credentials、source、target scope、security warning を表示し、確認後は通常の `mcpServers` entry だけを書き込みます。Local package version は pin され、別の installed database や automatic updater は作りません。また、catalog 掲載は security certification ではありません。Local stdio preset は mikan host 上で code を実行し、remote preset はその tool に送られた call と data を受信します。
+
 ## プラットフォーム認証情報
 
 通常の bot mode には、少なくとも 1 組の完全な platform credentials が必要です：
