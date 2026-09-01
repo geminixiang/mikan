@@ -573,9 +573,11 @@ describe("ConversationRuntime lifecycle", () => {
     await vi.waitFor(() => expect(runner.dispose).toHaveBeenCalledOnce());
     expect(runner.syncChatHistory).not.toHaveBeenCalled();
 
-    expect(context.responder.replaceResponse).toHaveBeenCalledWith(
-      expect.stringContaining("new session reply"),
-      expect.anything(),
+    await vi.waitFor(() =>
+      expect(context.responder.replaceResponse).toHaveBeenCalledWith(
+        expect.stringContaining("new session reply"),
+        expect.anything(),
+      ),
     );
   });
 
