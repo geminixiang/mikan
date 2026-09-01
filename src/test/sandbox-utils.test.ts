@@ -29,6 +29,16 @@ describe("shellEscape", () => {
   });
 });
 
+describe("HostExecutor", () => {
+  test("decodes UTF-8 characters split across output chunks", async () => {
+    const command =
+      "node -e 'process.stdout.write(Buffer.from([0xe4, 0xb8])); setTimeout(() => process.stdout.write(Buffer.from([0xad])), 30)'";
+    const result = await new HostExecutor().exec(command);
+
+    expect(result.stdout).toBe("中");
+  });
+});
+
 describe("execSimple", () => {
   test("resolves with stdout on success", async () => {
     await expect(execSimple("echo", ["hi"])).resolves.toBe("hi\n");

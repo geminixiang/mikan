@@ -53,15 +53,18 @@ export class HostExecutor implements Executor {
         }
       }
 
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+
       child.stdout?.on("data", (data) => {
-        stdout += data.toString();
+        stdout += data;
         if (stdout.length > 10 * 1024 * 1024) {
           stdout = stdout.slice(0, 10 * 1024 * 1024);
         }
       });
 
       child.stderr?.on("data", (data) => {
-        stderr += data.toString();
+        stderr += data;
         if (stderr.length > 10 * 1024 * 1024) {
           stderr = stderr.slice(0, 10 * 1024 * 1024);
         }
