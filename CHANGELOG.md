@@ -9,6 +9,32 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.46]
+
+### Added
+
+- Add an interactive `mikan onboard` wizard that configures one chat adapter, an LLM provider, and the sandbox, writing private environment and settings files while retaining non-interactive template generation.
+- Derive shared workspace visibility from platform channel privacy: Slack public channels can update shared memory, private channels receive it read-only, and DMs, external channels, unknown kinds, and other platforms stay isolated unless explicitly overridden.
+- Schedule Dream maintenance for Conversation-office memory with durable evidence checkpoints.
+- Add an Admin MCP Marketplace with reviewed GitHub, Context7, Playwright, Sequential Thinking, and Metabase presets; Metabase installations accept an instance endpoint and API key.
+
+### Changed
+
+- Remove the executable extension system and its CLI/chat management surfaces; packages remain the supported path for deploying read-only skills.
+- Remove the harness `auth.json` credential store; configure provider credentials through environment variables, onboarding, or the conversation vault.
+- Remove Gondolin, Firecracker, and GitHub Cloud Build log integrations from the supported runtime surface.
+- Fail closed when a sandbox backend cannot enforce an isolated office or read-only shared workspace memory; use `image:*` or explicitly select a trusted read-write projection.
+- Consolidate runtime, session, adapter, web, and configuration ownership to reduce duplicate lifecycle and parsing rules.
+
+### Fixed
+
+- Preserve streamed UTF-8 output when host sandbox chunks split multi-byte characters.
+- Re-aim migrated session lanes at the nearest surviving ancestor when the newest v3 entry contains facts but no v4 message.
+
+### Tests
+
+- Move CI action runtimes to Node 24 and strengthen runtime, presenter, workspace-projection, MCP marketplace, and session migration coverage.
+
 ## [1.0.0-beta.45]
 
 ### Fixed
