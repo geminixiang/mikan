@@ -101,6 +101,7 @@ describe("MCP preset catalog", () => {
     expect(presets.map((preset) => preset.id)).toEqual([
       "github",
       "context7",
+      "metabase",
       "playwright",
       "sequential-thinking",
     ]);
@@ -120,10 +121,30 @@ describe("MCP preset catalog", () => {
     expect(preset.server).toEqual({ url: "https://api.githubcopilot.com/mcp/" });
   });
 
-  test("rejects a missing required credential", () => {
+  test("materializes a remote URL and API key", () => {
+    const preset = findMcpPreset("metabase")!;
+
+    expect(
+      materializeMcpPreset(preset, {
+        url: "https://metabase.example.com/api/metabase-mcp",
+        "x-api-key": "mb_key_123",
+      }),
+    ).toEqual({
+      url: "https://metabase.example.com/api/metabase-mcp",
+      headers: { "x-api-key": "mb_key_123" },
+    });
+  });
+
+  test("rejects missing credentials and invalid remote URLs", () => {
     expect(() => materializeMcpPreset(findMcpPreset("context7")!, {})).toThrow(
       "Context7 API key is required",
     );
+    expect(() =>
+      materializeMcpPreset(findMcpPreset("metabase")!, {
+        url: "metabase.example.com/api/metabase-mcp",
+        "x-api-key": "mb_key_123",
+      }),
+    ).toThrow("Metabase MCP server URL must be a valid HTTP URL");
   });
 });
 
@@ -159,6 +180,33 @@ describe("Admin MCP preset API", () => {
       headerKeys: ["Authorization"],
     });
     expect(JSON.stringify(listed.body.global)).not.toContain("github_pat_123");
+  });
+
+  test("installs a Metabase preset with a redacted API key", async () => {
+    const installed = await post("/admin/api/mcp-servers/mutate", {
+      action: "install",
+      scope: "global",
+      presetId: "metabase",
+      credentials: {
+        url: "https://metabase.example.com/api/metabase-mcp",
+        "x-api-key": "mb_key_123",
+      },
+      conversationId: CONVERSATION_ID,
+    });
+
+    expect(installed.status).toBe(200);
+    expect(globalSettings().mcpServers.metabase).toEqual({
+      url: "https://metabase.example.com/api/metabase-mcp",
+      headers: { "x-api-key": "mb_key_123" },
+    });
+
+    const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
+    expect(listed.body.global.metabase).toEqual({
+      url: "https://metabase.example.com/api/metabase-mcp",
+      envKeys: [],
+      headerKeys: ["x-api-key"],
+    });
+    expect(JSON.stringify(listed.body.global)).not.toContain("mb_key_123");
   });
 
   test("installs a pinned local preset", async () => {

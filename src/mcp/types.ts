@@ -26,7 +26,7 @@ export interface McpServerConfig {
   disabled?: boolean;
 }
 
-type McpPresetCredentialTarget = "env" | "header";
+type McpPresetCredentialTarget = "env" | "header" | "url";
 
 interface McpPresetCredential {
   key: string;

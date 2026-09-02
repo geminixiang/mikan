@@ -2648,7 +2648,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         '</div>' +
         (installed ? '<div class="mcp-replace-note">Installing again replaces the existing <code>' + escHtml(preset.serverName) + '</code> entry in this scope.</div>' : '') +
         (credentials || '<p class="mcp-no-credentials">No credentials required.</p>') +
-        '<p class="mcp-secret-note">Credentials are stored in host-private settings and are not shown to the model or sandbox.</p>' +
+        '<p class="mcp-secret-note">These values are stored in host-private settings and are not shown to the model or sandbox.</p>' +
         '<a class="mcp-setup-link" href="' + escAttr(preset.setupUrl) + '" target="_blank" rel="noopener">Setup documentation ↗</a>';
       document.getElementById('mcp-install-dialog').showModal();
     }
