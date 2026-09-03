@@ -45,6 +45,11 @@ record or database.
 Runner wiring lives in `src/agent/runner.ts`: tools are connected when a
 runner is built and disposed with it, so settings changes apply on the next
 runner build (`settings-mutation.ts` refreshes caches on `mcpServers` patches).
+The runner's required platform trust gate runs before OpenConnector provisioning:
+`membership` preserves the configured MCP map and provisioning, while
+`open-trigger` unconditionally replaces the effective map with `{}`. Open-trigger
+runners therefore neither launch configured servers nor admit MCP tools or server
+instructions into the parent or subagent sessions.
 
 Preset installation is administrator-only and requires a preview/confirmation
 in the Admin portal. A local preset executes its pinned command on the mikan

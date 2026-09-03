@@ -311,6 +311,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           address,
           sessionKey,
           currentMessageId: event.ts,
+          trustModel: context.platform.trustModel ?? "membership",
           platformWorkspaceId: context.platform.workspaceId,
         });
         const { state } = lease;
@@ -550,6 +551,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sandboxConfig: this.options.sandbox,
       sessionKey: options.sessionKey,
       office: this.options.workspace.office(options.address),
+      trustModel: options.trustModel,
       platformWorkspaceId: options.platformWorkspaceId,
       sessionScope,
       vaultManager: this.options.vaultManager,

@@ -69,6 +69,20 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   return `[${userLabel}]: ${text}`;
 }
 
+async function resolveRunnerMcpServers(options: {
+  office: Office;
+  trustModel: CreateRunnerOptions["trustModel"];
+  platformWorkspaceId?: string;
+  servers: ReturnType<typeof resolveConversationSettings>["mcpServers"];
+}): Promise<Awaited<ReturnType<typeof provisionOfficeOpenConnectorToken>>> {
+  if (options.trustModel === "open-trigger") return {};
+  return provisionOfficeOpenConnectorToken(
+    options.office,
+    options.platformWorkspaceId,
+    options.servers,
+  );
+}
+
 type PrepareRunParams = {
   message: ConversationMessage;
   responder: ConversationResponder;
@@ -545,6 +559,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sandboxConfig,
     sessionKey,
     office,
+    trustModel,
     sessionScope,
     vaultManager,
     provisioner,
@@ -556,12 +571,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const conversationDir = office.dir;
   const workspaceDir = office.workspace.root;
   const resolvedAgentConfig = resolveConversationSettings(office);
-  const mcpServers = await provisionOfficeOpenConnectorToken(
+  const mcpServers = await resolveRunnerMcpServers({
     office,
-    options.platformWorkspaceId,
-    resolvedAgentConfig.mcpServers,
-  );
-  const agentConfig = { ...resolvedAgentConfig, ...(mcpServers ? { mcpServers } : {}) };
+    trustModel,
+    platformWorkspaceId: options.platformWorkspaceId,
+    servers: resolvedAgentConfig.mcpServers,
+  });
+  const agentConfig = { ...resolvedAgentConfig, mcpServers };
 
   const projection = resolveWorkspaceProjection(office);
   // Bootstrap validation fails runner creation early. resolveForRun repeats

@@ -178,9 +178,9 @@ export interface MessagingInfo {
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
   /**
-   * Trust boundary for ambient credentials. Defaults to `membership` when
-   * omitted (closed chat platforms). Open-trigger platforms must set this
-   * explicitly so vault policy does not key off platform name strings.
+   * Trust boundary for ambient credentials and host-side MCP capabilities.
+   * Built-in product paths normalize omission to `membership`; open-trigger
+   * platforms set this explicitly so policy does not key off platform names.
    */
   trustModel?: PlatformTrustModel;
   diagnostics?: {
@@ -661,6 +661,11 @@ export interface CreateRunnerOptions {
   sessionKey: string;
   /** The Conversation office this runner serves; identity and layout derive from it. */
   office: Office;
+  /**
+   * Fixed trust boundary for this office. It is not part of runner cache
+   * identity; changing it requires runner replacement, not another cache entry.
+   */
+  trustModel: PlatformTrustModel;
   /** Platform workspace/team identity used by host-side integration provisioning. */
   platformWorkspaceId?: string;
   sessionScope: ResolvedSessionScope;

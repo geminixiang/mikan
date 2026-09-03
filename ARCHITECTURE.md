@@ -121,8 +121,8 @@ Every platform feeds the same intake and runtime model:
 3. The runtime serializes events by office and session key.
 4. Built-in commands run before runner creation; unmatched slash-prefixed text remains an agent prompt.
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
-6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use.
-7. Before connecting MCP tools, the runner replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
+6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
+7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips OpenConnector provisioning, while `membership` preserves the configured map and replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
 8. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
 9. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
 10. The runner streams and finalizes the response through platform capabilities.
@@ -233,6 +233,8 @@ An `isolated` Door policy produces a conversation-only projection. Without an ex
 Vault selection is independent from runtime resource naming. Open-trigger conversations do not inherit an ambient shared default vault. Credential mounts may not shadow workspace or package targets. Host execution does not inject conversation vault environment by default.
 
 OpenConnector provider OAuth connections remain shared in the sibling service. When automatic provisioning is enabled, mikan uses its host-only OpenConnector admin authority to mint one runtime token per Slack Conversation office, named `mikan:slack:<workspace-id>:<channel-id>`. A deployment-owned origin is the only destination allowed to receive that authority; conversation MCP settings cannot redirect it. The token is written atomically under the office's State-dir and replaces the deployment token only in that runner's in-memory MCP configuration. Neither admin nor runtime tokens enter settings or the Sandbox Vault. Managed sandboxes do not receive them; host mode is explicitly non-isolated. Provisioning failure disables only that runner's OpenConnector server.
+
+The runner applies the same fixed platform trust gate to every settings-declared MCP server: `open-trigger` conversations receive no MCP tools or server instructions, and no configured stdio process is launched. This creation-time gate precedes provisioning and MCP loading, so the capability cannot enter either the parent or subagent tool sets. `membership` conversations retain the existing MCP loading and OpenConnector provisioning behavior.
 
 ### Package skills
 
@@ -350,9 +352,9 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 <a id="inv-mcp-conversation-authority"></a>
 
-**`mcp-conversation-authority`** — A provisioned OpenConnector runtime token is scoped to one Slack Conversation office and named from the stable Slack workspace and channel IDs. Shared provider OAuth credentials remain in OpenConnector. The OpenConnector admin token stays at the host provisioning boundary and may be sent only to the deployment-owned pinned origin; conversation MCP settings cannot select its destination. The conversation runtime token stays in the host-only office State-dir and is never projected into a managed Sandbox or the Vault. Failure to provision removes only OpenConnector from that runner.
+**`mcp-conversation-authority`** — A provisioned OpenConnector runtime token is scoped to one Slack Conversation office and named from the stable Slack workspace and channel IDs. Shared provider OAuth credentials remain in OpenConnector. The OpenConnector admin token stays at the host provisioning boundary and may be sent only to the deployment-owned pinned origin; conversation MCP settings cannot select its destination. The conversation runtime token stays in the host-only office State-dir and is never projected into a managed Sandbox or the Vault. Failure to provision removes only OpenConnector from that runner. The fixed platform trust gate runs before provisioning and loading: `open-trigger` unconditionally gives the runner an empty MCP map, so configured servers are not launched and MCP tools/instructions cannot enter parent or subagent tool sets. Trust is static for an `OfficeAddress`, is not a runner cache key, and changing it requires runner replacement rather than another cache entry.
 
-Evidence: `src/mcp/open-connector.ts`, `src/agent/runner.ts`, `src/adapters/slack/bot.ts`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/runner.ts`, `src/mcp/open-connector.ts`, `src/adapters/slack/bot.ts`.
 
 ### INV settings runner coherence
 

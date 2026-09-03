@@ -506,8 +506,8 @@ docs = "ARCHITECTURE.md#inv-credential-least-authority"
 
 [[invariants]]
 id = "mcp-conversation-authority"
-owners = ["mcp"]
-applies_to = ["mcp-tools", "openconnector-runtime-token", "office"]
+owners = ["mcp", "conversation-runtime", "agent-runner"]
+applies_to = ["mcp-tools", "openconnector-runtime-token", "office", "runner-state"]
 docs = "ARCHITECTURE.md#inv-mcp-conversation-authority"
 
 [[invariants]]

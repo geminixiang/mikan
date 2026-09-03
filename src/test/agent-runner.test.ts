@@ -1,10 +1,19 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../adapter.js";
+import type { McpServerConfig } from "../mcp/types.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createRunner } from "../agent/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
@@ -41,6 +50,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.MIKAN_STATE_DIR;
+  delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
+  delete process.env.OPENCONNECTOR_ORIGIN;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -63,11 +74,23 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
 }
 
 async function createTestRunner(
-  platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
+  options: {
+    trustModel?: "membership" | "open-trigger";
+    mcpServers?: Record<string, McpServerConfig>;
+    platformWorkspaceId?: string;
+    platformToolPackFactories?: readonly PlatformToolPackFactory[];
+  } = {},
 ) {
   const { models, faux } = createFauxModels();
   const office = testOffice();
   const conversationDir = office.ensure();
+  if (options.mcpServers) {
+    mkdirSync(office.stateDir, { recursive: true });
+    writeFileSync(
+      join(office.stateDir, "settings.json"),
+      JSON.stringify({ mcpServers: options.mcpServers }),
+    );
+  }
   const sessionDir = officeSessionsDir(conversationDir);
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
 
@@ -75,9 +98,11 @@ async function createTestRunner(
     sandboxConfig: { type: "host" },
     sessionKey: "C1",
     office,
+    trustModel: options.trustModel ?? "membership",
+    platformWorkspaceId: options.platformWorkspaceId,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
     models,
-    platformToolPackFactories,
+    platformToolPackFactories: options.platformToolPackFactories ?? [],
   });
   return { runner, faux };
 }
@@ -125,6 +150,53 @@ const platform: MessagingInfo = {
 };
 
 describe("PiAgentWrapper.run", () => {
+  test("gates configured stdio MCP commands by runner trust", async () => {
+    const marker = join(dir, "mcp-launched");
+    const markerScript = `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "launched");`;
+    const mcpServers = {
+      marker: {
+        command: process.execPath,
+        args: ["--input-type=module", "-e", markerScript],
+      },
+    } satisfies Record<string, McpServerConfig>;
+
+    const { runner: openTriggerRunner } = await createTestRunner({
+      trustModel: "open-trigger",
+      mcpServers,
+    });
+    await openTriggerRunner.dispose();
+    expect(existsSync(marker)).toBe(false);
+
+    const { runner: membershipRunner } = await createTestRunner({
+      trustModel: "membership",
+      mcpServers,
+    });
+    expect(existsSync(marker)).toBe(true);
+    await membershipRunner.dispose();
+  });
+
+  test("skips OpenConnector provisioning for open-trigger runners", async () => {
+    process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
+    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("must not fetch"));
+    const { runner } = await createTestRunner({
+      trustModel: "open-trigger",
+      platformWorkspaceId: "T1",
+      mcpServers: {
+        "open-connector": {
+          url: "http://127.0.0.1:3737/mcp",
+          headers: { Authorization: "Bearer deployment-token" },
+        },
+      },
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(existsSync(join(testOffice().stateDir, "open-connector-runtime-token.json"))).toBe(
+      false,
+    );
+    await runner.dispose();
+  });
+
   test("does not follow conversation memory symlinks during host prompt construction", async () => {
     const outside = join(dir, "outside-secret.txt");
     writeFileSync(outside, "DO_NOT_LEAK_THIS_SECRET");
@@ -335,14 +407,16 @@ describe("PiAgentWrapper.run", () => {
 
   test("a successful Slack Block Kit call owns the final visible response", async () => {
     const postBlocks = vi.fn(async () => ({ ts: "block-message" }));
-    const { runner, faux } = await createTestRunner([
-      () =>
-        createSlackToolPack({
-          postBlocks,
-          updateBlocks: vi.fn(async () => {}),
-          ownsBlockKitMessage: () => false,
-        }),
-    ]);
+    const { runner, faux } = await createTestRunner({
+      platformToolPackFactories: [
+        () =>
+          createSlackToolPack({
+            postBlocks,
+            updateBlocks: vi.fn(async () => {}),
+            ownsBlockKitMessage: () => false,
+          }),
+      ],
+    });
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("slack_blockkit", {

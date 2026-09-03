@@ -207,6 +207,7 @@ describe("ConversationRuntime handleEvent", () => {
         conversationId: string;
         sessionKey: string;
         conversationKind: "shared";
+        trustModel: "membership" | "open-trigger";
       }): Promise<{ state: ConversationRuntimeState; release: () => void }>;
       createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
     };
@@ -222,6 +223,7 @@ describe("ConversationRuntime handleEvent", () => {
       conversationId: "C123",
       sessionKey: "C123",
       conversationKind: "shared" as const,
+      trustModel: "open-trigger" as const,
     };
 
     const first = internal.acquireState(options);
@@ -232,8 +234,34 @@ describe("ConversationRuntime handleEvent", () => {
 
     expect(left.state).toBe(right.state);
     expect(create).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ trustModel: "open-trigger" }),
+      expect.anything(),
+    );
     left.release();
     right.release();
+    await runtime.shutdown();
+  });
+
+  test("normalizes omitted platform trust before runner materialization", async () => {
+    const { models, faux } = createFauxModels();
+    faux.setResponses([fauxAssistantMessage("ok")]);
+    const runtime = makeRuntime(models);
+    const internal = runtime as unknown as {
+      createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
+    };
+    const create = vi.spyOn(internal, "createCurrentRunner");
+    const { event, context } = makeEventAndContext("1000.01");
+    const platformWithoutTrust = { ...context.platform };
+    delete platformWithoutTrust.trustModel;
+    context.platform = platformWithoutTrust;
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ trustModel: "membership" }),
+      expect.anything(),
+    );
     await runtime.shutdown();
   });
 

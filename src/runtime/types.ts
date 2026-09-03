@@ -1,4 +1,4 @@
-import type { PiAgentWrapper } from "../types.js";
+import type { PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,
   ConversationContext,
@@ -52,6 +52,8 @@ export interface SessionStateOptions {
   /** Canonical office identity; the runtime keys all state by this. */
   address: OfficeAddress;
   sessionKey: string;
+  /** Fixed trust boundary for this office's built-in platform path. */
+  trustModel: PlatformTrustModel;
   /** Stable platform workspace/team identity when the adapter supplies one. */
   platformWorkspaceId?: string;
 }
