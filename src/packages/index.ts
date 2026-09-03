@@ -24,7 +24,15 @@ import type {
 } from "./types.js";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { ensureDirExists, readTextFileIfExists } from "../utils/file-guards.js";
 import * as log from "../log.js";
 import { officeStateDir } from "../office/index.js";
@@ -242,7 +250,6 @@ export type { MaterializeOptions } from "./types.js";
 
 /** Git operations get a bounded wall clock so a hung remote cannot wedge a save. */
 const GIT_TIMEOUT_MS = 120_000;
-const NPM_TIMEOUT_MS = 300_000;
 const MATERIALIZED_REF_FILE = "mikan-ref";
 
 /**
@@ -355,7 +362,7 @@ function materializeGit(
   }
 
   // An incomplete checkout must not retain a marker from an earlier attempt:
-  // otherwise a retry could mistake a failed dependency install for success.
+  // otherwise a retry could mistake an interrupted fetch or checkout for success.
   if (alreadyCloned) rmSync(markerPath, { force: true });
 
   if (!alreadyCloned) {
@@ -383,9 +390,8 @@ function materializeGit(
   git(cloneDir, ["checkout", "-q", "--detach", "FETCH_HEAD"]);
 
   const dir = resolveSubpath(cloneDir, parsed);
-  installDependencies(dir);
   // This is the completion marker, not merely a fetched-ref marker. Write it
-  // last so a failed npm install is retried by the next materialization.
+  // only after checkout and subpath validation have both succeeded.
   writeFileSync(markerPath, `${requestedRef}\n`);
   return dir;
 }
@@ -474,39 +480,6 @@ function resolveSubpath(cloneDir: string, parsed: Extract<ParsedSource, { type: 
     throw new Error(`Subpath escapes repository: ${parsed.subpath}`);
   }
   return dir;
-}
-
-/**
- * Install runtime dependencies when the package declares any. This runs npm
- * on the host against code that was just fetched from a remote, which is the
- * same trust level as importing the package itself — but it is worth being
- * explicit that it happens, because it also runs the dependencies' install
- * scripts.
- */
-function installDependencies(dir: string): void {
-  if (!hasDependencies(dir)) return;
-  log.logInfo(`Installing package dependencies in ${dir}`);
-  try {
-    execFileSync("npm", ["install", "--omit=dev", "--no-audit", "--no-fund"], {
-      cwd: dir,
-      timeout: NPM_TIMEOUT_MS,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch (err) {
-    throw new Error(`npm install failed for the package: ${gitErrorText(err)}`, { cause: err });
-  }
-}
-
-function hasDependencies(dir: string): boolean {
-  const raw = readTextFileIfExists(join(dir, "package.json"));
-  if (raw === undefined) return false;
-  try {
-    const pkg = JSON.parse(raw) as { dependencies?: Record<string, string> };
-    return Boolean(pkg.dependencies && Object.keys(pkg.dependencies).length > 0);
-  } catch {
-    return false;
-  }
 }
 
 function git(cwd: string, args: string[]): string {
@@ -636,7 +609,9 @@ async function describe(
 
 function contributedSkills(dir: string): string[] {
   const skillsDir = join(dir, "skills");
-  return loadSkillsFromDir({ dir: skillsDir, source: "package" }).skills.map((skill) => skill.name);
+  return loadSkillsFromDir({ dir: skillsDir, source: "package", rejectSymlinks: true }).skills.map(
+    (skill) => skill.name,
+  );
 }
 
 // ── Resolution & skill mounts ─────────────────────────────────────────────────
@@ -704,11 +679,11 @@ export function packageSkillRuntimeDir(slug: string): string {
 export function conversationPackageSkillMounts(
   packages: ResolvedPackages,
 ): Array<{ source: string; target: string; readOnly: true }> {
-  return packages.skillDirs.map(({ slug, dir }) => ({
-    source: dir,
-    target: packageSkillRuntimeDir(slug),
-    readOnly: true,
-  }));
+  return packages.skillDirs.flatMap(({ slug, dir }) =>
+    isNonSymlinkDirectory(dir)
+      ? [{ source: dir, target: packageSkillRuntimeDir(slug), readOnly: true as const }]
+      : [],
+  );
 }
 
 /**
@@ -788,8 +763,18 @@ function materialize(
 
 function packageSkillDir(pkg: MaterializedPackage): PackageSkillDir[] {
   const dir = join(pkg.dir, SKILLS_SUBDIR);
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) return [];
-  return [{ slug: packageSlug(pkg), dir }];
+  return isNonSymlinkDirectory(dir) ? [{ slug: packageSlug(pkg), dir }] : [];
+}
+
+function isNonSymlinkDirectory(path: string): boolean {
+  if (!existsSync(path)) return false;
+  try {
+    const stats = lstatSync(path);
+    return !stats.isSymbolicLink() && stats.isDirectory();
+  } catch (err) {
+    log.logWarning(`Could not inspect package skills directory ${path}`, messageOf(err));
+    return false;
+  }
 }
 
 /**

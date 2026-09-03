@@ -106,9 +106,9 @@ describe("materializeSource", () => {
     expect(existsSync(dir)).toBe(false);
   });
 
-  test("a failed dependency install is retried before the ref marker is written", () => {
+  test("materialization never invokes npm for package dependencies", () => {
     const packageJson = join(repo, "package.json");
-    writeFileSync(packageJson, JSON.stringify({ dependencies: { "missing-package": "1.0.0" } }));
+    writeFileSync(packageJson, JSON.stringify({ dependencies: { untrusted: "1.0.0" } }));
     run(repo, ["add", "package.json"]);
     run(repo, ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "deps"]);
 
@@ -116,22 +116,13 @@ describe("materializeSource", () => {
     const callsFile = join(stateDir, "npm-calls");
     mkdirSync(npmDir, { recursive: true });
     const fakeNpm = join(npmDir, "npm");
-    writeFileSync(
-      fakeNpm,
-      `#!/bin/sh\ncalls=$(cat "${callsFile}" 2>/dev/null || echo 0)\ncalls=$((calls + 1))\necho "$calls" > "${callsFile}"\n[ "$calls" -ne 1 ]\n`,
-    );
+    writeFileSync(fakeNpm, `#!/bin/sh\necho called > "${callsFile}"\n`);
     chmodSync(fakeNpm, 0o755);
     const originalPath = process.env.PATH;
     process.env.PATH = `${npmDir}:${originalPath ?? ""}`;
     try {
-      expect(() => materializeSource(source, { scope: "global", stateDir })).toThrow(
-        /npm install failed/,
-      );
-      const clone = gitCloneDir(source, join(stateDir, "global"));
-      expect(existsSync(join(clone, ".git", "mikan-ref"))).toBe(false);
-
-      expect(materializeSource(source, { scope: "global", stateDir }).dir).toBe(clone);
-      expect(readFileSync(callsFile, "utf-8").trim()).toBe("2");
+      const clone = materializeSource(source, { scope: "global", stateDir }).dir;
+      expect(existsSync(callsFile)).toBe(false);
       expect(readFileSync(join(clone, ".git", "mikan-ref"), "utf-8").trim()).toBe("HEAD");
     } finally {
       process.env.PATH = originalPath;

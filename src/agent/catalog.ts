@@ -41,7 +41,11 @@ export function loadMikanSkills(
   const mounted = workspacePath !== hostWorkspacePath;
   for (const { slug, dir } of packages.skillDirs) {
     const runtimeDir = packageSkillRuntimeDir(slug);
-    for (const skill of loadSkillsFromDir({ dir, source: `package:${slug}` }).skills) {
+    for (const skill of loadSkillsFromDir({
+      dir,
+      source: `package:${slug}`,
+      rejectSymlinks: true,
+    }).skills) {
       if (mounted) {
         skill.filePath = runtimeDir + skill.filePath.slice(dir.length);
         skill.baseDir = runtimeDir + skill.baseDir.slice(dir.length);

@@ -1,14 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { loadMikanSkills } from "../agent/catalog.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import {
   conversationPackageSkillMounts,
   packageSkillRuntimeDir,
   resolveConversationPackages,
 } from "../packages/index.js";
+import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 
 const CONVERSATION_ID = "C03045VJJAY";
 const CONVERSATION_ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
@@ -157,5 +159,71 @@ describe("conversationPackageSkillMounts", () => {
     expect(`${mount.target}/triage/triage.sh`).toBe(
       `${packageSkillRuntimeDir(resolved.skillDirs[0].slug)}/triage/triage.sh`,
     );
+  });
+
+  test("a symlinked package skills root contributes no mount", () => {
+    const outside = join(base, "outside-skills");
+    mkdirSync(join(outside, "linked"), { recursive: true });
+    writeFileSync(
+      join(outside, "linked", "SKILL.md"),
+      "---\nname: linked\ndescription: Outside skill\n---\nbody",
+    );
+    const repo = mkdtempSync(join(base, "repo-linked-root-"));
+    symlinkSync(outside, join(repo, "skills"));
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], {
+      cwd: repo,
+    });
+    globalPackages([`file://${repo}`]);
+
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
+    expect(resolved.skillDirs).toEqual([]);
+    expect(conversationPackageSkillMounts(resolved)).toEqual([]);
+  });
+
+  test("revalidates the skills root when producing mounts", () => {
+    globalPackages([makeSkillPackage()]);
+    const resolved = resolveConversationPackages({ ...options(), fetchMissing: true });
+    const skillsDir = resolved.skillDirs[0].dir;
+    const outside = join(base, "replacement-skills");
+    mkdirSync(outside, { recursive: true });
+    rmSync(skillsDir, { recursive: true });
+    symlinkSync(outside, skillsDir);
+
+    expect(conversationPackageSkillMounts(resolved)).toEqual([]);
+  });
+
+  test("symlinked package skill entries are not loaded", () => {
+    const outside = join(base, "outside-entry");
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(
+      join(outside, "SKILL.md"),
+      "---\nname: linked\ndescription: Outside skill\n---\nbody",
+    );
+    const repo = mkdtempSync(join(base, "repo-linked-entry-"));
+    const realSkill = join(repo, "skills", "real");
+    mkdirSync(realSkill, { recursive: true });
+    writeFileSync(
+      join(realSkill, "SKILL.md"),
+      "---\nname: real\ndescription: Real skill\n---\nbody",
+    );
+    symlinkSync(outside, join(repo, "skills", "linked"));
+    execFileSync("git", ["init", "-q"], { cwd: repo });
+    execFileSync("git", ["add", "-A"], { cwd: repo });
+    execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "i"], {
+      cwd: repo,
+    });
+    globalPackages([`file://${repo}`]);
+
+    const office = options().office;
+    const resolved = resolveConversationPackages({ office, fetchMissing: true });
+    const { skills } = loadMikanSkills(
+      office,
+      office.workspace.root,
+      resolveWorkspaceProjection(office),
+      resolved,
+    );
+    expect(skills.map((skill) => skill.name)).toEqual(["real"]);
   });
 });

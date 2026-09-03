@@ -63,6 +63,7 @@ marker is written only after checkout and subpath validation complete.
 ## Trust
 
 Package files are untrusted content. They remain under the host-only state
-directory and only declared skill directories cross into a Sandbox as
-read-only mounts. mikan does not import or execute package modules in its host
-process.
+directory and only declared, non-symlinked skill directories cross into a
+Sandbox as read-only mounts. Package materialization does not install
+dependencies, run lifecycle scripts, import package modules, or otherwise
+execute package code in the mikan host process.
