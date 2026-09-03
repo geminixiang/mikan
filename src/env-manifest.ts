@@ -118,6 +118,23 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
+    key: "openconnector",
+    title: "OpenConnector",
+    kind: "feature",
+    doc: "Host-side provisioning of conversation-scoped OpenConnector runtime tokens",
+    vars: [
+      {
+        name: "OPENCONNECTOR_ORIGIN",
+        doc: "Deployment-owned origin that may receive the OpenConnector admin token",
+      },
+      {
+        name: "OPENCONNECTOR_ADMIN_TOKEN",
+        secret: true,
+        doc: "Admin token used only to mint per-conversation runtime tokens",
+      },
+    ],
+  },
+  {
     key: "cloudflare",
     title: "Cloudflare sandbox",
     kind: "feature",

@@ -46,9 +46,11 @@ Default office runtimes are single-node by design. Moving a live office between 
 - **Host workspace root**: The directory on the mikan host machine that stores workspace data.
 - **Runtime workspace root**: The path at which an authorized Workspace projection appears inside a conversation's Sandbox runtime. The model only ever sees runtime paths.
 - **State dir**: mikan's host-only private storage for settings, credentials, office records, and materialized package repositories. It is never part of a Workspace projection.
+- **Conversation integration identity**: A host-side service credential that identifies one Conversation office while using a shared external account. For OpenConnector on Slack, the runtime token name is `mikan:slack:<workspace-id>:<channel-id>`; provider OAuth remains shared in OpenConnector.
 
 ## Security boundaries
 
 - **Execution isolation**: Every Conversation office uses an independent Sandbox runtime—the agent's computer. Trusted workspace policy never weakens this boundary.
 - **Data isolation**: Conversation files are protected by an Isolated workspace projection. Eligible platform channels may derive a Trusted workspace projection for shared memory, while direct, external, and unknown conversations fail closed to Isolated workspace without changing environment isolation.
 - **Open network**: Sandbox runtimes have unrestricted network connectivity by default. Authority comes from explicitly injected credentials and capabilities, not network reachability.
+- **Host-side integration provisioning**: OpenConnector's admin token may mint conversation runtime tokens only inside the mikan host process and may be sent only to the deployment-owned pinned OpenConnector origin. It does not enter settings, the Vault, or managed Sandbox projections. Host sandbox mode is non-isolated and cannot provide this protection.

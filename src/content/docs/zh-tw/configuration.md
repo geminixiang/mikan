@@ -118,7 +118,9 @@ Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversatio
 
 每個 entry 必須只使用一種 transport：`command`（可搭配 `args`、`env`）或 `url`（可搭配 `headers`）。`disabled: true` 可在不刪除設定的情況下停用 server。全域與對話設定會依 server name 合併；對話設定可以覆寫或停用同名的全域 server，其他全域 entries 仍會保留。
 
-Admin 的 MCP 面板提供 repository-owned 的精選 Marketplace。安裝前會顯示完整 host command 或 remote endpoint、所需憑證、來源、目標 scope 與安全警告；確認後只會建立一般的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自動更新服務，也不把 catalog 收錄視為安全認證。Local stdio preset 會在 mikan host 執行程式碼；remote preset 則會收到送往其工具的呼叫與資料。
+Admin 的 MCP 面板提供 repository-owned 的精選 Marketplace。安裝前會顯示完整 host command 或 remote endpoint、所需憑證、來源、目標 scope 與安全警告；確認後只會建立一般的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自動更新服務，也不把 catalog 收錄視為安全認證。Local stdio preset 會在 mikan host 執行程式碼；remote preset 則會收到送往其工具的呼叫與資料。OpenConnector preset 會連到 `http://127.0.0.1:3737/mcp` 的 self-hosted sibling runtime；請安裝受限範圍的 persistent runtime token，不要使用擁有完整權限的 bootstrap token。Provider credentials 保留在 OpenConnector，不會進入 Sandbox Vault。
+
+設定 deployment-owned 的 `OPENCONNECTOR_ORIGIN` 與 host-only 的 `OPENCONNECTOR_ADMIN_TOKEN` 環境變數後，mikan 會讓每個 Slack Conversation office 在共用 provider OAuth connections 的同時擁有自己的 OpenConnector runtime identity。MCP endpoint 必須符合這個固定 origin，因此 conversation override 無法把 admin credential 重新導向其他主機。Office 首次建立 runner 時，mikan 會建立名稱為 `mikan:slack:<workspace-id>:<channel-id>` 的 token、複製目前 OpenConnector deployment 的 action／proxy policy，並把 token 存在該 office 的私有 State-dir。Provisioning 失敗只會停用該 runner 的 OpenConnector。Managed sandbox 不會收到 admin 或 runtime token；host sandbox 沒有這項隔離，必須視為 trusted。
 
 ## 平台憑證
 

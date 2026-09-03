@@ -52,6 +52,8 @@ export interface SessionStateOptions {
   /** Canonical office identity; the runtime keys all state by this. */
   address: OfficeAddress;
   sessionKey: string;
+  /** Stable platform workspace/team identity when the adapter supplies one. */
+  platformWorkspaceId?: string;
 }
 
 export interface ConversationRuntimeOptions extends Omit<

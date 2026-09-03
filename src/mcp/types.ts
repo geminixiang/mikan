@@ -55,10 +55,17 @@ export interface McpLoadError {
   error: string;
 }
 
+export interface McpServerInstruction {
+  server: string;
+  text: string;
+}
+
 export interface McpToolsResult {
   /** Tools namespaced `mcp__<server>__<tool>`, ready for the agent tool list. */
   tools: AgentTool<TSchema>[];
   errors: McpLoadError[];
+  /** Admin-approved server guidance for operating its tools. */
+  instructions: McpServerInstruction[];
   /** Close all server connections (and kill stdio child processes). */
   dispose: () => Promise<void>;
 }

@@ -43,6 +43,13 @@ docs = "ARCHITECTURE.md#agent-execution"
 sources = ["src/agent/"]
 
 [[modules]]
+id = "mcp"
+name = "Host-side MCP integration"
+kind = "infrastructure"
+docs = "src/mcp/README.md"
+sources = ["src/mcp/"]
+
+[[modules]]
 id = "harness"
 name = "Agent harness"
 kind = "core"
@@ -170,6 +177,13 @@ interface = "PiAgentWrapper"
 docs = "ARCHITECTURE.md#agent-execution"
 
 [[seams]]
+id = "mcp-tools"
+owner = "mcp"
+consumers = ["agent-runner"]
+interface = "loadMcpTools, provisionOfficeOpenConnectorToken"
+docs = "src/mcp/README.md"
+
+[[seams]]
 id = "harness-session"
 owner = "harness"
 consumers = ["agent-runner"]
@@ -188,6 +202,7 @@ consumers = [
   "workspace-projection",
   "packages",
   "side-services",
+  "mcp",
 ]
 interface = "Workspace.office, Office"
 docs = "src/office/README.md"
@@ -337,6 +352,13 @@ classification = "credential"
 docs = "src/vault/README.md"
 
 [[resources]]
+id = "openconnector-runtime-token"
+authority = "mcp"
+scope = "conversation"
+classification = "credential"
+docs = "src/mcp/README.md"
+
+[[resources]]
 id = "runner-state"
 authority = "conversation-runtime"
 scope = "office-and-session"
@@ -481,6 +503,12 @@ id = "credential-least-authority"
 owners = ["execution-resolver", "vault"]
 applies_to = ["vault-store", "sandbox"]
 docs = "ARCHITECTURE.md#inv-credential-least-authority"
+
+[[invariants]]
+id = "mcp-conversation-authority"
+owners = ["mcp"]
+applies_to = ["mcp-tools", "openconnector-runtime-token", "office"]
+docs = "ARCHITECTURE.md#inv-mcp-conversation-authority"
 
 [[invariants]]
 id = "settings-runner-coherence"

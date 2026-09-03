@@ -90,7 +90,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Orchestration           | Composition root, Conversation runtime, Agent runner         | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                                                                |
 | Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
 | Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
-| Execution and authority | Execution resolver, Sandbox, Vault, Packages                 | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                                                                           |
+| Execution and authority | Execution resolver, Sandbox, Vault, Packages, MCP            | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md), [`src/mcp/README.md`](src/mcp/README.md)                                 |
 | Control surfaces        | Commands, Web and scheduled-event services                   | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                                                 |
 
 ## Main flows
@@ -122,10 +122,11 @@ Every platform feeds the same intake and runtime model:
 4. Built-in commands run before runner creation; unmatched slash-prefixed text remains an agent prompt.
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use.
-7. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
-8. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
-9. The runner streams and finalizes the response through platform capabilities.
-10. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
+7. Before connecting MCP tools, the runner replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
+8. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
+9. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
+10. The runner streams and finalizes the response through platform capabilities.
+11. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
 
 The `stop` magic word is exceptional: it runs before trigger policy and queueing. It is not an ordinary bare command.
 
@@ -230,6 +231,8 @@ An `isolated` Door policy produces a conversation-only projection. Without an ex
 ### Credential authority
 
 Vault selection is independent from runtime resource naming. Open-trigger conversations do not inherit an ambient shared default vault. Credential mounts may not shadow workspace or package targets. Host execution does not inject conversation vault environment by default.
+
+OpenConnector provider OAuth connections remain shared in the sibling service. When automatic provisioning is enabled, mikan uses its host-only OpenConnector admin authority to mint one runtime token per Slack Conversation office, named `mikan:slack:<workspace-id>:<channel-id>`. A deployment-owned origin is the only destination allowed to receive that authority; conversation MCP settings cannot redirect it. The token is written atomically under the office's State-dir and replaces the deployment token only in that runner's in-memory MCP configuration. Neither admin nor runtime tokens enter settings or the Sandbox Vault. Managed sandboxes do not receive them; host mode is explicitly non-isolated. Provisioning failure disables only that runner's OpenConnector server.
 
 ### Package skills
 
@@ -342,6 +345,14 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/index.ts`.
 **`credential-least-authority`** — Credential access derives from actor, office, trigger trust, and sandbox capabilities. Open-trigger conversations receive no ambient shared vault, and credential mounts cannot shadow workspace or package mounts.
 
 Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
+
+### INV MCP conversation authority
+
+<a id="inv-mcp-conversation-authority"></a>
+
+**`mcp-conversation-authority`** — A provisioned OpenConnector runtime token is scoped to one Slack Conversation office and named from the stable Slack workspace and channel IDs. Shared provider OAuth credentials remain in OpenConnector. The OpenConnector admin token stays at the host provisioning boundary and may be sent only to the deployment-owned pinned origin; conversation MCP settings cannot select its destination. The conversation runtime token stays in the host-only office State-dir and is never projected into a managed Sandbox or the Vault. Failure to provision removes only OpenConnector from that runner.
+
+Evidence: `src/mcp/open-connector.ts`, `src/agent/runner.ts`, `src/adapters/slack/bot.ts`.
 
 ### INV settings runner coherence
 

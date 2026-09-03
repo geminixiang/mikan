@@ -311,6 +311,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           address,
           sessionKey,
           currentMessageId: event.ts,
+          platformWorkspaceId: context.platform.workspaceId,
         });
         const { state } = lease;
         await state.runner.syncChatHistory(event.ts);
@@ -549,6 +550,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sandboxConfig: this.options.sandbox,
       sessionKey: options.sessionKey,
       office: this.options.workspace.office(options.address),
+      platformWorkspaceId: options.platformWorkspaceId,
       sessionScope,
       vaultManager: this.options.vaultManager,
       provisioner: this.options.provisioner,

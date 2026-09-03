@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { loadMcpTools } from "../mcp/loader.js";
+import { formatMcpServerInstructions, loadMcpTools } from "../mcp/loader.js";
 
 // A minimal MCP server as a standalone script, spawned over stdio like a real
 // deployment would. It exposes one echo tool and reads a secret from its env
@@ -44,6 +46,102 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+function startHttpMcpServer(): Promise<{ server: Server; url: string }> {
+  const server = createServer(async (req, res) => {
+    if (req.method !== "POST" || req.url !== "/mcp") {
+      res.writeHead(405).end();
+      return;
+    }
+    if (req.headers.authorization !== "Bearer scoped-token") {
+      res.writeHead(401).end();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const message = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
+      id?: string | number;
+      method?: string;
+      params?: { name?: string; arguments?: Record<string, unknown> };
+    };
+    if (message.method === "notifications/initialized") {
+      res.writeHead(202).end();
+      return;
+    }
+    const result =
+      message.method === "initialize"
+        ? {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: {} },
+            serverInfo: { name: "http-test", version: "1.0.0" },
+            instructions: "Search for an action before executing it.",
+          }
+        : message.method === "tools/list"
+          ? {
+              tools: [
+                {
+                  name: "list_connections",
+                  description: "List connected accounts",
+                  inputSchema: {
+                    type: "object",
+                    properties: { service: { type: "string" } },
+                  },
+                },
+                {
+                  name: "execute_action",
+                  description: "Execute one connected action",
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      actionId: { type: "string" },
+                      connectionName: { type: "string" },
+                    },
+                    required: ["actionId"],
+                  },
+                },
+              ],
+            }
+          : message.params?.name === "list_connections"
+            ? {
+                content: [
+                  {
+                    type: "text",
+                    text: JSON.stringify({
+                      ok: true,
+                      data:
+                        message.params.arguments?.service === "multi"
+                          ? [
+                              { service: "multi", connectionName: "account-a" },
+                              { service: "multi", connectionName: "account-b" },
+                            ]
+                          : [
+                              {
+                                service: message.params.arguments?.service,
+                                connectionName: "only-account",
+                              },
+                            ],
+                    }),
+                  },
+                ],
+              }
+            : {
+                content: [
+                  {
+                    type: "text",
+                    text: `executed:${String(message.params?.arguments?.actionId ?? "")}:${String(message.params?.arguments?.connectionName ?? "")}`,
+                  },
+                ],
+              };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+  });
+  return new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address() as AddressInfo;
+      resolve({ server, url: `http://127.0.0.1:${address.port}/mcp` });
+    });
+  });
+}
+
 describe("loadMcpTools", () => {
   it("connects over stdio, namespaces tools, and pipes env credentials", async () => {
     const result = await loadMcpTools({
@@ -72,6 +170,49 @@ describe("loadMcpTools", () => {
     }
   }, 30_000);
 
+  it("connects over HTTP and sends host-side authorization headers", async () => {
+    const http = await startHttpMcpServer();
+    const result = await loadMcpTools({
+      "open-connector": {
+        url: http.url,
+        headers: { Authorization: "Bearer scoped-token" },
+      },
+    });
+    try {
+      expect(result.errors).toEqual([]);
+      expect(result.instructions).toEqual([
+        {
+          server: "open-connector",
+          text: "Search for an action before executing it.",
+        },
+      ]);
+      expect(formatMcpServerInstructions(result.instructions)).toContain(
+        "### open-connector\nSearch for an action before executing it.",
+      );
+      const execute = result.tools.find(
+        (tool) => tool.name === "mcp__open-connector__execute_action",
+      )!;
+      const executed = await execute.execute("call-http", {
+        actionId: "github.create_issue",
+      });
+      expect(executed.content).toEqual([
+        { type: "text", text: "executed:github.create_issue:only-account" },
+      ]);
+
+      const ambiguous = await execute.execute("call-multi", { actionId: "multi.read" });
+      expect(ambiguous.content).toEqual([{ type: "text", text: "executed:multi.read:" }]);
+
+      const explicit = await execute.execute("call-explicit", {
+        actionId: "multi.read",
+        connectionName: "account-b",
+      });
+      expect(explicit.content).toEqual([{ type: "text", text: "executed:multi.read:account-b" }]);
+    } finally {
+      await result.dispose();
+      await new Promise<void>((resolve) => http.server.close(() => resolve()));
+    }
+  });
+
   it("reports unreachable servers as errors without failing the rest", async () => {
     const result = await loadMcpTools({
       good: { command: process.execPath, args: [serverPath] },
@@ -92,6 +233,7 @@ describe("loadMcpTools", () => {
     });
     expect(disabled.tools).toEqual([]);
     expect(disabled.errors).toEqual([]);
+    expect(disabled.instructions).toEqual([]);
     await disabled.dispose();
 
     const invalid = await loadMcpTools({

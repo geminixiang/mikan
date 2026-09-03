@@ -792,6 +792,7 @@ export class SlackMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "slack",
+      ...(this.teamId ? { workspaceId: this.teamId } : {}),
       trustModel: "membership",
       formattingGuide:
         "## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.",

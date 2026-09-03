@@ -172,6 +172,8 @@ export interface ConversationResponder {
 
 export interface MessagingInfo {
   name: string;
+  /** Stable platform workspace/team identity when the adapter has one. */
+  workspaceId?: string;
   formattingGuide: string;
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
@@ -659,6 +661,8 @@ export interface CreateRunnerOptions {
   sessionKey: string;
   /** The Conversation office this runner serves; identity and layout derive from it. */
   office: Office;
+  /** Platform workspace/team identity used by host-side integration provisioning. */
+  platformWorkspaceId?: string;
   sessionScope: ResolvedSessionScope;
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;

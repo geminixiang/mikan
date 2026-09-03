@@ -17,7 +17,8 @@ import { resolveConversationSettings } from "../config.js";
 import { resolveConversationPackages } from "../packages/index.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import * as log from "../log.js";
-import { loadMcpTools } from "../mcp/loader.js";
+import { formatMcpServerInstructions, loadMcpTools } from "../mcp/loader.js";
+import { provisionOfficeOpenConnectorToken } from "../mcp/open-connector.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   getUnresolvedSandboxPathContext,
@@ -301,9 +302,10 @@ async function createRunnerAgentSession(params: {
   if (mcpResult.tools.length > 0) {
     log.logInfo(`[${params.conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
   }
+  const mcpInstructions = formatMcpServerInstructions(mcpResult.instructions);
   const session = await createConfiguredAgentSession({
     workspaceDir,
-    systemPrompt,
+    systemPrompt: mcpInstructions ? `${systemPrompt}\n\n${mcpInstructions}` : systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools: [...tools, ...mcpResult.tools],
@@ -553,7 +555,13 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const conversationId = office.address.conversationId;
   const conversationDir = office.dir;
   const workspaceDir = office.workspace.root;
-  const agentConfig = resolveConversationSettings(office);
+  const resolvedAgentConfig = resolveConversationSettings(office);
+  const mcpServers = await provisionOfficeOpenConnectorToken(
+    office,
+    options.platformWorkspaceId,
+    resolvedAgentConfig.mcpServers,
+  );
+  const agentConfig = { ...resolvedAgentConfig, ...(mcpServers ? { mcpServers } : {}) };
 
   const projection = resolveWorkspaceProjection(office);
   // Bootstrap validation fails runner creation early. resolveForRun repeats

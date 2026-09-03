@@ -74,6 +74,28 @@ const MCP_PRESETS: readonly McpPreset[] = [
     ],
   },
   {
+    id: "open-connector",
+    name: "OpenConnector",
+    description: "Use connected services through a self-hosted, host-side action gateway.",
+    category: "Integrations",
+    serverName: "open-connector",
+    sourceUrl: "https://github.com/oomol-lab/open-connector",
+    setupUrl: "https://github.com/oomol-lab/open-connector/blob/main/docs/runtime-api.md",
+    server: { url: "http://127.0.0.1:3737/mcp" },
+    credentials: [
+      {
+        key: "Authorization",
+        label: "Scoped OpenConnector runtime token",
+        description:
+          "Create a persistent runtime token limited to the actions and connections this mikan deployment may use. Do not use the full-access bootstrap token.",
+        target: "header",
+        required: true,
+        secret: true,
+        valuePrefix: "Bearer ",
+      },
+    ],
+  },
+  {
     id: "playwright",
     name: "Playwright",
     description: "Inspect and automate websites through Playwright's accessibility-first tools.",

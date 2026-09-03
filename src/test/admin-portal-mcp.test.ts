@@ -102,6 +102,7 @@ describe("MCP preset catalog", () => {
       "github",
       "context7",
       "metabase",
+      "open-connector",
       "playwright",
       "sequential-thinking",
     ]);
@@ -207,6 +208,30 @@ describe("Admin MCP preset API", () => {
       headerKeys: ["x-api-key"],
     });
     expect(JSON.stringify(listed.body.global)).not.toContain("mb_key_123");
+  });
+
+  test("installs OpenConnector with a redacted scoped runtime token", async () => {
+    const installed = await post("/admin/api/mcp-servers/mutate", {
+      action: "install",
+      scope: "global",
+      presetId: "open-connector",
+      credentials: { Authorization: "oct_scoped_123" },
+      conversationId: CONVERSATION_ID,
+    });
+
+    expect(installed.status).toBe(200);
+    expect(globalSettings().mcpServers["open-connector"]).toEqual({
+      url: "http://127.0.0.1:3737/mcp",
+      headers: { Authorization: "Bearer oct_scoped_123" },
+    });
+
+    const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
+    expect(listed.body.global["open-connector"]).toEqual({
+      url: "http://127.0.0.1:3737/mcp",
+      envKeys: [],
+      headerKeys: ["Authorization"],
+    });
+    expect(JSON.stringify(listed.body.global)).not.toContain("oct_scoped_123");
   });
 
   test("installs a pinned local preset", async () => {
