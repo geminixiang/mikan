@@ -9,6 +9,27 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.47]
+
+### Added
+
+- Integrate OpenConnector as a host-side MCP gateway: Slack Conversation offices receive scoped runtime identities, while provider OAuth connections remain in the gateway and execution audit stays attributable to the originating conversation.
+- Preserve operating guidance supplied during MCP initialization and present it to the agent with explicit system-prompt and user-intent boundaries.
+- Add automatic selection of a sole OpenConnector provider connection when an action omits `connectionName`; retain explicit selection when multiple accounts exist.
+
+### Changed
+
+- Gate MCP tools by the platform trust model and enforce the untrusted package boundary.
+- Make platform shutdown cleanup bounded and strengthen runner/session lifecycle rollback handling.
+
+### Fixed
+
+- Isolate Slack DM and thread E2E context and bound event-delivery waits.
+
+### Tests
+
+- Add coverage for OpenConnector token provisioning, MCP instruction propagation, connection selection, trust gating, lifecycle cleanup, and Slack isolation.
+
 ## [1.0.0-beta.46]
 
 ### Added
