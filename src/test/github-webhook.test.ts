@@ -152,7 +152,7 @@ describe("handleGithubWebhookRequest", () => {
 function makeBot(): GithubMessagingBot {
   const handler = { handleEvent: vi.fn() } as unknown as MessagingEventHandler;
   const client = {} as GithubClient;
-  return new GithubMessagingBot(
+  const bot = new GithubMessagingBot(
     handler,
     {
       appId: "1",
@@ -165,6 +165,8 @@ function makeBot(): GithubMessagingBot {
     },
     client,
   );
+  (bot as unknown as { stopped: boolean }).stopped = false;
+  return bot;
 }
 
 describe("requestPoll", () => {

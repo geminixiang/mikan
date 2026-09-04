@@ -5,7 +5,14 @@ This directory contains chat platform adapters and shared adapter helpers.
 Every adapter is constructed with a `Workspace` and reaches per-conversation
 state through an `Office` resolved from a typed `OfficeAddress` (see
 `src/office/`), which each intake carries on its event — no adapter takes a raw
-conversation directory path.
+conversation directory path. Every built-in adapter implements the shared
+`MessagingBot.stop()` lifecycle boundary: Slack disconnects Socket Mode,
+Discord destroys its client, Telegram stops polling, and GitHub clears polling
+and webhook-debounce timers while waiting for an active poll to finish. Process
+shutdown begins closing these external paths first and gives their accepted work
+a bounded 30-second drain window. Conversation runtime closes after a successful
+drain; on timeout it aborts stuck runner construction and the process reports a
+failed shutdown.
 
 ## Files
 

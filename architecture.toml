@@ -12,7 +12,7 @@ id = "composition-root"
 name = "Process composition root"
 kind = "entrypoint"
 docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
-sources = ["src/main.ts", "src/cli/boot.ts"]
+sources = ["src/main.ts", "src/process-lifecycle.ts", "src/cli/boot.ts"]
 
 [[modules]]
 id = "platform-adapters"
@@ -461,6 +461,18 @@ id = "session-serialization"
 owners = ["conversation-runtime"]
 applies_to = ["runner-state"]
 docs = "ARCHITECTURE.md#inv-session-serialization"
+
+[[invariants]]
+id = "process-shutdown-order"
+owners = ["composition-root", "platform-adapters", "side-services", "conversation-runtime"]
+applies_to = ["platform-adapters", "side-services", "events-bus", "runner-state"]
+docs = "ARCHITECTURE.md#inv-process-shutdown-order"
+
+[[invariants]]
+id = "runner-materialization-rollback"
+owners = ["agent-runner", "mcp", "sessions"]
+applies_to = ["runner-state", "mcp-tools", "session-files"]
+docs = "ARCHITECTURE.md#inv-runner-materialization-rollback"
 
 [[invariants]]
 id = "run-settlement"

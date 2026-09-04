@@ -238,6 +238,8 @@ export interface ConversationEvent {
  */
 export interface MessagingBot {
   start(): Promise<void>;
+  /** Stop accepting new platform events and wait for intake already in flight. */
+  stop(): Promise<void>;
   postMessage(channel: string, text: string): Promise<string>;
   updateMessage(channel: string, ts: string, text: string): Promise<void>;
   /**
@@ -669,6 +671,8 @@ export interface CreateRunnerOptions {
   /** Platform workspace/team identity used by host-side integration provisioning. */
   platformWorkspaceId?: string;
   sessionScope: ResolvedSessionScope;
+  /** Cancels construction during process shutdown; acquired resources still roll back before rejection. */
+  signal?: AbortSignal;
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;
   resourceController?: SandboxResourceController;

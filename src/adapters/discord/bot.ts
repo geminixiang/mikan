@@ -40,6 +40,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
+  MessagingIntakeTracker,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -79,7 +80,9 @@ export class DiscordMessagingBot implements MessagingBot {
   private token: string;
   private workspace: Workspace;
   private botUserId: string | null = null;
+  private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
+  private intake = new MessagingIntakeTracker("Discord");
   private startupTime: number = 0;
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
@@ -104,8 +107,13 @@ export class DiscordMessagingBot implements MessagingBot {
   // ==========================================================================
 
   async start(): Promise<void> {
+    this.stopped = false;
     await new Promise<void>((resolve, reject) => {
       this.client.once(Events.ClientReady, async (readyClient) => {
+        if (this.stopped) {
+          resolve();
+          return;
+        }
         this.botUserId = readyClient.user.id;
         this.startupTime = Date.now();
         log.logConnected("Discord");
@@ -150,6 +158,16 @@ export class DiscordMessagingBot implements MessagingBot {
     });
   }
 
+  async stop(): Promise<void> {
+    this.stopped = true;
+    try {
+      this.client.destroy();
+    } finally {
+      await this.intake.close();
+      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+    }
+  }
+
   async postMessage(channel: string, text: string): Promise<string> {
     return discordRetry(async () => {
       const ch = await this.fetchTextChannel(channel);
@@ -173,6 +191,7 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   enqueueEvent(event: ConversationEvent): boolean {
+    if (this.stopped) return false;
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -182,11 +201,10 @@ export class DiscordMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
+    return queue.enqueue(() => {
       const context = createDiscordAdapters(event as DiscordEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
-    return true;
   }
 
   getMessagingInfo(): MessagingInfo {
@@ -466,8 +484,12 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private setupEventHandlers(): void {
-    this.client.on(Events.InteractionCreate, this.handleInteractionCreate.bind(this));
-    this.client.on(Events.MessageCreate, this.handleMessageCreate.bind(this));
+    this.client.on(Events.InteractionCreate, (interaction) => {
+      void this.intake.run(() => this.handleInteractionCreate(interaction));
+    });
+    this.client.on(Events.MessageCreate, (message) => {
+      void this.intake.run(() => this.handleMessageCreate(message));
+    });
   }
 
   private async handleInteractionCreate(interaction: Interaction): Promise<void> {

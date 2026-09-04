@@ -54,6 +54,7 @@ function fakeResponseCtx(): RecordingResponseCtx {
 function fakeMessagingBot(overrides: Partial<MessagingBot> = {}): MessagingBot {
   return {
     start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
     postMessage: vi.fn(async () => "ts-1"),
     updateMessage: vi.fn(async () => {}),
     enqueueEvent: vi.fn(() => true),

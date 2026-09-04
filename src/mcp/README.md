@@ -45,6 +45,10 @@ record or database.
 Runner wiring lives in `src/agent/runner.ts`: tools are connected when a
 runner is built and disposed with it, so settings changes apply on the next
 runner build (`settings-mutation.ts` refreshes caches on `mcpServers` patches).
+If later runner construction fails, acquired MCP connections are disposed before
+the session writer is closed and before the construction error is returned.
+Process shutdown also propagates an abort signal into MCP connect/tool discovery
+and OpenConnector provisioning before awaiting that rollback.
 The runner's required platform trust gate runs before OpenConnector provisioning:
 `membership` preserves the configured MCP map and provisioning, while
 `open-trigger` unconditionally replaces the effective map with `{}`. Open-trigger

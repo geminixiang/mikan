@@ -74,12 +74,14 @@ async function resolveRunnerMcpServers(options: {
   trustModel: CreateRunnerOptions["trustModel"];
   platformWorkspaceId?: string;
   servers: ReturnType<typeof resolveConversationSettings>["mcpServers"];
+  signal?: AbortSignal;
 }): Promise<Awaited<ReturnType<typeof provisionOfficeOpenConnectorToken>>> {
   if (options.trustModel === "open-trigger") return {};
   return provisionOfficeOpenConnectorToken(
     options.office,
     options.platformWorkspaceId,
     options.servers,
+    options.signal,
   );
 }
 
@@ -275,6 +277,14 @@ async function buildInitialSystemPrompt(params: {
   });
 }
 
+async function rollbackRunnerResource(label: string, cleanup: () => Promise<void>): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    log.logWarning(`Runner rollback failed to ${label}`, String(error));
+  }
+}
+
 async function openRunnerSessionManager(params: {
   contextFile: string;
   runtimeWorkspaceRoot: string;
@@ -283,15 +293,20 @@ async function openRunnerSessionManager(params: {
 }) {
   const { contextFile, runtimeWorkspaceRoot, sessionKey, threadRootMessage } = params;
   const sessionManager = await openManagedSession(contextFile, runtimeWorkspaceRoot);
-  const threadSessionName = buildThreadSessionName(threadRootMessage);
-  if (
-    isThreadSessionKey(sessionKey) &&
-    threadSessionName &&
-    (await sessionManager.getSessionName()) !== threadSessionName
-  ) {
-    await sessionManager.setSessionName(threadSessionName);
+  try {
+    const threadSessionName = buildThreadSessionName(threadRootMessage);
+    if (
+      isThreadSessionKey(sessionKey) &&
+      threadSessionName &&
+      (await sessionManager.getSessionName()) !== threadSessionName
+    ) {
+      await sessionManager.setSessionName(threadSessionName);
+    }
+    return sessionManager;
+  } catch (error) {
+    await rollbackRunnerResource("close the session writer", () => sessionManager.close());
+    throw error;
   }
-  return sessionManager;
 }
 
 async function createRunnerAgentSession(params: {
@@ -303,10 +318,19 @@ async function createRunnerAgentSession(params: {
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   modelRegistry: MikanModels;
   conversationId: string;
+  signal?: AbortSignal;
 }) {
-  const { workspaceDir, systemPrompt, model, agentConfig, tools, sessionManager, modelRegistry } =
-    params;
-  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {});
+  const {
+    workspaceDir,
+    systemPrompt,
+    model,
+    agentConfig,
+    tools,
+    sessionManager,
+    modelRegistry,
+    signal,
+  } = params;
+  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {}, signal);
   for (const mcpError of mcpResult.errors) {
     log.logWarning(
       `[${params.conversationId}] MCP server unavailable: ${mcpError.server}`,
@@ -316,17 +340,23 @@ async function createRunnerAgentSession(params: {
   if (mcpResult.tools.length > 0) {
     log.logInfo(`[${params.conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
   }
-  const mcpInstructions = formatMcpServerInstructions(mcpResult.instructions);
-  const session = await createConfiguredAgentSession({
-    workspaceDir,
-    systemPrompt: mcpInstructions ? `${systemPrompt}\n\n${mcpInstructions}` : systemPrompt,
-    model,
-    thinkingLevel: agentConfig.thinkingLevel,
-    tools: [...tools, ...mcpResult.tools],
-    sessionStore: sessionManager,
-    models: modelRegistry,
-  });
-  return { mcpResult, session };
+  try {
+    signal?.throwIfAborted();
+    const mcpInstructions = formatMcpServerInstructions(mcpResult.instructions);
+    const session = await createConfiguredAgentSession({
+      workspaceDir,
+      systemPrompt: mcpInstructions ? `${systemPrompt}\n\n${mcpInstructions}` : systemPrompt,
+      model,
+      thinkingLevel: agentConfig.thinkingLevel,
+      tools: [...tools, ...mcpResult.tools],
+      sessionStore: sessionManager,
+      models: modelRegistry,
+    });
+    return { mcpResult, session };
+  } catch (error) {
+    await rollbackRunnerResource("dispose MCP resources", mcpResult.dispose);
+    throw error;
+  }
 }
 
 type PreparedTurnParams = {
@@ -554,7 +584,87 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   };
 }
 
+async function finishRunnerCreation(params: {
+  options: CreateRunnerOptions;
+  conversationId: string;
+  conversationDir: string;
+  workspaceDir: string;
+  executor: Executor;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  model: Model<Api>;
+  modelRegistry: MikanModels;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  systemPrompt: string;
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  toolBindings: MikanToolBindings;
+}): Promise<PiAgentWrapper> {
+  const {
+    options,
+    conversationId,
+    conversationDir,
+    workspaceDir,
+    executor,
+    resolveForRun,
+    model,
+    modelRegistry,
+    agentConfig,
+    systemPrompt,
+    sessionManager,
+    toolBindings,
+  } = params;
+  const { sessionKey, office, sessionScope, sessionView } = options;
+  const { contextFile } = sessionScope;
+  let acquiredMcpResult: Awaited<ReturnType<typeof loadMcpTools>> | undefined;
+  try {
+    const sessionUuid = extractSessionUuid(contextFile);
+    const chatSessionManager = new ChatHistorySync();
+    const { mcpResult, session } = await createRunnerAgentSession({
+      workspaceDir,
+      systemPrompt,
+      model,
+      agentConfig,
+      tools: toolBindings.tools,
+      sessionManager,
+      modelRegistry,
+      conversationId,
+      signal: options.signal,
+    });
+    acquiredMcpResult = mcpResult;
+    options.signal?.throwIfAborted();
+
+    const runState = createRunState();
+    attachSessionEventHandlers({ session, runState, model, agentConfig });
+
+    return createRunnerInterface({
+      conversationId,
+      conversationDir,
+      sessionKey,
+      office,
+      sessionUuid,
+      contextFile,
+      sessionView,
+      runState,
+      executor,
+      resolveForRun,
+      session,
+      model,
+      agentConfig,
+      sessionManager,
+      chatSessionManager,
+      mcpResult,
+      toolBindings,
+    });
+  } catch (error) {
+    if (acquiredMcpResult) {
+      await rollbackRunnerResource("dispose MCP resources", acquiredMcpResult.dispose);
+    }
+    await rollbackRunnerResource("close the session writer", () => sessionManager.close());
+    throw error;
+  }
+}
+
 export async function createRunner(options: CreateRunnerOptions): Promise<PiAgentWrapper> {
+  options.signal?.throwIfAborted();
   const {
     sandboxConfig,
     sessionKey,
@@ -564,7 +674,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     vaultManager,
     provisioner,
     resourceController,
-    sessionView,
     platformToolPackFactories,
   } = options;
   const conversationId = office.address.conversationId;
@@ -576,7 +685,9 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     trustModel,
     platformWorkspaceId: options.platformWorkspaceId,
     servers: resolvedAgentConfig.mcpServers,
+    signal: options.signal,
   });
+  options.signal?.throwIfAborted();
   const agentConfig = { ...resolvedAgentConfig, mcpServers };
 
   const projection = resolveWorkspaceProjection(office);
@@ -623,6 +734,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     projection,
     sandboxConfig,
   });
+  options.signal?.throwIfAborted();
   const { contextFile, threadRootMessage } = sessionScope;
   const sessionManager = await openRunnerSessionManager({
     contextFile,
@@ -630,40 +742,18 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sessionKey,
     threadRootMessage,
   });
-  const sessionUuid = extractSessionUuid(contextFile);
-  const chatSessionManager = new ChatHistorySync();
-  const { mcpResult, session } = await createRunnerAgentSession({
-    workspaceDir,
-    systemPrompt,
-    model,
-    agentConfig,
-    tools: toolBindings.tools,
-    sessionManager,
-    modelRegistry,
-    conversationId,
-  });
-
-  // Mutable per-run state - event handler references this
-  const runState = createRunState();
-  attachSessionEventHandlers({ session, runState, model, agentConfig });
-
-  return createRunnerInterface({
+  return finishRunnerCreation({
+    options,
     conversationId,
     conversationDir,
-    sessionKey,
-    office,
-    sessionUuid,
-    contextFile,
-    sessionView,
-    runState,
+    workspaceDir,
     executor,
     resolveForRun,
-    session,
     model,
+    modelRegistry,
     agentConfig,
+    systemPrompt,
     sessionManager,
-    chatSessionManager,
-    mcpResult,
     toolBindings,
   });
 }

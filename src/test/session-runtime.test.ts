@@ -237,6 +237,7 @@ describe("ConversationRuntime handleEvent", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ trustModel: "open-trigger" }),
       expect.anything(),
+      expect.any(AbortSignal),
     );
     left.release();
     right.release();
@@ -261,6 +262,7 @@ describe("ConversationRuntime handleEvent", () => {
     expect(create).toHaveBeenCalledWith(
       expect.objectContaining({ trustModel: "membership" }),
       expect.anything(),
+      expect.any(AbortSignal),
     );
     await runtime.shutdown();
   });

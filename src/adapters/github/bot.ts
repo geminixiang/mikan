@@ -192,8 +192,11 @@ export class GithubMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private repoState = new Map<string, RepoWatermark>();
   private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
-  private pollInFlight = false;
+  private stopped = true;
+  private stopping = false;
+  private activePoll: Promise<void> | null = null;
   private pollPending = false;
+  private pollIntervalTimer: NodeJS.Timeout | null = null;
   private requestPollTimer: NodeJS.Timeout | null = null;
 
   constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
@@ -214,6 +217,8 @@ export class GithubMessagingBot implements MessagingBot {
   // ==========================================================================
 
   async start(): Promise<void> {
+    this.stopped = false;
+    this.stopping = false;
     this.appSlug = await this.client.getAppSlug();
     // Canonical noreply author email (<user-id>+<login>@users.noreply.github.com)
     // so the bot's commits link to its avatar/profile; degrade to a plain
@@ -262,15 +267,33 @@ export class GithubMessagingBot implements MessagingBot {
       );
     }
     this.persistSyncState();
+    if (this.stopping) return;
 
-    setInterval(() => {
+    this.stopped = false;
+    this.pollIntervalTimer = setInterval(() => {
       void this.poll();
-    }, this.config.pollIntervalMs).unref();
+    }, this.config.pollIntervalMs);
+    this.pollIntervalTimer.unref();
 
     log.logConnected("GitHub");
     log.logInfo(
       `GitHub bot started as @${this.appSlug}[bot], polling ${this.watchedRepos.length} repo(s) every ${Math.round(this.config.pollIntervalMs / 1000)}s`,
     );
+  }
+
+  async stop(): Promise<void> {
+    this.stopping = true;
+    this.pollPending = false;
+    if (this.pollIntervalTimer) clearInterval(this.pollIntervalTimer);
+    if (this.requestPollTimer) clearTimeout(this.requestPollTimer);
+    this.pollIntervalTimer = null;
+    this.requestPollTimer = null;
+    try {
+      if (this.activePoll) await this.activePoll;
+    } finally {
+      this.stopped = true;
+      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+    }
   }
 
   async postMessage(channel: string, text: string): Promise<string> {
@@ -314,6 +337,7 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   enqueueEvent(event: ConversationEvent): boolean {
+    if (this.stopped) return false;
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -323,11 +347,10 @@ export class GithubMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
+    return queue.enqueue(() => {
       const context = createGithubAdapters(event as GithubEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
-    return true;
   }
 
   getMessagingInfo(): MessagingInfo {
@@ -385,7 +408,8 @@ export class GithubMessagingBot implements MessagingBot {
    * because the in-flight pass may already be past the poked repo's feeds.
    */
   requestPoll(debounceMs = REQUEST_POLL_DEBOUNCE_MS): void {
-    if (this.pollInFlight) {
+    if (this.stopped || this.stopping) return;
+    if (this.activePoll) {
       this.pollPending = true;
       return;
     }
@@ -399,33 +423,37 @@ export class GithubMessagingBot implements MessagingBot {
 
   /** One poll tick over every watched repo. Public for tests. */
   async poll(): Promise<void> {
-    if (this.pollInFlight) {
+    if (this.stopped || this.stopping) return;
+    if (this.activePoll) {
       this.pollPending = true;
       return;
     }
-    this.pollInFlight = true;
+    const activePoll = this.pollWatchedRepos();
+    this.activePoll = activePoll;
     try {
-      let changed = false;
-      for (const repo of this.watchedRepos) {
-        try {
-          changed = (await this.pollRepo(repo)) || changed;
-        } catch (err) {
-          log.logWarning(
-            `GitHub poll failed for ${repo.owner}/${repo.repo}`,
-            err instanceof Error ? err.message : String(err),
-          );
-        }
-      }
-      if (changed) {
-        this.persistSyncState();
-      }
+      await activePoll;
     } finally {
-      this.pollInFlight = false;
+      this.activePoll = null;
       if (this.pollPending) {
         this.pollPending = false;
         this.requestPoll();
       }
     }
+  }
+
+  private async pollWatchedRepos(): Promise<void> {
+    let changed = false;
+    for (const repo of this.watchedRepos) {
+      try {
+        changed = (await this.pollRepo(repo)) || changed;
+      } catch (err) {
+        log.logWarning(
+          `GitHub poll failed for ${repo.owner}/${repo.repo}`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+    if (changed) this.persistSyncState();
   }
 
   private async pollRepo(repo: GithubRepoRef): Promise<boolean> {

@@ -64,19 +64,59 @@ function reportChatResponseError(err: unknown, context: ChatResponseErrorContext
   });
 }
 
+export class MessagingIntakeTracker {
+  private accepting = true;
+  private active = new Set<Promise<void>>();
+
+  constructor(private readonly name: string) {}
+
+  run(work: () => Promise<void> | void): Promise<void> {
+    if (!this.accepting) return Promise.resolve();
+    let result: Promise<void> | void;
+    try {
+      result = work();
+    } catch (error) {
+      result = Promise.reject(error);
+    }
+    const task = Promise.resolve(result).catch((error) => {
+      log.logWarning(
+        `${this.name} intake error`,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+    this.active.add(task);
+    return task.finally(() => this.active.delete(task));
+  }
+
+  async close(): Promise<void> {
+    this.accepting = false;
+    await Promise.allSettled(this.active);
+  }
+}
+
 export class MessagingEventQueue {
   private queue: Array<() => Promise<void>> = [];
   private processing = false;
+  private accepting = true;
+  private drainWaiters: Array<() => void> = [];
 
   constructor(private readonly name: string = "") {}
 
-  enqueue(work: () => Promise<void>): void {
+  enqueue(work: () => Promise<void>): boolean {
+    if (!this.accepting) return false;
     this.queue.push(work);
     this.processNext();
+    return true;
   }
 
   size(): number {
     return this.queue.length;
+  }
+
+  close(): Promise<void> {
+    this.accepting = false;
+    if (!this.processing && this.queue.length === 0) return Promise.resolve();
+    return new Promise((resolve) => this.drainWaiters.push(resolve));
   }
 
   private async processNext(): Promise<void> {
@@ -92,7 +132,11 @@ export class MessagingEventQueue {
       );
     }
     this.processing = false;
-    this.processNext();
+    if (this.queue.length > 0) {
+      this.processNext();
+      return;
+    }
+    for (const resolve of this.drainWaiters.splice(0)) resolve();
   }
 }
 

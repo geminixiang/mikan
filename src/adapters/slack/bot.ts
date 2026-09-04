@@ -39,6 +39,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
+  MessagingIntakeTracker,
   saveIncomingAttachments,
   withRetry,
 } from "../shared.js";
@@ -233,7 +234,9 @@ export class SlackMessagingBot implements MessagingBot {
    * instead of inheriting whatever ran before it.
    */
   private streamStarts = new StreamStartLimiter();
+  private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
+  private intake = new MessagingIntakeTracker("Slack");
   private eventsWatcher: EventsWatcher | null = null;
 
   /** Host office dir for a Slack conversation. */
@@ -278,12 +281,14 @@ export class SlackMessagingBot implements MessagingBot {
   // ==========================================================================
 
   async start(): Promise<void> {
+    this.stopped = false;
     const auth = await this.webClient.auth.test();
     this.botUserId = auth.user_id as string;
     this.botId = typeof auth.bot_id === "string" ? auth.bot_id : null;
     this.teamId = typeof auth.team_id === "string" ? auth.team_id : null;
 
     await Promise.all([this.fetchUsers(), this.fetchChannels()]);
+    if (this.stopped) return;
     log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
 
     // Record startup time before opening the socket. Slack may replay older events;
@@ -299,6 +304,16 @@ export class SlackMessagingBot implements MessagingBot {
     void this.backfillAllChannels(this.startupTs).catch((error) => {
       log.logWarning("Slack backfill failed", String(error));
     });
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    try {
+      await this.socketClient.disconnect();
+    } finally {
+      await this.intake.close();
+      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+    }
   }
 
   getUser(userId: string): SlackUser | undefined {
@@ -817,6 +832,7 @@ export class SlackMessagingBot implements MessagingBot {
    * Returns true if enqueued, false if queue is full (max 5).
    */
   enqueueEvent(event: ConversationEvent): boolean {
+    if (this.stopped) return false;
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -826,7 +842,7 @@ export class SlackMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(async () => {
+    return queue.enqueue(async () => {
       let anchorTs: string | undefined;
       if (!event.thread_ts) {
         try {
@@ -864,7 +880,7 @@ export class SlackMessagingBot implements MessagingBot {
       const runQueueKey = planSlackAdapterSession(eventForRun, {
         initialMessageTs: eventPlan.initialMessageTs,
       }).sessionKey;
-      this.getQueue(runQueueKey).enqueue(async () => {
+      const run = async () => {
         const slackEvent = createConversationEvent({
           platform: "slack",
           address: eventForRun.address,
@@ -884,9 +900,13 @@ export class SlackMessagingBot implements MessagingBot {
           replyMode: this.resolveReplyMode(eventForRun.address),
         });
         return this.handler.handleEvent(eventForRun, this, context);
-      });
+      };
+      const runQueue = this.getQueue(runQueueKey);
+      if (!runQueue.enqueue(run)) {
+        await runQueue.close();
+        await run();
+      }
     });
-    return true;
   }
 
   // ==========================================================================
@@ -897,6 +917,7 @@ export class SlackMessagingBot implements MessagingBot {
     let queue = this.queues.get(channelId);
     if (!queue) {
       queue = new MessagingEventQueue("Slack");
+      if (this.stopped) void queue.close();
       this.queues.set(channelId, queue);
     }
     return queue;
@@ -942,7 +963,7 @@ export class SlackMessagingBot implements MessagingBot {
     queueKey: string;
     isAutoReplyCandidate: boolean;
     addressed: boolean;
-  }): void {
+  }): Promise<void> {
     const kind = this.channelKindFor(options.event.conversationId);
     if (kind) {
       try {
@@ -958,7 +979,7 @@ export class SlackMessagingBot implements MessagingBot {
         log.logWarning("Failed to log Slack message", String(err));
       });
     };
-    processMessageIntake({
+    return processMessageIntake({
       eventBase: options.event as unknown as ConversationEvent,
       office: this.workspace.office(options.event.address),
       isAutoReplyCandidate: options.isAutoReplyCandidate,
@@ -1303,32 +1324,48 @@ export class SlackMessagingBot implements MessagingBot {
       log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
     });
 
-    this.socketClient.on("app_mention", (payload) => this.handleAppMention(payload));
-    this.socketClient.on("message", (payload) => this.handleMessageEvent(payload));
-    this.socketClient.on("slash_commands", (payload) => void this.handleSlashCommand(payload));
-    this.socketClient.on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
+    this.socketClient.on("app_mention", (payload) => {
+      void this.intake.run(() => this.handleAppMention(payload));
+    });
+    this.socketClient.on("message", (payload) => {
+      void this.intake.run(() => this.handleMessageEvent(payload));
+    });
+    this.socketClient.on("slash_commands", (payload) => {
+      void this.intake.run(() => this.handleSlashCommand(payload));
+    });
+    this.socketClient.on("app_home_opened", (payload) => {
+      void this.intake.run(() => this.handleAppHomeOpened(payload));
+    });
     // The assistant surface's lifecycle. Both events were already subscribed
     // in the app manifest and then dropped on the floor, which is why the pane
     // opened empty and the sidebar filled with untitled conversations.
-    this.socketClient.on("assistant_thread_started", (payload) =>
-      this.handleAssistantThreadStarted(payload),
-    );
-    this.socketClient.on("assistant_thread_context_changed", (payload) =>
-      this.handleAgentContextChangedEvent(payload),
-    );
+    this.socketClient.on("assistant_thread_started", (payload) => {
+      void this.intake.run(() => this.handleAssistantThreadStarted(payload));
+    });
+    this.socketClient.on("assistant_thread_context_changed", (payload) => {
+      void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
+    });
     // agent_view's spelling of the same signal.
-    this.socketClient.on("app_context_changed", (payload) =>
-      this.handleAgentContextChangedEvent(payload),
-    );
-    this.socketClient.on("block_actions", (payload) => void this.handleBlockAction(payload));
-    this.socketClient.on(
-      "interactive",
-      (payload) =>
-        void this.handleBlockAction(payload as { body: SlackBlockActionBody; ack: () => void }),
-    );
+    this.socketClient.on("app_context_changed", (payload) => {
+      void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
+    });
+    this.socketClient.on("block_actions", (payload) => {
+      void this.intake.run(() => this.handleBlockAction(payload));
+    });
+    this.socketClient.on("interactive", (payload) => {
+      void this.intake.run(() =>
+        this.handleBlockAction(payload as { body: SlackBlockActionBody; ack: () => void }),
+      );
+    });
   }
 
-  private handleAppMention({ event, ack }: { event: unknown; ack: () => void }): void {
+  private async handleAppMention({
+    event,
+    ack,
+  }: {
+    event: unknown;
+    ack: () => void;
+  }): Promise<void> {
     const e = event as {
       text: string;
       channel: string;
@@ -1377,7 +1414,7 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    this.processSlackMessageIntake({
+    const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, sessionKey),
@@ -1386,6 +1423,7 @@ export class SlackMessagingBot implements MessagingBot {
     });
 
     ack();
+    await intake;
   }
 
   private admitHumanMessage(
@@ -1432,7 +1470,13 @@ export class SlackMessagingBot implements MessagingBot {
     return false;
   }
 
-  private handleMessageEvent({ event, ack }: { event: unknown; ack: () => void }): void {
+  private async handleMessageEvent({
+    event,
+    ack,
+  }: {
+    event: unknown;
+    ack: () => void;
+  }): Promise<void> {
     const e = event as SlackIncomingMessage;
     if (!this.admitHumanMessage(e, ack)) return;
 
@@ -1510,7 +1554,7 @@ export class SlackMessagingBot implements MessagingBot {
     // message ts as a thread session (`channel:ts`) instead of the persistent
     // top-level channel session.
     slackEvent.sessionKey = activeSessionKey;
-    this.processSlackMessageIntake({
+    const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
@@ -1519,6 +1563,7 @@ export class SlackMessagingBot implements MessagingBot {
     });
 
     ack();
+    await intake;
   }
 
   private async handleSlashCommand({
@@ -1548,16 +1593,18 @@ export class SlackMessagingBot implements MessagingBot {
     if (!entry) return;
 
     if (!entry.slackRoute) return;
-    this.routeSlashCommand(entry.slackRoute, {
-      command,
-      text,
-      channel_id,
-      user_id,
-      user_name,
-      thread_ts,
-    }).catch((err) => {
+    try {
+      await this.routeSlashCommand(entry.slackRoute, {
+        command,
+        text,
+        channel_id,
+        user_id,
+        user_name,
+        thread_ts,
+      });
+    } catch (err) {
       log.logWarning("Slack slash command error", err instanceof Error ? err.message : String(err));
-    });
+    }
   }
 
   private handleAppHomeOpened({ event, ack }: { event: unknown; ack: () => void }): void {

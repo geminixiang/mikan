@@ -17,6 +17,7 @@ function makeMessagingBot(platform: string) {
 
   const bot: MessagingBot = {
     start: async () => {},
+    stop: async () => {},
     postMessage: async () => "1",
     updateMessage: async () => {},
     enqueueEvent,

@@ -130,6 +130,55 @@ describe("SessionLifecycle", () => {
     expect(materialized.runner.dispose).toHaveBeenCalledOnce();
   });
 
+  test("aborts materialization but waits for its rollback to settle", async () => {
+    const lifecycle = new SessionLifecycle();
+    let releaseRollback!: () => void;
+    const rollbackGate = new Promise<void>((resolve) => (releaseRollback = resolve));
+    let rollbackStarted = false;
+    let rollbackFinished = false;
+    const create = vi.fn(async (signal: AbortSignal) => {
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+      rollbackStarted = true;
+      await rollbackGate;
+      rollbackFinished = true;
+      throw signal.reason;
+    });
+
+    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    let shutdownFinished = false;
+    const shutdown = lifecycle.shutdown(0).then(() => {
+      shutdownFinished = true;
+    });
+
+    await vi.waitFor(() => expect(rollbackStarted).toBe(true));
+    expect(shutdownFinished).toBe(false);
+    releaseRollback();
+
+    await expect(acquisition).rejects.toThrow("Session lifecycle is shutting down");
+    await shutdown;
+    expect(rollbackFinished).toBe(true);
+  });
+
+  test("fails bounded shutdown when materialization ignores cancellation", async () => {
+    const lifecycle = new SessionLifecycle();
+    const create = vi.fn(() => new Promise<ConversationRuntimeState>(() => {}));
+    void lifecycle.acquire(slack, "C1", () => undefined, create);
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+
+    vi.useFakeTimers();
+    try {
+      const shutdown = lifecycle.shutdown(0);
+      const rejection = expect(shutdown).rejects.toThrow(
+        "Shutdown could not settle 1 runner materializations within 5000ms",
+      );
+      await vi.advanceTimersByTimeAsync(5_000);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("rejects new acquisitions after shutdown", async () => {
     const lifecycle = new SessionLifecycle();
     await lifecycle.shutdown(0);

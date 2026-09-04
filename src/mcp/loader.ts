@@ -86,38 +86,54 @@ function toAgentToolResult(result: {
 async function connectServer(
   name: string,
   config: McpServerConfig,
+  signal?: AbortSignal,
 ): Promise<{ client: Client; tools: AgentTool<TSchema>[]; instructions?: string }> {
   const client = new Client({ name: "mikan", version: "1.0.0" });
   const transport = buildTransport(name, config);
-  await client.connect(transport, { timeout: CONNECT_TIMEOUT_MS });
-  const listed = await client.listTools(undefined, { timeout: CONNECT_TIMEOUT_MS });
-  const tools: AgentTool<TSchema>[] = listed.tools.map((mcpTool) => ({
-    // Server prefix keeps names collision-free and visibly foreign next to
-    // mikan's own tools: `mcp__github__create_issue`.
-    name: `mcp__${name}__${mcpTool.name}`,
-    label: `${name}: ${mcpTool.name}`,
-    description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-    // MCP inputSchema is JSON Schema with `"type": "object"` at the root —
-    // structurally a valid TSchema; the provider sees the same JSON either way.
-    parameters: mcpTool.inputSchema as unknown as TSchema,
-    execute: async (_toolCallId, params, signal) => {
-      const toolArguments = await prepareOpenConnectorToolArguments(
-        client,
-        name,
-        mcpTool.name,
-        params as Record<string, unknown>,
-        signal,
-      );
-      const result = await client.callTool(
-        { name: mcpTool.name, arguments: toolArguments },
-        undefined,
-        { timeout: CALL_TIMEOUT_MS, ...(signal ? { signal } : {}) },
-      );
-      return toAgentToolResult(result as { content?: unknown; isError?: boolean });
-    },
-  }));
-  const instructions = client.getInstructions()?.trim();
-  return { client, tools, ...(instructions ? { instructions } : {}) };
+  try {
+    await client.connect(transport, {
+      timeout: CONNECT_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
+    });
+    const listed = await client.listTools(undefined, {
+      timeout: CONNECT_TIMEOUT_MS,
+      ...(signal ? { signal } : {}),
+    });
+    const tools: AgentTool<TSchema>[] = listed.tools.map((mcpTool) => ({
+      // Server prefix keeps names collision-free and visibly foreign next to
+      // mikan's own tools: `mcp__github__create_issue`.
+      name: `mcp__${name}__${mcpTool.name}`,
+      label: `${name}: ${mcpTool.name}`,
+      description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
+      // MCP inputSchema is JSON Schema with `"type": "object"` at the root —
+      // structurally a valid TSchema; the provider sees the same JSON either way.
+      parameters: mcpTool.inputSchema as unknown as TSchema,
+      execute: async (_toolCallId, params, runSignal) => {
+        const toolArguments = await prepareOpenConnectorToolArguments(
+          client,
+          name,
+          mcpTool.name,
+          params as Record<string, unknown>,
+          runSignal,
+        );
+        const result = await client.callTool(
+          { name: mcpTool.name, arguments: toolArguments },
+          undefined,
+          { timeout: CALL_TIMEOUT_MS, ...(runSignal ? { signal: runSignal } : {}) },
+        );
+        return toAgentToolResult(result as { content?: unknown; isError?: boolean });
+      },
+    }));
+    const instructions = client.getInstructions()?.trim();
+    return { client, tools, ...(instructions ? { instructions } : {}) };
+  } catch (error) {
+    try {
+      await client.close();
+    } catch (closeError) {
+      log.logWarning("MCP client rollback failed", String(closeError));
+    }
+    throw error;
+  }
 }
 
 export function formatMcpServerInstructions(instructions: McpServerInstruction[]): string {
@@ -138,6 +154,7 @@ ${sections.join("\n\n")}`;
  */
 export async function loadMcpTools(
   servers: Record<string, McpServerConfig>,
+  signal?: AbortSignal,
 ): Promise<McpToolsResult> {
   const clients: Client[] = [];
   const tools: AgentTool<TSchema>[] = [];
@@ -152,7 +169,7 @@ export async function loadMcpTools(
           `server name "${name}" is invalid: use letters, digits, "_" or "-", starting with a letter`,
         );
       }
-      return { name, ...(await connectServer(name, config)) };
+      return { name, ...(await connectServer(name, config, signal)) };
     }),
   );
   for (const [index, result] of results.entries()) {

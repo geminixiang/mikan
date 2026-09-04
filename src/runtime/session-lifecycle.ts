@@ -5,6 +5,7 @@ import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.
 
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
+const MATERIALIZATION_ABORT_GRACE_MS = 5_000;
 
 interface ConversationBarrier {
   activeWork: number;
@@ -35,6 +36,7 @@ export class SessionLifecycle {
   private readonly now: () => number;
   private globalGeneration = 0;
   private shuttingDown = false;
+  private readonly materializationAbort = new AbortController();
 
   constructor(options: SessionLifecycleOptions = {}) {
     this.maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
@@ -55,7 +57,7 @@ export class SessionLifecycle {
     address: OfficeAddress,
     sessionKey: string,
     expectedFile: () => string | null | undefined,
-    materialize: () => Promise<ConversationRuntimeState>,
+    materialize: (signal: AbortSignal) => Promise<ConversationRuntimeState>,
   ): Promise<{ state: ConversationRuntimeState; release: () => void }> {
     if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
     return this.transition(address, sessionKey, async () => {
@@ -70,7 +72,7 @@ export class SessionLifecycle {
     address: OfficeAddress,
     sessionKey: string,
     expectedFile: () => string | null | undefined,
-    materialize: () => Promise<ConversationRuntimeState>,
+    materialize: (signal: AbortSignal) => Promise<ConversationRuntimeState>,
   ): Promise<ConversationRuntimeState> {
     const id = runtimeSessionId(address, sessionKey);
     while (true) {
@@ -85,7 +87,7 @@ export class SessionLifecycle {
       if (existing) await this.discardAndWait(address, sessionKey);
 
       const generation = this.generation(address);
-      const state = await materialize();
+      const state = await materialize(this.materializationAbort.signal);
       if (!this.shuttingDown && generation === this.generation(address)) {
         this.states.set(id, state);
         return state;
@@ -396,6 +398,8 @@ export class SessionLifecycle {
   async shutdown(timeoutMs: number): Promise<void> {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
+    const materializationDeadline = Date.now() + MATERIALIZATION_ABORT_GRACE_MS;
+    this.materializationAbort.abort(new Error("Session lifecycle is shutting down"));
     const timeout = Date.now() + timeoutMs;
     await this.waitForActiveWork(timeout, 500);
 
@@ -413,8 +417,25 @@ export class SessionLifecycle {
       }
     }
 
-    await Promise.all(this.transitions.values());
+    await this.waitForMaterializations(materializationDeadline);
     await this.closeAll();
+  }
+
+  private async waitForMaterializations(deadline: number): Promise<void> {
+    if (this.transitions.size === 0) return;
+    let timeout: NodeJS.Timeout | undefined;
+    const settled = await Promise.race([
+      Promise.all(this.transitions.values()).then(() => true),
+      new Promise<false>((resolve) => {
+        timeout = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now()));
+      }),
+    ]);
+    if (timeout) clearTimeout(timeout);
+    if (!settled) {
+      throw new Error(
+        `Shutdown could not settle ${this.transitions.size} runner materializations within ${MATERIALIZATION_ABORT_GRACE_MS}ms`,
+      );
+    }
   }
 
   private async waitForActiveWork(deadline: number, intervalMs: number): Promise<void> {

@@ -19,6 +19,7 @@ import { downloadChannel } from "./cli/download.js";
 import { DreamScheduler } from "./dream/index.js";
 import { EventsWatcher } from "./events.js";
 import * as log from "./log.js";
+import { createProcessShutdownHandler, runShutdownSteps } from "./process-lifecycle.js";
 import { startWebServer } from "./web/server.js";
 import { InMemoryAdminTokenStore } from "./web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./web/login/portal.js";
@@ -92,6 +93,7 @@ const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
 
 const WORLD_WRITABLE_MODE = 0o002;
+const INTAKE_DRAIN_TIMEOUT_MS = 30_000;
 
 function ensureSecureStateDir(path: string): void {
   let stat;
@@ -580,26 +582,78 @@ if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
   );
 }
 
-if (LINK_PORT) {
-  startWebServer({
-    port: LINK_PORT,
-    linkTokenStore,
-    vaultManager,
-    notify: async (platform, conversationId, message) => {
-      const bot = botsByPlatform[platform];
-      if (bot) await bot.postMessage(conversationId, message);
-    },
-    sessionViewTokenStore,
-    sessionViewInteractive: { handler, botsByPlatform },
-    adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
-    githubWebhook:
-      GITHUB_WEBHOOK_SECRET && githubBotForWebhook
-        ? {
-            secret: GITHUB_WEBHOOK_SECRET,
-            onPoke: () => githubBotForWebhook.requestPoll(),
-          }
-        : undefined,
+const webServer = LINK_PORT
+  ? startWebServer({
+      port: LINK_PORT,
+      linkTokenStore,
+      vaultManager,
+      notify: async (platform, conversationId, message) => {
+        const bot = botsByPlatform[platform];
+        if (bot) await bot.postMessage(conversationId, message);
+      },
+      sessionViewTokenStore,
+      sessionViewInteractive: { handler, botsByPlatform },
+      adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+      githubWebhook:
+        GITHUB_WEBHOOK_SECRET && githubBotForWebhook
+          ? {
+              secret: GITHUB_WEBHOOK_SECRET,
+              onPoke: () => githubBotForWebhook.requestPoll(),
+            }
+          : undefined,
+    })
+  : undefined;
+
+function closeWebServer(): Promise<void> {
+  if (!webServer) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    webServer.close((error) => (error ? reject(error) : resolve()));
   });
+}
+
+async function stopConversationIntake(): Promise<void> {
+  const results = await Promise.allSettled([
+    ...Object.values(botsByPlatform).map((bot) => bot.stop()),
+    closeWebServer(),
+  ]);
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (failures.length > 0) throw new AggregateError(failures, "Failed to stop conversation intake");
+}
+
+async function waitForGracefulDrain(drain: Promise<unknown>): Promise<boolean> {
+  let timeout: NodeJS.Timeout | undefined;
+  const settled = await Promise.race([
+    drain.then(() => true),
+    new Promise<false>((resolve) => {
+      timeout = setTimeout(() => resolve(false), INTAKE_DRAIN_TIMEOUT_MS);
+    }),
+  ]);
+  if (timeout) clearTimeout(timeout);
+  return settled;
+}
+
+async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
+  const dreamStop = dreamScheduler.stop();
+  const gracefulDrain = Promise.allSettled([intakeStop, dreamStop]);
+  if (!(await waitForGracefulDrain(gracefulDrain))) {
+    const runtimeResult = await Promise.allSettled([handler.shutdown(0)]);
+    const failures: unknown[] = [
+      new Error(`Conversation work did not drain within ${INTAKE_DRAIN_TIMEOUT_MS}ms`),
+      ...runtimeResult.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
+    ];
+    throw new AggregateError(failures, "Failed to drain conversation work");
+  }
+
+  const results = [
+    ...(await gracefulDrain),
+    ...(await Promise.allSettled([handler.shutdown(INTAKE_DRAIN_TIMEOUT_MS)])),
+  ];
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (failures.length > 0) throw new AggregateError(failures, "Failed to drain conversation work");
 }
 
 // Start events watcher with explicit platform routing
@@ -612,17 +666,30 @@ eventsWatcher.start();
 const dreamScheduler = new DreamScheduler(workspace, handler);
 dreamScheduler.start();
 
-// Handle shutdown
-async function shutdown(): Promise<void> {
-  eventsWatcher.stop();
-  await dreamScheduler.stop();
-  await handler.shutdown();
-  await Sentry.close(5000);
-  process.exit(0);
-}
+// Handle shutdown. A second signal is an explicit request to stop waiting.
+const shutdown = createProcessShutdownHandler({
+  stop: () => {
+    const intakeStop = stopConversationIntake();
+    return runShutdownSteps([
+      {
+        name: "event watcher",
+        run: async () => {
+          eventsWatcher.stop();
+        },
+      },
+      { name: "conversation work", run: () => drainConversationWork(intakeStop) },
+    ]);
+  },
+  flush: () => Sentry.close(5000),
+  captureError: (error) => {
+    Sentry.captureException(error);
+  },
+  warn: log.logWarning,
+  exit: (code) => process.exit(code),
+});
 
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => void shutdown("SIGINT"));
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 // Start all bots
 await Promise.all(

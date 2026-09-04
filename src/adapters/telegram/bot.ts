@@ -16,6 +16,7 @@ import {
   appendBotResponseLog,
   appendChannelLog,
   MessagingEventQueue,
+  MessagingIntakeTracker,
   downloadUrlToFile,
   withRetry,
   saveIncomingAttachments,
@@ -82,7 +83,9 @@ export class TelegramMessagingBot implements MessagingBot {
   private workspace: Workspace;
   private botUserId: string | null = null;
   private botUsername: string | null = null;
+  private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
+  private intake = new MessagingIntakeTracker("Telegram");
   private startupTime: number = 0;
 
   constructor(handler: MessagingEventHandler, config: { token: string; workspace: Workspace }) {
@@ -100,6 +103,7 @@ export class TelegramMessagingBot implements MessagingBot {
   // ==========================================================================
 
   async start(): Promise<void> {
+    this.stopped = false;
     const me = await this.client.api.getMe();
     this.botUserId = String(me.id);
     this.botUsername = me.username ?? null;
@@ -108,6 +112,7 @@ export class TelegramMessagingBot implements MessagingBot {
     // Menu registration derives from the command manifest; routing is
     // separate (native handlers below + intake/dispatch for the rest).
     await this.client.api.setMyCommands(telegramCommandMenu());
+    if (this.stopped) return;
 
     this.setupEventHandlers();
 
@@ -118,6 +123,16 @@ export class TelegramMessagingBot implements MessagingBot {
 
     log.logConnected("Telegram");
     log.logInfo(`Telegram bot started as @${this.botUsername ?? this.botUserId}`);
+  }
+
+  async stop(): Promise<void> {
+    this.stopped = true;
+    try {
+      await this.client.stop();
+    } finally {
+      await this.intake.close();
+      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+    }
   }
 
   async postMessage(channel: string, text: string): Promise<string> {
@@ -151,6 +166,7 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   enqueueEvent(event: ConversationEvent): boolean {
+    if (this.stopped) return false;
     const conversationId = event.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
@@ -160,11 +176,10 @@ export class TelegramMessagingBot implements MessagingBot {
       return false;
     }
     log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    queue.enqueue(() => {
+    return queue.enqueue(() => {
       const context = createTelegramAdapters(event as TelegramEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
-    return true;
   }
 
   getMessagingInfo(): MessagingInfo {
@@ -343,15 +358,55 @@ export class TelegramMessagingBot implements MessagingBot {
     // conversation intake, so the catch-all below must receive them.
     for (const entry of COMMAND_MANIFEST) {
       if (!entry.telegramCommand || entry.magicWord) continue;
-      this.client.command(entry.name, async (ctx) => {
+      this.client.command(entry.name, (ctx) =>
+        this.intake.run(async () => {
+          const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
+          if (!mc) return;
+          // Handler grammars accept the user's spelling directly (manifest
+          // slash forms), so it is logged and dispatched as-is.
+          const commandText = this.cleanText(mc.text);
+          const event = createConversationEvent({
+            platform: "telegram",
+            type: "command",
+            conversationId: mc.chatId,
+            conversationKind: mc.conversationKind,
+            ts: mc.msgId,
+            thread_ts: mc.threadTs,
+            sessionKey: mc.sessionKey,
+            user: mc.userId,
+            userName: mc.userName,
+            text: commandText,
+            attachments: [],
+          }) as TelegramEvent;
+          this.logToFile(mc.chatId, {
+            date: new Date(mc.msg.date * 1000).toISOString(),
+            ts: mc.msgId,
+            ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+            user: mc.userId,
+            userName: mc.userName,
+            text: commandText,
+            attachments: [],
+            isMessagingBot: false,
+          });
+          await this.handler.handleEvent(event, this, createTelegramAdapters(event, this));
+        }),
+      );
+    }
+
+    // --- Catch-all for regular (non-command) messages ---
+
+    this.client.on("message", (ctx) =>
+      this.intake.run(async () => {
         const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
         if (!mc) return;
-        // Handler grammars accept the user's spelling directly (manifest
-        // slash forms), so it is logged and dispatched as-is.
-        const commandText = this.cleanText(mc.text);
-        const event = createConversationEvent({
+
+        const cleanedText = this.cleanText(mc.text);
+        const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
+        const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
+
+        const eventBase = createConversationEvent({
           platform: "telegram",
-          type: "command",
+          type: "message",
           conversationId: mc.chatId,
           conversationKind: mc.conversationKind,
           ts: mc.msgId,
@@ -359,72 +414,36 @@ export class TelegramMessagingBot implements MessagingBot {
           sessionKey: mc.sessionKey,
           user: mc.userId,
           userName: mc.userName,
-          text: commandText,
-          attachments: [],
-        }) as TelegramEvent;
-        this.logToFile(mc.chatId, {
-          date: new Date(mc.msg.date * 1000).toISOString(),
-          ts: mc.msgId,
-          ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
-          user: mc.userId,
-          userName: mc.userName,
-          text: commandText,
-          attachments: [],
-          isMessagingBot: false,
-        });
-        await this.handler.handleEvent(event, this, createTelegramAdapters(event, this));
-      });
-    }
-
-    // --- Catch-all for regular (non-command) messages ---
-
-    this.client.on("message", async (ctx) => {
-      const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
-      if (!mc) return;
-
-      const cleanedText = this.cleanText(mc.text);
-      const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
-      const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
-
-      const eventBase = createConversationEvent({
-        platform: "telegram",
-        type: "message",
-        conversationId: mc.chatId,
-        conversationKind: mc.conversationKind,
-        ts: mc.msgId,
-        thread_ts: mc.threadTs,
-        sessionKey: mc.sessionKey,
-        user: mc.userId,
-        userName: mc.userName,
-        text: cleanedText,
-      }) as TelegramEvent;
-
-      await processMessageIntake({
-        eventBase,
-        office: this.workspace.office(eventBase.address),
-        isAutoReplyCandidate,
-        magicWord: {
-          addressed: addressedToMessagingBot || mc.chatType === "private",
-          scopeFallback: "always",
-        },
-        busyPolicy: "reject",
-        logEntryBase: {
-          date: new Date(mc.msg.date * 1000).toISOString(),
-          ts: mc.msgId,
-          ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
-          user: mc.userId,
-          userName: mc.userName,
           text: cleanedText,
-          isMessagingBot: false,
-        },
-        log: (entry) => this.logToFile(mc.chatId, entry),
-        processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
-        queueKey: mc.sessionKey,
-        enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
-        handler: this.handler,
-        bot: this,
-        createContext: (event) => createTelegramAdapters(event, this),
-      });
-    });
+        }) as TelegramEvent;
+
+        await processMessageIntake({
+          eventBase,
+          office: this.workspace.office(eventBase.address),
+          isAutoReplyCandidate,
+          magicWord: {
+            addressed: addressedToMessagingBot || mc.chatType === "private",
+            scopeFallback: "always",
+          },
+          busyPolicy: "reject",
+          logEntryBase: {
+            date: new Date(mc.msg.date * 1000).toISOString(),
+            ts: mc.msgId,
+            ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+            user: mc.userId,
+            userName: mc.userName,
+            text: cleanedText,
+            isMessagingBot: false,
+          },
+          log: (entry) => this.logToFile(mc.chatId, entry),
+          processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
+          queueKey: mc.sessionKey,
+          enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+          handler: this.handler,
+          bot: this,
+          createContext: (event) => createTelegramAdapters(event, this),
+        });
+      }),
+    );
   }
 }

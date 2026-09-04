@@ -108,7 +108,8 @@ Daemon boot proceeds conceptually as follows:
 5. Configure sandbox, vault, package, portal, and platform facilities.
 6. Construct the Conversation runtime with capability factories.
 7. Start platform bots, web services, the event watcher, and the Dream scheduler.
-8. On shutdown, stop new scheduled work, drain the currently active Dream office without starting the remaining sweep, then reject new runner acquisitions; Session lifecycle waits for active leases and settlements, aborts overdue runs, and disposes every materialized runner.
+8. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work plus the active Dream sweep up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
+9. Flush Sentry whether graceful shutdown succeeds or fails, then exit non-zero on failure. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
 
@@ -123,10 +124,11 @@ Every platform feeds the same intake and runtime model:
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
 7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips OpenConnector provisioning, while `membership` preserves the configured map and replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
-8. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
-9. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
-10. The runner streams and finalizes the response through platform capabilities.
-11. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
+8. If runner construction fails after acquiring MCP connections or the session writer, the runner disposes those resources in reverse acquisition order before rejecting; the original construction failure remains primary and the same session can be reconstructed immediately.
+9. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
+10. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
+11. The runner streams and finalizes the response through platform capabilities.
+12. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
 
 The `stop` magic word is exceptional: it runs before trigger policy and queueing. It is not an ordinary bare command.
 
@@ -299,6 +301,22 @@ Evidence: `src/adapters/intake.ts`.
 **`session-serialization`** — Events sharing an office and session key execute serially. Different session keys may progress independently. Session lifecycle single-flights runner materialization, grants leases for every runner use, and prevents invalidation, disposal, or eviction until those leases and settlements complete.
 
 Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.ts`.
+
+### INV process shutdown order
+
+<a id="inv-process-shutdown-order"></a>
+
+**`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work plus Dream a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter/Dream promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
+
+Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/web/server.ts`, `src/runtime/conversation-runtime.ts`.
+
+### INV runner materialization rollback
+
+<a id="inv-runner-materialization-rollback"></a>
+
+**`runner-materialization-rollback`** — Runner construction either returns a fully owned runner or settles rollback before rejecting. Shutdown propagates an abort signal through Conversation runtime, OpenConnector provisioning, and MCP connection/tool discovery. Once acquired, MCP connections are disposed before the session writer is closed; cleanup failures are reported without replacing the original construction error, and the same office/session identity can be reconstructed immediately. Session lifecycle awaits cooperative rollback, but reports a non-zero shutdown failure after a fixed five-second materialization grace instead of waiting forever for non-cancellable repository I/O.
+
+Evidence: `src/agent/runner.ts`, `src/mcp/loader.ts`, `src/harness/session-store.ts`.
 
 ### INV run settlement
 

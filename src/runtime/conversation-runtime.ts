@@ -546,6 +546,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private async createCurrentRunner(
     options: SessionStateOptions,
     sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
+    signal: AbortSignal,
   ): Promise<PiAgentWrapper> {
     return createRunner({
       sandboxConfig: this.options.sandbox,
@@ -554,6 +555,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       trustModel: options.trustModel,
       platformWorkspaceId: options.platformWorkspaceId,
       sessionScope,
+      signal,
       vaultManager: this.options.vaultManager,
       provisioner: this.options.provisioner,
       resourceController: this.options.resourceController,
@@ -578,14 +580,16 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         sessionKey === address.conversationId
           ? resolveChannelSessionFile(conversationDir)
           : tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey)),
-      () => this.materializeState(options, conversationDir),
+      (signal) => this.materializeState(options, conversationDir, signal),
     );
   }
 
   private async materializeState(
     options: SessionStateOptions & { currentMessageId?: string },
     conversationDir: string,
+    signal: AbortSignal,
   ): Promise<ConversationState> {
+    signal.throwIfAborted();
     const { address, sessionKey, currentMessageId } = options;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
@@ -594,11 +598,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       cwd: runtimeCwd,
       currentMessageId,
     });
+    signal.throwIfAborted();
     return {
       address,
       sessionKey,
       running: false,
-      runner: await this.createCurrentRunner(options, sessionScope),
+      runner: await this.createCurrentRunner(options, sessionScope, signal),
       stopRequested: false,
       lastAccessedAt: Date.now(),
       sessionFile: sessionScope.contextFile,

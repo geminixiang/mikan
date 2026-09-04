@@ -117,16 +117,22 @@ async function readJson(response: Response, operation: string): Promise<unknown>
   }
 }
 
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeout]) : timeout;
+}
+
 async function createRuntimeToken(
   origin: string,
   adminToken: string,
   name: string,
+  signal?: AbortSignal,
 ): Promise<RuntimeTokenState> {
   const headers = { Authorization: `Bearer ${adminToken}` };
   const policyValue = await readJson(
     await fetch(new URL("/api/runtime-policy", origin), {
       headers,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: requestSignal(signal),
     }),
     "runtime policy request",
   );
@@ -144,7 +150,7 @@ async function createRuntimeToken(
         blockedActions: stringArray(deployment.blockedActions, "blockedActions policy"),
         allowedProxies: stringArray(deployment.allowedProxies, "allowedProxies policy"),
       }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: requestSignal(signal),
     }),
     "runtime token creation",
   );
@@ -179,6 +185,7 @@ async function loadOrCreateRuntimeToken(
   origin: string,
   adminToken: string,
   name: string,
+  signal?: AbortSignal,
 ): Promise<RuntimeTokenState> {
   const statePath = join(office.stateDir, TOKEN_STATE_FILE);
   const state = readRuntimeTokenState(statePath);
@@ -196,7 +203,7 @@ async function loadOrCreateRuntimeToken(
   const creation = (async () => {
     const current = readRuntimeTokenState(statePath);
     if (current) return current;
-    const created = await createRuntimeToken(origin, adminToken, name);
+    const created = await createRuntimeToken(origin, adminToken, name, signal);
     ensureDirExists(office.stateDir);
     atomicWritePrivateFile(statePath, `${JSON.stringify(created, null, 2)}\n`);
     log.logInfo(
@@ -221,6 +228,7 @@ export async function provisionOfficeOpenConnectorToken(
   office: Office,
   platformWorkspaceId: string | undefined,
   servers: Record<string, McpServerConfig> | undefined,
+  signal?: AbortSignal,
 ): Promise<Record<string, McpServerConfig> | undefined> {
   const config = servers?.[OPEN_CONNECTOR_SERVER];
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
@@ -257,7 +265,7 @@ export async function provisionOfficeOpenConnectorToken(
       throw new Error("the MCP endpoint does not match the deployment-owned OpenConnector origin");
     }
     const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
-    const state = await loadOrCreateRuntimeToken(office, origin, adminToken, name);
+    const state = await loadOrCreateRuntimeToken(office, origin, adminToken, name, signal);
     return {
       ...servers,
       [OPEN_CONNECTOR_SERVER]: {
