@@ -118,6 +118,7 @@ Stack:
 - `/login` stores credentials under `--state-dir`; avoid logging secrets and validate state-dir safety.
 - Sandbox modes have different credential/mount behavior. Check `src/content/docs/sandbox.mdx` and `src/sandbox/types.ts` before changing executor logic.
 - Slack/Discord/Telegram adapters map threads/replies to independent session scopes; check `src/content/docs/sessions.mdx` before changing conversation IDs or session keys. GitHub maps one issue or PR to one conversation.
+- Before triggering or interpreting Slack E2E, follow `docs/testing/slack-e2e.md`: verify that no local or remote daemon is connected to the same QA Slack App. Socket Mode sends each event to one connected client, so a competing daemon can cause false failures or false passes. For missing replies, prove whether the event reached the CI runner's intake log before changing production code or model timeouts.
 - Office directories, per-conversation host state, and conversation vault keys are named by office key, never by the raw platform conversation id. Derive paths from an `Office` value (`workspace.office(address)`), and leave the raw-id mapping to the office registry; raw ids belong at platform I/O boundaries.
 - `src/index.ts` is the published package interface (the embedder in `deploy/examples/embedder/` builds against it). Adding an export there widens the npm surface — keep the list explicit and deliberate.
 

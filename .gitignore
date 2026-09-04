@@ -7,6 +7,10 @@ site-dist/
 coverage/
 data/
 bin/
+
+# Local Archify specifications, HTML artifacts, and visual-check receipts
+/docs/diagrams/
+
 .workspace/
 workspace/
 
