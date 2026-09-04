@@ -45,6 +45,16 @@ export async function postMessage(
   return String(res.ts);
 }
 
+/**
+ * Per-attempt bound for confirming that this runner's daemon logged a posted
+ * message. The daemon appends the history line at intake, before any model
+ * run, so this measures Socket Mode event latency only. Keep it independent
+ * of `SLACK_QA_TIMEOUT_MS` (which bounds model replies): tying the two
+ * together turned every lost event into a 60s wait, so one helper call could
+ * exhaust an entire test timeout before its own diagnostic fired.
+ */
+export const LOCAL_DELIVERY_TIMEOUT_MS = 15_000;
+
 export interface PostLocallyDeliveredMessageOptions {
   client: WebClient;
   channel: string;

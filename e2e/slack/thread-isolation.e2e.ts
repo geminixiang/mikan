@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
+  LOCAL_DELIVERY_TIMEOUT_MS,
   nowSeconds,
   postLocallyDeliveredMessage,
   postMessage,
@@ -38,7 +39,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       text: (deliveryMarker) =>
         `<@${botUserId}> 請記住這個 token：${tokenA}。` +
         `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const tellAReply = await waitForThreadBotReply({
@@ -63,7 +64,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       text: (deliveryMarker) =>
         `<@${botUserId}> 請記住這個 token：${tokenB}。` +
         `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const tellBReply = await waitForThreadBotReply({
@@ -89,7 +90,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       // QA_DELIVERY_ marker, and a weak judge model can echo that one instead.
       text: () =>
         `<@${botUserId}> 請只回覆我在這個 thread 要你記住、以 QA_ISOLATE_ 開頭的 token，不要加其他文字。`,
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const askAReply = await waitForThreadBotReply({
@@ -116,5 +117,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       "thread A reply leaked thread B's token — sessions are not isolated",
     ).not.toContain(tokenB);
     console.log(`thread A recall ts=${askAReply!.ts}: ${summarizeMessage(askAReply!)}`);
-  }, 240_000);
+    // Worst case: three local-delivery cycles (4 x 15s each) + three 60s reply waits.
+  }, 420_000);
 });

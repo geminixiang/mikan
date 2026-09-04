@@ -5,6 +5,7 @@ import { createOfficeAddress, officeDir } from "../../src/office/index.js";
 import { resolveChannelSessionFile } from "../../src/sessions/store.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
+  LOCAL_DELIVERY_TIMEOUT_MS,
   nowSeconds,
   openDmChannel,
   postLocallyDeliveredMessage,
@@ -73,7 +74,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       workingDir: env.workingDir,
       text: (deliveryMarker) =>
         `這個 session 的暫時註記是 ${scratchNonce}。請只簡短回覆 OK，並原樣附上 ${deliveryMarker}。`,
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const setupReply = await waitForBotReply({
@@ -103,7 +104,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
       channel: dmChannel,
       workingDir: env.workingDir,
       text: () => "/pi-new",
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const resetResult = await waitForResetResult(
@@ -123,5 +124,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(existsSync(originalSession!)).toBe(true);
     expect(readFileSync(cleanSession!, "utf-8")).not.toContain(scratchNonce);
     expect(readFileSync(memoryPath, "utf-8")).toBe(memoryAnchor);
-  }, 180_000);
+    // Worst case: two local-delivery cycles (4 x 15s each) + setup reply + reset result.
+  }, 300_000);
 });

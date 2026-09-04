@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
+  LOCAL_DELIVERY_TIMEOUT_MS,
   nowSeconds,
   openDmChannel,
   postLocallyDeliveredMessage,
@@ -83,7 +84,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
       channel: dmChannel,
       workingDir: env.workingDir,
       text: () => "/pi-new",
-      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
     const resetReply = await waitForBotReply({
