@@ -3,11 +3,15 @@ import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
   openDmChannel,
+  postLocallyDeliveredMessage,
   postMessage,
   summarizeMessage,
   waitForBotReply,
 } from "./helpers/slack.js";
 
+const RESET_SUCCESS = "Conversation reset. Send a new message to start fresh.";
+const RESET_RESULT =
+  /Conversation reset|Could not preserve memory|current conversation was not reset/i;
 const ctx = loadContextOrSkip();
 
 describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
@@ -70,6 +74,33 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
 
   it("S-018 DM session retains multi-turn context", async () => {
     const dmChannel = await openDmChannel(client, botUserId);
+
+    // DM history persists across CI runs. Reset through the locally connected
+    // daemon so this test measures its own two turns instead of accumulated QA history.
+    const resetStartedAt = nowSeconds();
+    const { ts: resetTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: dmChannel,
+      workingDir: env.workingDir,
+      text: () => "/pi-new",
+      timeoutMs: Math.max(env.timeoutMs, 15_000),
+      pollMs: env.pollMs,
+    });
+    const resetReply = await waitForBotReply({
+      client,
+      channel: dmChannel,
+      botUserId,
+      rootTs: resetTs,
+      startedAt: resetStartedAt,
+      timeoutMs: Math.max(env.timeoutMs, 60_000),
+      pollMs: env.pollMs,
+      textMatches: RESET_RESULT,
+    });
+    expect(resetReply, "timed out waiting for clean DM session").not.toBeNull();
+    expect(resetReply?.text?.trim(), `reset failed: ${resetReply?.text ?? "no result"}`).toBe(
+      RESET_SUCCESS,
+    );
+
     const token = `QA_DM_CTX_${Date.now()}`;
     const firstStartedAt = nowSeconds();
     const firstTs = await postMessage(
@@ -106,5 +137,5 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
     });
     expect(reply, `no context-carrying DM reply containing ${token}`).not.toBeNull();
     console.log(`dm context reply ts=${reply!.ts}: ${summarizeMessage(reply!)}`);
-  }, 180_000);
+  }, 300_000);
 });
