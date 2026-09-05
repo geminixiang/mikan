@@ -52,7 +52,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.MIKAN_STATE_DIR;
   delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
-  delete process.env.OPENCONNECTOR_ORIGIN;
+  delete process.env.OPENCONNECTOR_ENDPOINT;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -79,6 +79,7 @@ async function createTestRunner(
     trustModel?: "membership" | "open-trigger";
     mcpServers?: Record<string, McpServerConfig>;
     platformWorkspaceId?: string;
+    openConnector?: McpServerConfig;
     sessionView?: CreateRunnerOptions["sessionView"];
     platformToolPackFactories?: readonly PlatformToolPackFactory[];
   } = {},
@@ -102,6 +103,7 @@ async function createTestRunner(
     office,
     trustModel: options.trustModel ?? "membership",
     platformWorkspaceId: options.platformWorkspaceId,
+    openConnector: options.openConnector,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
     models,
     sessionView: options.sessionView,
@@ -180,11 +182,12 @@ describe("PiAgentWrapper.run", () => {
 
   test("skips OpenConnector provisioning for open-trigger runners", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
+    process.env.OPENCONNECTOR_ENDPOINT = "http://127.0.0.1:3737/mcp";
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("must not fetch"));
     const { runner } = await createTestRunner({
       trustModel: "open-trigger",
       platformWorkspaceId: "T1",
+      openConnector: { url: "http://127.0.0.1:3737/mcp" },
       mcpServers: {
         "open-connector": {
           url: "http://127.0.0.1:3737/mcp",

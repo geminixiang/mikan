@@ -1,3 +1,4 @@
+import type { McpServerConfig } from "../mcp/types.js";
 import type { PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,
@@ -77,6 +78,8 @@ export interface ConversationRuntimeOptions extends Omit<
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
+  /** Startup-owned OpenConnector MCP endpoint; settings cannot replace it. */
+  openConnector?: McpServerConfig;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as
    * factories — each runner instantiates its own pack because bind state is

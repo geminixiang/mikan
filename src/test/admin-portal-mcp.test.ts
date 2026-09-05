@@ -98,28 +98,11 @@ describe("MCP preset catalog", () => {
   test("contains reviewed, pinned recipes", () => {
     const presets = listMcpPresets();
 
-    expect(presets.map((preset) => preset.id)).toEqual([
-      "github",
-      "context7",
-      "metabase",
-      "open-connector",
-      "playwright",
-      "sequential-thinking",
-    ]);
+    expect(presets.map((preset) => preset.id)).toEqual(["metabase"]);
     for (const preset of presets) {
       expect(JSON.stringify(preset.server)).not.toContain("@latest");
       expect(preset.sourceUrl).toMatch(/^https:\/\/github\.com\//);
     }
-  });
-
-  test("materializes credential values without mutating the preset", () => {
-    const preset = findMcpPreset("github")!;
-
-    expect(materializeMcpPreset(preset, { Authorization: "github_pat_123" })).toEqual({
-      url: "https://api.githubcopilot.com/mcp/",
-      headers: { Authorization: "Bearer github_pat_123" },
-    });
-    expect(preset.server).toEqual({ url: "https://api.githubcopilot.com/mcp/" });
   });
 
   test("materializes a remote URL and API key", () => {
@@ -137,8 +120,8 @@ describe("MCP preset catalog", () => {
   });
 
   test("rejects missing credentials and invalid remote URLs", () => {
-    expect(() => materializeMcpPreset(findMcpPreset("context7")!, {})).toThrow(
-      "Context7 API key is required",
+    expect(() => materializeMcpPreset(findMcpPreset("metabase")!, {})).toThrow(
+      "Metabase MCP server URL is required",
     );
     expect(() =>
       materializeMcpPreset(findMcpPreset("metabase")!, {
@@ -154,33 +137,9 @@ describe("Admin MCP preset API", () => {
     const response = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.presets.map((preset: { id: string }) => preset.id)).toContain("github");
+    expect(response.body.presets.map((preset: { id: string }) => preset.id)).toEqual(["metabase"]);
     expect(response.body.global).toEqual({});
     expect(response.body.conversation).toEqual({});
-  });
-
-  test("installs a credentialed preset and redacts its value on read", async () => {
-    const installed = await post("/admin/api/mcp-servers/mutate", {
-      action: "install",
-      scope: "global",
-      presetId: "github",
-      credentials: { Authorization: "github_pat_123" },
-      conversationId: CONVERSATION_ID,
-    });
-
-    expect(installed).toMatchObject({ status: 200, body: { ok: true } });
-    expect(globalSettings().mcpServers.github).toEqual({
-      url: "https://api.githubcopilot.com/mcp/",
-      headers: { Authorization: "Bearer github_pat_123" },
-    });
-
-    const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
-    expect(listed.body.global.github).toEqual({
-      url: "https://api.githubcopilot.com/mcp/",
-      envKeys: [],
-      headerKeys: ["Authorization"],
-    });
-    expect(JSON.stringify(listed.body.global)).not.toContain("github_pat_123");
   });
 
   test("installs a Metabase preset with a redacted API key", async () => {
@@ -210,46 +169,6 @@ describe("Admin MCP preset API", () => {
     expect(JSON.stringify(listed.body.global)).not.toContain("mb_key_123");
   });
 
-  test("installs OpenConnector with a redacted scoped runtime token", async () => {
-    const installed = await post("/admin/api/mcp-servers/mutate", {
-      action: "install",
-      scope: "global",
-      presetId: "open-connector",
-      credentials: { Authorization: "oct_scoped_123" },
-      conversationId: CONVERSATION_ID,
-    });
-
-    expect(installed.status).toBe(200);
-    expect(globalSettings().mcpServers["open-connector"]).toEqual({
-      url: "http://127.0.0.1:3737/mcp",
-      headers: { Authorization: "Bearer oct_scoped_123" },
-    });
-
-    const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
-    expect(listed.body.global["open-connector"]).toEqual({
-      url: "http://127.0.0.1:3737/mcp",
-      envKeys: [],
-      headerKeys: ["Authorization"],
-    });
-    expect(JSON.stringify(listed.body.global)).not.toContain("oct_scoped_123");
-  });
-
-  test("installs a pinned local preset", async () => {
-    const installed = await post("/admin/api/mcp-servers/mutate", {
-      action: "install",
-      scope: "global",
-      presetId: "playwright",
-      credentials: {},
-      conversationId: CONVERSATION_ID,
-    });
-
-    expect(installed.status).toBe(200);
-    expect(globalSettings().mcpServers.playwright).toEqual({
-      command: "npx",
-      args: ["-y", "@playwright/mcp@0.0.80"],
-    });
-  });
-
   test("rejects unknown presets and missing required credentials", async () => {
     const unknown = await post("/admin/api/mcp-servers/mutate", {
       action: "install",
@@ -261,7 +180,7 @@ describe("Admin MCP preset API", () => {
     const missing = await post("/admin/api/mcp-servers/mutate", {
       action: "install",
       scope: "global",
-      presetId: "github",
+      presetId: "metabase",
       credentials: {},
       conversationId: CONVERSATION_ID,
     });
@@ -269,7 +188,7 @@ describe("Admin MCP preset API", () => {
     expect(unknown).toMatchObject({ status: 400, body: { error: "unknown MCP preset" } });
     expect(missing).toMatchObject({
       status: 400,
-      body: { error: "GitHub personal access token is required" },
+      body: { error: "Metabase MCP server URL is required" },
     });
     expect(globalSettings().mcpServers).toBeUndefined();
   });

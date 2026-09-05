@@ -142,7 +142,8 @@ const SettingsFileSchema = Type.Object({
   /**
    * MCP servers, keyed by name. Merged per key across scopes: a conversation
    * entry overrides (or, with `disabled: true`, turns off) the same-name
-   * global entry; other global entries stay available.
+   * global entry; other global entries stay available. The reserved
+   * `open-connector` name is ignored by runner construction.
    */
   mcpServers: Type.Optional(
     Type.Record(
@@ -365,7 +366,8 @@ export function resolveConversationSettings(office: Office): AgentConfig {
     loadSettingsFile(conversationSettingsPath(office)) ?? {},
   );
   // MCP servers merge per key: a conversation redefines or disables individual
-  // servers without losing the rest of the global set.
+  // servers without losing the rest of the global set. Runner construction
+  // removes the reserved open-connector entry before loading servers.
   const mcpServers = { ...globalConfig.mcpServers, ...conversationConfig.mcpServers };
   // The sandbox group merges at the leaf level (see mergeSandboxSettings):
   // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.

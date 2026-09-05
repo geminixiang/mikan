@@ -173,6 +173,14 @@ async function createRuntimeToken(
   };
 }
 
+function withoutReservedServer(
+  servers: Record<string, McpServerConfig> | undefined,
+): Record<string, McpServerConfig> {
+  if (!servers) return {};
+  const { [OPEN_CONNECTOR_SERVER]: _reserved, ...settingsServers } = servers;
+  return settingsServers;
+}
+
 function disabledServer(
   servers: Record<string, McpServerConfig>,
   config: McpServerConfig,
@@ -228,49 +236,44 @@ export async function provisionOfficeOpenConnectorToken(
   office: Office,
   platformWorkspaceId: string | undefined,
   servers: Record<string, McpServerConfig> | undefined,
+  openConnector: McpServerConfig | undefined,
   signal?: AbortSignal,
-): Promise<Record<string, McpServerConfig> | undefined> {
-  const config = servers?.[OPEN_CONNECTOR_SERVER];
+): Promise<Record<string, McpServerConfig>> {
+  const settingsServers = withoutReservedServer(servers);
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
-  if (!config || config.disabled || !adminToken || office.address.platform !== "slack") {
-    return servers;
-  }
-  const configuredOrigin = readEnv("OPENCONNECTOR_ORIGIN");
-  if (!configuredOrigin || !URL.canParse(configuredOrigin)) {
-    log.logWarning(
-      `[${office.address.conversationId}] OpenConnector token provisioning skipped`,
-      "OPENCONNECTOR_ORIGIN is missing or invalid",
-    );
-    return disabledServer(servers, config);
+  if (
+    !openConnector ||
+    openConnector.disabled ||
+    !adminToken ||
+    office.address.platform !== "slack"
+  ) {
+    return settingsServers;
   }
   if (!platformWorkspaceId) {
     log.logWarning(
       `[${office.address.conversationId}] OpenConnector token provisioning skipped`,
       "Slack workspace ID is unavailable",
     );
-    return disabledServer(servers, config);
+    return disabledServer(settingsServers, openConnector);
   }
-  if (!config.url) {
+  if (!openConnector.url) {
     log.logWarning(
       `[${office.address.conversationId}] OpenConnector token provisioning skipped`,
-      "the open-connector server is not configured for HTTP",
+      "the startup OpenConnector configuration is not configured for HTTP",
     );
-    return disabledServer(servers, config);
+    return disabledServer(settingsServers, openConnector);
   }
 
   try {
-    const endpoint = new URL(config.url);
-    const origin = new URL(configuredOrigin).origin;
-    if (endpoint.origin !== origin) {
-      throw new Error("the MCP endpoint does not match the deployment-owned OpenConnector origin");
-    }
+    const endpoint = new URL(openConnector.url);
+    const origin = endpoint.origin;
     const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
     const state = await loadOrCreateRuntimeToken(office, origin, adminToken, name, signal);
     return {
-      ...servers,
+      ...settingsServers,
       [OPEN_CONNECTOR_SERVER]: {
-        ...config,
-        headers: { ...config.headers, Authorization: `Bearer ${state.token}` },
+        ...openConnector,
+        headers: { ...openConnector.headers, Authorization: `Bearer ${state.token}` },
       },
     };
   } catch (error) {
@@ -278,6 +281,6 @@ export async function provisionOfficeOpenConnectorToken(
       `[${office.address.conversationId}] OpenConnector token provisioning failed`,
       error instanceof Error ? error.message : String(error),
     );
-    return disabledServer(servers, config);
+    return disabledServer(settingsServers, openConnector);
   }
 }

@@ -78,6 +78,7 @@ async function resolveRunnerMcpServers(options: {
   trustModel: CreateRunnerOptions["trustModel"];
   platformWorkspaceId?: string;
   servers: ReturnType<typeof resolveConversationSettings>["mcpServers"];
+  openConnector?: CreateRunnerOptions["openConnector"];
   signal?: AbortSignal;
 }): Promise<Awaited<ReturnType<typeof provisionOfficeOpenConnectorToken>>> {
   if (options.trustModel === "open-trigger") return {};
@@ -85,6 +86,7 @@ async function resolveRunnerMcpServers(options: {
     options.office,
     options.platformWorkspaceId,
     options.servers,
+    options.openConnector,
     options.signal,
   );
 }
@@ -681,6 +683,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     trustModel,
     platformWorkspaceId: options.platformWorkspaceId,
     servers: resolvedAgentConfig.mcpServers,
+    openConnector: options.openConnector,
     signal: options.signal,
   });
   options.signal?.throwIfAborted();

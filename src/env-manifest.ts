@@ -124,8 +124,8 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     doc: "Host-side provisioning of conversation-scoped OpenConnector runtime tokens",
     vars: [
       {
-        name: "OPENCONNECTOR_ORIGIN",
-        doc: "Deployment-owned origin that may receive the OpenConnector admin token",
+        name: "OPENCONNECTOR_ENDPOINT",
+        doc: "Deployment-owned full MCP endpoint for the reserved OpenConnector server",
       },
       {
         name: "OPENCONNECTOR_ADMIN_TOKEN",

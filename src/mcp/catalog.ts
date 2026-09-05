@@ -2,48 +2,6 @@ import type { McpPreset, McpServerConfig } from "./types.js";
 
 const MCP_PRESETS: readonly McpPreset[] = [
   {
-    id: "github",
-    name: "GitHub",
-    description: "Work with repositories, issues, pull requests, code, and GitHub Actions.",
-    category: "Development",
-    serverName: "github",
-    sourceUrl: "https://github.com/github/github-mcp-server",
-    setupUrl: "https://github.com/github/github-mcp-server#remote-github-mcp-server",
-    server: { url: "https://api.githubcopilot.com/mcp/" },
-    credentials: [
-      {
-        key: "Authorization",
-        label: "GitHub personal access token",
-        description: "A GitHub PAT with only the repository permissions you want mikan to use.",
-        target: "header",
-        required: true,
-        secret: true,
-        valuePrefix: "Bearer ",
-      },
-    ],
-  },
-  {
-    id: "context7",
-    name: "Context7",
-    description: "Look up current, version-specific library and framework documentation.",
-    category: "Documentation",
-    serverName: "context7",
-    sourceUrl: "https://github.com/upstash/context7",
-    setupUrl: "https://context7.com/docs/resources/all-clients",
-    server: { url: "https://mcp.context7.com/mcp" },
-    credentials: [
-      {
-        key: "Authorization",
-        label: "Context7 API key",
-        description: "Create an API key in Context7 and paste the raw key here.",
-        target: "header",
-        required: true,
-        secret: true,
-        valuePrefix: "Bearer ",
-      },
-    ],
-  },
-  {
     id: "metabase",
     name: "Metabase",
     description: "Query and explore analytics from your Metabase instance.",
@@ -72,54 +30,6 @@ const MCP_PRESETS: readonly McpPreset[] = [
         secret: true,
       },
     ],
-  },
-  {
-    id: "open-connector",
-    name: "OpenConnector",
-    description: "Use connected services through a self-hosted, host-side action gateway.",
-    category: "Integrations",
-    serverName: "open-connector",
-    sourceUrl: "https://github.com/oomol-lab/open-connector",
-    setupUrl: "https://github.com/oomol-lab/open-connector/blob/main/docs/runtime-api.md",
-    server: { url: "http://127.0.0.1:3737/mcp" },
-    credentials: [
-      {
-        key: "Authorization",
-        label: "Scoped OpenConnector runtime token",
-        description:
-          "Create a persistent runtime token limited to the actions and connections this mikan deployment may use. Do not use the full-access bootstrap token.",
-        target: "header",
-        required: true,
-        secret: true,
-        valuePrefix: "Bearer ",
-      },
-    ],
-  },
-  {
-    id: "playwright",
-    name: "Playwright",
-    description: "Inspect and automate websites through Playwright's accessibility-first tools.",
-    category: "Browser",
-    serverName: "playwright",
-    sourceUrl: "https://github.com/microsoft/playwright-mcp",
-    setupUrl: "https://github.com/microsoft/playwright-mcp#installation",
-    server: { command: "npx", args: ["-y", "@playwright/mcp@0.0.80"] },
-    credentials: [],
-  },
-  {
-    id: "sequential-thinking",
-    name: "Sequential Thinking",
-    description: "Add a structured tool for revising and branching through complex reasoning.",
-    category: "Reasoning",
-    serverName: "sequential-thinking",
-    sourceUrl: "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
-    setupUrl:
-      "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking#usage-with-claude-desktop",
-    server: {
-      command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
-    },
-    credentials: [],
   },
 ];
 

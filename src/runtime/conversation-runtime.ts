@@ -554,6 +554,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       office: this.options.workspace.office(options.address),
       trustModel: options.trustModel,
       platformWorkspaceId: options.platformWorkspaceId,
+      openConnector: this.options.openConnector,
       sessionScope,
       signal,
       vaultManager: this.options.vaultManager,

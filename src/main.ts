@@ -53,6 +53,7 @@ import {
   OfficeRegistry,
 } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
+import type { McpServerConfig } from "./mcp/types.js";
 import * as Sentry from "@sentry/node";
 
 function getVersion(): string {
@@ -91,6 +92,10 @@ const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
+const OPENCONNECTOR_ENDPOINT = readEnv("OPENCONNECTOR_ENDPOINT");
+const openConnector: McpServerConfig | undefined = OPENCONNECTOR_ENDPOINT
+  ? { url: OPENCONNECTOR_ENDPOINT }
+  : undefined;
 
 const WORLD_WRITABLE_MODE = 0o002;
 const INTAKE_DRAIN_TIMEOUT_MS = 30_000;
@@ -464,6 +469,7 @@ const handler = createConversationRuntime({
   linkTokenStore,
   sessionViewTokenStore,
   adminTokenStore,
+  openConnector,
   portalBaseUrl: portalBaseUrl(),
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });

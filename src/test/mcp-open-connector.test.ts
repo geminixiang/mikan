@@ -15,8 +15,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
   delete process.env.MIKAN_OPENCONNECTOR_ADMIN_TOKEN;
-  delete process.env.OPENCONNECTOR_ORIGIN;
-  delete process.env.MIKAN_OPENCONNECTOR_ORIGIN;
+  delete process.env.OPENCONNECTOR_ENDPOINT;
+  delete process.env.MIKAN_OPENCONNECTOR_ENDPOINT;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -25,6 +25,8 @@ function testOffice() {
     createOfficeAddress("slack", "C123"),
   );
 }
+
+const openConnector = { url: "http://127.0.0.1:3737/mcp" };
 
 const servers = {
   "open-connector": {
@@ -42,19 +44,38 @@ function jsonResponse(value: unknown, status = 200): Response {
 }
 
 describe("provisionOfficeOpenConnectorToken", () => {
-  test("keeps the configured deployment token when automatic provisioning is not enabled", async () => {
+  test("does not inject OpenConnector without the admin token", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await provisionOfficeOpenConnectorToken(testOffice(), "T123", servers);
+    const result = await provisionOfficeOpenConnectorToken(
+      testOffice(),
+      "T123",
+      servers,
+      openConnector,
+    );
 
-    expect(result).toBe(servers);
+    expect(result).toEqual({ other: servers.other });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("does not inject OpenConnector for non-Slack offices", async () => {
+    process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
+    const office = createWorkspace({
+      root: join(dir, "workspace"),
+      stateDir: join(dir, "state"),
+    }).office(createOfficeAddress("discord", "C123"));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector);
+
+    expect(result).toEqual({ other: servers.other });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("creates and persists a Slack conversation runtime token", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
     const expectedName = "mikan:slack:T123:C123";
     const fetchMock = vi
       .fn()
@@ -83,7 +104,7 @@ describe("provisionOfficeOpenConnectorToken", () => {
     vi.stubGlobal("fetch", fetchMock);
     const office = testOffice();
 
-    const result = await provisionOfficeOpenConnectorToken(office, "T123", servers);
+    const result = await provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector);
 
     expect(result?.["open-connector"]?.headers).toEqual({
       Authorization: "Bearer oct_conversation-secret",
@@ -118,7 +139,6 @@ describe("provisionOfficeOpenConnectorToken", () => {
 
   test("reuses the persisted token without another admin request", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -140,9 +160,9 @@ describe("provisionOfficeOpenConnectorToken", () => {
     vi.stubGlobal("fetch", fetchMock);
     const office = testOffice();
 
-    await provisionOfficeOpenConnectorToken(office, "T123", servers);
+    await provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector);
     fetchMock.mockClear();
-    const result = await provisionOfficeOpenConnectorToken(office, "T123", servers);
+    const result = await provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector);
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result?.["open-connector"]?.headers?.Authorization).toBe(
@@ -152,7 +172,6 @@ describe("provisionOfficeOpenConnectorToken", () => {
 
   test("creates only one token during concurrent runner construction", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -170,8 +189,8 @@ describe("provisionOfficeOpenConnectorToken", () => {
     const office = testOffice();
 
     const results = await Promise.all([
-      provisionOfficeOpenConnectorToken(office, "T123", servers),
-      provisionOfficeOpenConnectorToken(office, "T123", servers),
+      provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector),
+      provisionOfficeOpenConnectorToken(office, "T123", servers, openConnector),
     ]);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -181,27 +200,52 @@ describe("provisionOfficeOpenConnectorToken", () => {
     ]);
   });
 
-  test("never sends the admin token to a conversation-overridden origin", async () => {
+  test("uses the startup endpoint instead of a settings override", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
-    const fetchMock = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          deployment: { allowedActions: [], blockedActions: [], allowedProxies: [] },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          token: "oct_conversation-secret",
+          record: { id: "token-1", name: "mikan:slack:T123:C123" },
+        }),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await provisionOfficeOpenConnectorToken(testOffice(), "T123", {
-      ...servers,
-      "open-connector": { url: "https://attacker.example/mcp" },
-    });
+    const result = await provisionOfficeOpenConnectorToken(
+      testOffice(),
+      "T123",
+      {
+        ...servers,
+        "open-connector": { url: "https://attacker.example/mcp", disabled: true },
+      },
+      openConnector,
+    );
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(result?.["open-connector"]?.disabled).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0].toString()).toBe(
+      "http://127.0.0.1:3737/api/runtime-policy",
+    );
+    expect(result["open-connector"]).toEqual({
+      ...openConnector,
+      headers: { Authorization: "Bearer oct_conversation-secret" },
+    });
   });
 
   test("disables only OpenConnector when provisioning fails", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    process.env.OPENCONNECTOR_ORIGIN = "http://127.0.0.1:3737";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: "down" }, 503)));
 
-    const result = await provisionOfficeOpenConnectorToken(testOffice(), "T123", servers);
+    const result = await provisionOfficeOpenConnectorToken(
+      testOffice(),
+      "T123",
+      servers,
+      openConnector,
+    );
 
     expect(result?.["open-connector"]?.disabled).toBe(true);
     expect(result?.other).toEqual(servers.other);
