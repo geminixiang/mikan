@@ -21,6 +21,7 @@ import { MikanModels } from "../harness/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
+import type { CreateRunnerOptions } from "../types.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 
 /**
@@ -78,6 +79,7 @@ async function createTestRunner(
     trustModel?: "membership" | "open-trigger";
     mcpServers?: Record<string, McpServerConfig>;
     platformWorkspaceId?: string;
+    sessionView?: CreateRunnerOptions["sessionView"];
     platformToolPackFactories?: readonly PlatformToolPackFactory[];
   } = {},
 ) {
@@ -102,6 +104,7 @@ async function createTestRunner(
     platformWorkspaceId: options.platformWorkspaceId,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
     models,
+    sessionView: options.sessionView,
     platformToolPackFactories: options.platformToolPackFactories ?? [],
   });
   return { runner, faux };
@@ -437,6 +440,64 @@ describe("PiAgentWrapper.run", () => {
     ].flatMap((call) => call.map(String));
     expect(visibleText.join("\n")).not.toContain("This text must not be posted");
   });
+
+  test.each([
+    {
+      id: "event:daily.json",
+      answer: "report",
+      tokens: 1,
+      linked: true,
+      attribution: "[event: daily.json]",
+    },
+    { id: "event:daily.json", answer: "[SILENT]", tokens: 1, linked: false },
+    { id: "event:daily.json", answer: "", tokens: 1, linked: false },
+    { id: "event:daily.json", answer: "", error: "provider exploded", tokens: 1, linked: false },
+    { id: "1000.1", answer: "report", tokens: 0, linked: false, attribution: "@alice" },
+  ])(
+    "preserves session-link behavior for $id with '$answer' (error: $error)",
+    async ({ id, answer, error, tokens, linked, attribution }) => {
+      const create = vi.fn(() => ({ token: "test-session-token" }));
+      const { runner, faux } = await createTestRunner({
+        sessionView: { tokenStore: { create }, portalBaseUrl: "https://portal.example" },
+      });
+      faux.setResponses([
+        fauxAssistantMessage(
+          answer,
+          error === undefined ? undefined : { stopReason: "error", errorMessage: error },
+        ),
+      ]);
+      const responder = makeResponder();
+      try {
+        await runner.run(makeMessage({ id }), responder, platform);
+        expect(create).toHaveBeenCalledTimes(tokens);
+        const finalText = String(responder.replaceResponse.mock.calls.at(-1)?.[0] ?? "");
+        const sessionLink = "session: https://portal.example/session?token=test-session-token";
+        expect(finalText.includes(sessionLink)).toBe(linked);
+        if (attribution === undefined) {
+          expect(finalText).not.toContain("_Triggered by");
+        } else {
+          expect(finalText).toContain(`_Triggered by ${attribution}_`);
+        }
+        if (error !== undefined) {
+          expect(finalText).toBe("_Sorry, something went wrong_");
+          const diagnostics = responder.respondDiagnostic.mock.calls.map(([text]) => String(text));
+          expect(diagnostics.some((text) => text.includes(error))).toBe(true);
+          expect(diagnostics.some((text) => text.includes(sessionLink))).toBe(false);
+        }
+        if (linked) {
+          expect(create).toHaveBeenCalledWith(
+            expect.objectContaining({
+              platformUserId: "U1",
+              conversationId: "C1",
+              sessionKey: "C1",
+            }),
+          );
+        }
+      } finally {
+        await runner.dispose();
+      }
+    },
+  );
 
   test("empty final text leaves the placeholder untouched", async () => {
     const { runner, faux } = await createTestRunner();

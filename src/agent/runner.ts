@@ -438,7 +438,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
       : undefined;
 
   await finalizeRunResponse(responder, session, runState, {
-    triggerAttribution: prepared.triggerAttribution,
     triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
       ? createSessionViewLink?.()
       : undefined,

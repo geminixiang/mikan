@@ -95,6 +95,29 @@ this does not establish completion of the broader review.
    formatting remain appropriately local. The five renderer/context suites pass
    (175 tests). Continue caller and test inspection before claiming comprehensive
    boundary review.
-5. Finish the requirement-by-requirement scope audit and summarize approved
+5. Follow-up review retains `pendingTools` and `toolProgress`: pending entries
+   are deleted on completion for activity/duration tracking, whereas progress
+   retains completed entries in start order for final output. A parallel-tool
+   reverse-completion regression test now covers these distinct lifetimes and
+   final rendered output; presenter/runner suites pass (20 tests).
+   Claude's finalization review retains wait → finalize → usage orchestration
+   and runner-owned authenticated token creation. Attribution is duplicated
+   between run state and finalize options, but moving token creation inside the
+   finalizer is not strictly equivalent: its early returns would skip token
+   creation currently performed before entry. Added four runner cases covering
+   event normal/silent/empty output and ordinary chat; they passed before the
+   production change. Removed only the duplicate finalize attribution option:
+   both rendering paths now read `runState.triggerAttribution`. Token creation
+   timing remains unchanged. Claude confirmed equivalence and implemented
+   explicit ordinary-chat attribution and event-error token/output assertions.
+   The independent Pi reviewer retained GitHub's separate `postMessage` and
+   renderer splitting paths, and implemented a GitHub-specific long-response
+   regression test proving destination, content order, length bounds, and
+   reuse of existing comment IDs. Both agents changed only their assigned tests;
+   the integrator inspected both diffs. Four focused suites pass (58 tests).
+   Full lint, format, knip, build, and test gates pass (121 files, 1687 tests).
+   GitHub validation uses mocks; live API and enqueueEvent coverage remain out
+   of scope for this checkpoint.
+6. Finish the requirement-by-requirement scope audit and summarize approved
    changes versus deferred behavioral or upstream-migration decisions. Repeat the
    full gate if subsequent implementation changes are made.

@@ -201,6 +201,53 @@ describe("presenter event routing", () => {
     ]);
   });
 
+  test("retains completed progress in start order while parallel tools settle out of order", async () => {
+    const { emit, responder, runQueue, runState } = attachPresenter();
+    try {
+      for (const id of ["first", "second"]) {
+        await emit({
+          type: "tool_execution_start",
+          toolCallId: id,
+          toolName: "read",
+          args: { label: id },
+        });
+      }
+      await runQueue.wait();
+      expect([...runState.pendingTools.keys()]).toEqual(["first", "second"]);
+
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: "second",
+        toolName: "read",
+        result: "failed",
+        isError: true,
+      });
+      await runQueue.wait();
+      expect([...runState.pendingTools.keys()]).toEqual(["first"]);
+      expect(responder.replaceResponse).toHaveBeenLastCalledWith("• first\n✗ second");
+
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: "first",
+        toolName: "read",
+        result: "contents",
+        isError: false,
+      });
+      await runQueue.wait();
+      expect(runState.pendingTools.size).toBe(0);
+      expect([...runState.toolProgress.keys()]).toEqual(["first", "second"]);
+      expect(responder.replaceResponse).toHaveBeenLastCalledWith("✓ first\n✗ second");
+
+      await emit({ type: "message_end", message: fauxAssistantMessage("answer") });
+      await runQueue.wait();
+      expect(responder.finishResponse).toHaveBeenLastCalledWith(
+        "✓ first\n✗ second\n\nanswer\n\n_Triggered by @alice_",
+      );
+    } finally {
+      runQueue.dispose();
+    }
+  });
+
   test("routes subagent updates and suppresses assistant deltas while progress is live", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
     const partial = fauxAssistantMessage("hidden");

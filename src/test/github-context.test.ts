@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
+import { GITHUB_MAX_COMMENT_LENGTH } from "../adapters/github/client.js";
 import { createGithubAdapters } from "../adapters/github/context.js";
 import type { GithubEvent } from "../adapters/github/types.js";
 
@@ -50,6 +51,33 @@ describe("createGithubAdapters", () => {
     await responder.respond("second");
     expect(bot.updateMessage).toHaveBeenCalledWith("GH_octo_widgets_5", "555", "first\nsecond");
     expect(bot.postComment).toHaveBeenCalledTimes(1);
+  });
+
+  test("long responses split into comments and replacement reuses their ids in order", async () => {
+    const bot = makeFakeBot();
+    bot.postComment.mockResolvedValueOnce(555).mockResolvedValueOnce(556);
+    const { responder } = createGithubAdapters(makeEvent(), bot as unknown as GithubMessagingBot);
+    const answer = "A".repeat(GITHUB_MAX_COMMENT_LENGTH) + "B".repeat(100);
+
+    await responder.respond(answer);
+
+    expect(bot.postComment).toHaveBeenCalledTimes(2);
+    expect(bot.updateMessage).not.toHaveBeenCalled();
+    const parts = bot.postComment.mock.calls.map(([ref, text]) => {
+      expect(ref).toEqual({ owner: "octo", repo: "widgets", number: 5 });
+      expect(text.length).toBeLessThanOrEqual(GITHUB_MAX_COMMENT_LENGTH);
+      return text as string;
+    });
+    expect(parts[0]).toMatch(/\n\*\(continued 1\)\*$/);
+    expect(parts[0].replace(/\n\*\(continued 1\)\*$/, "") + parts[1]).toBe(answer);
+
+    await responder.replaceResponse(answer.replaceAll("A", "C").replaceAll("B", "D"));
+
+    expect(bot.postComment).toHaveBeenCalledTimes(2);
+    expect(bot.updateMessage.mock.calls).toEqual([
+      ["GH_octo_widgets_5", "555", parts[0].replaceAll("A", "C").replaceAll("B", "D")],
+      ["GH_octo_widgets_5", "556", parts[1].replaceAll("A", "C").replaceAll("B", "D")],
+    ]);
   });
 
   test("streaming is disabled so the runner falls back to a single respond()", () => {

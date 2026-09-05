@@ -294,7 +294,6 @@ export async function finalizeRunResponse(
   session: MikanAgentSession,
   runState: RunnerSessionState,
   options?: {
-    triggerAttribution?: string;
     triggerSessionLink?: string;
     createOverflowLink?: () => string;
     platform?: string;
@@ -329,7 +328,7 @@ export async function finalizeRunResponse(
   try {
     const finalResponse = appendTriggerAttribution(
       finalText,
-      options?.triggerAttribution,
+      runState.triggerAttribution,
       options?.triggerSessionLink,
     );
     const finalDashboard = mergeSubagentProgress(runState.completedSubagentProgress);
