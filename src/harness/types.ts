@@ -18,7 +18,7 @@ import type {
   ThinkingLevel,
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { Api, Model, Usage } from "@earendil-works/pi-ai";
+import type { Api, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
@@ -275,11 +275,7 @@ export interface LoadSkillsResult {
   diagnostics: SkillDiagnostic[];
 }
 
-export interface RetrySettings {
-  enabled: boolean;
-  maxRetries: number;
-  baseDelayMs: number;
-}
+export type RetrySettings = RetryPolicy;
 
 export interface BudgetSettings {
   /** Max cumulative tokens processed this run (input + output + cache read/write). */

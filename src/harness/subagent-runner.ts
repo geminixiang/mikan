@@ -301,15 +301,7 @@ function messageText(message: AgentMessage): string {
     return message.summary;
   }
   if (!("content" in message)) return "";
-  if (typeof message.content === "string") return message.content;
-  if (!Array.isArray(message.content)) return "";
-  return message.content
-    .filter(
-      (part): part is { type: "text"; text: string } =>
-        typeof part === "object" && part !== null && part.type === "text",
-    )
-    .map((part) => part.text)
-    .join("");
+  return contentText(message.content, "");
 }
 
 function normalizedParentContext(

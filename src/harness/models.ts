@@ -304,10 +304,8 @@ export class MikanModels {
    * need a bearer key (for example pi-agent-core's compat stream function).
    */
   async getApiKeyForProvider(provider: string): Promise<string | undefined> {
-    const model = this.models.getModels(provider)[0];
-    if (!model) return undefined;
     try {
-      const auth = await this.models.getAuth(model);
+      const auth = await this.models.getAuth(provider);
       return auth?.auth.apiKey;
     } catch {
       return undefined;

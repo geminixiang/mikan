@@ -99,6 +99,31 @@ describe("MikanModels.resolve", () => {
   });
 });
 
+describe("MikanModels.getApiKeyForProvider", () => {
+  test("resolves provider auth without enumerating models and tolerates auth failure", async () => {
+    const registry = withTempRegistry({
+      providers: {
+        custom: {
+          api: "openai-completions",
+          apiKey: "custom-key",
+          models: [{ id: "custom-model" }],
+        },
+      },
+    });
+    const models = (registry as unknown as { models: MutableModels }).models;
+    const getModels = vi.spyOn(models, "getModels");
+    const getAuth = vi.spyOn(models, "getAuth");
+
+    await expect(registry.getApiKeyForProvider("custom")).resolves.toBe("custom-key");
+    expect(getAuth).toHaveBeenCalledWith("custom");
+    expect(getModels).not.toHaveBeenCalled();
+    await expect(registry.getApiKeyForProvider("missing")).resolves.toBeUndefined();
+
+    getAuth.mockRejectedValueOnce(new Error("auth check failed"));
+    await expect(registry.getApiKeyForProvider("custom")).resolves.toBeUndefined();
+  });
+});
+
 describe("MikanModels.getAvailable", () => {
   test("delegates provider filtering and isolates one provider failure", async () => {
     const registry = withTempRegistry({

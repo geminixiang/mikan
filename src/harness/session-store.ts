@@ -318,18 +318,14 @@ function headerView(header: CurrentSessionHeader, metadata?: MikanSessionMetadat
   };
 }
 
-function fileRepo(path: string): JsonlSessionRepo {
-  return new JsonlSessionRepo({
-    fileSystem: new NodeExecutionEnv({ cwd: process.cwd() }),
-    sessionsRoot: dirname(path),
-  });
-}
-
 async function openFileSession(
   path: string,
   header: CurrentSessionHeader,
 ): Promise<{ session: Session<JsonlSessionMetadata>; repo: JsonlSessionRepo }> {
-  const sessionRepo = fileRepo(path);
+  const sessionRepo = new JsonlSessionRepo({
+    fileSystem: new NodeExecutionEnv({ cwd: process.cwd() }),
+    sessionsRoot: dirname(path),
+  });
   try {
     const session = await sessionRepo.open(metadataFromHeader(header, path), TODO_CONTEXT);
     return { session, repo: sessionRepo };
