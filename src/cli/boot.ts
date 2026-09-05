@@ -91,7 +91,7 @@ Usage:
   mikan office <list|claim> …
       Inspect conversation offices and claim legacy directories for a platform.
   mikan sessions migrate …
-      Migrate legacy v3 session files to the v4 format (run with the daemon stopped).
+      Migrate legacy v3 and Pi 0.84 session files to the current v4 format (stop the daemon first).
   mikan env
       Show the full environment-variable inventory and what is currently set.
   mikan onboard

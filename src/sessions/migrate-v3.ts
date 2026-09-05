@@ -3,10 +3,9 @@
  *
  * v3 is the entry family mikan wrote up to pi 0.83: a `{"type":"session"}`
  * header followed by tree entries with string ISO timestamps and compaction
- * entries that point at `firstKeptEntryId`. v4 (pi 0.84+) uses a
- * `{"kind":"header","version":4}` header followed by mutation lines whose
- * entries carry numeric timestamps and a consecutive `seq`, with compaction
- * retention stored inline as `retainedTail`.
+ * entries that point at `firstKeptEntryId`. Current Pi v4 uses a
+ * `{"v":4,"kind":"header","storageVersion":1}` header followed by
+ * transactional writes with numeric timestamps and consecutive sequences.
  *
  * The migration preserves entry ids, parent links, and timestamps, converts
  * `custom_message` entries into v4 `custom`-role messages, folds
@@ -17,14 +16,24 @@
  * v3 context computed by the reference converter below. The original file
  * is kept beside the migrated one as `<name>.v3.bak`.
  */
-import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { join } from "node:path";
 import {
-  buildSessionContext,
+  createBranchSummaryMessage,
+  createCompactionSummaryMessage,
   createCustomMessage,
   type AgentMessage,
   type Entry as PiEntry,
-  type JsonlV4Header,
+  type JsonValue,
 } from "@earendil-works/pi-agent-core";
 import { SessionStore } from "../harness/session-store.js";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
@@ -126,18 +135,15 @@ function readV3SessionFile(filePath: string): V3SessionFile {
   // Crash-era v3 files can contain duplicated lines (a retried append wrote
   // the header+entry pair twice). The v3 runtime read entries into a Map, so
   // duplicates were silently collapsed; v4 rejects duplicate mutation ids.
-  // Reproduce the v3 semantics: keep one entry per id, drop stray repeated
-  // session headers.
-  const seen = new Set<string>();
-  const entries: V3Entry[] = [];
+  // Reproduce the v3 Map semantics: a repeated id replaces its payload while
+  // retaining the id's original insertion position.
+  const entriesById = new Map<string, V3Entry>();
   for (const record of records.slice(1)) {
     if (typeof record.type !== "string" || typeof record.id !== "string") continue;
     if (record.type === "session") continue;
-    if (seen.has(record.id)) continue;
-    seen.add(record.id);
-    entries.push(record as unknown as V3Entry);
+    entriesById.set(record.id, record as unknown as V3Entry);
   }
-  return { header: header as unknown as V3SessionHeader, entries };
+  return { header: header as unknown as V3SessionHeader, entries: [...entriesById.values()] };
 }
 
 function toEpochMillis(timestamp: string): number {
@@ -191,11 +197,16 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         ),
       };
     case "thinking_level_change":
-      return { ...base, type: "thinking_level_change", thinkingLevel: entry.thinkingLevel };
     case "model_change":
-      return { ...base, type: "model_change", provider: entry.provider, modelId: entry.modelId };
-    case "active_tools_change":
-      return { ...base, type: "active_tools_change", activeToolNames: entry.activeToolNames };
+    case "active_tools_change": {
+      const { id: _id, parentId: _parentId, timestamp: _timestamp, type, ...data } = entry;
+      return {
+        ...base,
+        type: "custom",
+        customType: `mikan.legacy.${type}`,
+        data: data as JsonValue,
+      };
+    }
     case "compaction":
       return {
         ...base,
@@ -203,20 +214,27 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         summary: entry.summary,
         retainedTail: entry.retainedTail ?? compactionKeptMessages(entry, entries),
         tokensBefore: entry.tokensBefore,
-        ...(entry.details !== undefined ? { details: entry.details } : {}),
-        ...(entry.usage !== undefined ? { usage: entry.usage as PiEntry & object } : {}),
+        fromHook: false,
+        ...(entry.details !== undefined ? { details: entry.details as JsonValue } : {}),
+        ...(entry.usage !== undefined ? { usage: entry.usage } : {}),
       } as unknown as PiEntry;
     case "branch_summary":
       return {
         ...base,
         type: "branch_summary",
-        fromId: entry.fromId,
+        fromId: entry.fromId ?? null,
         summary: entry.summary,
-        ...(entry.details !== undefined ? { details: entry.details } : {}),
+        fromHook: false,
+        ...(entry.details !== undefined ? { details: entry.details as JsonValue } : {}),
         ...(entry.usage !== undefined ? { usage: entry.usage } : {}),
       } as unknown as PiEntry;
     case "custom":
-      return { ...base, type: "custom", customType: entry.customType, data: entry.data };
+      return {
+        ...base,
+        type: "custom",
+        customType: entry.customType,
+        ...(entry.data !== undefined ? { data: entry.data as JsonValue } : {}),
+      };
     default:
       // session_info / label / leaf become facts and the lane pointer.
       return null;
@@ -320,6 +338,7 @@ function referenceContextEntries(branch: V3Entry[]): PiEntry[] {
         summary: entry.summary,
         retainedTail: [],
         tokensBefore: entry.tokensBefore,
+        fromHook: false,
       });
       continue;
     }
@@ -335,30 +354,50 @@ function referenceContextEntries(branch: V3Entry[]): PiEntry[] {
   return converted;
 }
 
+function isCurrentContextMessage(message: AgentMessage): boolean {
+  return (
+    message.role !== "assistant" ||
+    (message.stopReason !== "error" &&
+      message.stopReason !== "aborted" &&
+      message.stopReason !== "deferred")
+  );
+}
+
+function referenceContextMessages(entries: PiEntry[]): AgentMessage[] {
+  const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
+  const visible =
+    compactionIndex === -1
+      ? entries
+      : [entries[compactionIndex]!, ...entries.slice(compactionIndex + 1)];
+  const messages: AgentMessage[] = [];
+  for (const entry of visible) {
+    if (entry.type === "message") {
+      if (isCurrentContextMessage(entry.message)) messages.push(entry.message);
+    } else if (entry.type === "compaction") {
+      messages.push(
+        createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp),
+        ...entry.retainedTail.filter(isCurrentContextMessage),
+      );
+    } else if (entry.type === "branch_summary" && entry.summary) {
+      messages.push(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
+    }
+  }
+  return messages;
+}
+
 // ── v4 encoding ─────────────────────────────────────────────────────────────
 
-function buildV4Header(header: V3SessionHeader): JsonlV4Header {
-  const {
-    type: _type,
-    version: _version,
-    id,
-    timestamp,
-    cwd,
-    parentSession,
-    parentSessionId,
-    ...extras
-  } = header;
-  const metadata: Record<string, unknown> = { ...extras };
-  if (parentSession !== undefined) metadata.parentSessionPath = parentSession;
+function buildV4Header(header: V3SessionHeader): Record<string, unknown> {
   return {
+    v: 4,
     kind: "header",
-    version: 4,
-    id,
-    createdAt: toEpochMillis(timestamp),
-    cwd,
-    ...(parentSessionId !== undefined ? { parentSessionId } : {}),
-    ...(Object.keys(metadata).length > 0
-      ? { metadata: metadata as JsonlV4Header["metadata"] }
+    id: header.id,
+    storageVersion: 1,
+    createdAt: toEpochMillis(header.timestamp),
+    cwd: header.cwd,
+    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
+    ...(header.parentSession !== undefined
+      ? { legacyParentSessionPath: header.parentSession }
       : {}),
   };
 }
@@ -366,9 +405,7 @@ function buildV4Header(header: V3SessionHeader): JsonlV4Header {
 function encodeV4File(file: V3SessionFile): string {
   const lines: string[] = [JSON.stringify(buildV4Header(file.header))];
   let seq = 0;
-  const push = (mutation: Record<string, unknown>) => {
-    lines.push(JSON.stringify(mutation));
-  };
+  const push = (write: Record<string, unknown>) => lines.push(JSON.stringify(write));
 
   let name: string | undefined;
   const labels: Array<{ targetId: string; label: string | undefined }> = [];
@@ -385,13 +422,9 @@ function encodeV4File(file: V3SessionFile): string {
     const converted = convertEntry(entry, file.entries);
     if (!converted) continue;
     converted.seq = ++seq;
-    // Entry mutations are encoded flat: {kind:"entry", ...entry fields}.
     push({ kind: "entry", ...converted });
   }
 
-  // The v3 leaf may point at a fact-only entry (session_info/label) that
-  // does not survive as a v4 entry; re-aim the lane at its nearest surviving
-  // ancestor, mirroring resolveV4Parent.
   let leafId = v3LeafId(file.entries);
   const byId = new Map(file.entries.map((entry) => [entry.id, entry]));
   while (leafId !== null) {
@@ -400,15 +433,59 @@ function encodeV4File(file: V3SessionFile): string {
       leafId = null;
       break;
     }
-    if (target.type !== "session_info" && target.type !== "label" && target.type !== "leaf") {
-      break;
-    }
+    if (target.type !== "session_info" && target.type !== "label" && target.type !== "leaf") break;
     leafId = target.parentId;
   }
-  push({ kind: "lane", seq: ++seq, lane: "main", leafId });
-  if (name !== undefined) push({ kind: "fact", seq: ++seq, fact: "name", name });
+  push({
+    kind: "value",
+    op: "set",
+    seq: ++seq,
+    namespace: "pi.branch.tip",
+    key: "main",
+    value: leafId,
+  });
+  if (name !== undefined) {
+    push({
+      kind: "value",
+      op: "set",
+      seq: ++seq,
+      namespace: "pi.session.name",
+      key: "",
+      value: name,
+    });
+  }
   for (const { targetId, label } of labels) {
-    push({ kind: "fact", seq: ++seq, fact: "label", targetId, label });
+    if (label === undefined) continue;
+    push({
+      kind: "value",
+      op: "set",
+      seq: ++seq,
+      namespace: "pi.entry.label",
+      key: targetId,
+      value: label,
+    });
+  }
+  const {
+    type: _type,
+    version: _version,
+    id: _id,
+    timestamp: _timestamp,
+    cwd: _cwd,
+    parentSession,
+    parentSessionId: _parentSessionId,
+    ...extras
+  } = file.header;
+  const metadata: Record<string, JsonValue> = extras as Record<string, JsonValue>;
+  if (parentSession !== undefined) metadata.parentSessionPath = parentSession;
+  if (Object.keys(metadata).length > 0) {
+    push({
+      kind: "value",
+      op: "set",
+      seq: ++seq,
+      namespace: "mikan",
+      key: "metadata",
+      value: metadata,
+    });
   }
   return `${lines.join("\n")}\n`;
 }
@@ -419,9 +496,8 @@ async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promis
   const store = await SessionStore.inspect(v4Path);
   const migratedContext = await store.buildSessionContext();
   const branch = v3Branch(source.entries, v3LeafId(source.entries));
-  const referenceContext = buildSessionContext(referenceContextEntries(branch));
   const migrated = JSON.stringify(migratedContext.messages);
-  const reference = JSON.stringify(referenceContext.messages);
+  const reference = JSON.stringify(referenceContextMessages(referenceContextEntries(branch)));
   if (migrated !== reference) {
     throw new Error("migrated context does not match the v3 reference context");
   }
@@ -440,24 +516,37 @@ async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promis
  * the v3 reference semantics before it replaces the original; the original
  * is preserved as `<file>.v3.bak`.
  */
+function backupAlreadyLinked(sourcePath: string, backupPath: string): boolean {
+  if (!existsSync(backupPath)) return false;
+  const source = statSync(sourcePath);
+  const backup = statSync(backupPath);
+  if (source.dev === backup.dev && source.ino === backup.ino) return true;
+  throw new Error(`Backup already exists: ${backupPath}`);
+}
+
 export async function migrateSessionFile(
   filePath: string,
   options?: { dryRun?: boolean },
 ): Promise<MigrateResult> {
   if (!isV3SessionFile(filePath)) return { file: filePath, status: "already-v4" };
+  const sourceBytes = readFileSync(filePath);
   const source = readV3SessionFile(filePath);
   if (options?.dryRun) return { file: filePath, status: "migrated", detail: "dry run" };
 
   const tempPath = `${filePath}.v4.tmp`;
+  const backupPath = `${filePath}.v3.bak`;
+  const backupLinked = backupAlreadyLinked(filePath, backupPath);
   atomicWritePrivateFile(tempPath, encodeV4File(source));
   try {
     await verifyMigratedFile(tempPath, source);
+    if (!readFileSync(filePath).equals(sourceBytes))
+      throw new Error("source changed during migration");
+    if (!backupLinked) linkSync(filePath, backupPath);
+    renameSync(tempPath, filePath);
   } catch (error) {
     rmSync(tempPath, { force: true });
-    throw new Error(`Verification failed for ${filePath}`, { cause: error });
+    throw new Error(`Migration failed for ${filePath}`, { cause: error });
   }
-  renameSync(filePath, `${filePath}.v3.bak`);
-  renameSync(tempPath, filePath);
   return { file: filePath, status: "migrated" };
 }
 
@@ -470,10 +559,11 @@ export function findV3SessionFiles(root: string): string[] {
       const path = join(dir, name);
       let stats;
       try {
-        stats = statSync(path);
+        stats = lstatSync(path);
       } catch {
         continue;
       }
+      if (stats.isSymbolicLink()) continue;
       if (stats.isDirectory()) {
         walk(path);
       } else if (name.endsWith(".jsonl") && isV3SessionFile(path)) {

@@ -9,6 +9,15 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Add an offline session migration for Pi 0.84-generation v4 JSONL files, with verified atomic replacement and preserved `*.pi-084.bak` originals.
+
+### Changed
+
+- Upgrade `pi-agent-core` and `pi-ai` to 0.85.0 and persist sessions with the current `v: 4`, `storageVersion: 1` schema.
+- Extend `mikan sessions migrate` to convert both legacy mikan v3 and Pi 0.84-generation v4 sessions while the daemon is stopped.
+
 ## [1.0.0-beta.47]
 
 ### Added

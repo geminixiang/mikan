@@ -2273,22 +2273,6 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
   switch (entry.type) {
     case "message":
       return mapMessageEntry(entry);
-    case "model_change":
-      return {
-        kind: "system",
-        title: "Model changed",
-        body: `${entry.provider} / ${entry.modelId}`,
-        meta: entryIsoTime(entry) ?? "",
-        tone: "muted",
-      };
-    case "thinking_level_change":
-      return {
-        kind: "system",
-        title: "Thinking level changed",
-        body: entry.thinkingLevel,
-        meta: entryIsoTime(entry) ?? "",
-        tone: "muted",
-      };
     case "compaction":
       return mapCompactionEntry(entry);
     case "branch_summary":

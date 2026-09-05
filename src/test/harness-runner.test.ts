@@ -84,7 +84,12 @@ describe("MikanAgentSession", () => {
     const persisted = readFileSync(sessionFile, "utf-8")
       .split("\n")
       .filter(Boolean)
-      .map((line) => JSON.parse(line) as { type?: string; message?: { role?: string } });
+      .flatMap((line) => {
+        const parsed = JSON.parse(line) as
+          | { type?: string; message?: { role?: string } }
+          | Array<{ type?: string; message?: { role?: string } }>;
+        return Array.isArray(parsed) ? parsed : [parsed];
+      });
     const roles = persisted
       .filter((entry) => entry.type === "message")
       .map((entry) => entry.message?.role);

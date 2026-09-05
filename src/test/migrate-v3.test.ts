@@ -162,9 +162,9 @@ describe("migrateSessionFile", () => {
     const file = join(dir, "session.jsonl");
     writeJsonl(file, [
       header,
-      v3Message("a1", null, "hello"),
+      v3Message("a1", null, "stale"),
       header,
-      v3Message("a1", null, "hello"),
+      v3Message("a1", null, "latest"),
       v3Message("b2", "a1", "world", "assistant"),
     ]);
 
@@ -173,7 +173,7 @@ describe("migrateSessionFile", () => {
 
     const store = await SessionStore.inspect(file);
     const context = await store.buildSessionContext();
-    expect(context.messages.map(textOf)).toEqual(["hello", "world"]);
+    expect(context.messages.map(textOf)).toEqual(["latest", "world"]);
   });
 
   test("a trailing fact-only entry re-aims the lane at its surviving ancestor", async () => {
@@ -208,6 +208,16 @@ describe("migrateSessionFile", () => {
     await migrateSessionFile(file);
     const second = await migrateSessionFile(file);
     expect(second.status).toBe("already-v4");
+  });
+
+  test("refuses to overwrite an existing backup", async () => {
+    const file = join(dir, "backup.jsonl");
+    writeJsonl(file, [header, v3Message("a", null, "A")]);
+    writeFileSync(`${file}.v3.bak`, "existing backup");
+
+    await expect(migrateSessionFile(file)).rejects.toThrow(/Backup already exists/);
+    expect(isV3SessionFile(file)).toBe(true);
+    expect(readFileSync(`${file}.v3.bak`, "utf8")).toBe("existing backup");
   });
 
   test("dry run leaves the file untouched", async () => {

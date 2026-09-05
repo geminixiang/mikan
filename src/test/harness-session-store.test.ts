@@ -62,10 +62,12 @@ describe("SessionStore", () => {
     });
 
     const lines = readLines(file);
-    expect(lines[0]).toMatchObject({ kind: "header", version: 4, cwd: "/work" });
+    expect(lines[0]).toMatchObject({ kind: "header", v: 4, storageVersion: 1, cwd: "/work" });
     expect(typeof lines[0]?.createdAt).toBe("number");
-    expect(lines[1]).toMatchObject({ kind: "entry", type: "message", parentId: null });
-    expect(typeof lines[1]?.id).toBe("string");
+    const writes = lines.slice(1).flatMap((line) => (Array.isArray(line) ? line : [line]));
+    const entry = writes.find((write) => write.kind === "entry");
+    expect(entry).toMatchObject({ kind: "entry", type: "message", parentId: null });
+    expect(typeof entry?.id).toBe("string");
   });
 
   test("entries form a parent chain and getBranch returns root-first order", async () => {
@@ -193,7 +195,7 @@ describe("SessionStore", () => {
       content: [{ type: "text", text: "hi" }],
       timestamp: 1,
     });
-    expect(readLines(file)[0]).toMatchObject({ kind: "header", version: 4 });
+    expect(readLines(file)[0]).toMatchObject({ kind: "header", v: 4, storageVersion: 1 });
   });
 
   test("appending to a missing (headerless) file materializes the header", async () => {
@@ -208,8 +210,16 @@ describe("SessionStore", () => {
     });
 
     const lines = readLines(file);
-    expect(lines[0]).toMatchObject({ kind: "header", version: 4, id: sessionId, cwd: "/work" });
-    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({
+      kind: "header",
+      v: 4,
+      storageVersion: 1,
+      id: sessionId,
+      cwd: "/work",
+    });
+    expect(lines.slice(1).flatMap((line) => (Array.isArray(line) ? line : [line]))).toContainEqual(
+      expect.objectContaining({ kind: "entry", type: "message" }),
+    );
   });
 
   test("empty pending materialization truncates the original file", async () => {
@@ -220,7 +230,12 @@ describe("SessionStore", () => {
     await store.close();
 
     expect(readFileSync(file, "utf8")).not.toContain(" ".repeat(128));
-    expect(readLines(file)).toHaveLength(2);
+    expect(
+      readLines(file)
+        .slice(1)
+        .flatMap((line) => (Array.isArray(line) ? line : [line]))
+        .filter((line) => line.kind === "entry"),
+    ).toHaveLength(1);
   });
 
   test("read-only inspection never repairs or changes its source file", async () => {

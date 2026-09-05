@@ -64,8 +64,8 @@
     "docs:preview": "astro preview --config .config/astro.config.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.84.3",
-    "@earendil-works/pi-ai": "^0.84.3",
+    "@earendil-works/pi-agent-core": "^0.85.0",
+    "@earendil-works/pi-ai": "^0.85.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@sentry/node": "^10.60.0",
     "@sinclair/typebox": "^0.34.49",

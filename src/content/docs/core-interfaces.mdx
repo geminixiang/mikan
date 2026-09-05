@@ -199,7 +199,7 @@ Owns the model turn loop, message persistence, retries, compaction, budget circu
 
 ### `SessionStore`
 
-Owns version 3 append-only session JSONL and tree reconstruction. `SessionHeader.version` is currently `3` (`CURRENT_SESSION_VERSION`). Session entries may branch; consumers must use store/context helpers rather than assuming the file is a flat chat transcript.
+Owns the current Pi 0.85.0 v4 append-only session JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan-specific metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format, so legacy mikan v3 and Pi 0.84-generation v4 files must be converted with `mikan sessions migrate` while the daemon is stopped. `SessionHeader.version` in the compatibility view is currently `4` (`CURRENT_SESSION_VERSION`). Session entries may branch; consumers must use store/context helpers rather than assuming the file is a flat chat transcript.
 
 ### `MikanModels`
 

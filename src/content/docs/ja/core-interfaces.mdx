@@ -160,7 +160,7 @@ model turn loop、message 永続化、retries、compaction、budget circuit brea
 
 ### `SessionStore`
 
-version 3 の append-only な session JSONL と tree 再構築を所有します。`SessionHeader.version` は現在 `3`（`CURRENT_SESSION_VERSION`）です。Session entries は分岐し得るため、consumers はファイルをフラットなチャットトランスクリプトと仮定せず、store/context helpers を使わなければなりません。
+Pi 0.85.0 の current v4 append-only session JSONL tree を所有します。永続化される header は `v: 4` と `storageVersion: 1` を持ち、mikan 固有の metadata は namespaced な durable value `mikan/metadata` として保存されます。runtime が受け付けるのはこの current format だけです。そのため legacy mikan v3 と Pi 0.84-generation v4 は、daemon を停止して `mikan sessions migrate` で変換する必要があります。`SessionHeader.version` の compatibility view は現在 `4`（`CURRENT_SESSION_VERSION`）です。Session entries は分岐し得るため、consumers はファイルをフラットなチャットトランスクリプトと仮定せず、store/context helpers を使わなければなりません。
 
 ### `MikanModels`
 

@@ -11,7 +11,7 @@ export interface MikanSessionHeader {
   timestamp?: string;
   cwd?: string;
   parentSession?: string;
-  /** Legacy platform-history marker; preserved in v4 header metadata. */
+  /** Legacy platform-history marker; preserved in mikan's durable session metadata. */
   source?: {
     kind?: string;
     file?: string;
@@ -120,5 +120,11 @@ export interface ThreadBootstrapWaitOptions {
 export interface MigrateResult {
   file: string;
   status: "migrated" | "already-v4" | "skipped";
+  detail?: string;
+}
+
+export interface Pi084MigrationResult {
+  file: string;
+  status: "migrated" | "already-current" | "not-pi-084";
   detail?: string;
 }

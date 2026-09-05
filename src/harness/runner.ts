@@ -22,6 +22,8 @@ import {
   getOrThrow,
   prepareCompaction,
   shouldCompact,
+  TODO_CONTEXT,
+  withAbortSignal,
   type AgentEvent,
   type AgentMessage,
   type AgentTool,
@@ -480,8 +482,10 @@ export class MikanAgentSession {
           this.createCompactionModels(),
           this.agent.state.model,
           undefined,
-          signal,
           this.agent.state.thinkingLevel,
+          undefined,
+          undefined,
+          withAbortSignal(signal, TODO_CONTEXT),
         ),
       );
       if (signal.aborted) {

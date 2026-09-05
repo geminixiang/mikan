@@ -73,11 +73,7 @@ function makeAssistantMessage(text: string): AssistantMessage {
 }
 
 function countSessionHeaders(sessionFile: string): number {
-  return readFileSync(sessionFile, "utf-8")
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { kind?: string })
-    .filter((entry) => entry.kind === "header").length;
+  return parseSessionEntries(sessionFile).filter((entry) => entry.kind === "header").length;
 }
 
 async function seedManagedSession(
@@ -97,7 +93,10 @@ function parseSessionEntries(sessionFile: string): Array<Record<string, unknown>
   return readFileSync(sessionFile, "utf-8")
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
+    .flatMap((line) => {
+      const parsed = JSON.parse(line) as Record<string, unknown> | Array<Record<string, unknown>>;
+      return Array.isArray(parsed) ? parsed : [parsed];
+    });
 }
 
 function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
@@ -289,12 +288,19 @@ describe("managed session initialization", () => {
     writeFileSync(
       historyFile,
       `${JSON.stringify({
+        v: 4,
         kind: "header",
-        version: 4,
         id: "history",
+        storageVersion: 1,
         createdAt: Date.now(),
         cwd: channelDir,
-        metadata: { source: { kind: "platform-history", file: "log.jsonl" } },
+      })}\n${JSON.stringify({
+        kind: "value",
+        op: "set",
+        seq: 1,
+        namespace: "mikan",
+        key: "metadata",
+        value: { source: { kind: "platform-history", file: "log.jsonl" } },
       })}\n`,
     );
     writeFileSync(join(sessionDir, "current"), "history.jsonl");

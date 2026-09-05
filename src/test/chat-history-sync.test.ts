@@ -54,11 +54,13 @@ function countJsonlEntries(
   return readFileSync(sessionFile, "utf-8")
     .split("\n")
     .filter(Boolean)
-    .map((line) => {
-      // v4 lines: header, entry wrappers, lane pointers, facts. Normalize to
-      // the entry-shaped view the predicates were written against; the header
-      // keeps its v3 spelling ("session") so header-count intents read the same.
-      const parsed = JSON.parse(line) as { kind?: string; type?: string; customType?: string };
+    .flatMap((line) => {
+      const parsed = JSON.parse(line) as
+        | { kind?: string; type?: string; customType?: string }
+        | Array<{ kind?: string; type?: string; customType?: string }>;
+      return Array.isArray(parsed) ? parsed : [parsed];
+    })
+    .map((parsed) => {
       if (parsed.kind === "entry") return parsed;
       if (parsed.kind === "header") return { type: "session" };
       return {};

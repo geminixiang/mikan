@@ -2,19 +2,19 @@
  * Core types for the mikan agent harness.
  *
  * The harness is built directly on pi-agent-core and pi-ai. Sessions use
- * pi's v4 entry model and JSONL format; mikan adds only the header
- * conventions carried in the v4 header `metadata`. Legacy v3 files are
- * handled exclusively by the migration module (`sessions/migrate-v3.ts`).
+ * pi's current v4 entry model and JSONL storage format. mikan-owned
+ * metadata uses a namespaced durable value; legacy v3 and Pi 0.84 v4 files
+ * are handled exclusively by the offline session migrations.
  */
 import type {
   AgentEvent,
+  AgentMessage,
   AgentTool,
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
   Entry,
   MessageEntry,
-  SessionContext,
   ThinkingLevel,
   CompactionSettings,
 } from "@earendil-works/pi-agent-core";
@@ -23,7 +23,12 @@ import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
-export type { BranchSummaryEntry, CompactionEntry, CustomEntry, SessionContext };
+export type { BranchSummaryEntry, CompactionEntry, CustomEntry };
+
+/** Model-visible messages reconstructed from the active session branch. */
+export interface SessionContext {
+  messages: AgentMessage[];
+}
 
 /** Message entry as stored in mikan session files (pi v4). */
 export type SessionMessageEntry = MessageEntry;

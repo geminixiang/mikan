@@ -3,14 +3,13 @@
  *
  *   mikan sessions migrate [--state-dir <dir>] [--workspace <dir>] [--dry-run]
  *
- * `migrate` rewrites legacy v3 session files under the workspace to pi's v4
- * JSONL format. Run it with the daemon stopped: this mikan version cannot
- * read v3 files, and old versions cannot read v4, so the deploy order is
- * stop → migrate → start. Each migrated file is verified against the v3
- * semantics before it replaces the original, and the original is kept as
- * `<file>.v3.bak`.
+ * `migrate` rewrites legacy mikan v3 and Pi 0.84-generation v4 sessions to
+ * Pi's current JSONL v4 storage schema. Run it with the daemon stopped. Each
+ * candidate is verified before atomic replacement, and the original remains
+ * beside it as `<file>.v3.bak` or `<file>.pi-084.bak`.
  */
 import { join, resolve } from "node:path";
+import { findPi084SessionFiles, migratePi084SessionFile } from "../sessions/migrate-pi-084.js";
 import { findV3SessionFiles, migrateSessionFile } from "../sessions/migrate-v3.js";
 import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
 
@@ -48,18 +47,25 @@ export async function runSessionsCommand(argv: string[]): Promise<number> {
   }
 
   const workspaceRoot = workspaceArg ? resolve(workspaceArg) : join(stateDir, "workspace");
-  const files = findV3SessionFiles(workspaceRoot);
-  if (files.length === 0) {
-    console.log(`No v3 session files found under ${workspaceRoot}`);
+  const candidates = [
+    ...findV3SessionFiles(workspaceRoot).map((file) => ({ file, format: "v3" as const })),
+    ...findPi084SessionFiles(workspaceRoot).map((file) => ({ file, format: "pi-084" as const })),
+  ].toSorted((left, right) => left.file.localeCompare(right.file));
+  if (candidates.length === 0) {
+    console.log(`No legacy session files found under ${workspaceRoot}`);
     return 0;
   }
 
-  console.log(`Found ${files.length} v3 session file(s) under ${workspaceRoot}`);
+  console.log(`Found ${candidates.length} legacy session file(s) under ${workspaceRoot}`);
   let migrated = 0;
   let failed = 0;
-  for (const file of files) {
+  for (const candidate of candidates) {
+    const { file } = candidate;
     try {
-      const result = await migrateSessionFile(file, { dryRun });
+      const result =
+        candidate.format === "v3"
+          ? await migrateSessionFile(file, { dryRun })
+          : await migratePi084SessionFile(file, { dryRun });
       if (result.status === "migrated") {
         migrated++;
         console.log(`${dryRun ? "would migrate" : "migrated"}  ${file}`);
@@ -75,7 +81,7 @@ export async function runSessionsCommand(argv: string[]): Promise<number> {
   console.log(
     dryRun
       ? `Dry run: ${migrated} file(s) would be migrated, ${failed} failed to read.`
-      : `Migrated ${migrated} file(s), ${failed} failure(s). Originals kept as *.v3.bak.`,
+      : `Migrated ${migrated} file(s), ${failed} failure(s). Originals kept as *.v3.bak or *.pi-084.bak.`,
   );
   return failed === 0 ? 0 : 1;
 }

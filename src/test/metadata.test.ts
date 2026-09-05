@@ -5,14 +5,29 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { isPlatformHistorySession } from "../sessions/store.js";
 
 function v4Header(metadata?: Record<string, unknown>): string {
-  return `${JSON.stringify({
-    kind: "header",
-    version: 4,
-    id: "abc",
-    createdAt: 1704067200000,
-    cwd: "/tmp",
-    ...(metadata ? { metadata } : {}),
-  })}\n`;
+  const lines = [
+    JSON.stringify({
+      v: 4,
+      kind: "header",
+      id: "abc",
+      storageVersion: 1,
+      createdAt: 1704067200000,
+      cwd: "/tmp",
+    }),
+  ];
+  if (metadata) {
+    lines.push(
+      JSON.stringify({
+        kind: "value",
+        op: "set",
+        seq: 1,
+        namespace: "mikan",
+        key: "metadata",
+        value: metadata,
+      }),
+    );
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 describe("isPlatformHistorySession", () => {

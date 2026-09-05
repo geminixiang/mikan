@@ -54,6 +54,19 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
 
 Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
 
+## 維運遷移
+
+**遷移前請停止 daemon。** 執行：
+
+```bash
+mikan sessions migrate
+```
+
+這項離線轉換會處理舊版 mikan v3 與 Pi 0.84 世代 v4 session files，並將它們
+改寫為目前的 Pi 0.85.0 v4 格式。可視需要使用 `--state-dir`、`--workspace` 或
+`--dry-run`；`--dry-run` 不會修改檔案。原檔案會保留為 `*.v3.bak` 或
+`*.pi-084.bak`。
+
 ## Bootstrap、rotation、Clean session 與 Dream
 
 新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Shared channel 的 top-level session 以每兩週一次的星期日邊界輪替。Rotation 採 lazy 機制而非 cron：跨過邊界後，第一則符合條件的訊息抵達時，mikan 才會檢查目前 session 的 timestamp。

@@ -199,7 +199,7 @@ interface ConversationContext {
 
 ### `SessionStore`
 
-拥有版本 3 的仅追加会话 JSONL 和树重建。`SessionHeader.version` 当前为 `3`（`CURRENT_SESSION_VERSION`）。会话条目可能分支；使用方必须使用 store/context 辅助函数，而不能假定文件是一份扁平的聊天记录。
+负责 Pi 0.85.0 当前 v4 的仅追加会话 JSONL 树。持久化 header 使用 `v: 4` 和 `storageVersion: 1`；mikan 专属 metadata 存储为命名空间持久值 `mikan/metadata`。运行时只接受这一当前格式，因此旧版 mikan v3 和 Pi 0.84 代 v4 文件必须在 daemon 停止时通过 `mikan sessions migrate` 转换。兼容视图中的 `SessionHeader.version` 当前为 `4`（`CURRENT_SESSION_VERSION`）。会话条目可能分支；使用方必须使用 store/context 辅助函数，而不能假定文件是一份扁平的聊天记录。
 
 ### `MikanModels`
 

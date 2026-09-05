@@ -57,6 +57,19 @@ session key は常にちょうど 1 つの会話に属します。プラット�
 
 scoped session は、それがどの top-level session から作られたかを header に記録します。`parentSession`（path）と `parentSessionId`（uuid）です。このリンクは reset をまたいでも維持されます。scoped session をリセットするとファイルは作り直されますが、現在の top-level session に結び直すのではなく、元の parent を保持します。系譜のメタデータが存在する前に書かれた session は、作り直されずそのまま残されます。
 
+## 運用者向けの移行
+
+**移行前に daemon を停止してください。** 実行:
+
+```bash
+mikan sessions migrate
+```
+
+この offline conversion は legacy mikan v3 と Pi 0.84-generation v4 の session
+files を扱い、current Pi 0.85.0 v4 format に書き換えます。必要に応じて
+`--state-dir`、`--workspace`、`--dry-run` を使えます。`--dry-run` は files を
+変更しません。Originals は `*.v3.bak` または `*.pi-084.bak` として残ります。
+
 ## Bootstrap、ローテーション、Clean session、Dream
 
 新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Shared channel の top-level session は隔週の日曜日の境界でローテーションします。ローテーションは cron ではなく遅延実行です。境界を越えた後、最初の該当メッセージが届いた時点で、mikan が現在の session timestamp を確認します。

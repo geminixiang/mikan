@@ -1,9 +1,9 @@
 # src/harness
 
-mikan's model-facing agent harness, built directly on `pi-agent-core` and
-`pi-ai`. It owns model selection, session-tree persistence, the turn loop,
-budgets, retries, compaction, skills, and bounded subagents. Platform adapters
-and Sandbox backends stay outside this module.
+mikan's model-facing agent harness, built directly on Pi 0.85.0's
+`pi-agent-core` and `pi-ai` packages. It owns model selection, session-tree
+persistence, the turn loop, budgets, retries, compaction, skills, and bounded
+subagents. Platform adapters and Sandbox backends stay outside this module.
 
 ## Files
 
@@ -22,6 +22,12 @@ and Sandbox backends stay outside this module.
 | `http.ts`              | shared HTTP dispatcher configuration                                                                                |
 | `types.ts`             | exported harness and subagent types                                                                                 |
 | `index.ts`             | harness module exports                                                                                              |
+
+`SessionStore` persists the current Pi 0.85.0 v4 JSONL format: a header with
+`v: 4` and `storageVersion: 1`, followed by session mutations. mikan-specific
+metadata is stored as the durable namespaced value `mikan/metadata`. Runtime
+opening supports only this current format; legacy mikan v3 and Pi 0.84-generation
+v4 files require `mikan sessions migrate` with the daemon stopped.
 
 ## Run lifecycle
 

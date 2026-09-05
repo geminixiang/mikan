@@ -54,6 +54,18 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 限定范围的会话会在其 header 中记录它由哪个顶层会话创建而来，字段为 `parentSession`（路径）和 `parentSessionId`（uuid）。该链接在重置后依然存在：重置一个限定范围会话会重建它的文件，但保留原来的父会话，而不是重新绑定到当前的那个顶层会话。在谱系元数据出现之前写入的会话会被原样保留，不会重建。
 
+## 运维迁移
+
+**迁移前请停止 daemon。** 执行：
+
+```bash
+mikan sessions migrate
+```
+
+此离线转换会处理旧版 mikan v3 和 Pi 0.84 代 v4 会话文件，并将其改写为当前
+Pi 0.85.0 v4 格式。可按需使用 `--state-dir`、`--workspace` 或 `--dry-run`；
+`--dry-run` 不会修改文件。原文件会保留为 `*.v3.bak` 或 `*.pi-084.bak`。
+
 ## 初始化、轮换、Clean session 与 Dream
 
 新的限定范围会话会从过去 14 天内最多 200 条适用的平台消息初始化。共享频道的顶层会话以每两周一次的星期日边界轮换。轮换采用惰性机制，而不是由 cron 驱动：跨过边界后，第一条符合条件的消息到达时，mikan 才会检查当前会话的时间戳。

@@ -1,16 +1,11 @@
 /**
- * mikan-owned session storage facade over pi-agent-core's v4 sessions.
+ * mikan-owned facade over Pi's current JSONL v4 SessionRepo.
  *
- * Sessions are pi v4 JSONL files: a `{"kind":"header","version":4,...}` line
- * followed by mutation lines (entries, lane pointers, facts, lane records).
- * pi's `Session`/`JsonlSessionStorage` own the format, tree validation, and
- * torn-tail repair; this facade owns mikan's concerns only: session files
- * live at mikan-chosen paths (session-key layout), mikan header extras ride
- * in the v4 header `metadata`, and a missing file behaves as an empty
- * session whose header materializes on the first append.
- *
- * v3 files (the pre-0.84 layout) are not readable at runtime: `open` throws
- * an actionable error pointing at the `mikan sessions migrate` script.
+ * Pi owns entry, branch, value, transaction, and storage validation. mikan
+ * owns exact file paths, single-writer leases, lazy materialization, lineage
+ * metadata, and the stable inspection API consumed by platform runtimes.
+ * Older session generations are rejected and converted only by the offline
+ * `mikan sessions migrate` command.
  */
 import {
   closeSync,
@@ -30,31 +25,52 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  buildSessionContext as buildContextFromEntries,
+  branchTip,
+  createBranchSummaryMessage,
+  createCompactionSummaryMessage,
   createCustomMessage,
-  InMemorySessionStorage,
+  insertEntry,
   JsonlSessionRepo,
-  Session,
+  MemorySessionRepo,
+  setValue,
+  TODO_CONTEXT,
   uuidv7,
+  value,
 } from "@earendil-works/pi-agent-core";
 import type {
   AgentMessage,
+  Branch,
   Entry,
   JsonlSessionMetadata,
-  JsonlV4Header,
+  JsonValue,
+  Session,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../utils/file-guards.js";
-import {
-  CURRENT_SESSION_VERSION,
-  type SessionContext,
-  type SessionCreateInfo,
-  type SessionHeader,
-  type SessionInspection,
+import type {
+  SessionContext,
+  SessionCreateInfo,
+  SessionHeader,
+  SessionInspection,
 } from "./types.js";
+import { CURRENT_SESSION_VERSION } from "./types.js";
 
-/** Live writer claims: lease key → canonical path it was claimed for. */
+interface CurrentSessionHeader {
+  v: 4;
+  kind: "header";
+  id: string;
+  storageVersion: number;
+  createdAt: number;
+  cwd: string;
+  parentSessionId?: string;
+  legacyParentSessionPath?: string;
+  nextSeq?: number;
+}
+
+type MikanSessionMetadata = Record<string, JsonValue>;
+
+const MIKAN_METADATA = value<MikanSessionMetadata>("mikan", "metadata");
 const activeWriterKeys = new Map<string, string>();
 
 function canonicalSessionPath(path: string): string {
@@ -67,22 +83,11 @@ function canonicalSessionPath(path: string): string {
 
 function sessionWriterKey(path: string): string {
   if (!existsSync(path)) return `path:${path}`;
-  const stat = statSync(path);
-  // birthtime disambiguates a deleted-and-recreated file that received the
-  // same reused inode (same path or not). Filesystems without birthtime
-  // report 0 and fall back to dev:ino alone.
-  return `inode:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
+  const stats = statSync(path);
+  return `inode:${stats.dev}:${stats.ino}:${stats.birthtimeMs}`;
 }
 
-/**
- * A claim is stale when the file it was taken for no longer resolves to the
- * claimed identity — deleted or replaced since. Filesystems reuse inodes, so
- * without this check a leaked claim for a deleted file would block an
- * unrelated new file that happens to receive the same dev:ino.
- */
 function isStaleClaim(key: string, claimedPath: string): boolean {
-  // Pending (`path:`) claims guard a file that legitimately does not exist
-  // yet, so absence proves nothing; they are never stale.
   if (!key.startsWith("inode:")) return false;
   return sessionWriterKey(claimedPath) !== key;
 }
@@ -114,27 +119,8 @@ function promotePendingWriter(pathKey: string, path: string): string {
   return inodeKey;
 }
 
-let sharedRepo: JsonlSessionRepo | undefined;
-
-/**
- * Drop undefined-valued properties before durable persistence. pi's agent
- * loop builds messages with explicit `details: undefined` / `usage: undefined`
- * (e.g. tool results from tools that return only `content`), which pi's own
- * v4 durable-payload validator rejects; persistence is a value boundary, so
- * a JSON round-trip matches the validator's semantics exactly.
- */
-function toDurable<T>(value: T): T {
-  return value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
-}
-
-function repo(): JsonlSessionRepo {
-  // The repo is only used to open sessions at explicit paths; its
-  // sessionsRoot layout is never consulted, so one shared instance is fine.
-  sharedRepo ??= new JsonlSessionRepo({
-    fs: new NodeExecutionEnv({ cwd: process.cwd() }),
-    sessionsRoot: process.cwd(),
-  });
-  return sharedRepo;
+function toDurable<T>(input: T): T {
+  return input === undefined ? input : (JSON.parse(JSON.stringify(input)) as T);
 }
 
 class SessionFormatError extends Error {}
@@ -142,7 +128,6 @@ class SessionFormatError extends Error {}
 const HEADER_CHUNK_SIZE = 4096;
 const MAX_HEADER_BYTES = 1024 * 1024;
 
-/** Read only the first JSONL line rather than loading the complete session. */
 function readHeaderLine(filePath: string): string {
   const fd = openSync(filePath, "r");
   const chunks: Buffer[] = [];
@@ -169,55 +154,89 @@ function readHeaderLine(filePath: string): string {
   return Buffer.concat(chunks).toString("utf-8");
 }
 
-/** Parse the first line of a session file into a v4 header, or explain why not. */
-function parseV4Header(filePath: string, firstLine: string): JsonlV4Header {
-  firstLine = firstLine.trim();
-  if (!firstLine) throw new SessionFormatError(`Session file has a blank header line: ${filePath}`);
+function parseCurrentHeader(filePath: string, firstLine: string): CurrentSessionHeader {
+  const trimmed = firstLine.trim();
+  if (!trimmed) throw new SessionFormatError(`Session file has a blank header line: ${filePath}`);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(firstLine);
+    parsed = JSON.parse(trimmed);
   } catch {
     throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  const record = parsed as {
-    kind?: unknown;
-    type?: unknown;
-    version?: unknown;
-    id?: unknown;
-  };
-  if (record.type === "session") {
+  const record = parsed as Record<string, unknown>;
+  if (record.type === "session" || (record.kind === "header" && record.version === 4)) {
+    const generation = record.type === "session" ? "legacy v3" : "Pi 0.84 v4";
     throw new SessionFormatError(
-      `Session file uses the legacy v3 format: ${filePath}. Run \`mikan sessions migrate\` before starting this mikan version.`,
+      `Session file uses the ${generation} format: ${filePath}. Run \`mikan sessions migrate\` before starting this mikan version.`,
     );
   }
-  if (record.kind !== "header" || record.version !== 4 || typeof record.id !== "string") {
+  if (
+    record.kind !== "header" ||
+    record.v !== 4 ||
+    record.storageVersion !== 1 ||
+    typeof record.id !== "string" ||
+    typeof record.createdAt !== "number" ||
+    typeof record.cwd !== "string"
+  ) {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  return parsed as JsonlV4Header;
+  return parsed as CurrentSessionHeader;
 }
 
-function metadataFromHeader(header: JsonlV4Header, path: string): JsonlSessionMetadata {
+function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSessionMetadata {
   return {
     id: header.id,
     createdAt: header.createdAt,
+    storageVersion: header.storageVersion,
     cwd: header.cwd,
     path,
     modifiedAt: 0,
-    sourceFormat: 4,
     ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
     ...(header.legacyParentSessionPath !== undefined
       ? { legacyParentSessionPath: header.legacyParentSessionPath }
       : {}),
-    ...(header.metadata !== undefined ? { metadata: header.metadata } : {}),
   };
+}
+
+function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined {
+  let current: MikanSessionMetadata | undefined;
+  const lines = readFileSync(filePath, "utf-8").split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (index === 0 || line.trim() === "") continue;
+    let transaction: unknown;
+    try {
+      transaction = JSON.parse(line);
+    } catch {
+      if (index === lines.length - 1) break;
+      continue;
+    }
+    const writes = Array.isArray(transaction) ? transaction : [transaction];
+    for (const candidate of writes) {
+      if (typeof candidate !== "object" || candidate === null) continue;
+      const write = candidate as Record<string, unknown>;
+      if (write.kind !== "value" || write.namespace !== "mikan" || write.key !== "metadata") {
+        continue;
+      }
+      if (write.op === "delete") current = undefined;
+      else if (
+        write.op === "set" &&
+        typeof write.value === "object" &&
+        write.value !== null &&
+        !Array.isArray(write.value)
+      ) {
+        current = write.value as MikanSessionMetadata;
+      }
+    }
+  }
+  return current;
 }
 
 function fileFingerprint(path: string): string {
   const bytes = readFileSync(path);
   const fd = openSync(path, "r");
   try {
-    const stat = fstatSync(fd);
-    return `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${bytes.toString("base64")}`;
+    const stats = fstatSync(fd);
+    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${bytes.toString("base64")}`;
   } finally {
     closeSync(fd);
   }
@@ -225,11 +244,12 @@ function fileFingerprint(path: string): string {
 
 function materializePendingFile(
   path: string,
-  header: JsonlV4Header,
+  header: CurrentSessionHeader,
   expectedFingerprint: string | null,
 ): void {
   const content = `${JSON.stringify(header)}\n`;
   if (expectedFingerprint === null) {
+    mkdirSync(dirname(path), { recursive: true });
     const fd = openSync(path, "wx", 0o600);
     try {
       writeFileSync(fd, content);
@@ -238,13 +258,12 @@ function materializePendingFile(
     }
     return;
   }
-
   const fd = openSync(path, "r+");
   try {
-    const stat = fstatSync(fd);
-    const bytes = Buffer.alloc(stat.size);
+    const stats = fstatSync(fd);
+    const bytes = Buffer.alloc(stats.size);
     readSync(fd, bytes, 0, bytes.length, 0);
-    const actual = `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${bytes.toString("base64")}`;
+    const actual = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${bytes.toString("base64")}`;
     if (actual !== expectedFingerprint) {
       throw new Error(`Session file changed before pending session materialization: ${path}`);
     }
@@ -255,24 +274,38 @@ function materializePendingFile(
   }
 }
 
-function buildHeader(cwd: string, options?: SessionCreateInfo): JsonlV4Header {
+function buildHeader(
+  cwd: string,
+  options?: SessionCreateInfo,
+): { header: CurrentSessionHeader; metadata?: MikanSessionMetadata } {
+  const metadata =
+    options?.parentSession === undefined
+      ? undefined
+      : ({ parentSessionPath: options.parentSession } satisfies MikanSessionMetadata);
   return {
-    kind: "header",
-    version: 4,
-    id: options?.id ?? uuidv7(),
-    createdAt: Date.now(),
-    cwd,
-    ...(options?.parentSessionId !== undefined ? { parentSessionId: options.parentSessionId } : {}),
-    // The v3 parent *path* has no dedicated v4 slot when the id is known;
-    // preserve it in metadata so lineage debugging keeps working.
-    ...(options?.parentSession !== undefined
-      ? { metadata: { parentSessionPath: options.parentSession } }
-      : {}),
+    header: {
+      v: 4,
+      kind: "header",
+      id: options?.id ?? uuidv7(),
+      storageVersion: 1,
+      createdAt: Date.now(),
+      cwd,
+      ...(options?.parentSessionId !== undefined
+        ? { parentSessionId: options.parentSessionId }
+        : {}),
+      ...(options?.parentSession !== undefined
+        ? { legacyParentSessionPath: options.parentSession }
+        : {}),
+    },
+    ...(metadata !== undefined ? { metadata } : {}),
   };
 }
 
-function headerView(header: JsonlV4Header): SessionHeader {
-  const metadata = header.metadata as Record<string, unknown> | undefined;
+function headerView(header: CurrentSessionHeader, metadata?: MikanSessionMetadata): SessionHeader {
+  const parentSession =
+    typeof metadata?.parentSessionPath === "string"
+      ? metadata.parentSessionPath
+      : header.legacyParentSessionPath;
   return {
     type: "session",
     version: CURRENT_SESSION_VERSION,
@@ -280,116 +313,168 @@ function headerView(header: JsonlV4Header): SessionHeader {
     timestamp: new Date(header.createdAt).toISOString(),
     cwd: header.cwd,
     ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
-    ...(typeof metadata?.parentSessionPath === "string"
-      ? { parentSession: metadata.parentSessionPath }
-      : {}),
-    ...(header.legacyParentSessionPath !== undefined && metadata?.parentSessionPath === undefined
-      ? { parentSession: header.legacyParentSessionPath }
-      : {}),
+    ...(parentSession !== undefined ? { parentSession } : {}),
     ...(metadata !== undefined ? { metadata } : {}),
   };
 }
 
-type StoreState =
-  | { kind: "live"; session: Session; header: JsonlV4Header }
-  | { kind: "pending"; header: JsonlV4Header; fingerprint: string | null };
+function fileRepo(path: string): JsonlSessionRepo {
+  return new JsonlSessionRepo({
+    fileSystem: new NodeExecutionEnv({ cwd: process.cwd() }),
+    sessionsRoot: dirname(path),
+  });
+}
 
-class ReadOnlySessionInspection implements SessionInspection {
-  constructor(
-    private readonly header: JsonlV4Header,
-    private readonly session: Session,
-  ) {}
-
-  getHeader(): SessionHeader {
-    return headerView(this.header);
-  }
-
-  async getEntries(): Promise<Entry[]> {
-    return this.session.findEntries({ order: "oldestFirst" });
-  }
-
-  async getSessionName(): Promise<string | undefined> {
-    return this.session.getName();
-  }
-
-  async getBranch(fromId?: string): Promise<Entry[]> {
-    return this.session.findEntriesOnBranch({
-      order: "oldestFirst",
-      ...(fromId !== undefined ? { start: fromId } : {}),
-    });
-  }
-
-  async buildSessionContext(): Promise<SessionContext> {
-    return buildContextFromEntries(await this.getBranch());
+async function openFileSession(
+  path: string,
+  header: CurrentSessionHeader,
+): Promise<{ session: Session<JsonlSessionMetadata>; repo: JsonlSessionRepo }> {
+  const sessionRepo = fileRepo(path);
+  try {
+    const session = await sessionRepo.open(metadataFromHeader(header, path), TODO_CONTEXT);
+    return { session, repo: sessionRepo };
+  } catch (error) {
+    await sessionRepo.close(TODO_CONTEXT);
+    throw error;
   }
 }
 
-/**
- * Async session store over one pi v4 JSONL file at a mikan-chosen path.
- *
- * A missing or empty file opens as an empty session; the header (and file)
- * materialize on the first append. Files with content must carry a valid
- * v4 header — v3 files throw with a pointer at the migration script.
- */
+async function mainBranch(session: Session, create: boolean): Promise<Branch | undefined> {
+  const existing = await session.branch("main", TODO_CONTEXT);
+  if (existing || !create) return existing;
+  return session.createBranch("main", null, TODO_CONTEXT);
+}
+
+function isContextMessage(message: AgentMessage): boolean {
+  return (
+    message.role !== "assistant" ||
+    (message.stopReason !== "error" &&
+      message.stopReason !== "aborted" &&
+      message.stopReason !== "deferred")
+  );
+}
+
+function buildContext(entries: Entry[]): SessionContext {
+  const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
+  const visibleEntries =
+    compactionIndex === -1
+      ? entries
+      : [entries[compactionIndex]!, ...entries.slice(compactionIndex + 1)];
+  const messages: AgentMessage[] = [];
+  for (const entry of visibleEntries) {
+    if (entry.type === "message") {
+      if (isContextMessage(entry.message)) messages.push(entry.message);
+    } else if (entry.type === "compaction") {
+      messages.push(
+        createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp),
+        ...entry.retainedTail.filter(isContextMessage),
+      );
+    } else if (entry.type === "branch_summary" && entry.summary) {
+      messages.push(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
+    }
+  }
+  return { messages };
+}
+
+interface LiveState {
+  kind: "live";
+  session: Session;
+  header: CurrentSessionHeader;
+  metadata?: MikanSessionMetadata;
+  repo?: JsonlSessionRepo | MemorySessionRepo;
+}
+
+interface PendingState {
+  kind: "pending";
+  header: CurrentSessionHeader;
+  metadata?: MikanSessionMetadata;
+  fingerprint: string | null;
+}
+
+type StoreState = LiveState | PendingState;
+
+class CachedSessionInspection implements SessionInspection {
+  constructor(
+    private readonly header: SessionHeader,
+    private readonly entries: Entry[],
+    private readonly name: string | undefined,
+    private readonly branch: Entry[],
+    private readonly context: SessionContext,
+  ) {}
+
+  getHeader(): SessionHeader {
+    return structuredClone(this.header);
+  }
+
+  async getEntries(): Promise<Entry[]> {
+    return structuredClone(this.entries);
+  }
+
+  async getSessionName(): Promise<string | undefined> {
+    return this.name;
+  }
+
+  async getBranch(fromId?: string): Promise<Entry[]> {
+    if (fromId === undefined) return structuredClone(this.branch);
+    const byId = new Map(this.entries.map((entry) => [entry.id, entry]));
+    const result: Entry[] = [];
+    let current = byId.get(fromId);
+    while (current) {
+      result.push(current);
+      current = current.parentId === null ? undefined : byId.get(current.parentId);
+    }
+    return result.toReversed();
+  }
+
+  async buildSessionContext(): Promise<SessionContext> {
+    return structuredClone(this.context);
+  }
+}
+
 export class SessionStore implements SessionInspection {
-  private readonly sessionFile: string | null;
-  private readonly cwd: string;
-  private writerKey: string | null;
-  private state: StoreState;
   private mutationTail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closed = false;
 
   private constructor(
-    sessionFile: string | null,
-    cwd: string,
-    state: StoreState,
-    writerKey: string | null,
-  ) {
-    this.sessionFile = sessionFile;
-    this.cwd = cwd;
-    this.state = state;
-    this.writerKey = writerKey;
-  }
+    private readonly sessionFile: string | null,
+    private readonly cwd: string,
+    private state: StoreState,
+    private writerKey: string | null,
+  ) {}
 
-  /**
-   * Open a session file. Missing and empty files start an empty session
-   * whose header is written on the first append.
-   * @param cwdOverride Working directory override; defaults to the header cwd.
-   */
   static async open(path: string, cwdOverride?: string): Promise<SessionStore> {
     const writer = acquireWriter(path);
     const writerPath = writer.path;
     try {
       if (!existsSync(writerPath)) {
         const cwd = cwdOverride ?? process.cwd();
+        const built = buildHeader(cwd);
         return new SessionStore(
           writerPath,
           cwd,
-          { kind: "pending", header: buildHeader(cwd), fingerprint: null },
+          { kind: "pending", ...built, fingerprint: null },
           writer.key,
         );
       }
       const firstLine = readHeaderLine(writerPath);
       if (firstLine.trim().length === 0) {
         const cwd = cwdOverride ?? process.cwd();
+        const built = buildHeader(cwd);
         return new SessionStore(
           writerPath,
           cwd,
-          {
-            kind: "pending",
-            header: buildHeader(cwd),
-            fingerprint: fileFingerprint(writerPath),
-          },
+          { kind: "pending", ...built, fingerprint: fileFingerprint(writerPath) },
           writer.key,
         );
       }
-      const header = parseV4Header(writerPath, firstLine);
-      const session = await repo().open(metadataFromHeader(header, writerPath));
+      const header = parseCurrentHeader(writerPath, firstLine);
+      const metadata = parseMikanMetadata(writerPath);
+      const opened = await openFileSession(writerPath, header);
       return new SessionStore(
         writerPath,
         cwdOverride ?? header.cwd,
-        { kind: "live", session, header },
+        { kind: "live", header, metadata, ...opened },
         writer.key,
       );
     } catch (error) {
@@ -398,23 +483,39 @@ export class SessionStore implements SessionInspection {
     }
   }
 
-  /** Open an immutable inspection handle that does not acquire a writer lease. */
   static async inspect(path: string): Promise<SessionInspection> {
     const resolvedPath = canonicalSessionPath(path);
     const snapshotDir = mkdtempSync(join(tmpdir(), "mikan-session-inspect-"));
     const snapshotPath = join(snapshotDir, basename(resolvedPath));
+    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
     try {
       writeFileSync(snapshotPath, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
-      const firstLine = readHeaderLine(snapshotPath);
-      const header = parseV4Header(resolvedPath, firstLine);
-      const session = await repo().open(metadataFromHeader(header, snapshotPath));
-      return new ReadOnlySessionInspection(header, session);
+      const header = parseCurrentHeader(resolvedPath, readHeaderLine(snapshotPath));
+      const metadata = parseMikanMetadata(snapshotPath);
+      opened = await openFileSession(snapshotPath, header);
+      const entries = await opened.session.findEntries({ order: "asc" }, TODO_CONTEXT);
+      const name = await opened.session.getName(TODO_CONTEXT);
+      const branchObject = await mainBranch(opened.session, false);
+      const branch = branchObject
+        ? await branchObject.findEntries({ order: "oldestFirst" }, TODO_CONTEXT)
+        : [];
+      const context = buildContext(branch);
+      return new CachedSessionInspection(
+        headerView(header, metadata),
+        entries,
+        name,
+        branch,
+        context,
+      );
     } finally {
+      if (opened) {
+        await opened.session.close(TODO_CONTEXT);
+        await opened.repo.close(TODO_CONTEXT);
+      }
       rmSync(snapshotDir, { recursive: true, force: true });
     }
   }
 
-  /** Create a new session file exclusively; existing content is never replaced. */
   static async create(
     path: string,
     cwd: string,
@@ -423,23 +524,27 @@ export class SessionStore implements SessionInspection {
     const writer = acquireWriter(path);
     const writerPath = writer.path;
     let leaseKey = writer.key;
+    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
     try {
-      const header = buildHeader(cwd, options);
-      writeFileSync(writerPath, `${JSON.stringify(header)}\n`, { mode: 0o600, flag: "wx" });
+      const built = buildHeader(cwd, options);
+      mkdirSync(dirname(writerPath), { recursive: true });
+      writeFileSync(writerPath, `${JSON.stringify(built.header)}\n`, { mode: 0o600, flag: "wx" });
       leaseKey = promotePendingWriter(leaseKey, writerPath);
-      const session = await repo().open(metadataFromHeader(header, writerPath));
-      return new SessionStore(writerPath, cwd, { kind: "live", session, header }, leaseKey);
+      opened = await openFileSession(writerPath, built.header);
+      if (built.metadata) {
+        await opened.session.setValue(MIKAN_METADATA, built.metadata, TODO_CONTEXT);
+      }
+      return new SessionStore(writerPath, cwd, { kind: "live", ...built, ...opened }, leaseKey);
     } catch (error) {
+      if (opened) {
+        await opened.session.close(TODO_CONTEXT).catch(() => undefined);
+        await opened.repo.close(TODO_CONTEXT).catch(() => undefined);
+      }
       releaseWriter(leaseKey);
       throw error;
     }
   }
 
-  /**
-   * Synchronously read a session file's header without opening the session.
-   * Returns null for missing, empty, or unreadable files; throws only for
-   * v3 files so callers surface the migration requirement.
-   */
   static readHeader(path: string): SessionHeader | null {
     let firstLine: string;
     try {
@@ -449,31 +554,25 @@ export class SessionStore implements SessionInspection {
     }
     if (firstLine.trim().length === 0) return null;
     try {
-      return headerView(parseV4Header(path, firstLine));
+      const header = parseCurrentHeader(path, firstLine);
+      return headerView(header, parseMikanMetadata(path));
     } catch (error) {
-      if (error instanceof SessionFormatError && /legacy v3/.test(error.message)) throw error;
+      if (error instanceof SessionFormatError && /legacy v3|Pi 0\.84 v4/.test(error.message)) {
+        throw error;
+      }
       return null;
     }
   }
 
-  /**
-   * Synchronously write a fresh header-only session file, replacing any
-   * existing file. The session is opened later via {@link SessionStore.open}.
-   */
   static writeHeaderFile(path: string, cwd: string, options?: SessionCreateInfo): void {
     mkdirSync(dirname(path), { recursive: true });
-    atomicWritePrivateFile(path, `${JSON.stringify(buildHeader(cwd, options))}\n`);
+    const built = buildHeader(cwd, options);
+    atomicWritePrivateFile(path, `${JSON.stringify(built.header)}\n`);
   }
 
-  /** Create an ephemeral session that never writes a session file. */
   static inMemory(cwd = process.cwd()): SessionStore {
-    const header = buildHeader(cwd);
-    const storage = new InMemorySessionStorage({
-      id: header.id,
-      createdAt: header.createdAt,
-    });
-    const session = new Session(storage);
-    return new SessionStore(null, cwd, { kind: "live", session, header }, null);
+    const built = buildHeader(cwd);
+    return new SessionStore(null, cwd, { kind: "pending", ...built, fingerprint: null }, null);
   }
 
   getSessionFile(): string | undefined {
@@ -491,13 +590,11 @@ export class SessionStore implements SessionInspection {
     return this.cwd;
   }
 
-  /** Compatibility header view for callers that read mikan session lineage. */
   getHeader(): SessionHeader {
     this.assertOpen();
-    return headerView(this.state.header);
+    return headerView(this.state.header, this.state.metadata);
   }
 
-  /** Stable session id: the header id, or a generated id for fresh sessions. */
   getSessionId(): string {
     this.assertOpen();
     return this.state.header.id;
@@ -506,83 +603,74 @@ export class SessionStore implements SessionInspection {
   async getLeafId(): Promise<string | null> {
     this.assertOpen();
     if (this.state.kind === "pending") return null;
-    return this.state.session.getLeafId();
+    return (await mainBranch(this.state.session, false))?.getTipId(TODO_CONTEXT) ?? null;
   }
 
   async getEntry(id: string): Promise<Entry | undefined> {
     this.assertOpen();
     if (this.state.kind === "pending") return undefined;
-    return this.state.session.getEntry(id);
+    return this.state.session.getEntry(id, TODO_CONTEXT);
   }
 
-  /** All session entries in append order. */
   async getEntries(): Promise<Entry[]> {
     this.assertOpen();
     if (this.state.kind === "pending") return [];
-    return this.state.session.findEntries({ order: "oldestFirst" });
+    return this.state.session.findEntries({ order: "asc" }, TODO_CONTEXT);
   }
 
-  /** Latest user-assigned session name, if any. */
   async getSessionName(): Promise<string | undefined> {
     this.assertOpen();
     if (this.state.kind === "pending") return undefined;
-    return this.state.session.getName();
+    return this.state.session.getName(TODO_CONTEXT);
   }
 
-  /**
-   * Walk from an entry to the root, returning entries in path order
-   * (root first). Defaults to the current leaf.
-   */
   async getBranch(fromId?: string): Promise<Entry[]> {
     this.assertOpen();
     if (this.state.kind === "pending") return [];
-    return this.state.session.findEntriesOnBranch({
-      order: "oldestFirst",
-      ...(fromId !== undefined ? { start: fromId } : {}),
+    if (fromId !== undefined) {
+      return this.state.session.scanBranch({ start: fromId, order: "oldestFirst" }, TODO_CONTEXT);
+    }
+    const branchObject = await mainBranch(this.state.session, false);
+    return branchObject ? branchObject.findEntries({ order: "oldestFirst" }, TODO_CONTEXT) : [];
+  }
+
+  async buildSessionContext(): Promise<SessionContext> {
+    return buildContext(await this.getBranch());
+  }
+
+  async appendMessage(message: AgentMessage): Promise<string> {
+    return this.mutate(async () => {
+      const branchObject = await mainBranch((await this.live()).session, true);
+      if (!branchObject) throw new Error("Failed to create main session branch");
+      return branchObject.appendMessage(toDurable(message), TODO_CONTEXT);
     });
   }
 
-  /**
-   * Build the LLM context (messages, thinking level, model) from the current
-   * branch, resolving compaction and branch summaries along the path.
-   */
-  async buildSessionContext(): Promise<SessionContext> {
-    this.assertOpen();
-    return buildContextFromEntries(await this.getBranch());
-  }
-
-  /** Append a chat message as a child of the current leaf. Returns the entry id. */
-  async appendMessage(message: AgentMessage): Promise<string> {
-    return this.mutate(async () => (await this.live()).appendMessage(toDurable(message)));
-  }
-
-  /** Append a custom application data entry (never sent to the LLM). */
   async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
-    return this.mutate(async () =>
-      (await this.live()).appendCustomEntry(customType, toDurable(data)),
-    );
+    return this.mutate(async () => {
+      const branchObject = await mainBranch((await this.live()).session, true);
+      if (!branchObject) throw new Error("Failed to create main session branch");
+      return branchObject.appendCustomEntry(customType, toDurable(data) as JsonValue, TODO_CONTEXT);
+    });
   }
 
-  /** Append a custom message that participates in LLM context. */
   async appendCustomMessageEntry(
     customType: string,
-    content: string | (TextContent | ImageContent)[],
+    content: string | Array<TextContent | ImageContent>,
     display: boolean,
     details?: unknown,
   ): Promise<string> {
-    return this.mutate(async () =>
-      (await this.live()).appendMessage(
-        toDurable(createCustomMessage(customType, content, display, details, Date.now())),
-      ),
+    return this.appendMessage(
+      toDurable(createCustomMessage(customType, content, display, details, Date.now())),
     );
   }
 
-  /** Record a user-visible session name. */
   async setSessionName(name: string): Promise<void> {
-    await this.mutate(async () => (await this.live()).setName(name.trim() || undefined));
+    await this.mutate(async () =>
+      (await this.live()).session.setName(name.trim() || undefined, TODO_CONTEXT),
+    );
   }
 
-  /** Persist a compaction summary produced for this session. */
   async appendCompaction(
     summary: string,
     retainedTail: AgentMessage[],
@@ -590,28 +678,46 @@ export class SessionStore implements SessionInspection {
     details?: unknown,
   ): Promise<string> {
     return this.mutate(async () => {
-      const session = await this.live();
-      const entry = await session.appendEntry(
-        {
-          type: "compaction",
-          id: session.idGenerator.next(),
-          summary,
-          retainedTail: toDurable(retainedTail),
-          tokensBefore,
-          ...(details !== undefined ? { details: toDurable(details) } : {}),
-        },
-        "main",
-      );
-      return entry.id;
+      const { session } = await this.live();
+      const id = session.idGenerator.next();
+      await session.mutate(async (mutator, context) => {
+        const currentTip = await mutator.getValue(branchTip("main"), context);
+        await mutator.commit(
+          [
+            insertEntry({
+              type: "compaction",
+              id,
+              parentId: currentTip?.value ?? null,
+              summary,
+              retainedTail: toDurable(retainedTail),
+              tokensBefore,
+              fromHook: false,
+              ...(details !== undefined ? { details: toDurable(details) as JsonValue } : {}),
+            }),
+            setValue(branchTip("main"), id),
+          ],
+          context,
+        );
+      }, TODO_CONTEXT);
+      return id;
     });
   }
 
   async close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
-    this.closePromise = this.mutationTail.finally(() => {
-      if (this.writerKey !== null) releaseWriter(this.writerKey);
-    });
+    this.closePromise = this.mutationTail
+      .then(async () => {
+        if (this.state.kind !== "live") return;
+        try {
+          await this.state.session.close(TODO_CONTEXT);
+        } finally {
+          await this.state.repo?.close(TODO_CONTEXT);
+        }
+      })
+      .finally(() => {
+        if (this.writerKey !== null) releaseWriter(this.writerKey);
+      });
     return this.closePromise;
   }
 
@@ -629,18 +735,45 @@ export class SessionStore implements SessionInspection {
     return result;
   }
 
-  /** Materialize the session file (when persisted) and return the live session. */
-  private async live(): Promise<Session> {
-    if (this.state.kind === "live") return this.state.session;
+  private async live(): Promise<LiveState> {
+    if (this.state.kind === "live") return this.state;
     const pending = this.state;
-    const header = pending.header;
     const sessionFile = this.sessionFile;
-    if (sessionFile === null) throw new Error("Pending session must have a session file");
-    materializePendingFile(sessionFile, header, pending.fingerprint);
+    if (sessionFile === null) {
+      const repo = new MemorySessionRepo();
+      const session = await repo.create(
+        {
+          id: pending.header.id,
+          ...(pending.header.parentSessionId !== undefined
+            ? { parentSessionId: pending.header.parentSessionId }
+            : {}),
+        },
+        TODO_CONTEXT,
+      );
+      const live: LiveState = {
+        kind: "live",
+        header: pending.header,
+        metadata: pending.metadata,
+        session,
+        repo,
+      };
+      this.state = live;
+      return live;
+    }
+    materializePendingFile(sessionFile, pending.header, pending.fingerprint);
     if (this.writerKey === null) throw new Error("Pending session must have a writer lease");
     this.writerKey = promotePendingWriter(this.writerKey, sessionFile);
-    const session = await repo().open(metadataFromHeader(header, sessionFile));
-    this.state = { kind: "live", session, header };
-    return session;
+    const opened = await openFileSession(sessionFile, pending.header);
+    if (pending.metadata) {
+      await opened.session.setValue(MIKAN_METADATA, pending.metadata, TODO_CONTEXT);
+    }
+    const live: LiveState = {
+      kind: "live",
+      header: pending.header,
+      metadata: pending.metadata,
+      ...opened,
+    };
+    this.state = live;
+    return live;
   }
 }
