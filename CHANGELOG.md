@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.48]
+
 ### Added
 
 - Add an offline session migration for Pi 0.84-generation v4 JSONL files, with verified atomic replacement and preserved `*.pi-084.bak` originals.
