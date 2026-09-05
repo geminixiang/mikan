@@ -286,6 +286,30 @@ describe("setTyping()", () => {
     expect(bot.postReply).not.toHaveBeenCalled();
   });
 
+  test("typing repeats every 8 seconds and stops after the first response", async () => {
+    vi.useFakeTimers();
+    try {
+      const bot = makeDiscordMessagingBot();
+      const { responder } = createDiscordAdapters(makeEvent(), bot);
+
+      await responder.setTyping(true);
+      expect(bot.sendTyping).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(7999);
+      expect(bot.sendTyping).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(bot.sendTyping).toHaveBeenCalledTimes(2);
+      expect(bot.sendTyping).toHaveBeenNthCalledWith(2, "CH001");
+
+      await responder.respond("hello");
+      expect(bot.postReply).toHaveBeenCalledWith("CH001", "MSG001", "hello ...");
+      await vi.advanceTimersByTimeAsync(16000);
+      expect(bot.sendTyping).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   test("setTyping(false) stops typing and allows restart", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });

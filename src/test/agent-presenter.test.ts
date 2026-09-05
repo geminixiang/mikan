@@ -329,4 +329,86 @@ describe("presenter event routing", () => {
       { style: "error" },
     );
   });
+
+  test("reactivation clears completed tool progress, subagent dashboard, and attribution", async () => {
+    const { emit, responder, runQueue, runState } = attachPresenter();
+    try {
+      await emit({
+        type: "tool_execution_start",
+        toolCallId: "tool-1",
+        toolName: "read",
+        args: { label: "Inspect file" },
+      });
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: "tool-1",
+        toolName: "read",
+        result: "contents",
+        isError: false,
+      });
+      await emit({ type: "message_end", message: fauxAssistantMessage("first answer") });
+      await runQueue.wait();
+      expect(responder.finishResponse).toHaveBeenLastCalledWith(
+        "✓ Inspect file\n\nfirst answer\n\n_Triggered by @alice_",
+      );
+
+      await emit({
+        type: "tool_execution_start",
+        toolCallId: "subagent-1",
+        toolName: "subagent",
+        args: { label: "Delegate work" },
+      });
+      await emit({
+        type: "tool_execution_update",
+        toolCallId: "subagent-1",
+        toolName: "subagent",
+        args: { label: "Delegate work" },
+        partialResult: {
+          details: {
+            progress: {
+              mode: "single",
+              nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
+            },
+          },
+        },
+      });
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: "subagent-1",
+        toolName: "subagent",
+        result: "done",
+        isError: false,
+      });
+      await runQueue.wait();
+      expect(responder.replaceResponse).toHaveBeenLastCalledWith(
+        expect.stringContaining("Inspect code"),
+        undefined,
+      );
+      expect(runState.toolProgress.size).toBe(2);
+      expect(runState.completedSubagentProgress).toHaveLength(1);
+    } finally {
+      runQueue.dispose();
+    }
+
+    const nextResponder = makeResponder();
+    const next = activateRunPresentation(runState, {
+      responder: nextResponder,
+      sessionConversation: "C1",
+      userName: "bob",
+      sessionUuid: "session-1",
+      triggerAttribution: undefined,
+    });
+    try {
+      expect(runState.toolProgress.size).toBe(0);
+      expect(runState.completedSubagentProgress).toEqual([]);
+      await emit({ type: "message_end", message: fauxAssistantMessage("second answer") });
+      await next.wait();
+      expect(nextResponder.finishResponse).toHaveBeenCalledTimes(1);
+      expect(nextResponder.finishResponse).toHaveBeenCalledWith("second answer");
+      expect(nextResponder.replaceResponse).not.toHaveBeenCalled();
+      expect(responder.finishResponse).toHaveBeenCalledTimes(1);
+    } finally {
+      next.dispose();
+    }
+  });
 });

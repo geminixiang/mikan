@@ -13,6 +13,7 @@ function makeTelegramMessagingBot(
   return {
     postMessageRaw: vi.fn().mockResolvedValue(1001),
     postReply: vi.fn().mockResolvedValue(1002),
+    postPlainMessage: vi.fn().mockResolvedValue(undefined),
     updateMessage: vi.fn().mockResolvedValue(undefined),
     deleteMessageRaw: vi.fn().mockResolvedValue(undefined),
     sendTyping: vi.fn().mockResolvedValue(undefined),
@@ -152,6 +153,40 @@ describe("respond() — non-threaded", () => {
       "Usage: gws +read --id <ID> with **bold**",
     );
   });
+
+  test.each(["resolves", "rejects"])(
+    "recovers from a failed rich post when the plain notification %s",
+    async (notification) => {
+      const bot = makeTelegramMessagingBot({
+        postMessageRaw: vi
+          .fn()
+          .mockRejectedValueOnce(new Error("can't parse entities"))
+          .mockResolvedValue(2001),
+        postPlainMessage:
+          notification === "rejects"
+            ? vi.fn().mockRejectedValue(new Error("plain send failed"))
+            : vi.fn().mockResolvedValue(undefined),
+      });
+      const event = makeEvent({ thread_ts: undefined });
+      const { responder } = createTelegramAdapters(event, bot);
+
+      await expect(responder.respond("first")).resolves.toBeUndefined();
+      expect(bot.postPlainMessage).toHaveBeenCalledTimes(1);
+      expect(bot.postPlainMessage).toHaveBeenCalledWith(
+        123456,
+        expect.stringContaining("can't parse entities"),
+      );
+      // The notice goes through the plain sender only, never back into the rich pipeline.
+      expect(bot.postMessageRaw).toHaveBeenCalledTimes(1);
+
+      // The failed text stays in the accumulated source, so the next send
+      // re-posts it together with the new line rather than dropping it.
+      await responder.respond("second");
+      expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
+      expect(bot.postMessageRaw).toHaveBeenLastCalledWith(123456, "first\nsecond");
+      expect(bot.postPlainMessage).toHaveBeenCalledTimes(1);
+    },
+  );
 });
 
 describe("respond() — threaded (reply to parent message)", () => {

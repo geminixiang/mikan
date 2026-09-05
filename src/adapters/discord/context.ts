@@ -85,9 +85,7 @@ export function createDiscordAdapters(
       replyTargetId,
       conversationKind: message.conversationKind,
     }),
-    post: async (text) => {
-      return postFirst(text);
-    },
+    post: postFirst,
     update: (id, text) => bot.updateMessageRaw(channelId, id, text),
     // Returns the id so the renderer can edit this overflow message on the
     // next redraw instead of posting another copy of the tail.
@@ -97,9 +95,7 @@ export function createDiscordAdapters(
       if (responseId !== null) return bot.postReply(channelId, responseId, text);
       return bot.postMessage(channelId, text);
     },
-    delete: async (id) => {
-      await bot.deleteMessageRaw(channelId, id);
-    },
+    delete: (id) => bot.deleteMessageRaw(channelId, id),
     logBotResponse: (text, id) => bot.logBotResponse(channelId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
   });

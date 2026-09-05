@@ -118,6 +118,30 @@ this does not establish completion of the broader review.
    Full lint, format, knip, build, and test gates pass (121 files, 1687 tests).
    GitHub validation uses mocks; live API and enqueueEvent coverage remain out
    of scope for this checkpoint.
-6. Finish the requirement-by-requirement scope audit and summarize approved
+6. After pushing checkpoint `9f8db6d`, completed five additional bounded rounds
+   with Herdr Claude Code and Pi. The integrator decided scope, delegated edits,
+   inspected actual diffs, collected cross-reviews, and verified the aggregate:
+   - Round 1: Telegram rich-send failure notification/recovery and Discord
+     8-second typing repetition/stop-on-first-send regression coverage. Corrected
+     an initially wrong test expectation: failed source remains accumulated.
+   - Round 2: Removed four redundant Promise forwarding wrappers in Discord and
+     Telegram contexts. Kept destinations, numeric ID conversion, renderer await
+     boundaries, and platform-local formatting. Promise identity/microtask count
+     is not preserved; direct callers do not rely on it.
+   - Round 3: Removed the redundant `PresenterEventContext.pendingTools` field;
+     handlers now access the same Map through run state. Nullable context fields
+     still serve narrowing and were retained; the two tool Maps remain separate.
+   - Round 4: Parameterized Telegram recovery coverage to include failure of the
+     plain-text failure notice itself. Both cases preserve source and a usable
+     queue; no production error-handling policy changed.
+   - Round 5: Presenter reactivation coverage starts with completed ordinary and
+     subagent progress, then verifies cleared state and an uncontaminated answer
+     on the new responder. This covers activation, not full runner finalization.
+     Cross-reviews found no remaining blockers. Integrator verification: five
+     focused suites / 135 tests; full lint, format, knip, build, and test gates pass
+     (121 files / 1691 tests), plus diff checks. No live platform tests were run.
+     These five rounds are complete, not a claim that the broader architecture
+     audit or deferred persistence-failure investigation is complete.
+7. Finish the requirement-by-requirement scope audit and summarize approved
    changes versus deferred behavioral or upstream-migration decisions. Repeat the
    full gate if subsequent implementation changes are made.

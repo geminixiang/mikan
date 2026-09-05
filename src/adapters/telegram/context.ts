@@ -77,10 +77,8 @@ export function createTelegramAdapters(
     update: (id, text) => bot.updateMessage(conversationId, id, text),
     // Returns the id so the renderer can edit this overflow message on the
     // next redraw instead of posting another copy of the tail.
-    postExtra: async (text) => bot.postMessageRaw(chatId, text),
-    delete: async (id) => {
-      await bot.deleteMessageRaw(chatId, Number(id));
-    },
+    postExtra: (text) => bot.postMessageRaw(chatId, text),
+    delete: (id) => bot.deleteMessageRaw(chatId, Number(id)),
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),
   });

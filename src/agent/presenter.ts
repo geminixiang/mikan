@@ -472,7 +472,6 @@ type PresenterEventContext = {
   responder: ConversationResponder;
   logCtx: NonNullable<RunnerSessionState["logCtx"]>;
   queue: NonNullable<RunnerSessionState["queue"]>;
-  pendingTools: RunnerSessionState["pendingTools"];
   baseAttrs: { channel_id: string; session_id: string | undefined };
   agentEventSessionId: string;
   model: Model<Api>;
@@ -492,8 +491,7 @@ type LifecycleEvent = Extract<
 >;
 
 function handleToolStart(event: ToolStartEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx, queue, pendingTools, baseAttrs, agentEventSessionId } =
-    context;
+  const { runState, responder, logCtx, queue, baseAttrs, agentEventSessionId } = context;
   const args = (event.args ?? {}) as { label?: string };
   const label = args.label || event.toolName;
   sendAgentEvent({
@@ -506,7 +504,7 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
       input: { label },
     },
   });
-  pendingTools.set(event.toolCallId, {
+  runState.pendingTools.set(event.toolCallId, {
     toolName: event.toolName,
     args: event.args,
     startTime: Date.now(),
@@ -561,9 +559,9 @@ function recordToolMetrics(
 }
 
 function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx, pendingTools, agentEventSessionId } = context;
+  const { runState, responder, logCtx, agentEventSessionId } = context;
   const resultStr = extractToolResultText(event.result);
-  const pending = pendingTools.get(event.toolCallId);
+  const pending = runState.pendingTools.get(event.toolCallId);
   sendAgentEvent({
     sessionId: agentEventSessionId,
     actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
@@ -582,7 +580,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   const completedProgress = runState.subagentProgress.get(event.toolCallId);
   if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
   runState.subagentProgress.delete(event.toolCallId);
-  pendingTools.delete(event.toolCallId);
+  runState.pendingTools.delete(event.toolCallId);
   const durationMs = pending ? Date.now() - pending.startTime : 0;
   recordToolMetrics(event, durationMs, context);
   if (event.isError) {
@@ -824,7 +822,6 @@ export function attachSessionEventHandlers(params: {
       responder: runState.responder,
       logCtx: runState.logCtx,
       queue: runState.queue,
-      pendingTools: runState.pendingTools,
       baseAttrs: {
         channel_id: runState.logCtx.conversationId,
         session_id: runState.logCtx.sessionId,
