@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.49]
+
 ### Changed
 
 - Configure OpenConnector only at startup with `OPENCONNECTOR_ENDPOINT` and `OPENCONNECTOR_ADMIN_TOKEN`; ignore settings overrides of the reserved server, and reduce the Admin MCP Marketplace to the Metabase preset.
