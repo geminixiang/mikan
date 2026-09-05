@@ -26,7 +26,6 @@ export class SessionLifecycle {
   private readonly transitions = new Map<string, Promise<void>>();
   private readonly queues = new Map<string, Promise<void>>();
   private readonly leases = new Map<string, number>();
-  private readonly settlements = new Set<Promise<void>>();
   private readonly settlementSessions = new Map<Promise<void>, string>();
   private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
@@ -132,7 +131,6 @@ export class SessionLifecycle {
       .then(work)
       .finally(() => this.finishSettlement(state, settlement, id));
     state.runSettlement = settlement;
-    this.settlements.add(settlement);
     this.settlementSessions.set(settlement, id);
     return settlement;
   }
@@ -142,7 +140,6 @@ export class SessionLifecycle {
     settlement: Promise<void>,
     id: string,
   ): void {
-    this.settlements.delete(settlement);
     this.settlementSessions.delete(settlement);
     if (state.runSettlement === settlement) state.runSettlement = undefined;
     state.running = false;
@@ -153,7 +150,7 @@ export class SessionLifecycle {
   }
 
   settlementCount(): number {
-    return this.settlements.size;
+    return this.settlementSessions.size;
   }
 
   async enqueue(

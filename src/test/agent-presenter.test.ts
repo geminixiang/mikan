@@ -1,7 +1,11 @@
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ConversationResponder } from "../adapter.js";
-import { attachSessionEventHandlers, createRunQueue, createRunState } from "../agent/presenter.js";
+import {
+  activateRunPresentation,
+  attachSessionEventHandlers,
+  createRunState,
+} from "../agent/presenter.js";
 import type { HarnessEvent, HarnessEventListener, MikanAgentSession } from "../harness/index.js";
 
 function makeResponder(): ConversationResponder & {
@@ -35,15 +39,13 @@ function attachPresenter() {
   } as MikanAgentSession;
   const responder = makeResponder();
   const runState = createRunState();
-  runState.responder = responder;
-  runState.logCtx = {
-    conversationId: "C1",
+  const runQueue = activateRunPresentation(runState, {
+    responder,
+    sessionConversation: "C1",
     userName: "alice",
-    sessionId: "session-1",
-  };
-  const runQueue = createRunQueue(responder, runState);
-  runState.queue = runQueue.queue;
-  runState.triggerAttribution = "@alice";
+    sessionUuid: "session-1",
+    triggerAttribution: "@alice",
+  });
   const model = fauxProvider().getModel();
 
   attachSessionEventHandlers({
@@ -63,9 +65,79 @@ function attachPresenter() {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("presenter event routing", () => {
+  test("disposal cancels scheduled progress and ignores events until reactivation", async () => {
+    vi.useFakeTimers();
+    const { emit, responder, runQueue, runState } = attachPresenter();
+    await emit({
+      type: "tool_execution_update",
+      toolCallId: "subagent-1",
+      toolName: "subagent",
+      args: {},
+      partialResult: {
+        details: {
+          progress: {
+            mode: "single",
+            nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
+          },
+        },
+      },
+    });
+    expect(vi.getTimerCount()).toBe(1);
+    runQueue.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await emit({ type: "message_end", message: fauxAssistantMessage("ignored") });
+    await vi.runAllTimersAsync();
+    await runQueue.wait();
+    expect(responder.replaceResponse).not.toHaveBeenCalled();
+    expect(responder.finishResponse).not.toHaveBeenCalled();
+
+    const nextResponder = makeResponder();
+    const next = activateRunPresentation(runState, {
+      responder: nextResponder,
+      sessionConversation: "C1",
+      userName: "bob",
+      sessionUuid: "session-1",
+      triggerAttribution: undefined,
+    });
+    try {
+      await emit({ type: "message_end", message: fauxAssistantMessage("next run") });
+      await next.wait();
+      expect(nextResponder.finishResponse).toHaveBeenCalledWith("next run");
+      expect(responder.finishResponse).not.toHaveBeenCalled();
+      expect(nextResponder.replaceResponse).not.toHaveBeenCalled();
+    } finally {
+      next.dispose();
+    }
+  });
+
+  test("wait includes delayed output and disposal does not cancel already queued output", async () => {
+    const { emit, responder, runQueue } = attachPresenter();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    responder.finishResponse.mockImplementation(() => gate);
+    await emit({ type: "message_end", message: fauxAssistantMessage("queued answer") });
+    let settled = false;
+    const waiting = runQueue.wait().then(() => {
+      settled = true;
+    });
+    try {
+      runQueue.dispose();
+      await Promise.resolve();
+      expect(responder.finishResponse).toHaveBeenCalledWith(
+        "queued answer\n\n_Triggered by @alice_",
+      );
+      expect(settled).toBe(false);
+    } finally {
+      release();
+      await waiting;
+    }
+    expect(settled).toBe(true);
+  });
+
   test("routes the assistant start, delta, and end sequence", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
     const partial = fauxAssistantMessage("Hel");

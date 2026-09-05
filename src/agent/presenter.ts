@@ -18,7 +18,7 @@ import {
 import * as Sentry from "@sentry/node";
 import { emitAgentEvent } from "../agent-events.js";
 import { appendTriggerAttribution } from "./prompt.js";
-import type { RunnerSessionState, UsageReportContext } from "./types.js";
+import type { RunPresentation, RunnerSessionState, UsageReportContext } from "./types.js";
 
 function createEmptyUsageTotals() {
   return {
@@ -54,7 +54,7 @@ export function createRunState(): RunnerSessionState {
   };
 }
 
-export function resetRunState(
+export function activateRunPresentation(
   runState: RunnerSessionState,
   context: {
     responder: ConversationResponder;
@@ -63,7 +63,7 @@ export function resetRunState(
     sessionUuid: string;
     triggerAttribution: string | undefined;
   },
-): void {
+): RunPresentation {
   runState.responder = context.responder;
   runState.logCtx = {
     conversationId: context.sessionConversation,
@@ -88,36 +88,36 @@ export function resetRunState(
   runState.reportedLlmError = false;
   runState.finalResponseHandledByTool = false;
   runState.triggerAttribution = context.triggerAttribution;
-}
 
-export function createRunQueue(
-  responder: ConversationResponder,
-  runState: RunnerSessionState,
-): {
-  queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
-  wait: () => Promise<void>;
-} {
+  const { responder } = context;
   let queueChain = Promise.resolve();
-  return {
-    queue: {
-      enqueue(fn: () => Promise<void>, errorContext: string): void {
-        queueChain = queueChain.then(async () => {
-          if (runState.finalResponseHandledByTool) return;
+  runState.queue = {
+    enqueue(fn: () => Promise<void>, errorContext: string): void {
+      queueChain = queueChain.then(async () => {
+        if (runState.finalResponseHandledByTool) return;
+        try {
+          await fn();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.logWarning(`API error (${errorContext})`, errMsg);
           try {
-            await fn();
-          } catch (err) {
-            const errMsg = err instanceof Error ? err.message : String(err);
-            log.logWarning(`API error (${errorContext})`, errMsg);
-            try {
-              await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
-            } catch {
-              // Ignore
-            }
+            await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
+          } catch {
+            // Ignore
           }
-        });
-      },
+        }
+      });
     },
+  };
+  return {
     wait: () => queueChain,
+    dispose(): void {
+      if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
+      runState.toolProgressTimer = undefined;
+      runState.responder = null;
+      runState.logCtx = null;
+      runState.queue = null;
+    },
   };
 }
 
@@ -372,13 +372,10 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     sessionUuid,
     waitForQueue,
   } = ctx;
-  const lastAssistantMessage = session.messages
-    .slice()
-    .toReversed()
-    .find(
-      (message): message is Extract<typeof message, { role: "assistant" }> =>
-        message.role === "assistant" && message.stopReason !== "aborted",
-    );
+  const lastAssistantMessage = session.messages.findLast(
+    (message): message is Extract<typeof message, { role: "assistant" }> =>
+      message.role === "assistant" && message.stopReason !== "aborted",
+  );
 
   const contextTokens = lastAssistantMessage
     ? lastAssistantMessage.usage.input +

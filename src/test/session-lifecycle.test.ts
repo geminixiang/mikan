@@ -43,6 +43,27 @@ describe("SessionLifecycle", () => {
     expect(order).toEqual(["first:start", "first:end", "second"]);
   });
 
+  test("counts pending settlements and removes both successful and failed work", async () => {
+    const lifecycle = new SessionLifecycle();
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    expect(lifecycle.settlementCount()).toBe(0);
+    const successful = lifecycle.settle(state("C1"), () => gate);
+    const failed = lifecycle.settle(state("C1:T1"), async () => {
+      throw new Error("run failed");
+    });
+
+    expect(lifecycle.settlementCount()).toBe(2);
+    try {
+      await expect(failed).rejects.toThrow("run failed");
+      expect(lifecycle.settlementCount()).toBe(1);
+    } finally {
+      finish();
+      await successful;
+    }
+    expect(lifecycle.settlementCount()).toBe(0);
+  });
+
   test("acquires one materialized runner lease and releases it idempotently", async () => {
     const lifecycle = new SessionLifecycle();
     const materialized = state("C1");

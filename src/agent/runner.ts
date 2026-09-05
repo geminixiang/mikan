@@ -50,17 +50,21 @@ import {
 } from "./prompt.js";
 import {
   attachSessionEventHandlers,
-  createRunQueue,
+  activateRunPresentation,
   createRunState,
   finalizeRunResponse,
   formatAgentActorName,
   isEventTriggerAttribution,
   reportUsageSummary,
-  resetRunState,
   sendAgentEvent,
 } from "./presenter.js";
 
-import type { PreparedRunContext, RunnerExecutionContext, RunnerSessionState } from "./types.js";
+import type {
+  PreparedRunContext,
+  RunPresentation,
+  RunnerExecutionContext,
+  RunnerSessionState,
+} from "./types.js";
 
 function buildThreadSessionName(message: ThreadRootMessage | null): string | undefined {
   const text = message?.text?.trim();
@@ -90,8 +94,6 @@ type PrepareRunParams = {
   responder: ConversationResponder;
   platform: MessagingInfo;
   office: Office;
-  sessionUuid: string;
-  runState: RunnerSessionState;
   executor: Executor;
   resolveForRun: RunnerExecutionContext["resolveForRun"];
   session: MikanAgentSession;
@@ -202,22 +204,12 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
 }
 
 async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunContext> {
-  const { message, responder, platform, office, sessionUuid, runState, executor } = params;
+  const { message, platform, office, executor } = params;
   const sessionConversation = conversationIdOf(message.sessionKey);
   await mkdir(join(office.dir, "scratch"), { recursive: true });
   const { pathContext, memory, systemPrompt, triggerAttribution } =
     await preparePromptContext(params);
   bindRunCapabilities(params, pathContext);
-
-  resetRunState(runState, {
-    responder,
-    sessionConversation,
-    userName: message.userName,
-    sessionUuid,
-    triggerAttribution,
-  });
-  const runQueue = createRunQueue(responder, runState);
-  runState.queue = runQueue.queue;
 
   log.logInfo(
     `Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`,
@@ -238,7 +230,6 @@ async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunC
   const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
   return {
     sessionConversation,
-    runQueue,
     userMessage: finalUserMessage,
     imageAttachments,
     triggerAttribution,
@@ -361,6 +352,7 @@ async function createRunnerAgentSession(params: {
 
 type PreparedTurnParams = {
   prepared: PreparedRunContext;
+  presentation: RunPresentation;
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -380,6 +372,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 }> {
   const {
     prepared,
+    presentation,
     message,
     responder,
     platform,
@@ -421,7 +414,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
     ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
   });
-  await prepared.runQueue.wait();
+  await presentation.wait();
 
   const sessionViewTokenStore = sessionView?.tokenStore;
   const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
@@ -464,7 +457,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     agentConfig,
     sessionConversation: prepared.sessionConversation,
     sessionUuid,
-    waitForQueue: () => prepared.runQueue.wait(),
+    waitForQueue: presentation.wait,
   });
   return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
 }
@@ -527,8 +520,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
         responder,
         platform,
         office,
-        sessionUuid,
-        runState,
         executor,
         resolveForRun,
         session,
@@ -539,9 +530,17 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
         setReactFunction: toolBindings.setReactFunction,
         bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
       });
+      const presentation = activateRunPresentation(runState, {
+        responder,
+        sessionConversation: prepared.sessionConversation,
+        userName: message.userName,
+        sessionUuid,
+        triggerAttribution: prepared.triggerAttribution,
+      });
       try {
         return await runPreparedTurn({
           prepared,
+          presentation,
           message,
           responder,
           platform,
@@ -555,9 +554,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
           sessionView,
         });
       } finally {
-        runState.responder = null;
-        runState.logCtx = null;
-        runState.queue = null;
+        presentation.dispose();
       }
     },
 

@@ -80,12 +80,13 @@ export interface RunnerExecutionContext {
   }>;
 }
 
+export interface RunPresentation {
+  wait(): Promise<void>;
+  dispose(): void;
+}
+
 export interface PreparedRunContext {
   sessionConversation: string;
-  runQueue: {
-    queue: { enqueue(fn: () => Promise<void>, errorContext: string): void };
-    wait: () => Promise<void>;
-  };
   userMessage: string;
   imageAttachments: ImageContent[];
   triggerAttribution?: string;
