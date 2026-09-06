@@ -566,7 +566,9 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
     ...request,
     systemPrompt: profile.systemPrompt,
     tools: profile.tools,
-    requiredTools: profile.requiredTools,
+    // The guard above allows requiredTools to combine with a profile, so the
+    // caller's evidence requirements must survive alongside the profile's.
+    requiredTools: [...new Set([...(request.requiredTools ?? []), ...profile.requiredTools])],
     ...(profile.model ? { model: profile.model } : {}),
     ...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
     ...(Object.keys(budget).length > 0 ? { budget } : {}),

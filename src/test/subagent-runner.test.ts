@@ -832,6 +832,38 @@ describe("runSubagent", () => {
     });
   });
 
+  test("keeps the caller's requiredTools when combined with a profile", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([fauxAssistantMessage("answered without evidence")]);
+
+    const result = await runSubagent({
+      request: { task: "Read README", profile: "explorer", requiredTools: ["echo"] },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [echoTool],
+      profiles: new Map([
+        [
+          "explorer",
+          {
+            name: "explorer",
+            description: "Evidence explorer",
+            systemPrompt: "Use evidence.",
+            tools: ["echo"],
+            requiredTools: [],
+          },
+        ],
+      ]),
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      toolCalls: 0,
+      error: "Required tool not used: echo",
+    });
+  });
+
   test("completes when a profile's required tool was actually invoked", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([

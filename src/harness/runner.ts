@@ -513,10 +513,9 @@ export class MikanAgentSession {
       });
 
       if (this.budgetExceededReason) return false;
-      if (willRetry) {
-        this.dropTrailingErrorMessage();
-        return true;
-      }
+      // Messages here were just rebuilt from the store, which already filters
+      // error assistants out of context — nothing left for the drop to target.
+      if (willRetry) return true;
       return this.agent.hasQueuedMessages();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "compaction failed";
