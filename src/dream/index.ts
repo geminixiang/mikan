@@ -1,6 +1,6 @@
 import { Cron } from "croner";
 import { contentText } from "@earendil-works/pi-ai";
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveConversationSettings } from "../config.js";
 import type { MikanModels, SessionEntry } from "../harness/index.js";
@@ -49,15 +49,21 @@ export async function prepareOfficeDream(
     sessions: { ...state.sessions },
   };
   const evidence: DreamSessionEvidence[] = [];
-  const sessionIds = new Set<string>();
+  const sessionFilesById = new Map<string, string>();
   let latestEvidenceAt = 0;
   let batchFull = false;
 
   for (const sessionFile of listSessionFiles(office)) {
     const inspection = await SessionStore.inspect(sessionFile);
     const sessionId = inspection.getHeader().id;
-    if (sessionIds.has(sessionId)) throw new Error(`Duplicate Dream session id: ${sessionId}`);
-    sessionIds.add(sessionId);
+    const existingSessionFile = sessionFilesById.get(sessionId);
+    if (existingSessionFile !== undefined) {
+      if (!readFileSync(existingSessionFile).equals(readFileSync(sessionFile))) {
+        throw new Error(`Duplicate Dream session id: ${sessionId}`);
+      }
+      continue;
+    }
+    sessionFilesById.set(sessionId, sessionFile);
 
     const entries = await inspection.getEntries();
     if (entries.length === 0) continue;

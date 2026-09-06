@@ -1,4 +1,5 @@
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -119,6 +120,32 @@ describe("Dream authority", () => {
 
     expect(await prepareOfficeDream(office, new Date("2026-06-01T18:59:59.999Z"))).toBeNull();
     expect(await prepareOfficeDream(office, DREAM_NOW)).not.toBeNull();
+  });
+
+  test("counts byte-identical copies of one session once", async () => {
+    const originalFile = await seedSession(
+      "a.jsonl",
+      "session-a",
+      "same session",
+      "2026-06-01T12:00:00.000Z",
+    );
+    copyFileSync(originalFile, join(office.sessionsDir, "b.jsonl"));
+
+    const plan = requirePlan(await prepareOfficeDream(office, DREAM_NOW));
+
+    expect(plan.evidence).toHaveLength(1);
+    expect(plan.evidence[0]?.sessionId).toBe("session-a");
+    expect(plan.evidence[0]?.entries).toHaveLength(1);
+    expect(Object.keys(plan.checkpoint.sessions)).toEqual(["session-a"]);
+  });
+
+  test("rejects same-ID session files with differing content", async () => {
+    await seedSession("a.jsonl", "session-a", "first session", "2026-06-01T12:00:00.000Z");
+    await seedSession("b.jsonl", "session-a", "different session", "2026-06-01T13:00:00.000Z");
+
+    await expect(prepareOfficeDream(office, DREAM_NOW)).rejects.toThrow(
+      "Duplicate Dream session id: session-a",
+    );
   });
 
   test("collects checkpoint increments across every office session", async () => {

@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Tolerate byte-identical duplicate Dream session files while rejecting divergent same-ID files.
+
 ## [1.0.0-beta.49]
 
 ### Changed
