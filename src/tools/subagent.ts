@@ -6,6 +6,7 @@ import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from ".
 // snapshot the tool emits rather than restated here.
 import type { SubagentProgressNode, SubagentProgressStatus } from "../types.js";
 import { boundSubagentProgressNode, clampSubagentLabel } from "../subagent-progress.js";
+import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/sentry.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -429,6 +430,13 @@ async function runWaves(
           status: "skipped",
           error: `Dependency ${failedDependency} did not complete`,
         });
+        recordSubagentOutcome({
+          itemId: item.id,
+          mode: plan.mode,
+          status: "skipped",
+          profile: item.task.profile,
+          error: `Dependency ${failedDependency} did not complete`,
+        });
         progress.update(item.id, "skipped", {
           reason: `Dependency ${failedDependency} did not complete`,
         });
@@ -436,10 +444,32 @@ async function runWaves(
       }
       let result: SubagentRunResult<unknown>;
       progress.update(item.id, "running");
-      result = await runSubagent(planRequest(item, shared, outcomes, signal), {
-        onActivity: (activity: string) => progress.activity(item.id, activity),
-      });
+      try {
+        result = await runSubagent(planRequest(item, shared, outcomes, signal), {
+          onActivity: (activity: string) => progress.activity(item.id, activity),
+        });
+      } catch (error) {
+        reportSubagentLaunchError(error, {
+          itemId: item.id,
+          mode: plan.mode,
+          profile: item.task.profile,
+        });
+        throw error;
+      }
       outcomes.set(item.id, { id: item.id, ...result });
+      recordSubagentOutcome({
+        itemId: item.id,
+        mode: plan.mode,
+        status: result.status,
+        profile: item.task.profile,
+        error: result.error,
+        turns: result.turns,
+        toolCalls: result.toolCalls,
+        tokens: result.tokens,
+        costUsd: result.costUsd,
+        durationMs: result.durationMs,
+        cleanupPending: result.cleanupPending,
+      });
       progress.update(item.id, result.status, {
         turns: result.turns,
         toolCalls: result.toolCalls,

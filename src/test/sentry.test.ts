@@ -13,6 +13,8 @@ const sentryMock = vi.hoisted(() => {
   return {
     captureException: vi.fn(() => "event-id"),
     spanToJSON: vi.fn(() => ({ trace_id: "trace-1" })),
+    addBreadcrumb: vi.fn(),
+    metrics: { count: vi.fn(), distribution: vi.fn() },
     scope,
   };
 });
@@ -23,6 +25,8 @@ vi.mock("@sentry/node", async (importOriginal) => {
     ...actual,
     captureException: sentryMock.captureException,
     spanToJSON: sentryMock.spanToJSON,
+    addBreadcrumb: sentryMock.addBreadcrumb,
+    metrics: sentryMock.metrics,
     withScope: vi.fn((callback: (scope: Scope) => unknown) =>
       callback(sentryMock.scope as unknown as Scope),
     ),
@@ -35,7 +39,9 @@ import {
   createRunAttributionAttributes,
   createSentryInitOptions,
   metricAttributes,
+  recordSubagentOutcome,
   registerTraceAttribution,
+  reportSubagentLaunchError,
   reportUserFacingError,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -347,5 +353,126 @@ describe("run attribution", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("recordSubagentOutcome", () => {
+  beforeEach(() => {
+    sentryMock.captureException.mockClear();
+    sentryMock.addBreadcrumb.mockClear();
+    sentryMock.metrics.count.mockClear();
+    sentryMock.metrics.distribution.mockClear();
+    sentryMock.scope.setTag.mockClear();
+    sentryMock.scope.setFingerprint.mockClear();
+    sentryMock.scope.setContext.mockClear();
+  });
+
+  const base = {
+    itemId: "root",
+    mode: "dag" as const,
+    profile: "software-engineer",
+    turns: 4,
+    toolCalls: 3,
+    tokens: 2_000,
+    costUsd: 0.12,
+    durationMs: 8_000,
+  };
+
+  test("captures a failed run under the subagent domain, grouped by error class", () => {
+    const id = recordSubagentOutcome({
+      ...base,
+      status: "failed",
+      error: "Required tool not used: read",
+    });
+
+    expect(id).toBe("event-id");
+    expect(sentryMock.captureException).toHaveBeenCalledWith(expect.any(Error));
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "subagent");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "run");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("tool", "subagent");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_status", "failed");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "software-engineer");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_mode", "dag");
+    expect(sentryMock.scope.setFingerprint).toHaveBeenCalledWith([
+      "subagent",
+      "failed",
+      "Required tool not used",
+    ]);
+    expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
+      "user_facing_error",
+      expect.objectContaining({
+        itemId: "root",
+        error: "Required tool not used: read",
+        turns: 4,
+        toolCalls: 3,
+        tokens: 2_000,
+        costUsd: 0.12,
+        durationMs: 8_000,
+      }),
+    );
+    expect(sentryMock.metrics.count).toHaveBeenCalledWith("agent.subagent.runs", 1, {
+      attributes: { status: "failed", profile: "software-engineer", mode: "dag" },
+    });
+    expect(sentryMock.metrics.distribution).toHaveBeenCalledWith(
+      "agent.subagent.duration",
+      8_000,
+      expect.objectContaining({ unit: "millisecond" }),
+    );
+  });
+
+  test("captures invalid_output the same way", () => {
+    recordSubagentOutcome({
+      ...base,
+      status: "invalid_output",
+      error: "Subagent output is not valid JSON",
+    });
+
+    expect(sentryMock.captureException).toHaveBeenCalledTimes(1);
+    expect(sentryMock.scope.setFingerprint).toHaveBeenCalledWith([
+      "subagent",
+      "invalid_output",
+      "Subagent output is not valid JSON",
+    ]);
+  });
+
+  test.each([
+    ["completed", undefined],
+    ["budget_exceeded", "LLM calls 100 >= 100 limit"],
+    ["timeout", "Subagent exceeded its 60000ms duration limit"],
+    ["cancelled", undefined],
+    ["skipped", "Dependency root did not complete"],
+  ] as const)("%s is metrics and breadcrumb only", (status, error) => {
+    const id = recordSubagentOutcome({ ...base, status, error });
+
+    expect(id).toBeUndefined();
+    expect(sentryMock.captureException).not.toHaveBeenCalled();
+    expect(sentryMock.metrics.count).toHaveBeenCalledWith(
+      "agent.subagent.runs",
+      1,
+      expect.objectContaining({ attributes: expect.objectContaining({ status }) }),
+    );
+    expect(sentryMock.addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "agent.lifecycle",
+        message: "agent.subagent.completed",
+        data: expect.objectContaining({ item_id: "root", status }),
+      }),
+    );
+  });
+
+  test("skips the duration metric when no duration is known", () => {
+    recordSubagentOutcome({ itemId: "dependent", mode: "dag", status: "skipped" });
+
+    expect(sentryMock.metrics.distribution).not.toHaveBeenCalled();
+  });
+
+  test("reports a launch failure with the launch operation", () => {
+    const error = new Error("Unknown subagent profile: nope");
+    reportSubagentLaunchError(error, { itemId: "task", mode: "single", profile: "nope" });
+
+    expect(sentryMock.captureException).toHaveBeenCalledWith(error);
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "subagent");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "launch");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "nope");
   });
 });

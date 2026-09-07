@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Report subagent outcomes to Sentry from the subagent tool: `agent.subagent.runs` / `agent.subagent.duration` metrics and a lifecycle breadcrumb for every status; a Sentry error under `error_domain=subagent` for `failed` and `invalid_output` (fingerprinted by error class) and for launch failures. `budget_exceeded`, `timeout`, `cancelled`, and `skipped` stay metrics-only. Reports carry run metrics, never task text or labels.
+
 ## [1.0.0-beta.52]
 
 ### Removed

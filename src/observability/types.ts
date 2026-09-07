@@ -40,7 +40,8 @@ type UserFacingErrorDomain =
   | "sandbox"
   | "login"
   | "events"
-  | "session_view";
+  | "session_view"
+  | "subagent";
 
 type UserFacingErrorSeverity = "warning" | "error" | "fatal";
 
@@ -58,4 +59,29 @@ export interface ReportUserFacingErrorOptions {
   fingerprint?: string[];
   tags?: Record<string, SentryPrimitive | undefined>;
   context?: Record<string, unknown>;
+}
+
+/** Terminal states of one subagent run as seen by the parent tool. */
+export type SubagentOutcomeStatus =
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "timeout"
+  | "budget_exceeded"
+  | "invalid_output"
+  | "skipped";
+
+/** Metrics-only view of a subagent outcome; never carries task text or labels. */
+export interface SubagentOutcomeReport {
+  itemId: string;
+  mode: "single" | "parallel" | "dag";
+  status: SubagentOutcomeStatus;
+  profile?: string;
+  error?: string;
+  turns?: number;
+  toolCalls?: number;
+  tokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+  cleanupPending?: boolean;
 }

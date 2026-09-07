@@ -60,6 +60,7 @@ const TOKEN_PATTERNS = [
 export type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
+  SubagentOutcomeReport,
   SentryRunScopeContext,
   SentrySpanPayload,
   SentryTransactionPayload,
@@ -67,6 +68,8 @@ export type {
 import type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
+  SubagentOutcomeReport,
+  SubagentOutcomeStatus,
   SentryRunScopeContext,
   SentrySpanPayload,
   SentryTransactionPayload,
@@ -405,4 +408,97 @@ function sanitizeString(value: string): string {
     return `${sanitized.slice(0, MAX_STRING_LENGTH)}… [truncated ${sanitized.length - MAX_STRING_LENGTH} chars]`;
   }
   return sanitized;
+}
+
+/**
+ * Subagent outcomes that page. Everything else is a bounded, expected end
+ * state the parent model already sees in the tool result: a budget or clock
+ * ran out, the caller aborted, or a dependency failed upstream.
+ */
+const UNEXPECTED_SUBAGENT_STATUSES: ReadonlySet<SubagentOutcomeStatus> = new Set([
+  "failed",
+  "invalid_output",
+]);
+
+/**
+ * Record one subagent outcome: a run counter and duration for every status,
+ * a lifecycle breadcrumb, and a Sentry error only for statuses in
+ * `UNEXPECTED_SUBAGENT_STATUSES`. Fingerprinted on the error's prefix before
+ * the first colon so one failure class is one issue regardless of which
+ * tool, file, or model message follows it.
+ */
+export function recordSubagentOutcome(report: SubagentOutcomeReport): string | undefined {
+  const attributes = metricAttributes({
+    status: report.status,
+    profile: report.profile,
+    mode: report.mode,
+  });
+  Sentry.metrics.count("agent.subagent.runs", 1, { attributes });
+  if (report.durationMs !== undefined) {
+    Sentry.metrics.distribution("agent.subagent.duration", report.durationMs, {
+      unit: "millisecond",
+      attributes,
+    });
+  }
+  addLifecycleBreadcrumb("agent.subagent.completed", {
+    item_id: report.itemId,
+    status: report.status,
+    profile: report.profile,
+    mode: report.mode,
+    turns: report.turns,
+    tool_calls: report.toolCalls,
+    tokens: report.tokens,
+    cost_usd: report.costUsd,
+    duration_ms: report.durationMs,
+    cleanup_pending: report.cleanupPending,
+  });
+  if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
+
+  const errorClass = (report.error ?? report.status).split(":")[0]!.trim();
+  return reportUserFacingError(
+    new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
+    {
+      domain: "subagent",
+      surface: "subagent_tool",
+      operation: "run",
+      severity: "error",
+      toolName: "subagent",
+      fingerprint: ["subagent", report.status, errorClass],
+      tags: {
+        subagent_status: report.status,
+        subagent_profile: report.profile,
+        subagent_mode: report.mode,
+        cleanup_pending: report.cleanupPending,
+      },
+      context: {
+        itemId: report.itemId,
+        error: report.error,
+        turns: report.turns,
+        toolCalls: report.toolCalls,
+        tokens: report.tokens,
+        costUsd: report.costUsd,
+        durationMs: report.durationMs,
+      },
+    },
+  );
+}
+
+/**
+ * A subagent that never started: unknown profile, ungranted tool, or a
+ * harness rejection. The throw still reaches the parent model as a tool
+ * error; this only makes sure it also reaches Sentry.
+ */
+export function reportSubagentLaunchError(
+  error: unknown,
+  report: Pick<SubagentOutcomeReport, "itemId" | "mode" | "profile">,
+): string | undefined {
+  return reportUserFacingError(error, {
+    domain: "subagent",
+    surface: "subagent_tool",
+    operation: "launch",
+    severity: "error",
+    toolName: "subagent",
+    tags: { subagent_profile: report.profile, subagent_mode: report.mode },
+    context: { itemId: report.itemId },
+  });
 }

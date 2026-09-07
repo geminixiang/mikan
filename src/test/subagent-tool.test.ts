@@ -8,6 +8,15 @@ import type {
 } from "../harness/types.js";
 import { createSubagentTool } from "../tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent-slots.js";
+import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/sentry.js";
+
+vi.mock("../observability/sentry.js", () => ({
+  recordSubagentOutcome: vi.fn(),
+  reportSubagentLaunchError: vi.fn(),
+}));
+
+const mockRecordSubagentOutcome = vi.mocked(recordSubagentOutcome);
+const mockReportSubagentLaunchError = vi.mocked(reportSubagentLaunchError);
 
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
@@ -724,5 +733,144 @@ describe("subagent tool", () => {
 
     expect(result.content).toEqual([{ type: "text", text: "Subagent cancelled" }]);
     expect(result.details).toMatchObject({ status: "cancelled" });
+  });
+});
+
+describe("subagent observability", () => {
+  function runWith(status: "failed" | "budget_exceeded", error: string): RunSubagent {
+    return (async () => ({
+      runId: `subagent-${status}`,
+      status,
+      model: { provider: "test", id: "model" },
+      turns: 3,
+      toolCalls: 2,
+      toolCallCounts: { bash: 2 },
+      usage: testUsage(500, 0.5),
+      tokens: 500,
+      costUsd: 0.5,
+      durationMs: 1_234,
+      error,
+    })) as RunSubagent;
+  }
+
+  test("records every outcome with metrics only, never task text or labels", async () => {
+    mockRecordSubagentOutcome.mockClear();
+    const tool = makeTool(runWith("failed", "Required tool not used: read"));
+
+    await tool.execute("call-obs", {
+      profile: "explorer",
+      task: "Read the confidential customer list",
+      label: "customer list",
+    });
+
+    expect(mockRecordSubagentOutcome).toHaveBeenCalledTimes(1);
+    const report = mockRecordSubagentOutcome.mock.calls[0]![0];
+    expect(report).toEqual({
+      itemId: "0",
+      mode: "single",
+      status: "failed",
+      profile: "explorer",
+      error: "Required tool not used: read",
+      turns: 3,
+      toolCalls: 2,
+      tokens: 500,
+      costUsd: 0.5,
+      durationMs: 1_234,
+      cleanupPending: undefined,
+    });
+    expect(JSON.stringify(report)).not.toContain("confidential");
+    expect(JSON.stringify(report)).not.toContain("customer list");
+  });
+
+  test("records expected end states through the same seam", async () => {
+    mockRecordSubagentOutcome.mockClear();
+    const tool = makeTool(runWith("budget_exceeded", "LLM calls 100 >= 100 limit"));
+
+    await tool.execute("call-budget-obs", { profile: "explorer", task: "Keep working" });
+
+    expect(mockRecordSubagentOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "budget_exceeded", mode: "single" }),
+    );
+  });
+
+  test("records skipped DAG descendants with the dependency reason", async () => {
+    mockRecordSubagentOutcome.mockClear();
+    const runSubagent = (async (request: SubagentRunRequest) =>
+      request.task === "fail"
+        ? {
+            runId: "failed",
+            status: "failed" as const,
+            model: { provider: "test", id: "model" },
+            turns: 1,
+            toolCalls: 0,
+            toolCallCounts: {},
+            usage: testUsage(1),
+            tokens: 1,
+            costUsd: 0,
+            durationMs: 1,
+            error: "boom",
+          }
+        : {
+            runId: request.task,
+            status: "completed" as const,
+            output: "ok",
+            text: "ok",
+            model: { provider: "test", id: "model" },
+            turns: 1,
+            toolCalls: 0,
+            toolCallCounts: {},
+            usage: testUsage(1),
+            tokens: 1,
+            costUsd: 0,
+            durationMs: 1,
+          }) as RunSubagent;
+    const tool = makeTool(runSubagent);
+
+    await tool.execute("dag-obs", {
+      profile: "explorer",
+      dag: {
+        nodes: [
+          { id: "root", task: "fail" },
+          { id: "dependent", task: "skip", dependsOn: ["root"] },
+        ],
+      },
+    });
+
+    const statuses = mockRecordSubagentOutcome.mock.calls.map(([report]) => [
+      report.itemId,
+      report.status,
+      report.mode,
+    ]);
+    expect(statuses).toEqual([
+      ["root", "failed", "dag"],
+      ["dependent", "skipped", "dag"],
+    ]);
+    expect(mockRecordSubagentOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemId: "dependent",
+        error: "Dependency root did not complete",
+      }),
+    );
+  });
+
+  test("reports a launch failure and still surfaces it to the parent", async () => {
+    mockReportSubagentLaunchError.mockClear();
+    mockRecordSubagentOutcome.mockClear();
+    const launchError = new Error("Unknown subagent profile: explorer");
+    const runSubagent = vi.fn(async () => {
+      throw launchError;
+    }) as unknown as RunSubagent;
+    const tool = makeTool(runSubagent);
+
+    await expect(
+      tool.execute("launch-obs", { profile: "explorer", task: "Never starts" }),
+    ).rejects.toBe(launchError);
+
+    expect(mockReportSubagentLaunchError).toHaveBeenCalledWith(launchError, {
+      itemId: "0",
+      mode: "single",
+      profile: "explorer",
+    });
+    expect(mockRecordSubagentOutcome).not.toHaveBeenCalled();
   });
 });
