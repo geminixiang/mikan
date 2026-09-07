@@ -6,6 +6,7 @@ const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";
 const MAX_STRING_LENGTH = 256;
 const MAX_DEPTH = 4;
+const MAX_FINGERPRINT_CLASS_LENGTH = 80;
 const TRACE_ATTRIBUTION_TTL_MS = 5 * 60 * 1000;
 
 const SENSITIVE_KEYS = new Set([
@@ -454,7 +455,10 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
   });
   if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
 
-  const errorClass = (report.error ?? report.status).split(":")[0]!.trim();
+  const errorClass = sanitizeString((report.error ?? report.status).split(":")[0]!.trim()).slice(
+    0,
+    MAX_FINGERPRINT_CLASS_LENGTH,
+  );
   return reportUserFacingError(
     new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
     {

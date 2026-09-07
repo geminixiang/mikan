@@ -476,3 +476,25 @@ describe("recordSubagentOutcome", () => {
     expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "nope");
   });
 });
+
+describe("recordSubagentOutcome fingerprint", () => {
+  beforeEach(() => {
+    sentryMock.scope.setFingerprint.mockClear();
+  });
+
+  test("redacts paths and caps the error class before it becomes a fingerprint", () => {
+    recordSubagentOutcome({
+      itemId: "0",
+      mode: "single",
+      status: "failed",
+      error: `ENOENT /workspace/acme/secret.json ${"x".repeat(200)}: no such file`,
+    });
+
+    const [fingerprint] = sentryMock.scope.setFingerprint.mock.calls[0]!;
+    expect(fingerprint[0]).toBe("subagent");
+    expect(fingerprint[1]).toBe("failed");
+    expect(fingerprint[2]).toContain("[REDACTED_PATH]");
+    expect(fingerprint[2]).not.toContain("/workspace/");
+    expect(fingerprint[2]!.length).toBeLessThanOrEqual(80);
+  });
+});
