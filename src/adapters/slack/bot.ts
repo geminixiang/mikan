@@ -72,6 +72,7 @@ import {
   resolveSlackSessionKey,
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/sentry.js";
+import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 
@@ -529,7 +530,13 @@ export class SlackMessagingBot implements MessagingBot {
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {
     return slackRetry(async () => {
       const payload = { channel, ts, ...renderSlackBlocks(this.resolveMentions(text)) };
-      await this.webClient.chat.update(payload);
+      try {
+        await this.webClient.chat.update(payload);
+      } catch (error) {
+        recordSlackUpdate(this, { channel, ts }, text, payload, { error });
+        throw error;
+      }
+      recordSlackUpdate(this, { channel, ts }, text, payload, { success: true });
     });
   }
 
