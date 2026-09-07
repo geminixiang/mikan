@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.53]
+
 ### Changed
 
 - Graceful shutdown drains in-flight runs for up to five minutes (was 30 seconds) after stopping intake; runs still open at the deadline are aborted and their conversations receive a restart notice instead of silence. The pm2 template `kill_timeout` is now six minutes; update your `ecosystem.config.cjs` to match. Shutdown failures now log every nested step error.
