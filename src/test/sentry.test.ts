@@ -213,10 +213,10 @@ describe("sanitizeBreadcrumb", () => {
 });
 
 describe("sanitizeEvent", () => {
-  test("removes user, server name, headers, and sensitive extras", () => {
+  test("keeps user id and username, removes server name, headers, and sensitive extras", () => {
     const event: Event = {
       event_id: "123",
-      user: { id: "U1", username: "alice" },
+      user: { id: "U1", username: "alice", email: "alice@example.com", ip_address: "10.0.0.1" },
       server_name: "Alice-MacBook-Air.local",
       request: {
         headers: { authorization: "Bearer secret" },
@@ -233,7 +233,7 @@ describe("sanitizeEvent", () => {
     };
 
     const sanitized = sanitizeEvent(event);
-    expect(sanitized?.user).toBeUndefined();
+    expect(sanitized?.user).toEqual({ id: "U1", username: "alice" });
     expect(sanitized?.server_name).toBeUndefined();
     expect(sanitized?.request?.headers).toBeUndefined();
     expect(sanitized?.request?.data).toBe("[Redacted body; keys=1]");

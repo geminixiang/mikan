@@ -257,7 +257,9 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
     extra: sanitizeValue(event.extra) as T["extra"],
     contexts: sanitizeValue(event.contexts) as T["contexts"],
     request: sanitizeRequest(event.request),
-    user: undefined,
+    // Keep the identity applyRunScope set so Conversations show who sent each
+    // message; drop anything else the SDK may have attached (email, IP).
+    user: event.user ? { id: event.user.id, username: event.user.username } : undefined,
     server_name: undefined,
   };
 
