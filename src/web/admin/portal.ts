@@ -2086,6 +2086,22 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
         <button class="pkg-btn" type="button" onclick="closeMcpInstall()">Cancel</button>
         <button id="mcp-dialog-install" class="primary-action-btn" type="button" onclick="installMcpPreset(this)">Install preset</button>
       </div>
+    </dialog>
+
+    <dialog id="mcp-custom-dialog" class="mcp-dialog" aria-labelledby="mcp-custom-dialog-title">
+      <div class="mcp-dialog-head">
+        <div>
+          <p class="eyebrow">Add MCP server</p>
+          <h2 id="mcp-custom-dialog-title" class="card-title">新增自訂 server</h2>
+        </div>
+        <button class="mcp-dialog-close" type="button" aria-label="Close" onclick="closeMcpCustomDialog()">×</button>
+      </div>
+      <div id="mcp-custom-dialog-content"></div>
+      <div id="mcp-custom-dialog-error" class="inline-result err" style="display:none"></div>
+      <div class="mcp-dialog-actions">
+        <button class="pkg-btn" type="button" onclick="closeMcpCustomDialog()">Cancel</button>
+        <button id="mcp-custom-dialog-submit" class="primary-action-btn" type="button" onclick="submitMcpCustomDialog(this)">新增並測試連線</button>
+      </div>
     </dialog>`;
 
 const adminViewScript = `    let activeConversationKey = defaultConversationKey;
@@ -2583,17 +2599,20 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       const keys = [];
       if (server.envKeys && server.envKeys.length) keys.push('env: ' + server.envKeys.join(', '));
       if (server.headerKeys && server.headerKeys.length) keys.push('headers: ' + server.headerKeys.join(', '));
-      return '<div class="pkg-row">' +
-        '<div class="pkg-row-main"><span class="pkg-source">' + escHtml(name) + '</span>' +
-        (server.disabled ? '<span class="pkg-badge pkg-badge-warn">disabled</span>' : '<span class="pkg-badge pkg-badge-ok">enabled</span>') +
+      return '<article class="mcp-preset mcp-installed-card">' +
+        '<div class="mcp-preset-top">' +
+          '<span class="mcp-preset-category">' + (server.command ? 'STDIO' : 'HTTP') + '</span>' +
+          (server.disabled ? '<span class="pkg-badge pkg-badge-warn">disabled</span>' : '<span class="pkg-badge pkg-badge-ok">enabled</span>') +
         '</div>' +
-        '<div class="skill-desc">' + escHtml(transport) + (keys.length ? ' · ' + escHtml(keys.join(' · ')) : '') + '</div>' +
-        '<div class="pkg-actions">' +
+        '<h3>' + escHtml(name) + '</h3>' +
+        '<p class="mcp-preset-meta mcp-installed-transport">' + escHtml(transport) + '</p>' +
+        (keys.length ? '<div class="mcp-preset-meta">' + escHtml(keys.join(' · ')) + '</div>' : '') +
+        '<div class="mcp-preset-actions">' +
           '<button class="pkg-btn" data-mcp-action="test" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Test</button>' +
           '<button class="pkg-btn" data-mcp-action="toggle" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">' + (server.disabled ? 'Enable' : 'Disable') + '</button>' +
           '<button class="pkg-btn pkg-btn-danger" data-mcp-action="remove" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Remove</button>' +
         '</div>' +
-      '</div>';
+      '</article>';
     }
 
     function renderMcpPreset(scope, preset, servers) {
@@ -2621,16 +2640,157 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         '<div class="mcp-market-head"><div><h3>Explore presets</h3><p>Reviewed recipes that install into this scope.</p></div><span>' + mcpPresets.length + ' available</span></div>' +
         '<div class="mcp-preset-grid">' + presets + '</div>' +
         '<details class="mcp-installed" open><summary>Installed in this scope</summary>' +
-          '<div class="pkg-list">' + (rows || '<div class="pkg-provides-empty">No MCP servers installed here</div>') + '</div>' +
-        '</details>' +
-        '<details class="mcp-manual"><summary>Add a server from its MCP config</summary>' +
-          '<p class="mcp-manual-hint">貼上 MCP server 文件給的 <code>mcpServers</code> JSON，原樣保存到這個 scope。remote 走 Streamable HTTP，local 走 stdio。</p>' +
-          '<textarea id="mcp-' + scope + '-json" class="pkg-input mcp-json" spellcheck="false" rows="9" placeholder="' + escAttr(MCP_JSON_PLACEHOLDER) + '"></textarea>' +
-          '<div class="pkg-add">' +
-            '<button class="primary-action-btn" data-mcp-action="import" data-mcp-scope="' + scope + '">Add &amp; test connection</button>' +
+          '<div class="mcp-preset-grid">' +
+            rows +
+            '<button type="button" class="mcp-add-card" data-mcp-action="open-custom" data-mcp-scope="' + scope + '">' +
+              '<span class="mcp-add-card-plus">+</span><span>新增 server</span>' +
+            '</button>' +
           '</div>' +
-          '<div id="mcp-' + scope + '-verify" class="mcp-verify"></div>' +
         '</details>';
+    }
+
+    function renderMcpGuidedForm(scope) {
+      return '<div class="mcp-guided-grid">' +
+        '<label class="mcp-field"><span>Server 名稱</span><input id="mcp-' + scope + '-g-name" class="pkg-input mcp-json" placeholder="例如 github" autocomplete="off" /></label>' +
+        '<div class="mcp-transport-toggle">' +
+          '<label><input type="radio" name="mcp-' + scope + '-g-transport" value="stdio" checked /> 本機指令 (stdio)</label>' +
+          '<label><input type="radio" name="mcp-' + scope + '-g-transport" value="http" /> 遠端服務 (HTTP)</label>' +
+        '</div>' +
+        '<div id="mcp-' + scope + '-g-stdio" class="mcp-transport-fields">' +
+          '<label class="mcp-field"><span>指令</span><input id="mcp-' + scope + '-g-command" class="pkg-input mcp-json" placeholder="npx" autocomplete="off" /></label>' +
+          '<label class="mcp-field"><span>參數（以逗號分隔）</span><input id="mcp-' + scope + '-g-args" class="pkg-input mcp-json" placeholder="-y, @modelcontextprotocol/server-github" autocomplete="off" /></label>' +
+        '</div>' +
+        '<div id="mcp-' + scope + '-g-http" class="mcp-transport-fields" style="display:none">' +
+          '<label class="mcp-field"><span>URL</span><input id="mcp-' + scope + '-g-url" class="pkg-input mcp-json" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>' +
+        '</div>' +
+        '<div class="mcp-kv-block">' +
+          '<div class="mcp-kv-head"><span id="mcp-' + scope + '-g-kv-label">環境變數 (env)</span><button type="button" class="pkg-btn" data-mcp-kv-add="' + scope + '">+ 新增一列</button></div>' +
+          '<div id="mcp-' + scope + '-g-kv" class="mcp-kv-rows"></div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    function renderMcpKvRow() {
+      return '<div class="mcp-kv-row">' +
+        '<input class="pkg-input mcp-json" placeholder="KEY" data-kv-key autocomplete="off" />' +
+        '<input class="pkg-input mcp-json" type="password" placeholder="value" data-kv-value autocomplete="off" />' +
+        '<button type="button" class="pkg-btn pkg-btn-danger" data-mcp-kv-remove>移除</button>' +
+      '</div>';
+    }
+
+    function addMcpGuidedRow(scope) {
+      const container = document.getElementById('mcp-' + scope + '-g-kv');
+      if (container) container.insertAdjacentHTML('beforeend', renderMcpKvRow());
+    }
+
+    function updateMcpGuidedTransport(scope) {
+      const checked = document.querySelector('input[name="mcp-' + scope + '-g-transport"]:checked');
+      const transport = checked ? checked.value : 'stdio';
+      const stdioEl = document.getElementById('mcp-' + scope + '-g-stdio');
+      const httpEl = document.getElementById('mcp-' + scope + '-g-http');
+      const kvLabel = document.getElementById('mcp-' + scope + '-g-kv-label');
+      if (stdioEl) stdioEl.style.display = transport === 'stdio' ? '' : 'none';
+      if (httpEl) httpEl.style.display = transport === 'http' ? '' : 'none';
+      if (kvLabel) kvLabel.textContent = transport === 'stdio' ? '環境變數 (env)' : 'HTTP Headers';
+    }
+
+    let pendingMcpCustomScope = null;
+
+    function openMcpCustomDialog(scope) {
+      pendingMcpCustomScope = scope;
+      const content = document.getElementById('mcp-custom-dialog-content');
+      content.innerHTML =
+        '<div class="mcp-add-mode">' +
+          '<button type="button" class="mcp-mode-btn active" data-mcp-mode="guided">引導式表單</button>' +
+          '<button type="button" class="mcp-mode-btn" data-mcp-mode="json">貼上 JSON</button>' +
+        '</div>' +
+        '<div id="mcp-custom-guided-panel" class="mcp-panel">' + renderMcpGuidedForm('custom') + '</div>' +
+        '<div id="mcp-custom-json-panel" class="mcp-panel" style="display:none">' +
+          '<p class="mcp-manual-hint">貼上 MCP server 文件給的 <code>mcpServers</code> JSON，原樣保存到這個 scope。remote 走 Streamable HTTP，local 走 stdio。</p>' +
+          '<textarea id="mcp-custom-json" class="pkg-input mcp-json" spellcheck="false" rows="9" placeholder="' + escAttr(MCP_JSON_PLACEHOLDER) + '"></textarea>' +
+        '</div>';
+      const dialogError = document.getElementById('mcp-custom-dialog-error');
+      dialogError.style.display = 'none';
+      dialogError.textContent = '';
+      addMcpGuidedRow('custom');
+      document.getElementById('mcp-custom-dialog').showModal();
+    }
+
+    function closeMcpCustomDialog() {
+      pendingMcpCustomScope = null;
+      document.getElementById('mcp-custom-dialog').close();
+    }
+
+    function switchMcpCustomMode(mode) {
+      const guidedEl = document.getElementById('mcp-custom-guided-panel');
+      const jsonEl = document.getElementById('mcp-custom-json-panel');
+      if (guidedEl) guidedEl.style.display = mode === 'guided' ? '' : 'none';
+      if (jsonEl) jsonEl.style.display = mode === 'json' ? '' : 'none';
+      document.querySelectorAll('#mcp-custom-dialog-content [data-mcp-mode]').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mcpMode === mode);
+      });
+    }
+
+    async function submitMcpCustomDialog(btn) {
+      const scope = pendingMcpCustomScope;
+      if (!scope) return;
+      const dialogError = document.getElementById('mcp-custom-dialog-error');
+      dialogError.style.display = 'none';
+      dialogError.textContent = '';
+      const jsonMode = document.getElementById('mcp-custom-json-panel').style.display !== 'none';
+      let json;
+      if (jsonMode) {
+        const raw = document.getElementById('mcp-custom-json').value.trim();
+        if (!raw) { dialogError.textContent = '請貼上 mcpServers JSON'; dialogError.style.display = 'block'; return; }
+        json = raw;
+      } else {
+        const nameEl = document.getElementById('mcp-custom-g-name');
+        const name = nameEl ? nameEl.value.trim() : '';
+        if (!name) { dialogError.textContent = '請輸入 server 名稱'; dialogError.style.display = 'block'; return; }
+        const checked = document.querySelector('input[name="mcp-custom-g-transport"]:checked');
+        const transport = checked ? checked.value : 'stdio';
+        const kv = {};
+        document.querySelectorAll('#mcp-custom-g-kv .mcp-kv-row').forEach((row) => {
+          const keyInput = row.querySelector('[data-kv-key]');
+          const valueInput = row.querySelector('[data-kv-value]');
+          const key = keyInput ? keyInput.value.trim() : '';
+          if (key) kv[key] = valueInput ? valueInput.value : '';
+        });
+        let entry;
+        if (transport === 'stdio') {
+          const commandEl = document.getElementById('mcp-custom-g-command');
+          const command = commandEl ? commandEl.value.trim() : '';
+          if (!command) { dialogError.textContent = '請輸入指令'; dialogError.style.display = 'block'; return; }
+          const argsEl = document.getElementById('mcp-custom-g-args');
+          const argsRaw = argsEl ? argsEl.value.trim() : '';
+          const args = argsRaw ? argsRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+          entry = Object.assign({ command: command }, args.length ? { args: args } : {}, Object.keys(kv).length ? { env: kv } : {});
+        } else {
+          const urlEl = document.getElementById('mcp-custom-g-url');
+          const url = urlEl ? urlEl.value.trim() : '';
+          if (!url) { dialogError.textContent = '請輸入 URL'; dialogError.style.display = 'block'; return; }
+          entry = Object.assign({ url: url }, Object.keys(kv).length ? { headers: kv } : {});
+        }
+        json = JSON.stringify({ mcpServers: { [name]: entry } });
+      }
+      btn.disabled = true;
+      btn.textContent = '儲存中…';
+      try {
+        const data = await apiPost('/admin/api/mcp-servers/mutate', {
+          action: 'import', scope: scope, json: json, ...scopeBody(),
+        });
+        const results = Array.isArray(data.results) ? data.results : [];
+        const failed = results.filter((r) => r.error).length;
+        closeMcpCustomDialog();
+        mcpMessage(scope, failed ? '已儲存，但 ' + failed + ' 個 server 連線失敗，見上方選項維護。' : '已儲存並連線成功。', failed ? 'err' : 'ok');
+        await loadMcpServers();
+      } catch (err) {
+        dialogError.textContent = err.message;
+        dialogError.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '新增並測試連線';
+      }
     }
 
     const MCP_JSON_PLACEHOLDER = JSON.stringify({
@@ -2642,16 +2802,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         },
       },
     }, null, 2);
-
-    function renderMcpVerify(scope, results) {
-      const el = document.getElementById('mcp-' + scope + '-verify');
-      if (!el) return;
-      if (!results || !results.length) { el.innerHTML = ''; return; }
-      el.innerHTML = results.map((r) => r.error
-        ? '<div class="inline-result err">✗ <strong>' + escHtml(r.name) + '</strong> — ' + escHtml(r.error) + '</div>'
-        : '<div class="inline-result ok">✓ <strong>' + escHtml(r.name) + '</strong> — ' + r.tools + ' tool(s), 下一次回應即可使用</div>'
-      ).join('');
-    }
 
     async function loadMcpServers() {
       const convEl = document.getElementById('mcp-conv-content');
@@ -2692,11 +2842,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
           mcpMessage(scope, failed ? '已儲存，但 ' + failed + ' 個 server 連線失敗，見下方錯誤。' : '已儲存並連線成功。', failed ? 'err' : 'ok');
         }
         await loadMcpServers();
-        if (action === 'import') {
-          const details = document.querySelector('#mcp-' + (scope === 'global' ? 'global' : 'conv') + '-content .mcp-manual');
-          if (details) details.open = true;
-          renderMcpVerify(scope, results);
-        }
       } catch (err) {
         mcpMessage(scope, err.message, 'err');
       }
@@ -2766,16 +2911,22 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    function importMcpServers(scope) {
-      const json = document.getElementById('mcp-' + scope + '-json').value.trim();
-      if (!json) { mcpMessage(scope, '請貼上 mcpServers JSON', 'err'); return; }
-      void mutateMcpServer(scope, 'import', null, { json: json });
-    }
-
     document.addEventListener('click', (event) => {
+      const modeBtn = event.target.closest('#mcp-custom-dialog-content [data-mcp-mode]');
+      if (modeBtn) { switchMcpCustomMode(modeBtn.dataset.mcpMode); return; }
+      const kvAddBtn = event.target.closest('[data-mcp-kv-add]');
+      if (kvAddBtn) { addMcpGuidedRow(kvAddBtn.dataset.mcpKvAdd); return; }
+      const kvRemoveBtn = event.target.closest('[data-mcp-kv-remove]');
+      if (kvRemoveBtn) { kvRemoveBtn.closest('.mcp-kv-row').remove(); return; }
+      const transportRadio = event.target.closest('input[name^="mcp-"][name$="-g-transport"]');
+      if (transportRadio) {
+        const match = /^mcp-(.+)-g-transport$/.exec(transportRadio.name);
+        if (match) updateMcpGuidedTransport(match[1]);
+        return;
+      }
       const btn = event.target.closest('[data-mcp-action]');
       if (!btn) return;
-      if (btn.dataset.mcpAction === 'import') { importMcpServers(btn.dataset.mcpScope); return; }
+      if (btn.dataset.mcpAction === 'open-custom') { openMcpCustomDialog(btn.dataset.mcpScope); return; }
       if (btn.dataset.mcpAction === 'preset') { openMcpPreset(btn.dataset.mcpScope, btn.dataset.mcpPreset); return; }
       void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
     });
@@ -3598,15 +3749,44 @@ const adminViewStyles = `
   }
   .mcp-preset-actions a:hover, .mcp-setup-link:hover { color: var(--text); text-decoration: underline; }
   .mcp-preset-actions .primary-action-btn { padding: 6px 12px; }
-  .mcp-installed, .mcp-manual {
+  .mcp-installed {
     margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;
   }
-  .mcp-installed > summary, .mcp-manual > summary {
+  .mcp-installed > summary {
     cursor: pointer; color: var(--muted); font-size: 0.8rem; font-weight: 600;
     margin-bottom: 10px;
   }
-  .mcp-manual .pkg-add { margin: 10px 0 0; }
+  .mcp-installed-card { min-height: 150px; }
+  .mcp-installed-transport {
+    font-family: 'JetBrains Mono', ui-monospace, monospace; word-break: break-all;
+  }
+  .mcp-add-card {
+    min-width: 0; min-height: 190px; border: 1.5px dashed var(--border); border-radius: 12px;
+    background: transparent; color: var(--muted); font-size: 0.86rem; font-weight: 600;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; cursor: pointer;
+  }
+  .mcp-add-card:hover { background: rgba(0,0,0,0.03); color: var(--text); border-color: var(--text); }
+  .mcp-add-card-plus { font-size: 1.8rem; line-height: 1; font-weight: 400; }
   .mcp-manual-hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 10px; line-height: 1.5; }
+  .mcp-add-mode { display: flex; gap: 8px; margin: 0 0 12px; }
+  .mcp-mode-btn {
+    padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--card); font-size: 0.8rem; cursor: pointer; color: var(--muted);
+  }
+  .mcp-mode-btn.active { background: var(--text); color: #fafafa; border-color: var(--text); }
+  .mcp-guided-grid { display: grid; gap: 12px; }
+  .mcp-field { display: grid; gap: 5px; }
+  .mcp-field span { font-size: 0.78rem; font-weight: 650; color: var(--muted); }
+  .mcp-transport-toggle { display: flex; gap: 16px; font-size: 0.85rem; align-items: center; }
+  .mcp-transport-toggle label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .mcp-transport-fields { display: grid; gap: 12px; }
+  .mcp-kv-block { display: grid; gap: 8px; }
+  .mcp-kv-head { display: flex; align-items: center; justify-content: space-between; }
+  .mcp-kv-head span { font-size: 0.78rem; font-weight: 650; color: var(--muted); }
+  .mcp-kv-rows { display: grid; gap: 6px; }
+  .mcp-kv-row { display: flex; gap: 8px; }
+  .mcp-kv-row .pkg-input { flex: 1 1 auto; }
   .mcp-json {
     width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.8rem; line-height: 1.45; resize: vertical;
@@ -3618,6 +3798,9 @@ const adminViewStyles = `
     width: min(620px, calc(100vw - 28px)); max-height: calc(100vh - 40px);
     border: 1px solid var(--border); border-radius: 18px; padding: 22px;
     color: var(--text); background: #fbfaf6; box-shadow: 0 28px 90px rgba(18,18,16,0.24);
+    /* The shell's global "* { margin: 0 }" reset overrides the UA stylesheet's
+       dialog[open] { margin: auto } centering rule, so pin it back explicitly. */
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0;
   }
   .mcp-dialog::backdrop { background: rgba(20,20,18,0.5); backdrop-filter: blur(3px); }
   .mcp-dialog-head {
@@ -3663,7 +3846,7 @@ const adminViewStyles = `
   }
   .mcp-secret-note { margin: 14px 0 8px; }
   .mcp-no-credentials { margin: 14px 0 0; }
-  #mcp-dialog-error { margin-top: 14px; }
+  #mcp-dialog-error, #mcp-custom-dialog-error { margin-top: 14px; }
   .mcp-dialog-actions {
     display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
     padding-top: 14px; border-top: 1px solid var(--border);
