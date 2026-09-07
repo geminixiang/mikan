@@ -193,3 +193,139 @@ describe("Admin MCP preset API", () => {
     expect(globalSettings().mcpServers).toBeUndefined();
   });
 });
+
+function startFakeHttpMcpServer(): Promise<{ server: Server; url: string }> {
+  const instance = createServer(async (req, res) => {
+    if (req.method !== "POST") {
+      res.writeHead(405).end();
+      return;
+    }
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    const message = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
+      id?: string | number;
+      method?: string;
+    };
+    if (req.headers.authorization !== "Bearer good-token") {
+      res.writeHead(401, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: message.id,
+          error: { code: -32000, message: "No API token provided" },
+        }),
+      );
+      return;
+    }
+    if (message.method === "notifications/initialized") {
+      res.writeHead(202).end();
+      return;
+    }
+    const result =
+      message.method === "initialize"
+        ? {
+            protocolVersion: "2025-03-26",
+            capabilities: { tools: {} },
+            serverInfo: { name: "fake", version: "1.0.0" },
+          }
+        : {
+            tools: [
+              { name: "one", inputSchema: { type: "object" } },
+              { name: "two", inputSchema: { type: "object" } },
+            ],
+          };
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+  });
+  return new Promise((resolve) => {
+    instance.listen(0, "127.0.0.1", () => {
+      const address = instance.address() as AddressInfo;
+      resolve({ server: instance, url: `http://127.0.0.1:${address.port}/mcp` });
+    });
+  });
+}
+
+describe("Admin MCP import API", () => {
+  test("imports a pasted mcpServers block, stores the normalized shape, and reports tools", async () => {
+    const fake = await startFakeHttpMcpServer();
+    try {
+      const imported = await post("/admin/api/mcp-servers/mutate", {
+        action: "import",
+        scope: "global",
+        json: JSON.stringify({
+          mcpServers: {
+            browser: {
+              type: "http",
+              url: fake.url,
+              headers: { Authorization: "Bearer good-token" },
+            },
+          },
+        }),
+        conversationId: CONVERSATION_ID,
+      });
+
+      expect(imported.status).toBe(200);
+      expect(imported.body.results).toEqual([{ name: "browser", tools: 2 }]);
+      expect(globalSettings().mcpServers.browser).toEqual({
+        url: fake.url,
+        headers: { Authorization: "Bearer good-token" },
+      });
+
+      const tested = await post("/admin/api/mcp-servers/mutate", {
+        action: "test",
+        scope: "global",
+        name: "browser",
+        conversationId: CONVERSATION_ID,
+      });
+      expect(tested.body.results).toEqual([{ name: "browser", tools: 2 }]);
+    } finally {
+      await new Promise<void>((resolve) => fake.server.close(() => resolve()));
+    }
+  });
+
+  test("keeps a bad entry on disk but surfaces the server's auth error, redacting the URL", async () => {
+    const fake = await startFakeHttpMcpServer();
+    try {
+      const imported = await post("/admin/api/mcp-servers/mutate", {
+        action: "import",
+        scope: "global",
+        json: JSON.stringify({
+          mcpServers: { browser: { url: `${fake.url}?token=wrong-secret` } },
+        }),
+        conversationId: CONVERSATION_ID,
+      });
+
+      expect(imported.status).toBe(200);
+      expect(imported.body.results).toHaveLength(1);
+      expect(imported.body.results[0].name).toBe("browser");
+      expect(imported.body.results[0].error).toContain("No API token provided");
+      expect(JSON.stringify(imported.body)).not.toContain("wrong-secret");
+      expect(globalSettings().mcpServers.browser.url).toBe(`${fake.url}?token=wrong-secret`);
+
+      const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
+      expect(listed.body.global.browser.url).toBe(`${fake.url}?token=<redacted>`);
+    } finally {
+      await new Promise<void>((resolve) => fake.server.close(() => resolve()));
+    }
+  });
+
+  test("rejects legacy 'set' payloads and malformed JSON with a clear error", async () => {
+    const malformed = await post("/admin/api/mcp-servers/mutate", {
+      action: "import",
+      scope: "global",
+      json: "{ not json",
+      conversationId: CONVERSATION_ID,
+    });
+    const legacy = await post("/admin/api/mcp-servers/mutate", {
+      action: "set",
+      scope: "global",
+      name: "s",
+      server: { url: "https://s.test/mcp" },
+      conversationId: CONVERSATION_ID,
+    });
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.error).toMatch(/not valid JSON/);
+    expect(legacy.status).toBe(400);
+    expect(globalSettings().mcpServers).toBeUndefined();
+  });
+});
