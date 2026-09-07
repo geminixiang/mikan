@@ -9,6 +9,7 @@ const sentryMock = vi.hoisted(() => {
     setContext: vi.fn(),
     setAttributes: vi.fn(),
     setUser: vi.fn(),
+    setConversationId: vi.fn(),
   };
   return {
     captureException: vi.fn(() => "event-id"),
@@ -49,6 +50,13 @@ import {
 } from "../observability/sentry.js";
 
 describe("Sentry initialization", () => {
+  test("keeps gen_ai inputs and outputs off by never declaring dataCollection", () => {
+    const options = createSentryInitOptions("https://public@example.invalid/1");
+
+    expect(options.sendDefaultPii).toBe(false);
+    expect(options).not.toHaveProperty("dataCollection");
+  });
+
   test("disables only OpenAI auto-instrumentation", () => {
     const options = createSentryInitOptions("https://public@example.invalid/1");
     const integrations = [{ name: "Http" }, { name: "OpenAI" }, { name: "OnUnhandledRejection" }];
@@ -307,6 +315,7 @@ describe("run attribution", () => {
       expect.objectContaining({ conversation_id: "C1", channel_id: "C1", user_id: "U1" }),
     );
     expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: "U1", username: "alice" });
+    expect(sentryMock.scope.setConversationId).toHaveBeenCalledWith("C1:T1");
   });
 
   test("propagates root attribution onto child spans", () => {

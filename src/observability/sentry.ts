@@ -88,6 +88,9 @@ export function createSentryInitOptions(dsn?: string) {
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
     enabled: Boolean(dsn) && readEnv("SENTRY_ENABLED") !== "false",
+    // Also keeps gen_ai inputs/outputs off. Do not add a `dataCollection`
+    // block here: its mere presence switches the SDK base to all-true, and
+    // prompts and completions start shipping unless every key is set false.
     sendDefaultPii: false,
     tracesSampleRate: 1.0,
     includeLocalVariables: false,
@@ -202,6 +205,10 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
     scope.setTag(key, value);
   }
   scope.setAttributes(attributes);
+  // Agent Monitoring groups gen_ai spans by this id. The session key is the
+  // thread-level unit (a shared channel has one conversationId across many
+  // threads) and is already emitted as the session_key tag.
+  scope.setConversationId(context.sessionKey);
   scope.setUser({
     id: context.userId,
     username: context.userName,
