@@ -73,4 +73,4 @@ A file earns its existence in exactly one way: **slot** (fills an existing conve
 - Check `node_modules` type definitions instead of guessing external APIs.
 - Dependency and lockfile changes are reviewed code: no adds or upgrades without approval; install with `--ignore-scripts`.
 - Answer the question first, then edit. Short, direct, technical; match the user's language.
-- Completion reports use tables where the content is tabular: decision points met during the work (choice, alternatives, why), before/after diffs of behavior or structure, and what verification ran.
+- Completion reports use tables and Mermaid diagrams where they fit: a table for decision points (choice, alternatives, why), before/after diffs, and verification; a Mermaid diagram for flows, state machines, and module relationships that changed.
