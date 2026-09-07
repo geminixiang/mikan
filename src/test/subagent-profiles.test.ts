@@ -33,45 +33,37 @@ describe("loadSubagentProfiles", () => {
     expect(diagnostics).toEqual([]);
     expect(profiles.get("worker")).toMatchObject({
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("software-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: [],
       maxTurns: 35,
     });
     expect(profiles.get("devops-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write", "event", "sandbox"],
-      requiredTools: [],
       maxTurns: 40,
     });
     expect(profiles.get("data-scientist")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: [],
       maxTurns: 35,
     });
     expect(profiles.get("account-manager")).toMatchObject({
       tools: ["read", "bash", "write", "event"],
-      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("business-development")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("creative-producer")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: [],
       maxTurns: 40,
     });
     expect(profiles.get("ad-operations-specialist")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: [],
       maxTurns: 35,
     });
-    expect(profiles.get("analysis-only")).toMatchObject({ tools: [], requiredTools: [] });
+    expect(profiles.get("analysis-only")).toMatchObject({ tools: [] });
     for (const profile of profiles.values()) {
       expect(profile.maxTokens).toBe(100_000);
     }
@@ -100,7 +92,6 @@ describe("loadSubagentProfiles", () => {
     expect(profile).toMatchObject({
       model: { provider: "openai-codex", id: "gpt-5.6-luna" },
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: [],
       thinkingLevel: "high",
     });
     expect(profile?.systemPrompt).toContain("software engineer");
@@ -108,11 +99,10 @@ describe("loadSubagentProfiles", () => {
 
   test("a patch can narrow the built-in's tool grant", () => {
     const dir = workspace();
-    writeProfile(dir, "software-engineer", `---\ntools: read\nrequired_tools: read\n---\n`);
+    writeProfile(dir, "software-engineer", `---\ntools: read\n---\n`);
 
     expect(loadSubagentProfiles(dir).profiles.get("software-engineer")).toMatchObject({
       tools: ["read"],
-      requiredTools: ["read"],
     });
   });
 
@@ -121,7 +111,7 @@ describe("loadSubagentProfiles", () => {
     writeProfile(
       dir,
       "auditor",
-      `---\ndescription: Evidence auditor\ntools: read, bash\nrequired_tools: read\nmodel: openai-codex/gpt-5.6-luna\nthinking: high\nmax_turns: 12\nmax_tokens: 90000\nmax_cost_usd: 0.75\nmax_duration_ms: 120000\n---\nUse evidence only.\n`,
+      `---\ndescription: Evidence auditor\ntools: read, bash\nmodel: openai-codex/gpt-5.6-luna\nthinking: high\nmax_turns: 12\nmax_tokens: 90000\nmax_cost_usd: 0.75\nmax_duration_ms: 120000\n---\nUse evidence only.\n`,
     );
 
     expect(loadSubagentProfiles(dir).profiles.get("auditor")).toEqual({
@@ -129,7 +119,6 @@ describe("loadSubagentProfiles", () => {
       description: "Evidence auditor",
       systemPrompt: "Use evidence only.",
       tools: ["read", "bash"],
-      requiredTools: ["read"],
       model: { provider: "openai-codex", id: "gpt-5.6-luna" },
       thinkingLevel: "high",
       maxTurns: 12,
@@ -141,24 +130,10 @@ describe("loadSubagentProfiles", () => {
 
   test("reads `none` as an empty tool grant", () => {
     const dir = workspace();
-    writeProfile(dir, "reader", `---\ntools: none\nrequired_tools: none\n---\nThink only.\n`);
+    writeProfile(dir, "reader", `---\ntools: none\n---\nThink only.\n`);
 
     expect(loadSubagentProfiles(dir).profiles.get("reader")).toMatchObject({
       tools: [],
-      requiredTools: [],
-    });
-  });
-
-  test("reports required tools outside the grant and keeps the built-in", () => {
-    const dir = workspace();
-    writeProfile(dir, "software-engineer", `---\ntools: read\nrequired_tools: bash\n---\n`);
-
-    const { profiles, diagnostics } = loadSubagentProfiles(dir);
-
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].message).toContain("required_tools must be included in tools: bash");
-    expect(profiles.get("software-engineer")).toMatchObject({
-      tools: ["read", "bash", "edit", "write"],
     });
   });
 

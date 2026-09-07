@@ -70,7 +70,6 @@ export interface SubagentProfile {
   description: string;
   systemPrompt: string;
   tools: string[];
-  requiredTools: string[];
   model?: SubagentModelSpec;
   thinkingLevel?: ThinkingLevel;
   maxTurns?: number;
@@ -124,8 +123,6 @@ export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = 
   model?: SubagentModelSpec;
   /** Tool names explicitly granted to the subagent. Defaults to no tools. */
   tools?: string[];
-  /** Tool names that must each be invoked at least once before completion. */
-  requiredTools?: string[];
   /** Per-profile thinking override. */
   thinkingLevel?: ThinkingLevel;
   /** When present, the final response must be JSON matching this schema. */

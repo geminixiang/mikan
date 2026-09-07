@@ -30,10 +30,6 @@ import type {
 export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
 import { parseFrontmatter } from "./skills.js";
 
-// Built-ins carry no requiredTools. The check is a per-task evidence demand
-// ("prove you actually inspected X") that only the caller can judge; as a
-// profile default it fails every task that legitimately needs a subset of the
-// granted tools, discarding a finished answer after the budget is spent.
 const BUILTIN_PROFILES: SubagentProfile[] = [
   {
     name: "worker",
@@ -46,7 +42,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep verbose discovery and command output in this isolated run. Return the completed result, files or artifacts changed, verification performed, and any unresolved blocker.",
     ].join("\n"),
     tools: ["read", "bash", "edit", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 30,
     maxTokens: 100_000,
@@ -63,7 +58,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep source discovery, build logs, browser traces, and repetitive diagnostics in this isolated run. Return the implemented or diagnosed outcome, decisive technical evidence, changed artifact paths when applicable, verification results, and remaining engineering risk.",
     ].join("\n"),
     tools: ["read", "bash", "edit", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 35,
     maxTokens: 100_000,
@@ -80,7 +74,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep verbose CLI, API, and job logs in this isolated run. Return the resulting state, affected resources or job identifiers, verification performed, and concrete follow-up or rollback information.",
     ].join("\n"),
     tools: ["read", "bash", "edit", "write", "event", "sandbox"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 40,
     maxTokens: 100_000,
@@ -97,7 +90,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep verbose rows and query output in this isolated run. Return the conclusion, key figures with units and scope, methodology and checks, and limitations that affect confidence.",
     ].join("\n"),
     tools: ["read", "bash", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 35,
     maxTokens: 100_000,
@@ -114,7 +106,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep verbose records and operational output in this isolated run. Return the customer-facing outcome, account or artifact identifiers, decisions and blockers, and the next owner and action where follow-through remains.",
     ].join("\n"),
     tools: ["read", "bash", "write", "event"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 30,
     maxTokens: 100_000,
@@ -131,7 +122,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep raw pages, candidate lists, and repetitive validation output in this isolated run. Return qualified opportunities, supporting evidence, confidence and disqualifiers, and a concise recommended next action.",
     ].join("\n"),
     tools: ["read", "bash", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 30,
     maxTokens: 100_000,
@@ -147,7 +137,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep generation logs, intermediate assets, and provider polling in this isolated run. Return deliverable paths or external identifiers, a concise production summary, verification results, and unresolved creative, quality, or rights constraints.",
     ].join("\n"),
     tools: ["read", "bash", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 40,
     maxTokens: 100_000,
@@ -164,7 +153,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Keep browser traces, HAR data, report rows, and repetitive diagnostics in this isolated run. Return the operational conclusion, decisive delivery evidence, affected inventory, remediation or escalation owner, and uncertainty that could change the diagnosis.",
     ].join("\n"),
     tools: ["read", "bash", "write"],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 35,
     maxTokens: 100_000,
@@ -178,7 +166,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "Do not claim to have inspected files, executed commands, accessed URLs, or verified external state. Clearly distinguish dependency-provided facts from your own analysis. If the supplied evidence is insufficient, state the limitation instead of inventing details.",
     ].join("\n"),
     tools: [],
-    requiredTools: [],
     thinkingLevel: "high",
     maxTurns: 20,
     maxTokens: 100_000,
@@ -262,7 +249,6 @@ function parseProfilePatch(filePath: string, base: SubagentProfile | undefined):
 
   applyField(patch, values, "description", "description", (value) => value.trim());
   applyField(patch, values, "tools", "tools", csv);
-  applyField(patch, values, "required_tools", "requiredTools", csv);
   applyField(patch, values, "model", "model", parseModel);
   applyField(patch, values, "thinking", "thinkingLevel", parseThinking);
   applyField(patch, values, "max_turns", "maxTurns", (v) => parsePositiveInteger(v, "max_turns"));
@@ -291,13 +277,7 @@ function parseProfilePatch(filePath: string, base: SubagentProfile | undefined):
     description: patch.description || base?.description || name,
     systemPrompt,
     tools: patch.tools ?? base?.tools ?? [],
-    requiredTools: patch.requiredTools ?? base?.requiredTools ?? [],
   };
-
-  const ungranted = merged.requiredTools.filter((tool) => !merged.tools.includes(tool));
-  if (ungranted.length > 0) {
-    throw new Error(`required_tools must be included in tools: ${ungranted.join(", ")}`);
-  }
   return merged;
 }
 

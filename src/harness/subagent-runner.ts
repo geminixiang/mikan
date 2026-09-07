@@ -252,29 +252,6 @@ function selectTools(requested: string[] | undefined, available: AgentTool[]): A
   return selected;
 }
 
-/**
- * Wrap a tool so the run can prove it was actually reached. Fields are listed
- * explicitly rather than spread: `AgentTool` is a plain interface, and a
- * structural copy would silently drop anything added to it later.
- */
-function witnessToolUse(tool: AgentTool, invoked: Set<string>): AgentTool {
-  return {
-    name: tool.name,
-    label: tool.label,
-    description: tool.description,
-    parameters: tool.parameters,
-    ...(tool.constrainedSampling !== undefined
-      ? { constrainedSampling: tool.constrainedSampling }
-      : {}),
-    ...(tool.prepareArguments ? { prepareArguments: tool.prepareArguments.bind(tool) } : {}),
-    ...(tool.executionMode ? { executionMode: tool.executionMode } : {}),
-    execute: (...args: Parameters<AgentTool["execute"]>) => {
-      invoked.add(tool.name);
-      return tool.execute(...args);
-    },
-  };
-}
-
 function formatTask(task: string, input: unknown, parentContext?: string): string {
   const trimmed = task.trim();
   if (!trimmed) throw new Error("api.subagent.run requires a non-empty task");
@@ -566,9 +543,6 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
     ...request,
     systemPrompt: profile.systemPrompt,
     tools: profile.tools,
-    // The guard above allows requiredTools to combine with a profile, so the
-    // caller's evidence requirements must survive alongside the profile's.
-    requiredTools: [...new Set([...(request.requiredTools ?? []), ...profile.requiredTools])],
     ...(profile.model ? { model: profile.model } : {}),
     ...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
     ...(Object.keys(budget).length > 0 ? { budget } : {}),
@@ -584,7 +558,6 @@ type PreparedSubagentRun<TOutputSchema extends TSchema | undefined> = {
   modelSpec: SubagentModelSpec;
   session: MikanAgentSession;
   budget: ReturnType<typeof resolveBudget>;
-  invokedTools: Set<string>;
   task: string;
 };
 
@@ -597,14 +570,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
   const model = request.model
     ? options.models.resolve(request.model.provider, request.model.id)
     : options.defaultModel;
-  const invokedTools = new Set<string>();
   const granted = selectTools(request.tools, options.availableTools);
-  const missingRequiredTools = (request.requiredTools ?? []).filter(
-    (name) => !granted.some((tool) => tool.name === name),
-  );
-  if (missingRequiredTools.length > 0) {
-    throw new Error(`Required subagent tools were not granted: ${missingRequiredTools.join(", ")}`);
-  }
   const task = formatTask(
     request.task,
     request.input,
@@ -618,7 +584,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
     ),
     model,
     thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
-    tools: granted.map((tool) => witnessToolUse(tool, invokedTools)),
+    tools: granted,
     models: options.models,
     sessionStore: SessionStore.inMemory(options.workspaceDir),
     settings: { compaction: { enabled: false } },
@@ -631,7 +597,6 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
     modelSpec: { provider: model.provider, id: model.id },
     session,
     budget: resolveBudget(request.budget),
-    invokedTools,
     task,
   };
 }
@@ -641,7 +606,7 @@ function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
   terminalSignal: TerminalSignal | undefined,
   cleanupPending = false,
 ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
-  const { session, request, invokedTools, budget } = run;
+  const { session, request, budget } = run;
   const stats = session.getLastRunStats();
   const assistant = finalAssistant(session.messages);
   const text = assistant ? contentText(assistant.content, "") : "";
@@ -662,16 +627,6 @@ function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
   }
   if (stats.budgetExceededReason) {
     return { ...base, status: "budget_exceeded", error: stats.budgetExceededReason };
-  }
-  const unusedRequiredTools = (request.requiredTools ?? []).filter(
-    (name) => !invokedTools.has(name),
-  );
-  if (unusedRequiredTools.length > 0) {
-    return {
-      ...base,
-      status: "failed",
-      error: `Required tool not used: ${unusedRequiredTools.join(", ")}`,
-    };
   }
   if (assistant?.stopReason === "error") {
     return { ...base, status: "failed", error: assistant.errorMessage || "Subagent failed" };

@@ -13,7 +13,7 @@ any release.
 
 ### Fixed
 
-- Drop `requiredTools` from built-in subagent profiles; requiring both `read` and `bash` discarded finished answers from tasks that needed only one of them.
+- Remove the subagent `requiredTools` / `required_tools` mechanism. Built-in profiles required both `read` and `bash`, and the post-run check discarded finished answers from tasks that needed only one of them.
 
 ## [1.0.0-beta.50]
 

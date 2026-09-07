@@ -53,9 +53,6 @@ this does not establish completion of the broader review.
   behavior absent from the upstream formatter.
 - Model availability intentionally isolates provider authentication failures;
   upstream all-provider availability is not an equivalent replacement.
-- Required subagent tools are witnessed at `execute`, not
-  `tool_execution_start`: installed core emits the latter before validation and
-  for tool calls suppressed after truncated model output.
 - Upstream `retryAssistantCall` retries one model call, not mikan's persisted
   Agent continuation with its budget and compaction policies.
 - No equivalent exported run-local usage accumulator has been identified.
