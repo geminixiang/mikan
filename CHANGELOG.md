@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.54]
+
+### Changed
+
+- Admin portal: MCP servers are added by pasting the server's standard `mcpServers` JSON (Claude Desktop / Cursor shape), stored as-is; the old name / target / `KEY=value` form is gone. Every add and preset install is followed by a real connection check, and the response shows the tool count or the server's own error; a per-server **Test** button re-checks an installed entry. Query-string values in listed URLs are redacted. stdio entries now run their command on the host at save time.
+
 ## [1.0.0-beta.53]
 
 ### Changed
