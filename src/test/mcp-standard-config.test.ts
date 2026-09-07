@@ -45,6 +45,9 @@ describe("parseStandardMcpServers", () => {
       /either command/,
     );
     expect(
+      parseStandardMcpServers(JSON.stringify({ s: { url: "mcp.example/mcp" } })).error,
+    ).toMatch(/not a valid URL/);
+    expect(
       parseStandardMcpServers(JSON.stringify({ s: { url: "https://s.test", command: "npx" } }))
         .error,
     ).toMatch(/only one/);

@@ -44,7 +44,10 @@ export function parseStandardMcpServers(text: string): StandardMcpParseResult {
     }
     if (!isRecord(entry)) return { error: `"${name}" must be an object` };
     const hasCommand = typeof entry.command === "string" && entry.command.trim() !== "";
-    const hasUrl = typeof entry.url === "string" && URL.canParse(entry.url);
+    if (typeof entry.url === "string" && !URL.canParse(entry.url)) {
+      return { error: `"${name}": url is not a valid URL` };
+    }
+    const hasUrl = typeof entry.url === "string";
     if (!hasCommand && !hasUrl) {
       return { error: `"${name}": set either command (stdio) or url (HTTP)` };
     }
