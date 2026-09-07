@@ -9,11 +9,23 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.52]
+
+### Removed
+
+- Remove the subagent `requiredTools` / `required_tools` mechanism: the post-run "every listed tool was invoked" check was a proxy for evidence that never held and failed only after the budget was spent. Callers that want evidence can read `toolCallCounts`.
+
 ## [1.0.0-beta.51]
 
 ### Fixed
 
-- Remove the subagent `requiredTools` / `required_tools` mechanism. Built-in profiles required both `read` and `bash`, and the post-run check discarded finished answers from tasks that needed only one of them.
+- Drop `requiredTools` from built-in subagent profiles; requiring both `read` and `bash` discarded finished answers from tasks that needed only one of them.
+- Keep a caller's `requiredTools` when the request also names a profile.
+- Stop dropping the retained assistant message when an overflow retry rebuilds context from the store.
+
+### Changed
+
+- Read mikan session metadata through Pi's `session.getValue` in `open`/`inspect`; compare `fstat` fields instead of hashing the file for pending-session materialization.
 
 ## [1.0.0-beta.50]
 
