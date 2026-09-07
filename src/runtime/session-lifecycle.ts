@@ -405,7 +405,10 @@ export class SessionLifecycle {
         `Aborting ${this.activeWorkCount()} runs after shutdown timeout`,
         `${timeoutMs}ms`,
       );
-      for (const state of this.runningStates()) state.runner.abort();
+      for (const state of this.runningStates()) {
+        state.shutdownAborted = true;
+        state.runner.abort();
+      }
       await this.waitForActiveWork(Date.now() + 5_000, 100);
       if (this.activeWorkCount() > 0) {
         throw new Error(

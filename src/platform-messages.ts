@@ -34,6 +34,13 @@ export function formatStopped(source: PlatformSource): string {
   return formatItalic(resolvePlatformName(source), "Stopped.");
 }
 
+export function formatRestarting(source: PlatformSource): string {
+  return formatItalic(
+    resolvePlatformName(source),
+    "Restarting for an update; this reply was interrupted. Please send your message again.",
+  );
+}
+
 export function formatAlreadyWorking(
   source: PlatformSource,
   stopCommand: string,

@@ -119,9 +119,11 @@ pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">
-  同梱の PM2 設定は SIGTERM 後、SIGKILL まで最大 60 秒待機します。mikan は最初に conversation
-  runtime を drain し、events watcher を停止し、Sentry の flush を最大 5 秒待ちます。supervisor
-  timeout を超える runs は、それでも終了される場合があります。
+  同梱の PM2 設定は停止シグナル後、SIGKILL まで最大 6 分待機します。mikan は新しいメッセージの
+  受付を即座に止め、実行中の runs を最大 5 分完了させ、残りを中止してその会話に再起動の通知を
+  投稿し、Sentry の flush を最大 5 秒待ちます。fork モードの `pm2 reload` は旧プロセス終了後に
+  新プロセスを起動するため、drain 中はどのプロセスもプラットフォームに接続していません。
+  オフピークにデプロイしてください。
 </Aside>
 
 ### Office layout migration をまたぐアップグレード

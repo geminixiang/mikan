@@ -36,9 +36,11 @@
 //   pm2 logs mikan         # tail combined logs
 //
 // Notes:
-// - kill_timeout is 60s to give mikan's internal graceful shutdown
-//   (handler.shutdown defaults to 30s) room to drain in-flight LLM
-//   turns before pm2 sends SIGKILL.
+// - kill_timeout is 6 minutes: mikan stops taking new messages at once, lets
+//   in-flight runs finish for up to 5 minutes, then aborts what is left and
+//   posts a "restarting" notice to those conversations. In fork mode
+//   `pm2 reload` is sequential (old process exits, then the new one starts),
+//   so a long drain is also downtime for new messages; deploy off-peak.
 // - A `container:` sandbox should be started with `--restart unless-stopped`
 //   so it comes back on reboot before mikan tries to exec into it.
 
@@ -90,8 +92,9 @@ module.exports = {
       // Secrets and tokens come from the env file, never from this file.
       env: loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")),
 
-      // Graceful shutdown: SIGTERM, then wait up to 60s before SIGKILL.
-      kill_timeout: 60000,
+      // Graceful shutdown: SIGINT, then wait up to 6 minutes before SIGKILL
+      // (5-minute run drain + abort settle + Sentry flush).
+      kill_timeout: 360000,
 
       // Auto-restart policy.
       autorestart: true,

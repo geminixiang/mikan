@@ -560,6 +560,35 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning(testAddress, "C123")).toBe(false);
   });
 
+  test("shutdown deadline aborts the run and posts a restart notice", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime(models);
+    let started = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    faux.setResponses([
+      async () => {
+        started = true;
+        await gate;
+        return fauxAssistantMessage("late");
+      },
+    ]);
+    const { event, context } = makeEventAndContext("1000.4");
+    const run = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(started).toBe(true));
+
+    const shutdown = runtime.shutdown(0);
+    release();
+    await run;
+    await shutdown;
+
+    expect(bot.postMessage).toHaveBeenCalledWith(
+      "C123",
+      expect.stringContaining("Restarting for an update"),
+    );
+    expect(runtime.isRunning(testAddress, "C123")).toBe(false);
+  });
+
   test("new creates a clean session immediately without changing memory", async () => {
     const runtime = makeRuntime();
     const runner = seedRunnerState(runtime);

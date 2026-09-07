@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Graceful shutdown drains in-flight runs for up to five minutes (was 30 seconds) after stopping intake; runs still open at the deadline are aborted and their conversations receive a restart notice instead of silence. The pm2 template `kill_timeout` is now six minutes; update your `ecosystem.config.cjs` to match. Shutdown failures now log every nested step error.
+
 ### Added
 
 - Send the run user (id and username) with Sentry events instead of stripping it, so Conversations show who sent each message; email and IP stay dropped.

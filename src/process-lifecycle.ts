@@ -10,6 +10,13 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+/** Flatten AggregateError trees so the log names every failed step, not just the wrapper. */
+function describeFailure(error: Error): string {
+  if (!(error instanceof AggregateError)) return error.message;
+  const inner = error.errors.map((entry) => describeFailure(asError(entry)));
+  return `${error.message}: ${inner.join("; ")}`;
+}
+
 /** Run every shutdown phase in order without letting one failure skip the rest. */
 export async function runShutdownSteps(
   steps: readonly { name: string; run: () => Promise<void> }[],
@@ -51,7 +58,7 @@ export function createProcessShutdownHandler(
       } catch (error) {
         const failure = asError(error);
         exitCode = 1;
-        options.warn("Graceful shutdown failed", failure.message);
+        options.warn("Graceful shutdown failed", describeFailure(failure));
         options.captureError(failure);
       }
 

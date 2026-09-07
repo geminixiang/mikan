@@ -38,7 +38,12 @@ import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
 } from "../sessions/session-key.js";
-import { formatNothingRunning, formatStopped, formatStopping } from "../platform-messages.js";
+import {
+  formatNothingRunning,
+  formatRestarting,
+  formatStopped,
+  formatStopping,
+} from "../platform-messages.js";
 import * as Sentry from "@sentry/node";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/index.js";
@@ -83,6 +88,29 @@ function runtimeCwdForSandbox(
   ).runtimeWorkspaceRoot;
   // The office key names the same segment on the host and in the runtime.
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${workspace.office(address).key}`;
+}
+
+/** Tell the conversation why its reply stopped: an operator stop, or a shutdown deadline. */
+async function postAbortNotice(
+  state: ConversationRuntimeState,
+  bot: MessagingBot,
+  conversationId: string,
+  platformName: string,
+): Promise<void> {
+  if (state.shutdownAborted) {
+    Sentry.metrics.count("agent.run.shutdown_aborted", 1, {
+      attributes: { platform: platformName },
+    });
+    await bot.postMessage(conversationId, formatRestarting(bot));
+    return;
+  }
+  if (!state.stopRequested) return;
+  if (state.stopMessageTs) {
+    await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
+    state.stopMessageTs = undefined;
+    return;
+  }
+  await bot.postMessage(conversationId, formatStopped(bot));
 }
 
 export function createConversationRuntime(
@@ -353,13 +381,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             },
           );
 
-          if (result?.stopReason === "aborted" && state.stopRequested) {
-            if (state.stopMessageTs) {
-              await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
-              state.stopMessageTs = undefined;
-            } else {
-              await bot.postMessage(conversationId, formatStopped(bot));
-            }
+          if (result?.stopReason === "aborted") {
+            await postAbortNotice(state, bot, conversationId, context.platform.name);
           }
         } finally {
           Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount() - 1);

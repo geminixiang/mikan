@@ -115,9 +115,10 @@ pm2 reload ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">
-  隨附的 PM2 設定會在 SIGTERM 後等待最多 60 秒才送出 SIGKILL。mikan 會先排空 conversation
-  runtime、停止 events watcher，並給 Sentry 最多五秒完成 flush。超過 supervisor timeout
-  的執行仍可能被終止。
+  隨附的 PM2 設定會在停止訊號後等待最多六分鐘才送出 SIGKILL。mikan 會立即停止接收新訊息，
+  讓進行中的執行最多再跑五分鐘，之後中止剩餘的執行並在那些對話張貼重啟通知，最後給 Sentry
+  最多五秒完成 flush。fork 模式下的 `pm2 reload` 是先停舊、再起新，排空期間沒有任何 process
+  連著平台；請在離峰時段部署。
 </Aside>
 
 ### 跨 office 佈局遷移的升級

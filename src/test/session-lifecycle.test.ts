@@ -358,3 +358,46 @@ describe("SessionLifecycle", () => {
     });
   });
 });
+
+describe("SessionLifecycle shutdown deadline", () => {
+  test("marks each aborted run so the runtime can post a restart notice", async () => {
+    const lifecycle = new SessionLifecycle();
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => (finish = resolve));
+    const running = state("C1");
+    running.running = true;
+    running.runner = {
+      dispose: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn(() => finish()),
+    } as unknown as ConversationRuntimeState["runner"];
+    lifecycle.set(running);
+    const settlement = lifecycle.settle(running, () => gate);
+
+    await lifecycle.shutdown(0);
+    await settlement;
+
+    expect(running.runner.abort).toHaveBeenCalledOnce();
+    expect(running.shutdownAborted).toBe(true);
+  });
+
+  test("does not mark runs that finish inside the budget", async () => {
+    const lifecycle = new SessionLifecycle();
+    const running = state("C1");
+    running.running = true;
+    running.runner = {
+      dispose: vi.fn().mockResolvedValue(undefined),
+      abort: vi.fn(),
+    } as unknown as ConversationRuntimeState["runner"];
+    lifecycle.set(running);
+    const settlement = lifecycle.settle(running, async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      running.running = false;
+    });
+
+    await lifecycle.shutdown(5_000);
+    await settlement;
+
+    expect(running.runner.abort).not.toHaveBeenCalled();
+    expect(running.shutdownAborted).toBeUndefined();
+  });
+});

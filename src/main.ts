@@ -98,7 +98,11 @@ const openConnector: McpServerConfig | undefined = OPENCONNECTOR_ENDPOINT
   : undefined;
 
 const WORLD_WRITABLE_MODE = 0o002;
-const INTAKE_DRAIN_TIMEOUT_MS = 30_000;
+// How long in-flight runs (and messages already queued behind them) may keep
+// running after a shutdown signal before they are aborted. pm2 fork-mode reload
+// is sequential, so this is also the window where no process is connected to
+// the platforms; Slack's documented redelivery schedule ends at five minutes.
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 5 * 60_000;
 
 function ensureSecureStateDir(path: string): void {
   let stat;
@@ -633,7 +637,7 @@ async function waitForGracefulDrain(drain: Promise<unknown>): Promise<boolean> {
   const settled = await Promise.race([
     drain.then(() => true),
     new Promise<false>((resolve) => {
-      timeout = setTimeout(() => resolve(false), INTAKE_DRAIN_TIMEOUT_MS);
+      timeout = setTimeout(() => resolve(false), SHUTDOWN_DRAIN_TIMEOUT_MS);
     }),
   ]);
   if (timeout) clearTimeout(timeout);
@@ -646,7 +650,7 @@ async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
   if (!(await waitForGracefulDrain(gracefulDrain))) {
     const runtimeResult = await Promise.allSettled([handler.shutdown(0)]);
     const failures: unknown[] = [
-      new Error(`Conversation work did not drain within ${INTAKE_DRAIN_TIMEOUT_MS}ms`),
+      new Error(`Conversation work did not drain within ${SHUTDOWN_DRAIN_TIMEOUT_MS}ms`),
       ...runtimeResult.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
     ];
     throw new AggregateError(failures, "Failed to drain conversation work");
@@ -654,7 +658,7 @@ async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
 
   const results = [
     ...(await gracefulDrain),
-    ...(await Promise.allSettled([handler.shutdown(INTAKE_DRAIN_TIMEOUT_MS)])),
+    ...(await Promise.allSettled([handler.shutdown(SHUTDOWN_DRAIN_TIMEOUT_MS)])),
   ];
   const failures = results.flatMap((result) =>
     result.status === "rejected" ? [result.reason] : [],

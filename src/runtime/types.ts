@@ -34,6 +34,8 @@ export interface ConversationRuntimeState {
   runSettlement?: Promise<void>;
   runner: PiAgentWrapper;
   stopRequested: boolean;
+  /** Set when the shutdown deadline aborted this run; the runtime posts a restart notice. */
+  shutdownAborted?: boolean;
   stopMessageTs?: string;
   lastAccessedAt: number;
   sessionFile: string;

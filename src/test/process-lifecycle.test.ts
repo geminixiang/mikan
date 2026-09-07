@@ -81,6 +81,28 @@ describe("createProcessShutdownHandler", () => {
     expect(options.exit).toHaveBeenCalledWith(1);
   });
 
+  test("names every nested step failure, not just the wrapper", async () => {
+    const failure = new AggregateError(
+      [
+        new Error("conversation work: Conversation work did not drain within 300000ms"),
+        new AggregateError(
+          [new Error("Shutdown could not settle 2 aborted runs within 5000ms")],
+          "Failed to drain conversation work",
+        ),
+      ],
+      "Graceful shutdown failed",
+    );
+    const options = createOptions({ stop: vi.fn().mockRejectedValue(failure) });
+    const shutdown = createProcessShutdownHandler(options);
+
+    await shutdown("SIGINT");
+
+    expect(options.warn).toHaveBeenCalledWith(
+      "Graceful shutdown failed",
+      "Graceful shutdown failed: conversation work: Conversation work did not drain within 300000ms; Failed to drain conversation work: Shutdown could not settle 2 aborted runs within 5000ms",
+    );
+  });
+
   test("exits non-zero when diagnostic flushing times out", async () => {
     const options = createOptions({ flush: vi.fn().mockResolvedValue(false) });
     const shutdown = createProcessShutdownHandler(options);
