@@ -41,6 +41,7 @@ The Husky pre-commit hook runs the full gate: lint, fmt:check, knip, build, test
 
 - Strict TypeScript, ESM, `.js` specifiers for local imports, `node:` for builtins, `import type` for types, no `any` in `src/` (tests exempt). Lint and tsconfig enforce these; don't restate them in code review.
 - `.config/oxlintrc.json` carries a frozen exemption list for legacy long functions — shrink it when touching a listed file, never grow it.
+- **LBYL and early returns.** Check preconditions up front and return or throw at the top of the function; keep the happy path unnested. Reach for EAFP (try/catch around the operation) only when a check-then-act would race (TOCTOU), duplicate expensive work, or make the error handling less clear.
 - Handle errors explicitly; never swallow failures silently.
 - State files that readers must not see half-written (settings, session pointers, event JSON, credentials, markers) go through `atomicWritePrivateFile`; optional text/JSON reads and schema-validated parsing go through `src/utils/file-guards.ts`. Otherwise use `node:fs` directly; don't wrap it.
 - Secret/vault file permissions stay explicit at the call site.
