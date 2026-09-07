@@ -198,6 +198,12 @@ function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSe
   };
 }
 
+/**
+ * Hand-rolled JSONL scan kept only for the synchronous `readHeader` path,
+ * which must read metadata without opening a Session. `open`/`inspect`
+ * instead read it via `session.getValue(MIKAN_METADATA, ...)` once a
+ * Session exists, so pi owns that decoding.
+ */
 function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined {
   let current: MikanSessionMetadata | undefined;
   const lines = readFileSync(filePath, "utf-8").split("\n");
@@ -232,11 +238,10 @@ function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined 
 }
 
 function fileFingerprint(path: string): string {
-  const bytes = readFileSync(path);
   const fd = openSync(path, "r");
   try {
     const stats = fstatSync(fd);
-    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${bytes.toString("base64")}`;
+    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
   } finally {
     closeSync(fd);
   }
@@ -261,9 +266,7 @@ function materializePendingFile(
   const fd = openSync(path, "r+");
   try {
     const stats = fstatSync(fd);
-    const bytes = Buffer.alloc(stats.size);
-    readSync(fd, bytes, 0, bytes.length, 0);
-    const actual = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${bytes.toString("base64")}`;
+    const actual = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
     if (actual !== expectedFingerprint) {
       throw new Error(`Session file changed before pending session materialization: ${path}`);
     }
@@ -465,8 +468,8 @@ export class SessionStore implements SessionInspection {
         );
       }
       const header = parseCurrentHeader(writerPath, firstLine);
-      const metadata = parseMikanMetadata(writerPath);
       const opened = await openFileSession(writerPath, header);
+      const metadata = (await opened.session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
       return new SessionStore(
         writerPath,
         cwdOverride ?? header.cwd,
@@ -487,8 +490,8 @@ export class SessionStore implements SessionInspection {
     try {
       writeFileSync(snapshotPath, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
       const header = parseCurrentHeader(resolvedPath, readHeaderLine(snapshotPath));
-      const metadata = parseMikanMetadata(snapshotPath);
       opened = await openFileSession(snapshotPath, header);
+      const metadata = (await opened.session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
       const entries = await opened.session.findEntries({ order: "asc" }, TODO_CONTEXT);
       const name = await opened.session.getName(TODO_CONTEXT);
       const branchObject = await mainBranch(opened.session, false);
