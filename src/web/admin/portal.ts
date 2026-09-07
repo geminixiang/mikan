@@ -46,6 +46,12 @@ import {
   type WorkspacePolicyChoice,
 } from "../../config.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../mcp/catalog.js";
+import { loadMcpTools } from "../../mcp/loader.js";
+import {
+  isValidMcpServerName,
+  parseStandardMcpServers,
+  redactMcpUrl,
+} from "../../mcp/standard-config.js";
 import type { McpServerConfig } from "../../mcp/types.js";
 import {
   applyConversationSettings,
@@ -1513,7 +1519,7 @@ function redactMcpServers(map: Record<string, McpServerConfig>): Record<string, 
       {
         ...(config.command !== undefined ? { command: config.command } : {}),
         ...(config.args !== undefined ? { args: config.args } : {}),
-        ...(config.url !== undefined ? { url: config.url } : {}),
+        ...(config.url !== undefined ? { url: redactMcpUrl(config.url) } : {}),
         ...(config.disabled !== undefined ? { disabled: config.disabled } : {}),
         envKeys: Object.keys(config.env ?? {}),
         headerKeys: Object.keys(config.headers ?? {}),
@@ -1521,8 +1527,6 @@ function redactMcpServers(map: Record<string, McpServerConfig>): Record<string, 
     ]),
   );
 }
-
-const MCP_SERVER_NAME_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 function mcpStringMap(value: unknown): Record<string, string> | undefined {
   if (typeof value !== "object" || value === null) return undefined;
@@ -1533,65 +1537,125 @@ function mcpStringMap(value: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
-function parseMcpServerEntry(raw: unknown): { config?: McpServerConfig; error?: string } {
-  if (typeof raw !== "object" || raw === null) return { error: "server entry must be an object" };
-  const entry = raw as Record<string, unknown>;
-  const command = typeof entry.command === "string" ? entry.command.trim() : "";
-  const serverUrl = typeof entry.url === "string" ? entry.url.trim() : "";
-  if (!command && !serverUrl) return { error: "set either command (stdio) or url (HTTP)" };
-  if (command && serverUrl) return { error: "set only one of command / url" };
-  if (serverUrl && !URL.canParse(serverUrl)) {
-    return { error: "url is not a valid URL" };
-  }
-  const args = Array.isArray(entry.args)
-    ? entry.args.filter((a): a is string => typeof a === "string")
-    : undefined;
-  const env = mcpStringMap(entry.env);
-  const headers = mcpStringMap(entry.headers);
-  return {
-    config: {
-      ...(command ? { command, ...(args && args.length > 0 ? { args } : {}) } : {}),
-      ...(serverUrl ? { url: serverUrl } : {}),
-      ...(env ? { env } : {}),
-      ...(headers ? { headers } : {}),
-      ...(entry.disabled === true ? { disabled: true } : {}),
-    },
-  };
-}
+const MCP_VERIFY_TIMEOUT_MS = 20_000;
+
+type McpVerifyResult = { name: string; tools: number } | { name: string; error: string };
 
 /**
- * Set / remove / toggle one MCP server in one scope. Reads the scope's raw
- * map, applies the change, and writes the full map back (wholesale, like
- * packages — merge would make removal impossible). Runner caches refresh via
- * applyGlobalSettings/applyConversationSettings.
+ * Connect to the given servers once, the way the runner will, and report per
+ * server either the tool count or the server's own error text. This is the
+ * difference between "settings.json was written" and "it works": the runner
+ * only logs load failures host-side, so without this the portal is the only
+ * place an operator can learn that a pasted token is wrong.
+ *
+ * For stdio entries this runs the configured command on the host now, at save
+ * time, rather than at the next message.
  */
-function serveMcpServerMutation(
-  res: ServerResponse,
+async function verifyMcpServers(
+  servers: Record<string, McpServerConfig>,
+): Promise<McpVerifyResult[]> {
+  const names = Object.keys(servers);
+  if (names.length === 0) return [];
+  const loaded = await loadMcpTools(servers, AbortSignal.timeout(MCP_VERIFY_TIMEOUT_MS));
+  try {
+    return names.map((name) => {
+      const failure = loaded.errors.find((e) => e.server === name);
+      if (failure) {
+        const url = servers[name]?.url;
+        const error = url ? failure.error.split(url).join(redactMcpUrl(url)) : failure.error;
+        return { name, error };
+      }
+      const prefix = `mcp__${name}__`;
+      return { name, tools: loaded.tools.filter((t) => t.name.startsWith(prefix)).length };
+    });
+  } finally {
+    await loaded.dispose();
+  }
+}
+
+type McpMutationPlan =
+  | { next: Record<string, McpServerConfig>; touched: Record<string, McpServerConfig> }
+  | { status: number; error: string };
+
+/**
+ * Compute the scope's next server map for one mutation. `import` takes the
+ * cross-client `mcpServers` JSON verbatim (see `parseStandardMcpServers`) and
+ * replaces every named entry outright — a pasted declaration is the whole
+ * truth for that server, so no env/header carry-over from the previous entry.
+ * `touched` lists the entries to connection-check after the write.
+ */
+function planMcpMutation(
+  action: "import" | "install" | "remove" | "toggle",
   body: Record<string, unknown>,
-  services: AdminServices,
-  token: AdminToken,
-): void {
-  const action = body.action;
-  if (action !== "set" && action !== "install" && action !== "remove" && action !== "toggle") {
-    jsonRes(res, 400, { error: "action must be 'set', 'install', 'remove', or 'toggle'" });
-    return;
+  current: Record<string, McpServerConfig>,
+): McpMutationPlan {
+  const next: Record<string, McpServerConfig> = { ...current };
+  if (action === "import") {
+    const parsed = parseStandardMcpServers(typeof body.json === "string" ? body.json : "");
+    if (!parsed.servers) return { status: 400, error: parsed.error };
+    Object.assign(next, parsed.servers);
+    return { next, touched: parsed.servers };
   }
   const preset =
     action === "install" && typeof body.presetId === "string"
       ? findMcpPreset(body.presetId)
       : undefined;
-  if (action === "install" && !preset) {
-    jsonRes(res, 400, { error: "unknown MCP preset" });
-    return;
-  }
-  const mutationScope = body.scope === "global" ? "global" : "conversation";
+  if (action === "install" && !preset) return { status: 400, error: "unknown MCP preset" };
   const name = preset?.serverName ?? (typeof body.name === "string" ? body.name.trim() : "");
-  if (!MCP_SERVER_NAME_PATTERN.test(name)) {
-    jsonRes(res, 400, {
+  if (!isValidMcpServerName(name)) {
+    return {
+      status: 400,
       error: "invalid server name (letters, digits, '_' or '-', starting with a letter)",
+    };
+  }
+  if (action === "install") {
+    try {
+      next[name] = materializeMcpPreset(preset!, mcpStringMap(body.credentials) ?? {});
+    } catch (err) {
+      return { status: 400, error: err instanceof Error ? err.message : String(err) };
+    }
+    return { next, touched: { [name]: next[name] } };
+  }
+  if (!(name in next)) return { status: 404, error: "Not declared here." };
+  if (action === "remove") {
+    delete next[name];
+    return { next, touched: {} };
+  }
+  const entry = next[name]!;
+  next[name] = entry.disabled ? { ...entry, disabled: undefined } : { ...entry, disabled: true };
+  return { next, touched: {} };
+}
+
+/**
+ * Import / install / remove / toggle / test MCP servers in one scope. Reads
+ * the scope's raw map, applies the change, and writes the full map back
+ * (wholesale, like packages — merge would make removal impossible). Runner
+ * caches refresh via applyGlobalSettings/applyConversationSettings.
+ *
+ * Writes persist even when the follow-up connection check fails: the
+ * operator edits the entry, not retypes it. `test` re-checks an existing
+ * entry without writing.
+ */
+async function serveMcpServerMutation(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): Promise<void> {
+  const action = body.action;
+  if (
+    action !== "import" &&
+    action !== "install" &&
+    action !== "remove" &&
+    action !== "toggle" &&
+    action !== "test"
+  ) {
+    jsonRes(res, 400, {
+      error: "action must be 'import', 'install', 'remove', 'toggle', or 'test'",
     });
     return;
   }
+  const mutationScope = body.scope === "global" ? "global" : "conversation";
   const scope = resolveTargetConversation(body, token);
   if (scope.error) {
     jsonRes(res, 403, { error: scope.error });
@@ -1603,54 +1667,33 @@ function serveMcpServerMutation(
   const maps = loadScopeMcpServers(office);
   const current = mutationScope === "global" ? maps.global : maps.conversation;
 
-  const next: Record<string, McpServerConfig> = { ...current };
-  if (action === "set") {
-    const parsed = parseMcpServerEntry(body.server);
-    if (!parsed.config) {
-      jsonRes(res, 400, { error: parsed.error ?? "invalid server entry" });
-      return;
-    }
-    // Env/headers omitted in the payload keep their existing values, so the
-    // panel can edit command/args without re-entering credentials.
-    const existing = current[name];
-    next[name] = {
-      ...parsed.config,
-      ...(parsed.config.env === undefined && existing?.env ? { env: existing.env } : {}),
-      ...(parsed.config.headers === undefined && existing?.headers
-        ? { headers: existing.headers }
-        : {}),
-    };
-  } else if (action === "install") {
-    try {
-      next[name] = materializeMcpPreset(preset!, mcpStringMap(body.credentials) ?? {});
-    } catch (err) {
-      jsonRes(res, 400, { error: err instanceof Error ? err.message : String(err) });
-      return;
-    }
-  } else if (action === "remove") {
-    if (!(name in next)) {
+  if (action === "test") {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const entry = current[name];
+    if (!entry) {
       jsonRes(res, 404, { error: "Not declared here." });
       return;
     }
-    delete next[name];
-  } else {
-    if (!(name in next)) {
-      jsonRes(res, 404, { error: "Not declared here." });
-      return;
-    }
-    const entry = next[name]!;
-    next[name] = entry.disabled ? { ...entry, disabled: undefined } : { ...entry, disabled: true };
+    const results = await verifyMcpServers({ [name]: { ...entry, disabled: undefined } });
+    jsonRes(res, 200, { ok: true, results });
+    return;
   }
 
+  const plan = planMcpMutation(action, body, current);
+  if ("error" in plan) {
+    jsonRes(res, plan.status, { error: plan.error });
+    return;
+  }
   const result =
     mutationScope === "global"
-      ? applyGlobalSettings(services.runtime, { mcpServers: next })
-      : applyConversationSettings(services.runtime, office, { mcpServers: next });
+      ? applyGlobalSettings(services.runtime, { mcpServers: plan.next })
+      : applyConversationSettings(services.runtime, office, { mcpServers: plan.next });
   if (!result.ok) {
     jsonRes(res, 409, { error: "Conversation is busy; try again shortly." });
     return;
   }
-  jsonRes(res, 200, { ok: true });
+  const results = await verifyMcpServers(plan.touched);
+  jsonRes(res, 200, { ok: true, results });
 }
 
 function serveSkillsList(
@@ -2546,6 +2589,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         '</div>' +
         '<div class="skill-desc">' + escHtml(transport) + (keys.length ? ' · ' + escHtml(keys.join(' · ')) : '') + '</div>' +
         '<div class="pkg-actions">' +
+          '<button class="pkg-btn" data-mcp-action="test" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Test</button>' +
           '<button class="pkg-btn" data-mcp-action="toggle" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">' + (server.disabled ? 'Enable' : 'Disable') + '</button>' +
           '<button class="pkg-btn pkg-btn-danger" data-mcp-action="remove" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Remove</button>' +
         '</div>' +
@@ -2579,14 +2623,34 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         '<details class="mcp-installed" open><summary>Installed in this scope</summary>' +
           '<div class="pkg-list">' + (rows || '<div class="pkg-provides-empty">No MCP servers installed here</div>') + '</div>' +
         '</details>' +
-        '<details class="mcp-manual"><summary>Advanced: add a custom server</summary>' +
+        '<details class="mcp-manual"><summary>Add a server from its MCP config</summary>' +
+          '<p class="mcp-manual-hint">貼上 MCP server 文件給的 <code>mcpServers</code> JSON，原樣保存到這個 scope。remote 走 Streamable HTTP，local 走 stdio。</p>' +
+          '<textarea id="mcp-' + scope + '-json" class="pkg-input mcp-json" spellcheck="false" rows="9" placeholder="' + escAttr(MCP_JSON_PLACEHOLDER) + '"></textarea>' +
           '<div class="pkg-add">' +
-            '<input id="mcp-' + scope + '-name" class="pkg-input pkg-input-ref" type="text" spellcheck="false" placeholder="name" />' +
-            '<input id="mcp-' + scope + '-target" class="pkg-input" type="text" spellcheck="false" placeholder="npx -y package@version 或 https://host/mcp" />' +
-            '<input id="mcp-' + scope + '-env" class="pkg-input" type="text" spellcheck="false" placeholder="KEY=value（HTTP 則為 header）" />' +
-            '<button class="primary-action-btn" data-mcp-action="add" data-mcp-scope="' + scope + '">Add custom</button>' +
+            '<button class="primary-action-btn" data-mcp-action="import" data-mcp-scope="' + scope + '">Add &amp; test connection</button>' +
           '</div>' +
+          '<div id="mcp-' + scope + '-verify" class="mcp-verify"></div>' +
         '</details>';
+    }
+
+    const MCP_JSON_PLACEHOLDER = JSON.stringify({
+      mcpServers: {
+        browserless: {
+          type: 'http',
+          url: 'https://mcp.browserless.io/mcp',
+          headers: { Authorization: 'Bearer YOUR_API_TOKEN' },
+        },
+      },
+    }, null, 2);
+
+    function renderMcpVerify(scope, results) {
+      const el = document.getElementById('mcp-' + scope + '-verify');
+      if (!el) return;
+      if (!results || !results.length) { el.innerHTML = ''; return; }
+      el.innerHTML = results.map((r) => r.error
+        ? '<div class="inline-result err">✗ <strong>' + escHtml(r.name) + '</strong> — ' + escHtml(r.error) + '</div>'
+        : '<div class="inline-result ok">✓ <strong>' + escHtml(r.name) + '</strong> — ' + r.tools + ' tool(s), 下一次回應即可使用</div>'
+      ).join('');
     }
 
     async function loadMcpServers() {
@@ -2606,18 +2670,33 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    async function mutateMcpServer(scope, action, name, server) {
-      mcpMessage(scope, '儲存中…', 'busy');
+    async function mutateMcpServer(scope, action, name, extra) {
+      mcpMessage(scope, action === 'test' ? '連線測試中…' : '儲存並測試連線中…', 'busy');
       try {
-        await apiPost('/admin/api/mcp-servers/mutate', {
+        const data = await apiPost('/admin/api/mcp-servers/mutate', {
           action: action,
           scope: scope,
-          name: name,
-          ...(server ? { server: server } : {}),
+          ...(name ? { name: name } : {}),
+          ...(extra || {}),
           ...scopeBody(),
         });
-        mcpMessage(scope, '完成。新設定在下一次回應生效。', 'ok');
+        const results = Array.isArray(data.results) ? data.results : [];
+        const failed = results.filter((r) => r.error).length;
+        if (action === 'test') {
+          mcpMessage(scope, failed ? '✗ ' + name + ': ' + results[0].error : '✓ ' + name + ': ' + results[0].tools + ' tool(s)', failed ? 'err' : 'ok');
+          return;
+        }
+        if (action === 'remove' || action === 'toggle') {
+          mcpMessage(scope, '完成。新設定在下一次回應生效。', 'ok');
+        } else {
+          mcpMessage(scope, failed ? '已儲存，但 ' + failed + ' 個 server 連線失敗，見下方錯誤。' : '已儲存並連線成功。', failed ? 'err' : 'ok');
+        }
         await loadMcpServers();
+        if (action === 'import') {
+          const details = document.querySelector('#mcp-' + (scope === 'global' ? 'global' : 'conv') + '-content .mcp-manual');
+          if (details) details.open = true;
+          renderMcpVerify(scope, results);
+        }
       } catch (err) {
         mcpMessage(scope, err.message, 'err');
       }
@@ -2669,11 +2748,13 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       btn.disabled = true;
       btn.textContent = 'Installing…';
       try {
-        await apiPost('/admin/api/mcp-servers/mutate', {
+        const data = await apiPost('/admin/api/mcp-servers/mutate', {
           action: 'install', scope: scope, presetId: preset.id, credentials: credentials, ...scopeBody(),
         });
         closeMcpInstall();
-        mcpMessage(scope, preset.name + ' installed. It will be available on the next response.', 'ok');
+        const result = (Array.isArray(data.results) ? data.results : [])[0];
+        if (result && result.error) mcpMessage(scope, '✗ ' + preset.name + ' saved but failed to connect: ' + result.error, 'err');
+        else mcpMessage(scope, '✓ ' + preset.name + ' installed, ' + (result ? result.tools : 0) + ' tool(s).', 'ok');
         await loadMcpServers();
       } catch (err) {
         const dialogError = document.getElementById('mcp-dialog-error');
@@ -2685,33 +2766,16 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    function addMcpServer(scope) {
-      const name = document.getElementById('mcp-' + scope + '-name').value.trim();
-      const target = document.getElementById('mcp-' + scope + '-target').value.trim();
-      const envRaw = document.getElementById('mcp-' + scope + '-env').value.trim();
-      if (!name || !target) { mcpMessage(scope, '請填入 name 與 command/URL', 'err'); return; }
-      const server = {};
-      const pairs = {};
-      for (const token of envRaw ? envRaw.split(/\\s+/) : []) {
-        const eq = token.indexOf('=');
-        if (eq > 0) pairs[token.slice(0, eq)] = token.slice(eq + 1);
-      }
-      if (/^https?:[/][/]/.test(target)) {
-        server.url = target;
-        if (Object.keys(pairs).length) server.headers = pairs;
-      } else {
-        const parts = target.split(/\\s+/);
-        server.command = parts[0];
-        if (parts.length > 1) server.args = parts.slice(1);
-        if (Object.keys(pairs).length) server.env = pairs;
-      }
-      void mutateMcpServer(scope, 'set', name, server);
+    function importMcpServers(scope) {
+      const json = document.getElementById('mcp-' + scope + '-json').value.trim();
+      if (!json) { mcpMessage(scope, '請貼上 mcpServers JSON', 'err'); return; }
+      void mutateMcpServer(scope, 'import', null, { json: json });
     }
 
     document.addEventListener('click', (event) => {
       const btn = event.target.closest('[data-mcp-action]');
       if (!btn) return;
-      if (btn.dataset.mcpAction === 'add') { addMcpServer(btn.dataset.mcpScope); return; }
+      if (btn.dataset.mcpAction === 'import') { importMcpServers(btn.dataset.mcpScope); return; }
       if (btn.dataset.mcpAction === 'preset') { openMcpPreset(btn.dataset.mcpScope, btn.dataset.mcpPreset); return; }
       void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
     });
@@ -3541,7 +3605,14 @@ const adminViewStyles = `
     cursor: pointer; color: var(--muted); font-size: 0.8rem; font-weight: 600;
     margin-bottom: 10px;
   }
-  .mcp-manual .pkg-add { margin: 12px 0 0; }
+  .mcp-manual .pkg-add { margin: 10px 0 0; }
+  .mcp-manual-hint { color: var(--muted); font-size: 0.8rem; margin: 0 0 10px; line-height: 1.5; }
+  .mcp-json {
+    width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem; line-height: 1.45; resize: vertical;
+  }
+  .mcp-verify { margin-top: 10px; display: grid; gap: 6px; }
+  .mcp-verify .inline-result { word-break: break-word; }
 
   .mcp-dialog {
     width: min(620px, calc(100vw - 28px)); max-height: calc(100vh - 40px);

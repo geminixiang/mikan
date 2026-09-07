@@ -8,6 +8,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
 import * as log from "../log.js";
 import { prepareOpenConnectorToolArguments } from "./open-connector.js";
+import { isValidMcpServerName } from "./standard-config.js";
 import type {
   McpLoadError,
   McpServerConfig,
@@ -19,10 +20,6 @@ export type { McpServerConfig, McpToolsResult } from "./types.js";
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 120_000;
-
-/** Server names become tool-name segments; keep them to a safe charset so a
- *  settings typo cannot produce an unparseable or provider-rejected tool name. */
-const SERVER_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 function buildTransport(name: string, config: McpServerConfig) {
   if (config.command && config.url) {
@@ -164,7 +161,7 @@ export async function loadMcpTools(
   const entries = Object.entries(servers).filter(([, config]) => !config.disabled);
   const results = await Promise.allSettled(
     entries.map(async ([name, config]) => {
-      if (!SERVER_NAME_RE.test(name)) {
+      if (!isValidMcpServerName(name)) {
         throw new Error(
           `server name "${name}" is invalid: use letters, digits, "_" or "-", starting with a letter`,
         );
