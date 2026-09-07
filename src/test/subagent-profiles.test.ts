@@ -33,42 +33,42 @@ describe("loadSubagentProfiles", () => {
     expect(diagnostics).toEqual([]);
     expect(profiles.get("worker")).toMatchObject({
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("software-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 35,
     });
     expect(profiles.get("devops-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write", "event", "sandbox"],
-      requiredTools: ["read", "bash", "sandbox"],
+      requiredTools: [],
       maxTurns: 40,
     });
     expect(profiles.get("data-scientist")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 35,
     });
     expect(profiles.get("account-manager")).toMatchObject({
       tools: ["read", "bash", "write", "event"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("business-development")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 30,
     });
     expect(profiles.get("creative-producer")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: ["read", "bash", "write"],
+      requiredTools: [],
       maxTurns: 40,
     });
     expect(profiles.get("ad-operations-specialist")).toMatchObject({
       tools: ["read", "bash", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       maxTurns: 35,
     });
     expect(profiles.get("analysis-only")).toMatchObject({ tools: [], requiredTools: [] });
@@ -100,7 +100,7 @@ describe("loadSubagentProfiles", () => {
     expect(profile).toMatchObject({
       model: { provider: "openai-codex", id: "gpt-5.6-luna" },
       tools: ["read", "bash", "edit", "write"],
-      requiredTools: ["read", "bash"],
+      requiredTools: [],
       thinkingLevel: "high",
     });
     expect(profile?.systemPrompt).toContain("software engineer");
