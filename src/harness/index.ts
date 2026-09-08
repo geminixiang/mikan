@@ -1,9 +1,9 @@
 /**
  * mikan agent harness.
  *
- * mikan's own harness engineering layer, built directly on pi-agent-core
- * (agent loop, compaction, context building) and pi-ai (providers, models,
- * auth). See `src/harness/README.md` for the architecture.
+ * Application integration of pi-agent-core's native AgentHarness (durable
+ * operations, tools, retries, compaction, recovery) and pi-ai (providers,
+ * models, auth). See `src/harness/README.md` for the architecture.
  */
 export {
   DEFAULT_HTTP_IDLE_TIMEOUT_MS,

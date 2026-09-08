@@ -155,7 +155,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     projection,
     skippedSkillLinks: conversationSkillLoad.skippedSkillLinks,
   });
-  session.agent.state.systemPrompt = systemPrompt;
+  session.setSystemPrompt(systemPrompt);
   // A stable hash across turns verifies that turn-specific data did not leak
   // into the provider-cacheable system prompt.
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);

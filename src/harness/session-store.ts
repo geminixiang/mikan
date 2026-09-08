@@ -25,6 +25,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
+  AgentHarness,
   branchTip,
   createBranchSummaryMessage,
   createCompactionSummaryMessage,
@@ -38,6 +39,8 @@ import {
   value,
 } from "@earendil-works/pi-agent-core";
 import type {
+  AgentHarnessOptions,
+  AgentLane,
   AgentMessage,
   Branch,
   Entry,
@@ -434,6 +437,8 @@ export class SessionStore implements SessionInspection {
   private mutationTail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closed = false;
+  private harness: AgentHarness | undefined;
+  private harnessLane: AgentLane | undefined;
 
   private constructor(
     private readonly sessionFile: string | null,
@@ -637,8 +642,21 @@ export class SessionStore implements SessionInspection {
     return buildContext(await this.getBranch());
   }
 
+  /** Attach Pi's runtime to this store's sole writable Session. */
+  async createHarness(options: Omit<AgentHarnessOptions, "session">): Promise<AgentHarness> {
+    return this.mutate(async () => {
+      if (this.harness) throw new Error("SessionStore already has an attached harness");
+      const { session } = await this.live();
+      const { harness } = await AgentHarness.create({ ...options, session }, TODO_CONTEXT);
+      this.harness = harness;
+      this.harnessLane = await harness.lane("main", TODO_CONTEXT);
+      return harness;
+    });
+  }
+
   async appendMessage(message: AgentMessage): Promise<string> {
     return this.mutate(async () => {
+      if (this.harnessLane) return this.harnessLane.appendMessage(toDurable(message), TODO_CONTEXT);
       const branchObject = await mainBranch((await this.live()).session, true);
       if (!branchObject) throw new Error("Failed to create main session branch");
       return branchObject.appendMessage(toDurable(message), TODO_CONTEXT);
@@ -647,6 +665,13 @@ export class SessionStore implements SessionInspection {
 
   async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
     return this.mutate(async () => {
+      if (this.harnessLane) {
+        return this.harnessLane.appendCustomEntry(
+          customType,
+          toDurable(data) as JsonValue,
+          TODO_CONTEXT,
+        );
+      }
       const branchObject = await mainBranch((await this.live()).session, true);
       if (!branchObject) throw new Error("Failed to create main session branch");
       return branchObject.appendCustomEntry(customType, toDurable(data) as JsonValue, TODO_CONTEXT);
@@ -677,6 +702,7 @@ export class SessionStore implements SessionInspection {
     details?: unknown,
   ): Promise<string> {
     return this.mutate(async () => {
+      if (this.harness) throw new Error("Compaction is owned by the attached Pi harness");
       const { session } = await this.live();
       const id = session.idGenerator.next();
       await session.mutate(async (mutator, context) => {
@@ -709,7 +735,8 @@ export class SessionStore implements SessionInspection {
       .then(async () => {
         if (this.state.kind !== "live") return;
         try {
-          await this.state.session.close(TODO_CONTEXT);
+          if (this.harness) await this.harness.close(TODO_CONTEXT);
+          else await this.state.session.close(TODO_CONTEXT);
         } finally {
           await this.state.repo?.close(TODO_CONTEXT);
         }

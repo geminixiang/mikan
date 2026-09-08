@@ -429,13 +429,15 @@ describe("Dream authority", () => {
     expect(runDream).toHaveBeenCalledOnce();
   });
 
-  test("rejects an early-stopped Dream instead of committing partial memory", async () => {
+  test("rejects a context-window-exceeded Dream instead of committing partial memory", async () => {
     await seedSession("a.jsonl", "session-a", "evidence", "2026-06-01T12:00:00.000Z");
     const plan = requirePlan(await prepareOfficeDream(office, DREAM_NOW));
     const { models, faux } = createFauxModels();
     faux.setResponses([fauxAssistantMessage("partial", { stopReason: "length" })]);
 
-    await expect(generateMemoryAnchor(office, plan, models)).rejects.toThrow("Dream stopped early");
+    await expect(generateMemoryAnchor(office, plan, models)).rejects.toThrow(
+      "Assistant request exceeded the context window",
+    );
     expect(existsSync(office.memoryPath)).toBe(false);
     expect(existsSync(join(office.stateDir, "dream.json"))).toBe(false);
   });

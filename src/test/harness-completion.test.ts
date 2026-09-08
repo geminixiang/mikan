@@ -25,7 +25,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-test.each(["persistence", "terminal listener"] as const)(
+test.each(["committed-entry delivery", "terminal listener"] as const)(
   "prompt remains active until %s completes",
   async (stage) => {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
@@ -46,14 +46,17 @@ test.each(["persistence", "terminal listener"] as const)(
     let assistantPresented = false;
     let settled = false;
 
-    if (stage === "persistence") {
-      const append = store.appendMessage.bind(store);
-      vi.spyOn(store, "appendMessage").mockImplementation(async (message) => {
-        if (message.role === "assistant") {
-          entered.resolve();
-          await release.promise;
-        }
-        return append(message);
+    if (stage === "committed-entry delivery") {
+      const attach = store.createHarness.bind(store);
+      vi.spyOn(store, "createHarness").mockImplementation(async (options) => {
+        const harness = await attach(options);
+        harness.events.on("entry_added", async (event) => {
+          if (event.entry.type === "message" && event.entry.message.role === "assistant") {
+            entered.resolve();
+            await release.promise;
+          }
+        });
+        return harness;
       });
     }
     session.subscribe(async (event) => {
@@ -81,6 +84,11 @@ test.each(["persistence", "terminal listener"] as const)(
       expect(settled).toBe(false);
       expect(session.isActiveRun).toBe(true);
       expect(assistantPresented).toBe(stage === "terminal listener");
+      expect(
+        (await store.getEntries()).some(
+          (entry) => entry.type === "message" && entry.message.role === "assistant",
+        ),
+      ).toBe(true);
       await expect(session.prompt("overlapping prompt")).rejects.toThrow(
         "Agent is already processing a prompt",
       );

@@ -1,50 +1,27 @@
 /**
- * MikanAgentSession — mikan's agent run loop.
+ * mikan's application adapter for pi-agent-core's durable AgentHarness.
  *
- * Owns a pi-agent-core `Agent` and layers on the behaviors mikan needs for
- * long-lived chat conversations:
- *
- * - message persistence into the conversation's {@link SessionStore}
- * - automatic context compaction (threshold and overflow recovery), using
- *   pi-agent-core's compaction pipeline over the session tree
- * - automatic retry with exponential backoff on transient provider errors
- *
- * Events mirror the agent's lifecycle events plus `compaction_start/_end`
- * and `auto_retry_start/_end`, preserving the event surface mikan's
- * platform adapters already render.
+ * Pi owns the run/turn state machine, message persistence, tool execution,
+ * retries, compaction, recovery, and cancellation. This adapter owns per-request
+ * budgets, delegated-spend accounting, and the platform-facing event vocabulary.
  */
 import {
-  Agent,
-  calculateContextTokens,
-  compact,
-  convertToLlm,
-  estimateContextTokens,
-  getOrThrow,
-  prepareCompaction,
-  shouldCompact,
   TODO_CONTEXT,
-  withAbortSignal,
-  type AgentEvent,
+  OperationMismatch,
+  getOrThrow,
+  type AgentHarness,
+  type AgentHarnessTool,
+  type AgentLane,
   type AgentMessage,
   type AgentTool,
-  type CustomMessage,
+  type HarnessEvent as PiHarnessEvent,
 } from "@earendil-works/pi-agent-core";
-import {
-  isContextOverflow,
-  isRetryableAssistantError,
-  type Api,
-  type AssistantMessage,
-  type ImageContent,
-  type Model,
-  type Models,
-} from "@earendil-works/pi-ai";
+import type { ImageContent, Model, Api } from "@earendil-works/pi-ai";
 import * as log from "../log.js";
-import type { MikanModels } from "./models.js";
-import { resolveHarnessSettings } from "./settings.js";
 import type { SessionStore } from "./session-store.js";
+import { resolveHarnessSettings } from "./settings.js";
 import type {
   BudgetSettings,
-  CompactionReason,
   HarnessEvent,
   HarnessEventListener,
   HarnessSettings,
@@ -52,6 +29,7 @@ import type {
   SubagentUsage,
   SubagentUsageSink,
 } from "./types.js";
+import { addUsage, copyUsage, createEmptyUsage } from "./usage.js";
 
 export type {
   CompactionReason,
@@ -59,46 +37,58 @@ export type {
   HarnessEventListener,
   MikanAgentSessionOptions,
 } from "./types.js";
-import { addUsage, copyUsage, createEmptyUsage } from "./usage.js";
 
-/** Running resource tally for the current `prompt()` call, matched against the budget. */
 interface RunTally {
   usage: SubagentUsage;
   llmCalls: number;
   toolCalls: number;
   toolCallCounts: Record<string, number>;
   startedAt: number;
+  endedAt?: number;
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) {
-      reject(new Error("aborted"));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new Error("aborted"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
+const FORWARDED_EVENTS = [
+  "run_start",
+  "run_end",
+  "message_start",
+  "message_update",
+  "entry_added",
+  "turn_start",
+  "turn_end",
+  "tool_start",
+  "tool_update",
+  "tool_end",
+  "retry_scheduled",
+  "retry_end",
+  "compaction_start",
+  "compaction_end",
+  "usage",
+  "fault",
+] as const;
 
 export class MikanAgentSession {
-  readonly agent: Agent;
   readonly sessionStore: SessionStore;
-  private readonly models: MikanModels;
+  readonly model: Model<Api>;
   private readonly settings: HarnessSettings;
-  private listeners = new Set<HarnessEventListener>();
-  private retryAttempt = 0;
-  private overflowRecoveryAttempted = false;
-  private retryAbortController: AbortController | undefined;
-  private compactionAbortController: AbortController | undefined;
+  private readonly listeners = new Set<HarnessEventListener>();
+  private systemPrompt: string;
+  private transcript: AgentMessage[] = [];
+  private harness: AgentHarness | undefined;
+  private lane: AgentLane | undefined;
   private runActive = false;
+  private runAborted = false;
+  private operationId: string | undefined;
+  private cancellation: Promise<void> | undefined;
+  private cancellationError: unknown;
+  private deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  private deadlineNotification: Promise<void> | undefined;
+  private runBudget: BudgetSettings = {};
+  private budgetExceededReason: string | undefined;
+  private retryAttempt = 0;
+  private latestAssistantNeedsCall = false;
+  private latestAssistantErrored = false;
+  private runMessages: AgentMessage[] = [];
+  private readonly toolArgs = new Map<string, unknown>();
   private tally: RunTally = {
     usage: createEmptyUsage(),
     llmCalls: 0,
@@ -106,46 +96,26 @@ export class MikanAgentSession {
     toolCallCounts: {},
     startedAt: 0,
   };
-  private runBudget: BudgetSettings = {};
-  private budgetExceededReason: string | undefined;
 
-  constructor(options: MikanAgentSessionOptions) {
-    this.models = options.models;
+  constructor(private readonly options: MikanAgentSessionOptions) {
     this.sessionStore = options.sessionStore;
+    this.model = options.model;
+    this.systemPrompt = options.systemPrompt;
     this.settings = resolveHarnessSettings(options.settings);
-
-    this.agent = new Agent({
-      initialState: {
-        systemPrompt: options.systemPrompt,
-        model: options.model,
-        thinkingLevel: options.thinkingLevel,
-        tools: options.tools,
-      },
-      convertToLlm,
-      streamFn: (model, context, streamOptions) =>
-        this.models.models.streamSimple(model, context, streamOptions),
-    });
-
-    this.agent.subscribe(async (event) => {
-      await this.handleAgentEvent(event);
-    });
   }
 
-  /** Conversation transcript currently held by the agent. */
   get messages(): AgentMessage[] {
-    return this.agent.state.messages;
+    return this.transcript;
   }
-
-  get model(): Model<Api> {
-    return this.agent.state.model;
-  }
-
-  /** Whether this session currently owns a prompt, including pre-model hooks. */
   get isActiveRun(): boolean {
     return this.runActive;
   }
 
-  /** Resource totals and terminal budget state from the most recent prompt. */
+  setSystemPrompt(prompt: string): void {
+    if (this.runActive) throw new Error("Cannot change the system prompt during a run");
+    this.systemPrompt = prompt;
+  }
+
   getLastRunStats(): Readonly<{
     usage: SubagentUsage;
     tokens: number;
@@ -163,25 +133,18 @@ export class MikanAgentSession {
       llmCalls: this.tally.llmCalls,
       toolCalls: this.tally.toolCalls,
       toolCallCounts: { ...this.tally.toolCallCounts },
-      durationMs: this.tally.startedAt > 0 ? Date.now() - this.tally.startedAt : 0,
+      durationMs:
+        this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
       ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
     };
   }
 
-  /**
-   * Fold spend incurred outside this session's own LLM calls — e.g. subagent
-   * runs launched by a tool during the current prompt — into the run tally
-   * and enforce the run budget at the fold itself: a fold that lands over a
-   * resource ceiling aborts the run now instead of waiting for a next
-   * assistant message that may never come (and would be paid for). Complete
-   * usage is folded; external runs are not this session's turns.
-   */
-  /** Capture a usage sink bound to the tally owned by the current prompt run. */
+  /** Bind delegated spend to its owning prompt, even when cleanup finishes late. */
   captureExternalUsageSink(): SubagentUsageSink {
     const tally = this.tally;
     return async (usage) => {
       addUsage(tally.usage, usage);
-      if (this.tally !== tally || this.budgetExceededReason || !this.runActive) return;
+      if (this.tally !== tally || !this.runActive || this.budgetExceededReason) return;
       const reason = this.resourceOverBudgetReason();
       if (reason) await this.exceedBudget(reason);
     };
@@ -196,23 +159,11 @@ export class MikanAgentSession {
     return () => this.listeners.delete(listener);
   }
 
-  /** Replace the agent transcript from the persisted session tree. */
   async reloadFromSession(): Promise<number> {
-    const context = await this.sessionStore.buildSessionContext();
-    if (context.messages.length > 0) {
-      this.agent.state.messages = context.messages;
-    }
-    return context.messages.length;
+    this.transcript = (await this.sessionStore.buildSessionContext()).messages;
+    return this.transcript.length;
   }
 
-  /**
-   * Send a user prompt and run the agent loop to completion, including
-   * automatic retries and compaction.
-   *
-   * @param options.budget Per-run resource ceilings that override the session
-   *   defaults. Autonomous event runs should pass a budget so a runaway loop
-   *   is stopped even with no human watching.
-   */
   async prompt(
     text: string,
     options?: {
@@ -221,32 +172,32 @@ export class MikanAgentSession {
       tools?: AgentTool[];
     },
   ): Promise<void> {
-    if (this.runActive) throw new Error("Agent is already processing a prompt");
-    this.runActive = true;
-    const runSystemPrompt = this.agent.state.systemPrompt;
-    const runTools = this.agent.state.tools;
-    if (options?.tools) this.agent.state.tools = options.tools;
-    try {
-      await this.runPrompt(text, options);
-    } finally {
-      this.agent.state.systemPrompt = runSystemPrompt;
-      this.agent.state.tools = runTools;
-      this.runActive = false;
-    }
+    await this.run(text, options);
   }
 
-  private async runPrompt(
-    text: string,
+  /** Resume an operation left open by a previous process using Pi's recovery rules. */
+  async resume(options?: { budget?: BudgetSettings; tools?: AgentTool[] }): Promise<void> {
+    await this.run(undefined, options);
+  }
+
+  private async run(
+    text: string | undefined,
     options?: {
       images?: ImageContent[];
       budget?: BudgetSettings;
       tools?: AgentTool[];
     },
   ): Promise<void> {
-    this.retryAttempt = 0;
-    this.overflowRecoveryAttempted = false;
-    this.runBudget = { ...this.settings.budget, ...options?.budget };
+    if (this.runActive) throw new Error("Agent is already processing a prompt");
+    this.runActive = true;
+    this.runAborted = false;
     this.budgetExceededReason = undefined;
+    this.cancellationError = undefined;
+    this.retryAttempt = 0;
+    this.latestAssistantNeedsCall = false;
+    this.latestAssistantErrored = false;
+    this.runMessages = [];
+    this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.tally = {
       usage: createEmptyUsage(),
       llmCalls: 0,
@@ -254,39 +205,156 @@ export class MikanAgentSession {
       toolCallCounts: {},
       startedAt: Date.now(),
     };
-
-    await this.ensureAuthConfigured(this.agent.state.model);
-
-    // A previous turn may have ended over the threshold (for example after an
-    // abort); compact before adding new context on top.
-    const lastAssistant = this.findLastAssistantMessage();
-    if (lastAssistant && lastAssistant.stopReason !== "error") {
-      await this.checkThresholdCompaction(lastAssistant);
-    }
-
-    const userMessage: AgentMessage = {
-      role: "user",
-      content: [{ type: "text", text }, ...(options?.images ?? [])],
-      timestamp: Date.now(),
-    };
-
-    await this.agent.prompt([userMessage]);
-    while (await this.handlePostRun()) await this.agent.continue();
-  }
-
-  /** Abort the active run, pending retry backoff, and in-flight compaction. */
-  abort(): void {
-    this.retryAbortController?.abort();
-    this.compactionAbortController?.abort();
-    this.agent.abort();
-  }
-
-  private async ensureAuthConfigured(model: Model<Api>): Promise<void> {
-    const auth = await this.models.getAuth(model);
-    if (!auth) {
-      throw new Error(
-        `No credentials for provider "${model.provider}". Set the provider API key environment variable.`,
+    let runFailure: { error: unknown } | undefined;
+    try {
+      if (!(await this.checkCallBudget())) return;
+      this.armDeadline();
+      const auth = await this.options.models.getAuth(this.model);
+      if (this.runAborted) return;
+      if (!auth)
+        throw new Error(
+          `No credentials for provider "${this.model.provider}". Set the provider API key environment variable.`,
+        );
+      await this.initialize();
+      if (this.runAborted) return;
+      const harness = this.harness!;
+      const lane = this.lane!;
+      const tools = options?.tools ?? this.options.tools;
+      await harness.setTools(this.nativeTools(tools), TODO_CONTEXT);
+      await lane.setActiveTools(
+        tools.map((tool) => tool.name),
+        TODO_CONTEXT,
       );
+      await this.reloadFromSession();
+      if (!(await this.checkCallBudget())) return;
+      if (text === undefined) {
+        const current = await lane.inspectExecution(TODO_CONTEXT);
+        this.operationId = current.current?.id;
+        if (this.runAborted) this.requestCancellation();
+        const result = getOrThrow(await lane.resume(TODO_CONTEXT));
+        if (result.status === "failed") throw new Error(result.error?.message ?? "Pi run failed");
+      } else {
+        // Admission and execution stay in Pi. In particular, no local retry,
+        // compaction, persistence, or tool loop wraps drive().
+        const admission = getOrThrow(
+          await lane.accept(
+            { kind: "prompt", prompt: text, images: options?.images },
+            TODO_CONTEXT,
+          ),
+        );
+        this.operationId = admission.operationId;
+        if (this.runAborted) this.requestCancellation();
+        const result = getOrThrow(
+          await lane.drive(
+            { operationId: admission.operationId, waitForRetry: true },
+            TODO_CONTEXT,
+          ),
+        );
+        if (result.kind === "settled" && result.outcome.status === "failed") {
+          // The assistant error is already persisted and presented when present.
+          if (!this.latestAssistantErrored) {
+            throw new Error(result.outcome.error?.message ?? "Pi run failed");
+          }
+        }
+      }
+    } catch (error) {
+      runFailure = { error };
+      throw error;
+    } finally {
+      await this.cleanupRun(runFailure);
+    }
+  }
+
+  private async cleanupRun(runFailure: { error: unknown } | undefined): Promise<void> {
+    clearTimeout(this.deadlineTimer);
+    this.deadlineTimer = undefined;
+    let cleanupFailure: { error: unknown } | undefined;
+    try {
+      await this.cancellation;
+      await this.deadlineNotification;
+      if (this.cancellationError) throw this.cancellationError;
+    } catch (error) {
+      cleanupFailure = { error };
+    } finally {
+      this.toolArgs.clear();
+      this.operationId = undefined;
+      this.cancellation = undefined;
+      this.deadlineNotification = undefined;
+      this.tally.endedAt = Date.now();
+      this.runActive = false;
+    }
+    if (!cleanupFailure) return;
+    if (runFailure) {
+      throw new AggregateError(
+        [runFailure.error, cleanupFailure.error],
+        "Agent run and cancellation cleanup failed",
+        { cause: runFailure.error },
+      );
+    }
+    throw cleanupFailure.error;
+  }
+
+  /** Pi's durable cancellation gate stops providers, tools, retries, and summaries. */
+  abort(): void {
+    if (!this.runActive) return;
+    this.runAborted = true;
+    clearTimeout(this.deadlineTimer);
+    this.deadlineTimer = undefined;
+    this.requestCancellation();
+  }
+
+  private requestCancellation(): void {
+    if (!this.lane || !this.operationId || this.cancellation) return;
+    // Do not await a lane mutation inside an event listener: Pi serializes event
+    // delivery, and the abort mutation itself emits another event. The native
+    // gate closes synchronously; prompt() drains the mutation before releasing ownership.
+    this.cancellation = this.lane
+      .requestAbort(this.operationId, TODO_CONTEXT)
+      .then((result) => {
+        if (!result.ok && !(result.error instanceof OperationMismatch)) throw result.error;
+      })
+      .catch((error: unknown) => {
+        this.cancellationError = error;
+      });
+  }
+
+  private nativeTools(tools: AgentTool[]): AgentHarnessTool<object | undefined>[] {
+    return tools.map((tool) => ({
+      ...tool,
+      execute: (
+        ...[id, params, onUpdate, , , context]: Parameters<
+          AgentHarnessTool<object | undefined>["execute"]
+        >
+      ) => tool.execute(id, params, context.abortSignal, onUpdate),
+    }));
+  }
+
+  private async initialize(): Promise<void> {
+    if (this.harness) return;
+    this.harness = await this.sessionStore.createHarness({
+      models: this.options.models.models,
+      model: this.model,
+      thinkingLevel: this.options.thinkingLevel,
+      tools: this.nativeTools(this.options.tools),
+      systemPrompt: () => this.systemPrompt,
+      retry: this.settings.retry,
+      compaction: this.settings.compaction,
+    });
+    this.lane = await this.harness.lane("main", TODO_CONTEXT);
+    // Restored lanes retain their old configuration; the runtime's selected
+    // model and thinking level apply to this session wrapper.
+    await this.lane.setModel(
+      { provider: this.model.provider, modelId: this.model.id },
+      TODO_CONTEXT,
+    );
+    await this.lane.setThinkingLevel(this.options.thinkingLevel, TODO_CONTEXT);
+    this.harness.hooks.on("before_request", async () => {
+      if (!(await this.checkCallBudget())) return undefined;
+      this.tally.llmCalls += 1;
+      return undefined;
+    });
+    for (const type of FORWARDED_EVENTS) {
+      this.harness.events.on(type, (event) => this.handlePiEvent(event));
     }
   }
 
@@ -294,74 +362,202 @@ export class MikanAgentSession {
     for (const listener of this.listeners) {
       try {
         await listener(event);
-      } catch (err) {
+      } catch (error) {
         log.logWarning(
           "Harness event listener failed",
-          err instanceof Error ? err.message : String(err),
+          error instanceof Error ? error.message : String(error),
         );
       }
     }
   }
 
-  private async handleAgentEvent(event: AgentEvent): Promise<void> {
-    if (event.type === "tool_execution_start") {
-      this.tally.toolCalls += 1;
-      this.tally.toolCallCounts[event.toolName] =
-        (this.tally.toolCallCounts[event.toolName] ?? 0) + 1;
+  private async handlePiEvent(event: PiHarnessEvent): Promise<void> {
+    if (!this.runActive) return;
+    if ("lane" in event && event.lane !== undefined && event.lane !== "main") return;
+    switch (event.type) {
+      case "entry_added":
+        if (event.entry.type !== "message") return;
+        this.transcript.push(event.entry.message);
+        this.runMessages.push(event.entry.message);
+        if (event.entry.message.role === "assistant") {
+          const message = event.entry.message;
+          this.latestAssistantErrored = message.stopReason === "error";
+          this.latestAssistantNeedsCall =
+            message.stopReason === "error" ||
+            message.content.some((part) => part.type === "toolCall");
+        }
+        await this.emit({ type: "message_end", message: event.entry.message });
+        return;
+      case "message_start":
+        await this.emit({ type: "message_start", message: event.message });
+        return;
+      case "message_update":
+        await this.emit({
+          type: "message_update",
+          message: event.message,
+          assistantMessageEvent: event.event,
+        });
+        return;
+      case "turn_start":
+        await this.emit({ type: "turn_start" });
+        return;
+      case "turn_end":
+        await this.emit({
+          type: "turn_end",
+          message: event.message,
+          toolResults: event.toolResults,
+        });
+        return;
+      case "tool_start":
+      case "tool_update":
+      case "tool_end":
+        return this.handlePiToolEvent(event);
+      case "usage": {
+        addUsage(this.tally.usage, event.row.usage);
+        const maxLlmCalls = this.runBudget.maxLlmCalls;
+        const reason =
+          this.latestAssistantNeedsCall &&
+          maxLlmCalls !== undefined &&
+          this.tally.llmCalls >= maxLlmCalls
+            ? `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`
+            : this.resourceOverBudgetReason();
+        if (reason) await this.exceedBudget(reason);
+        return;
+      }
+      case "run_start":
+      case "run_end":
+      case "retry_scheduled":
+      case "retry_end":
+      case "compaction_start":
+      case "compaction_end":
+        return this.handlePiLifecycleEvent(event);
+      case "fault":
+        throw new Error(event.message);
     }
-    if (event.type !== "message_end") {
-      await this.emit(event);
-      return;
+  }
+
+  private async handlePiToolEvent(
+    event: Extract<PiHarnessEvent, { type: "tool_start" | "tool_update" | "tool_end" }>,
+  ): Promise<void> {
+    switch (event.type) {
+      case "tool_start":
+        this.toolArgs.set(event.toolCallId, event.args);
+        this.tally.toolCalls += 1;
+        this.tally.toolCallCounts[event.toolName] =
+          (this.tally.toolCallCounts[event.toolName] ?? 0) + 1;
+        await this.emit({
+          type: "tool_execution_start",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: event.args,
+        });
+        return;
+      case "tool_update":
+        await this.emit({
+          type: "tool_execution_update",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          args: this.toolArgs.get(event.toolCallId) ?? {},
+          partialResult: event.partialResult,
+        });
+        return;
+      case "tool_end":
+        this.toolArgs.delete(event.toolCallId);
+        await this.emit({
+          type: "tool_execution_end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          result: event.result,
+          isError: event.isError,
+        });
+        return;
     }
+  }
 
-    const message = event.message;
-    if (message.role === "user" || message.role === "assistant" || message.role === "toolResult") {
-      await this.sessionStore.appendMessage(message);
-    } else if (message.role === "custom") {
-      const custom = message as CustomMessage;
-      await this.sessionStore.appendCustomMessageEntry(
-        custom.customType,
-        custom.content,
-        custom.display,
-        custom.details,
-      );
-    }
-
-    await this.emit({ ...event, message });
-
-    if (message.role === "assistant") {
-      this.recordUsage(message);
-      await this.enforceBudget(message);
-      if (message.stopReason !== "error") {
-        this.overflowRecoveryAttempted = false;
+  private async handlePiLifecycleEvent(
+    event: Extract<
+      PiHarnessEvent,
+      {
+        type:
+          | "run_start"
+          | "run_end"
+          | "retry_scheduled"
+          | "retry_end"
+          | "compaction_start"
+          | "compaction_end";
+      }
+    >,
+  ): Promise<void> {
+    switch (event.type) {
+      case "run_start":
+        this.operationId = event.runId;
+        if (this.runAborted) this.requestCancellation();
+        await this.emit({ type: "agent_start" });
+        return;
+      case "retry_scheduled":
+        this.retryAttempt = event.attempt - 1;
+        await this.emit({
+          type: "auto_retry_start",
+          attempt: this.retryAttempt,
+          maxAttempts: event.maxAttempts - 1,
+          delayMs: event.delayMs,
+          errorMessage: event.errorMessage,
+        });
+        return;
+      case "retry_end":
+        this.retryAttempt = 0;
+        await this.emit({
+          type: "auto_retry_end",
+          attempt: event.attempt - 1,
+          success: event.success,
+          finalError: event.finalError,
+        });
+        return;
+      case "compaction_start":
+        await this.emit({ type: "compaction_start", reason: event.reason });
+        return;
+      case "compaction_end": {
+        const entry =
+          event.status === "completed"
+            ? await this.sessionStore.getEntry(event.entryId)
+            : undefined;
+        if (entry?.type === "compaction") await this.reloadFromSession();
+        await this.emit({
+          type: "compaction_end",
+          reason: event.reason,
+          aborted: event.status === "aborted",
+          ...(event.status === "failed" ? { errorMessage: event.error.message } : {}),
+          ...(entry?.type === "compaction"
+            ? {
+                result: {
+                  summary: entry.summary,
+                  retainedMessages: entry.retainedTail.length,
+                  tokensBefore: entry.tokensBefore,
+                },
+              }
+            : {}),
+        });
+        return;
+      }
+      case "run_end":
         if (this.retryAttempt > 0) {
-          await this.emit({ type: "auto_retry_end", success: true, attempt: this.retryAttempt });
+          await this.emit({
+            type: "auto_retry_end",
+            attempt: this.retryAttempt,
+            success: false,
+            finalError: event.status === "aborted" ? "Retry cancelled" : event.error?.message,
+          });
           this.retryAttempt = 0;
         }
-      }
+        await this.emit({ type: "agent_end", messages: this.runMessages });
+        return;
     }
   }
 
-  /** Fold one assistant completion's usage into the running per-run tally. */
-  private recordUsage(message: AssistantMessage): void {
-    this.tally.llmCalls += 1;
-    const usage = message.usage;
-    if (!usage) return;
-    addUsage(this.tally.usage, usage);
-  }
-
-  /** Compare the tally against the run budget; abort the run when a cap is exceeded. */
-  private async enforceBudget(message: AssistantMessage): Promise<void> {
-    if (this.budgetExceededReason) return;
-    const reason = this.overBudgetReason(message);
-    if (!reason) return;
-    await this.exceedBudget(reason);
-  }
-
-  /** Mark the run over budget, notify listeners, and abort the agent. */
   private async exceedBudget(reason: string): Promise<void> {
     if (this.budgetExceededReason) return;
     this.budgetExceededReason = reason;
+    this.abort();
     await this.emit({
       type: "budget_exceeded",
       reason,
@@ -371,255 +567,48 @@ export class MikanAgentSession {
       durationMs: Date.now() - this.tally.startedAt,
     });
     log.logWarning("Run budget exceeded — aborting", reason);
-    this.agent.abort();
   }
 
-  private overBudgetReason(message: AssistantMessage): string | undefined {
-    const { maxLlmCalls } = this.runBudget;
-    const needsAnotherCall =
-      message.stopReason === "error" || message.content.some((part) => part.type === "toolCall");
-    if (needsAnotherCall && maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
-      return `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`;
+  private async checkCallBudget(): Promise<boolean> {
+    if (this.runAborted || this.budgetExceededReason) {
+      this.requestCancellation();
+      return false;
     }
-    return this.resourceOverBudgetReason();
+    const maxLlmCalls = this.runBudget.maxLlmCalls;
+    const reason =
+      maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls
+        ? `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`
+        : this.resourceOverBudgetReason();
+    if (reason) await this.exceedBudget(reason);
+    return !this.runAborted && !this.budgetExceededReason;
   }
 
-  /** The message-independent budget checks, shared with external-spend folds. */
   private resourceOverBudgetReason(): string | undefined {
     const { maxTokens, maxCostUsd, maxDurationMs } = this.runBudget;
-    if (maxTokens !== undefined && this.tally.usage.totalTokens >= maxTokens) {
+    if (maxTokens !== undefined && this.tally.usage.totalTokens >= maxTokens)
       return `${this.tally.usage.totalTokens} tokens >= ${maxTokens} limit`;
-    }
-    if (maxCostUsd !== undefined && this.tally.usage.cost.total >= maxCostUsd) {
+    if (maxCostUsd !== undefined && this.tally.usage.cost.total >= maxCostUsd)
       return `cost ${this.tally.usage.cost.total.toFixed(2)} USD >= ${maxCostUsd} USD limit`;
-    }
-    if (maxDurationMs !== undefined && Date.now() - this.tally.startedAt >= maxDurationMs) {
+    if (maxDurationMs !== undefined && Date.now() - this.tally.startedAt >= maxDurationMs)
       return `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`;
-    }
     return undefined;
   }
 
-  private findLastAssistantMessage(): AssistantMessage | undefined {
-    const messages = this.agent.state.messages;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const message = messages[i];
-      if (message?.role === "assistant") return message;
-    }
-    return undefined;
-  }
-
-  /** Decide what to do after a run settles. Returns true when the agent should continue. */
-  private async handlePostRun(): Promise<boolean> {
-    // A run stopped for going over budget must not be retried or compacted back
-    // into another continuation — that would defeat the circuit breaker.
-    if (this.budgetExceededReason) return false;
-
-    const lastAssistant = this.findLastAssistantMessage();
-    if (!lastAssistant) return false;
-
-    if (lastAssistant.stopReason === "error") {
-      const contextWindow = this.agent.state.model.contextWindow || 0;
-      if (isContextOverflow(lastAssistant, contextWindow)) {
-        return this.handleOverflow();
-      }
-      if (isRetryableAssistantError(lastAssistant)) {
-        return this.prepareRetry(lastAssistant);
-      }
-      return false;
-    }
-
-    return this.checkThresholdCompaction(lastAssistant);
-  }
-
-  private async handleOverflow(): Promise<boolean> {
-    if (this.overflowRecoveryAttempted) {
-      await this.emit({
-        type: "compaction_end",
-        reason: "overflow",
-        aborted: false,
-        errorMessage:
-          "Context overflow recovery failed after one compact-and-retry attempt. Try /new or a larger-context model.",
-      });
-      return false;
-    }
-    this.overflowRecoveryAttempted = true;
-    this.dropTrailingErrorMessage();
-    return this.runCompaction("overflow", true);
-  }
-
-  private async checkThresholdCompaction(lastAssistant: AssistantMessage): Promise<boolean> {
-    const settings = this.settings.compaction;
-    if (!settings.enabled) return false;
-    const contextWindow = this.agent.state.model.contextWindow || 0;
-    if (contextWindow <= 0) return false;
-
-    let contextTokens = lastAssistant.usage ? calculateContextTokens(lastAssistant.usage) : 0;
-    if (contextTokens === 0) {
-      const estimate = estimateContextTokens(this.agent.state.messages);
-      if (estimate.lastUsageIndex === null) return false;
-      contextTokens = estimate.tokens;
-    }
-
-    if (!shouldCompact(contextTokens, contextWindow, settings)) return false;
-    return this.runCompaction("threshold", false);
-  }
-
-  private async runCompaction(reason: CompactionReason, willRetry: boolean): Promise<boolean> {
-    let started = false;
-    try {
-      const pathEntries = await this.sessionStore.getBranch();
-      const preparation = getOrThrow(prepareCompaction(pathEntries, this.settings.compaction));
-      if (!preparation) return false;
-
-      await this.emit({ type: "compaction_start", reason });
-      started = true;
-      this.compactionAbortController = new AbortController();
-      const signal = this.compactionAbortController.signal;
-
-      const result = getOrThrow(
-        await compact(
-          preparation,
-          this.createCompactionModels(),
-          this.agent.state.model,
-          undefined,
-          this.agent.state.thinkingLevel,
-          undefined,
-          undefined,
-          withAbortSignal(signal, TODO_CONTEXT),
-        ),
-      );
-      if (signal.aborted) {
-        await this.emit({ type: "compaction_end", reason, aborted: true });
-        return false;
-      }
-      await this.sessionStore.appendCompaction(
-        result.summary,
-        result.retainedTail,
-        result.tokensBefore,
-        result.details,
-      );
-      const context = await this.sessionStore.buildSessionContext();
-      this.agent.state.messages = context.messages;
-
-      await this.emit({
-        type: "compaction_end",
-        reason,
-        result: {
-          summary: result.summary,
-          retainedMessages: result.retainedTail.length,
-          tokensBefore: result.tokensBefore,
-        },
-        aborted: false,
-      });
-
-      if (this.budgetExceededReason) return false;
-      // Messages here were just rebuilt from the store, which already filters
-      // error assistants out of context — nothing left for the drop to target.
-      if (willRetry) return true;
-      return this.agent.hasQueuedMessages();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "compaction failed";
-      if (started) {
-        await this.emit({
-          type: "compaction_end",
-          reason,
-          aborted: false,
-          errorMessage:
-            reason === "overflow"
-              ? `Context overflow recovery failed: ${errorMessage}`
-              : `Auto-compaction failed: ${errorMessage}`,
-        });
-      } else {
-        log.logWarning("Compaction preparation failed", errorMessage);
-      }
-      return false;
-    } finally {
-      this.compactionAbortController = undefined;
-    }
-  }
-
-  /**
-   * Compaction can make one completion, or two when its cut splits a turn.
-   * Intercept only those opaque upstream calls so each returned assistant
-   * message is tallied exactly once. A call at maxLlmCalls is not started;
-   * the cap is otherwise enforced before any post-compaction continuation.
-   */
-  private createCompactionModels(): Models {
-    const models = this.models.models;
-    return new Proxy(models, {
-      get: (target, property) => {
-        if (property === "completeSimple") {
-          return async (...args: Parameters<Models["completeSimple"]>) => {
-            const maxLlmCalls = this.runBudget.maxLlmCalls;
-            if (maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls) {
-              await this.exceedBudget(`${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`);
-              throw new Error("Compaction LLM-call budget exhausted");
-            }
-
-            const message = await target.completeSimple(...args);
-            this.recordUsage(message);
-            const reason = this.resourceOverBudgetReason();
-            if (reason) await this.exceedBudget(reason);
-            return message;
-          };
+  private armDeadline(): void {
+    const maxDurationMs = this.runBudget.maxDurationMs;
+    if (maxDurationMs === undefined || !Number.isFinite(maxDurationMs) || this.runAborted) return;
+    const remaining = maxDurationMs - (Date.now() - this.tally.startedAt);
+    this.deadlineTimer = setTimeout(
+      () => {
+        if (Date.now() - this.tally.startedAt < maxDurationMs) {
+          this.armDeadline();
+          return;
         }
-        const value: unknown = Reflect.get(target, property, target);
-        return typeof value === "function" ? value.bind(target) : value;
+        this.deadlineNotification = this.exceedBudget(
+          `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`,
+        );
       },
-    });
-  }
-
-  private async prepareRetry(message: AssistantMessage): Promise<boolean> {
-    const settings = this.settings.retry;
-    if (!settings.enabled) return false;
-
-    this.retryAttempt++;
-    if (this.retryAttempt > settings.maxRetries) {
-      this.retryAttempt--;
-      await this.emit({
-        type: "auto_retry_end",
-        success: false,
-        attempt: this.retryAttempt,
-        finalError: message.errorMessage,
-      });
-      this.retryAttempt = 0;
-      return false;
-    }
-
-    const delayMs = settings.baseDelayMs * 2 ** (this.retryAttempt - 1);
-    await this.emit({
-      type: "auto_retry_start",
-      attempt: this.retryAttempt,
-      maxAttempts: settings.maxRetries,
-      delayMs,
-      errorMessage: message.errorMessage || "Unknown error",
-    });
-
-    this.dropTrailingErrorMessage();
-
-    this.retryAbortController = new AbortController();
-    try {
-      await sleep(delayMs, this.retryAbortController.signal);
-    } catch {
-      const attempt = this.retryAttempt;
-      this.retryAttempt = 0;
-      await this.emit({
-        type: "auto_retry_end",
-        success: false,
-        attempt,
-        finalError: "Retry cancelled",
-      });
-      return false;
-    } finally {
-      this.retryAbortController = undefined;
-    }
-    return true;
-  }
-
-  private dropTrailingErrorMessage(): void {
-    const messages = this.agent.state.messages;
-    if (messages[messages.length - 1]?.role === "assistant") {
-      this.agent.state.messages = messages.slice(0, -1);
-    }
+      Math.min(Math.max(0, remaining), 2_147_483_647),
+    );
   }
 }

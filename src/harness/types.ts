@@ -279,7 +279,7 @@ export interface BudgetSettings {
   maxTokens?: number;
   /** Max cumulative provider cost (USD) this run. Requires a populated model cost table. */
   maxCostUsd?: number;
-  /** Max wall-clock duration for the run, in milliseconds. */
+  /** Wall-clock deadline in milliseconds; signals cancellation and waits for active cleanup. */
   maxDurationMs?: number;
   /** Max number of LLM calls (assistant turns) this run. */
   maxLlmCalls?: number;

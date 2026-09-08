@@ -140,7 +140,6 @@ describe("MikanAgentSession", () => {
       models,
       sessionStore: await SessionStore.create(join(dir, "usage.jsonl"), dir),
     });
-    session.agent.sessionId = "usage-breakdown";
 
     await session.prompt("run the tool");
 
@@ -332,7 +331,7 @@ describe("MikanAgentSession", () => {
 
     const session = new MikanAgentSession({
       systemPrompt: "test",
-      model: { ...model, contextWindow: 15 },
+      model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
@@ -353,7 +352,7 @@ describe("MikanAgentSession", () => {
 
     const session = new MikanAgentSession({
       systemPrompt: "test",
-      model: { ...model, contextWindow: 15 },
+      model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
@@ -361,10 +360,10 @@ describe("MikanAgentSession", () => {
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
-    await session.prompt("history to compact", { budget: { maxTokens: 20 } });
+    await session.prompt("history to compact", { budget: { maxTokens: 30 } });
 
     expect(session.getLastRunStats().llmCalls).toBe(2);
-    expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(20);
+    expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(30);
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
   });
 
@@ -381,7 +380,7 @@ describe("MikanAgentSession", () => {
 
     const session = new MikanAgentSession({
       systemPrompt: "test",
-      model: { ...model, contextWindow: 100 },
+      model: Object.assign(model, { contextWindow: 100 }),
       thinkingLevel: "off",
       tools: [],
       models,
@@ -407,7 +406,7 @@ describe("MikanAgentSession", () => {
 
     const session = new MikanAgentSession({
       systemPrompt: "test",
-      model: { ...model, contextWindow: 15 },
+      model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
