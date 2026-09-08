@@ -9,6 +9,11 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade `pi-agent-core` and `pi-ai` to 0.85.1 (pi-ai: GPT-6 Astra catalog entries, 30-minute prompt-cache TTL for GPT-5.6+ Responses models). `MikanSkill` now extends Pi's native `Skill` type.
+- Harness: `MikanAgentSession` delegates the run loop, retries, compaction, persistence, and cancellation to Pi's native `AgentHarness`; mikan keeps budgets, delegated-spend accounting, and platform event translation. `setSystemPrompt()` replaces the removed `session.agent.state.systemPrompt`, and `resume()` recovers an open operation through Pi's lane.
+
 ## [1.0.0-beta.54]
 
 ### Changed

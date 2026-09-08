@@ -7,7 +7,7 @@ state is office-keyed — but the **session key itself stays a raw platform
 value** (`conversationId[":"suffix]`). Office keys name directories; session
 keys name conversations as the platform reports them.
 
-Session files use Pi 0.85.0's current v4 JSONL format, whose persisted header
+Session files use Pi 0.85's current v4 JSONL format, whose persisted header
 has `v: 4` and `storageVersion: 1`. mikan-specific metadata is a durable
 namespaced value under `mikan/metadata`, not a header field. Runtime opening
 accepts only this current format; legacy mikan v3 and Pi 0.84-generation v4

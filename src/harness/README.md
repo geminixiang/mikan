@@ -1,6 +1,6 @@
 # src/harness
 
-mikan's model-facing integration of Pi 0.85.0's native `AgentHarness` and
+mikan's model-facing integration of Pi 0.85's native `AgentHarness` and
 `pi-ai` model catalog. Pi owns durable operations, the turn loop, tool execution,
 message persistence, retries, compaction, and recovery. mikan supplies prompt
 sources, authorized tools, per-request budgets, delegated-spend accounting, and
@@ -25,7 +25,7 @@ this module.
 | `types.ts`             | exported harness and subagent types                                                               |
 | `index.ts`             | harness module exports                                                                            |
 
-`SessionStore` persists the current Pi 0.85.0 v4 JSONL format: a header with
+`SessionStore` persists the current Pi 0.85 v4 JSONL format: a header with
 `v: 4` and `storageVersion: 1`, followed by session mutations. mikan-specific
 metadata is stored as the durable namespaced value `mikan/metadata`. Runtime
 opening supports only this current format; legacy mikan v3 and Pi 0.84-generation

@@ -17,6 +17,7 @@ import type {
   MessageEntry,
   ThinkingLevel,
   CompactionSettings,
+  Skill,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
@@ -243,18 +244,14 @@ export interface EventPayloadInput {
   timezone?: string;
 }
 
-/** A loaded skill. `baseDir` is the directory containing the skill file. */
-export interface MikanSkill {
-  name: string;
-  description: string;
-  /** Full skill instructions (file content without frontmatter). */
-  content: string;
-  filePath: string;
+/**
+ * A loaded skill: Pi's native `Skill` shape plus mikan provenance.
+ * `baseDir` is the directory containing the skill file.
+ */
+export interface MikanSkill extends Skill {
   baseDir: string;
   /** Where the skill was loaded from (e.g. "workspace", "channel"). */
   source: string;
-  /** Exclude from model-visible skill lists. */
-  disableModelInvocation?: boolean;
   /** Embed the skill body in the prompt instead of referencing its file path. */
   inline?: boolean;
 }
