@@ -9,6 +9,8 @@ import {
   execSimple,
   execWriteFile,
   killProcessTree,
+  linkAbortSignal,
+  SandboxError,
   shellEscape,
 } from "../sandbox/utils.js";
 
@@ -36,6 +38,88 @@ describe("HostExecutor", () => {
     const result = await new HostExecutor().exec(command);
 
     expect(result.stdout).toBe("中");
+  });
+
+  test("aborting a live signal kills the command and rejects", async () => {
+    const controller = new AbortController();
+    const running = new HostExecutor().exec("sleep 30", { signal: controller.signal });
+    setTimeout(() => controller.abort(), 50);
+
+    await expect(running).rejects.toThrow(/Command aborted/);
+  });
+
+  test("a signal that is already aborted rejects without waiting", async () => {
+    await expect(
+      new HostExecutor().exec("sleep 30", { signal: AbortSignal.abort() }),
+    ).rejects.toThrow(/Command aborted/);
+  });
+
+  test("a command that outlives its timeout rejects with the elapsed limit", async () => {
+    await expect(new HostExecutor().exec("sleep 30", { timeout: 0.1 })).rejects.toThrow(
+      /Command timed out after 0.1 seconds/,
+    );
+  });
+});
+
+describe("linkAbortSignal", () => {
+  test("is inert without a signal", () => {
+    let fired = 0;
+    const unlink = linkAbortSignal(undefined, () => fired++);
+    expect(fired).toBe(0);
+    expect(() => unlink()).not.toThrow();
+    expect(fired).toBe(0);
+  });
+
+  test("fires immediately for an already-aborted signal", () => {
+    const controller = new AbortController();
+    controller.abort();
+    let fired = 0;
+
+    const unlink = linkAbortSignal(controller.signal, () => fired++);
+
+    expect(fired).toBe(1);
+    // Nothing was subscribed, so unlinking must neither throw nor re-run it.
+    expect(() => unlink()).not.toThrow();
+    expect(fired).toBe(1);
+  });
+
+  test("forwards an abort that arrives later", () => {
+    const controller = new AbortController();
+    let fired = 0;
+
+    linkAbortSignal(controller.signal, () => fired++);
+    expect(fired).toBe(0);
+
+    controller.abort();
+    expect(fired).toBe(1);
+  });
+
+  test("unlinking drops the listener, so a later abort is ignored", () => {
+    const controller = new AbortController();
+    let fired = 0;
+
+    const unlink = linkAbortSignal(controller.signal, () => fired++);
+    unlink();
+    controller.abort();
+
+    expect(fired).toBe(0);
+  });
+});
+
+describe("SandboxError", () => {
+  test("formats the message alone when there are no details", () => {
+    const error = new SandboxError("boom");
+    expect(error.name).toBe("SandboxError");
+    expect(error.details).toEqual([]);
+    expect(error.formatForCli()).toEqual(["boom"]);
+  });
+
+  test("formats each detail as its own line under the message", () => {
+    expect(new SandboxError("boom", ["first", "second"]).formatForCli()).toEqual([
+      "boom",
+      "first",
+      "second",
+    ]);
   });
 });
 
@@ -65,6 +149,27 @@ describe("killProcessTree", () => {
 
   test("ignores already-dead processes", () => {
     expect(() => killProcessTree(2 ** 30)).not.toThrow();
+  });
+});
+
+describe("execWriteFile staging cleanup", () => {
+  test("reports the write failure even when the cleanup command itself fails", async () => {
+    const commands: string[] = [];
+    const executor = {
+      async exec(command: string) {
+        commands.push(command);
+        // The cleanup channel is gone too — its rejection must stay swallowed
+        // so the caller sees why the write failed, not why the cleanup did.
+        if (command.startsWith("rm -f ")) throw new Error("cleanup channel is gone");
+        if (command.startsWith("printf ")) return { stdout: "", stderr: "disk full", code: 1 };
+        return { stdout: "", stderr: "", code: 0 };
+      },
+    };
+
+    await expect(
+      execWriteFile(executor, "/tmp/mikan-staging-probe.txt", "content"),
+    ).rejects.toThrow("disk full");
+    expect(commands.some((command) => command.startsWith("rm -f "))).toBe(true);
   });
 });
 
