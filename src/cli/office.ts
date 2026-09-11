@@ -12,35 +12,25 @@
 import { join, resolve } from "node:path";
 import { assertPlatformName } from "../office/index.js";
 import { OfficeRegistry } from "../office/index.js";
-import { resolveStateDir, takeValueFlag } from "./arg-grammar.js";
+import { resolveStateDir, scanArgs } from "./arg-grammar.js";
 
 const USAGE = `Usage:
   mikan office list [--state-dir <dir>] [--workspace <dir>]
   mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]`;
 
 export function runOfficeCommand(argv: string[]): number {
-  const stateDir = resolveStateDir(argv);
-  let workspaceArg: string | undefined;
-  const positional: string[] = [];
-
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (arg === undefined) continue;
-    let taken;
-    if ((taken = takeValueFlag(argv, i, "--workspace"))) {
-      workspaceArg = taken.value;
-      i = taken.lastIndex;
-    } else if ((taken = takeValueFlag(argv, i, "--state-dir"))) {
-      i = taken.lastIndex; // consumed by resolveStateDir above
-    } else if (arg.startsWith("-")) {
-      console.error(`Unknown flag: ${arg}\n${USAGE}`);
-      return 1;
-    } else {
-      positional.push(arg);
-    }
+  const scan = scanArgs(argv, {
+    values: ["--workspace", "--state-dir"], // --state-dir is read by resolveStateDir
+  });
+  if (scan.unknown) {
+    console.error(`Unknown flag: ${scan.unknown}\n${USAGE}`);
+    return 1;
   }
+
+  const stateDir = resolveStateDir(argv);
+  const workspaceArg = scan.values.get("--workspace");
   const workspaceRoot = workspaceArg ? resolve(workspaceArg) : join(stateDir, "workspace");
-  const [action, ...rest] = positional;
+  const [action, ...rest] = scan.positionals;
 
   if (action === "list") return listOffices(stateDir);
   if (action === "claim") return claimOffice(stateDir, workspaceRoot, rest);

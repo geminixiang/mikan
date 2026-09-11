@@ -227,41 +227,44 @@ export class MikanAgentSession {
       );
       await this.reloadFromSession();
       if (!(await this.checkCallBudget())) return;
-      if (text === undefined) {
-        const current = await lane.inspectExecution(TODO_CONTEXT);
-        this.operationId = current.current?.id;
-        if (this.runAborted) this.requestCancellation();
-        const result = getOrThrow(await lane.resume(TODO_CONTEXT));
-        if (result.status === "failed") throw new Error(result.error?.message ?? "Pi run failed");
-      } else {
-        // Admission and execution stay in Pi. In particular, no local retry,
-        // compaction, persistence, or tool loop wraps drive().
-        const admission = getOrThrow(
-          await lane.accept(
-            { kind: "prompt", prompt: text, images: options?.images },
-            TODO_CONTEXT,
-          ),
-        );
-        this.operationId = admission.operationId;
-        if (this.runAborted) this.requestCancellation();
-        const result = getOrThrow(
-          await lane.drive(
-            { operationId: admission.operationId, waitForRetry: true },
-            TODO_CONTEXT,
-          ),
-        );
-        if (result.kind === "settled" && result.outcome.status === "failed") {
-          // The assistant error is already persisted and presented when present.
-          if (!this.latestAssistantErrored) {
-            throw new Error(result.outcome.error?.message ?? "Pi run failed");
-          }
-        }
-      }
+      await this.driveOperation(lane, text, options?.images);
     } catch (error) {
       runFailure = { error };
       throw error;
     } finally {
       await this.cleanupRun(runFailure);
+    }
+  }
+
+  private async driveOperation(
+    lane: AgentLane,
+    text: string | undefined,
+    images?: ImageContent[],
+  ): Promise<void> {
+    if (text === undefined) {
+      const current = await lane.inspectExecution(TODO_CONTEXT);
+      this.operationId = current.current?.id;
+      if (this.runAborted) this.requestCancellation();
+      const result = getOrThrow(await lane.resume(TODO_CONTEXT));
+      if (result.status === "failed") throw new Error(result.error?.message ?? "Pi run failed");
+      return;
+    }
+    // Pi owns admission, retries, compaction, persistence, and the tool loop.
+    const admission = getOrThrow(
+      await lane.accept({ kind: "prompt", prompt: text, images }, TODO_CONTEXT),
+    );
+    this.operationId = admission.operationId;
+    if (this.runAborted) this.requestCancellation();
+    const result = getOrThrow(
+      await lane.drive({ operationId: admission.operationId, waitForRetry: true }, TODO_CONTEXT),
+    );
+    // The assistant error is already persisted and presented when present.
+    if (
+      result.kind === "settled" &&
+      result.outcome.status === "failed" &&
+      !this.latestAssistantErrored
+    ) {
+      throw new Error(result.outcome.error?.message ?? "Pi run failed");
     }
   }
 
@@ -412,18 +415,8 @@ export class MikanAgentSession {
       case "tool_update":
       case "tool_end":
         return this.handlePiToolEvent(event);
-      case "usage": {
-        addUsage(this.tally.usage, event.row.usage);
-        const maxLlmCalls = this.runBudget.maxLlmCalls;
-        const reason =
-          this.latestAssistantNeedsCall &&
-          maxLlmCalls !== undefined &&
-          this.tally.llmCalls >= maxLlmCalls
-            ? `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`
-            : this.resourceOverBudgetReason();
-        if (reason) await this.exceedBudget(reason);
-        return;
-      }
+      case "usage":
+        return this.recordUsage(event.row.usage);
       case "run_start":
       case "run_end":
       case "retry_scheduled":
@@ -434,6 +427,14 @@ export class MikanAgentSession {
       case "fault":
         throw new Error(event.message);
     }
+  }
+
+  private async recordUsage(usage: SubagentUsage): Promise<void> {
+    addUsage(this.tally.usage, usage);
+    const reason =
+      (this.latestAssistantNeedsCall && this.callOverBudgetReason()) ||
+      this.resourceOverBudgetReason();
+    if (reason) await this.exceedBudget(reason);
   }
 
   private async handlePiToolEvent(
@@ -574,13 +575,16 @@ export class MikanAgentSession {
       this.requestCancellation();
       return false;
     }
-    const maxLlmCalls = this.runBudget.maxLlmCalls;
-    const reason =
-      maxLlmCalls !== undefined && this.tally.llmCalls >= maxLlmCalls
-        ? `${this.tally.llmCalls} LLM calls >= ${maxLlmCalls} limit`
-        : this.resourceOverBudgetReason();
+    const reason = this.callOverBudgetReason() ?? this.resourceOverBudgetReason();
     if (reason) await this.exceedBudget(reason);
     return !this.runAborted && !this.budgetExceededReason;
+  }
+
+  private callOverBudgetReason(): string | undefined {
+    const limit = this.runBudget.maxLlmCalls;
+    if (limit !== undefined && this.tally.llmCalls >= limit)
+      return `${this.tally.llmCalls} LLM calls >= ${limit} limit`;
+    return undefined;
   }
 
   private resourceOverBudgetReason(): string | undefined {

@@ -15,6 +15,11 @@ interface ConversationBarrier {
   workWaiters: Array<() => void>;
 }
 
+/** Wake everyone waiting on a barrier gate and clear the queue. */
+function releaseWaiters(waiters: Array<() => void>): void {
+  for (const resolve of waiters.splice(0)) resolve();
+}
+
 /** Runtime state is addressed by office plus the platform session key. */
 function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
   return `${officeKey(address)}|${sessionKey}`;
@@ -67,6 +72,42 @@ export class SessionLifecycle {
     });
   }
 
+  /**
+   * A cached runner that may be handed out: one already writing the expected
+   * file, or one still busy with active work that must not be replaced.
+   */
+  private reusableState(
+    id: string,
+    expectedFile: () => string | null | undefined,
+  ): ConversationRuntimeState | undefined {
+    const existing = this.states.get(id);
+    if (!existing) return undefined;
+    if (expectedFile() === existing.sessionFile) {
+      existing.lastAccessedAt = this.now();
+      return existing;
+    }
+    return this.isStateActive(id, existing) ? existing : undefined;
+  }
+
+  /**
+   * Publish a freshly materialized runner, or dispose it when the office was
+   * invalidated (or shutdown began) while it was being built.
+   */
+  private async publishMaterialized(
+    id: string,
+    address: OfficeAddress,
+    generation: string,
+    state: ConversationRuntimeState,
+  ): Promise<boolean> {
+    if (!this.shuttingDown && generation === this.generation(address)) {
+      this.states.set(id, state);
+      return true;
+    }
+    await state.runner.dispose();
+    if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
+    return false;
+  }
+
   private async materializeExclusive(
     address: OfficeAddress,
     sessionKey: string,
@@ -77,22 +118,13 @@ export class SessionLifecycle {
     while (true) {
       if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
       await this.waitForClose(address, sessionKey);
-      const existing = this.states.get(id);
-      if (existing && expectedFile() === existing.sessionFile) {
-        existing.lastAccessedAt = this.now();
-        return existing;
-      }
-      if (existing && this.isStateActive(id, existing)) return existing;
-      if (existing) await this.discardAndWait(address, sessionKey);
+      const reusable = this.reusableState(id, expectedFile);
+      if (reusable) return reusable;
+      if (this.states.has(id)) await this.discardAndWait(address, sessionKey);
 
       const generation = this.generation(address);
       const state = await materialize(this.materializationAbort.signal);
-      if (!this.shuttingDown && generation === this.generation(address)) {
-        this.states.set(id, state);
-        return state;
-      }
-      await state.runner.dispose();
-      if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
+      if (await this.publishMaterialized(id, address, generation, state)) return state;
     }
   }
 
@@ -180,10 +212,7 @@ export class SessionLifecycle {
       if (released) return;
       released = true;
       barrier.activeWork--;
-      if (barrier.activeWork === 0) {
-        const waiters = barrier.activeWaiters.splice(0);
-        for (const resolve of waiters) resolve();
-      }
+      if (barrier.activeWork === 0) releaseWaiters(barrier.activeWaiters);
     };
   }
 
@@ -207,10 +236,7 @@ export class SessionLifecycle {
     } finally {
       finishMaintenance();
       barrier.pendingMaintenance--;
-      if (barrier.pendingMaintenance === 0) {
-        const waiters = barrier.workWaiters.splice(0);
-        for (const resolve of waiters) resolve();
-      }
+      if (barrier.pendingMaintenance === 0) releaseWaiters(barrier.workWaiters);
     }
   }
 

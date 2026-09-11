@@ -1,7 +1,7 @@
 import type { Office } from "../office/index.js";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type Api, type Model } from "@earendil-works/pi-ai";
-import type { MikanModels, MikanSkill, SessionStore } from "../harness/index.js";
+import type { MikanModels, MikanSkill, SessionStore, SkillDiagnostic } from "../harness/index.js";
 import { loadSkillsFromDir, MikanAgentSession } from "../harness/index.js";
 import { runSubagent } from "../harness/subagent-runner.js";
 import { loadSubagentProfiles } from "../harness/subagent-profiles.js";
@@ -18,6 +18,35 @@ import { DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "../harness/suba
 // ceiling, N busy conversations hold N × cap live subagent sessions.
 const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
 
+const keepPath = (path: string): string => path;
+
+/** Register skills under their prompt-side paths; a later source overrides an earlier one. */
+function addSkills(
+  skillMap: Map<string, MikanSkill>,
+  skills: MikanSkill[],
+  rewritePath: (path: string) => string,
+): void {
+  for (const skill of skills) {
+    skill.filePath = rewritePath(skill.filePath);
+    skill.baseDir = rewritePath(skill.baseDir);
+    skillMap.set(skill.name, skill);
+  }
+}
+
+/** Conversation skill entries that are symlinks are refused, and reported to the prompt. */
+function skippedSymlinkPaths(
+  diagnostics: SkillDiagnostic[],
+  translatePath: (path: string) => string,
+): string[] {
+  const skipped: string[] = [];
+  for (const diagnostic of diagnostics) {
+    if (diagnostic.code !== "symlink") continue;
+    log.logWarning("Skipping conversation skill entry (symlink)", diagnostic.path);
+    skipped.push(translatePath(diagnostic.path));
+  }
+  return skipped;
+}
+
 export function loadMikanSkills(
   office: Office,
   workspacePath: string,
@@ -29,39 +58,25 @@ export function loadMikanSkills(
   // workspacePath is the runtime-side root (e.g. /workspace); host paths under
   // the workspace root translate onto it for prompt references.
   const hostWorkspacePath = office.workspace.root;
-  const translatePath = (hostPath: string): string => {
-    if (hostPath.startsWith(hostWorkspacePath)) {
-      return workspacePath + hostPath.slice(hostWorkspacePath.length);
-    }
-    return hostPath;
-  };
+  const translatePath = (hostPath: string): string =>
+    hostPath.startsWith(hostWorkspacePath)
+      ? workspacePath + hostPath.slice(hostWorkspacePath.length)
+      : hostPath;
 
   // Package skills are lowest precedence. In sandbox modes they are mounted
   // read-only outside the workspace so scripts and templates remain available.
   const mounted = workspacePath !== hostWorkspacePath;
   for (const { slug, dir } of packages.skillDirs) {
     const runtimeDir = packageSkillRuntimeDir(slug);
-    for (const skill of loadSkillsFromDir({
-      dir,
-      source: `package:${slug}`,
-      rejectSymlinks: true,
-    }).skills) {
-      if (mounted) {
-        skill.filePath = runtimeDir + skill.filePath.slice(dir.length);
-        skill.baseDir = runtimeDir + skill.baseDir.slice(dir.length);
-      }
-      skillMap.set(skill.name, skill);
-    }
+    const toMountPath = (path: string): string => runtimeDir + path.slice(dir.length);
+    const loaded = loadSkillsFromDir({ dir, source: `package:${slug}`, rejectSymlinks: true });
+    addSkills(skillMap, loaded.skills, mounted ? toMountPath : keepPath);
   }
 
   const workspaceSkillsDir = projection.promptSources.globalSkillsDir;
   if (workspaceSkillsDir) {
-    for (const skill of loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" })
-      .skills) {
-      skill.filePath = translatePath(skill.filePath);
-      skill.baseDir = translatePath(skill.baseDir);
-      skillMap.set(skill.name, skill);
-    }
+    const loaded = loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" });
+    addSkills(skillMap, loaded.skills, translatePath);
   }
 
   const conversationSkills = loadSkillsFromDir({
@@ -69,17 +84,8 @@ export function loadMikanSkills(
     source: "channel",
     rejectSymlinks: true,
   });
-  const skippedSkillLinks: string[] = [];
-  for (const diagnostic of conversationSkills.diagnostics) {
-    if (diagnostic.code !== "symlink") continue;
-    log.logWarning("Skipping conversation skill entry (symlink)", diagnostic.path);
-    skippedSkillLinks.push(translatePath(diagnostic.path));
-  }
-  for (const skill of conversationSkills.skills) {
-    skill.filePath = translatePath(skill.filePath);
-    skill.baseDir = translatePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
+  const skippedSkillLinks = skippedSymlinkPaths(conversationSkills.diagnostics, translatePath);
+  addSkills(skillMap, conversationSkills.skills, translatePath);
 
   return { skills: Array.from(skillMap.values()), skippedSkillLinks };
 }

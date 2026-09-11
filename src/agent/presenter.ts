@@ -193,6 +193,13 @@ function subagentProgressDelay(runState: RunnerSessionState): number {
   return Math.max(0, runState.lastSubagentProgressAt + SUBAGENT_PROGRESS_THROTTLE_MS - Date.now());
 }
 
+/** Record that a subagent dashboard reached the channel, for throttling the next one. */
+function markSubagentProgressShown(runState: RunnerSessionState, snapshot: unknown): void {
+  if (!snapshot) return;
+  runState.subagentProgressShown = true;
+  runState.lastSubagentProgressAt = Date.now();
+}
+
 function scheduleToolProgressUpdate(
   responder: ConversationResponder,
   runState: RunnerSessionState,
@@ -203,10 +210,7 @@ function scheduleToolProgressUpdate(
   runState.toolProgressTimer = setTimeout(() => {
     runState.toolProgressTimer = undefined;
     const snapshot = mergeSubagentProgress([...runState.subagentProgress.values()]);
-    if (snapshot) {
-      runState.subagentProgressShown = true;
-      runState.lastSubagentProgressAt = Date.now();
-    }
+    markSubagentProgressShown(runState, snapshot);
     runState.queue?.enqueue(
       () => replaceResponseWithToolProgress(responder, runState, snapshot),
       "tool progress update",
@@ -222,10 +226,7 @@ function flushToolProgressUpdate(
   if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
   runState.toolProgressTimer = undefined;
   const subagentProgress = mergeSubagentProgress([...runState.subagentProgress.values()]);
-  if (subagentProgress) {
-    runState.subagentProgressShown = true;
-    runState.lastSubagentProgressAt = Date.now();
-  }
+  markSubagentProgressShown(runState, subagentProgress);
   runState.queue?.enqueue(
     () => replaceResponseWithToolProgress(responder, runState, subagentProgress),
     "tool progress update",
@@ -312,19 +313,38 @@ export async function finalizeRunResponse(
     log.logInfo("Final response already handled by tool - skipping final replacement");
     return;
   }
-  if (finalText.trim() === "[SILENT]" || finalText.trim().startsWith("[SILENT]")) {
-    try {
-      await responder.deleteResponse();
-      log.logInfo("Silent response - deleted message and thread");
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      log.logWarning("Failed to delete message for silent response", errMsg);
-    }
+  if (finalText.trim().startsWith("[SILENT]")) {
+    await deleteForSilentResponse(responder);
     return;
   }
-
   if (!finalText.trim()) return;
+  await publishFinalResponse(responder, runState, finalText, options);
+}
 
+/** `[SILENT]` means the run leaves no message behind. */
+async function deleteForSilentResponse(responder: ConversationResponder): Promise<void> {
+  try {
+    await responder.deleteResponse();
+    log.logInfo("Silent response - deleted message and thread");
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log.logWarning("Failed to delete message for silent response", errMsg);
+  }
+}
+
+/** Replace the in-progress message with the run's answer, or a subagent dashboard plus it. */
+async function publishFinalResponse(
+  responder: ConversationResponder,
+  runState: RunnerSessionState,
+  finalText: string,
+  options?: {
+    triggerSessionLink?: string;
+    createOverflowLink?: () => string;
+    platform?: string;
+    sessionConversation?: string;
+    sessionUuid?: string;
+  },
+): Promise<void> {
   try {
     const finalResponse = appendTriggerAttribution(
       finalText,
@@ -428,30 +448,20 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   }
 }
 
+/** The joined text parts of a structured tool result, when it carries any. */
+function toolResultContentText(result: unknown): string | undefined {
+  if (!result || typeof result !== "object" || !("content" in result)) return undefined;
+  const content = (result as { content: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const textParts = (content as Array<{ type?: string; text?: string }>)
+    .filter((part) => part.type === "text" && part.text)
+    .map((part) => part.text);
+  return textParts.length > 0 ? textParts.join("\n") : undefined;
+}
+
 function extractToolResultText(result: unknown): string {
-  if (typeof result === "string") {
-    return result;
-  }
-
-  if (
-    result &&
-    typeof result === "object" &&
-    "content" in result &&
-    Array.isArray((result as { content: unknown }).content)
-  ) {
-    const content = (result as { content: Array<{ type: string; text?: string }> }).content;
-    const textParts: string[] = [];
-    for (const part of content) {
-      if (part.type === "text" && part.text) {
-        textParts.push(part.text);
-      }
-    }
-    if (textParts.length > 0) {
-      return textParts.join("\n");
-    }
-  }
-
-  return JSON.stringify(result);
+  if (typeof result === "string") return result;
+  return toolResultContentText(result) ?? JSON.stringify(result);
 }
 
 export function formatAgentActorName(userName: string | undefined, fallback: string): string {
@@ -478,6 +488,15 @@ type PresenterEventContext = {
   agentConfig: ReturnType<typeof resolveConversationSettings>;
 };
 
+/** Mirror one agent event onto the SSE stream under this run's actor identity. */
+function emitPresenterEvent(context: PresenterEventContext, event: AgentEventPayload): void {
+  sendAgentEvent({
+    sessionId: context.agentEventSessionId,
+    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
+    event,
+  });
+}
+
 type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
 type ToolUpdateEvent = Extract<HarnessEvent, { type: "tool_execution_update" }>;
 type ToolEndEvent = Extract<HarnessEvent, { type: "tool_execution_end" }>;
@@ -491,18 +510,14 @@ type LifecycleEvent = Extract<
 >;
 
 function handleToolStart(event: ToolStartEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx, queue, baseAttrs, agentEventSessionId } = context;
+  const { runState, responder, logCtx, queue, baseAttrs } = context;
   const args = (event.args ?? {}) as { label?: string };
   const label = args.label || event.toolName;
-  sendAgentEvent({
-    sessionId: agentEventSessionId,
-    actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-    event: {
-      kind: "toolStart",
-      toolId: event.toolCallId,
-      toolName: event.toolName,
-      input: { label },
-    },
+  emitPresenterEvent(context, {
+    kind: "toolStart",
+    toolId: event.toolCallId,
+    toolName: event.toolName,
+    input: { label },
   });
   runState.pendingTools.set(event.toolCallId, {
     toolName: event.toolName,
@@ -559,14 +574,10 @@ function recordToolMetrics(
 }
 
 function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx, agentEventSessionId } = context;
+  const { runState, responder, logCtx } = context;
   const resultStr = extractToolResultText(event.result);
   const pending = runState.pendingTools.get(event.toolCallId);
-  sendAgentEvent({
-    sessionId: agentEventSessionId,
-    actorName: formatAgentActorName(logCtx.userName, logCtx.conversationId),
-    event: { kind: "toolEnd", toolId: event.toolCallId },
-  });
+  emitPresenterEvent(context, { kind: "toolEnd", toolId: event.toolCallId });
   const progress = runState.toolProgress.get(event.toolCallId);
   if (progress) progress.status = event.isError ? "error" : "done";
   const subagentProgress = runState.subagentProgress.get(event.toolCallId);
@@ -594,11 +605,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
   if (event.message.role !== "assistant") return;
   context.runState.llmCallCount += 1;
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event: { kind: "sessionStart" },
-  });
+  emitPresenterEvent(context, { kind: "sessionStart" });
   addLifecycleBreadcrumb("agent.llm.call.started", {
     call_index: context.runState.llmCallCount,
     provider: context.model.provider,
@@ -611,11 +618,7 @@ function handleMessageStart(event: MessageStartEvent, context: PresenterEventCon
 function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventContext): void {
   const update = event.assistantMessageEvent;
   if (update.type !== "text_delta" || !update.delta) return;
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event: { kind: "responseDelta", delta: update.delta },
-  });
+  emitPresenterEvent(context, { kind: "responseDelta", delta: update.delta });
   if (context.responder.appendResponseDelta && !context.runState.suppressResponseDeltas) {
     context.queue.enqueue(async () => {
       await context.responder.appendResponseDelta?.(update.delta);
@@ -665,6 +668,36 @@ function recordAssistantUsage(message: AssistantMessage, context: PresenterEvent
   });
 }
 
+/** Stream one thinking block to the channel and the diagnostic surface. */
+function presentThinking(thinking: string, context: PresenterEventContext): void {
+  log.logThinking(context.logCtx, thinking);
+  context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
+  context.queue.enqueue(
+    () => context.responder.respondDiagnostic(`_${thinking}_`),
+    "thinking diagnostic",
+  );
+}
+
+/** Emit the assistant's answer as the run's final message. */
+function presentFinalText(text: string, context: PresenterEventContext): void {
+  const finalText = appendTriggerAttribution(
+    formatResponseWithToolProgress(text, context.runState),
+    context.runState.triggerAttribution,
+  );
+  log.logResponse(context.logCtx, text);
+  emitPresenterEvent(context, { kind: "responseFinal", text: finalText });
+  emitPresenterEvent(context, { kind: "turnEnd" });
+  // Subagent dashboard finalization must preserve "dashboard, blank line, answer".
+  if (context.runState.completedSubagentProgress.length > 0) return;
+  if (context.responder.finishResponse) {
+    context.queue.enqueue(async () => {
+      await context.responder.finishResponse?.(finalText);
+    }, "response finish");
+  } else {
+    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
+  }
+}
+
 function presentAssistantMessage(message: AssistantMessage, context: PresenterEventContext): void {
   const thinkingParts: string[] = [];
   const textParts: string[] = [];
@@ -675,41 +708,11 @@ function presentAssistantMessage(message: AssistantMessage, context: PresenterEv
     if (part.type === "thinking") thinkingParts.push(part.thinking);
     else if (part.type === "text") textParts.push(part.text);
   }
-  for (const thinking of thinkingParts) {
-    log.logThinking(context.logCtx, thinking);
-    context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
-    context.queue.enqueue(
-      () => context.responder.respondDiagnostic(`_${thinking}_`),
-      "thinking diagnostic",
-    );
-  }
+  for (const thinking of thinkingParts) presentThinking(thinking, context);
 
   const text = textParts.join("\n");
   if (!text.trim() || hasToolCall || context.runState.finalResponseHandledByTool) return;
-  const finalText = appendTriggerAttribution(
-    formatResponseWithToolProgress(text, context.runState),
-    context.runState.triggerAttribution,
-  );
-  log.logResponse(context.logCtx, text);
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event: { kind: "responseFinal", text: finalText },
-  });
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event: { kind: "turnEnd" },
-  });
-  // Subagent dashboard finalization must preserve "dashboard, blank line, answer".
-  if (context.runState.completedSubagentProgress.length > 0) return;
-  if (context.responder.finishResponse) {
-    context.queue.enqueue(async () => {
-      await context.responder.finishResponse?.(finalText);
-    }, "response finish");
-  } else {
-    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
-  }
+  presentFinalText(text, context);
 }
 
 function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext): void {
@@ -728,11 +731,7 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
   if (event.type === "compaction_start") {
     const text = "_Compacting context..._";
     log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-    sendAgentEvent({
-      sessionId: context.agentEventSessionId,
-      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-      event: { kind: "diagnostic", text },
-    });
+    emitPresenterEvent(context, { kind: "diagnostic", text });
     context.queue.enqueue(() => context.responder.respond(text), "compaction start");
     return;
   }
@@ -746,17 +745,9 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
   }
   if (event.type === "auto_retry_start") {
     log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
-    sendAgentEvent({
-      sessionId: context.agentEventSessionId,
-      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-      event: { kind: "sessionStart" },
-    });
+    emitPresenterEvent(context, { kind: "sessionStart" });
     const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-    sendAgentEvent({
-      sessionId: context.agentEventSessionId,
-      actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-      event: { kind: "diagnostic", text },
-    });
+    emitPresenterEvent(context, { kind: "diagnostic", text });
     context.queue.enqueue(() => context.responder.respond(text), "retry");
     return;
   }
@@ -766,11 +757,7 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
     `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
   );
   const text = `_Stopped: run budget exceeded (${event.reason})_`;
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event: { kind: "diagnostic", text },
-  });
+  emitPresenterEvent(context, { kind: "diagnostic", text });
   context.queue.enqueue(
     () => context.responder.respondDiagnostic(text, { style: "error" }),
     "budget exceeded",

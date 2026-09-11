@@ -1804,6 +1804,40 @@ describe("SlackMessagingBot backfill", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
+  test("backfill keeps distinct human, external-bot, and own-message admission rules", async () => {
+    const bot = new SlackMessagingBot(makeHandler(), {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workspace,
+      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
+    });
+    (bot as any).botUserId = "U_SELF";
+    (bot as any).botId = "B_SELF";
+    const messages = [
+      { user: "U_SELF", subtype: "message_changed" }, // Own user always retained.
+      { bot_id: "B_SELF", text: "own bot identity" }, // But own bot-id-only posts are skipped.
+      { user: "U1", blocks: [{}] }, // Historical humans require text/files.
+      { user: "U1", text: "human" },
+      { bot_id: "B_OTHER", blocks: [{}] },
+      { subtype: "bot_message", attachments: [{}] },
+      { bot_id: "B_OTHER", subtype: "message_changed", text: "unsupported" },
+      { user: "U1", subtype: "message_changed", text: "unsupported" },
+      { user: "U1", files: [] },
+      { text: "no author" },
+    ].map((message, index) => Object.assign(message, { ts: `1000.${index}` }));
+    (bot as any).webClient = {
+      conversations: { history: vi.fn().mockResolvedValue({ messages }) },
+    };
+    const logMessage = vi.spyOn(bot as any, "logToFile").mockImplementation(() => {});
+    const logExternal = vi
+      .spyOn(bot as any, "logExternalMessagingBotMessage")
+      .mockResolvedValue(undefined);
+
+    expect(await (bot as any).backfillChannel("C123")).toBe(4);
+    expect(logMessage.mock.calls.map((call) => (call[1] as any).ts)).toEqual(["1000.3", "1000.0"]);
+    expect(logExternal.mock.calls.map((call) => (call[0] as any).ts)).toEqual(["1000.5", "1000.4"]);
+  });
+
   test("backfill preserves threadTs for thread replies", async () => {
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {

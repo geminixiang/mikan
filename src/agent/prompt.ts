@@ -41,38 +41,30 @@ export async function buildPromptPayload(
   return { userMessage, imageAttachments };
 }
 
+/** A memory file under its prompt heading; absent, empty and unreadable all yield nothing. */
+async function memorySection(
+  path: string | undefined,
+  heading: string,
+  label: string,
+): Promise<string | undefined> {
+  if (!path || !isRegularFile(path)) return undefined;
+  try {
+    const content = (await readFile(path, "utf-8")).trim();
+    return content ? `### ${heading}\n${content}` : undefined;
+  } catch (error) {
+    log.logWarning(`Failed to read ${label}`, `${path}: ${error}`);
+    return undefined;
+  }
+}
+
 export async function getMemory(projection: WorkspaceProjection): Promise<string> {
-  const parts: string[] = [];
-
-  const workspaceMemoryPath = projection.promptSources.globalMemoryPath;
-  if (workspaceMemoryPath && isRegularFile(workspaceMemoryPath)) {
-    try {
-      const content = (await readFile(workspaceMemoryPath, "utf-8")).trim();
-      if (content) {
-        parts.push(`### Global Workspace Memory\n${content}`);
-      }
-    } catch (error) {
-      log.logWarning("Failed to read workspace memory", `${workspaceMemoryPath}: ${error}`);
-    }
-  }
-
-  const conversationMemoryPath = projection.promptSources.conversationMemoryPath;
-  if (isRegularFile(conversationMemoryPath)) {
-    try {
-      const content = (await readFile(conversationMemoryPath, "utf-8")).trim();
-      if (content) {
-        parts.push(`### Conversation-Specific Memory\n${content}`);
-      }
-    } catch (error) {
-      log.logWarning("Failed to read conversation memory", `${conversationMemoryPath}: ${error}`);
-    }
-  }
-
-  if (parts.length === 0) {
-    return "(no working memory yet)";
-  }
-
-  return parts.join("\n\n");
+  const { globalMemoryPath, conversationMemoryPath } = projection.promptSources;
+  const sections = await Promise.all([
+    memorySection(globalMemoryPath, "Global Workspace Memory", "workspace memory"),
+    memorySection(conversationMemoryPath, "Conversation-Specific Memory", "conversation memory"),
+  ]);
+  const parts = sections.filter((section) => section !== undefined);
+  return parts.length > 0 ? parts.join("\n\n") : "(no working memory yet)";
 }
 
 function isRegularFile(path: string): boolean {
@@ -125,17 +117,22 @@ export function resolveTriggerAttribution(
 
 type RuntimePromptPaths = ReturnType<typeof buildRuntimePaths>;
 
+/** A tab-separated directory table, or a placeholder when the directory has not loaded. */
+function mappingTable(rows: string[], empty: string): string {
+  return rows.length > 0 ? rows.join("\n") : empty;
+}
+
 function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
   const { platform, sandboxConfig } = input;
   const { workspaceRoot, conversationPath, scratchPath } = paths;
-  const channelMappings =
-    platform.channels.length > 0
-      ? platform.channels.map((c) => `${c.id}\t#${c.name}`).join("\n")
-      : "(no channels loaded)";
-  const userMappings =
-    platform.users.length > 0
-      ? platform.users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`).join("\n")
-      : "(no users loaded)";
+  const channelMappings = mappingTable(
+    platform.channels.map((c) => `${c.id}\t#${c.name}`),
+    "(no channels loaded)",
+  );
+  const userMappings = mappingTable(
+    platform.users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`),
+    "(no users loaded)",
+  );
   const envDescription = buildEnvDescription(sandboxConfig.type, workspaceRoot);
   const slackBlockKitInstructions =
     platform.name === "slack"

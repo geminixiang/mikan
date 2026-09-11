@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import {
   chmodSync,
   copyFileSync,
@@ -51,31 +52,31 @@ import type { ResolvedVault, ResolvedVaultMount, VaultManager } from "./types.js
  */
 export function parseEnvFile(content: string): Record<string, string> {
   const env: Record<string, string> = {};
-  const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-
-    const eqIndex = trimmed.indexOf("=");
-    if (eqIndex === -1) continue;
-
-    const key = trimmed.slice(0, eqIndex).trim();
-    if (!key) continue;
-
-    let value = trimmed.slice(eqIndex + 1);
-
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    env[key] = value;
+  for (const line of content.split(/\r\n|\r|\n/)) {
+    const entry = parseEnvLine(line);
+    if (entry) env[entry[0]] = entry[1];
   }
-
   return env;
+}
+
+/** One `KEY=VALUE` entry, or undefined for a blank line, comment or non-entry. */
+function parseEnvLine(line: string): [string, string] | undefined {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) return undefined;
+
+  const eqIndex = trimmed.indexOf("=");
+  if (eqIndex === -1) return undefined;
+
+  const key = trimmed.slice(0, eqIndex).trim();
+  if (!key) return undefined;
+  return [key, unquoteEnvValue(trimmed.slice(eqIndex + 1))];
+}
+
+/** Strip one matching pair of surrounding single or double quotes. */
+function unquoteEnvValue(value: string): string {
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.endsWith(quote)) return value.slice(1, -1);
+  return value;
 }
 
 // ── FileVaultManager ───────────────────────────────────────────────────────────
@@ -241,49 +242,52 @@ function ensurePrivateDir(path: string): void {
   chmodSync(path, PRIVATE_DIR_MODE);
 }
 
-function copyVaultDir(
-  sourceDir: string,
-  targetDir: string,
-): {
+interface VaultCopyCounts {
   filesCopied: number;
   envKeysCopied: number;
-} {
-  let filesCopied = 0;
-  let envKeysCopied = 0;
+}
 
+function copyVaultDir(sourceDir: string, targetDir: string): VaultCopyCounts {
+  const total: VaultCopyCounts = { filesCopied: 0, envKeysCopied: 0 };
   for (const entry of readdirSync(sourceDir, { withFileTypes: true })) {
-    const sourcePath = join(sourceDir, entry.name);
-    const targetPath = join(targetDir, entry.name);
-
-    if (entry.name === "env" && entry.isFile()) {
-      const sourceEnv = parseEnvFile(readTextFileIfExists(sourcePath) ?? "");
-      const targetEnv = parseEnvFile(readTextFileIfExists(targetPath) ?? "");
-      const merged = { ...targetEnv, ...sourceEnv };
-      const content =
-        Object.entries(merged)
-          .toSorted(([left], [right]) => left.localeCompare(right))
-          .map(([envKey, value]) => `${envKey}=${value}`)
-          .join("\n") + "\n";
-      atomicWritePrivateFile(targetPath, content);
-      envKeysCopied += Object.keys(sourceEnv).length;
-      continue;
-    }
-
-    if (entry.isDirectory()) {
-      ensurePrivateDir(targetPath);
-      const nested = copyVaultDir(sourcePath, targetPath);
-      filesCopied += nested.filesCopied;
-      envKeysCopied += nested.envKeysCopied;
-      continue;
-    }
-
-    if (!entry.isFile()) continue;
-    copyFileSync(sourcePath, targetPath);
-    chmodSync(targetPath, 0o600);
-    filesCopied++;
+    const counts = copyVaultEntry(sourceDir, targetDir, entry);
+    total.filesCopied += counts.filesCopied;
+    total.envKeysCopied += counts.envKeysCopied;
   }
+  return total;
+}
 
-  return { filesCopied, envKeysCopied };
+/** Copy one vault entry: merge `env`, recurse into directories, chmod files. */
+function copyVaultEntry(sourceDir: string, targetDir: string, entry: Dirent): VaultCopyCounts {
+  const sourcePath = join(sourceDir, entry.name);
+  const targetPath = join(targetDir, entry.name);
+
+  if (entry.name === "env" && entry.isFile()) {
+    return { filesCopied: 0, envKeysCopied: mergeVaultEnvFile(sourcePath, targetPath) };
+  }
+  if (entry.isDirectory()) {
+    ensurePrivateDir(targetPath);
+    return copyVaultDir(sourcePath, targetPath);
+  }
+  if (!entry.isFile()) return { filesCopied: 0, envKeysCopied: 0 };
+
+  copyFileSync(sourcePath, targetPath);
+  chmodSync(targetPath, 0o600);
+  return { filesCopied: 1, envKeysCopied: 0 };
+}
+
+/** Overlay the source env file onto the target's; returns the keys copied. */
+function mergeVaultEnvFile(sourcePath: string, targetPath: string): number {
+  const sourceEnv = parseEnvFile(readTextFileIfExists(sourcePath) ?? "");
+  const targetEnv = parseEnvFile(readTextFileIfExists(targetPath) ?? "");
+  const merged = { ...targetEnv, ...sourceEnv };
+  const content =
+    Object.entries(merged)
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([envKey, value]) => `${envKey}=${value}`)
+      .join("\n") + "\n";
+  atomicWritePrivateFile(targetPath, content);
+  return Object.keys(sourceEnv).length;
 }
 
 function isSafeVaultKey(key: unknown): key is string {
@@ -409,18 +413,12 @@ export function allowsAmbientDefaultSharedVault(options: {
 export type { VaultInjection } from "./types.js";
 import type { VaultInjection } from "./types.js";
 
-export function resolveVaultInjection(options: {
-  vault: ResolvedVault | undefined;
-  capabilities: SandboxCredentialCapabilities;
-  sandboxType: SandboxConfig["type"];
-  /** Diagnostic identity for error reports only; no injection decision reads it. */
-  address: OfficeAddress;
-}): VaultInjection {
-  const { vault, capabilities, sandboxType, address } = options;
-  if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
-    throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
-  }
-
+/** Keep the mounts whose source still exists; a missing one is reported, not fatal. */
+function resolveExistingMounts(
+  vault: ResolvedVault | undefined,
+  sandboxType: SandboxConfig["type"],
+  address: OfficeAddress,
+): ResolvedVaultMount[] {
   const mounts: ResolvedVaultMount[] = [];
   for (const mount of vault?.mounts ?? []) {
     if (!existsSync(mount.source)) {
@@ -440,6 +438,22 @@ export function resolveVaultInjection(options: {
     }
     mounts.push({ source: mount.source, target: mount.target });
   }
+  return mounts;
+}
+
+export function resolveVaultInjection(options: {
+  vault: ResolvedVault | undefined;
+  capabilities: SandboxCredentialCapabilities;
+  sandboxType: SandboxConfig["type"];
+  /** Diagnostic identity for error reports only; no injection decision reads it. */
+  address: OfficeAddress;
+}): VaultInjection {
+  const { vault, capabilities, sandboxType, address } = options;
+  if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
+    throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
+  }
+
+  const mounts = resolveExistingMounts(vault, sandboxType, address);
 
   const env =
     capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;

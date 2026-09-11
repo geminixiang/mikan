@@ -95,6 +95,21 @@ type SlackIncomingMessage = {
   files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
 };
 
+type SlackHistoryMessage = Omit<SlackIncomingMessage, "channel" | "ts"> & { ts?: string };
+
+function hasMessageContent(message: SlackHistoryMessage, includeBlocks = true): boolean {
+  const content: Array<string | unknown[] | undefined> = [message.text, message.files];
+  if (includeBlocks) content.push(message.blocks, message.attachments);
+  return content.some((part) => !!part?.length);
+}
+
+function hasBotIdentity(message: SlackHistoryMessage): boolean {
+  return !!message.bot_id || message.subtype === "bot_message";
+}
+
+const USER_MESSAGE_SUBTYPES = new Set([undefined, "file_share"]);
+const BOT_MESSAGE_SUBTYPES = new Set([...USER_MESSAGE_SUBTYPES, "bot_message"]);
+
 type CommandAdapterInput = {
   conversationId: string;
   userId: string;
@@ -1437,11 +1452,7 @@ export class SlackMessagingBot implements MessagingBot {
     event: SlackIncomingMessage,
     ack: () => void,
   ): event is SlackIncomingMessage & { user: string } {
-    const hasSlackContent =
-      !!event.text ||
-      !!event.files?.length ||
-      !!event.blocks?.length ||
-      !!event.attachments?.length;
+    const hasSlackContent = hasMessageContent(event);
     const isOwnMessage =
       event.user === this.botUserId || (!!this.botId && event.bot_id === this.botId);
     if (isOwnMessage) {
@@ -1455,10 +1466,7 @@ export class SlackMessagingBot implements MessagingBot {
     const isExternalMessage =
       event.subtype === "bot_message" || (!!event.bot_id && !authorIsKnownHuman);
     if (isExternalMessage) {
-      const supportedSubtype =
-        event.subtype === undefined ||
-        event.subtype === "bot_message" ||
-        event.subtype === "file_share";
+      const supportedSubtype = BOT_MESSAGE_SUBTYPES.has(event.subtype);
       if (supportedSubtype && hasSlackContent) {
         void this.logExternalMessagingBotMessage(event).catch((err) => {
           log.logWarning("Failed to log Slack bot message", String(err));
@@ -1469,9 +1477,7 @@ export class SlackMessagingBot implements MessagingBot {
     }
 
     const isSupportedUserMessage =
-      !!event.user &&
-      (event.subtype === undefined || event.subtype === "file_share") &&
-      hasSlackContent;
+      !!event.user && USER_MESSAGE_SUBTYPES.has(event.subtype) && hasSlackContent;
     if (isSupportedUserMessage) return true;
     ack();
     return false;
@@ -1919,6 +1925,20 @@ export class SlackMessagingBot implements MessagingBot {
     return timestamps;
   }
 
+  private isBackfillableMessage(message: SlackHistoryMessage): boolean {
+    if (message.user === this.botUserId) return true;
+    if (hasBotIdentity(message)) {
+      if (this.botId && message.bot_id === this.botId) return false;
+      return BOT_MESSAGE_SUBTYPES.has(message.subtype) && hasMessageContent(message);
+    }
+    // Unlike live intake, historical human posts need text or files, not just blocks.
+    return (
+      !!message.user &&
+      USER_MESSAGE_SUBTYPES.has(message.subtype) &&
+      hasMessageContent(message, false)
+    );
+  }
+
   private async backfillChannel(channelId: string, upperBoundTs?: string): Promise<number> {
     const existingTs = await this.getExistingTimestamps(channelId);
 
@@ -1928,21 +1948,7 @@ export class SlackMessagingBot implements MessagingBot {
       if (!lastLoggedTs || parseFloat(ts) > parseFloat(lastLoggedTs)) lastLoggedTs = ts;
     }
 
-    type Message = {
-      user?: string;
-      bot_id?: string;
-      app_id?: string;
-      username?: string;
-      bot_profile?: { app_id?: string; name?: string; real_name?: string };
-      blocks?: unknown[];
-      attachments?: unknown[];
-      text?: string;
-      ts?: string;
-      thread_ts?: string;
-      subtype?: string;
-      files?: Array<{ name: string }>;
-    };
-    const allMessages: Message[] = [];
+    const allMessages: SlackHistoryMessage[] = [];
 
     let cursor: string | undefined;
     let pageCount = 0;
@@ -1958,7 +1964,7 @@ export class SlackMessagingBot implements MessagingBot {
         cursor,
       });
       if (result.messages) {
-        allMessages.push(...(result.messages as Message[]));
+        allMessages.push(...(result.messages as SlackHistoryMessage[]));
       }
       cursor = result.response_metadata?.next_cursor;
       pageCount++;
@@ -1967,28 +1973,7 @@ export class SlackMessagingBot implements MessagingBot {
     // Filter: include mikan's messages, external app/bot messages, and user messages.
     const relevantMessages = allMessages.filter((msg) => {
       if (!msg.ts || existingTs.has(msg.ts)) return false; // Skip duplicates
-      if (msg.user === this.botUserId) return true;
-      const isExternalMessagingBotMessage = !!msg.bot_id || msg.subtype === "bot_message";
-      if (isExternalMessagingBotMessage) {
-        if (this.botId && msg.bot_id === this.botId) return false;
-        if (
-          msg.subtype !== undefined &&
-          msg.subtype !== "bot_message" &&
-          msg.subtype !== "file_share"
-        ) {
-          return false;
-        }
-        return (
-          !!msg.text ||
-          !!(msg.files && msg.files.length > 0) ||
-          !!msg.blocks?.length ||
-          !!msg.attachments?.length
-        );
-      }
-      if (msg.subtype !== undefined && msg.subtype !== "file_share") return false;
-      if (!msg.user) return false;
-      if (!msg.text && (!msg.files || msg.files.length === 0)) return false;
-      return true;
+      return this.isBackfillableMessage(msg);
     });
 
     // Reverse to chronological order
@@ -1997,8 +1982,7 @@ export class SlackMessagingBot implements MessagingBot {
     // Log each message to log.jsonl
     for (const msg of relevantMessages) {
       const isMikanMessage = msg.user === this.botUserId;
-      const isExternalMessagingBotMessage =
-        !isMikanMessage && (!!msg.bot_id || msg.subtype === "bot_message");
+      const isExternalMessagingBotMessage = !isMikanMessage && hasBotIdentity(msg);
       if (isExternalMessagingBotMessage) {
         await this.logExternalMessagingBotMessage({ ...msg, channel: channelId, ts: msg.ts! });
         continue;
@@ -2077,17 +2061,14 @@ export class SlackMessagingBot implements MessagingBot {
             is_bot?: boolean;
           }>
         | undefined;
-      if (members) {
-        for (const u of members) {
-          if (u.id && u.name && !u.deleted) {
-            this.users.set(u.id, {
-              id: u.id,
-              userName: u.name,
-              displayName: u.real_name || u.name,
-              isBot: !!u.is_bot,
-            });
-          }
-        }
+      for (const u of members ?? []) {
+        if (!u.id || !u.name || u.deleted) continue;
+        this.users.set(u.id, {
+          id: u.id,
+          userName: u.name,
+          displayName: u.real_name || u.name,
+          isBot: !!u.is_bot,
+        });
       }
       cursor = result.response_metadata?.next_cursor;
     } while (cursor);
@@ -2113,17 +2094,14 @@ export class SlackMessagingBot implements MessagingBot {
             is_ext_shared?: boolean;
           }>
         | undefined;
-      if (channels) {
-        for (const c of channels) {
-          if (c.id && c.name && c.is_member) {
-            this.channels.set(c.id, {
-              id: c.id,
-              name: c.name,
-              ...(typeof c.is_private === "boolean" ? { isPrivate: c.is_private } : {}),
-              ...(c.is_shared || c.is_ext_shared ? { isExternallyShared: true } : {}),
-            });
-          }
-        }
+      for (const c of channels ?? []) {
+        if (!c.id || !c.name || !c.is_member) continue;
+        this.channels.set(c.id, {
+          id: c.id,
+          name: c.name,
+          ...(typeof c.is_private === "boolean" ? { isPrivate: c.is_private } : {}),
+          ...(c.is_shared || c.is_ext_shared ? { isExternallyShared: true } : {}),
+        });
       }
       cursor = result.response_metadata?.next_cursor;
     } while (cursor);
@@ -2137,15 +2115,12 @@ export class SlackMessagingBot implements MessagingBot {
         cursor,
       });
       const ims = result.channels as Array<{ id?: string; user?: string }> | undefined;
-      if (ims) {
-        for (const im of ims) {
-          if (im.id) {
-            // Use user's name as channel name for DMs
-            const user = im.user ? this.users.get(im.user) : undefined;
-            const name = user ? `DM:${user.userName}` : `DM:${im.id}`;
-            this.channels.set(im.id, { id: im.id, name });
-          }
-        }
+      for (const im of ims ?? []) {
+        if (!im.id) continue;
+        // Use user's name as channel name for DMs
+        const user = im.user ? this.users.get(im.user) : undefined;
+        const name = user ? `DM:${user.userName}` : `DM:${im.id}`;
+        this.channels.set(im.id, { id: im.id, name });
       }
       cursor = result.response_metadata?.next_cursor;
     } while (cursor);

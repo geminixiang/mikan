@@ -6,7 +6,13 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { SandboxError, execReadFile, execReadFileBase64, execWriteFile } from "./utils.js";
+import {
+  SandboxError,
+  execReadFile,
+  execReadFileBase64,
+  execWriteFile,
+  linkAbortSignal,
+} from "./utils.js";
 import { readEnv } from "../env-manifest.js";
 
 const DEFAULT_CLOUDFLARE_CWD = "/workspace";
@@ -82,65 +88,58 @@ export class CloudflareSandboxExecutor implements Executor {
       options?.timeout && options.timeout > 0
         ? setTimeout(() => controller.abort(), options.timeout * 1000)
         : undefined;
-
-    const onAbort = () => controller.abort();
-    if (options?.signal) {
-      if (options.signal.aborted) {
-        controller.abort();
-      } else {
-        options.signal.addEventListener("abort", onAbort, { once: true });
-      }
-    }
+    const unlinkSignal = linkAbortSignal(options?.signal, () => controller.abort());
 
     try {
-      const payload: CloudflareExecPayload = {
-        sandboxId: this.sandboxId,
-        command,
-        cwd: this.cwd,
-      };
-      if (options?.timeout) payload.timeoutSeconds = options.timeout;
-      if (this.env && Object.keys(this.env).length > 0) payload.env = this.env;
-
-      const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...buildCloudflareHeaders(),
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      const raw = (await response.text()).trim();
-      const parsed = raw ? (JSON.parse(raw) as CloudflareExecResponse) : {};
-
-      if (!response.ok) {
-        throw new Error(
-          parsed.error ||
-            parsed.stderr ||
-            `Cloudflare sandbox bridge returned HTTP ${response.status}`,
-        );
-      }
-
-      return {
-        stdout: parsed.stdout || "",
-        stderr: parsed.stderr || "",
-        code: parsed.code ?? 0,
-      };
+      return await this.postExec(command, options, controller.signal);
     } catch (error) {
-      if (controller.signal.aborted) {
-        if (options?.signal?.aborted) {
-          throw new Error("Command aborted", { cause: error });
-        }
-        throw new Error(`Command timed out after ${options?.timeout} seconds`, { cause: error });
-      }
-      throw error;
+      if (!controller.signal.aborted) throw error;
+      if (options?.signal?.aborted) throw new Error("Command aborted", { cause: error });
+      throw new Error(`Command timed out after ${options?.timeout} seconds`, { cause: error });
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
-      if (options?.signal) {
-        options.signal.removeEventListener("abort", onAbort);
-      }
+      unlinkSignal();
     }
+  }
+
+  private async postExec(
+    command: string,
+    options: ExecOptions | undefined,
+    signal: AbortSignal,
+  ): Promise<ExecResult> {
+    const payload: CloudflareExecPayload = {
+      sandboxId: this.sandboxId,
+      command,
+      cwd: this.cwd,
+    };
+    if (options?.timeout) payload.timeoutSeconds = options.timeout;
+    if (this.env && Object.keys(this.env).length > 0) payload.env = this.env;
+
+    const response = await fetch(new URL("/exec", resolveCloudflareSandboxUrl()), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...buildCloudflareHeaders(),
+      },
+      body: JSON.stringify(payload),
+      signal,
+    });
+
+    const raw = (await response.text()).trim();
+    const parsed = raw ? (JSON.parse(raw) as CloudflareExecResponse) : {};
+    if (!response.ok) {
+      throw new Error(
+        parsed.error ||
+          parsed.stderr ||
+          `Cloudflare sandbox bridge returned HTTP ${response.status}`,
+      );
+    }
+
+    return {
+      stdout: parsed.stdout || "",
+      stderr: parsed.stderr || "",
+      code: parsed.code ?? 0,
+    };
   }
 
   readFile(path: string, options?: ExecOptions): Promise<string> {

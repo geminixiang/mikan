@@ -5,6 +5,7 @@
  * exported types live in `types.ts` per module convention.
  */
 import { createHash, randomBytes } from "node:crypto";
+import type { Dirent, Stats } from "node:fs";
 import {
   existsSync,
   lstatSync,
@@ -75,22 +76,19 @@ export function assertPlatformName(value: string): PlatformName {
   return value;
 }
 
+/** Path separators and the C0/C1 control ranges are never allowed in an id. */
+function isUnsafeConversationIdChar(character: string): boolean {
+  const code = character.codePointAt(0) ?? 0;
+  return character === "/" || character === "\\" || code <= 0x1f || (code >= 0x7f && code <= 0x9f);
+}
+
 /** Validate a raw platform conversation identifier before it enters storage. */
 export function assertConversationId(value: string): string {
   if (value.length === 0 || value === "." || value === "..") {
     throw new Error("Conversation id must be non-empty and not a path marker");
   }
-  for (const character of value) {
-    const code = character.codePointAt(0) ?? 0;
-    if (
-      character === "/" ||
-      character === "\\" ||
-      code === 0 ||
-      code <= 0x1f ||
-      (code >= 0x7f && code <= 0x9f)
-    ) {
-      throw new Error("Conversation id must not contain path separators or control characters");
-    }
+  if ([...value].some(isUnsafeConversationIdChar)) {
+    throw new Error("Conversation id must not contain path separators or control characters");
   }
   return value;
 }
@@ -684,19 +682,29 @@ function parseOfficeRecord(value: unknown, path: string): OfficeRecord {
   });
 }
 
-function parseRecord(
-  value: unknown,
-  path: string,
-  enabledPlatforms: readonly PlatformName[],
-): OfficeMigrationRecord {
-  if (!isRecord(value)) throw new Error(`Invalid office migration record in ${path}`);
-  if (
-    typeof value.rawConversationId !== "string" ||
-    typeof value.sourceDir !== "string" ||
-    typeof value.workspaceRoot !== "string" ||
-    typeof value.status !== "string" ||
-    typeof value.updatedAt !== "string"
-  ) {
+interface MigrationFields {
+  rawConversationId: string;
+  sourceDir: string;
+  workspaceRoot: string;
+  status: OfficeMigrationStatus;
+  updatedAt: string;
+}
+
+function hasMigrationStrings(
+  value: Record<string, unknown>,
+): value is Record<string, unknown> & Record<keyof MigrationFields, string> {
+  return (
+    typeof value.rawConversationId === "string" &&
+    typeof value.sourceDir === "string" &&
+    typeof value.workspaceRoot === "string" &&
+    typeof value.status === "string" &&
+    typeof value.updatedAt === "string"
+  );
+}
+
+/** Validate the fields every stored migration record must carry. */
+function parseMigrationFields(value: Record<string, unknown>, path: string): MigrationFields {
+  if (!hasMigrationStrings(value)) {
     throw new Error(`Invalid office migration fields in ${path}`);
   }
   assertConversationId(value.rawConversationId);
@@ -707,48 +715,85 @@ function parseRecord(
   if (!MIGRATION_STATUSES.has(value.status as OfficeMigrationStatus)) {
     throw new Error(`Invalid office migration status in ${path}`);
   }
+  return {
+    rawConversationId: value.rawConversationId,
+    sourceDir: value.sourceDir,
+    workspaceRoot: value.workspaceRoot,
+    status: value.status as OfficeMigrationStatus,
+    updatedAt: value.updatedAt,
+  };
+}
 
+/**
+ * Ownership rules by status: `needs-owner` must carry neither owner nor
+ * target, `failed` may carry either, every other status must carry both.
+ */
+function assertOwnershipMatchesStatus(
+  status: OfficeMigrationStatus,
+  ownerPlatform: PlatformName | undefined,
+  targetDir: string | undefined,
+  path: string,
+): void {
+  const owned = ownerPlatform !== undefined;
+  const targeted = targetDir !== undefined;
+  if (status === "needs-owner" && (owned || targeted)) {
+    throw new Error(`Needs-owner migration cannot have an owner or target in ${path}`);
+  }
+  if (status !== "needs-owner" && status !== "failed" && !(owned && targeted)) {
+    throw new Error(`Prepared office migration is missing ownership in ${path}`);
+  }
+  if (!owned && targeted) {
+    throw new Error(`Office migration target has no owner in ${path}`);
+  }
+}
+
+function parseRecord(
+  value: unknown,
+  path: string,
+  enabledPlatforms: readonly PlatformName[],
+): OfficeMigrationRecord {
+  if (!isRecord(value)) throw new Error(`Invalid office migration record in ${path}`);
+  const fields = parseMigrationFields(value, path);
   const ownerPlatform = optionalPlatform(value.ownerPlatform);
   const targetDir = optionalString(value.targetDir);
   const error = optionalString(value.error);
+
   if (ownerPlatform !== undefined && !enabledPlatforms.includes(ownerPlatform)) {
     throw new Error(`Office migration owner is not enabled in ${path}`);
   }
-  if (value.status === "needs-owner" && (ownerPlatform !== undefined || targetDir !== undefined)) {
-    throw new Error(`Needs-owner migration cannot have an owner or target in ${path}`);
-  }
-  if (
-    value.status !== "needs-owner" &&
-    value.status !== "failed" &&
-    (ownerPlatform === undefined || targetDir === undefined)
-  ) {
-    throw new Error(`Prepared office migration is missing ownership in ${path}`);
-  }
-  if (ownerPlatform === undefined && targetDir !== undefined) {
-    throw new Error(`Office migration target has no owner in ${path}`);
-  }
+  assertOwnershipMatchesStatus(fields.status, ownerPlatform, targetDir, path);
+
   const expectedTargetDir = ownerPlatform
-    ? officeDir(value.workspaceRoot, {
+    ? officeDir(fields.workspaceRoot, {
         platform: ownerPlatform,
-        conversationId: value.rawConversationId,
+        conversationId: fields.rawConversationId,
       })
     : undefined;
   if (targetDir !== expectedTargetDir) {
     throw new Error(`Office migration target does not match its office address in ${path}`);
   }
-  if (value.status === "failed" && !error) {
+  if (fields.status === "failed" && !error) {
     throw new Error(`Failed office migration is missing an error in ${path}`);
   }
 
+  return buildMigrationRecord(fields, ownerPlatform, expectedTargetDir, error);
+}
+
+function buildMigrationRecord(
+  fields: MigrationFields,
+  ownerPlatform: PlatformName | undefined,
+  targetDir: string | undefined,
+  error: string | undefined,
+): OfficeMigrationRecord {
   return makeRecord({
-    rawConversationId: value.rawConversationId,
-    sourceDir: value.sourceDir,
-    workspaceRoot: value.workspaceRoot,
+    rawConversationId: fields.rawConversationId,
+    sourceDir: fields.sourceDir,
+    workspaceRoot: fields.workspaceRoot,
     ...(ownerPlatform ? { ownerPlatform } : {}),
-    ...(expectedTargetDir ? { targetDir: expectedTargetDir } : {}),
-    status: value.status as OfficeMigrationStatus,
+    ...(targetDir ? { targetDir } : {}),
+    status: fields.status,
     ...(error ? { error } : {}),
-    updatedAt: value.updatedAt,
+    updatedAt: fields.updatedAt,
   });
 }
 
@@ -807,46 +852,45 @@ function assertRegularDirectory(path: string, label: string): void {
   }
 }
 
-function assertRegistryFileSafe(path: string): void {
+/** `lstat` that reports a missing path as undefined; other errors still throw. */
+function lstatIfExists(path: string): Stats | undefined {
   try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      throw new Error(`Office registry must be a regular file: ${path}`);
-    }
+    return lstatSync(path);
   } catch (error) {
-    if (isErrno(error, "ENOENT")) return;
+    if (isErrno(error, "ENOENT")) return undefined;
     throw error;
+  }
+}
+
+function assertRegistryFileSafe(path: string): void {
+  const stat = lstatIfExists(path);
+  if (stat && (stat.isSymbolicLink() || !stat.isFile())) {
+    throw new Error(`Office registry must be a regular file: ${path}`);
   }
 }
 
 function assertPathIfPresent(path: string, label: string): void {
-  try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) {
-      throw new Error(`${label} must be a regular directory: ${path}`);
-    }
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return;
-    throw error;
+  const stat = lstatIfExists(path);
+  if (stat && (stat.isSymbolicLink() || !stat.isDirectory())) {
+    throw new Error(`${label} must be a regular directory: ${path}`);
   }
 }
 
 function assertPathAbsent(path: string, label: string): void {
-  try {
-    lstatSync(path);
-  } catch (error) {
-    if (isErrno(error, "ENOENT")) return;
-    throw error;
-  }
-  throw new Error(`${label} must be absent: ${path}`);
+  if (lstatIfExists(path)) throw new Error(`${label} must be absent: ${path}`);
 }
 
 function pathExists(path: string): boolean {
+  return lstatIfExists(path) !== undefined;
+}
+
+/** Create the lock directory and stamp it with our token, unwinding on failure. */
+function claimRegistryLock(lockPath: string, token: string): void {
+  mkdirSync(lockPath, { mode: 0o700 });
   try {
-    lstatSync(path);
-    return true;
+    writeFileSync(join(lockPath, "owner"), `${token}\n`, { mode: 0o600 });
   } catch (error) {
-    if (isErrno(error, "ENOENT")) return false;
+    rmSync(lockPath, { recursive: true, force: true });
     throw error;
   }
 }
@@ -857,26 +901,28 @@ function acquireRegistryLease(lockPath: string, timeoutMs: number): () => void {
 
   for (;;) {
     try {
-      mkdirSync(lockPath, { mode: 0o700 });
-      try {
-        writeFileSync(join(lockPath, "owner"), `${token}\n`, { mode: 0o600 });
-      } catch (error) {
-        rmSync(lockPath, { recursive: true, force: true });
-        throw error;
-      }
+      claimRegistryLock(lockPath, token);
       return () => releaseRegistryLease(lockPath, token);
     } catch (error) {
-      if (!isErrno(error, "EEXIST")) throw error;
-      if (registryLockIsStale(lockPath)) {
-        rmSync(lockPath, { recursive: true, force: true });
-        continue;
-      }
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out acquiring office registry lock: ${lockPath}`, { cause: error });
-      }
-      sleepSync(REGISTRY_LOCK_RETRY_MS);
+      awaitFreeRegistryLock(lockPath, deadline, error);
     }
   }
+}
+
+/**
+ * Handle one failed lock attempt: rethrow anything but a held lock, clear a
+ * stale lock so the next attempt wins, else wait until the deadline passes.
+ */
+function awaitFreeRegistryLock(lockPath: string, deadline: number, error: unknown): void {
+  if (!isErrno(error, "EEXIST")) throw error;
+  if (registryLockIsStale(lockPath)) {
+    rmSync(lockPath, { recursive: true, force: true });
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new Error(`Timed out acquiring office registry lock: ${lockPath}`, { cause: error });
+  }
+  sleepSync(REGISTRY_LOCK_RETRY_MS);
 }
 
 function releaseRegistryLease(lockPath: string, token: string): void {
@@ -1029,33 +1075,50 @@ function recoverInterruptedMoves(
 ): void {
   for (const record of registry.getState().migrations) {
     if (record.status !== "moving") continue;
-    const targetDir = record.targetDir;
-    if (!targetDir) {
-      registry.markFailed(record.rawConversationId, "Moving record has no target directory");
+    const failure = finishInterruptedMove(record);
+    if (failure) {
+      registry.markFailed(record.rawConversationId, failure);
       continue;
     }
-    const sourceExists = pathExists(record.sourceDir);
-    const targetExists = pathExists(targetDir);
-    if (sourceExists && targetExists) {
-      registry.markFailed(
-        record.rawConversationId,
-        "Both legacy source and office target exist; merge them manually",
-      );
-      continue;
-    }
-    if (!sourceExists && !targetExists) {
-      registry.markFailed(
-        record.rawConversationId,
-        "Neither legacy source nor office target exists",
-      );
-      continue;
-    }
-    if (sourceExists) renameSync(record.sourceDir, targetDir);
     registry.markCommitted(record.rawConversationId);
     recordMigratedOffice(registry, record);
     summary.recovered.push(record.rawConversationId);
     log.logInfo(`[office] Recovered interrupted migration: ${record.rawConversationId}`);
   }
+}
+
+/** Complete one interrupted rename; returns the failure reason when it cannot. */
+function finishInterruptedMove(record: OfficeMigrationRecord): string | undefined {
+  const targetDir = record.targetDir;
+  if (!targetDir) return "Moving record has no target directory";
+  const sourceExists = pathExists(record.sourceDir);
+  const targetExists = pathExists(targetDir);
+  if (sourceExists && targetExists) {
+    return "Both legacy source and office target exist; merge them manually";
+  }
+  if (!sourceExists && !targetExists) return "Neither legacy source nor office target exists";
+  if (sourceExists) renameSync(record.sourceDir, targetDir);
+  return undefined;
+}
+
+/**
+ * A legacy directory is claimable unless it already failed (reported via
+ * summary.failed). One that reappears after a committed move is a different
+ * (or resurrected) office the runtime can no longer see, so refusing to boot
+ * beats silently ignoring its data.
+ */
+function isClaimableLegacyDir(
+  registry: OfficeRegistry,
+  workspaceRoot: string,
+  rawConversationId: string,
+): boolean {
+  const existing = registry.getMigration(rawConversationId);
+  if (existing?.status === "committed") {
+    throw new Error(
+      `Legacy office directory reappeared after migration: ${join(workspaceRoot, rawConversationId)}`,
+    );
+  }
+  return existing?.status !== "failed";
 }
 
 /** Scan the workspace root and move every claimable legacy office directory. */
@@ -1065,16 +1128,7 @@ function claimAndMoveLegacyDirs(
   summary: OfficeMigrationRunSummary,
 ): void {
   for (const rawConversationId of listLegacyOfficeDirs(workspaceRoot)) {
-    const existing = registry.getMigration(rawConversationId);
-    if (existing?.status === "committed") {
-      // The move already happened; a raw-id dir with this name reappearing
-      // afterwards is a different (or resurrected) office the runtime can no
-      // longer see. Refusing to boot beats silently ignoring its data.
-      throw new Error(
-        `Legacy office directory reappeared after migration: ${join(workspaceRoot, rawConversationId)}`,
-      );
-    }
-    if (existing?.status === "failed") continue; // reported via summary.failed
+    if (!isClaimableLegacyDir(registry, workspaceRoot, rawConversationId)) continue;
 
     const record = registry.prepareLegacyMigration({
       rawConversationId,
@@ -1142,24 +1196,25 @@ function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationR
  * are (an operator can still claim one explicitly via `mikan office claim`).
  */
 function listLegacyOfficeDirs(workspaceRoot: string): string[] {
-  const candidates: string[] = [];
-  for (const entry of readdirSync(workspaceRoot, { withFileTypes: true })) {
-    if (entry.name.startsWith(".")) continue;
-    if (RESERVED_WORKSPACE_NAMES.has(entry.name)) continue;
-    if (isOfficeKey(entry.name)) continue;
-    if (entry.isSymbolicLink()) {
-      throw new Error(`Workspace entry must not be a symlink: ${join(workspaceRoot, entry.name)}`);
-    }
-    if (!entry.isDirectory()) continue;
-    if (!looksLikeConversationOffice(join(workspaceRoot, entry.name))) {
-      log.logInfo(
-        `[office] Skipping non-office workspace directory (no log.jsonl or sessions/): ${entry.name}`,
-      );
-      continue;
-    }
-    candidates.push(entry.name);
+  return readdirSync(workspaceRoot, { withFileTypes: true })
+    .filter((entry) => isLegacyOfficeDir(workspaceRoot, entry))
+    .map((entry) => entry.name)
+    .toSorted();
+}
+
+function isLegacyOfficeDir(workspaceRoot: string, entry: Dirent): boolean {
+  if (entry.name.startsWith(".")) return false;
+  if (RESERVED_WORKSPACE_NAMES.has(entry.name)) return false;
+  if (isOfficeKey(entry.name)) return false;
+  if (entry.isSymbolicLink()) {
+    throw new Error(`Workspace entry must not be a symlink: ${join(workspaceRoot, entry.name)}`);
   }
-  return candidates.toSorted();
+  if (!entry.isDirectory()) return false;
+  if (looksLikeConversationOffice(join(workspaceRoot, entry.name))) return true;
+  log.logInfo(
+    `[office] Skipping non-office workspace directory (no log.jsonl or sessions/): ${entry.name}`,
+  );
+  return false;
 }
 
 function looksLikeConversationOffice(dir: string): boolean {
@@ -1180,31 +1235,27 @@ export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary)
       "  mikan office claim <conversationId> <platform>",
     );
   }
-  if (summary.failed.length > 0) {
-    lines.push(
-      "",
+  lines.push(
+    ...conflictSection(summary.failed, [
       "These migrations previously failed and need manual repair (see",
       "office-registry.json in the state dir for each error):",
-      ...summary.failed.map((id) => `  - ${id}`),
-    );
-  }
-  if (summary.vaultConflicts.length > 0) {
-    lines.push(
-      "",
+    ]),
+    ...conflictSection(summary.vaultConflicts, [
       "These conversations have credentials under both the legacy and the",
       "office-key vault directory; merge them manually under <state-dir>/vaults:",
-      ...summary.vaultConflicts.map((id) => `  - ${id}`),
-    );
-  }
-  if (summary.stateDirConflicts.length > 0) {
-    lines.push(
-      "",
+    ]),
+    ...conflictSection(summary.stateDirConflicts, [
       "These conversations have host state under both the legacy and the",
       "office-key directory; merge them manually under <state-dir>/conversations:",
-      ...summary.stateDirConflicts.map((id) => `  - ${id}`),
-    );
-  }
+    ]),
+  );
   return lines.join("\n");
+}
+
+/** One blank-separated "these need manual work" block, empty when nothing does. */
+function conflictSection(ids: readonly string[], explanation: string[]): string[] {
+  if (ids.length === 0) return [];
+  return ["", ...explanation, ...ids.map((id) => `  - ${id}`)];
 }
 
 /**

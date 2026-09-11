@@ -64,3 +64,51 @@ export function resolveStateDir(
 export function effectiveStateDir(): string {
   return resolveStateDir([]);
 }
+
+/** Flag/positional split of one argv, shared by every mikan CLI grammar. */
+export interface ArgScan {
+  /** Last value seen for each value flag, keyed by the flag name. */
+  values: Map<string, string>;
+  /** Canonical (first-listed) spelling of every boolean flag present. */
+  flags: Set<string>;
+  positionals: string[];
+  /** First token that looked like a flag but matched no spec entry. */
+  unknown?: string;
+}
+
+export interface ArgSpec {
+  /** Value flags, in `--name value` / `--name=value` form. */
+  values?: readonly string[];
+  /** Boolean flags as alias groups; the first spelling is the canonical one. */
+  flags?: readonly (readonly string[])[];
+}
+
+/**
+ * Split `args` into value flags, boolean flags and positionals. Callers decide
+ * what an unknown flag means — boot throws, the subcommands print usage — so
+ * the scan only reports the first one it saw.
+ */
+export function scanArgs(args: string[], spec: ArgSpec = {}): ArgScan {
+  const scan: ArgScan = { values: new Map(), flags: new Set(), positionals: [] };
+  for (let i = 0; i < args.length; i++) {
+    i = consumeArg(args, i, spec, scan);
+  }
+  return scan;
+}
+
+/** Fold `args[i]` into `scan`; returns the last argv index it consumed. */
+function consumeArg(args: string[], i: number, spec: ArgSpec, scan: ArgScan): number {
+  const arg = args[i];
+  if (arg === undefined) return i;
+  for (const name of spec.values ?? []) {
+    const taken = takeValueFlag(args, i, name);
+    if (!taken) continue;
+    scan.values.set(name, taken.value);
+    return taken.lastIndex;
+  }
+  const canonical = spec.flags?.find((aliases) => aliases.includes(arg))?.[0];
+  if (canonical) scan.flags.add(canonical);
+  else if (arg.startsWith("-")) scan.unknown ??= arg;
+  else scan.positionals.push(arg);
+  return i;
+}

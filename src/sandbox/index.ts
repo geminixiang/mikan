@@ -65,20 +65,22 @@ export function getSandboxAdapters(): readonly [...typeof sandboxAdapters] {
   return sandboxAdapters;
 }
 
+function requireSandboxAdapter(type: SandboxConfig["type"]): SandboxAdapter {
+  const adapter = sandboxAdapterByType.get(type);
+  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
+  return adapter;
+}
+
 export function getSandboxCredentialCapabilities(
   type: SandboxConfig["type"],
 ): SandboxAdapter["credentials"] {
-  const adapter = sandboxAdapterByType.get(type);
-  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
-  return adapter.credentials;
+  return requireSandboxAdapter(type).credentials;
 }
 
 export function getSandboxWorkspaceCapabilities(
   type: SandboxConfig["type"],
 ): SandboxAdapter["workspace"] {
-  const adapter = sandboxAdapterByType.get(type);
-  if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
-  return adapter.workspace;
+  return requireSandboxAdapter(type).workspace;
 }
 
 export function assertSandboxSupportsWorkspacePolicy(
@@ -124,12 +126,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
 }
 
 export async function validateSandbox(config: SandboxConfig): Promise<void> {
-  const adapter = sandboxAdapterByType.get(config.type);
-  if (!adapter) {
-    throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
-  }
-
-  await adapter.validate?.(config);
+  await requireSandboxAdapter(config.type).validate?.(config);
 }
 
 /**
@@ -141,10 +138,7 @@ export function createExecutor(
   env?: Record<string, string>,
   ensureReady?: () => Promise<void>,
 ): Executor {
-  const adapter = sandboxAdapterByType.get(config.type);
-  if (!adapter) {
-    throw new SandboxError(`Error: Unsupported sandbox type '${config.type}'`);
-  }
+  const adapter = requireSandboxAdapter(config.type);
   if (!adapter.createExecutor) {
     throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
   }

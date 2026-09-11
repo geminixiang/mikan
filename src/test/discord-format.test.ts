@@ -137,6 +137,34 @@ describe("monospace alignment", () => {
    * text mikan produces; Discord's own CJK fallback font is not exactly twice
    * the Latin advance, so the rendered columns end up close rather than exact.
    */
+  test("preserves fixed wide-range boundaries and supplementary code points", () => {
+    const ranges = [
+      [0x1100, 0x115f],
+      [0x2e80, 0xa4cf],
+      [0xac00, 0xd7a3],
+      [0xf900, 0xfaff],
+      [0xfe30, 0xfe6f],
+      [0xff00, 0xff60],
+      [0xffe0, 0xffe6],
+      [0x1f300, 0x1faff],
+      [0x2705, 0x2705],
+      [0x270a, 0x270b],
+      [0x2728, 0x2728],
+      [0x274c, 0x274c],
+      [0x274e, 0x274e],
+      [0x2753, 0x2755],
+      [0x2757, 0x2757],
+      [0x2795, 0x2797],
+      [0x27b0, 0x27b0],
+      [0x27bf, 0x27bf],
+    ];
+    for (const [start, end] of ranges) {
+      expect(displayWidth(String.fromCodePoint(start!, end!))).toBe(4);
+      expect(displayWidth(String.fromCodePoint(start! - 1, end! + 1))).toBe(2);
+    }
+    expect(displayWidth("\u{20000}\ud800\u0301")).toBe(3);
+  });
+
   test("counts CJK as two cells", () => {
     expect(displayWidth("項目")).toBe(4);
     expect(displayWidth("ab")).toBe(2);

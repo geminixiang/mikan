@@ -70,6 +70,33 @@ describe("SessionStore", () => {
     expect(typeof entry?.id).toBe("string");
   });
 
+  test("readHeader folds only metadata writes and tolerates malformed JSONL", () => {
+    const file = join(dir, "metadata.jsonl");
+    SessionStore.writeHeaderFile(file, "/work");
+    const header = readFileSync(file, "utf-8");
+    const metadata = { kind: "value", namespace: "mikan", key: "metadata" };
+    const lines = [
+      JSON.stringify({ ...metadata, op: "set", value: { parentSessionPath: "/first" } }),
+      "broken JSON",
+      "",
+      JSON.stringify([null, 1, { ...metadata, namespace: "other", op: "delete" }]),
+      JSON.stringify([
+        { ...metadata, op: "delete" },
+        { ...metadata, op: "set", value: { parentSessionPath: "/last" } },
+        { ...metadata, op: "set", value: [] },
+        { ...metadata, op: "set", value: null },
+      ]),
+      "truncated",
+    ];
+    writeFileSync(file, header + lines.join("\n"));
+    expect(SessionStore.readHeader(file)?.parentSession).toBe("/last");
+    writeFileSync(
+      file,
+      header + lines.join("\n") + "\n" + JSON.stringify({ ...metadata, op: "delete" }),
+    );
+    expect(SessionStore.readHeader(file)?.metadata).toBeUndefined();
+  });
+
   test("entries form a parent chain and getBranch returns root-first order", async () => {
     const file = join(dir, "session.jsonl");
     const store = await SessionStore.create(file, "/work");

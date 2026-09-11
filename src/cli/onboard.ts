@@ -183,17 +183,21 @@ export function renderEnvFile(existing: string | undefined, vars: Record<string,
   const pending = new Map(Object.entries(vars));
   const lines: string[] = [];
   for (const line of existing ? existing.split("\n") : []) {
-    const key = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(line)?.[1];
-    if (key && pending.has(key)) {
-      lines.push(`${key}=${pending.get(key)}`);
-      pending.delete(key);
-    } else if (line.trim() || lines.length > 0) {
-      lines.push(line);
-    }
+    const rendered = rewriteEnvLine(line, pending);
+    if (rendered.trim() || lines.length > 0) lines.push(rendered);
   }
-  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  while (lines.at(-1) === "") lines.pop();
   for (const [key, value] of pending) lines.push(`${key}=${value}`);
   return `${lines.join("\n")}\n`;
+}
+
+/** Replace a `KEY=` line whose key is still pending, consuming that key. */
+function rewriteEnvLine(line: string, pending: Map<string, string>): string {
+  const key = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(line)?.[1];
+  if (key === undefined || !pending.has(key)) return line;
+  const value = pending.get(key);
+  pending.delete(key);
+  return `${key}=${value}`;
 }
 
 export async function runOnboardWizard(

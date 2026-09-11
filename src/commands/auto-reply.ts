@@ -7,7 +7,7 @@ import {
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { formatCommandSummary, replyDiagnosticWithContext, replySummary } from "./utils.js";
 
 type AutoReplyAction = { type: "status" } | { type: "on" } | { type: "off" } | { type: "invalid" };
 
@@ -43,20 +43,12 @@ export class AutoReplyCommandHandler implements CommandHandler {
     if (!action) return false;
 
     if (context.privateConversation) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Auto Reply", ["只能在 group/channel 裡設定。"]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Auto Reply", ["只能在 group/channel 裡設定。"]);
       return true;
     }
 
     if (action.type === "invalid") {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Auto Reply", ["Usage: `/pi-auto-reply on|off|status`"]);
       return true;
     }
 

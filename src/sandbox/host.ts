@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type {
@@ -9,7 +9,15 @@ import type {
   RuntimePathContext,
   SandboxAdapter,
 } from "./types.js";
-import { createMountedRuntimePathContext, killProcessTree } from "./utils.js";
+import { createMountedRuntimePathContext, killProcessTree, linkAbortSignal } from "./utils.js";
+
+/** Cap on captured output, so a runaway command cannot exhaust the daemon. */
+const MAX_CAPTURE_CHARS = 10 * 1024 * 1024;
+
+interface Capture {
+  stdout: string;
+  stderr: string;
+}
 
 function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
   if (value === "host") {
@@ -21,16 +29,8 @@ function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
 export class HostExecutor implements Executor {
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
-      const shell = process.platform === "win32" ? "cmd" : "sh";
-      const shellArgs = process.platform === "win32" ? ["/c"] : ["-c"];
-
-      const child = spawn(shell, [...shellArgs, command], {
-        detached: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      let stdout = "";
-      let stderr = "";
+      const child = spawnShell(command);
+      const capture = captureOutput(child);
       let timedOut = false;
 
       const timeoutHandle =
@@ -41,46 +41,19 @@ export class HostExecutor implements Executor {
             }, options.timeout * 1000)
           : undefined;
 
-      const onAbort = () => {
+      const unlinkSignal = linkAbortSignal(options?.signal, () => {
         if (child.pid) killProcessTree(child.pid);
-      };
-
-      if (options?.signal) {
-        if (options.signal.aborted) {
-          onAbort();
-        } else {
-          options.signal.addEventListener("abort", onAbort, { once: true });
-        }
-      }
-
-      child.stdout?.setEncoding("utf8");
-      child.stderr?.setEncoding("utf8");
-
-      child.stdout?.on("data", (data) => {
-        stdout += data;
-        if (stdout.length > 10 * 1024 * 1024) {
-          stdout = stdout.slice(0, 10 * 1024 * 1024);
-        }
-      });
-
-      child.stderr?.on("data", (data) => {
-        stderr += data;
-        if (stderr.length > 10 * 1024 * 1024) {
-          stderr = stderr.slice(0, 10 * 1024 * 1024);
-        }
       });
 
       child.on("close", (code) => {
         if (timeoutHandle) clearTimeout(timeoutHandle);
-        if (options?.signal) {
-          options.signal.removeEventListener("abort", onAbort);
-        }
+        unlinkSignal();
 
+        const { stdout, stderr } = capture;
         if (options?.signal?.aborted) {
           reject(new Error(`${stdout}\n${stderr}\nCommand aborted`.trim()));
           return;
         }
-
         if (timedOut) {
           reject(
             new Error(
@@ -89,7 +62,6 @@ export class HostExecutor implements Executor {
           );
           return;
         }
-
         resolve({ stdout, stderr, code: code ?? 0 });
       });
     });
@@ -121,6 +93,26 @@ export class HostExecutor implements Executor {
   getSandboxConfig(): HostSandboxConfig {
     return { type: "host" };
   }
+}
+
+function spawnShell(command: string): ChildProcess {
+  const isWindows = process.platform === "win32";
+  return spawn(isWindows ? "cmd" : "sh", [isWindows ? "/c" : "-c", command], {
+    detached: true,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/** Accumulate the child's streams into one capped buffer per stream. */
+function captureOutput(child: ChildProcess): Capture {
+  const capture: Capture = { stdout: "", stderr: "" };
+  for (const stream of ["stdout", "stderr"] as const) {
+    child[stream]?.setEncoding("utf8");
+    child[stream]?.on("data", (chunk: string) => {
+      capture[stream] = (capture[stream] + chunk).slice(0, MAX_CAPTURE_CHARS);
+    });
+  }
+  return capture;
 }
 
 export const hostSandboxAdapter: SandboxAdapter<HostSandboxConfig> = {

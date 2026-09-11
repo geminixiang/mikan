@@ -296,27 +296,32 @@ export function resolveParentSessionForThread(
   return id ? { path, id } : null;
 }
 
+/** Header summaries of the main session files in an office's session directory. */
+function mainSessionSummaries(
+  sessionDir: string,
+): Array<ParentSessionRef & { timestampMs: number }> {
+  return readdirSync(sessionDir)
+    .filter((name) => MAIN_SESSION_FILENAME.test(name))
+    .flatMap((name) => {
+      const path = join(sessionDir, name);
+      const summary = readSessionHeaderSummary(path);
+      return summary ? [{ path, id: summary.id, timestampMs: summary.timestampMs }] : [];
+    });
+}
+
+/** The main session current at `targetMs`: the newest one created at or before it. */
 function findMainSessionActiveAtTime(
   channelDir: string,
   targetMs: number,
 ): ParentSessionRef | null {
   const sessionDir = officeSessionsDir(channelDir);
   if (!existsSync(sessionDir)) return null;
-
-  let best: ParentSessionRef | null = null;
-  let bestCreatedMs = -Infinity;
-
-  for (const name of readdirSync(sessionDir)) {
-    if (!MAIN_SESSION_FILENAME.test(name)) continue;
-    const filePath = join(sessionDir, name);
-    const summary = readSessionHeaderSummary(filePath);
-    if (!summary) continue;
-    if (summary.timestampMs <= targetMs && summary.timestampMs > bestCreatedMs) {
-      bestCreatedMs = summary.timestampMs;
-      best = { path: filePath, id: summary.id };
-    }
-  }
-  return best;
+  const started = mainSessionSummaries(sessionDir).filter(
+    (summary) => summary.timestampMs <= targetMs,
+  );
+  if (started.length === 0) return null;
+  const best = started.reduce((a, b) => (b.timestampMs > a.timestampMs ? b : a));
+  return { path: best.path, id: best.id };
 }
 
 function readSessionHeaderSummary(filePath: string): { id: string; timestampMs: number } | null {

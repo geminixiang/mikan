@@ -1,18 +1,14 @@
-import {
-  existsSync,
-  linkSync,
-  lstatSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-} from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import type { AgentMessage, Entry, JsonValue } from "@earendil-works/pi-agent-core";
-import type { Usage } from "@earendil-works/pi-ai";
 import { SessionStore } from "../harness/session-store.js";
-import { atomicWritePrivateFile, isRecord } from "../utils/file-guards.js";
+import { isRecord } from "../utils/file-guards.js";
+import {
+  commitMigration,
+  findSessionFiles,
+  jsonValue,
+  optionalAnnotations,
+  V4FileWriter,
+} from "./migrate-common.js";
 import type { Pi084MigrationResult } from "./types.js";
 export type { Pi084MigrationResult } from "./types.js";
 
@@ -27,13 +23,17 @@ interface Pi084Header {
   metadata?: Record<string, JsonValue>;
 }
 
-interface ParsedPi084Session {
-  header: Pi084Header;
+/** The mutation state a Pi 0.84 file folds into as its lines are replayed. */
+interface Pi084Mutations {
   entries: Entry[];
   branchTips: Map<string, string | null>;
-  name?: string;
   labels: Map<string, string>;
   records: JsonValue[];
+  name?: string;
+}
+
+interface ParsedPi084Session extends Pi084Mutations {
+  header: Pi084Header;
   metadata?: Record<string, JsonValue>;
 }
 
@@ -73,10 +73,6 @@ export function isPi084SessionFile(filePath: string): boolean {
   }
 }
 
-function jsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
-
 function convertEntry(record: Record<string, unknown>): Entry {
   const { kind: _kind, lane: _lane, ...raw } = record;
   const base = {
@@ -96,8 +92,7 @@ function convertEntry(record: Record<string, unknown>): Entry {
         retainedTail: jsonValue(raw.retainedTail ?? []) as unknown as AgentMessage[],
         tokensBefore: Number(raw.tokensBefore ?? 0),
         fromHook: false,
-        ...(raw.details !== undefined ? { details: jsonValue(raw.details) } : {}),
-        ...(raw.usage !== undefined ? { usage: raw.usage as Usage } : {}),
+        ...optionalAnnotations(raw),
       };
     case "branch_summary":
       return {
@@ -106,8 +101,7 @@ function convertEntry(record: Record<string, unknown>): Entry {
         fromId: typeof raw.fromId === "string" ? raw.fromId : null,
         summary: String(raw.summary ?? ""),
         fromHook: false,
-        ...(raw.details !== undefined ? { details: jsonValue(raw.details) } : {}),
-        ...(raw.usage !== undefined ? { usage: raw.usage as Usage } : {}),
+        ...optionalAnnotations(raw),
       };
     case "custom":
       return {
@@ -132,140 +126,122 @@ function convertEntry(record: Record<string, unknown>): Entry {
   }
 }
 
-function parsePi084Session(filePath: string): ParsedPi084Session {
+/** Apply a `fact` mutation; `false` means the fact is not one we understand. */
+function applyFact(state: Pi084Mutations, value: Record<string, unknown>): boolean {
+  if (value.fact === "name") {
+    state.name = typeof value.name === "string" ? value.name : undefined;
+    return true;
+  }
+  if (value.fact !== "label" || typeof value.targetId !== "string") return false;
+  if (typeof value.label === "string") state.labels.set(value.targetId, value.label);
+  else state.labels.delete(value.targetId);
+  return true;
+}
+
+/** Apply one non-header line; `false` means the mutation is unrecognized. */
+function applyMutation(state: Pi084Mutations, value: Record<string, unknown>): boolean {
+  switch (value.kind) {
+    case "entry": {
+      const entry = convertEntry(value);
+      state.entries.push(entry);
+      if (typeof value.lane === "string") state.branchTips.set(value.lane, entry.id);
+      return true;
+    }
+    case "lane": {
+      if (typeof value.lane !== "string") return false;
+      state.branchTips.set(value.lane, typeof value.leafId === "string" ? value.leafId : null);
+      return true;
+    }
+    case "fact":
+      return applyFact(state, value);
+    case "record":
+      state.records.push(jsonValue(value));
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** mikan metadata, with the legacy parent path folded in when it is missing. */
+function sessionMetadata(header: Pi084Header): Record<string, JsonValue> | undefined {
+  const metadata = header.metadata ? structuredClone(header.metadata) : undefined;
+  if (!header.legacyParentSessionPath || metadata?.parentSessionPath !== undefined) return metadata;
+  const withParent = metadata ?? {};
+  withParent.parentSessionPath = header.legacyParentSessionPath;
+  return withParent;
+}
+
+interface Pi084Lines {
+  lines: string[];
+  /** A file without a trailing newline may end in a torn line (a crash tail). */
+  torn: boolean;
+  filePath: string;
+}
+
+function readLines(filePath: string): Pi084Lines {
   const source = readFileSync(filePath, "utf8");
   const lines = source.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  let header: Pi084Header | undefined;
-  const entries: Entry[] = [];
-  const branchTips = new Map<string, string | null>([["main", null]]);
-  const labels = new Map<string, string>();
-  const records: JsonValue[] = [];
-  let name: string | undefined;
+  return { lines, torn: !source.endsWith("\n"), filePath };
+}
 
-  for (const [index, line] of lines.entries()) {
-    let value: unknown;
-    try {
-      value = JSON.parse(line);
-    } catch (error) {
-      if (index === lines.length - 1 && !source.endsWith("\n")) break;
-      throw new Error(`Invalid JSON on line ${index + 1}: ${filePath}`, { cause: error });
-    }
-    if (index === 0) {
-      header = parseHeader(value, filePath);
-      continue;
-    }
-    if (!isRecord(value)) throw new Error(`Invalid mutation on line ${index + 1}: ${filePath}`);
-    if (value.kind === "entry") {
-      const entry = convertEntry(value);
-      entries.push(entry);
-      if (typeof value.lane === "string") branchTips.set(value.lane, entry.id);
-    } else if (value.kind === "lane" && typeof value.lane === "string") {
-      branchTips.set(value.lane, typeof value.leafId === "string" ? value.leafId : null);
-    } else if (value.kind === "fact" && value.fact === "name") {
-      name = typeof value.name === "string" ? value.name : undefined;
-    } else if (
-      value.kind === "fact" &&
-      value.fact === "label" &&
-      typeof value.targetId === "string"
-    ) {
-      if (typeof value.label === "string") labels.set(value.targetId, value.label);
-      else labels.delete(value.targetId);
-    } else if (value.kind === "record") {
-      records.push(jsonValue(value));
-    } else {
-      throw new Error(`Unknown Pi 0.84 mutation on line ${index + 1}: ${filePath}`);
-    }
+/** One JSONL line; `undefined` marks a torn final line — a crash tail, not corruption. */
+function parseLine({ lines, torn, filePath }: Pi084Lines, index: number): unknown {
+  try {
+    return JSON.parse(lines[index] ?? "");
+  } catch (error) {
+    if (index === lines.length - 1 && torn) return undefined;
+    throw new Error(`Invalid JSON on line ${index + 1}: ${filePath}`, { cause: error });
   }
-  if (!header) throw new Error(`Missing Pi 0.84 session header: ${filePath}`);
-  let metadata = header.metadata ? structuredClone(header.metadata) : undefined;
-  if (header.legacyParentSessionPath && metadata?.parentSessionPath === undefined) {
-    (metadata ??= {}).parentSessionPath = header.legacyParentSessionPath;
+}
+
+/** Replay every non-header line into `state`, stopping at a torn tail. */
+function replayMutations(state: Pi084Mutations, file: Pi084Lines): void {
+  for (let index = 1; index < file.lines.length; index++) {
+    const value = parseLine(file, index);
+    if (value === undefined) return;
+    const where = `line ${index + 1}: ${file.filePath}`;
+    if (!isRecord(value)) throw new Error(`Invalid mutation on ${where}`);
+    if (!applyMutation(state, value)) throw new Error(`Unknown Pi 0.84 mutation on ${where}`);
   }
-  return { header, entries, branchTips, name, labels, records, metadata };
+}
+
+function parsePi084Session(filePath: string): ParsedPi084Session {
+  const file = readLines(filePath);
+  const headerValue = file.lines.length === 0 ? undefined : parseLine(file, 0);
+  if (headerValue === undefined) throw new Error(`Missing Pi 0.84 session header: ${filePath}`);
+  const header = parseHeader(headerValue, filePath);
+  const state: Pi084Mutations = {
+    entries: [],
+    branchTips: new Map([["main", null]]),
+    labels: new Map(),
+    records: [],
+  };
+  replayMutations(state, file);
+  return { ...state, header, metadata: sessionMetadata(header) };
 }
 
 function encodeCurrentSession(source: ParsedPi084Session): string {
-  const header = {
+  const { header } = source;
+  const writer = new V4FileWriter({
     v: 4,
     kind: "header",
-    id: source.header.id,
+    id: header.id,
     storageVersion: 1,
-    createdAt: source.header.createdAt,
-    cwd: source.header.cwd,
-    ...(source.header.parentSessionId !== undefined
-      ? { parentSessionId: source.header.parentSessionId }
+    createdAt: header.createdAt,
+    cwd: header.cwd,
+    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
+    ...(header.legacyParentSessionPath !== undefined
+      ? { legacyParentSessionPath: header.legacyParentSessionPath }
       : {}),
-    ...(source.header.legacyParentSessionPath !== undefined
-      ? { legacyParentSessionPath: source.header.legacyParentSessionPath }
-      : {}),
-  };
-  const lines = [JSON.stringify(header)];
-  let seq = 0;
-  for (const entry of source.entries) {
-    lines.push(JSON.stringify({ kind: "entry", ...entry, seq: ++seq }));
-  }
-  for (const [branch, tip] of source.branchTips) {
-    lines.push(
-      JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: ++seq,
-        namespace: "pi.branch.tip",
-        key: branch,
-        value: tip,
-      }),
-    );
-  }
-  if (source.name !== undefined) {
-    lines.push(
-      JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: ++seq,
-        namespace: "pi.session.name",
-        key: "",
-        value: source.name,
-      }),
-    );
-  }
-  for (const [targetId, label] of source.labels) {
-    lines.push(
-      JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: ++seq,
-        namespace: "pi.entry.label",
-        key: targetId,
-        value: label,
-      }),
-    );
-  }
-  if (source.metadata !== undefined) {
-    lines.push(
-      JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: ++seq,
-        namespace: "mikan",
-        key: "metadata",
-        value: source.metadata,
-      }),
-    );
-  }
-  for (const record of source.records) {
-    lines.push(
-      JSON.stringify({
-        kind: "list",
-        op: "append",
-        seq: ++seq,
-        namespace: "mikan.pi084.records",
-        key: "",
-        value: record,
-      }),
-    );
-  }
-  return `${lines.join("\n")}\n`;
+  });
+  for (const entry of source.entries) writer.entry(entry);
+  for (const [branch, tip] of source.branchTips) writer.set("pi.branch.tip", branch, tip);
+  if (source.name !== undefined) writer.set("pi.session.name", "", source.name);
+  for (const [targetId, label] of source.labels) writer.set("pi.entry.label", targetId, label);
+  if (source.metadata !== undefined) writer.set("mikan", "metadata", source.metadata);
+  for (const record of source.records) writer.append("mikan.pi084.records", "", record);
+  return writer.toString();
 }
 
 function currentWrites(path: string): Array<Record<string, unknown>> {
@@ -293,12 +269,11 @@ function valueWritten(
   )?.value;
 }
 
-async function verifyCandidate(path: string, source: ParsedPi084Session): Promise<void> {
-  const inspection = await SessionStore.inspect(path);
-  const entries = await inspection.getEntries();
-  if (entries.length !== source.entries.length) throw new Error("entry count changed");
+/** Entries must survive the rewrite unchanged apart from their renumbered seq. */
+function verifyEntries(entries: Entry[], source: Entry[]): void {
+  if (entries.length !== source.length) throw new Error("entry count changed");
   for (const [index, entry] of entries.entries()) {
-    const original = source.entries[index];
+    const original = source[index];
     if (!original) throw new Error(`entry ${index + 1} changed`);
     const { seq: _entrySeq, ...entryData } = entry;
     const { seq: _originalSeq, ...originalData } = original;
@@ -306,28 +281,24 @@ async function verifyCandidate(path: string, source: ParsedPi084Session): Promis
       throw new Error(`entry ${index + 1} changed`);
     }
   }
-  const expectedTip = source.branchTips.get("main") ?? null;
-  const branch = await inspection.getBranch();
-  if ((branch.at(-1)?.id ?? null) !== expectedTip) throw new Error("main branch tip changed");
-  if ((await inspection.getSessionName()) !== source.name) throw new Error("session name changed");
-  const header = inspection.getHeader();
-  if (
-    header.id !== source.header.id ||
-    header.timestamp !== new Date(source.header.createdAt).toISOString()
-  ) {
-    throw new Error("session identity changed");
+}
+
+function verifyValues(
+  writes: Array<Record<string, unknown>>,
+  namespace: string,
+  expected: ReadonlyMap<string, string | null>,
+  describe: (key: string) => string,
+): void {
+  for (const [key, value] of expected) {
+    if (valueWritten(writes, namespace, key) !== value) throw new Error(describe(key));
   }
+}
+
+/** Branch tips, labels, metadata and audit records must round-trip as written. */
+function verifyValueWrites(path: string, source: ParsedPi084Session): void {
   const writes = currentWrites(path);
-  for (const [branchName, tip] of source.branchTips) {
-    if (valueWritten(writes, "pi.branch.tip", branchName) !== tip) {
-      throw new Error(`branch ${branchName} tip changed`);
-    }
-  }
-  for (const [targetId, label] of source.labels) {
-    if (valueWritten(writes, "pi.entry.label", targetId) !== label) {
-      throw new Error(`label ${targetId} changed`);
-    }
-  }
+  verifyValues(writes, "pi.branch.tip", source.branchTips, (key) => `branch ${key} tip changed`);
+  verifyValues(writes, "pi.entry.label", source.labels, (key) => `label ${key} changed`);
   if (
     JSON.stringify(valueWritten(writes, "mikan", "metadata")) !== JSON.stringify(source.metadata)
   ) {
@@ -339,12 +310,22 @@ async function verifyCandidate(path: string, source: ParsedPi084Session): Promis
   if (auditRecords.length !== source.records.length) throw new Error("audit records changed");
 }
 
-function backupAlreadyLinked(sourcePath: string, backupPath: string): boolean {
-  if (!existsSync(backupPath)) return false;
-  const source = statSync(sourcePath);
-  const backup = statSync(backupPath);
-  if (source.dev === backup.dev && source.ino === backup.ino) return true;
-  throw new Error(`Backup already exists: ${backupPath}`);
+async function verifyCandidate(path: string, source: ParsedPi084Session): Promise<void> {
+  const inspection = await SessionStore.inspect(path);
+  verifyEntries(await inspection.getEntries(), source.entries);
+  const branch = await inspection.getBranch();
+  if ((branch.at(-1)?.id ?? null) !== (source.branchTips.get("main") ?? null)) {
+    throw new Error("main branch tip changed");
+  }
+  if ((await inspection.getSessionName()) !== source.name) throw new Error("session name changed");
+  const header = inspection.getHeader();
+  if (
+    header.id !== source.header.id ||
+    header.timestamp !== new Date(source.header.createdAt).toISOString()
+  ) {
+    throw new Error("session identity changed");
+  }
+  verifyValueWrites(path, source);
 }
 
 export async function migratePi084SessionFile(
@@ -363,40 +344,17 @@ export async function migratePi084SessionFile(
   const source = parsePi084Session(filePath);
   if (options?.dryRun) return { file: filePath, status: "migrated", detail: "dry run" };
 
-  const tempPath = `${filePath}.pi-085.tmp`;
-  const backupPath = `${filePath}.pi-084.bak`;
-  const backupLinked = backupAlreadyLinked(filePath, backupPath);
-  atomicWritePrivateFile(tempPath, encodeCurrentSession(source));
-  try {
-    await verifyCandidate(tempPath, source);
-    if (!readFileSync(filePath).equals(sourceBytes))
-      throw new Error("source changed during migration");
-    if (!backupLinked) linkSync(filePath, backupPath);
-    renameSync(tempPath, filePath);
-  } catch (error) {
-    rmSync(tempPath, { force: true });
-    throw new Error(`Migration failed for ${filePath}`, { cause: error });
-  }
+  await commitMigration({
+    filePath,
+    sourceBytes,
+    encoded: encodeCurrentSession(source),
+    tempPath: `${filePath}.pi-085.tmp`,
+    backupPath: `${filePath}.pi-084.bak`,
+    verify: (candidatePath) => verifyCandidate(candidatePath, source),
+  });
   return { file: filePath, status: "migrated" };
 }
 
 export function findPi084SessionFiles(root: string): string[] {
-  if (!existsSync(root)) return [];
-  const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      let stats;
-      try {
-        stats = lstatSync(path);
-      } catch {
-        continue;
-      }
-      if (stats.isSymbolicLink()) continue;
-      if (stats.isDirectory()) walk(path);
-      else if (name.endsWith(".jsonl") && isPi084SessionFile(path)) found.push(path);
-    }
-  };
-  walk(root);
-  return found;
+  return findSessionFiles(root, isPi084SessionFile);
 }

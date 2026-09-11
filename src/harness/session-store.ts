@@ -209,35 +209,34 @@ function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSe
  */
 function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined {
   let current: MikanSessionMetadata | undefined;
-  const lines = readFileSync(filePath, "utf-8").split("\n");
-  for (const [index, line] of lines.entries()) {
-    if (index === 0 || line.trim() === "") continue;
-    let transaction: unknown;
-    try {
-      transaction = JSON.parse(line);
-    } catch {
-      if (index === lines.length - 1) break;
-      continue;
-    }
-    const writes = Array.isArray(transaction) ? transaction : [transaction];
-    for (const candidate of writes) {
-      if (typeof candidate !== "object" || candidate === null) continue;
-      const write = candidate as Record<string, unknown>;
-      if (write.kind !== "value" || write.namespace !== "mikan" || write.key !== "metadata") {
-        continue;
-      }
+  for (const line of readFileSync(filePath, "utf-8").split("\n").slice(1)) {
+    for (const write of parseMetadataWrites(line)) {
       if (write.op === "delete") current = undefined;
-      else if (
-        write.op === "set" &&
-        typeof write.value === "object" &&
-        write.value !== null &&
-        !Array.isArray(write.value)
-      ) {
-        current = write.value as MikanSessionMetadata;
-      }
+      else if (write.op === "set" && isMetadataRecord(write.value)) current = write.value;
     }
   }
   return current;
+}
+
+function isMetadataRecord(input: unknown): input is MikanSessionMetadata {
+  return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+function parseMetadataWrites(line: string): MikanSessionMetadata[] {
+  let transaction: unknown;
+  try {
+    transaction = JSON.parse(line);
+  } catch {
+    return [];
+  }
+  const writes: unknown[] = Array.isArray(transaction) ? transaction : [transaction];
+  return writes.filter(
+    (write): write is MikanSessionMetadata =>
+      isMetadataRecord(write) &&
+      write.kind === "value" &&
+      write.namespace === "mikan" &&
+      write.key === "metadata",
+  );
 }
 
 function fileFingerprint(path: string): string {
@@ -358,10 +357,7 @@ function isContextMessage(message: AgentMessage): boolean {
 
 function buildContext(entries: Entry[]): SessionContext {
   const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
-  const visibleEntries =
-    compactionIndex === -1
-      ? entries
-      : [entries[compactionIndex]!, ...entries.slice(compactionIndex + 1)];
+  const visibleEntries = entries.slice(Math.max(0, compactionIndex));
   const messages: AgentMessage[] = [];
   for (const entry of visibleEntries) {
     if (entry.type === "message") {

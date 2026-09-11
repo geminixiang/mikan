@@ -28,10 +28,10 @@ import {
   hasMaterializedChatSession,
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
-import { shouldRotateTopLevelSession } from "../sessions/store.js";
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,
+  shouldRotateTopLevelSession,
   tryResolveThreadSession,
 } from "../sessions/store.js";
 import {
@@ -88,6 +88,12 @@ function runtimeCwdForSandbox(
   ).runtimeWorkspaceRoot;
   // The office key names the same segment on the host and in the runtime.
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${workspace.office(address).key}`;
+}
+
+/** Ask a running session to stop; the run settles through its own abort path. */
+function requestStop(state: ConversationRuntimeState): void {
+  state.stopRequested = true;
+  state.runner.abort();
 }
 
 /** Tell the conversation why its reply stopped: an operator stop, or a shutdown deadline. */
@@ -179,8 +185,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
     const state = this.sessions.get(address, sessionKey);
     if (state?.running) {
-      state.stopRequested = true;
-      state.runner.abort();
+      requestStop(state);
       const ts = await bot.postMessage(address.conversationId, formatStopping(bot));
       state.stopMessageTs = ts;
     } else {
@@ -192,8 +197,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const state = this.sessions.get(address, sessionKey);
     if (state?.running) {
       log.logInfo(`[Force Stop] Force stopping session: ${sessionKey}`);
-      state.stopRequested = true;
-      state.runner.abort();
+      requestStop(state);
     }
   }
 
@@ -214,10 +218,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const activeState = this.sessions.get(address, sessionKey);
     if (activeState?.runSettlement) {
-      if (activeState.running) {
-        activeState.stopRequested = true;
-        activeState.runner.abort();
-      }
+      if (activeState.running) requestStop(activeState);
       await activeState.runSettlement;
     }
 
@@ -297,10 +298,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  async runSession(
-    { event, bot, context }: RunSessionOptions,
-    skipRotation = false,
-  ): Promise<void> {
+  async runSession(options: RunSessionOptions, skipRotation = false): Promise<void> {
+    const { event } = options;
     const conversationId = event.conversationId;
     if (this.isShuttingDown) {
       log.logInfo(
@@ -310,22 +309,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const sessionKey = deriveSessionKey(event);
-    if (!skipRotation && (await this.dispatchSessionCommand({ event, bot, context }, sessionKey))) {
-      return;
-    }
+    if (await this.handledBeforeRun(options, sessionKey, skipRotation)) return;
 
     const address = event.address;
-    const activeSettlement = this.sessions.get(address, sessionKey)?.runSettlement;
-    if (activeSettlement) await activeSettlement;
-
-    if (
-      !skipRotation &&
-      sessionKey === conversationId &&
-      this.scheduleSharedSessionRotation({ event, bot, context }, sessionKey)
-    ) {
-      return;
-    }
-
     const releaseConversationWork = skipRotation
       ? () => {}
       : await this.sessions.acquireConversationWork(address);
@@ -333,66 +319,106 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       const conversationDir = this.options.workspace.office(address).dir;
       await this.waitForParentSession(address, sessionKey, conversationDir);
 
-      let lease: { state: ConversationState; release: () => void } | undefined;
-      try {
-        lease = await this.acquireState({
-          address,
-          sessionKey,
-          currentMessageId: event.ts,
-          trustModel: context.platform.trustModel ?? "membership",
-          platformWorkspaceId: context.platform.workspaceId,
-        });
-        const { state } = lease;
-        await state.runner.syncChatHistory(event.ts);
-      } catch (err) {
-        lease?.release();
-        reportUserFacingError(err, {
-          domain: "mikan",
-          surface: "session_setup",
-          operation: "get_or_create_state",
-          severity: "error",
-          platform: context.platform.name,
-          context: {
-            conversationId,
-            sessionKey,
-            messageId: context.message.id,
-            threadTs: context.message.threadTs,
-            attachmentCount: context.message.attachments?.length ?? 0,
-          },
-        });
-        throw err;
-      }
-
+      const lease = await this.acquireRunLease(options, sessionKey);
       const { state } = lease;
       log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
-      const runPromise = this.sessions.settle(state, async () => {
-        try {
-          const result = await this.runWithInstrumentation(
-            context,
-            { conversationId, sessionKey, startedAt: state.startedAt },
-            async () => {
-              await context.responder.setTyping(true);
-              await context.responder.setWorking(true);
-              try {
-                return await state.runner.run(context.message, context.responder, context.platform);
-              } finally {
-                await context.responder.setWorking(false);
-              }
-            },
-          );
-
-          if (result?.stopReason === "aborted") {
-            await postAbortNotice(state, bot, conversationId, context.platform.name);
-          }
-        } finally {
-          Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount() - 1);
-        }
-      });
+      const runPromise = this.sessions.settle(state, () =>
+        this.executeRun(options, sessionKey, state),
+      );
       lease.release();
       Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount());
       await runPromise;
     } finally {
       releaseConversationWork();
+    }
+  }
+
+  /**
+   * Guards that can settle an event before any runner work: a session command,
+   * an in-flight run for the same session, or a shared-session rotation.
+   * Returns true when the event needs no run of its own.
+   */
+  private async handledBeforeRun(
+    options: RunSessionOptions,
+    sessionKey: string,
+    skipRotation: boolean,
+  ): Promise<boolean> {
+    const { event } = options;
+    if (!skipRotation && (await this.dispatchSessionCommand(options, sessionKey))) return true;
+
+    const activeSettlement = this.sessions.get(event.address, sessionKey)?.runSettlement;
+    if (activeSettlement) await activeSettlement;
+
+    return (
+      !skipRotation &&
+      sessionKey === event.conversationId &&
+      this.scheduleSharedSessionRotation(options, sessionKey)
+    );
+  }
+
+  /** Lease the runner for a run, reporting session-setup failures before rethrowing. */
+  private async acquireRunLease(
+    { event, context }: RunSessionOptions,
+    sessionKey: string,
+  ): Promise<{ state: ConversationState; release: () => void }> {
+    let lease: { state: ConversationState; release: () => void } | undefined;
+    try {
+      lease = await this.acquireState({
+        address: event.address,
+        sessionKey,
+        currentMessageId: event.ts,
+        trustModel: context.platform.trustModel ?? "membership",
+        platformWorkspaceId: context.platform.workspaceId,
+      });
+      await lease.state.runner.syncChatHistory(event.ts);
+      return lease;
+    } catch (err) {
+      lease?.release();
+      reportUserFacingError(err, {
+        domain: "mikan",
+        surface: "session_setup",
+        operation: "get_or_create_state",
+        severity: "error",
+        platform: context.platform.name,
+        context: {
+          conversationId: event.conversationId,
+          sessionKey,
+          messageId: context.message.id,
+          threadTs: context.message.threadTs,
+          attachmentCount: context.message.attachments?.length ?? 0,
+        },
+      });
+      throw err;
+    }
+  }
+
+  /** The instrumented agent run, with typing/working indicators and abort notice. */
+  private async executeRun(
+    { event, bot, context }: RunSessionOptions,
+    sessionKey: string,
+    state: ConversationState,
+  ): Promise<void> {
+    const conversationId = event.conversationId;
+    try {
+      const result = await this.runWithInstrumentation(
+        context,
+        { conversationId, sessionKey, startedAt: state.startedAt },
+        async () => {
+          await context.responder.setTyping(true);
+          await context.responder.setWorking(true);
+          try {
+            return await state.runner.run(context.message, context.responder, context.platform);
+          } finally {
+            await context.responder.setWorking(false);
+          }
+        },
+      );
+
+      if (result?.stopReason === "aborted") {
+        await postAbortNotice(state, bot, conversationId, context.platform.name);
+      }
+    } finally {
+      Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount() - 1);
     }
   }
 

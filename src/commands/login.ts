@@ -4,10 +4,12 @@ import { sharedVaultKey } from "../vault/index.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { portalNotConfiguredLines, replySummary } from "./utils.js";
 import { createOfficeAddress } from "../office/index.js";
 
 const LOGIN_COMMANDS = slashForms("login");
+
+const SHARED_OPERATIONS = ["create", "update", "delete"] as const;
 
 export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   const matched = matchCommand(text, LOGIN_COMMANDS);
@@ -15,26 +17,23 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
 
   const [subcommand, operation, name, ...extra] = matched.args;
   if (!subcommand) return { action: "setup" };
+  if (extra.length > 0) return null;
 
-  if (subcommand.toLowerCase() === "shared") {
-    const op = operation?.toLowerCase();
-    if (op === "list" && !name && extra.length === 0) return { action: "shared_list" };
-    if ((op === "create" || op === "update" || op === "delete") && name && extra.length === 0) {
-      return {
-        action: `shared_${op}` as "shared_create" | "shared_update" | "shared_delete",
-        name,
-      };
-    }
-    return null;
-  }
-
-  if (subcommand.toLowerCase() === "copy" && operation && !name && extra.length === 0) {
-    return { action: "copy_shared", name: operation };
-  }
-
+  const verb = subcommand.toLowerCase();
+  if (verb === "shared") return parseSharedLogin(operation?.toLowerCase(), name);
+  if (verb === "copy" && operation && !name) return { action: "copy_shared", name: operation };
   // Backward-compatible provider arguments open the generic login page.
-  if (!operation && extra.length === 0) return { action: "setup" };
-  return null;
+  return operation ? null : { action: "setup" };
+}
+
+function parseSharedLogin(
+  operation: string | undefined,
+  name: string | undefined,
+): ParsedLoginCommand | null {
+  if (operation === "list") return name ? null : { action: "shared_list" };
+  const matched = SHARED_OPERATIONS.find((candidate) => candidate === operation);
+  if (!matched || !name) return null;
+  return { action: `shared_${matched}`, name };
 }
 
 function ensureLoginVault(context: CommandContext): string {
@@ -44,12 +43,6 @@ function ensureLoginVault(context: CommandContext): string {
   return credentialAuthorizationKey(services.sandbox, {
     userId: platformUserId,
     address: createOfficeAddress(context.address.platform, vaultConversationId ?? conversationId),
-  });
-}
-
-async function replyVault(context: CommandContext, lines: string[]): Promise<void> {
-  await replyDiagnosticWithContext(context.responder, formatCommandSummary("Vault", lines), {
-    style: "muted",
   });
 }
 
@@ -87,100 +80,114 @@ export class LoginCommandHandler implements CommandHandler {
     if (!parsed) return false;
 
     if (!context.privateConversation) {
-      await replyVault(context, [
+      await replySummary(context, "Vault", [
         "為了保護你的憑證，`/login` 只能在與機器人的私訊中使用。",
         "請先私訊機器人，再重新執行 `/login`。",
       ]);
       return true;
     }
 
-    if (parsed.action === "shared_list") {
-      const profiles = context.services.vaultManager.listSharedVaults();
-      await replyVault(
-        context,
-        profiles.length > 0
-          ? ["Shared login profiles:", ...profiles.map((name) => `- ${name}`)]
-          : ["No shared login profiles found."],
-      );
-      return true;
-    }
-
-    if (parsed.action === "shared_delete") {
-      try {
-        const deleted = context.services.vaultManager.deleteSharedVault(parsed.name);
-        await replyVault(context, [
-          deleted
-            ? `Deleted shared login profile \`${parsed.name}\`.`
-            : `Shared login profile \`${parsed.name}\` does not exist.`,
-        ]);
-      } catch (error) {
-        await replyVault(context, [error instanceof Error ? error.message : String(error)]);
-      }
-      return true;
-    }
-
-    if (parsed.action === "copy_shared") {
-      try {
-        const vaultId = ensureLoginVault(context);
-        const result = context.services.vaultManager.copySharedVaultTo(parsed.name, vaultId);
-        const refreshNote = await refreshCopiedVaultRuntime(context);
-        await replyVault(context, [
-          `Copied shared login profile \`${parsed.name}\` into this conversation.`,
-          "Shared values overwrite matching conversation values; conversation-only values are kept.",
-          `Copied: ${result.envKeysCopied} env key(s), ${result.filesCopied} file(s).`,
-          ...(refreshNote ? [refreshNote] : []),
-        ]);
-      } catch (error) {
-        await replyVault(context, [error instanceof Error ? error.message : String(error)]);
-      }
-      return true;
-    }
-
-    if (!context.services.portalBaseUrl) {
-      await replyVault(context, [
-        "Login is not configured.",
-        "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
-      ]);
-      return true;
-    }
-
-    const isSharedSetup = parsed.action === "shared_create" || parsed.action === "shared_update";
-    let vaultId: string;
-    try {
-      vaultId = isSharedSetup ? (sharedVaultKey(parsed.name) ?? "") : ensureLoginVault(context);
-      if (!vaultId) {
-        throw new Error(
-          isSharedSetup ? `Invalid shared login profile name: ${parsed.name}` : "Invalid vault id",
-        );
-      }
-    } catch (error) {
-      log.logWarning(
-        `[${context.conversationId}] Failed to prepare login vault for ${context.platform}/${context.platformUserId}`,
-        error instanceof Error ? error.message : String(error),
-      );
-      await replyVault(context, [
-        "Login setup failed on the server.",
-        "請稍後重試，或聯絡管理員檢查 vault 儲存權限。",
-      ]);
-      return true;
-    }
-
-    const token = context.services.linkTokenStore.create(
-      context.platform,
-      context.platformUserId,
-      context.conversationId,
-      vaultId,
-      "",
-    );
-    const vaultLabel = isSharedSetup
-      ? `shared login profile (${parsed.name})`
-      : context.services.sandbox.type === "container"
-        ? `container vault (${vaultId})`
-        : "your vault";
-    await replyVault(context, [
-      `${context.services.portalBaseUrl}/link?token=${token.token}`,
-      `Target: ${vaultLabel} · Expires: 15 minutes`,
-    ]);
+    if (parsed.action === "shared_list") await listSharedProfiles(context);
+    else if (parsed.action === "shared_delete") await deleteSharedProfile(context, parsed.name);
+    else if (parsed.action === "copy_shared") await copySharedProfile(context, parsed.name);
+    else await startLoginSetup(context, parsed);
     return true;
   }
+}
+
+async function listSharedProfiles(context: CommandContext): Promise<void> {
+  const profiles = context.services.vaultManager.listSharedVaults();
+  await replySummary(
+    context,
+    "Vault",
+    profiles.length > 0
+      ? ["Shared login profiles:", ...profiles.map((name) => `- ${name}`)]
+      : ["No shared login profiles found."],
+  );
+}
+
+async function deleteSharedProfile(context: CommandContext, name: string): Promise<void> {
+  try {
+    const deleted = context.services.vaultManager.deleteSharedVault(name);
+    await replySummary(context, "Vault", [
+      deleted
+        ? `Deleted shared login profile \`${name}\`.`
+        : `Shared login profile \`${name}\` does not exist.`,
+    ]);
+  } catch (error) {
+    await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+  }
+}
+
+async function copySharedProfile(context: CommandContext, name: string): Promise<void> {
+  try {
+    const vaultId = ensureLoginVault(context);
+    const result = context.services.vaultManager.copySharedVaultTo(name, vaultId);
+    const refreshNote = await refreshCopiedVaultRuntime(context);
+    await replySummary(context, "Vault", [
+      `Copied shared login profile \`${name}\` into this conversation.`,
+      "Shared values overwrite matching conversation values; conversation-only values are kept.",
+      `Copied: ${result.envKeysCopied} env key(s), ${result.filesCopied} file(s).`,
+      ...(refreshNote ? [refreshNote] : []),
+    ]);
+  } catch (error) {
+    await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+  }
+}
+
+/** Issue a portal link for this conversation's vault, or for a shared profile. */
+async function startLoginSetup(context: CommandContext, parsed: ParsedLoginCommand): Promise<void> {
+  if (!context.services.portalBaseUrl) {
+    await replySummary(context, "Vault", portalNotConfiguredLines("Login"));
+    return;
+  }
+
+  let vaultId: string;
+  try {
+    vaultId = resolveLoginVaultId(context, parsed);
+  } catch (error) {
+    log.logWarning(
+      `[${context.conversationId}] Failed to prepare login vault for ${context.platform}/${context.platformUserId}`,
+      error instanceof Error ? error.message : String(error),
+    );
+    await replySummary(context, "Vault", [
+      "Login setup failed on the server.",
+      "請稍後重試，或聯絡管理員檢查 vault 儲存權限。",
+    ]);
+    return;
+  }
+
+  const token = context.services.linkTokenStore.create(
+    context.platform,
+    context.platformUserId,
+    context.conversationId,
+    vaultId,
+    "",
+  );
+  await replySummary(context, "Vault", [
+    `${context.services.portalBaseUrl}/link?token=${token.token}`,
+    `Target: ${loginVaultLabel(context, parsed, vaultId)} · Expires: 15 minutes`,
+  ]);
+}
+
+function resolveLoginVaultId(context: CommandContext, parsed: ParsedLoginCommand): string {
+  const isSharedSetup = parsed.action === "shared_create" || parsed.action === "shared_update";
+  const vaultId = isSharedSetup ? (sharedVaultKey(parsed.name) ?? "") : ensureLoginVault(context);
+  if (vaultId) return vaultId;
+  throw new Error(
+    isSharedSetup ? `Invalid shared login profile name: ${parsed.name}` : "Invalid vault id",
+  );
+}
+
+function loginVaultLabel(
+  context: CommandContext,
+  parsed: ParsedLoginCommand,
+  vaultId: string,
+): string {
+  if (parsed.action === "shared_create" || parsed.action === "shared_update") {
+    return `shared login profile (${parsed.name})`;
+  }
+  return context.services.sandbox.type === "container"
+    ? `container vault (${vaultId})`
+    : "your vault";
 }

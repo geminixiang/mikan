@@ -166,37 +166,7 @@ export class ChatHistorySync {
   async resetSession(options: ResetChatSessionOptions): Promise<string> {
     const cwd = options.cwd ?? options.conversationDir;
     const sessionFile = isThreadSessionKey(options.sessionKey)
-      ? (() => {
-          const threadFile = getThreadSessionFile(options.conversationDir, options.sessionKey);
-          // Preserve lineage: keep the original parent rather than re-binding to current.
-          let parent: ParentSessionRef | undefined;
-          try {
-            const existingHeader = SessionStore.readHeader(threadFile);
-            if (existingHeader?.parentSession) {
-              const parentPath = existingHeader.parentSession;
-              // Prefer stored UUID; for legacy sessions without it, read the parent file.
-              const parentId =
-                existingHeader.parentSessionId ??
-                (() => {
-                  try {
-                    return SessionStore.readHeader(parentPath)?.id;
-                  } catch {
-                    return undefined;
-                  }
-                })();
-              if (parentId) parent = { path: parentPath, id: parentId };
-            }
-          } catch {
-            // File missing or corrupted — will be recreated below.
-          }
-          parent ??=
-            resolveParentSessionForThread(
-              options.conversationDir,
-              extractSessionSuffix(options.sessionKey),
-            ) ?? undefined;
-          archiveManagedSessionFile(threadFile);
-          return createManagedSessionFileAtPath(threadFile, cwd, parent);
-        })()
+      ? resetThreadSessionFile(options.conversationDir, options.sessionKey, cwd)
       : createManagedSessionFile(officeSessionsDir(options.conversationDir), cwd);
     const records = readConversationLog(options.conversationDir);
     const lastMessageId = latestSyncMessageId(records, {
@@ -289,6 +259,43 @@ export class ChatHistorySync {
 
     return { sessionDir: options.sessionDir, contextFile: threadFile, threadRootMessage };
   }
+}
+
+/** The recorded parent of an existing thread session, kept across a reset. */
+function existingThreadParent(threadFile: string): ParentSessionRef | undefined {
+  let header;
+  try {
+    header = SessionStore.readHeader(threadFile);
+  } catch {
+    return undefined; // File missing or corrupted — the session is recreated.
+  }
+  const path = header?.parentSession;
+  if (!header || !path) return undefined;
+  // Prefer the stored UUID; legacy sessions without it need the parent file.
+  const id = header.parentSessionId ?? readParentSessionId(path);
+  return id ? { path, id } : undefined;
+}
+
+function readParentSessionId(parentPath: string): string | undefined {
+  try {
+    return SessionStore.readHeader(parentPath)?.id;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Archive a thread session and create its replacement, preserving lineage:
+ * the original parent is kept rather than re-bound to the current session.
+ */
+function resetThreadSessionFile(conversationDir: string, sessionKey: string, cwd: string): string {
+  const threadFile = getThreadSessionFile(conversationDir, sessionKey);
+  const parent =
+    existingThreadParent(threadFile) ??
+    resolveParentSessionForThread(conversationDir, extractSessionSuffix(sessionKey)) ??
+    undefined;
+  archiveManagedSessionFile(threadFile);
+  return createManagedSessionFileAtPath(threadFile, cwd, parent);
 }
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {
@@ -516,13 +523,22 @@ async function appendLogRecordsToSession(
   }
 }
 
+function isChatSyncMarker(entry: SessionEntry): entry is Extract<SessionEntry, { type: "custom" }> {
+  return entry.type === "custom" && entry.customType === CHAT_SYNC_CUSTOM_TYPE;
+}
+
+/** The reset timestamp a chat-sync marker records, when it carries a usable one. */
+function markerResetAt(entry: SessionEntry): number | undefined {
+  if (!isChatSyncMarker(entry)) return undefined;
+  if (!isRecord(entry.data) || typeof entry.data.resetAt !== "string") return undefined;
+  const resetAt = new Date(entry.data.resetAt).getTime();
+  return Number.isFinite(resetAt) ? resetAt : undefined;
+}
+
 function getLatestChatSyncResetAt(entries: SessionEntry[]): number | undefined {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry?.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
-    if (!isRecord(entry.data) || typeof entry.data.resetAt !== "string") continue;
-    const resetAt = new Date(entry.data.resetAt).getTime();
-    if (Number.isFinite(resetAt)) return resetAt;
+  for (const entry of entries.toReversed()) {
+    const resetAt = markerResetAt(entry);
+    if (resetAt !== undefined) return resetAt;
   }
   return undefined;
 }
@@ -534,13 +550,9 @@ function isAfterReset(record: LogRecord, resetAt: number): boolean {
 }
 
 function getLatestChatSyncMessageId(entries: SessionEntry[]): string | undefined {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry?.type !== "custom" || entry.customType !== CHAT_SYNC_CUSTOM_TYPE) continue;
-    if (!isRecord(entry.data)) return undefined;
-    return typeof entry.data.lastMessageId === "string" ? entry.data.lastMessageId : undefined;
-  }
-  return undefined;
+  const marker = entries.toReversed().find(isChatSyncMarker);
+  const lastMessageId = isRecord(marker?.data) ? marker.data.lastMessageId : undefined;
+  return typeof lastMessageId === "string" ? lastMessageId : undefined;
 }
 
 function buildRepresentedMessageCounts(entries: SessionEntry[]): Map<string, number> {
@@ -674,26 +686,33 @@ function readConversationLog(conversationDir: string): LogRecord[] {
   const raw = readTextFileIfExists(logFile);
   if (raw === undefined) return [];
 
-  const lines = raw.trim().split("\n").filter(Boolean);
   const records: LogRecord[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === undefined) continue;
-    try {
-      const message = parseJsonValue(
-        line,
-        (value): value is ConversationLogMessage => isRecord(value),
-        (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
-      );
-      records.push({ message, index: i });
-    } catch (err) {
-      log.logWarning(
-        `Skipping malformed log entry at ${logFile}:${i + 1}`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
+  for (const [index, line] of raw.trim().split("\n").filter(Boolean).entries()) {
+    const message = parseLogLine(line, logFile, index + 1);
+    if (message) records.push({ message, index });
   }
   return coalesceMessagingBotLogChunks(records);
+}
+
+/** One log line, or `undefined` after warning about a malformed one. */
+function parseLogLine(
+  line: string,
+  logFile: string,
+  lineNumber: number,
+): ConversationLogMessage | undefined {
+  try {
+    return parseJsonValue(
+      line,
+      (value): value is ConversationLogMessage => isRecord(value),
+      (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
+    );
+  } catch (err) {
+    log.logWarning(
+      `Skipping malformed log entry at ${logFile}:${lineNumber}`,
+      err instanceof Error ? err.message : String(err),
+    );
+    return undefined;
+  }
 }
 
 function coalesceMessagingBotLogChunks(records: LogRecord[]): LogRecord[] {

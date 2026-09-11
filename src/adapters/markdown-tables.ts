@@ -61,15 +61,25 @@ function parseOne(tokens: Token[], index: number): { table: MarkdownTable; next:
   for (; i < tokens.length; i++) {
     const token = tokens[i];
     if (token === undefined || token.type === "table_close") break;
-    if (token.type === "thead_open") inHead = true;
-    else if (token.type === "thead_close") inHead = false;
-    else if (token.type === "tr_open") currentRow = [];
-    else if (token.type === "tr_close" && currentRow) {
-      if (inHead) headers.push(...currentRow);
-      else rows.push(currentRow);
-      currentRow = null;
-    } else if (token.type === "inline" && currentRow) {
-      currentRow.push(inlinePlainText(token.children) || token.content);
+    switch (token.type) {
+      case "thead_open":
+        inHead = true;
+        break;
+      case "thead_close":
+        inHead = false;
+        break;
+      case "tr_open":
+        currentRow = [];
+        break;
+      case "tr_close":
+        if (!currentRow) break;
+        if (inHead) headers.push(...currentRow);
+        else rows.push(currentRow);
+        currentRow = null;
+        break;
+      case "inline":
+        currentRow?.push(inlinePlainText(token.children) || token.content);
+        break;
     }
   }
 
@@ -108,33 +118,15 @@ export function extractMarkdownTables(source: string): MarkdownTable[] {
  * CJK tables entirely, and that trade was considered and declined — close
  * alignment reads better than no table.
  */
+// Fixed ranges preserve our width approximation (not all Unicode emoji are wide).
+// Hangul, CJK/Yi, compatibility/full-width forms, emoji, and wide dingbats.
+const WIDE_CHARACTER =
+  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6\u{1f300}-\u{1faff}\u2705\u270a-\u270b\u2728\u274c\u274e\u2753-\u2755\u2757\u2795-\u2797\u27b0\u27bf]/u;
+
 export function displayWidth(text: string): number {
   let width = 0;
   for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    const wide =
-      (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
-      (code >= 0x2e80 && code <= 0xa4cf) || // CJK radicals … Yi
-      (code >= 0xac00 && code <= 0xd7a3) || // Hangul syllables
-      (code >= 0xf900 && code <= 0xfaff) || // CJK compatibility ideographs
-      (code >= 0xfe30 && code <= 0xfe6f) || // CJK compatibility forms
-      (code >= 0xff00 && code <= 0xff60) || // full-width forms
-      (code >= 0xffe0 && code <= 0xffe6) ||
-      (code >= 0x1f300 && code <= 0x1faff) || // emoji
-      // Wide symbols scattered through Miscellaneous Symbols and Dingbats.
-      // ✅ and ❌ carry most verdict columns a model writes, so getting these
-      // wrong drifts the alignment of exactly the tables this exists for.
-      code === 0x2705 ||
-      (code >= 0x270a && code <= 0x270b) ||
-      code === 0x2728 ||
-      code === 0x274c ||
-      code === 0x274e ||
-      (code >= 0x2753 && code <= 0x2755) ||
-      code === 0x2757 ||
-      (code >= 0x2795 && code <= 0x2797) ||
-      code === 0x27b0 ||
-      code === 0x27bf;
-    width += wide ? 2 : 1;
+    width += WIDE_CHARACTER.test(char) ? 2 : 1;
   }
   return width;
 }

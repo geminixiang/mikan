@@ -1,7 +1,7 @@
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { formatCommandSummary, replyPrivatelyWithContext } from "./utils.js";
+import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
 
 const ADMIN_COMMANDS = slashForms("admin");
 
@@ -10,14 +10,7 @@ export class AdminCommandHandler implements CommandHandler {
     if (!matchCommand(context.commandText, ADMIN_COMMANDS, { stripMention: true })) return false;
 
     if (!context.services.portalBaseUrl) {
-      await replyPrivatelyWithContext(
-        context,
-        formatCommandSummary("Admin", [
-          "Admin portal is not configured.",
-          "Set `MIKAN_LINK_URL` or `MIKAN_LINK_PORT` on the server.",
-        ]),
-        { style: "muted" },
-      );
+      await replySummaryPrivately(context, "Admin", portalNotConfiguredLines("Admin portal"));
       return true;
     }
 
@@ -34,11 +27,7 @@ export class AdminCommandHandler implements CommandHandler {
     });
 
     const url = `${context.services.portalBaseUrl}/admin?token=${token.token}`;
-    await replyPrivatelyWithContext(
-      context,
-      formatCommandSummary("Admin", [url, "Expires: 30 minutes"]),
-      { style: "muted" },
-    );
+    await replySummaryPrivately(context, "Admin", [url, "Expires: 30 minutes"]);
     return true;
   }
 }

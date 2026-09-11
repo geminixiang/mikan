@@ -31,88 +31,91 @@ export async function downloadChannel(channelId: string, botToken: string): Prom
   const client = new WebClient(botToken, { logLevel: LogLevel.ERROR });
 
   console.error(`Fetching channel info for ${channelId}...`);
-
-  // Get channel info
-  let channelName = channelId;
-  try {
-    const info = await client.conversations.info({ channel: channelId });
-    channelName = typeof info.channel?.name === "string" ? info.channel.name : channelId;
-  } catch {
-    // DM channels don't have names, that's fine
-  }
-
+  const channelName = await resolveChannelName(client, channelId);
   console.error(`Downloading history for #${channelName} (${channelId})...`);
 
-  // Fetch all messages
-  const messages: Message[] = [];
-  let cursor: string | undefined;
+  const messages = await fetchHistory(client, channelId);
+  messages.reverse(); // chronological order
 
-  do {
-    const response = await client.conversations.history({
-      channel: channelId,
-      limit: 200,
-      cursor,
-    });
-
-    if (response.messages) {
-      messages.push(...(response.messages as Message[]));
-    }
-
-    cursor = response.response_metadata?.next_cursor;
-    console.error(`  Fetched ${messages.length} messages...`);
-  } while (cursor);
-
-  // Reverse to chronological order
-  messages.reverse();
-
-  // Build map of thread replies
-  const threadReplies = new Map<string, Message[]>();
-  const threadsToFetch = messages.filter((m) => m.reply_count && m.reply_count > 0);
-
-  console.error(`Fetching ${threadsToFetch.length} threads...`);
-
-  for (let i = 0; i < threadsToFetch.length; i++) {
-    const parent = threadsToFetch[i];
-    if (parent === undefined) continue;
-    console.error(`  Thread ${i + 1}/${threadsToFetch.length} (${parent.reply_count} replies)...`);
-
-    const replies: Message[] = [];
-    let threadCursor: string | undefined;
-
-    do {
-      const response = await client.conversations.replies({
-        channel: channelId,
-        ts: parent.ts,
-        limit: 200,
-        cursor: threadCursor,
-      });
-
-      if (response.messages) {
-        // Skip the first message (it's the parent)
-        replies.push(...(response.messages as Message[]).slice(1));
-      }
-
-      threadCursor = response.response_metadata?.next_cursor;
-    } while (threadCursor);
-
-    threadReplies.set(parent.ts, replies);
-  }
-
-  // Output messages with thread replies interleaved
-  let totalReplies = 0;
-  for (const msg of messages) {
-    // Output the message
-    console.log(formatMessage(msg.ts, msg.user || "unknown", msg.text || ""));
-
-    // Output thread replies right after parent (indented)
-    const replies = threadReplies.get(msg.ts);
-    if (replies) {
-      for (const reply of replies) {
-        console.log(formatMessage(reply.ts, reply.user || "unknown", reply.text || "", "  "));
-        totalReplies++;
-      }
-    }
-  }
-
+  const threadReplies = await fetchThreadReplies(client, channelId, messages);
+  const totalReplies = printTranscript(messages, threadReplies);
   console.error(`Done! ${messages.length} messages, ${totalReplies} thread replies`);
+}
+
+/** DM channels have no name; the id is the readable fallback. */
+async function resolveChannelName(client: WebClient, channelId: string): Promise<string> {
+  try {
+    const info = await client.conversations.info({ channel: channelId });
+    return typeof info.channel?.name === "string" ? info.channel.name : channelId;
+  } catch {
+    return channelId;
+  }
+}
+
+interface Page {
+  messages?: unknown[];
+  response_metadata?: { next_cursor?: string };
+}
+
+/** Drain one cursor-paginated Slack conversations endpoint, page by page. */
+async function* pages(fetchPage: (cursor?: string) => Promise<Page>): AsyncGenerator<Message[]> {
+  let cursor: string | undefined;
+  do {
+    const response = await fetchPage(cursor);
+    yield (response.messages ?? []) as Message[];
+    cursor = response.response_metadata?.next_cursor;
+  } while (cursor);
+}
+
+async function fetchHistory(client: WebClient, channelId: string): Promise<Message[]> {
+  const messages: Message[] = [];
+  const fetchPage = (cursor?: string) =>
+    client.conversations.history({ channel: channelId, limit: 200, cursor });
+  for await (const page of pages(fetchPage)) {
+    messages.push(...page);
+    console.error(`  Fetched ${messages.length} messages...`);
+  }
+  return messages;
+}
+
+async function fetchThreadReplies(
+  client: WebClient,
+  channelId: string,
+  messages: readonly Message[],
+): Promise<Map<string, Message[]>> {
+  const parents = messages.filter((message) => message.reply_count && message.reply_count > 0);
+  console.error(`Fetching ${parents.length} threads...`);
+
+  const threadReplies = new Map<string, Message[]>();
+  for (const [index, parent] of parents.entries()) {
+    console.error(`  Thread ${index + 1}/${parents.length} (${parent.reply_count} replies)...`);
+    threadReplies.set(parent.ts, await fetchReplies(client, channelId, parent.ts));
+  }
+  return threadReplies;
+}
+
+async function fetchReplies(client: WebClient, channelId: string, ts: string): Promise<Message[]> {
+  const replies: Message[] = [];
+  const fetchPage = (cursor?: string) =>
+    client.conversations.replies({ channel: channelId, ts, limit: 200, cursor });
+  for await (const page of pages(fetchPage)) {
+    replies.push(...page.slice(1)); // the first message is the parent
+  }
+  return replies;
+}
+
+/** Print every message with its thread replies indented underneath. */
+function printTranscript(
+  messages: readonly Message[],
+  threadReplies: ReadonlyMap<string, Message[]>,
+): number {
+  let totalReplies = 0;
+  for (const message of messages) {
+    console.log(formatMessage(message.ts, message.user || "unknown", message.text || ""));
+    for (const reply of threadReplies.get(message.ts) ?? []) {
+      console.log(formatMessage(reply.ts, reply.user || "unknown", reply.text || "", "  "));
+      totalReplies++;
+    }
+  }
+  return totalReplies;
 }

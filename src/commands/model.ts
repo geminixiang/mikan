@@ -5,7 +5,7 @@ import { applyConversationSettings } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { replySummary } from "./utils.js";
 
 const PI_AI_THINKING_LEVELS = [
   "minimal",
@@ -84,6 +84,10 @@ function formatModelSpec(provider: string, model: string, thinkingLevel?: Thinki
   return `${provider}/${model}${thinkingLevel ? `:${thinkingLevel}` : ""}`;
 }
 
+const USAGE_EXAMPLE = "Example: `/pi-model anthropic/claude-sonnet-4-6:off`";
+
+type ModelSelection = { modelId: string; thinkingLevel?: ThinkingLevel } | { lines: string[] };
+
 export class ModelCommandHandler implements CommandHandler {
   constructor(private readonly modelRegistry: ModelRegistry) {}
   async tryHandle(context: CommandContext): Promise<boolean> {
@@ -91,109 +95,89 @@ export class ModelCommandHandler implements CommandHandler {
     if (!parsed) return false;
 
     if (parsed.error) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Model", [
-          "無效的模型參數，請使用 `provider/model[:thinking]`。",
-          "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Model", [
+        "無效的模型參數，請使用 `provider/model[:thinking]`。",
+        USAGE_EXAMPLE,
+      ]);
       return true;
     }
 
     const office = context.services.workspace.office(context.address);
     if (!parsed.provider || !parsed.model) {
       const current = resolveConversationSettings(office);
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Model", [
-          `Current: \`${formatModelSpec(current.provider, current.model, current.thinkingLevel)}\``,
-          "",
-          "Usage: `/pi-model provider/model[:thinking]`",
-          "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Model", [
+        `Current: \`${formatModelSpec(current.provider, current.model, current.thinkingLevel)}\``,
+        "",
+        "Usage: `/pi-model provider/model[:thinking]`",
+        USAGE_EXAMPLE,
+      ]);
       return true;
     }
 
-    const exactModelId = parsed.modelCandidate ?? parsed.model;
-    let selectedModelId = exactModelId;
-    let selectedThinkingLevel = parsed.thinkingLevel;
-    let registeredModel = this.modelRegistry.find(parsed.provider, exactModelId);
-
-    if (!registeredModel && parsed.modelCandidate) {
-      if (
-        parsed.thinkingLevelCandidate &&
-        !THINKING_LEVELS.has(parsed.thinkingLevelCandidate as ThinkingLevel)
-      ) {
-        await replyDiagnosticWithContext(
-          context.responder,
-          formatCommandSummary("Model", [
-            "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。",
-            "Example: `/pi-model anthropic/claude-sonnet-4-6:off`",
-          ]),
-          { style: "muted" },
-        );
-        return true;
-      }
-
-      selectedModelId = parsed.model;
-      registeredModel = this.modelRegistry.find(parsed.provider, selectedModelId);
-    }
-
-    if (!registeredModel) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Model", [
-          `找不到模型：\`${formatModelSpec(parsed.provider, selectedModelId, selectedThinkingLevel)}\``,
-          "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
-        ]),
-        { style: "muted" },
-      );
+    const selection = this.selectModel(parsed.provider, parsed.model, parsed);
+    if ("lines" in selection) {
+      await replySummary(context, "Model", selection.lines);
       return true;
-    }
-
-    if (parsed.modelCandidate && selectedModelId === parsed.modelCandidate) {
-      selectedThinkingLevel = undefined;
     }
 
     if (!context.services.runtime) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Model", [
-          "Model command is not configured correctly on the server. Please try again later.",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Model", [
+        "Model command is not configured correctly on the server. Please try again later.",
+      ]);
       return true;
     }
 
     const result = applyConversationSettings(context.services.runtime, office, {
       provider: parsed.provider,
-      model: selectedModelId,
-      ...(selectedThinkingLevel ? { thinkingLevel: selectedThinkingLevel } : {}),
+      model: selection.modelId,
+      ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
     });
     if (!result.ok) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Model", [
-          "目前這個 conversation 有執行中的工作，請等它完成或先 `/stop` 後再切換模型。",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Model", [
+        "目前這個 conversation 有執行中的工作，請等它完成或先 `/stop` 後再切換模型。",
+      ]);
       return true;
     }
 
-    await replyDiagnosticWithContext(
-      context.responder,
-      formatCommandSummary("Model", [
-        `Switched: \`${formatModelSpec(parsed.provider, selectedModelId, selectedThinkingLevel)}\``,
-        "下一則訊息會使用新模型。",
-      ]),
-      { style: "muted" },
-    );
+    await replySummary(context, "Model", [
+      `Switched: \`${formatModelSpec(parsed.provider, selection.modelId, selection.thinkingLevel)}\``,
+      "下一則訊息會使用新模型。",
+    ]);
     return true;
+  }
+
+  /**
+   * Resolve the spec against the registry. A `:suffix` is first tried as part
+   * of the model id, then as a thinking level on the bare id — so a model
+   * whose real name contains a colon still wins over the suffix reading.
+   */
+  private selectModel(provider: string, model: string, parsed: ParsedModelCommand): ModelSelection {
+    const exactModelId = parsed.modelCandidate ?? model;
+    if (this.modelRegistry.find(provider, exactModelId)) return { modelId: exactModelId };
+
+    if (parsed.modelCandidate) {
+      const suffix = parsed.thinkingLevelCandidate;
+      if (suffix && !THINKING_LEVELS.has(suffix as ThinkingLevel)) {
+        return {
+          lines: [
+            "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。",
+            USAGE_EXAMPLE,
+          ],
+        };
+      }
+      if (this.modelRegistry.find(provider, model)) {
+        return {
+          modelId: model,
+          ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),
+        };
+      }
+    }
+
+    return {
+      lines: [
+        `找不到模型：\`${formatModelSpec(provider, model, parsed.thinkingLevel)}\``,
+        "請確認 provider/model 名稱，或先在 pi models.json 註冊自訂模型。",
+      ],
+    };
   }
 }

@@ -43,6 +43,20 @@ export function killProcessTree(pid: number): void {
   }
 }
 
+/**
+ * Forward an abort from `signal` to `onAbort`, firing immediately when it has
+ * already aborted. Returns the unsubscribe every caller must run on settle.
+ */
+export function linkAbortSignal(signal: AbortSignal | undefined, onAbort: () => void): () => void {
+  if (!signal) return () => {};
+  if (signal.aborted) {
+    onAbort();
+    return () => {};
+  }
+  signal.addEventListener("abort", onAbort, { once: true });
+  return () => signal.removeEventListener("abort", onAbort);
+}
+
 export function shellEscape(s: string): string {
   // Escape for passing to sh -c
   return `'${s.replace(/'/g, "'\\''")}'`;

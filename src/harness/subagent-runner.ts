@@ -59,6 +59,21 @@ function schemaOptions(node: Record<string, unknown>): Record<string, unknown> {
   return options;
 }
 
+function isSchemaLiteral(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function hydrateObject(schema: Record<string, unknown>, options: Record<string, unknown>): TSchema {
+  const properties = isRecord(schema.properties) ? schema.properties : {};
+  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
+  const props: Record<string, TSchema> = {};
+  for (const [key, value] of Object.entries(properties)) {
+    const hydrated = hydrateSchema(value);
+    props[key] = required.has(key) ? hydrated : Type.Optional(hydrated);
+  }
+  return Type.Object(props, options);
+}
+
 /**
  * outputSchema arrives over the subagent tool as plain JSON (tool-call
  * arguments never carry TypeBox's Kind symbol), but Value.Check dispatches
@@ -76,19 +91,13 @@ function hydrateSchema(schema: unknown): TSchema {
   if (!isRecord(schema)) return Type.Unknown();
 
   if (Array.isArray(schema.enum)) {
-    const literals = schema.enum.filter(
-      (value): value is string | number | boolean =>
-        typeof value === "string" || typeof value === "number" || typeof value === "boolean",
-    );
+    const literals = schema.enum.filter(isSchemaLiteral);
     return literals.length > 0
       ? Type.Union(literals.map((value) => Type.Literal(value)))
       : Type.Unknown();
   }
   if ("const" in schema) {
-    const value = schema.const;
-    return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-      ? Type.Literal(value)
-      : Type.Unknown();
+    return isSchemaLiteral(schema.const) ? Type.Literal(schema.const) : Type.Unknown();
   }
   if (Array.isArray(schema.anyOf)) return Type.Union(schema.anyOf.map(hydrateSchema));
   if (Array.isArray(schema.oneOf)) return Type.Union(schema.oneOf.map(hydrateSchema));
@@ -103,21 +112,10 @@ function hydrateSchema(schema: unknown): TSchema {
 
   const options = schemaOptions(schema);
   switch (type) {
-    case "object": {
-      const properties = isRecord(schema.properties) ? schema.properties : {};
-      const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-      const props: Record<string, TSchema> = {};
-      for (const [key, value] of Object.entries(properties)) {
-        const hydrated = hydrateSchema(value);
-        props[key] = required.has(key) ? hydrated : Type.Optional(hydrated);
-      }
-      return Type.Object(props, options);
-    }
+    case "object":
+      return hydrateObject(schema, options);
     case "array":
-      return Type.Array(
-        schema.items !== undefined ? hydrateSchema(schema.items) : Type.Unknown(),
-        options,
-      );
+      return Type.Array(hydrateSchema(schema.items), options);
     case "string":
       return Type.String(options);
     case "number":
@@ -301,14 +299,11 @@ function normalizedParentContext(
   }
   const recent = conversation.slice(first);
   const recentStart = recent[0] ? messages.indexOf(recent[0]) : messages.length;
-  let summary: AgentMessage | undefined;
-  for (let index = recentStart - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message?.role === "compactionSummary" || message?.role === "branchSummary") {
-      summary = message;
-      break;
-    }
-  }
+  const summary = messages
+    .slice(0, recentStart)
+    .findLast(
+      (message) => message.role === "compactionSummary" || message.role === "branchSummary",
+    );
   return [
     "<parent_reference_context>",
     summary ? `Earlier summary: ${messageText(summary)}` : "[Earlier parent context omitted]",
@@ -388,11 +383,7 @@ function baseRunResult(
 }
 
 function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index];
-    if (message?.role === "assistant") return message;
-  }
-  return undefined;
+  return messages.findLast((message): message is AssistantMessage => message.role === "assistant");
 }
 
 /**
@@ -514,31 +505,14 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
       `Subagent profile ${request.profile} cannot be combined with tools, model, systemPrompt, or thinkingLevel`,
     );
   }
-  const budget = {
-    ...request.budget,
-    ...(profile.maxTurns !== undefined
-      ? { maxTurns: Math.min(profile.maxTurns, request.budget?.maxTurns ?? profile.maxTurns) }
-      : {}),
-    ...(profile.maxTokens !== undefined || request.budget?.maxTokens !== undefined
-      ? { maxTokens: Math.max(profile.maxTokens ?? 0, request.budget?.maxTokens ?? 0) }
-      : {}),
-    ...(profile.maxCostUsd !== undefined
-      ? {
-          maxCostUsd: Math.min(
-            profile.maxCostUsd,
-            request.budget?.maxCostUsd ?? profile.maxCostUsd,
-          ),
-        }
-      : {}),
-    ...(profile.maxDurationMs !== undefined
-      ? {
-          maxDurationMs: Math.min(
-            profile.maxDurationMs,
-            request.budget?.maxDurationMs ?? profile.maxDurationMs,
-          ),
-        }
-      : {}),
-  };
+  const budget = { ...request.budget };
+  for (const field of ["maxTurns", "maxCostUsd", "maxDurationMs"] as const) {
+    const cap = profile[field];
+    if (cap !== undefined) budget[field] = Math.min(cap, budget[field] ?? cap);
+  }
+  if (profile.maxTokens !== undefined || budget.maxTokens !== undefined) {
+    budget.maxTokens = Math.max(profile.maxTokens ?? 0, budget.maxTokens ?? 0);
+  }
   return {
     ...request,
     systemPrompt: profile.systemPrompt,

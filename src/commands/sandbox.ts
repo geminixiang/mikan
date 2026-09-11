@@ -5,7 +5,7 @@ import { applyConversationWorkspacePolicy } from "../settings-mutation.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { replySummary } from "./utils.js";
 
 /**
  * Word → selection; null clears the override, undefined is an unknown word.
@@ -59,11 +59,9 @@ export class SandboxCommandHandler implements CommandHandler {
     if (!parsed) return false;
 
     if (context.services.sandbox.type !== "image" || !context.services.resourceController) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("Sandbox", ["`/pi-sandbox` 目前只支援 `image:*` managed sandbox。"]),
-        { style: "muted" },
-      );
+      await replySummary(context, "Sandbox", [
+        "`/pi-sandbox` 目前只支援 `image:*` managed sandbox。",
+      ]);
       return true;
     }
 
@@ -90,85 +88,61 @@ async function handleBoost(
 ): Promise<void> {
   const boostLimits = controller.getBoostLimits();
   if (!boostLimits?.cpus && !boostLimits?.memory) {
-    await replyDiagnosticWithContext(
-      context.responder,
-      formatCommandSummary("Sandbox Boost", [
-        "此 mikan instance 尚未設定 sandbox boost 規格。",
-        "請先在全域 settings.json 設定 `sandbox.boost`。",
-      ]),
-      { style: "muted" },
-    );
+    await replySummary(context, "Sandbox Boost", [
+      "此 mikan instance 尚未設定 sandbox boost 規格。",
+      "請先在全域 settings.json 設定 `sandbox.boost`。",
+    ]);
     return;
   }
 
   const status = await controller.boost(containerKey);
-  await replyDiagnosticWithContext(
-    context.responder,
-    formatCommandSummary("Sandbox Boost", [
-      "已暫時提升此 conversation 的 sandbox 規格。",
-      `Current: ${formatLimits(status.limits)}`,
-      "boost 會在此 sandbox runtime 關閉後結束。",
-    ]),
-    { style: "muted" },
-  );
+  await replySummary(context, "Sandbox Boost", [
+    "已暫時提升此 conversation 的 sandbox 規格。",
+    `Current: ${formatLimits(status.limits)}`,
+    "boost 會在此 sandbox runtime 關閉後結束。",
+  ]);
 }
 
 async function handleDoor(context: CommandContext, parsed: ParsedSandboxCommand): Promise<void> {
   const office = context.services.workspace.office(context.address);
   const projection = resolveWorkspaceProjection(office);
   if (parsed.doorPolicy === undefined) {
-    await replyDiagnosticWithContext(
-      context.responder,
-      formatCommandSummary("Sandbox Door", [
-        `Current: ${projection.doorPolicy} / ${projection.layout} / ${projection.visibility}`,
-        "",
-        "預設不需要設定：共享範圍直接跟隨平台頻道屬性（public 頻道共享、private 頻道只讀、DM 隔離）。",
-        "以下為 admin 覆寫選項：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
-        "- `default`：清除覆寫，回到自動判定",
-        "- `isolated`：強制只掛載自己辦公室",
-        "- `shared`：強制共用 MEMORY.md / skills / events（可讀寫）",
-        "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫",
-        "- `full`：強制掛載整個 workspace（全開）",
-      ]),
-      { style: "muted" },
-    );
+    await replySummary(context, "Sandbox Door", [
+      `Current: ${projection.doorPolicy} / ${projection.layout} / ${projection.visibility}`,
+      "",
+      "預設不需要設定：共享範圍直接跟隨平台頻道屬性（public 頻道共享、private 頻道只讀、DM 隔離）。",
+      "以下為 admin 覆寫選項：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
+      "- `default`：清除覆寫，回到自動判定",
+      "- `isolated`：強制只掛載自己辦公室",
+      "- `shared`：強制共用 MEMORY.md / skills / events（可讀寫）",
+      "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫",
+      "- `full`：強制掛載整個 workspace（全開）",
+    ]);
     return;
   }
 
   const choice = doorChoiceFromWord(parsed.doorPolicy);
   if (choice === undefined) {
-    await replyDiagnosticWithContext(
-      context.responder,
-      formatCommandSummary("Sandbox Door", [
-        `未知的 door policy：\`${parsed.doorPolicy}\``,
-        "可用值：`default`、`isolated`、`shared`、`shared-private`、`full`",
-      ]),
-      { style: "muted" },
-    );
+    await replySummary(context, "Sandbox Door", [
+      `未知的 door policy：\`${parsed.doorPolicy}\``,
+      "可用值：`default`、`isolated`、`shared`、`shared-private`、`full`",
+    ]);
     return;
   }
 
   const result = applyConversationWorkspacePolicy(context.services.runtime, office, choice);
   if (!result.ok) {
-    await replyDiagnosticWithContext(
-      context.responder,
-      formatCommandSummary("Sandbox Door", [
-        "目前有工作正在執行，無法切換 door policy。等執行結束後再試一次。",
-      ]),
-      { style: "muted" },
-    );
+    await replySummary(context, "Sandbox Door", [
+      "目前有工作正在執行，無法切換 door policy。等執行結束後再試一次。",
+    ]);
     return;
   }
 
   const updated = resolveWorkspaceProjection(office);
-  await replyDiagnosticWithContext(
-    context.responder,
-    formatCommandSummary("Sandbox Door", [
-      `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout} / ${updated.visibility}`,
-      "下一則訊息時會以新的掛載重建 sandbox 容器；容器內容會保留。",
-    ]),
-    { style: "muted" },
-  );
+  await replySummary(context, "Sandbox Door", [
+    `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout} / ${updated.visibility}`,
+    "下一則訊息時會以新的掛載重建 sandbox 容器；容器內容會保留。",
+  ]);
 }
 
 async function showSandboxStatus(
@@ -180,22 +154,19 @@ async function showSandboxStatus(
   const defaultLimits = controller.getDefaultLimits();
   const boostLimits = controller.getBoostLimits();
   const projection = resolveWorkspaceProjection(context.services.workspace.office(context.address));
-  await replyDiagnosticWithContext(
-    context.responder,
-    formatCommandSummary(
-      "Sandbox",
-      [
-        `Current: ${formatLimits(status.limits)}`,
-        `Status: ${status.boosted ? "boosted" : "default"}`,
-        `Workspace policy: ${projection.doorPolicy}`,
-        `Workspace layout: ${projection.layout}`,
-        `Workspace visibility: ${projection.visibility}`,
-        "",
-        `Default: ${formatLimits(defaultLimits)}`,
-        boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,
-      ].filter((line): line is string => line !== undefined),
-    ),
-    { style: "muted" },
+  await replySummary(
+    context,
+    "Sandbox",
+    [
+      `Current: ${formatLimits(status.limits)}`,
+      `Status: ${status.boosted ? "boosted" : "default"}`,
+      `Workspace policy: ${projection.doorPolicy}`,
+      `Workspace layout: ${projection.layout}`,
+      `Workspace visibility: ${projection.visibility}`,
+      "",
+      `Default: ${formatLimits(defaultLimits)}`,
+      boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,
+    ].filter((line): line is string => line !== undefined),
   );
 }
 

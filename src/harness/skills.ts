@@ -66,13 +66,7 @@ function validateSkill(name: string, description: string): string[] {
   return errors;
 }
 
-function loadSkillFromFile(
-  filePath: string,
-  source: string,
-): {
-  skill: MikanSkill | null;
-  diagnostics: SkillDiagnostic[];
-} {
+function loadSkillFromFile(filePath: string, source: string): LoadSkillsResult {
   const diagnostics: SkillDiagnostic[] = [];
   try {
     const raw = readFileSync(filePath, "utf-8");
@@ -83,22 +77,24 @@ function loadSkillFromFile(
 
     if (!description.trim()) {
       diagnostics.push({ type: "warning", message: "description is required", path: filePath });
-      return { skill: null, diagnostics };
+      return { skills: [], diagnostics };
     }
     for (const error of validateSkill(name, description)) {
       diagnostics.push({ type: "warning", message: error, path: filePath });
     }
 
     return {
-      skill: {
-        name,
-        description,
-        content: body.trim(),
-        filePath,
-        baseDir: skillDir,
-        source,
-        disableModelInvocation: values["disable-model-invocation"] === "true",
-      },
+      skills: [
+        {
+          name,
+          description,
+          content: body.trim(),
+          filePath,
+          baseDir: skillDir,
+          source,
+          disableModelInvocation: values["disable-model-invocation"] === "true",
+        },
+      ],
       diagnostics,
     };
   } catch (error) {
@@ -107,7 +103,7 @@ function loadSkillFromFile(
       message: error instanceof Error ? error.message : "failed to parse skill file",
       path: filePath,
     });
-    return { skill: null, diagnostics };
+    return { skills: [], diagnostics };
   }
 }
 
@@ -186,34 +182,24 @@ function loadSkillsFromDirInternal(
       diagnostics.push(symlinkDiagnostic(join(dir, skillFile.name)));
       return { skills, diagnostics };
     }
-    const result = loadSkillFromFile(join(dir, skillFile.name), source);
-    if (result.skill) skills.push(result.skill);
-    diagnostics.push(...result.diagnostics);
-    return { skills, diagnostics };
+    return loadSkillFromFile(join(dir, skillFile.name), source);
   }
 
   for (const entry of entries) {
     if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
     const fullPath = join(dir, entry.name);
 
-    if (isDirectoryLike(dir, entry)) {
-      if (rejectSymlinks && entry.isSymbolicLink()) {
-        diagnostics.push(symlinkDiagnostic(fullPath));
-        continue;
-      }
-      const subResult = loadSkillsFromDirInternal(fullPath, source, false, rejectSymlinks);
-      skills.push(...subResult.skills);
-      diagnostics.push(...subResult.diagnostics);
+    const directory = isDirectoryLike(dir, entry);
+    if (!directory && !(includeRootFiles && entry.name.endsWith(".md") && isFileLike(dir, entry)))
       continue;
-    }
-    if (!includeRootFiles || !entry.name.endsWith(".md") || !isFileLike(dir, entry)) continue;
-
     if (rejectSymlinks && entry.isSymbolicLink()) {
       diagnostics.push(symlinkDiagnostic(fullPath));
       continue;
     }
-    const result = loadSkillFromFile(fullPath, source);
-    if (result.skill) skills.push(result.skill);
+    const result = directory
+      ? loadSkillsFromDirInternal(fullPath, source, false, rejectSymlinks)
+      : loadSkillFromFile(fullPath, source);
+    skills.push(...result.skills);
     diagnostics.push(...result.diagnostics);
   }
   return { skills, diagnostics };

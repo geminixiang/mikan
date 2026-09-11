@@ -2,7 +2,7 @@ import { createConversationMessage } from "../adapter.js";
 import { slashForms } from "./manifest.js";
 import { matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { formatCommandSummary, replyDiagnosticWithContext } from "./utils.js";
+import { replySummary } from "./utils.js";
 
 const NEW_COMMANDS = slashForms("new");
 
@@ -11,25 +11,17 @@ export class NewCommandHandler implements CommandHandler {
     if (!matchCommand(context.commandText, NEW_COMMANDS)) return false;
 
     if (!context.privateConversation) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("New Session", [
-          "為了避免誤清除共享上下文，`/new` 目前只能在與機器人的私訊 / DM 中使用。",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "New Session", [
+        "為了避免誤清除共享上下文，`/new` 目前只能在與機器人的私訊 / DM 中使用。",
+      ]);
       return true;
     }
 
     if (!context.services.runtime) {
-      await replyDiagnosticWithContext(
-        context.responder,
-        formatCommandSummary("New Session", [
-          "New command is not configured correctly on the server.",
-          "Please try again later.",
-        ]),
-        { style: "muted" },
-      );
+      await replySummary(context, "New Session", [
+        "New command is not configured correctly on the server.",
+        "Please try again later.",
+      ]);
       return true;
     }
 
