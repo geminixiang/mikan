@@ -183,23 +183,6 @@ export interface MessagingInfo {
   };
 }
 
-export type AgentEventPayload =
-  | { kind: "sessionStart" }
-  | { kind: "responseDelta"; delta: string }
-  | { kind: "responseFinal"; text: string }
-  | { kind: "diagnostic"; text: string }
-  | { kind: "toolStart"; toolId: string; toolName: string; input?: unknown }
-  | { kind: "toolEnd"; toolId: string }
-  | { kind: "turnEnd"; awaitingInput?: boolean }
-  | { kind: "sessionEnd"; reason?: string };
-
-export interface AgentEventEnvelope {
-  source: "mikan";
-  sessionId: string;
-  actorName: string;
-  event: AgentEventPayload;
-}
-
 /**
  * A platform-agnostic event (message/mention) that triggers the agent.
  */

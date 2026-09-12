@@ -62,10 +62,8 @@ import {
   activateRunPresentation,
   createRunState,
   finalizeRunResponse,
-  formatAgentActorName,
   isEventTriggerAttribution,
   reportUsageSummary,
-  sendAgentEvent,
 } from "./presenter.js";
 
 import * as log from "../log.js";
@@ -511,11 +509,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     session_id: sessionUuid,
     attachment_count: message.attachments?.length ?? 0,
     image_attachment_count: prepared.imageAttachments.length,
-  });
-  sendAgentEvent({
-    sessionId: sessionUuid,
-    actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
-    event: { kind: "sessionStart" },
   });
 
   const isEventRun = message.id.startsWith("event:");

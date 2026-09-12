@@ -316,7 +316,6 @@ state directory は sandbox から見える workspace 内に置いてはなり�
 | Login          | `GET /link`、`POST /api/link/complete`、`POST /api/oauth/start`、`GET /oauth/callback` | 短命の link token と OAuth state |
 | Session viewer | `GET /session`、`GET /session/stream`、任意の `POST /session/message`                  | Session-view token               |
 | Admin          | `GET /admin`、`/admin/api/*`                                                           | Admin token                      |
-| Agent events   | `GET /api/agent-events/stream`                                                         | デプロイ制御の event stream      |
 
 Admin endpoints は、conversation のインベントリ/状態/使用状況、グローバルおよび conversation の settings、models、workspace files、skills、events、platform 設定、login/session links をカバーします。ルートの payload は内部の UI 契約であり、同梱 frontend とともに進化し得ます。
 

@@ -169,12 +169,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         deploy: false,
         doc: "Idle timeout in ms for outbound HTTP streams",
       },
-      {
-        name: "AGENT_EVENTS_TOKEN",
-        secret: true,
-        deploy: false,
-        doc: "Bearer token guarding the agent-events stream",
-      },
     ],
   },
 ];

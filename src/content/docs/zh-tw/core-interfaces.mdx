@@ -316,7 +316,6 @@ state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態�
 | Login          | `GET /link`、`POST /api/link/complete`、`POST /api/oauth/start`、`GET /oauth/callback` | 短期 link token 加上 OAuth state |
 | Session viewer | `GET /session`、`GET /session/stream`、選用的 `POST /session/message`                  | Session-view token               |
 | Admin          | `GET /admin`、`/admin/api/*`                                                           | Admin token                      |
-| Agent events   | `GET /api/agent-events/stream`                                                         | 由部署控管的 event stream        |
 
 Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設定、model、workspace 檔案、skill、event、平台設定，以及 login/session link。路由 payload 是內部 UI 契約，可能與隨附前端一起演進。
 

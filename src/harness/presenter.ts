@@ -13,14 +13,12 @@ import {
   settleSubagentProgress,
 } from "./tools/subagent.js";
 import type { ConversationResponder, SubagentProgressSnapshot } from "../adapter.js";
-import type { AgentEventPayload } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";
 import {
   addLifecycleBreadcrumb,
   metricAttributes,
   reportUserFacingError,
 } from "../observability/sentry.js";
-import { emitAgentEvent } from "../agent-events.js";
 import { appendTriggerAttribution } from "./prompt.js";
 
 import * as log from "../log.js";
@@ -472,38 +470,15 @@ function extractToolResultText(result: unknown): string {
   return toolResultContentText(result) ?? JSON.stringify(result);
 }
 
-export function formatAgentActorName(userName: string | undefined, fallback: string): string {
-  return userName ? `DM:${userName}` : fallback;
-}
-
-export function sendAgentEvent(payload: {
-  sessionId: string;
-  actorName: string;
-  event: AgentEventPayload;
-}): void {
-  emitAgentEvent({ source: "mikan", ...payload });
-}
-
-// ponytail: additive SSE mirror only; keep responder rendering here until another frontend needs the same stream.
 type PresenterEventContext = {
   runState: RunnerSessionState;
   responder: ConversationResponder;
   logCtx: NonNullable<RunnerSessionState["logCtx"]>;
   queue: NonNullable<RunnerSessionState["queue"]>;
   baseAttrs: { channel_id: string; session_id: string | undefined };
-  agentEventSessionId: string;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
 };
-
-/** Mirror one agent event onto the SSE stream under this run's actor identity. */
-function emitPresenterEvent(context: PresenterEventContext, event: AgentEventPayload): void {
-  sendAgentEvent({
-    sessionId: context.agentEventSessionId,
-    actorName: formatAgentActorName(context.logCtx.userName, context.logCtx.conversationId),
-    event,
-  });
-}
 
 type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
 
@@ -528,12 +503,6 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
   const { runState, responder, logCtx, queue, baseAttrs } = context;
   const args = (event.args ?? {}) as { label?: string };
   const label = args.label || event.toolName;
-  emitPresenterEvent(context, {
-    kind: "toolStart",
-    toolId: event.toolCallId,
-    toolName: event.toolName,
-    input: { label },
-  });
   runState.pendingTools.set(event.toolCallId, {
     toolName: event.toolName,
     args: event.args,
@@ -592,7 +561,6 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   const { runState, responder, logCtx } = context;
   const resultStr = extractToolResultText(event.result);
   const pending = runState.pendingTools.get(event.toolCallId);
-  emitPresenterEvent(context, { kind: "toolEnd", toolId: event.toolCallId });
   const progress = runState.toolProgress.get(event.toolCallId);
   if (progress) progress.status = event.isError ? "error" : "done";
   const subagentProgress = runState.subagentProgress.get(event.toolCallId);
@@ -620,7 +588,6 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
   if (event.message.role !== "assistant") return;
   context.runState.llmCallCount += 1;
-  emitPresenterEvent(context, { kind: "sessionStart" });
   addLifecycleBreadcrumb("agent.llm.call.started", {
     call_index: context.runState.llmCallCount,
     provider: context.model.provider,
@@ -633,7 +600,6 @@ function handleMessageStart(event: MessageStartEvent, context: PresenterEventCon
 function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventContext): void {
   const update = event.assistantMessageEvent;
   if (update.type !== "text_delta" || !update.delta) return;
-  emitPresenterEvent(context, { kind: "responseDelta", delta: update.delta });
   if (context.responder.appendResponseDelta && !context.runState.suppressResponseDeltas) {
     context.queue.enqueue(async () => {
       await context.responder.appendResponseDelta?.(update.delta);
@@ -700,8 +666,6 @@ function presentFinalText(text: string, context: PresenterEventContext): void {
     context.runState.triggerAttribution,
   );
   log.logResponse(context.logCtx, text);
-  emitPresenterEvent(context, { kind: "responseFinal", text: finalText });
-  emitPresenterEvent(context, { kind: "turnEnd" });
   // Subagent dashboard finalization must preserve "dashboard, blank line, answer".
   if (context.runState.completedSubagentProgress.length > 0) return;
   if (context.responder.finishResponse) {
@@ -746,7 +710,6 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
   if (event.type === "compaction_start") {
     const text = "_Compacting context..._";
     log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-    emitPresenterEvent(context, { kind: "diagnostic", text });
     context.queue.enqueue(() => context.responder.respond(text), "compaction start");
     return;
   }
@@ -760,9 +723,7 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
   }
   if (event.type === "auto_retry_start") {
     log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
-    emitPresenterEvent(context, { kind: "sessionStart" });
     const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-    emitPresenterEvent(context, { kind: "diagnostic", text });
     context.queue.enqueue(() => context.responder.respond(text), "retry");
     return;
   }
@@ -772,7 +733,6 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
     `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
   );
   const text = `_Stopped: run budget exceeded (${event.reason})_`;
-  emitPresenterEvent(context, { kind: "diagnostic", text });
   context.queue.enqueue(
     () => context.responder.respondDiagnostic(text, { style: "error" }),
     "budget exceeded",
@@ -828,7 +788,6 @@ export function attachSessionEventHandlers(params: {
         channel_id: runState.logCtx.conversationId,
         session_id: runState.logCtx.sessionId,
       },
-      agentEventSessionId: runState.logCtx.sessionId ?? runState.logCtx.conversationId,
       model,
       agentConfig,
     });

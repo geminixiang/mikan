@@ -359,7 +359,6 @@ Source: `src/adapters/web/server.ts` and portal modules. These routes support mi
 | Login          | `GET /link`, `POST /api/link/complete`, `POST /api/oauth/start`, `GET /oauth/callback` | Short-lived link token plus OAuth state |
 | Session viewer | `GET /session`, `GET /session/stream`, optional `POST /session/message`                | Session-view token                      |
 | Admin          | `GET /admin`, `/admin/api/*`                                                           | Admin token                             |
-| Agent events   | `GET /api/agent-events/stream`                                                         | Deployment-controlled event stream      |
 
 Admin endpoints cover conversation inventory/state/usage, global and conversation settings, models, workspace files, skills, events, platform configuration, and login/session links. Route payloads are internal UI contracts and may evolve together with the bundled frontend.
 

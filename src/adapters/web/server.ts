@@ -7,7 +7,6 @@ import { HostEventStore } from "../../events/index.js";
 import type { VaultManager } from "../../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/portal.js";
-import { handleAgentEventsRequest } from "../../agent-events.js";
 import { createLoginRequestHandler } from "./login/portal.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/portal.js";
@@ -66,8 +65,6 @@ export function startWebServer(options: StartWebServerOptions): Server {
       ) {
         return;
       }
-
-      if (handleAgentEventsRequest(req, res, url)) return;
 
       const adminOptions = options.adminOptions;
       if (

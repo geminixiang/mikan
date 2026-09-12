@@ -355,7 +355,6 @@ state directory 不得位于沙箱可见的工作区内部。重要的状态文�
 | Login          | `GET /link`、`POST /api/link/complete`、`POST /api/oauth/start`、`GET /oauth/callback` | 短期 link token 加 OAuth state |
 | Session viewer | `GET /session`、`GET /session/stream`、可选的 `POST /session/message`                  | Session-view token             |
 | Admin          | `GET /admin`、`/admin/api/*`                                                           | Admin token                    |
-| Agent events   | `GET /api/agent-events/stream`                                                         | 由部署控制的事件流             |
 
 Admin 端点涵盖对话清单/状态/用量、全局与对话设置、模型、工作区文件、skill、事件、平台配置以及 login/session 链接。路由 payload 是内部 UI 契约，可能与捆绑的前端一同演进。
 
