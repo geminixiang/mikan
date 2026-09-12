@@ -21,9 +21,8 @@ This directory is the TypeScript source root for mikan; the entries below descri
 
 ## Subdirectories
 
-- `adapters/`: Chat platform adapters and shared adapter utilities.
+- `adapters/`: Chat platform adapters, shared chat commands (`commands/`), and adapter utilities.
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
-- `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
 - `harness/`: Agent execution — `createRunner`, prompt and presentation, execution binding, native Pi session integration, session store, models, MCP capabilities, skills, and bounded subagents.

@@ -1,4 +1,4 @@
-# src/commands
+# src/adapters/commands
 
 This directory contains chat command parsers, shared command types, and command handlers.
 

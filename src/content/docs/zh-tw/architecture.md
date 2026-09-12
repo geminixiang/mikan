@@ -34,7 +34,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
-- `src/commands/manifest.ts`
+- `src/adapters/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
 
@@ -43,7 +43,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - 把 argv 解析成一份 boot plan（`src/cli/boot.ts`），再執行它：讀取 env / `settings.json`、建立 `Workspace`、執行 office 遷移，並啟動選定的平台 bot
 - 建立 `ConversationRuntime` 作為各平台 bot 的 `MessagingEventHandler`
 - `stop` 魔法詞由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 與排隊之前辨識
-- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 內 dispatch；adapter 註冊與路由所依據的命令清單位於 `src/commands/manifest.ts`
+- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 內 dispatch；adapter 註冊與路由所依據的命令清單位於 `src/adapters/commands/manifest.ts`
 - 以 office address 加上 session key 作為 per-session 狀態與 queue 的 key，因此同一時間只有一個 session 在執行，其他 session 則可並行進行
 - 決定每個 session scope 對應哪個 `PiAgentWrapper`
 

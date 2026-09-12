@@ -48,7 +48,7 @@ import {
   withRetry,
   type IncomingAttachment,
 } from "../shared.js";
-import { COMMAND_MANIFEST } from "../../commands/manifest.js";
+import { COMMAND_MANIFEST } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
 

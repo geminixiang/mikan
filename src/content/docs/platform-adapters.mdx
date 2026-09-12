@@ -47,7 +47,7 @@ they pass the address and receive an `Office` value. One consequence worth knowi
 disk: a Slack channel `C0123456789` lives at `<workspace>/v1-slack-c0123456789-<digest>/`, not at
 `<workspace>/C0123456789/`.
 
-Slash-command registration and routing derive from `src/commands/manifest.ts` rather than per-adapter
+Slash-command registration and routing derive from `src/adapters/commands/manifest.ts` rather than per-adapter
 inventories, so a new command reaches every platform that opts in from one entry.
 
 ## Shared flow

@@ -13,7 +13,7 @@ import type {
   CommandServices,
   LinkTokenStoreLike,
   SessionViewTokenStoreLike,
-} from "../commands/types.js";
+} from "../adapters/commands/types.js";
 import type { MikanModels } from "../harness/index.js";
 import type { PlatformToolPackFactory } from "../tools/types.js";
 import type { VaultManager } from "../vault/index.js";

@@ -51,7 +51,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；既有的 container 內容會被保留。對話忙碌時切換會被拒絕。底層的 `sandbox.workspace` 欄位請見[設定](/zh-tw/configuration/)。
 
 <Aside type="note" title="平台指令註冊">
-  原生 slash commands 也必須向平台註冊。指令清單位於 `src/commands/manifest.ts`：Discord 的
+  原生 slash commands 也必須向平台註冊。指令清單位於 `src/adapters/commands/manifest.ts`：Discord 的
   application commands 與 Telegram 的指令選單會在啟動時由它派生，Slack 的路由也辨識清單中的 `/pi-*`
   名稱。由於 Discord 會拒絕長度超過 100 個字元的 option description，清單中的參數說明會由 command
   測試檢查長度。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、

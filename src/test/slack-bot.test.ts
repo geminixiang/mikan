@@ -8,7 +8,7 @@ import type { Workspace } from "../office/index.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
-import { commandManifestEntry } from "../commands/manifest.js";
+import { commandManifestEntry } from "../adapters/commands/manifest.js";
 import { createGlobalSettingsFile } from "../config.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
 

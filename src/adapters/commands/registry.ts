@@ -1,4 +1,4 @@
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../../harness/index.js";
 import { AdminCommandHandler } from "./admin.js";
 import { LoginCommandHandler } from "./login.js";
 import { COMMAND_MANIFEST } from "./manifest.js";

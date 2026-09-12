@@ -91,7 +91,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
 | Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox, Vault, Packages                 | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                                                                           |
-| Control surfaces        | Commands, Web and scheduled-event services                   | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                                                 |
+| Control surfaces        | Commands, Web and scheduled-event services                   | [`src/adapters/commands/README.md`](src/adapters/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                               |
 
 ## Main flows
 

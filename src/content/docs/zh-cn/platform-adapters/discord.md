@@ -30,7 +30,7 @@ DM 会直接触发。Guild 消息通常需要提及、mikan 所处理的回复/�
 
 ## Slash command 注册
 
-该适配器不维护自己的命令清单。连接时，它会通过 `application.commands.set()` 注册 `src/commands/manifest.ts` 中每一条标记为 Discord 的条目，命令名、描述和可选的字符串参数都直接取自该条目。因此添加命令意味着添加一条 manifest 条目，而不是修改适配器。
+该适配器不维护自己的命令清单。连接时，它会通过 `application.commands.set()` 注册 `src/adapters/commands/manifest.ts` 中每一条标记为 Discord 的条目，命令名、描述和可选的字符串参数都直接取自该条目。因此添加命令意味着添加一条 manifest 条目，而不是修改适配器。
 
 如果命令或选项描述超过 100 个字符，Discord 会拒绝该次注册，并且整个 `set()` 调用都会失败——这会让该 guild 的命令列表一直停留在旧状态，直到下次重启，且不会有任何提示。一项单元测试会对每条 manifest 描述强制执行 100 字符预算，让这类失败改为在测试时暴露。
 

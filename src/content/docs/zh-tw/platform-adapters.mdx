@@ -39,7 +39,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 Adapter 只在對外 I/O 邊界上保留自家平台的原始 conversation id——那是它們從 SDK 收到、也是送回去的東西。儲存層則不然：`platform` 加上原始 id 構成一個 `OfficeAddress`，`src/office/` 模組會把它雜湊成 office key，用來命名該對話的目錄、它在 host 端的狀態，以及它的 vault。Adapter 不會自行組出那些路徑；它們傳入 address，取回一個 `Office` 值。讀取磁碟時有個值得知道的結果：Slack 頻道 `C0123456789` 位於 `<workspace>/v1-slack-c0123456789-<digest>/`，而不是 `<workspace>/C0123456789/`。
 
-Slash command 的註冊與路由都衍生自 `src/commands/manifest.ts`，而不是各 adapter 自己的清單，因此新增一個指令只要一筆項目，就能送達每個選擇加入的平台。
+Slash command 的註冊與路由都衍生自 `src/adapters/commands/manifest.ts`，而不是各 adapter 自己的清單，因此新增一個指令只要一筆項目，就能送達每個選擇加入的平台。
 
 ## 共同流程
 

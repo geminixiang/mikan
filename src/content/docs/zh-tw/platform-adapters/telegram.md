@@ -22,7 +22,7 @@ mikan 使用 long polling；不需要公開 Telegram webhook。
 Adapter 處理：
 
 - private、group 與 supergroup 訊息
-- `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`——指令選單是透過 `setMyCommands` 從 `src/commands/manifest.ts` 註冊的，因此絕不會與共用清單脫節
+- `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`——指令選單是透過 `setMyCommands` 從 `src/adapters/commands/manifest.ts` 註冊的，因此絕不會與共用清單脫節
 - replies、photos 與 documents
 
 私人訊息會直接觸發。群組訊息需要指向 bot 的 command、mention 或支援的 reply context。Telegram 必須先將訊息送達 bot；擴大送達範圍不會繞過明確觸發條件。

@@ -1,10 +1,10 @@
-import * as log from "../log.js";
-import { credentialAuthorizationKey, runtimeResourceKey } from "../sandbox/identity.js";
-import { sharedVaultKey } from "../vault/index.js";
+import * as log from "../../log.js";
+import { credentialAuthorizationKey, runtimeResourceKey } from "../../sandbox/identity.js";
+import { sharedVaultKey } from "../../vault/index.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { portalNotConfiguredLines, replySummary } from "./utils.js";
-import { createOfficeAddress } from "../office/index.js";
+import { createOfficeAddress } from "../../office/index.js";
 
 const LOGIN_COMMANDS = slashForms("login");
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseModelCommand } from "../commands/model.js";
+import { parseModelCommand } from "../adapters/commands/model.js";
 
 describe("model command parsing", () => {
   test("requires slash form", () => {

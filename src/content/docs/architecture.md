@@ -34,7 +34,7 @@ Raw platform identifiers stay at these external I/O boundaries. Everything inwar
 - `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
-- `src/commands/manifest.ts`
+- `src/adapters/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
 
@@ -43,7 +43,7 @@ Responsibilities:
 - resolve argv into a boot plan (`src/cli/boot.ts`), then execute it: read env / `settings.json`, build the `Workspace`, run the office migration, and start the selected platform bots
 - create `ConversationRuntime` as the `MessagingEventHandler` for each platform bot
 - recognize the `stop` magic word in conversation intake (`src/adapters/intake.ts`) before trigger policy and queueing
-- dispatch control commands such as `/login`, `/session`, and `/new` inside `ConversationRuntime.runSession`; the command inventory that adapters register/route from lives in `src/commands/manifest.ts`
+- dispatch control commands such as `/login`, `/session`, and `/new` inside `ConversationRuntime.runSession`; the command inventory that adapters register/route from lives in `src/adapters/commands/manifest.ts`
 - key per-session state and queues by office address plus session key, so one session runs at a time while other sessions proceed concurrently
 - decide which `PiAgentWrapper` corresponds to each session scope
 

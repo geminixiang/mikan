@@ -5,7 +5,7 @@ import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
 import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
-import { isCommandText } from "../commands/manifest.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
 import { isThreadSessionKey } from "./session-key.js";

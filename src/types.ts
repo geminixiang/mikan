@@ -7,7 +7,7 @@ import type {
   PeriodicEventPayload,
 } from "./tools/event.js";
 import type { SubagentRunStatus } from "./harness/types.js";
-import type { SessionViewTokenStoreLike } from "./commands/types.js";
+import type { SessionViewTokenStoreLike } from "./adapters/commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { Office } from "./office/types.js";

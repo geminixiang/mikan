@@ -22,7 +22,7 @@ mikan uses long polling; no public Telegram webhook is required.
 The adapter handles:
 
 - private, group, and supergroup messages
-- `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox` — the command menu is registered from `src/commands/manifest.ts` through `setMyCommands`, so it never drifts from the shared inventory
+- `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox` — the command menu is registered from `src/adapters/commands/manifest.ts` through `setMyCommands`, so it never drifts from the shared inventory
 - replies, photos, and documents
 
 Private messages trigger directly. Group messages require an addressed command, mention, or supported reply context. Telegram must first deliver the message to the bot; broader delivery does not bypass the explicit trigger gate.

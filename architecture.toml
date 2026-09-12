@@ -102,8 +102,8 @@ sources = ["src/vault/"]
 id = "commands"
 name = "Built-in commands"
 kind = "registry"
-docs = "src/commands/README.md"
-sources = ["src/commands/"]
+docs = "src/adapters/commands/README.md"
+sources = ["src/adapters/commands/"]
 
 [[modules]]
 id = "packages"
@@ -255,7 +255,7 @@ id = "command-inventory"
 owner = "commands"
 consumers = ["platform-adapters", "conversation-runtime"]
 interface = "COMMAND_MANIFEST"
-docs = "src/commands/README.md"
+docs = "src/adapters/commands/README.md"
 
 [[seams]]
 id = "package-resolution"

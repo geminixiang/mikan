@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import { resolveConversationSettings } from "../config.js";
-import { applyConversationSettings } from "../settings-mutation.js";
+import { resolveConversationSettings } from "../../config.js";
+import { applyConversationSettings } from "../../settings-mutation.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { replySummary } from "./utils.js";

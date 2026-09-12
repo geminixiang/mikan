@@ -9,7 +9,7 @@ TypeScript ESM, Node `>=22.19.0`, `tsgo`, Vitest, `oxlint` + `oxfmt`. Tool confi
 - `src/README.md` — source index; module READMEs explain local interfaces.
 - `CONTEXT.md`, `ARCHITECTURE.md`, `architecture.toml`, `docs/adr/` — domain model and architectural decisions.
 - `src/harness/`, `src/agent/` — agent execution; `src/runtime/`, `src/sessions/` — conversation orchestration and persistence.
-- `src/adapters/`, `src/commands/`, `src/cli/` — platform and command entry points.
+- `src/adapters/`, `src/adapters/commands/`, `src/cli/` — platform and command entry points.
 - `src/office/`, `src/sandbox/`, `src/execution-resolver.ts`, `src/workspace-projection/`, `src/vault/` — office identity, execution, mounts, credentials.
 - `src/test/` — unit/integration tests; `e2e/` — real-platform tests.
 - `src/content/docs/` — product docs; `docs/` — internal docs; `deploy/` — deployment assets and examples.

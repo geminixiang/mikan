@@ -22,7 +22,7 @@ import {
   saveIncomingAttachments,
   type IncomingAttachment,
 } from "../shared.js";
-import { COMMAND_MANIFEST, telegramCommandMenu } from "../../commands/manifest.js";
+import { COMMAND_MANIFEST, telegramCommandMenu } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";

@@ -24,7 +24,7 @@ support, and DMs, external channels, or unknown kinds fail closed to isolated.
 
 Chat operators change it with
 `/pi-sandbox door <default|isolated|shared|shared-private|full>`
-(`src/commands/sandbox.ts`), which writes through the settings-mutation seam.
+(`src/adapters/commands/sandbox.ts`), which writes through the settings-mutation seam.
 Only a backend with managed projection (`image:*`) may accept isolated or
 private/read-only projections; other backends are rejected before a run starts.
 

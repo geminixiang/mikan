@@ -22,7 +22,7 @@ mikan は long polling を使用します。公開 Telegram webhook は不要で
 Adapter は次を処理します：
 
 - private、group、supergroup messages
-- `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox` — command menu は `setMyCommands` を通じて `src/commands/manifest.ts` から登録されるため、共通インベントリからずれることはありません
+- `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox` — command menu は `setMyCommands` を通じて `src/adapters/commands/manifest.ts` から登録されるため、共通インベントリからずれることはありません
 - replies、photos、documents
 
 Private messages は直接起動します。Group messages には bot 宛ての command、mention、または対応する reply context が必要です。Telegram が先にメッセージを bot に配信する必要があり、配信範囲を広げても明示的なトリガー条件は変わりません。

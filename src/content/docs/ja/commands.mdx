@@ -51,11 +51,11 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 <Aside type="note" title="プラットフォームへのコマンド登録">
   Native slash commands はプラットフォームにも登録する必要があります。コマンド一覧は
-  `src/commands/manifest.ts` にあり、Discord の application commands と Telegram の command menu は
-  起動時にそこから導出されます。Slack の routing は manifest の `/pi-*` 名を認識します。Discord は
-  100 文字を超える option description を拒否するため、manifest の引数 description は command tests
-  で長さが検証されます。Slack の App manifest（`/pi-login`、`/pi-session`、`/pi-new`、
-  設定で手動更新が必要です。
+  `src/adapters/commands/manifest.ts` にあり、Discord の application commands と Telegram の command
+  menu は 起動時にそこから導出されます。Slack の routing は manifest の `/pi-*`
+  名を認識します。Discord は 100 文字を超える option description を拒否するため、manifest の引数
+  description は command tests で長さが検証されます。Slack の App
+  manifest（`/pi-login`、`/pi-session`、`/pi-new`、 設定で手動更新が必要です。
 </Aside>
 
 ## 共有 vault コマンド

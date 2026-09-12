@@ -21,7 +21,7 @@ import {
   type PlatformUserInfo,
 } from "../../adapter.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
-import { COMMAND_MANIFEST, type SlackSlashRoute } from "../../commands/manifest.js";
+import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events.js";
 import * as log from "../../log.js";

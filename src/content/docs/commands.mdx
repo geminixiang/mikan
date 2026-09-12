@@ -53,11 +53,11 @@ The change takes effect on the next message, when the sandbox runtime is rebuilt
 
 <Aside type="note" title="Platform command registration">
   Native slash commands must also be registered with the platform. The command inventory lives in
-  `src/commands/manifest.ts`: Discord's application commands and Telegram's command menu are derived
-  from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names. Because Discord
-  rejects an option description longer than 100 characters, the manifest's argument descriptions are
-  length-checked by the command tests. Slack's App manifest (`/pi-login`, `/pi-session`, `/pi-new`,
-  in the Slack App configuration by hand.
+  `src/adapters/commands/manifest.ts`: Discord's application commands and Telegram's command menu
+  are derived from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names.
+  Because Discord rejects an option description longer than 100 characters, the manifest's argument
+  descriptions are length-checked by the command tests. Slack's App manifest (`/pi-login`,
+  `/pi-session`, `/pi-new`, in the Slack App configuration by hand.
 </Aside>
 
 ## Shared vault commands

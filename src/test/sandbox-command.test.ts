@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { parseSandboxCommand } from "../commands/sandbox.js";
+import { parseSandboxCommand } from "../adapters/commands/sandbox.js";
 
 describe("sandbox command parsing", () => {
   test("parses status command", () => {

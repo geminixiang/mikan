@@ -6,13 +6,13 @@ import type {
   MessagingBot,
   OfficeAddress,
   PlatformName,
-} from "../adapter.js";
-import type { Workspace } from "../office/index.js";
-import type { DockerContainerManager } from "../provisioner.js";
-import type { SandboxConfig } from "../sandbox/index.js";
-import type { SandboxResourceController } from "../types.js";
-import type { VaultManager } from "../vault/index.js";
-import type { SessionViewTokenCreateOptions } from "../web/session-view/types.js";
+} from "../../adapter.js";
+import type { Workspace } from "../../office/index.js";
+import type { DockerContainerManager } from "../../provisioner.js";
+import type { SandboxConfig } from "../../sandbox/index.js";
+import type { SandboxResourceController } from "../../types.js";
+import type { VaultManager } from "../../vault/index.js";
+import type { SessionViewTokenCreateOptions } from "../../web/session-view/types.js";
 
 interface CommandArgSpec {
   name: string;

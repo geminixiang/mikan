@@ -12,9 +12,9 @@ import { createRunner } from "../harness/runner.js";
 import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
 import type { PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";
-import { defaultCommandHandlers, dispatchCommand } from "../commands/registry.js";
-import type { CommandHandler, CommandServices } from "../commands/types.js";
-import { isPrivateConversation } from "../commands/utils.js";
+import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
+import type { CommandHandler, CommandServices } from "../adapters/commands/types.js";
+import { isPrivateConversation } from "../adapters/commands/utils.js";
 import * as log from "../log.js";
 import {
   addLifecycleBreadcrumb,

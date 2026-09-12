@@ -4,22 +4,26 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../adapter.js";
 import { MikanModels } from "../harness/index.js";
-import { AdminCommandHandler } from "../commands/admin.js";
+import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import {
   conversationSettingsPath,
   createGlobalSettingsFile,
   loadConversationWorkspaceOverride,
 } from "../config.js";
-import { dispatchCommand } from "../commands/registry.js";
-import { COMMAND_MANIFEST } from "../commands/manifest.js";
-import { LoginCommandHandler, parseLoginCommand } from "../commands/login.js";
-import { ModelCommandHandler } from "../commands/model.js";
-import { NewCommandHandler } from "../commands/new.js";
-import { SandboxCommandHandler } from "../commands/sandbox.js";
-import { SessionViewCommandHandler } from "../commands/session-view.js";
+import { dispatchCommand } from "../adapters/commands/registry.js";
+import { COMMAND_MANIFEST } from "../adapters/commands/manifest.js";
+import { LoginCommandHandler, parseLoginCommand } from "../adapters/commands/login.js";
+import { ModelCommandHandler } from "../adapters/commands/model.js";
+import { NewCommandHandler } from "../adapters/commands/new.js";
+import { SandboxCommandHandler } from "../adapters/commands/sandbox.js";
+import { SessionViewCommandHandler } from "../adapters/commands/session-view.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
-import type { CommandContext, CommandHandler, CommandServices } from "../commands/types.js";
+import type {
+  CommandContext,
+  CommandHandler,
+  CommandServices,
+} from "../adapters/commands/types.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import type { SandboxConfig } from "../sandbox/index.js";

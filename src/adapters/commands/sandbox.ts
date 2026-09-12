@@ -1,7 +1,7 @@
-import type { WorkspacePolicyChoice } from "../config.js";
-import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
-import { runtimeResourceKey } from "../sandbox/identity.js";
-import { applyConversationWorkspacePolicy } from "../settings-mutation.js";
+import type { WorkspacePolicyChoice } from "../../config.js";
+import { resolveWorkspaceProjection } from "../../workspace-projection/index.js";
+import { runtimeResourceKey } from "../../sandbox/identity.js";
+import { applyConversationWorkspacePolicy } from "../../settings-mutation.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { replySummary } from "./utils.js";

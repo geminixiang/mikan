@@ -30,7 +30,7 @@ DM 會直接觸發。Guild 訊息通常需要 mention 或 mikan 處理的 reply/
 
 ## Slash command 註冊
 
-這個 adapter 不維護自己的指令清單。連線時，它會透過 `application.commands.set()` 註冊 `src/commands/manifest.ts` 中每一筆標記為 Discord 的項目，名稱、說明與選用的字串參數都直接取自該項目。因此新增一個指令是新增一筆 manifest 項目，而不是修改 adapter。
+這個 adapter 不維護自己的指令清單。連線時，它會透過 `application.commands.set()` 註冊 `src/adapters/commands/manifest.ts` 中每一筆標記為 Discord 的項目，名稱、說明與選用的字串參數都直接取自該項目。因此新增一個指令是新增一筆 manifest 項目，而不是修改 adapter。
 
 只要指令或 option 的說明超過 100 個字元，Discord 就會拒絕該次註冊，而且整個 `set()` 呼叫都會失敗——這會讓該 guild 悄悄停留在過時的指令清單上，直到下次重新啟動。因此有一個單元測試會對每一筆 manifest 說明強制 100 字元的上限，讓這種失敗改在測試階段就浮現。
 

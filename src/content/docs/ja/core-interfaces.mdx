@@ -142,7 +142,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 ## 4. Command インターフェース
 
-ソース: `src/commands/manifest.ts`、`src/commands/types.ts`、`src/commands/registry.ts`。
+ソース: `src/adapters/commands/manifest.ts`、`src/adapters/commands/types.ts`、`src/adapters/commands/registry.ts`。
 
 `COMMAND_MANIFEST` は、slash 形式とネイティブ登録を導出するために使われる platform 向けのインベントリです。`CommandHandler.tryHandle(context)` は実行の契約です。handlers は順に実行され、最初に `true` を返したものが message を消費します。
 

@@ -3,7 +3,7 @@ import {
   formatCommandSummary,
   isPrivateConversation,
   replyPrivatelyWithContext,
-} from "../commands/utils.js";
+} from "../adapters/commands/utils.js";
 
 function makeContext(overrides: Partial<Record<string, unknown>> = {}): any {
   return {

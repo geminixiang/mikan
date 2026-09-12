@@ -31,7 +31,7 @@ DMs trigger directly. Guild messages normally require a mention or a reply/threa
 ## Slash-command registration
 
 The adapter does not keep its own command inventory. On connect it registers every
-`src/commands/manifest.ts` entry marked for Discord through `application.commands.set()`, taking the
+`src/adapters/commands/manifest.ts` entry marked for Discord through `application.commands.set()`, taking the
 name, description, and optional string argument straight from the entry. Adding a command therefore
 means adding a manifest entry, not editing the adapter.
 

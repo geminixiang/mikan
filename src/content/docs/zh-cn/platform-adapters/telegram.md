@@ -22,7 +22,7 @@ mikan 使用 long polling；不需要公开 Telegram webhook。
 适配器处理：
 
 - 私聊、群组和超级群组消息
-- `/login`、`/session`、`/new`、`/stop`、`/model` 和 `/sandbox`——命令菜单通过 `setMyCommands` 从 `src/commands/manifest.ts` 注册，因此绝不会与共享清单产生偏离
+- `/login`、`/session`、`/new`、`/stop`、`/model` 和 `/sandbox`——命令菜单通过 `setMyCommands` 从 `src/adapters/commands/manifest.ts` 注册，因此绝不会与共享清单产生偏离
 - 回复、照片和文档
 
 私聊消息会直接触发。群组消息需要命令、提及、回复上下文或匹配的自动回复策略。Telegram 必须先将消息投递给 bot；隐私模式可能会阻止自动回复规则看到普通群组流量。

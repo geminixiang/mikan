@@ -10,7 +10,7 @@ This directory implements the Discord platform adapter.
 
 ## Behavior notes
 
-- Slash commands are registered from `src/commands/manifest.ts` at ready time
+- Slash commands are registered from `src/adapters/commands/manifest.ts` at ready time
   (`COMMAND_MANIFEST.filter((entry) => entry.discord)`), so a command exists on
   Discord by being in the manifest — there is no second list here. Discord caps
   command and option descriptions at 100 characters and rejects the whole

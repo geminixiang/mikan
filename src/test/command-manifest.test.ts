@@ -5,9 +5,9 @@ import {
   matchCommand,
   slashForms,
   telegramCommandMenu,
-} from "../commands/manifest.js";
-import { commandManifestEntry, isCommandText } from "../commands/manifest.js";
-import { defaultCommandHandlers } from "../commands/registry.js";
+} from "../adapters/commands/manifest.js";
+import { commandManifestEntry, isCommandText } from "../adapters/commands/manifest.js";
+import { defaultCommandHandlers } from "../adapters/commands/registry.js";
 
 describe("command manifest", () => {
   test("isCommandText accepts every manifest name in slash and pi- form", () => {

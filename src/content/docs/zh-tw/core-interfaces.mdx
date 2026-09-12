@@ -142,7 +142,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ## 4. Command 介面
 
-來源：`src/commands/manifest.ts`、`src/commands/types.ts` 與 `src/commands/registry.ts`。
+來源：`src/adapters/commands/manifest.ts`、`src/adapters/commands/types.ts` 與 `src/adapters/commands/registry.ts`。
 
 `COMMAND_MANIFEST` 是面向平台的清單，用來推導 slash 形式與原生註冊。`CommandHandler.tryHandle(context)` 是執行契約。Handler 依序執行，第一個回傳 `true` 的結果會消耗掉該訊息。
 

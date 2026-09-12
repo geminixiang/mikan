@@ -34,7 +34,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
-- `src/commands/manifest.ts`
+- `src/adapters/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
 
@@ -43,7 +43,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - argv を boot plan に解決し（`src/cli/boot.ts`）、それを実行する: env / `settings.json` の読み込み、`Workspace` の構築、office migration の実行、選択されたプラットフォーム bot の起動
 - 各プラットフォーム bot の `MessagingEventHandler` として `ConversationRuntime` を作成する
 - `stop` マジックワードは conversation intake（`src/adapters/intake.ts`）が trigger policy とキューイングより先に認識する
-- `/login`、`/session`、`/new` などの制御コマンドは `ConversationRuntime.runSession` 内で dispatch する。アダプターが登録・ルーティングに使うコマンド一覧は `src/commands/manifest.ts` にある
+- `/login`、`/session`、`/new` などの制御コマンドは `ConversationRuntime.runSession` 内で dispatch する。アダプターが登録・ルーティングに使うコマンド一覧は `src/adapters/commands/manifest.ts` にある
 - per-session の state と queue を office address と session key の組で管理する。これにより 1 つの session は 1 度に 1 実行に保たれ、他の session は並行して進められる
 - 各 session scope に対応する `PiAgentWrapper` を決定する
 

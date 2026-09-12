@@ -30,7 +30,7 @@ DM は直接起動します。Guild messages には通常、mention または mi
 
 ## Slash command の登録
 
-Adapter は独自のコマンドインベントリを持ちません。接続時に、`src/commands/manifest.ts` の
+Adapter は独自のコマンドインベントリを持ちません。接続時に、`src/adapters/commands/manifest.ts` の
 エントリのうち Discord 向けにマークされたものをすべて `application.commands.set()` で登録し、
 名前・description・任意の string 引数はエントリからそのまま取得します。したがってコマンドの
 追加は manifest へのエントリ追加であって、adapter の編集ではありません。

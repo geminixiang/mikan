@@ -23,6 +23,7 @@ failed shutdown.
 
 ## Subdirectories
 
+- `commands/`: Shared chat-command inventory, parsing, handlers, and command context; platform adapters derive native command registration from this inventory.
 - `discord/`: Discord bot implementation and Discord response context.
 - `github/`: GitHub App polling bot (one issue/PR = one conversation), REST client, and response context.
 - `slack/`: Slack bot, Slack session/thread rules, native Block Kit rendering, and Slack response context.

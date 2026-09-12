@@ -1,6 +1,6 @@
 import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../adapter.js";
 import type { Workspace } from "../../office/index.js";
-import type { LinkTokenStoreLike } from "../../commands/types.js";
+import type { LinkTokenStoreLike } from "../../adapters/commands/types.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { VaultManager } from "../../vault/index.js";

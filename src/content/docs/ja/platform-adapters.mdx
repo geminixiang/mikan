@@ -47,7 +47,7 @@ SDK へ返すのがその値だからです。ストレージはそうではあ�
 あります。Slack channel `C0123456789` は `<workspace>/C0123456789/` ではなく
 `<workspace>/v1-slack-c0123456789-<digest>/` に存在します。
 
-Slash command の登録とルーティングは、adapter ごとのインベントリではなく `src/commands/manifest.ts`
+Slash command の登録とルーティングは、adapter ごとのインベントリではなく `src/adapters/commands/manifest.ts`
 から導出されます。そのため、新しいコマンドは 1 か所のエントリから、対応するすべてのプラットフォームに
 届きます。
 

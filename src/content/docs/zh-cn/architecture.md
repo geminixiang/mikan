@@ -34,7 +34,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - `src/cli/boot.ts`
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
-- `src/commands/manifest.ts`
+- `src/adapters/commands/manifest.ts`
 - `src/sessions/store.ts`
 - `src/sessions/chat-history-sync.ts`
 
@@ -43,7 +43,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - 将 argv 解析为启动计划（`src/cli/boot.ts`），然后执行它：读取 env / `settings.json`、构建 `Workspace`、运行办公室迁移，并启动所选的平台 bot
 - 为每个平台 bot 创建 `ConversationRuntime`，作为 `MessagingEventHandler`
 - `stop` 魔法词由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 和排队之前识别
-- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 内分发；适配器注册与路由所依据的命令清单位于 `src/commands/manifest.ts`
+- `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 内分发；适配器注册与路由所依据的命令清单位于 `src/adapters/commands/manifest.ts`
 - 按办公室地址加会话密钥来标识每个会话的状态和队列，因此同一时间只有一个会话在运行，而其他会话可以并发进行
 - 确定每个会话范围对应哪个 `PiAgentWrapper`
 

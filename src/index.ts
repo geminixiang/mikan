@@ -1,5 +1,5 @@
-export { defaultCommandHandlers, dispatchCommand } from "./commands/registry.js";
-export type { CommandContext, CommandHandler, CommandServices } from "./commands/types.js";
+export { defaultCommandHandlers, dispatchCommand } from "./adapters/commands/registry.js";
+export type { CommandContext, CommandHandler, CommandServices } from "./adapters/commands/types.js";
 
 // Public harness interface. Keep this list explicit: adding an internal harness
 // helper must not silently expand the npm package interface.
