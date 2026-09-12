@@ -113,7 +113,8 @@ pm2 reload ecosystem.config.cjs
 
 <Aside type="note" title="优雅重新加载">
   随附的 PM2 配置会在 SIGTERM 后等待最多 60 秒，再发送 SIGKILL。mikan 会先排空对话运行，停止 events
-  watcher， 并给 Sentry 最多五秒钟完成刷新。超过进程管理器超时时间的运行仍可能被终止。
+  watcher，并给 observability exporters
+  最多五秒钟完成刷新和关闭。超过进程管理器超时时间的运行仍可能被终止。
 </Aside>
 
 ### 跨办公室布局迁移升级

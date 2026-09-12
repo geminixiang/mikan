@@ -15,7 +15,7 @@ import type { ConversationKind, MessagingBot, PlatformName } from "../adapter.js
 import { parseEventPayload } from "./index.js";
 import { ensureDirExists } from "../file-guards.js";
 import * as log from "../log.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import { reportUserFacingError } from "../observability/index.js";
 import { inferConversationKind } from "../sessions/session-key.js";
 
 export type {

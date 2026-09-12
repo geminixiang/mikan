@@ -43,7 +43,7 @@ import {
   recordSubagentOutcome,
   registerTraceAttribution,
   reportSubagentLaunchError,
-  reportUserFacingError,
+  captureSentryError,
   sanitizeBreadcrumb,
   sanitizeEvent,
   sanitizeValue,
@@ -66,9 +66,28 @@ describe("Sentry initialization", () => {
       { name: "OnUnhandledRejection" },
     ]);
   });
+
+  test("cedes trace and propagation ownership when mikan configures an OTLP trace provider", () => {
+    const options = createSentryInitOptions("https://public@example.invalid/1", true);
+    const integrations = [
+      { name: "Http" },
+      { name: "NodeFetch" },
+      { name: "OpenAI" },
+      { name: "OnUnhandledRejection" },
+    ];
+
+    expect(options.skipOpenTelemetrySetup).toBe(true);
+    expect(options.registerEsmLoaderHooks).toBe(false);
+    expect(options.tracesSampleRate).toBeUndefined();
+    expect(options.integrations(integrations).map((integration) => integration.name)).toEqual([
+      "OnUnhandledRejection",
+      "Http",
+      "NodeFetch",
+    ]);
+  });
 });
 
-describe("reportUserFacingError", () => {
+describe("captureSentryError", () => {
   beforeEach(() => {
     sentryMock.captureException.mockClear();
     sentryMock.scope.setLevel.mockClear();
@@ -80,7 +99,7 @@ describe("reportUserFacingError", () => {
   });
 
   test("captures with user-facing tags and sanitized context", () => {
-    const id = reportUserFacingError(new Error("boom"), {
+    const id = captureSentryError(new Error("boom"), {
       domain: "chat_platform",
       surface: "chat_response",
       operation: "respond",
@@ -118,7 +137,7 @@ describe("reportUserFacingError", () => {
   });
 
   test("sets optional tags and fingerprint", () => {
-    reportUserFacingError(new Error("llm"), {
+    captureSentryError(new Error("llm"), {
       domain: "llm",
       surface: "assistant_response",
       operation: "llm_turn",
@@ -137,7 +156,7 @@ describe("reportUserFacingError", () => {
   });
 
   test("does not capture expected errors", () => {
-    const id = reportUserFacingError(new Error("expected"), {
+    const id = captureSentryError(new Error("expected"), {
       domain: "mikan",
       surface: "cli",
       operation: "validation",

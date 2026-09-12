@@ -121,9 +121,9 @@ pm2 reload ecosystem.config.cjs
 <Aside type="note" title="Graceful reload">
   The included PM2 configuration waits up to six minutes after the stop signal before SIGKILL. mikan
   stops accepting new messages immediately, lets in-flight runs finish for up to five minutes, then
-  aborts the rest and posts a restart notice in those conversations, and gives Sentry up to five
-  seconds to flush. `pm2 reload` in fork mode is sequential, so the drain is also a window with no
-  process connected to the platforms; deploy off-peak.
+  aborts the rest and posts a restart notice in those conversations, then gives observability
+  exporters up to five seconds to flush and shut down. `pm2 reload` in fork mode is sequential, so
+  the drain is also a window with no process connected to the platforms; deploy off-peak.
 </Aside>
 
 ### Upgrading across the office layout migration

@@ -15,15 +15,49 @@ import {
 import type { ConversationResponder, SubagentProgressSnapshot } from "../adapter.js";
 import type { resolveConversationSettings } from "../config.js";
 import {
-  addLifecycleBreadcrumb,
+  addLifecycleEvent,
   metricAttributes,
+  recordCounter,
+  recordDistribution,
+  recordGauge,
   reportUserFacingError,
-} from "../observability/sentry.js";
+  startOperationSpan,
+  type ObservabilitySpan,
+} from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
 
 import * as log from "../log.js";
 
-import * as Sentry from "@sentry/node";
+type RunOperationSpans = {
+  llm: ObservabilitySpan[];
+  tools: Map<string, ObservabilitySpan>;
+};
+
+const operationSpans = new WeakMap<RunnerSessionState, RunOperationSpans>();
+
+function spansFor(runState: RunnerSessionState): RunOperationSpans {
+  let spans = operationSpans.get(runState);
+  if (!spans) {
+    spans = { llm: [], tools: new Map() };
+    operationSpans.set(runState, spans);
+  }
+  return spans;
+}
+
+function operationError(name: "AbortError" | "LLMError" | "ToolError"): Error {
+  const error = new Error();
+  error.name = name;
+  return error;
+}
+
+function endOutstandingOperationSpans(runState: RunnerSessionState): void {
+  const spans = operationSpans.get(runState);
+  if (!spans) return;
+  const aborted = operationError("AbortError");
+  for (const span of spans.llm) span.end({ error: aborted });
+  for (const span of spans.tools.values()) span.end({ error: aborted });
+  operationSpans.delete(runState);
+}
 
 function createEmptyUsageTotals() {
   return {
@@ -69,6 +103,7 @@ export function activateRunPresentation(
     triggerAttribution: string | undefined;
   },
 ): RunPresentation {
+  endOutstandingOperationSpans(runState);
   runState.responder = context.responder;
   runState.logCtx = {
     conversationId: context.sessionConversation,
@@ -117,6 +152,7 @@ export function activateRunPresentation(
   return {
     wait: () => queueChain,
     dispose(): void {
+      endOutstandingOperationSpans(runState);
       if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
       runState.toolProgressTimer = undefined;
       runState.responder = null;
@@ -419,22 +455,22 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     stop_reason: runState.stopReason,
     llm_calls: runState.llmCallCount,
   });
-  Sentry.metrics.distribution("agent.run.tokens_in", totalUsage.input, {
+  recordDistribution("agent.run.tokens_in", totalUsage.input, {
     attributes: runMetricAttributes,
   });
-  Sentry.metrics.distribution("agent.run.tokens_out", totalUsage.output, {
+  recordDistribution("agent.run.tokens_out", totalUsage.output, {
     attributes: runMetricAttributes,
   });
-  Sentry.metrics.distribution("agent.run.cache_read", totalUsage.cacheRead, {
+  recordDistribution("agent.run.cache_read", totalUsage.cacheRead, {
     attributes: runMetricAttributes,
   });
-  Sentry.metrics.distribution("agent.run.cache_write", totalUsage.cacheWrite, {
+  recordDistribution("agent.run.cache_write", totalUsage.cacheWrite, {
     attributes: runMetricAttributes,
   });
-  Sentry.metrics.distribution("agent.run.cost", totalUsage.cost.total, {
+  recordDistribution("agent.run.cost", totalUsage.cost.total, {
     attributes: runMetricAttributes,
   });
-  Sentry.metrics.gauge("agent.context.utilization", contextTokens / contextWindow, {
+  recordGauge("agent.context.utilization", contextTokens / contextWindow, {
     unit: "ratio",
     attributes: runMetricAttributes,
   });
@@ -520,7 +556,19 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
       "tool progress update",
     );
   }
-  addLifecycleBreadcrumb("agent.tool.started", { tool: event.toolName, ...baseAttrs });
+  spansFor(runState).tools.set(
+    event.toolCallId,
+    startOperationSpan(
+      `execute_tool ${event.toolName}`,
+      metricAttributes({
+        "gen_ai.operation.name": "execute_tool",
+        "gen_ai.tool.name": event.toolName,
+        "openinference.span.kind": "TOOL",
+        ...baseAttrs,
+      }),
+    ),
+  );
+  addLifecycleEvent("agent.tool.started", { tool: event.toolName, ...baseAttrs });
   log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
 }
 
@@ -538,18 +586,20 @@ function recordToolMetrics(
   durationMs: number,
   context: PresenterEventContext,
 ): void {
-  Sentry.metrics.count("agent.tool.calls", 1, {
-    attributes: metricAttributes({
+  recordCounter(
+    "agent.tool.calls",
+    1,
+    metricAttributes({
       tool: event.toolName,
       error: String(event.isError),
       ...context.baseAttrs,
     }),
-  });
-  Sentry.metrics.distribution("agent.tool.duration", durationMs, {
+  );
+  recordDistribution("agent.tool.duration", durationMs, {
     unit: "millisecond",
     attributes: metricAttributes({ tool: event.toolName, ...context.baseAttrs }),
   });
-  addLifecycleBreadcrumb("agent.tool.completed", {
+  addLifecycleEvent("agent.tool.completed", {
     tool: event.toolName,
     error: event.isError,
     duration_ms: durationMs,
@@ -576,6 +626,17 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   runState.subagentProgress.delete(event.toolCallId);
   runState.pendingTools.delete(event.toolCallId);
   const durationMs = pending ? Date.now() - pending.startTime : 0;
+  const toolSpan = spansFor(runState).tools.get(event.toolCallId);
+  toolSpan?.end({
+    attributes: metricAttributes({
+      "gen_ai.tool.name": event.toolName,
+      "openinference.span.kind": "TOOL",
+      duration_ms: durationMs,
+      ...context.baseAttrs,
+    }),
+    ...(event.isError ? { error: operationError("ToolError") } : {}),
+  });
+  spansFor(runState).tools.delete(event.toolCallId);
   recordToolMetrics(event, durationMs, context);
   if (event.isError) {
     log.logToolError(logCtx, event.toolName, durationMs, resultStr);
@@ -588,7 +649,21 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
   if (event.message.role !== "assistant") return;
   context.runState.llmCallCount += 1;
-  addLifecycleBreadcrumb("agent.llm.call.started", {
+  spansFor(context.runState).llm.push(
+    startOperationSpan(
+      `chat ${context.agentConfig.model}`,
+      metricAttributes({
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": context.model.provider,
+        "gen_ai.request.model": context.agentConfig.model,
+        "openinference.span.kind": "LLM",
+        "llm.provider": context.model.provider,
+        "llm.model_name": context.agentConfig.model,
+        ...context.baseAttrs,
+      }),
+    ),
+  );
+  addLifecycleEvent("agent.llm.call.started", {
     call_index: context.runState.llmCallCount,
     provider: context.model.provider,
     model: context.agentConfig.model,
@@ -627,17 +702,17 @@ function recordAssistantUsage(message: AssistantMessage, context: PresenterEvent
     stop_reason: message.stopReason,
     error: Boolean(message.errorMessage),
   });
-  Sentry.metrics.count("agent.llm.calls", 1, { attributes });
-  Sentry.metrics.distribution("agent.llm.tokens_in", message.usage.input, { attributes });
-  Sentry.metrics.distribution("agent.llm.tokens_out", message.usage.output, { attributes });
+  recordCounter("agent.llm.calls", 1, attributes);
+  recordDistribution("agent.llm.tokens_in", message.usage.input, { attributes });
+  recordDistribution("agent.llm.tokens_out", message.usage.output, { attributes });
   if (message.usage.cacheRead > 0) {
-    Sentry.metrics.distribution("agent.llm.cache_read", message.usage.cacheRead, { attributes });
+    recordDistribution("agent.llm.cache_read", message.usage.cacheRead, { attributes });
   }
   if (message.usage.cacheWrite > 0) {
-    Sentry.metrics.distribution("agent.llm.cache_write", message.usage.cacheWrite, { attributes });
+    recordDistribution("agent.llm.cache_write", message.usage.cacheWrite, { attributes });
   }
-  Sentry.metrics.distribution("agent.llm.cost_per_turn", message.usage.cost.total, { attributes });
-  addLifecycleBreadcrumb("agent.llm.call.completed", {
+  recordDistribution("agent.llm.cost_per_turn", message.usage.cost.total, { attributes });
+  addLifecycleEvent("agent.llm.call.completed", {
     call_index: context.runState.llmCallCount,
     provider: context.model.provider,
     model: context.agentConfig.model,
@@ -703,6 +778,32 @@ function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext
     context.runState.errorMessage = message.errorMessage;
   }
   recordAssistantUsage(message, context);
+  const llmSpan = spansFor(context.runState).llm.shift();
+  const inputTokens = message.usage
+    ? message.usage.input + message.usage.cacheRead + message.usage.cacheWrite
+    : undefined;
+  llmSpan?.end({
+    attributes: metricAttributes({
+      "gen_ai.provider.name": context.model.provider,
+      "gen_ai.request.model": context.agentConfig.model,
+      "gen_ai.usage.input_tokens": inputTokens,
+      "gen_ai.usage.output_tokens": message.usage?.output,
+      "gen_ai.usage.cache_read.input_tokens": message.usage?.cacheRead,
+      "gen_ai.usage.cache_write.input_tokens": message.usage?.cacheWrite,
+      "openinference.span.kind": "LLM",
+      "llm.provider": context.model.provider,
+      "llm.model_name": context.agentConfig.model,
+      "llm.token_count.prompt": inputTokens,
+      "llm.token_count.completion": message.usage?.output,
+      "llm.token_count.total":
+        inputTokens !== undefined && message.usage ? inputTokens + message.usage.output : undefined,
+      "llm.token_count.prompt_details.cache_read": message.usage?.cacheRead,
+      "llm.token_count.prompt_details.cache_write": message.usage?.cacheWrite,
+      stop_reason: message.stopReason,
+      ...context.baseAttrs,
+    }),
+    ...(message.errorMessage ? { error: operationError("LLMError") } : {}),
+  });
   presentAssistantMessage(message, context);
 }
 

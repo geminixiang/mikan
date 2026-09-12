@@ -12,6 +12,7 @@ const TRACE_ATTRIBUTION_TTL_MS = 5 * 60 * 1000;
 const SENSITIVE_KEYS = new Set([
   "accesstoken",
   "apikey",
+  "apitoken",
   "args",
   "attachment",
   "attachments",
@@ -19,6 +20,8 @@ const SENSITIVE_KEYS = new Set([
   "body",
   "clientsecret",
   "code",
+  "completion",
+  "completions",
   "content",
   "contents",
   "cookie",
@@ -43,14 +46,17 @@ const SENSITIVE_KEYS = new Set([
   "systemprompt",
   "text",
   "thinking",
+  "toolarguments",
+  "toolargs",
+  "toolinput",
+  "tooloutput",
   "token",
   "url",
   "uri",
   "workspacepath",
 ]);
 
-const ABSOLUTE_PATH_PATTERN =
-  /(?:\/Users\/[^\s"'`]+|\/workspace\/[^\s"'`]+|\/tmp\/[^\s"'`]+|\/var\/folders\/[^\s"'`]+|[A-Za-z]:\\[^\s"'`]+)/;
+const ABSOLUTE_PATH_PATTERN = /(?:(?<![A-Za-z0-9:/])\/(?!\/)[^\s"'`<>]+|[A-Za-z]:\\[^\s"'`<>]+)/;
 const TOKEN_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{12,}\b/,
   /\bxox[a-z]-[A-Za-z0-9-]{10,}\b/,
@@ -83,7 +89,7 @@ type TraceAttributionEntry = {
 
 const traceAttribution = new Map<string, TraceAttributionEntry>();
 
-export function createSentryInitOptions(dsn?: string) {
+export function createSentryInitOptions(dsn?: string, customOpenTelemetry = false) {
   return {
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
@@ -92,7 +98,9 @@ export function createSentryInitOptions(dsn?: string) {
     // block here: its mere presence switches the SDK base to all-true, and
     // prompts and completions start shipping unless every key is set false.
     sendDefaultPii: false,
-    tracesSampleRate: 1.0,
+    tracesSampleRate: customOpenTelemetry ? undefined : 1.0,
+    skipOpenTelemetrySetup: customOpenTelemetry,
+    registerEsmLoaderHooks: customOpenTelemetry ? false : undefined,
     includeLocalVariables: false,
     enableLogs: true,
     // Sentry's OpenAI APIPromise wrapper leaks a second rejection when an
@@ -100,7 +108,22 @@ export function createSentryInitOptions(dsn?: string) {
     // Keep all other default integrations until the upstream wrapper handles
     // both withResponse() branches without an unhandled rejection.
     integrations(defaultIntegrations: ReturnType<typeof Sentry.getDefaultIntegrations>) {
-      return defaultIntegrations.filter((integration) => integration.name !== "OpenAI");
+      const retained = defaultIntegrations.filter(
+        (integration) =>
+          integration.name !== "OpenAI" &&
+          (!customOpenTelemetry ||
+            (integration.name !== "Http" && integration.name !== "NodeFetch")),
+      );
+      if (!customOpenTelemetry) return retained;
+
+      // OTel owns span creation and W3C propagation in custom mode. Keep
+      // Sentry's HTTP integration for request isolation, but do not let either
+      // Sentry integration create spans or inject a second set of headers.
+      return [
+        ...retained,
+        Sentry.httpIntegration({ spans: false, tracePropagation: false }),
+        Sentry.nativeNodeFetchIntegration({ tracePropagation: false }),
+      ];
     },
     beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
       return sanitizeEvent(event, hint);
@@ -117,7 +140,7 @@ export function createSentryInitOptions(dsn?: string) {
   };
 }
 
-export function reportUserFacingError(
+export function captureSentryError(
   error: unknown,
   options: ReportUserFacingErrorOptions,
 ): string | undefined {
@@ -156,6 +179,59 @@ export function reportUserFacingError(
   });
 }
 
+export function closeSentry(timeoutMs: number): Promise<boolean> {
+  return Sentry.close(timeoutMs);
+}
+
+export function recordSentryCounter(
+  name: string,
+  value: number,
+  attributes: SentryAttributionAttributes,
+): void {
+  Sentry.metrics.count(name, value, { attributes });
+}
+
+export function recordSentryDistribution(
+  name: string,
+  value: number,
+  options: { unit?: string; attributes: SentryAttributionAttributes },
+): void {
+  Sentry.metrics.distribution(name, value, options);
+}
+
+export function recordSentryGauge(
+  name: string,
+  value: number,
+  options: { unit?: string; attributes: SentryAttributionAttributes },
+): void {
+  Sentry.metrics.gauge(name, value, options);
+}
+
+export function addSentryBreadcrumb(
+  message: string,
+  data?: Record<string, unknown>,
+  options: {
+    category?: string;
+    level?: "info" | "warning";
+    log?: boolean;
+  } = {},
+): void {
+  if (options.log) Sentry.logger.info(message, data);
+  Sentry.addBreadcrumb({
+    category: options.category ?? "agent.lifecycle",
+    message,
+    level: options.level ?? "info",
+    data,
+  });
+}
+
+export function withSentryRunScope<T>(context: SentryRunScopeContext, body: () => T): T {
+  return Sentry.withScope((scope) => {
+    applyRunScope(scope, context);
+    return body();
+  });
+}
+
 function setOptionalTag(scope: Scope, key: string, value: string | undefined): void {
   if (value !== undefined) scope.setTag(key, value);
 }
@@ -190,12 +266,6 @@ export function registerTraceAttribution(
     attributes: { ...traceAttribution.get(traceId)?.attributes, ...attributes },
     expiresAt: now + TRACE_ATTRIBUTION_TTL_MS,
   });
-}
-
-export function updateActiveSpanAttribution(attributes: SentryAttributionAttributes): void {
-  const span = Sentry.getActiveSpan();
-  if (!span) return;
-  registerTraceAttribution(span, attributes);
 }
 
 export function applyRunScope(scope: Scope, context: SentryRunScopeContext): void {
@@ -236,7 +306,7 @@ export function metricAttributes(
   );
 }
 
-export function addLifecycleBreadcrumb(
+function addLifecycleBreadcrumb(
   message: string,
   data?: Record<string, string | number | boolean | undefined>,
 ): void {
@@ -264,27 +334,29 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
   };
 
   if (sanitized.message) {
-    sanitized.message = sanitizeString(sanitized.message);
+    sanitized.message = sanitizeTelemetryString(sanitized.message);
   }
 
   if (sanitized.logentry) {
     sanitized.logentry = {
       ...sanitized.logentry,
-      message: sanitized.logentry.message ? sanitizeString(sanitized.logentry.message) : undefined,
+      message: sanitized.logentry.message
+        ? sanitizeTelemetryString(sanitized.logentry.message)
+        : undefined,
     };
   }
 
   if (sanitized.exception?.values) {
     sanitized.exception.values = sanitized.exception.values.map((value) => ({
       ...value,
-      value: value.value ? sanitizeString(value.value) : value.value,
+      value: value.value ? sanitizeTelemetryString(value.value) : value.value,
       stacktrace: value.stacktrace
         ? {
             ...value.stacktrace,
             frames: value.stacktrace.frames?.map((frame) => ({
               ...frame,
-              filename: frame.filename ? sanitizeString(frame.filename) : frame.filename,
-              abs_path: frame.abs_path ? sanitizeString(frame.abs_path) : frame.abs_path,
+              filename: frame.filename ? sanitizeTelemetryString(frame.filename) : frame.filename,
+              abs_path: frame.abs_path ? sanitizeTelemetryString(frame.abs_path) : frame.abs_path,
               vars: undefined,
             })),
           }
@@ -334,7 +406,7 @@ export function sanitizeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
 
   return {
     ...breadcrumb,
-    message: breadcrumb.message ? sanitizeString(breadcrumb.message) : breadcrumb.message,
+    message: breadcrumb.message ? sanitizeTelemetryString(breadcrumb.message) : breadcrumb.message,
     data: sanitizeValue(breadcrumb.data) as Breadcrumb["data"],
   };
 }
@@ -348,7 +420,7 @@ export function sanitizeValue(value: unknown, key?: string, depth = 0): unknown 
   }
 
   if (typeof value === "string") {
-    return sanitizeString(value);
+    return sanitizeTelemetryString(value);
   }
 
   if (Array.isArray(value)) {
@@ -409,7 +481,7 @@ function summarizeValue(value: unknown, key?: string): string {
   return `[Redacted ${label}]`;
 }
 
-function sanitizeString(value: string): string {
+export function sanitizeTelemetryString(value: string): string {
   let sanitized = value.replace(new RegExp(ABSOLUTE_PATH_PATTERN, "g"), REDACTED_PATH);
   for (const pattern of TOKEN_PATTERNS) {
     sanitized = sanitized.replace(new RegExp(pattern, "g"), REDACTED);
@@ -464,11 +536,10 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
   });
   if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
 
-  const errorClass = sanitizeString((report.error ?? report.status).split(":")[0]!.trim()).slice(
-    0,
-    MAX_FINGERPRINT_CLASS_LENGTH,
-  );
-  return reportUserFacingError(
+  const errorClass = sanitizeTelemetryString(
+    (report.error ?? report.status).split(":")[0]!.trim(),
+  ).slice(0, MAX_FINGERPRINT_CLASS_LENGTH);
+  return captureSentryError(
     new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
     {
       domain: "subagent",
@@ -505,7 +576,7 @@ export function reportSubagentLaunchError(
   error: unknown,
   report: Pick<SubagentOutcomeReport, "itemId" | "mode" | "profile">,
 ): string | undefined {
-  return reportUserFacingError(error, {
+  return captureSentryError(error, {
     domain: "subagent",
     surface: "subagent_tool",
     operation: "launch",

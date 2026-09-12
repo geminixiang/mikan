@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationEvent } from "../adapter.js";
 import { EventsWatcher } from "../events/watcher.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import { reportUserFacingError } from "../observability/index.js";
 
-vi.mock("../observability/sentry.js", () => ({
+vi.mock("../observability/index.js", () => ({
   reportUserFacingError: vi.fn(),
 }));
 

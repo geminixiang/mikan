@@ -54,7 +54,7 @@ import {
 } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
-import * as Sentry from "@sentry/node";
+import { captureError, shutdownObservability } from "./observability/index.js";
 
 function getVersion(): string {
   // Try to find package.json in the dist directory or parent
@@ -690,10 +690,8 @@ const shutdown = createProcessShutdownHandler({
       { name: "conversation work", run: () => drainConversationWork(intakeStop) },
     ]);
   },
-  flush: () => Sentry.close(5000),
-  captureError: (error) => {
-    Sentry.captureException(error);
-  },
+  shutdownObservability: () => shutdownObservability(5000),
+  captureError,
   warn: log.logWarning,
   exit: (code) => process.exit(code),
 });

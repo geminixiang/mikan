@@ -1,4 +1,4 @@
-import * as Sentry from "@sentry/node";
+import { recordDiagnosticEvent } from "../../observability/index.js";
 import type { KnownBlock } from "@slack/types";
 
 // Diagnostic correlation only: eviction never changes transport behavior.
@@ -131,29 +131,13 @@ export function recordSlackUpdate(
     } else {
       failures?.delete(key);
     }
-    if ("success" in outcome) {
-      // Successful runs may emit no later error event to retain breadcrumbs.
-      Sentry.logger.info("Slack update recovered", {
-        channelId: channel,
-        responseMessageId: ts,
-        failedAttempts: attempts,
-        sourceLength: source.length,
-        blockCount: payload.blocks.length,
-        ...syntax(source),
-      });
-    }
-    Sentry.addBreadcrumb({
-      category: "slack.update",
-      level: "error" in outcome ? "warning" : "info",
-      message: "error" in outcome ? "Slack update rejected" : "Slack update recovered",
-      data: {
-        operation: "chat.update",
-        channelId: channel,
-        responseMessageId: ts,
-        failedAttempts: attempts,
-        ...shape(source, payload),
-        ...("error" in outcome ? validation(outcome.error) : {}),
-      },
+    recordDiagnosticEvent("error" in outcome ? "slack.update.rejected" : "slack.update.recovered", {
+      operation: "chat.update",
+      channelId: channel,
+      responseMessageId: ts,
+      failedAttempts: attempts,
+      ...shape(source, payload),
+      ...("error" in outcome ? validation(outcome.error) : {}),
     });
   } catch {
     // Observability must never change delivery or retry semantics.

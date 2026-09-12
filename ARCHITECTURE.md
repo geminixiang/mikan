@@ -93,6 +93,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Execution and authority | Harness execution resolution, Sandbox, Vault | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
 | External/control edges  | Platform/Web adapters and Commands           | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
 | Scheduling              | Scheduled-event protocol, store, and watcher | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
+| Observability           | OpenTelemetry pipeline and Sentry adapter    | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
 
 ## Main flows
 
@@ -102,15 +103,16 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 
 Daemon boot proceeds conceptually as follows:
 
-1. Parse argv and select daemon or one-shot CLI mode.
-2. Validate deployment settings and the State-dir/workspace relationship.
-3. Construct the Workspace and Office registry.
-4. Complete crash-resumable legacy office migration before accepting events.
-5. Configure sandbox, vault, portal, and platform facilities.
-6. Construct the Conversation runtime with capability factories.
-7. Start platform bots, web services, the event watcher, and the Dream scheduler.
-8. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work plus the active Dream sweep up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
-9. Flush Sentry whether graceful shutdown succeeds or fails, then exit non-zero on failure. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
+1. Before loading application modules, initialize the vendor-neutral observability boundary. Sentry issue reporting remains optional; an OpenTelemetry provider is registered only when an explicit OTLP endpoint enables at least one supported signal.
+2. Parse argv and select daemon or one-shot CLI mode.
+3. Validate deployment settings and the State-dir/workspace relationship.
+4. Construct the Workspace and Office registry.
+5. Complete crash-resumable legacy office migration before accepting events.
+6. Configure sandbox, vault, portal, and platform facilities.
+7. Construct the Conversation runtime with capability factories.
+8. Start platform bots, web services, the event watcher, and the Dream scheduler.
+9. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work plus the active Dream sweep up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
+10. Force-flush and shut down the OpenTelemetry providers, then close Sentry issue reporting, whether graceful application shutdown succeeds or fails. Attempt every configured backend and exit non-zero on any failure or timeout. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
 

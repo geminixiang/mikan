@@ -146,6 +146,16 @@ OpenConnector は起動時の deployment-owned な完全な `OPENCONNECTOR_ENDPO
 
 `mikan office` は `--state-dir <dir>` と `--workspace <dir>` を受け付けます。workspace の既定値は `<state-dir>/workspace` です。`claim` は判断を記録するだけで、実際の移動は daemon が次回起動時に行うため、daemon を停止した状態で実行してください。
 
+## Observability：OTLP、Sentry、Phoenix
+
+mikan は単一の OpenTelemetry traces/metrics pipeline を所有し、標準 OTLP HTTP/protobuf で export します。明示的な OTLP endpoint があり、`OTEL_SDK_DISABLED` が `true` でない場合のみ有効です。ゼロ設定では no-op のままです。Collector には `OTEL_EXPORTER_OTLP_ENDPOINT`、signal ごとには `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` と `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` を使います。base endpoint には `/v1/traces` と `/v1/metrics` が追加され、per-signal endpoint には完全な path が必要です。認証は URL ではなく対応する `*_HEADERS` に置いてください。
+
+ローカルの [Arize Phoenix](https://github.com/Arize-ai/phoenix) には `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:6006/v1/traces` を設定します。Phoenix は traces を受信しますが OTLP metrics ingestion は提供しません。metrics は Collector または別 backend に送ってください。mikan は同じ spans に content-free な標準 GenAI attributes と最小 OpenInference projection を付け、provider、model、token counts、duration、status、session attribution、tool name を duplicate spans なしで保持します。
+
+`SENTRY_DSN`（または互換の `sentry.dsn`）は Sentry issue reporting を有効にし、error を active OpenTelemetry trace に link します。Sentry が第2の application trace/metric pipeline を作ることはありません。同じ traces を Phoenix と Sentry の両方へ送る場合は OpenTelemetry Collector で fan-out してください。Sentry direct OTLP は現在 traces/logs をサポートしますが OTLP metrics はサポートしません。
+
+サポート protocol は `http/protobuf` のみです。`OTEL_TRACES_EXPORTER=none` と `OTEL_METRICS_EXPORTER=none` で signal ごとに無効化できます。prompts、completions、message text、tool arguments/results、file contents、credentials、tokens、absolute paths は送信しません。resource attributes は allowlist されるため、`OTEL_RESOURCE_ATTRIBUTES` に secrets や paths を入れないでください。shutdown は conversation work を drain した後に OTLP を flush/shutdown し、最後に Sentry を close します。
+
 ## 環境変数のエイリアス
 
 mikan の設定 helper で読み込む環境変数は、`MIKAN_` prefix も受け付けます。たとえば `MIKAN_SLACK_APP_TOKEN` と `MIKAN_LINK_URL` は `SLACK_APP_TOKEN` と `LINK_URL` の fallback で、prefix なしの値が優先されます。`SENTRY_DSN` は例外です。直接設定するか、`settings.json` の `sentry.dsn` を設定してください。

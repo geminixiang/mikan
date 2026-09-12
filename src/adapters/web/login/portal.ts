@@ -14,7 +14,7 @@ import {
   type OAuthService,
 } from "./oauth.js";
 import * as log from "../../../log.js";
-import { reportUserFacingError } from "../../../observability/sentry.js";
+import { reportUserFacingError } from "../../../observability/index.js";
 import { PRODUCT_NAME } from "../../../platform-messages.js";
 import { defaultVaultTargetPath, type VaultManager } from "../../../vault/index.js";
 

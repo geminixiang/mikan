@@ -68,7 +68,7 @@ import {
   planSlackEventAnchorRun,
   resolveSlackSessionKey,
 } from "./session.js";
-import { reportUserFacingError } from "../../observability/sentry.js";
+import { reportUserFacingError } from "../../observability/index.js";
 import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
 import { StreamStartLimiter } from "./stream-limits.js";

@@ -19,6 +19,11 @@ export function readEnv(name: string): string | undefined {
   return prefixed || undefined;
 }
 
+/** Read a standards-owned environment variable without mikan aliasing. */
+export function readStandardEnv(name: string): string | undefined {
+  return process.env[name]?.trim() || undefined;
+}
+
 export function setEnvAliases(name: string, value: string): void {
   process.env[name] = value;
   process.env[`MIKAN_${name}`] = value;
@@ -149,13 +154,36 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     title: "Observability",
     kind: "feature",
     vars: [
-      { name: "SENTRY_DSN", doc: "Sentry DSN (settings.json sentry.dsn wins over this)" },
+      { name: "SENTRY_DSN", secret: true, doc: "Sentry DSN (settings.json sentry.dsn wins)" },
       {
         name: "SENTRY_ENVIRONMENT",
         deploy: false,
         doc: "Sentry environment tag (default production)",
       },
-      { name: "SENTRY_ENABLED", deploy: false, doc: "Set to false to disable Sentry" },
+      { name: "SENTRY_ENABLED", deploy: false, doc: "Set to false to disable Sentry errors" },
+      { name: "OTEL_SDK_DISABLED", doc: "Set to true to disable OpenTelemetry" },
+      { name: "OTEL_SERVICE_NAME", doc: "OTLP service name (default mikan)" },
+      {
+        name: "OTEL_RESOURCE_ATTRIBUTES",
+        secret: true,
+        doc: "Comma-separated safe resource attrs",
+      },
+      { name: "OTEL_TRACES_EXPORTER", doc: "Trace exporter: otlp or none" },
+      { name: "OTEL_METRICS_EXPORTER", doc: "Metrics exporter: otlp or none" },
+      { name: "OTEL_EXPORTER_OTLP_ENDPOINT", secret: true, doc: "Base OTLP HTTP endpoint" },
+      { name: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", secret: true, doc: "OTLP traces endpoint" },
+      { name: "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", secret: true, doc: "OTLP metrics endpoint" },
+      { name: "OTEL_EXPORTER_OTLP_HEADERS", secret: true, doc: "Shared OTLP auth headers" },
+      { name: "OTEL_EXPORTER_OTLP_TRACES_HEADERS", secret: true, doc: "OTLP trace headers" },
+      { name: "OTEL_EXPORTER_OTLP_METRICS_HEADERS", secret: true, doc: "OTLP metric headers" },
+      { name: "OTEL_EXPORTER_OTLP_PROTOCOL", doc: "OTLP protocol; http/protobuf supported" },
+      { name: "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", doc: "Trace protocol override" },
+      { name: "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", doc: "Metric protocol override" },
+      { name: "OTEL_EXPORTER_OTLP_TIMEOUT", doc: "Shared OTLP timeout in milliseconds" },
+      { name: "OTEL_EXPORTER_OTLP_TRACES_TIMEOUT", doc: "Trace timeout in milliseconds" },
+      { name: "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT", doc: "Metric timeout in milliseconds" },
+      { name: "OTEL_METRIC_EXPORT_INTERVAL", doc: "Metric export interval in milliseconds" },
+      { name: "OTEL_METRIC_EXPORT_TIMEOUT", doc: "Metric export timeout in milliseconds" },
     ],
   },
   {

@@ -24,7 +24,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
 - `events/`: Scheduled-event wire protocol, host store, and watcher lifecycle.
 - `harness/`: Agent execution — `createRunner`, prompt and presentation, actor/executor resolution, native Pi session integration, generic agent tools, models, MCP capabilities, skills, and bounded subagents.
-- `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
+- `observability/`: Vendor-neutral tracing, metrics, error reporting, privacy filtering, OTLP/HTTP protobuf export, optional Sentry issue integration, and startup/shutdown instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, workspace projection policy, the durable office registry journal, and the boot-time legacy migration.
 - `runtime/`: Conversation and session runtime orchestration.
 - `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors, including managed Docker container provisioning and lifecycle.

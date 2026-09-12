@@ -11,6 +11,7 @@ any release.
 
 ### Changed
 
+- Replace application-level Sentry telemetry coupling with a vendor-neutral observability facade and one manually instrumented OpenTelemetry pipeline. Standard OTLP over HTTP/protobuf now exports explicitly configured traces and metrics, including content-free GenAI/OpenInference attribution for Arize Phoenix; Sentry remains available for sanitized issues and legacy metric fallback without duplicating OTLP spans. Zero configuration stays network-free, and graceful shutdown flushes OpenTelemetry before closing Sentry.
 - Upgrade `pi-agent-core` and `pi-ai` to 0.85.1 (pi-ai: GPT-6 Astra catalog entries, 30-minute prompt-cache TTL for GPT-5.6+ Responses models). `MikanSkill` now extends Pi's native `Skill` type.
 - Harness: `MikanAgentSession` delegates the run loop, retries, compaction, persistence, and cancellation to Pi's native `AgentHarness`; mikan keeps budgets, delegated-spend accounting, and platform event translation. `setSystemPrompt()` replaces the removed `session.agent.state.systemPrompt`, and `resume()` recovers an open operation through Pi's lane.
 

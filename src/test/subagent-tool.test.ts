@@ -8,9 +8,9 @@ import type {
 } from "../harness/types.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
-import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/sentry.js";
+import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/index.js";
 
-vi.mock("../observability/sentry.js", () => ({
+vi.mock("../observability/index.js", () => ({
   recordSubagentOutcome: vi.fn(),
   reportSubagentLaunchError: vi.fn(),
 }));

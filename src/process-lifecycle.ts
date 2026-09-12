@@ -1,6 +1,6 @@
 interface ProcessShutdownOptions {
   stop: () => Promise<void>;
-  flush: () => Promise<boolean>;
+  shutdownObservability: () => Promise<boolean>;
   captureError: (error: Error) => void;
   warn: (message: string, details?: string) => void;
   exit: (code: number) => void;
@@ -63,13 +63,13 @@ export function createProcessShutdownHandler(
       }
 
       try {
-        if (!(await options.flush())) {
+        if (!(await options.shutdownObservability())) {
           exitCode = 1;
-          options.warn("Sentry flush timed out during shutdown");
+          options.warn("Observability shutdown timed out");
         }
       } catch (error) {
         exitCode = 1;
-        options.warn("Sentry flush failed during shutdown", asError(error).message);
+        options.warn("Observability shutdown failed", asError(error).message);
       }
 
       if (!forced) options.exit(exitCode);

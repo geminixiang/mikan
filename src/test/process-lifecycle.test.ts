@@ -10,11 +10,14 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 function createOptions(
-  overrides: { stop?: () => Promise<void>; flush?: () => Promise<boolean> } = {},
+  overrides: {
+    stop?: () => Promise<void>;
+    shutdownObservability?: () => Promise<boolean>;
+  } = {},
 ) {
   return {
     stop: overrides.stop ?? vi.fn().mockResolvedValue(undefined),
-    flush: overrides.flush ?? vi.fn().mockResolvedValue(true),
+    shutdownObservability: overrides.shutdownObservability ?? vi.fn().mockResolvedValue(true),
     captureError: vi.fn(),
     warn: vi.fn(),
     exit: vi.fn(),
@@ -63,7 +66,7 @@ describe("createProcessShutdownHandler", () => {
     await shutdown("SIGTERM");
 
     expect(options.stop).toHaveBeenCalledOnce();
-    expect(options.flush).toHaveBeenCalledOnce();
+    expect(options.shutdownObservability).toHaveBeenCalledOnce();
     expect(options.captureError).not.toHaveBeenCalled();
     expect(options.exit).toHaveBeenCalledWith(0);
   });
@@ -76,7 +79,7 @@ describe("createProcessShutdownHandler", () => {
     await shutdown("SIGINT");
 
     expect(options.captureError).toHaveBeenCalledWith(failure);
-    expect(options.flush).toHaveBeenCalledOnce();
+    expect(options.shutdownObservability).toHaveBeenCalledOnce();
     expect(options.warn).toHaveBeenCalledWith("Graceful shutdown failed", failure.message);
     expect(options.exit).toHaveBeenCalledWith(1);
   });
@@ -103,23 +106,27 @@ describe("createProcessShutdownHandler", () => {
     );
   });
 
-  test("exits non-zero when diagnostic flushing times out", async () => {
-    const options = createOptions({ flush: vi.fn().mockResolvedValue(false) });
+  test("exits non-zero when observability shutdown times out", async () => {
+    const options = createOptions({
+      shutdownObservability: vi.fn().mockResolvedValue(false),
+    });
     const shutdown = createProcessShutdownHandler(options);
 
     await shutdown("SIGTERM");
 
-    expect(options.warn).toHaveBeenCalledWith("Sentry flush timed out during shutdown");
+    expect(options.warn).toHaveBeenCalledWith("Observability shutdown timed out");
     expect(options.exit).toHaveBeenCalledWith(1);
   });
 
-  test("exits non-zero when diagnostic flushing fails", async () => {
-    const options = createOptions({ flush: vi.fn().mockRejectedValue(new Error("offline")) });
+  test("exits non-zero when observability shutdown fails", async () => {
+    const options = createOptions({
+      shutdownObservability: vi.fn().mockRejectedValue(new Error("offline")),
+    });
     const shutdown = createProcessShutdownHandler(options);
 
     await shutdown("SIGTERM");
 
-    expect(options.warn).toHaveBeenCalledWith("Sentry flush failed during shutdown", "offline");
+    expect(options.warn).toHaveBeenCalledWith("Observability shutdown failed", "offline");
     expect(options.exit).toHaveBeenCalledWith(1);
   });
 
@@ -138,7 +145,7 @@ describe("createProcessShutdownHandler", () => {
 
     gate.resolve();
     await first;
-    expect(options.flush).toHaveBeenCalledOnce();
+    expect(options.shutdownObservability).toHaveBeenCalledOnce();
     expect(options.exit).toHaveBeenCalledTimes(1);
   });
 });

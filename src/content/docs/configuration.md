@@ -151,6 +151,16 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 
 `mikan office` accepts `--state-dir <dir>` and `--workspace <dir>`; the workspace defaults to `<state-dir>/workspace`. `claim` only records the decision — the daemon performs the move on its next start, so run it with the daemon stopped.
 
+## Observability: OTLP, Sentry, and Phoenix
+
+mikan owns one OpenTelemetry trace and metric pipeline and exports it with standard OTLP over HTTP/protobuf. The pipeline is enabled only when an explicit OTLP endpoint is configured and `OTEL_SDK_DISABLED` is not `true`; zero configuration remains a no-op. Use `OTEL_EXPORTER_OTLP_ENDPOINT` for a Collector, or the per-signal `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` and `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`. A base endpoint receives `/v1/traces` and `/v1/metrics`; per-signal endpoints must include their complete path. Authentication belongs in the corresponding `*_HEADERS` variable, never in an endpoint URL.
+
+For local [Arize Phoenix](https://github.com/Arize-ai/phoenix), set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:6006/v1/traces`. Phoenix ingests traces, not the OTLP metrics service; send metrics to a Collector or another metrics backend. mikan emits content-free standard GenAI attributes plus a minimal OpenInference projection on the same spans, so Phoenix can show provider, model, token counts, durations, status, session attribution, and tool names without duplicate spans.
+
+`SENTRY_DSN` (or the compatible `sentry.dsn` setting) enables Sentry issue reporting and links errors to the active OpenTelemetry trace. Sentry does not create a second application trace or metric pipeline. To send the same OTLP traces to Phoenix and Sentry, configure an OpenTelemetry Collector to fan out one stream; Sentry's direct OTLP ingestion currently supports traces/logs, not OTLP metrics.
+
+Only `http/protobuf` is supported. `OTEL_TRACES_EXPORTER=none` and `OTEL_METRICS_EXPORTER=none` disable individual signals. mikan never emits prompts, completions, message text, tool arguments/results, file contents, credentials, tokens, or absolute paths. Resource attributes are allowlisted; do not place secrets or paths in `OTEL_RESOURCE_ATTRIBUTES`. Shutdown first drains conversation work, then flushes/shuts down OTLP, then closes Sentry.
+
 ## Environment variable aliases
 
 Environment variables read through mikan's configuration helper also accept a `MIKAN_` prefix. For example, `MIKAN_SLACK_APP_TOKEN` and `MIKAN_LINK_URL` are fallbacks for `SLACK_APP_TOKEN` and `LINK_URL`; the unprefixed value takes precedence. `SENTRY_DSN` is the exception: configure it directly or set `sentry.dsn` in `settings.json`.

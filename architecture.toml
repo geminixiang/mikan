@@ -15,6 +15,13 @@ docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
 sources = ["src/main.ts", "src/process-lifecycle.ts", "src/cli/boot.ts"]
 
 [[modules]]
+id = "observability"
+name = "Process observability"
+kind = "infrastructure"
+docs = "src/observability/README.md"
+sources = ["src/observability/"]
+
+[[modules]]
 id = "platform-adapters"
 name = "Platform adapters"
 kind = "adapter"
@@ -107,6 +114,22 @@ sources = ["src/events/"]
 
 # A seam is a stable relationship callers depend on. Interface names refer to
 # source-level contracts or authority entry points; details stay in docs/code.
+
+[[seams]]
+id = "telemetry"
+owner = "observability"
+consumers = [
+  "composition-root",
+  "platform-adapters",
+  "conversation-runtime",
+  "harness",
+  "sandbox",
+  "vault",
+  "events",
+  "web-adapter",
+]
+interface = "vendor-neutral errors, spans, metrics, events, attribution, and shutdown"
+docs = "src/observability/README.md"
 
 [[seams]]
 id = "platform-messaging"
@@ -333,6 +356,7 @@ docs = "ARCHITECTURE.md#scheduled-execution"
 id = "boot"
 path = [
   "composition-root",
+  "observability",
   "office",
   "configuration",
   "conversation-runtime",

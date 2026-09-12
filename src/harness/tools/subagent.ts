@@ -9,7 +9,7 @@ import type {
   SubagentProgressSnapshot,
   SubagentProgressStatus,
 } from "../../types.js";
-import { recordSubagentOutcome, reportSubagentLaunchError } from "../../observability/sentry.js";
+import { recordSubagentOutcome, reportSubagentLaunchError } from "../../observability/index.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;

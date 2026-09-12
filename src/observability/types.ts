@@ -7,7 +7,7 @@ type SentrySpanAttributeValue =
   | Array<null | undefined | number>
   | Array<null | undefined | boolean>;
 
-export interface SentryRunScopeContext {
+export interface RunScopeContext {
   conversationId: string;
   sessionKey: string;
   messageId: string;
@@ -19,7 +19,13 @@ export interface SentryRunScopeContext {
   model?: string;
 }
 
-export type SentryAttributionAttributes = Record<string, SentryPrimitive>;
+export type ObservabilityAttributes = Record<string, SentryPrimitive>;
+
+/** @internal Sentry adapter alias; application code uses ObservabilityAttributes. */
+export type SentryAttributionAttributes = ObservabilityAttributes;
+
+/** @internal Sentry adapter alias; application code uses RunScopeContext. */
+export type SentryRunScopeContext = RunScopeContext;
 
 export interface SentrySpanPayload {
   trace_id: string;

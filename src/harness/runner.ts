@@ -38,7 +38,7 @@ import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../type
 import { createHash } from "node:crypto";
 import { resolveConversationSettings } from "../config.js";
 import { provisionOfficeOpenConnectorToken } from "./open-connector.js";
-import { addLifecycleBreadcrumb, updateActiveSpanAttribution } from "../observability/sentry.js";
+import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import {
@@ -502,7 +502,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     channel_id: prepared.sessionConversation,
     session_id: sessionUuid,
   });
-  addLifecycleBreadcrumb("agent.prompt.sent", {
+  addLifecycleEvent("agent.prompt.sent", {
     provider: model.provider,
     model: agentConfig.model,
     channel_id: prepared.sessionConversation,

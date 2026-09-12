@@ -17,12 +17,14 @@ import type { CommandHandler, CommandServices } from "../adapters/commands/types
 import { isPrivateConversation } from "../adapters/commands/utils.js";
 import * as log from "../log.js";
 import {
-  addLifecycleBreadcrumb,
-  applyRunScope,
+  addLifecycleEvent,
   createRunAttributionAttributes,
-  registerTraceAttribution,
+  recordCounter,
+  recordDistribution,
+  recordGauge,
   reportUserFacingError,
-} from "../observability/sentry.js";
+  withRunSpan,
+} from "../observability/index.js";
 import {
   ChatHistorySync,
   hasMaterializedChatSession,
@@ -44,7 +46,6 @@ import {
   formatStopped,
   formatStopping,
 } from "../platform-messages.js";
-import * as Sentry from "@sentry/node";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
@@ -104,9 +105,7 @@ async function postAbortNotice(
   platformName: string,
 ): Promise<void> {
   if (state.shutdownAborted) {
-    Sentry.metrics.count("agent.run.shutdown_aborted", 1, {
-      attributes: { platform: platformName },
-    });
+    recordCounter("agent.run.shutdown_aborted", 1, { platform: platformName });
     await bot.postMessage(conversationId, formatRestarting(bot));
     return;
   }
@@ -326,7 +325,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         this.executeRun(options, sessionKey, state),
       );
       lease.release();
-      Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount());
+      recordGauge("agent.sessions.active", this.sessions.settlementCount());
       await runPromise;
     } finally {
       releaseConversationWork();
@@ -418,7 +417,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
       }
     } finally {
-      Sentry.metrics.gauge("agent.sessions.active", this.sessions.settlementCount() - 1);
+      recordGauge("agent.sessions.active", this.sessions.settlementCount() - 1);
     }
   }
 
@@ -483,81 +482,67 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       threadTs: message.threadTs,
     });
 
-    Sentry.metrics.count("agent.run.started", 1, {
-      attributes: attribution,
-    });
+    recordCounter("agent.run.started", 1, attribution);
 
-    return Sentry.startSpan(
-      { name: "agent.run", op: "agent", attributes: attribution },
-      async (span) =>
-        Sentry.withScope(async (scope) => {
-          registerTraceAttribution(span, attribution);
-          applyRunScope(scope, {
-            conversationId,
-            sessionKey,
-            messageId: message.id,
-            platform: platform.name,
-            userId: message.userId,
-            userName: message.userName,
-            threadTs: message.threadTs,
+    return withRunSpan(
+      {
+        conversationId,
+        sessionKey,
+        messageId: message.id,
+        platform: platform.name,
+        userId: message.userId,
+        userName: message.userName,
+        threadTs: message.threadTs,
+      },
+      async () => {
+        addLifecycleEvent("agent.run.started", {
+          channel_id: conversationId,
+          platform: platform.name,
+          has_attachments: (message.attachments?.length ?? 0) > 0,
+        });
+
+        try {
+          const result = await body();
+          const durationMs = Date.now() - startedAt;
+          const completionAttrs = {
+            ...attribution,
+            stop_reason: result.stopReason,
+          };
+          recordDistribution("agent.run.duration", durationMs, {
+            unit: "millisecond",
+            attributes: completionAttrs,
           });
-          addLifecycleBreadcrumb("agent.run.started", {
+          recordCounter("agent.run.completed", 1, completionAttrs);
+          addLifecycleEvent("agent.run.completed", {
             channel_id: conversationId,
             platform: platform.name,
-            has_attachments: (message.attachments?.length ?? 0) > 0,
+            stop_reason: result.stopReason,
+            duration_ms: durationMs,
           });
-
-          try {
-            const result = await body();
-            const durationMs = Date.now() - startedAt;
-            const completionAttrs = {
-              ...attribution,
-              stop_reason: result.stopReason,
-            };
-            Sentry.metrics.distribution("agent.run.duration", durationMs, {
-              unit: "millisecond",
-              attributes: completionAttrs,
-            });
-            Sentry.metrics.count("agent.run.completed", 1, { attributes: completionAttrs });
-            addLifecycleBreadcrumb("agent.run.completed", {
-              channel_id: conversationId,
-              platform: platform.name,
-              stop_reason: result.stopReason,
-              duration_ms: durationMs,
-            });
-            return result;
-          } catch (err) {
-            scope.setContext("agent_run_error", {
+          return result;
+        } catch (err) {
+          reportUserFacingError(err, {
+            domain: "mikan",
+            surface: "agent_run",
+            operation: "run",
+            severity: "error",
+            platform: platform.name,
+            context: {
               conversationId,
               sessionKey,
-              platform: platform.name,
               messageId: message.id,
               threadTs: message.threadTs,
-            });
-            reportUserFacingError(err, {
-              domain: "mikan",
-              surface: "agent_run",
-              operation: "run",
-              severity: "error",
-              platform: platform.name,
-              context: {
-                conversationId,
-                sessionKey,
-                messageId: message.id,
-                threadTs: message.threadTs,
-                attachmentCount: message.attachments?.length ?? 0,
-              },
-            });
-            Sentry.metrics.count("agent.run.errors", 1, {
-              attributes: attribution,
-            });
-            log.logWarning(
-              `[${conversationId}] Run error`,
-              err instanceof Error ? err.message : String(err),
-            );
-            return undefined;
-          }
-        }),
+              attachmentCount: message.attachments?.length ?? 0,
+            },
+          });
+          recordCounter("agent.run.errors", 1, attribution);
+          log.logWarning(
+            `[${conversationId}] Run error`,
+            err instanceof Error ? err.message : String(err),
+          );
+          return undefined;
+        }
+      },
     );
   }
 

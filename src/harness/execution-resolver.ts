@@ -8,7 +8,7 @@ import {
   getSandboxCredentialCapabilities,
   type SandboxConfig,
 } from "../sandbox/index.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import { reportUserFacingError } from "../observability/index.js";
 import { normalizeSharedVaultName, type VaultManager } from "../vault/index.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
 import {

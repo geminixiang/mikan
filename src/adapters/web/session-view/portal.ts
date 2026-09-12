@@ -39,7 +39,7 @@ import {
   readJsonBody,
   renderPortalShell,
 } from "../portal-shell.js";
-import { reportUserFacingError } from "../../../observability/sentry.js";
+import { reportUserFacingError } from "../../../observability/index.js";
 import { inferConversationKind } from "../../../sessions/session-key.js";
 import { isThreadSessionKey, threadSuffixOf } from "../../../sessions/session-key.js";
 

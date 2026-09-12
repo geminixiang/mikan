@@ -146,6 +146,16 @@ OpenConnector 只通过启动时的 deployment-owned 完整 `OPENCONNECTOR_ENDPO
 
 `mikan office` 接受 `--state-dir <dir>` 和 `--workspace <dir>`；工作区默认为 `<state-dir>/workspace`。`claim` 只记录该决定——实际移动由 daemon 在下次启动时执行，因此请在 daemon 停止的状态下运行它。
 
+## Observability：OTLP、Sentry 与 Phoenix
+
+mikan 只维护一条 OpenTelemetry traces/metrics pipeline，并通过标准 OTLP HTTP/protobuf 导出。只有明确配置 OTLP endpoint 且 `OTEL_SDK_DISABLED` 不是 `true` 时才启用；零配置保持 no-op。Collector 可使用 `OTEL_EXPORTER_OTLP_ENDPOINT`，也可分别设置 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 和 `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`。base endpoint 会附加 `/v1/traces`、`/v1/metrics`，per-signal endpoint 必须包含完整路径。认证信息应放在对应的 `*_HEADERS`，不要写入 URL。
+
+本地 [Arize Phoenix](https://github.com/Arize-ai/phoenix) 可设置 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:6006/v1/traces`。Phoenix 接收 traces，不提供 OTLP metrics ingestion；metrics 请发送到 Collector 或其他 backend。mikan 在同一组 spans 上输出不含内容的标准 GenAI attributes 和最小 OpenInference projection，保留 provider、model、token counts、duration、status、session attribution和 tool name，不生成重复 spans。
+
+`SENTRY_DSN`（或兼容的 `sentry.dsn`）启用 Sentry issue reporting，并把错误链接到当前 OpenTelemetry trace；Sentry 不会创建第二条 application trace/metric pipeline。如需把同一份 traces 同时发送到 Phoenix 和 Sentry，请使用 OpenTelemetry Collector fan-out。Sentry direct OTLP 当前支持 traces/logs，不支持 OTLP metrics。
+
+仅支持 `http/protobuf`；`OTEL_TRACES_EXPORTER=none`、`OTEL_METRICS_EXPORTER=none` 可分别关闭 signal。mikan 不会输出 prompts、completions、消息文本、tool arguments/results、文件内容、credentials、tokens 或绝对路径。resource attributes 采用 allowlist，请勿在 `OTEL_RESOURCE_ATTRIBUTES` 中放入 secrets 或 paths。shutdown 会先 drain conversation work，再 flush/shutdown OTLP，最后 close Sentry。
+
 ## 环境变量别名
 
 通过 mikan 配置辅助程序读取的环境变量也接受 `MIKAN_` 前缀。例如，`MIKAN_SLACK_APP_TOKEN` 和 `MIKAN_LINK_URL` 是 `SLACK_APP_TOKEN` 和 `LINK_URL` 的后备值；无前缀值优先。`SENTRY_DSN` 是例外：请直接配置它，或在 `settings.json` 中设置 `sentry.dsn`。

@@ -13,7 +13,7 @@ import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import { reportUserFacingError } from "../observability/index.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
 import type { PlatformTrustModel } from "../types.js";
 

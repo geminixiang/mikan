@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
 import * as log from "../log.js";
-import { reportUserFacingError } from "../observability/sentry.js";
+import { reportUserFacingError } from "../observability/index.js";
 
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
