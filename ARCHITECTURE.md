@@ -90,7 +90,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Orchestration           | Composition root, Conversation runtime, Agent runner         | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                                                                |
 | Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
 | Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
-| Execution and authority | Execution resolver, Sandbox, Vault, Packages, MCP            | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md), [`src/mcp/README.md`](src/mcp/README.md)                                 |
+| Execution and authority | Execution resolver, Sandbox, Vault, Packages                 | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                                                                           |
 | Control surfaces        | Commands, Web and scheduled-event services                   | [`src/commands/README.md`](src/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                                                 |
 
 ## Main flows
@@ -124,7 +124,7 @@ Every platform feeds the same intake and runtime model:
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
 7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips OpenConnector provisioning, while `membership` preserves the configured map and replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
-8. If runner construction fails after acquiring MCP connections or the session writer, the runner disposes those resources in reverse acquisition order before rejecting; the original construction failure remains primary and the same session can be reconstructed immediately.
+8. The harness session store owns MCP connections alongside the session writer. If runner construction fails, the runner closes that owner; it disposes MCP connections before releasing the writer, preserves the original construction failure, and allows the same session to be reconstructed immediately.
 9. For each run, the runner resolves one execution decision containing the Workspace projection, packages, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
 10. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
 11. The runner streams and finalizes the response through platform capabilities.
@@ -316,7 +316,7 @@ Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/web/s
 
 **`runner-materialization-rollback`** — Runner construction either returns a fully owned runner or settles rollback before rejecting. Shutdown propagates an abort signal through Conversation runtime, OpenConnector provisioning, and MCP connection/tool discovery. Once acquired, MCP connections are disposed before the session writer is closed; cleanup failures are reported without replacing the original construction error, and the same office/session identity can be reconstructed immediately. Session lifecycle awaits cooperative rollback, but reports a non-zero shutdown failure after a fixed five-second materialization grace instead of waiting forever for non-cancellable repository I/O.
 
-Evidence: `src/agent/runner.ts`, `src/mcp/loader.ts`, `src/harness/session-store.ts`.
+Evidence: `src/agent/runner.ts`, `src/harness/mcp.ts`, `src/harness/session-store.ts`.
 
 ### INV run settlement
 
@@ -372,7 +372,7 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 **`mcp-conversation-authority`** — A provisioned OpenConnector runtime token is scoped to one Slack Conversation office and named from the stable Slack workspace and channel IDs. Shared provider OAuth credentials remain in OpenConnector. The startup-owned `OPENCONNECTOR_ENDPOINT` defines the reserved server and the only origin that may receive the host-only admin token; global and conversation MCP settings cannot replace, disable, or select its destination. The conversation runtime token stays in the host-only office State-dir and is never projected into a managed Sandbox or the Vault. Failure to provision removes only OpenConnector from that runner. The fixed platform trust gate runs before provisioning and loading: `open-trigger` unconditionally gives the runner an empty MCP map, so configured servers are not launched and MCP tools/instructions cannot enter parent or subagent tool sets. Trust is static for an `OfficeAddress`, is not a runner cache key, and changing it requires runner replacement rather than another cache entry.
 
-Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/runner.ts`, `src/mcp/open-connector.ts`, `src/adapters/slack/bot.ts`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/runner.ts`, `src/harness/open-connector.ts`, `src/adapters/slack/bot.ts`.
 
 ### INV settings runner coherence
 

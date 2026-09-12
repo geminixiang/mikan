@@ -38,6 +38,23 @@ describe("loadGlobalSettings", () => {
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
+  test("ignores retired auto-reply configuration without rewriting existing files", () => {
+    const path = join(stateDir, "settings.json");
+    const content = JSON.stringify({
+      llm: {
+        provider: "anthropic",
+        model: "main",
+        thinkingLevel: "off",
+        autoReply: { provider: "retired", model: "judge" },
+      },
+      autoReply: { enabled: true, rules: ["reply to everything"] },
+    });
+    writeFileSync(path, content);
+    expect(loadGlobalSettings()).toMatchObject({ provider: "anthropic", model: "main" });
+    expect(loadGlobalSettings()).not.toHaveProperty("autoReply");
+    expect(readFileSync(path, "utf8")).toBe(content);
+  });
+
   test("throws when global settings.json is missing", () => {
     expect(() => loadGlobalSettings()).toThrow(/Missing global settings file/);
   });
@@ -383,7 +400,6 @@ describe("updateGlobalSettings", () => {
         provider: "google",
         model: "gemini-2.0-flash",
         thinkingLevel: "off",
-        autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
       sandbox: {
         cpus: "0.5",
@@ -406,7 +422,6 @@ describe("updateGlobalSettings", () => {
         provider: "openai",
         model: "gpt-4o-mini",
         thinkingLevel: "off",
-        autoReply: { provider: "anthropic", model: "claude-haiku-4-5" },
       },
       sandbox: {
         cpus: "0.5",

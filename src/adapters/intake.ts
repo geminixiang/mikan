@@ -4,7 +4,6 @@ import {
 } from "../sessions/session-key.js";
 import type { ConversationEvent } from "../adapter.js";
 import { formatAlreadyWorking, formatNothingRunning } from "../platform-messages.js";
-import { evaluateAutoReplyPolicy } from "../trigger.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
 import type { MessageIntakeOptions, MessageIntakeOutcome } from "./types.js";
 
@@ -26,7 +25,7 @@ export function matchMagicWord(text: string): "stop" | null {
  *   magic word → trigger policy → attachments → log → busy policy → queue → dispatch
  *
  * Magic words are matched before the trigger gate — `stop` must never wait on
- * an auto-reply judgment or queue behind a running agent turn. Adapters state
+ * trigger filtering or queue behind a running agent turn. Adapters state
  * platform policy as data (`magicWord`, `busyPolicy`) instead of callbacks.
  */
 export async function processMessageIntake<TEvent extends ConversationEvent>(
@@ -45,11 +44,7 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
     return "magic-word";
   }
 
-  const triggerResult = options.isAutoReplyCandidate
-    ? await evaluateAutoReplyPolicy({ event: options.eventBase, office: options.office })
-    : ({ trigger: true, reason: "addressed" } as const);
-
-  if (!triggerResult.trigger) {
+  if (!options.addressed) {
     options.log?.({ ...options.logEntryBase, attachments: [] });
     return "not-triggered";
   }

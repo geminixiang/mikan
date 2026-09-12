@@ -26,7 +26,7 @@ Adapter は次を処理します：
 - slash commands：`login`、`session`、`new`、`stop`、`model`、`sandbox`
 - message attachments
 
-DM は直接起動します。Guild messages には通常、mention、mikan が処理する reply/thread context、または一致する auto-reply policy が必要です。Stop commands は通常の trigger gate より先に確認されます。
+DM は直接起動します。Guild messages には通常、mention または mikan が処理する reply/thread context が必要です。Stop commands は通常の trigger gate より先に確認されます。
 
 ## Slash command の登録
 

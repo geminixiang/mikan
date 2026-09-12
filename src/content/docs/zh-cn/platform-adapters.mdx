@@ -24,7 +24,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 <Steps>
 
 1. 接收平台事件，例如消息、mention、slash command 或 reply。
-2. 判断消息是否应该触发 mikan：DM、mention、thread reply、auto-reply policy。
+2. 判断消息是否应该触发 mikan：DM、mention、thread reply。
 3. 转为通用的 `ConversationEvent` 与 `ConversationMessage`。
 4. 计算 `sessionKey`，让不同 channel、thread、reply 可以对应到正确 session。
 5. 把附件下载到该对话办公室的 `attachments/` 目录。
@@ -58,7 +58,7 @@ sequenceDiagram
   P->>A: 原生消息 / slash command / reply
   A->>A: 解析 conversation、user、thread、attachments
   A->>I: ConversationEvent base + trigger/log/attachment hooks
-  I->>I: auto-reply / trigger 判断
+  I->>I: 明确触发判断
   I->>A: 需要时下载附件
   I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile

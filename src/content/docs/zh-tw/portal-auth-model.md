@@ -7,11 +7,11 @@ description: mikan admin、login 與 session portal 使用的短期 capability t
 
 ## 三種 portal link
 
-| 介面                 | 使用者如何取得                                                 | 可以做什麼                                                                                                | Token 有效期 | Token 是否一次性 |
-| -------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------ | ---------------- |
-| Admin portal         | `/admin` / `/pi-admin`                                         | 管理 conversations、模型、sandbox、auto-reply、workspace previews、events。也能產生 session/login links。 | 30 分鐘      | 否               |
-| Login / vault portal | `/login` / `/pi-login`，或由 admin portal 產生                 | 儲存 API keys，或完成內建 OAuth flow，將 credentials 寫入 vault。                                         | 15 分鐘      | 寫入時是         |
-| Session view         | `session` / `/session` / `/pi-session`，或由 admin portal 產生 | 檢視 session timeline；互動模式可用時，也能從網頁送訊息回該 session。                                     | 24 小時      | 否               |
+| 介面                 | 使用者如何取得                                                 | 可以做什麼                                                                                    | Token 有效期 | Token 是否一次性 |
+| -------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------ | ---------------- |
+| Admin portal         | `/admin` / `/pi-admin`                                         | 管理 conversations、模型、sandbox、workspace previews、events。也能產生 session/login links。 | 30 分鐘      | 否               |
+| Login / vault portal | `/login` / `/pi-login`，或由 admin portal 產生                 | 儲存 API keys，或完成內建 OAuth flow，將 credentials 寫入 vault。                             | 15 分鐘      | 寫入時是         |
+| Session view         | `session` / `/session` / `/pi-session`，或由 admin portal 產生 | 檢視 session timeline；互動模式可用時，也能從網頁送訊息回該 session。                         | 24 小時      | 否               |
 
 簡化來看：
 
@@ -33,7 +33,7 @@ Admin portal 可以：
 
 - 查看目前使用者與 conversation identity。
 - 從 office registry（持久的 raw id ↔ office 對照）列出 conversations，而不是掃描 workspace。
-- 讀取與更新 conversation model、thinking level、workspace door policy 與 layout、auto-reply 與 Slack reply mode。
+- 讀取與更新 conversation model、thinking level、workspace door policy 與 layout 與 Slack reply mode。
 - 讀取與更新 global model、sandbox 資源預設值、全域 door policy 與 Slack defaults。
 - 檢視有限範圍的 workspace files、skills、events metadata/files，並可在任一層級建立或編輯 skills。
 - 列出並變更某個 scope 的 package sources。

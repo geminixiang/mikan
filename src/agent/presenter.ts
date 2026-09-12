@@ -5,7 +5,7 @@ import {
   parseSubagentProgressSnapshot,
   renderSubagentDashboard,
   settleSubagentProgress,
-} from "../subagent-progress.js";
+} from "../tools/subagent.js";
 import type { ConversationResponder, SubagentProgressSnapshot } from "../adapter.js";
 import type { AgentEventPayload } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";

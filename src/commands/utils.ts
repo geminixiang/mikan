@@ -1,7 +1,7 @@
 import type { ConversationEvent } from "../adapter.js";
 import type { CommandContext } from "./types.js";
 
-export async function replyDiagnosticWithContext(
+async function replyDiagnosticWithContext(
   responder: CommandContext["responder"],
   text: string,
   options?: { style?: "muted" | "error" },

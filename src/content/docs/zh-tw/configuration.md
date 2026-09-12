@@ -47,11 +47,7 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
   "llm": {
     "provider": "anthropic",
     "model": "claude-sonnet-4-6",
-    "thinkingLevel": "off",
-    "autoReply": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-5"
-    }
+    "thinkingLevel": "off"
   },
   "slack": {
     "replyMode": "top-level"
@@ -77,8 +73,6 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 | `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                       |
 | `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                         |
 | `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                          |
-| `llm.autoReply.provider`       | `anthropic`         | 用來評估 auto-reply 規則的選用模型供應商                                             |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用來評估 auto-reply 規則的選用模型                                                   |
 | `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                       |
 | `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                              |
 | `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                             |
@@ -88,7 +82,9 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 | `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                  |
 | `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                              |
 
-`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|shared-private|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。Auto-reply 是否啟用及其規則文字由 `/pi-auto-reply` 與對話的 `auto-reply` marker file 管理，而非 JSON 設定欄位。
+`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|shared-private|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。
+
+Auto-reply 已退役。既有 `auto-reply`／`auto-reply.disabled` marker 檔與 `llm.autoReply`／`autoReply` 設定不再生效；讀取設定不會刪除這些檔案。
 
 Onboarding 不會寫入 `sandbox.workspace`。若沒有明確的全域或對話覆寫，mikan 會跟隨已記錄的平台頻道可見性。目前 Slack 公開頻道會解析為 `trusted` + `shared-support` + `public`，因此可讀寫 workspace 全域 `MEMORY.md`；Slack 私密頻道會解析為 `trusted` + `shared-support` + `private`，全域記憶以唯讀方式掛載。Slack DM、外部共享頻道、未知頻道類型，以及未記錄頻道可見性的其他平台都會解析為 `isolated`。這表示新部署的 Slack 公開頻道不需要額外 door-policy 指令，就會把內容寫入共享 workspace 記憶。
 

@@ -64,7 +64,7 @@ describe("runOnboardWizard", () => {
     const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8"));
     expect(settings.llm.provider).toBe("anthropic");
     expect(settings.llm.model).toBe("claude-sonnet-4-6");
-    expect(settings.llm.autoReply).toEqual({ provider: "anthropic", model: "claude-haiku-4-5" });
+    expect(settings.llm.autoReply).toBeUndefined();
 
     const envContent = readFileSync(envFile, "utf-8");
     expect(envContent).toContain("SLACK_APP_TOKEN=xapp-123");
@@ -104,7 +104,7 @@ describe("runOnboardWizard", () => {
     const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8"));
     expect(settings.llm.provider).toBe("agent-model");
     expect(settings.llm.model).toBe("chatgpt");
-    expect(settings.llm.autoReply).toEqual({ provider: "agent-model", model: "chatgpt" });
+    expect(settings.llm.autoReply).toBeUndefined();
 
     const nextSteps = io.transcript.join("\n");
     expect(nextSteps).toContain("--sandbox image:ghcr.io/geminixiang/mikan-sandbox:latest");

@@ -16,13 +16,13 @@ vi.mock("../agent/catalog.js", async (importOriginal) => {
   return { ...actual, createConfiguredAgentSession: mocks.createConfiguredAgentSession };
 });
 
-vi.mock("../mcp/loader.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../mcp/loader.js")>();
+vi.mock("../harness/mcp.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../harness/mcp.js")>();
   return { ...actual, loadMcpTools: mocks.loadMcpTools };
 });
 
 import { createRunner } from "../agent/runner.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels, SessionStore } from "../harness/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
@@ -77,6 +77,35 @@ function createOptions() {
 }
 
 describe("createRunner rollback", () => {
+  test("does not acquire MCP clients if opening the session writer fails", async () => {
+    const options = createOptions();
+    const failure = new Error("writer unavailable");
+    const opening = vi.spyOn(SessionStore, "open").mockRejectedValueOnce(failure);
+    try {
+      await expect(createRunner(options)).rejects.toBe(failure);
+      expect(mocks.loadMcpTools).not.toHaveBeenCalled();
+      expect(mocks.disposeMcp).not.toHaveBeenCalled();
+    } finally {
+      opening.mockRestore();
+    }
+  });
+
+  test("failed MCP close is single-flight and still releases the writer", async () => {
+    const options = createOptions();
+    const store = await SessionStore.open(options.sessionScope.contextFile);
+    await store.connectMcp({});
+    const failure = new Error("MCP close failed");
+    mocks.disposeMcp.mockRejectedValue(failure);
+    const outcomes = await Promise.allSettled([store.close(), store.close()]);
+    expect(outcomes).toEqual([
+      { status: "rejected", reason: failure },
+      { status: "rejected", reason: failure },
+    ]);
+    expect(mocks.disposeMcp).toHaveBeenCalledOnce();
+    const reopened = await SessionStore.open(options.sessionScope.contextFile);
+    await reopened.close();
+  });
+
   test("disposes acquired resources and permits immediate reconstruction after failure", async () => {
     const failure = new Error("agent session construction failed");
     mocks.createConfiguredAgentSession.mockRejectedValue(failure);

@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./env-manifest.js";
@@ -15,21 +15,9 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type {
-  AgentConfig,
-  AutoReplyConfig,
-  JudgeModelConfig,
-  SandboxSettings,
-  WorkspacePolicyChoice,
-} from "./types.js";
-import type {
-  AgentConfig,
-  AutoReplyConfig,
-  JudgeModelConfig,
-  SandboxSettings,
-  WorkspacePolicyChoice,
-} from "./types.js";
-import type { McpServerConfig } from "./mcp/types.js";
+export type { AgentConfig, SandboxSettings, WorkspacePolicyChoice } from "./types.js";
+import type { AgentConfig, SandboxSettings, WorkspacePolicyChoice } from "./types.js";
+import type { McpServerConfig } from "./harness/types.js";
 import type { OnboardLlmChoice } from "./types.js";
 import type { Office } from "./office/index.js";
 
@@ -38,10 +26,6 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
     provider: "anthropic",
     model: "claude-sonnet-4-6",
     thinkingLevel: "off",
-    autoReply: {
-      provider: "anthropic",
-      model: "claude-haiku-4-5",
-    },
   },
   slack: {
     replyMode: "top-level",
@@ -77,12 +61,6 @@ const SettingsFileSchema = Type.Object({
           Type.Literal("xhigh"),
           Type.Literal("max"),
         ]),
-      ),
-      autoReply: Type.Optional(
-        Type.Object({
-          provider: Type.Optional(Type.String()),
-          model: Type.Optional(Type.String()),
-        }),
       ),
     }),
   ),
@@ -129,12 +107,6 @@ const SettingsFileSchema = Type.Object({
         }),
       ),
       defaultSharedVault: Type.Optional(Type.String()),
-    }),
-  ),
-  autoReply: Type.Optional(
-    Type.Object({
-      enabled: Type.Optional(Type.Boolean()),
-      rules: Type.Optional(Type.Array(Type.String())),
     }),
   ),
   /** Package sources for this scope; see `src/packages`. */
@@ -388,77 +360,6 @@ export function resolveConversationSettings(office: Office): AgentConfig {
 }
 
 /**
- * Resolve the model used to judge auto-reply rules. Falls back to the main
- * llm.{provider,model} when llm.autoReply is not set, so a missing override
- * keeps current behavior.
- *
- * @deprecated Auto-reply is kept for compatibility while its future is undecided.
- */
-export function loadAutoReplyJudgeModel(office?: Office): JudgeModelConfig {
-  const global = requireGlobalSettings();
-  const local = office ? (loadSettingsFile(conversationSettingsPath(office)) ?? {}) : {};
-  const merged: SettingsFileConfig["llm"] = { ...global.llm, ...local.llm };
-  const judge = { ...global.llm?.autoReply, ...local.llm?.autoReply };
-  const provider = requireString(judge.provider ?? merged?.provider, "llm.autoReply.provider");
-  const model = requireString(judge.model ?? merged?.model, "llm.autoReply.model");
-  return { provider, model };
-}
-
-const AUTO_REPLY_FILE = "auto-reply";
-const AUTO_REPLY_DISABLED_FILE = "auto-reply.disabled";
-
-function readAutoReplyRulesFile(path: string): string[] {
-  const text = readFileSync(path, "utf-8").trim();
-  return text ? [text] : [];
-}
-
-/**
- * Load the mom-compatible auto-reply marker file state for a conversation.
- *
- * - `auto-reply` exists: enabled; empty file means reply to any top-level message.
- * - `auto-reply.disabled` exists: disabled, preserving any rules text for re-enable.
- * - neither exists: disabled.
- *
- * @deprecated Auto-reply is kept for compatibility while its future is undecided.
- */
-export function loadConversationAutoReplyConfig(conversationDir: string): AutoReplyConfig {
-  const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
-  if (existsSync(enabledPath)) {
-    return { enabled: true, rules: readAutoReplyRulesFile(enabledPath) };
-  }
-
-  const disabledPath = join(conversationDir, AUTO_REPLY_DISABLED_FILE);
-  if (existsSync(disabledPath)) {
-    return { enabled: false, rules: readAutoReplyRulesFile(disabledPath) };
-  }
-
-  return { enabled: false, rules: [] };
-}
-
-/**
- * Save auto-reply state using mom-compatible marker files.
- *
- * @deprecated Auto-reply is kept for compatibility while its future is undecided.
- */
-export function saveConversationAutoReplyConfig(
-  conversationDir: string,
-  config: AutoReplyConfig,
-): void {
-  ensureDirExists(conversationDir);
-
-  const enabledPath = join(conversationDir, AUTO_REPLY_FILE);
-  const disabledPath = join(conversationDir, AUTO_REPLY_DISABLED_FILE);
-  const targetPath = config.enabled ? enabledPath : disabledPath;
-  const otherPath = config.enabled ? disabledPath : enabledPath;
-
-  if (existsSync(otherPath)) {
-    renameSync(otherPath, targetPath);
-  }
-
-  atomicWritePrivateFile(targetPath, config.rules.join("\n"));
-}
-
-/**
  * True when `child` is `parent` or a path inside it. Purely lexical (no
  * symlink resolution) — used for configuration sanity checks, not as the
  * final security boundary.
@@ -516,9 +417,6 @@ export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoic
           ...ONBOARD_SETTINGS.llm,
           provider: llm.provider,
           model: llm.model,
-          // The wizard configured exactly one provider; pointing the
-          // auto-reply judge anywhere else would break on first use.
-          autoReply: { provider: llm.provider, model: llm.autoReplyModel ?? llm.model },
         },
       }
     : ONBOARD_SETTINGS;
@@ -546,7 +444,6 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.llm) ? { llm: config.llm } : {}),
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
-    ...(hasDefinedValue(config.autoReply) ? { autoReply: config.autoReply } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
     // An empty list is meaningful (the admin removed the last package) and
     // must survive the round trip, so this checks for the key, not for values.

@@ -9,7 +9,7 @@ import type {
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
-import type { McpServerConfig } from "./mcp/types.js";
+import type { McpServerConfig } from "./harness/types.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./provisioner.js";
 import type { SandboxConfig } from "./sandbox/types.js";
@@ -440,19 +440,6 @@ export interface AgentConfig {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
-/**
- * @deprecated Auto-reply is kept for compatibility while its future is undecided.
- */
-export interface AutoReplyConfig {
-  enabled: boolean;
-  rules: string[];
-}
-
-export interface JudgeModelConfig {
-  provider: string;
-  model: string;
-}
-
 // ── context ───────────────────────────────────────────────────────────────────
 
 /**
@@ -604,21 +591,6 @@ export interface Attachment {
   localPath: string;
 }
 
-// ── trigger ───────────────────────────────────────────────────────────────────
-
-export type TriggerIntent = "mention" | "direct" | "thread-continuation" | "auto-reply-candidate";
-
-export type TriggerResult = { trigger: true; reason: string } | { trigger: false; reason: string };
-
-/**
- * @deprecated Auto-reply is kept for compatibility while its future is undecided.
- */
-export type AutoReplyJudge = (input: {
-  event: ConversationEvent;
-  rules: string[];
-  office: Office;
-}) => Promise<boolean>;
-
 // ── shared implementation contracts ─────────────────────────────────────────
 
 interface EnvVarSpec {
@@ -633,8 +605,6 @@ interface EnvVarSpec {
 export interface OnboardLlmChoice {
   provider: string;
   model: string;
-  /** Auto-reply judge model; defaults to the main model. */
-  autoReplyModel?: string;
 }
 
 export interface EnvGroup {

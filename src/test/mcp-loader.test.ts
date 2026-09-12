@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { formatMcpServerInstructions, loadMcpTools } from "../mcp/loader.js";
+import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
 
 // A minimal MCP server as a standalone script, spawned over stdio like a real
 // deployment would. It exposes one echo tool and reads a secret from its env

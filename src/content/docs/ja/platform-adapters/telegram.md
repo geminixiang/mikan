@@ -6,7 +6,7 @@ description: BotFather privacy、long polling、reply-scoped sessions、commands
 ## セットアップ
 
 1. [@BotFather](https://t.me/BotFather) で bot を作成し、token をコピーします。
-2. bot が通常の group messages を受信する必要があるか判断します。BotFather privacy mode では通常、group での配信は commands、mentions、bot への replies に制限されます。group 全体の auto-reply rules で広範な受信が必要な場合にのみ、`/setprivacy` で privacy mode を無効にしてください。
+2. 別の明示的な連携が通常の group messages を必要としない限り、BotFather privacy mode を有効にしておいてください。`/setprivacy` で無効にして配信範囲を広げても、mikan は宛先になっていないメッセージには返信しません。
 3. bot を各 group に追加し、messages または files の読み取りと送信に必要な group/admin permissions だけを付与します。
 4. token を設定し、mikan を起動します：
 
@@ -25,7 +25,7 @@ Adapter は次を処理します：
 - `/login`、`/session`、`/new`、`/stop`、`/model`、`/sandbox` — command menu は `setMyCommands` を通じて `src/commands/manifest.ts` から登録されるため、共通インベントリからずれることはありません
 - replies、photos、documents
 
-Private messages は直接起動します。Group messages には command、mention、reply context、または一致する auto-reply policy が必要です。Telegram が最初に message を bot へ配信する必要があります。privacy mode により、auto-reply rule が通常の group traffic を受信できない場合があります。
+Private messages は直接起動します。Group messages には bot 宛ての command、mention、または対応する reply context が必要です。Telegram が先にメッセージを bot に配信する必要があり、配信範囲を広げても明示的なトリガー条件は変わりません。
 
 ## Session ルール
 

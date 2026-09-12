@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { provisionOfficeOpenConnectorToken } from "../mcp/open-connector.js";
+import { provisionOfficeOpenConnectorToken } from "../harness/open-connector.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
 let dir: string;

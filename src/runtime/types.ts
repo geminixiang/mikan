@@ -1,4 +1,4 @@
-import type { McpServerConfig } from "../mcp/types.js";
+import type { McpServerConfig } from "../harness/types.js";
 import type { PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,

@@ -7,11 +7,11 @@ description: mikan admin、login、session portal が使う短期 capability tok
 
 ## 3 種類の portal link
 
-| 画面                 | ユーザーの取得方法                                                   | できること                                                                                                      | Token 有効期間 | Token は一回限りか |
-| -------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------- | ------------------ |
-| Admin portal         | `/admin` / `/pi-admin`                                               | conversations、モデル、sandbox、auto-reply、workspace previews、events を管理。session/login links も生成可能。 | 30 分          | いいえ             |
-| Login / vault portal | `/login` / `/pi-login`、または admin portal から生成                 | API keys を保存、または組み込み OAuth flow を完了し、credentials を vault に書き込む。                          | 15 分          | 書き込み時ははい   |
-| Session view         | `session` / `/session` / `/pi-session`、または admin portal から生成 | session timeline を閲覧。interactive mode が利用できる場合は、Web からその session へメッセージ送信も可能。     | 24 時間        | いいえ             |
+| 画面                 | ユーザーの取得方法                                                   | できること                                                                                                  | Token 有効期間 | Token は一回限りか |
+| -------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------- | ------------------ |
+| Admin portal         | `/admin` / `/pi-admin`                                               | conversations、モデル、sandbox、workspace previews、events を管理。session/login links も生成可能。         | 30 分          | いいえ             |
+| Login / vault portal | `/login` / `/pi-login`、または admin portal から生成                 | API keys を保存、または組み込み OAuth flow を完了し、credentials を vault に書き込む。                      | 15 分          | 書き込み時ははい   |
+| Session view         | `session` / `/session` / `/pi-session`、または admin portal から生成 | session timeline を閲覧。interactive mode が利用できる場合は、Web からその session へメッセージ送信も可能。 | 24 時間        | いいえ             |
 
 簡単に言うと：
 
@@ -33,7 +33,7 @@ Admin portal でできること：
 
 - 現在のユーザーと conversation identity を確認する。
 - workspace を走査するのではなく、office registry（生 id ↔ office の恒久的な対応）から conversations を一覧表示する。
-- conversation model、thinking level、workspace の door policy と layout、auto-reply、Slack reply mode を読み取り・更新する。
+- conversation model、thinking level、workspace の door policy と layout、Slack reply mode を読み取り・更新する。
 - global model、sandbox のリソース既定値、グローバルな door policy、Slack defaults を読み取り・更新する。
 - 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集する。
 - ある scope の package sources を一覧表示・変更する。

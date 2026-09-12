@@ -8,7 +8,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
 import * as log from "../log.js";
 import { prepareOpenConnectorToolArguments } from "./open-connector.js";
-import { isValidMcpServerName } from "./standard-config.js";
+import { isValidMcpServerName } from "./mcp-config.js";
 import type {
   McpLoadError,
   McpServerConfig,

@@ -64,7 +64,6 @@ test.each([
   ["model", { provider: "anthropic", model: "example" }],
   ["sandbox", { doorPolicy: "isolated" }],
   ["slack", { replyMode: "thread" }],
-  ["auto-reply", { enabled: true }],
   ["session-link", {}],
 ])("conversation %s rejects invalid scope before applying settings", async (route, values) => {
   const result = await post(`/admin/api/conversations/${route}`, {
@@ -79,6 +78,13 @@ test.each([
 test("model field validation still precedes conversation scope validation", async () => {
   const result = await post("/admin/api/conversations/model", { platform: "not-a-platform" });
   expect(result).toEqual({ status: 400, body: { error: "Missing provider or model" } });
+});
+
+test("retired auto-reply API is not routed", async () => {
+  expect(await post("/admin/api/conversations/auto-reply", { enabled: true })).toEqual({
+    status: 404,
+    body: { error: "Not found" },
+  });
 });
 
 function globalPackages(): string[] {

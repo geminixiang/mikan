@@ -117,29 +117,29 @@ Workflow `.github/workflows/slack-e2e.yml` 会透过 **Actions → Slack E2E →
 每次 deploy 或 config change 后执行这些测试。这里的 `S-0xx` 编号用于下方的手动检查清单，与自动化 `e2e/slack`
 scenario 内部的 `S-0xx` 编号相互独立——请不要把两者对应起来。
 
-| ID    | 动作                             | 预期结果                                 |
-| ----- | -------------------------------- | ---------------------------------------- |
-| S-001 | DM mikan: `hello`                | mikan 正常回覆                           |
-| S-002 | Channel: `@mikan hello`          | 只有 mikan 回覆                          |
-| S-003 | 在 channel 发送未 mention 的讯息 | 除非明确启用 auto-reply，否则 bot 不回覆 |
-| S-004 | 在 thread 中回覆 bot             | Bot 在同一 thread 回覆                   |
-| S-005 | 要求 mikan 执行短指令/任务       | 任务完成并回报结果                       |
-| S-006 | mikan 执行中送出 `stop`          | 执行中的任务停止或回报已停止             |
-| S-007 | 上传小型文字档并要求摘要         | Bot 处理档案，或清楚说明不支援           |
-| S-008 | 观察后续 bot 讯息                | 不产生 reply loop                        |
-| S-009 | 建立 one-shot event file         | mikan 将 reminder 传送到 Slack           |
+| ID    | 动作                             | 预期结果                       |
+| ----- | -------------------------------- | ------------------------------ |
+| S-001 | DM mikan: `hello`                | mikan 正常回覆                 |
+| S-002 | Channel: `@mikan hello`          | 只有 mikan 回覆                |
+| S-003 | 在 channel 发送未 mention 的讯息 | bot 不回覆                     |
+| S-004 | 在 thread 中回覆 bot             | Bot 在同一 thread 回覆         |
+| S-005 | 要求 mikan 执行短指令/任务       | 任务完成并回报结果             |
+| S-006 | mikan 执行中送出 `stop`          | 执行中的任务停止或回报已停止   |
+| S-007 | 上传小型文字档并要求摘要         | Bot 处理档案，或清楚说明不支援 |
+| S-008 | 观察后续 bot 讯息                | 不产生 reply loop              |
+| S-009 | 建立 one-shot event file         | mikan 将 reminder 传送到 Slack |
 
 ## Mikan Bot 测试案例
 
 ### 基本 Slack 互动
 
-| ID    | 动作                            | 预期结果                               |
-| ----- | ------------------------------- | -------------------------------------- |
-| M-001 | DM mikan: `hello`               | mikan 回覆                             |
-| M-002 | Channel: `@mikan hello`         | mikan 回覆                             |
-| M-003 | Channel message without mention | 除非启用 auto-reply，否则 mikan 不回覆 |
-| M-004 | 在 thread 中回覆 mikan          | mikan 在同一 thread 回覆               |
-| M-005 | 开始两个不同主题的独立 threads  | Sessions 维持隔离                      |
+| ID    | 动作                            | 预期结果                 |
+| ----- | ------------------------------- | ------------------------ |
+| M-001 | DM mikan: `hello`               | mikan 回覆               |
+| M-002 | Channel: `@mikan hello`         | mikan 回覆               |
+| M-003 | Channel message without mention | mikan 不回覆             |
+| M-004 | 在 thread 中回覆 mikan          | mikan 在同一 thread 回覆 |
+| M-005 | 开始两个不同主题的独立 threads  | Sessions 维持隔离        |
 
 ### Agent 与 Tool 行为
 

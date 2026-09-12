@@ -54,7 +54,7 @@ function makeOptions(
   return {
     eventBase: makeEvent(),
     workingDir: undefined,
-    isAutoReplyCandidate: false,
+    addressed: true,
     magicWord: { addressed: true, scopeFallback: "top-level" },
     busyPolicy: "queue",
     logEntryBase: {},
@@ -135,11 +135,11 @@ describe("processMessageIntake magic word", () => {
     expect(options.processAttachments).not.toHaveBeenCalled();
   });
 
-  test("magic word bypasses the trigger gate for auto-reply candidates", async () => {
+  test("magic word bypasses the trigger gate for unaddressed messages", async () => {
     const handler = makeHandler(["C1"]);
     const options = makeOptions({
       eventBase: makeEvent({ text: "/stop", sessionKey: "C1" }),
-      isAutoReplyCandidate: true,
+      addressed: false,
       magicWord: { addressed: false, scopeFallback: "top-level" },
       handler,
     });
@@ -303,14 +303,14 @@ describe("processMessageIntake busy policy", () => {
 });
 
 describe("processMessageIntake", () => {
-  test("logs non-triggered auto-reply candidates without queueing", async () => {
+  test("logs unaddressed messages without queueing", async () => {
     const handler = makeHandler();
     const log = vi.fn();
     const enqueue = vi.fn();
 
     const outcome = await processMessageIntake(
       makeOptions({
-        isAutoReplyCandidate: true,
+        addressed: false,
         logEntryBase: { text: "hello" },
         log,
         processAttachments: vi.fn().mockResolvedValue([{ name: "a.txt", localPath: "C1/a.txt" }]),

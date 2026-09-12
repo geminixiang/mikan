@@ -339,7 +339,7 @@ export class MikanAgentSession {
       model: this.model,
       thinkingLevel: this.options.thinkingLevel,
       tools: this.nativeTools(this.options.tools),
-      systemPrompt: () => this.systemPrompt,
+      systemPrompt: () => this.sessionStore.withMcpInstructions(this.systemPrompt),
       retry: this.settings.retry,
       compaction: this.settings.compaction,
     });

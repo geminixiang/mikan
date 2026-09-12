@@ -385,6 +385,80 @@ describe("respondDiagnostic()", () => {
 // setTyping()
 // ============================================================================
 
+describe("non-blocking assistant status", () => {
+  test("pending Thinking cannot block runner start or finish/stop cleanup", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const status = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined);
+    const bot = makeSlackMessagingBot({ setAssistantStatus: status });
+    const { responder } = createSlackAdapters(makeEvent({ thread_ts: "1000.0001" }), bot);
+    let started = false;
+    const run = (async () => {
+      await responder.setTyping(true);
+      await responder.setWorking(true);
+      started = true;
+      await responder.setWorking(false);
+    })();
+    try {
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      expect(started).toBe(true);
+      await run;
+      expect(status).toHaveBeenLastCalledWith("C001", "1000.0001", "");
+      const calls = status.mock.calls.length;
+      await responder.setTyping(true);
+      expect(status).toHaveBeenCalledTimes(calls);
+    } finally {
+      release();
+      await run;
+    }
+  });
+
+  test("finish clears pending Thinking once and prevents stale restart", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const status = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined);
+    const bot = makeSlackMessagingBot({ setAssistantStatus: status });
+    const { responder } = createSlackAdapters(makeEvent(), bot);
+    let finished = false;
+    const done = (async () => {
+      await responder.setTyping(true);
+      await responder.finishResponse?.();
+      finished = true;
+    })();
+    try {
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      expect(finished).toBe(true);
+      expect(status.mock.calls.map((call) => call[2])).toEqual(["Thinking", ""]);
+      await responder.setWorking(false);
+      await responder.setTyping(true);
+      expect(status).toHaveBeenCalledTimes(2);
+    } finally {
+      release();
+      await done;
+    }
+  });
+
+  test("delete without a response clears status and late rejection is absorbed", async () => {
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((_resolve, fail) => {
+      reject = fail;
+    });
+    const status = vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined);
+    const bot = makeSlackMessagingBot({ setAssistantStatus: status });
+    const { responder } = createSlackAdapters(makeEvent(), bot);
+    const typing = responder.setTyping(true);
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    reject(new Error("status unavailable"));
+    await typing;
+    await responder.deleteResponse();
+    expect(status).toHaveBeenLastCalledWith("C001", "1000.0001", "");
+  });
+});
+
 describe("setTyping()", () => {
   test("non-threaded: sets assistant status only", async () => {
     const bot = makeSlackMessagingBot({ setAssistantStatus: vi.fn().mockResolvedValue(undefined) });

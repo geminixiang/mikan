@@ -4,6 +4,7 @@ const client = vi.hoisted(() => ({
   connect: vi.fn(),
   listTools: vi.fn(),
   close: vi.fn(),
+  getInstructions: vi.fn(),
 }));
 
 vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
@@ -11,12 +12,47 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
     connect = client.connect;
     listTools = client.listTools;
     close = client.close;
+    getInstructions = client.getInstructions;
   },
 }));
 
-import { loadMcpTools } from "../mcp/loader.js";
+import { loadMcpTools } from "../harness/mcp.js";
+import { SessionStore } from "../harness/session-store.js";
 
 describe("MCP connection rollback", () => {
+  test("the pending session owns connections and preserves guidance across prompt replacements", async () => {
+    client.connect.mockReset().mockResolvedValue(undefined);
+    client.listTools.mockReset().mockResolvedValue({ tools: [] });
+    client.getInstructions.mockReset().mockReturnValue("Use the service safely");
+    client.close.mockReset().mockResolvedValue(undefined);
+    const store = SessionStore.inMemory("/work");
+    await store.connectMcp({ service: { command: "unused" } });
+    expect(store.withMcpInstructions("first")).toContain("Use the service safely");
+    expect(store.withMcpInstructions("second")).toMatch(/^second\n\n/);
+    await Promise.all([store.close(), store.close()]);
+    expect(client.close).toHaveBeenCalledOnce();
+    await expect(store.connectMcp({})).rejects.toThrow("closed");
+  });
+
+  test("closing after partial MCP initialization releases successful clients despite a close failure", async () => {
+    client.connect.mockReset().mockResolvedValue(undefined);
+    client.listTools
+      .mockReset()
+      .mockResolvedValueOnce({ tools: [] })
+      .mockRejectedValueOnce(new Error("discovery failed"));
+    client.getInstructions.mockReset().mockReturnValue(undefined);
+    client.close
+      .mockReset()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("transport close failed"));
+    const store = SessionStore.inMemory("/work");
+    await store.connectMcp({ good: { command: "unused" }, bad: { command: "unused" } });
+    expect(client.close).toHaveBeenCalledTimes(1);
+    await store.close();
+    await store.close();
+    expect(client.close).toHaveBeenCalledTimes(2);
+  });
+
   test("closes a client when shutdown aborts connection", async () => {
     const controller = new AbortController();
     client.connect.mockReset().mockImplementation(

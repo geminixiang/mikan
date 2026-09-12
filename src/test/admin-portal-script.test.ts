@@ -54,6 +54,107 @@ function page() {
 }
 
 describe("admin embedded UI shared flows", () => {
+  test.each(["renderSettings", "renderGlobalSettings"])(
+    "%s retains cards, selected values and escaping",
+    (render) => {
+      const p = page();
+      const global = render === "renderGlobalSettings";
+      const html = p.run(
+        `${render}({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, workspaceOverride: 'trusted-full', workspaceDoorPolicy: 'trusted', workspaceLayout: 'full', autoReplyRules: ['<rule>'] })`,
+      ) as string;
+      expect(html.match(/class="config-block"/g)).toHaveLength(global ? 4 : 3);
+      expect(html).toContain('<option value="high" selected>high</option>');
+      expect(html).toContain('<option value="thread" selected>thread</option>');
+      expect(html).toContain('<option value="trusted-full" selected>');
+      const ids = global
+        ? [
+            "g-model-ref",
+            "g-thinking",
+            "g-cpus",
+            "g-mem",
+            "g-bcpus",
+            "g-bmem",
+            "g-door-policy",
+            "g-slack-reply-mode",
+            "g-model-result",
+            "g-sandbox-result",
+            "g-workspace-result",
+            "g-slack-result",
+          ]
+        : [
+            "m-model-ref",
+            "m-thinking",
+            "m-door-policy",
+            "m-slack-reply-mode",
+            "model-save-result",
+            "mount-save-result",
+            "slack-save-result",
+          ];
+      for (const id of ids) expect(html).toContain(`id="${id}"`);
+      expect(html).toContain(
+        global ? "follows each platform channel" : "follows the platform channel",
+      );
+      expect(html).not.toContain("auto-save-result");
+    },
+  );
+
+  test("settings resolve conversation scope after model loading", async () => {
+    const p = page();
+    let complete!: (response: unknown) => void;
+    p.fetch.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const loading = p.run("loadSettings()");
+    expect(p.get("settings-content").innerHTML).toContain("Loading");
+    p.run("activeConversationKey = 'telegram:C2'");
+    complete({ ok: true, json: async () => ({ models: [] }) });
+    await loading;
+    expect(p.fetch.mock.calls[1]?.[0]).toContain("conversationId=C2&platform=telegram");
+  });
+
+  test.each([
+    ["loadPackages", "pkg"],
+    ["loadMcpServers", "mcp"],
+  ])("%s displays escaped errors in both scopes", async (load, prefix) => {
+    const p = page();
+    p.fetch.mockRejectedValue(new Error("<denied>"));
+    await p.run(`${load}()`);
+    for (const scope of ["conv", "global"])
+      expect(p.get(`${prefix}-${scope}-content`).innerHTML).toBe(
+        '<div class="err-msg">&lt;denied&gt;</div>',
+      );
+  });
+
+  test.each([
+    ["loadPackages", "pkg"],
+    ["loadMcpServers", "mcp"],
+  ])("%s retains empty-state success and tolerates absent panels", async (load, prefix) => {
+    const p = page();
+    p.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ conversation: [], global: [], presets: [] }),
+    });
+    await p.run(`${load}()`);
+    expect(p.get(`${prefix}-conv-content`).innerHTML).not.toContain("Loading…");
+    expect(p.get(`${prefix}-global-content`).innerHTML).not.toContain("err-msg");
+    p.run("document.getElementById = () => null");
+    await expect(p.run(`${load}()`)).resolves.toBeUndefined();
+  });
+
+  test("global settings loader retains unscoped route and escaped errors", async () => {
+    const p = page();
+    p.run("modelsLoaded = true");
+    p.fetch.mockRejectedValue(new Error("<failed>"));
+    await p.run("loadGlobalSettings()");
+    expect(p.fetch.mock.calls[0]?.[0]).toBe("/admin/api/settings/global?token=secret");
+    expect(p.get("global-settings-content").innerHTML).toBe(
+      '<div class="err-msg">&lt;failed&gt;</div>',
+    );
+  });
+
   test.each([
     ["openLogin", "vault", "login"],
     ["openSessionView", "session", "session"],

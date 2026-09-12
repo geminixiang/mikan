@@ -6,7 +6,7 @@ description: Configure BotFather privacy, long polling, reply-scoped sessions, c
 ## Setup
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and copy its token.
-2. Decide whether the bot must receive ordinary group messages. BotFather privacy mode normally limits group delivery to commands, mentions, and replies to the bot. Disable privacy mode with `/setprivacy` only when group-wide auto-reply rules require broader intake.
+2. Keep BotFather privacy mode enabled unless another explicit integration needs ordinary group messages. Privacy mode limits group delivery; disabling it with `/setprivacy` does not make mikan respond to unaddressed messages.
 3. Add the bot to each group and grant only the group/admin permissions needed to read and send messages or files.
 4. Set the token and start mikan:
 
@@ -25,7 +25,7 @@ The adapter handles:
 - `/login`, `/session`, `/new`, `/stop`, `/model`, and `/sandbox` — the command menu is registered from `src/commands/manifest.ts` through `setMyCommands`, so it never drifts from the shared inventory
 - replies, photos, and documents
 
-Private messages trigger directly. Group messages require a command, mention, reply context, or matching auto-reply policy. Telegram must first deliver the message to the bot; privacy mode can prevent an auto-reply rule from seeing ordinary group traffic.
+Private messages trigger directly. Group messages require an addressed command, mention, or supported reply context. Telegram must first deliver the message to the bot; broader delivery does not bypass the explicit trigger gate.
 
 ## Session rules
 

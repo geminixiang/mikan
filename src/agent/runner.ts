@@ -17,8 +17,7 @@ import { resolveConversationSettings } from "../config.js";
 import { resolveConversationPackages } from "../packages/index.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
 import * as log from "../log.js";
-import { formatMcpServerInstructions, loadMcpTools } from "../mcp/loader.js";
-import { provisionOfficeOpenConnectorToken } from "../mcp/open-connector.js";
+import { provisionOfficeOpenConnectorToken } from "../harness/open-connector.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   getUnresolvedSandboxPathContext,
@@ -323,33 +322,16 @@ async function createRunnerAgentSession(params: {
     modelRegistry,
     signal,
   } = params;
-  const mcpResult = await loadMcpTools(agentConfig.mcpServers ?? {}, signal);
-  for (const mcpError of mcpResult.errors) {
-    log.logWarning(
-      `[${params.conversationId}] MCP server unavailable: ${mcpError.server}`,
-      mcpError.error,
-    );
-  }
-  if (mcpResult.tools.length > 0) {
-    log.logInfo(`[${params.conversationId}] Loaded ${mcpResult.tools.length} MCP tool(s)`);
-  }
-  try {
-    signal?.throwIfAborted();
-    const mcpInstructions = formatMcpServerInstructions(mcpResult.instructions);
-    const session = await createConfiguredAgentSession({
-      workspaceDir,
-      systemPrompt: mcpInstructions ? `${systemPrompt}\n\n${mcpInstructions}` : systemPrompt,
-      model,
-      thinkingLevel: agentConfig.thinkingLevel,
-      tools: [...tools, ...mcpResult.tools],
-      sessionStore: sessionManager,
-      models: modelRegistry,
-    });
-    return { mcpResult, session };
-  } catch (error) {
-    await rollbackRunnerResource("dispose MCP resources", mcpResult.dispose);
-    throw error;
-  }
+  const mcpTools = await sessionManager.connectMcp(agentConfig.mcpServers ?? {}, signal);
+  return createConfiguredAgentSession({
+    workspaceDir,
+    systemPrompt,
+    model,
+    thinkingLevel: agentConfig.thinkingLevel,
+    tools: [...tools, ...mcpTools],
+    sessionStore: sessionManager,
+    models: modelRegistry,
+  });
 }
 
 type PreparedTurnParams = {
@@ -481,7 +463,6 @@ type RunnerInterfaceParams = {
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   chatSessionManager: ChatHistorySync;
-  mcpResult: Awaited<ReturnType<typeof loadMcpTools>>;
   toolBindings: MikanToolBindings;
 };
 
@@ -502,7 +483,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     agentConfig,
     sessionManager,
     chatSessionManager,
-    mcpResult,
     toolBindings,
   } = params;
   return {
@@ -564,11 +544,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     },
 
     async dispose(): Promise<void> {
-      try {
-        await mcpResult.dispose();
-      } finally {
-        await sessionManager.close();
-      }
+      await sessionManager.close();
     },
 
     getCurrentStep(): { toolName?: string; label?: string } | undefined {
@@ -612,11 +588,10 @@ async function finishRunnerCreation(params: {
   } = params;
   const { sessionKey, office, sessionScope, sessionView } = options;
   const { contextFile } = sessionScope;
-  let acquiredMcpResult: Awaited<ReturnType<typeof loadMcpTools>> | undefined;
   try {
     const sessionUuid = extractSessionUuid(contextFile);
     const chatSessionManager = new ChatHistorySync();
-    const { mcpResult, session } = await createRunnerAgentSession({
+    const session = await createRunnerAgentSession({
       workspaceDir,
       systemPrompt,
       model,
@@ -627,7 +602,6 @@ async function finishRunnerCreation(params: {
       conversationId,
       signal: options.signal,
     });
-    acquiredMcpResult = mcpResult;
     options.signal?.throwIfAborted();
 
     const runState = createRunState();
@@ -649,13 +623,9 @@ async function finishRunnerCreation(params: {
       agentConfig,
       sessionManager,
       chatSessionManager,
-      mcpResult,
       toolBindings,
     });
   } catch (error) {
-    if (acquiredMcpResult) {
-      await rollbackRunnerResource("dispose MCP resources", acquiredMcpResult.dispose);
-    }
     await rollbackRunnerResource("close the session writer", () => sessionManager.close());
     throw error;
   }

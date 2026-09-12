@@ -140,7 +140,6 @@ The example manifest includes common control slash commands:
 - `/pi-new` → start a new DM session
 - `/pi-session` → session viewer
 - `/pi-model` → switch this conversation's LLM (`provider/model[:thinking]`, for example `anthropic/claude-sonnet-4-6:off`)
-- `/pi-auto-reply` → manage group/channel auto-reply rules
 - `/pi-sandbox` → inspect or tune this conversation's sandbox
 - `/pi-admin` → open the admin portal
 

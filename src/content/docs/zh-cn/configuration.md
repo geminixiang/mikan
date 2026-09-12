@@ -47,11 +47,7 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
   "llm": {
     "provider": "anthropic",
     "model": "claude-sonnet-4-6",
-    "thinkingLevel": "off",
-    "autoReply": {
-      "provider": "anthropic",
-      "model": "claude-haiku-4-5"
-    }
+    "thinkingLevel": "off"
   },
   "slack": {
     "replyMode": "top-level"
@@ -77,8 +73,6 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
 | `llm.provider`                 | `anthropic`         | 主 AI 提供商                                                                  |
 | `llm.model`                    | `claude-sonnet-4-6` | 主模型名称                                                                    |
 | `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                   |
-| `llm.autoReply.provider`       | `anthropic`         | 用于评估自动回复规则的可选模型提供商                                          |
-| `llm.autoReply.model`          | `claude-haiku-4-5`  | 用于评估自动回复规则的可选模型                                                |
 | `sentry.dsn`                   | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                                  |
 | `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                       |
 | `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                        |
@@ -88,7 +82,9 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
 | `sandbox.defaultSharedVault`   | 空                  | 复制到符合条件、基于成员身份信任的 image/Cloudflare 对话中的共享 vault        |
 | `slack.replyMode`              | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                       |
 
-`/pi-model` 写入部分对话覆盖，`/pi-sandbox door <default|isolated|shared|shared-private|full>` 写入该对话的 `sandbox.workspace` 覆盖值；管理 portal 既可以设置按办公室的门禁策略，也可以设置全局门禁策略。自动回复的启用状态和规则文本由 `/pi-auto-reply` 及对话的 `auto-reply` 标记文件管理，不由 JSON 设置字段管理。
+`/pi-model` 写入部分对话覆盖，`/pi-sandbox door <default|isolated|shared|shared-private|full>` 写入该对话的 `sandbox.workspace` 覆盖值；管理 portal 既可以设置按办公室的门禁策略，也可以设置全局门禁策略。
+
+Auto-reply 已退役。已有的 `auto-reply`／`auto-reply.disabled` 标记文件与 `llm.autoReply`／`autoReply` 设置不再生效；读取设置不会删除这些文件。
 
 Onboarding 不会写入 `sandbox.workspace`。没有显式的全局或对话覆盖时，mikan 会跟随已记录的平台频道可见性。目前 Slack 公开频道解析为 `trusted` + `shared-support` + `public`，因此可以读写工作区全局 `MEMORY.md`；Slack 私密频道解析为 `trusted` + `shared-support` + `private`，全局记忆以只读方式挂载。Slack DM、外部共享频道、未知频道类型，以及未记录频道可见性的其他平台均解析为 `isolated`。这意味着新部署中的 Slack 公开频道无需额外门禁命令，就会向共享工作区记忆写入内容。
 

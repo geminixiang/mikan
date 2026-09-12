@@ -26,7 +26,7 @@ Their goal is to keep `src/runtime/*` and `src/agent/` from knowing each platfor
 <Steps>
 
 1. Receive platform events such as messages, mentions, slash commands, or replies.
-2. Decide whether the message should trigger mikan: DM, mention, thread reply, or auto-reply policy.
+2. Decide whether the message should trigger mikan: DM, mention, thread reply.
 3. Convert it to shared `ConversationEvent` and `ConversationMessage` values.
 4. Compute `sessionKey` so different channels, threads, and replies map to the right session.
 5. Download attachments into the conversation office's `attachments/` directory.
@@ -63,7 +63,7 @@ sequenceDiagram
   P->>A: native message / slash command / reply
   A->>A: parse conversation, user, thread, attachments
   A->>I: ConversationEvent base + trigger/log/attachment hooks
-  I->>I: auto-reply / trigger decision
+  I->>I: explicit trigger decision
   I->>A: download attachments when needed
   I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile

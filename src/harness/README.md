@@ -14,6 +14,9 @@ this module.
 | `runner.ts`            | `MikanAgentSession`: native Pi integration, request budgets, delegated usage, and platform events |
 | `session-store.ts`     | Pi v4 JSONL session ownership, native harness attachment, and inspection                          |
 | `models.ts`            | model catalog and authentication resolution                                                       |
+| `mcp.ts`               | host MCP transports, tool discovery/calls, instructions, connection rollback and cleanup          |
+| `mcp-config.ts`        | MCP settings import validation and reviewed preset materialization                                |
+| `open-connector.ts`    | deployment-owned OpenConnector authority and office runtime-token provisioning                    |
 | `settings.ts`          | harness retry, compaction, and budget settings                                                    |
 | `skills.ts`            | `SKILL.md` parsing, discovery, diagnostics, and prompt formatting                                 |
 | `subagent-profiles.ts` | subagent profile discovery and validation                                                         |
@@ -37,7 +40,10 @@ v4 files require `mikan sessions migrate` with the daemon stopped.
 `AgentHarness` with a `main` lane. Existing v4 branches are promoted by Pi without
 rewriting conversation history. Once attached, host history writes also go
 through that lane so its durable state and transcript have the same owner.
-Closing the store closes its harness, Session, repository, and writer lease.
+Closing the store first closes its MCP connections, then its harness, Session,
+repository, and writer lease. MCP cleanup failure cannot skip writer cleanup.
+`close()` is single-flight, including failed close attempts; pending in-memory
+stores also release MCP resources even if no native Session was materialized.
 
 `MikanAgentSession.prompt()` resolves authentication, applies the current prompt
 and tool grants, then calls Pi's `lane.accept()` and `lane.drive()`. Pi alone
@@ -79,6 +85,41 @@ helper is limited to unattached stores; live compaction belongs to Pi.
 
 Runner reuse, conversation identity, rotation, eviction, and Sandbox topology
 remain in `src/runtime/` and `src/sessions/`.
+
+## Host MCP capabilities
+
+MCP belongs to the harness, not a separate integration module. `mcp.ts` connects
+stdio or streamable-HTTP servers, namespaces tools as `mcp__<server>__<tool>`,
+and preserves server instructions. `SessionStore.connectMcp()` acquires these
+capabilities under the session writer's lifetime and returns only the tools;
+the agent runner does not retain a separate cleanup handle. The native harness
+system-prompt supplier composes the stored MCP guidance with each refreshed
+base prompt, so later turns cannot discard server instructions.
+
+Per-server connection/discovery failures close that client's transport and
+leave other servers usable. Aborted runner construction closes acquired MCP
+connections before releasing its writer. Admin verification can use
+`loadMcpTools()` directly and must dispose its short-lived validation result.
+
+`mcp-config.ts` owns standard `mcpServers` JSON parsing, safe server names,
+credential redaction and reviewed presets. Installation materializes a preset
+into the existing global/conversation settings map; there is no second catalog
+of installed state. Settings credentials remain host-private.
+
+`open-connector.ts` retains the deployment-owned reserved server policy. Global
+or conversation settings cannot replace or disable that reserved server or
+redirect the admin token. Provisioning sends the admin token only to the pinned
+endpoint origin and stores a persistent office runtime token under host-private
+State-dir, never in settings or the Sandbox Vault. Concurrent creation is
+single-flight per origin/office. Provisioning failure disables only that server.
+Missing `connectionName` is filled only when the action's service has exactly
+one connection; multiple-account selection stays explicit.
+
+The agent's creation-time trust gate still precedes provisioning and loading:
+`open-trigger` gets no MCP servers, tools or guidance; `membership` keeps the
+configured capabilities. Subagents receive only the parent-authorized tool
+set, including MCP tools granted by their profiles, and do not own or reconnect
+parent MCP clients. MCP connection setup/cleanup is not performed per turn.
 
 ## Skills
 

@@ -15,7 +15,7 @@ Platform-specific tools live with their adapter (`adapters/slack/tools/`,
 - `react.ts`: Defines the `react` tool (a `host-fn-tool`), which reacts to a message with an emoji through the platform bot.
 - `read.ts`: Defines the `read` tool, which reads text or images with offset, limit, and truncation support.
 - `sandbox.ts`: Defines the `sandbox` tool for inspecting or changing managed sandbox resource limits.
-- `subagent.ts`: Defines the `subagent` tool, which runs one fresh in-memory subagent, a bounded parallel `tasks[]` batch, or a small dependency DAG with explicit tools and budgets; node state streams through `AgentTool.onUpdate`.
+- `subagent.ts`: Defines the `subagent` tool, which runs one fresh in-memory subagent, a bounded parallel `tasks[]` batch, or a small dependency DAG with explicit tools and budgets; node state streams through `AgentTool.onUpdate`. This module also owns the progress protocol: snapshot bounds, parsing, merging, settling, and canonical Markdown dashboard rendering consumed by the agent presenter.
 - `subagent-slots.ts`: `SubagentSlotPool` — the process-wide fan-out ceiling (`DEFAULT_GLOBAL_SUBAGENT_SLOTS`). Per-run caps alone would let N busy conversations hold N × cap live subagent sessions, so every launch also draws from this shared pool.
 - `types.ts`: The tool-side contracts — `PlatformToolPack` / `PlatformToolPackFactory` / `PlatformToolRunContext`, the event store interface, and the truncation option/result shapes.
 - `write.ts`: Defines the `write` tool, which writes file content (parent directories included) through `executor.writeFile`.

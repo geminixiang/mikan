@@ -3,7 +3,7 @@ import {
   isValidMcpServerName,
   parseStandardMcpServers,
   redactMcpUrl,
-} from "../mcp/standard-config.js";
+} from "../harness/mcp-config.js";
 
 describe("parseStandardMcpServers", () => {
   it("stores a pasted mcpServers block as-is, Bearer header intact", () => {

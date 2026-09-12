@@ -26,7 +26,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 <Steps>
 
 1. メッセージ、mention、slash command、reply などのプラットフォームイベントを受け取る。
-2. そのメッセージが mikan を起動すべきか判定する：DM、mention、thread reply、auto-reply policy。
+2. そのメッセージが mikan を起動すべきか判定する：DM、mention、thread reply。
 3. 共通の `ConversationEvent` と `ConversationMessage` に変換する。
 4. `sessionKey` を計算し、異なる channel、thread、reply を正しい session に対応させる。
 5. 添付ファイルを conversation office の `attachments/` ディレクトリにダウンロードする。
@@ -64,7 +64,7 @@ sequenceDiagram
   P->>A: ネイティブメッセージ / slash command / reply
   A->>A: conversation、user、thread、attachments を解析
   A->>I: ConversationEvent base + trigger/log/attachment hooks
-  I->>I: auto-reply / trigger 判定
+  I->>I: 明示的なトリガー判定
   I->>A: 必要に応じて添付ファイルをダウンロード
   I->>R: handler.handleEvent(event, bot, context)
   R->>C: respond / replaceResponse / setWorking / uploadFile

@@ -22,6 +22,8 @@ import {
   resolveChannelSessionFile,
 } from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
+import { createSlackAdapters } from "../adapters/slack/context.js";
+import type { SlackMessagingBot, SlackEvent } from "../adapters/slack/bot.js";
 import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
@@ -298,6 +300,33 @@ describe("ConversationRuntime handleEvent", () => {
       expect.stringContaining("Switched: `custom-provider/custom-model`"),
       { style: "muted" },
     );
+  });
+
+  test("Slack status pending does not delay actual runtime runner or settlement", async () => {
+    const runtime = makeRuntime();
+    const runner = seedRunnerState(runtime);
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const status = vi.fn().mockReturnValue(pending);
+    const slack = {
+      getUser: () => undefined,
+      getMessagingInfo: () => testPlatform,
+      setAssistantStatus: status,
+      getChannel: () => undefined,
+    } as unknown as SlackMessagingBot;
+    const { event } = makeEventAndContext("1000.05");
+    const context = createSlackAdapters({ ...event, channel: "C123" } as SlackEvent, slack);
+    const done = runtime.handleEvent(event, slack, context);
+    try {
+      await vi.waitFor(() => expect(runner.run).toHaveBeenCalledTimes(1), { timeout: 200 });
+      await done;
+      expect(status.mock.calls.map((call) => call[2])).toEqual(["Thinking", ""]);
+    } finally {
+      release();
+      await done;
+    }
   });
 
   test("waits for chat history persistence before the agent run", async () => {

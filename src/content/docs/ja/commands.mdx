@@ -28,7 +28,6 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `session` / `/session` / `/pi-session`                               | 現在の session viewer を開きます。DM のみ。                                                                                      |
 | `/new` / `/pi-new`                                                   | 現在の session をリセットします。DM のみ。                                                                                       |
 | `/model` / `/pi-model [provider/model[:thinking]]`                   | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status`                     | 現在の group/channel の auto-reply を制御します。                                                                                |
 | `stop` / `/stop`                                                     | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。            |
 | `/admin` / `/pi-admin`                                               | 30 分間有効な admin portal を開きます。                                                                                          |
 | `/sandbox` / `/pi-sandbox`                                           | 現在の sandbox の制限と、この office の door policy・workspace layout を表示します。                                             |

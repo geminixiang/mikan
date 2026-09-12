@@ -697,8 +697,7 @@ export class GithubMessagingBot implements MessagingBot {
 
     await processMessageIntake({
       eventBase,
-      office: this.office(eventBase.conversationId),
-      isAutoReplyCandidate: false,
+      addressed: true,
       // Match on the user-typed text, not the review-decorated messageText.
       magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
       busyPolicy: "queue",

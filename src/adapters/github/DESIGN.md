@@ -101,8 +101,8 @@ Like Slack: not every comment triggers a run. Default trigger = the bot is
 **@mentioned** in a comment, or the comment is in a thread the bot already
 participates in. As shipped this gate is narrower than the design assumed: the
 commenter must also hold write permission or better on the repo, and GitHub
-intake runs with auto-reply evaluation off, so auto-reply rules do not widen the
-trigger here (see README.md § Behavior notes).
+intake accepts only explicit triggers; ordinary unaddressed comments do not
+start a run (see README.md § Behavior notes).
 
 ## Fallback: GitHub as a tool, not only a conversation
 

@@ -53,7 +53,7 @@ import {
   OfficeRegistry,
 } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
-import type { McpServerConfig } from "./mcp/types.js";
+import type { McpServerConfig } from "./harness/types.js";
 import * as Sentry from "@sentry/node";
 
 function getVersion(): string {

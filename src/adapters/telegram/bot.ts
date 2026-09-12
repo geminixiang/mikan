@@ -402,7 +402,7 @@ export class TelegramMessagingBot implements MessagingBot {
 
         const cleanedText = this.cleanText(mc.text);
         const addressedToMessagingBot = this.isAddressedToMessagingBot(mc.text, mc.chatType);
-        const isAutoReplyCandidate = mc.chatType !== "private" && !addressedToMessagingBot;
+        const addressed = mc.chatType === "private" || addressedToMessagingBot;
 
         const eventBase = createConversationEvent({
           platform: "telegram",
@@ -419,8 +419,7 @@ export class TelegramMessagingBot implements MessagingBot {
 
         await processMessageIntake({
           eventBase,
-          office: this.workspace.office(eventBase.address),
-          isAutoReplyCandidate,
+          addressed,
           magicWord: {
             addressed: addressedToMessagingBot || mc.chatType === "private",
             scopeFallback: "always",

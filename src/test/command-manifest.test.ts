@@ -51,12 +51,7 @@ describe("command manifest", () => {
   });
 
   test("slash forms include aliases in both plain and pi- spellings", () => {
-    expect(slashForms("auto-reply")).toEqual([
-      "/auto-reply",
-      "/pi-auto-reply",
-      "/autoreply",
-      "/pi-autoreply",
-    ]);
+    expect(COMMAND_MANIFEST.some((command) => command.name === "auto-reply")).toBe(false);
   });
 
   test("every slack slash command name is the pi- form of its entry name", () => {

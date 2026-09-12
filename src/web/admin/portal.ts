@@ -35,24 +35,22 @@ export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
 }
 
 import {
-  loadConversationAutoReplyConfig,
   loadConversationWorkspaceOverride,
   loadGlobalSettings,
   loadScopeMcpServers,
   resolveConversationSettings,
-  saveConversationAutoReplyConfig,
   type AgentConfig,
   type SandboxSettings,
   type WorkspacePolicyChoice,
 } from "../../config.js";
-import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../mcp/catalog.js";
-import { loadMcpTools } from "../../mcp/loader.js";
+import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../harness/mcp-config.js";
+import { loadMcpTools } from "../../harness/mcp.js";
 import {
   isValidMcpServerName,
   parseStandardMcpServers,
   redactMcpUrl,
-} from "../../mcp/standard-config.js";
-import type { McpServerConfig } from "../../mcp/types.js";
+} from "../../harness/mcp-config.js";
+import type { McpServerConfig } from "../../harness/types.js";
 import {
   applyConversationSettings,
   applyConversationWorkspacePolicy,
@@ -208,8 +206,6 @@ async function routePostApiRequest(
       return serveConversationModelUpdate(res, body, services, token);
     case "/admin/api/conversations/sandbox":
       return serveConversationSandboxUpdate(res, body, services, token);
-    case "/admin/api/conversations/auto-reply":
-      return serveConversationAutoReplyUpdate(res, body, services, token);
     case "/admin/api/conversations/slack":
       return serveConversationSlackUpdate(res, body, services, token);
     case "/admin/api/conversations/session-link":
@@ -648,7 +644,6 @@ function serveConversationState(
   const conversationConfig = resolveConversationSettings(office);
   const conversationWorkspace = resolveWorkspaceProjection(office);
   const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
-  const autoReply = loadConversationAutoReplyConfig(office.dir);
 
   jsonRes(res, 200, {
     conversationId,
@@ -665,8 +660,6 @@ function serveConversationState(
     globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
     globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
     globalWorkspaceVisibility: globalWorkspaceSettings?.visibility ?? "public",
-    autoReplyEnabled: autoReply.enabled,
-    autoReplyRules: autoReply.rules,
     slack: {
       replyMode:
         conversationConfig.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
@@ -872,32 +865,6 @@ function serveConversationSlackUpdate(
   });
 }
 
-function serveConversationAutoReplyUpdate(
-  res: ServerResponse,
-  body: Record<string, unknown>,
-  services: AdminServices,
-  token: AdminToken,
-): void {
-  const enabled = body.enabled === true;
-  const rules = body.rules;
-  if (
-    rules !== undefined &&
-    (!Array.isArray(rules) || rules.some((rule) => typeof rule !== "string"))
-  ) {
-    jsonRes(res, 400, { error: "rules must be an array of strings" });
-    return;
-  }
-  const target = requireConversationWorkspace(res, body, services, token);
-  if (!target) return;
-  const { scope, workspace } = target;
-  const dir = workspace.office(scope.address).dir;
-  respondWithSettingsUpdate(res, () => {
-    const existing = loadConversationAutoReplyConfig(dir);
-    saveConversationAutoReplyConfig(dir, { enabled, rules: rules ?? existing.rules });
-    return { ok: true };
-  });
-}
-
 function serveConversationSessionLink(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -1093,21 +1060,16 @@ const WORKSPACE_TREE_MAX_DEPTH = 4;
 const WORKSPACE_TREE_MAX_ENTRIES = 800;
 const PREVIEW_FILE_MAX_BYTES = 256 * 1024;
 
-const WORKSPACE_TOP_FILES = new Set(["auto-reply", "auto-reply.disabled"]);
 const WORKSPACE_TOP_DIRS = new Set(["scratch"]);
 
 /**
  * Limit what the admin UI can browse under a conversation directory.
- * Allowed: top-level "scratch/" subtree, and the two auto-reply marker files.
+ * Allowed: top-level "scratch/" subtree.
  */
 function isWorkspacePathAllowed(rel: string): boolean {
   if (rel === "") return true;
-  const segments = rel.split("/").filter(Boolean);
-  const first = segments[0];
+  const first = rel.split("/").find(Boolean);
   if (first === undefined) return true;
-  if (segments.length === 1) {
-    return WORKSPACE_TOP_DIRS.has(first) || WORKSPACE_TOP_FILES.has(first);
-  }
   return WORKSPACE_TOP_DIRS.has(first);
 }
 
@@ -2264,73 +2226,72 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Settings ─────────────────────────────────────────────────────────────────
 
-    async function loadSettings() {
-      const container = document.getElementById('settings-content');
+    const loadSettings = () => loadSettingsPanel('settings-content', () => '/admin/api/conversation-state?' + scopeQuery(), renderSettings);
+    const loadGlobalSettings = () => loadSettingsPanel('global-settings-content', () => '/admin/api/settings/global', renderGlobalSettings);
+
+    async function loadSettingsPanel(id, path, render) {
+      const container = document.getElementById(id);
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       if (!modelsLoaded) await loadModels();
       try {
-        const data = await apiGet('/admin/api/conversation-state?' + scopeQuery());
-        container.innerHTML = renderSettings(data);
+        const data = await apiGet(path());
+        container.innerHTML = render(data);
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
     }
 
-    function renderSettings(data) {
-      const thinking = ['off','minimal','low','medium','high','xhigh','max'];
-      const thinkingOpts = thinking.map((t) =>
-        '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
+    function renderConfigCard(title, content, action, buttonLabel, resultId) {
+      return '<div class="config-block"><h3 class="card-subtitle">' + title + '</h3>' + content +
+        '<button class="primary-action-btn" onclick="' + action + '(this)">' + buttonLabel + '</button>' +
+        '<div id="' + resultId + '" class="inline-result" style="display:none"></div></div>';
+    }
+
+    function renderOptions(choices, selected) {
+      return choices.map(([value, label]) =>
+        '<option value="' + escAttr(value) + '"' + (selected === value ? ' selected' : '') + '>' + escHtml(label) + '</option>'
       ).join('');
-      const rulesText = (data.autoReplyRules || []).join('\\n');
-      const replyModes = ['top-level','thread'];
-      const replyModeOpts = replyModes.map((m) =>
-        '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
-      ).join('');
-      const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
-      const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
-      const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
-      const doorPolicyChoices = [
-        ['default', 'Automatic — follows the platform channel (public shares, private reads only, DMs isolated)'],
+    }
+    function renderThinkingOptions(value) {
+      return renderOptions(['off','minimal','low','medium','high','xhigh','max'].map((t) => [t, t]), value);
+    }
+    function renderReplyOptions(slack) {
+      return renderOptions(['top-level','thread'].map((m) => [m, m]), (slack && slack.replyMode) || 'top-level');
+    }
+    function renderDoorOptions(value, channel) {
+      return renderOptions([
+        ['default', 'Automatic — follows ' + channel + ' platform channel (public shares, private reads only, DMs isolated)'],
         ['isolated', 'isolated — own office only'],
         ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
         ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
         ['trusted-full', 'trusted / full — entire workspace'],
-      ];
-      const doorPolicyOpts = doorPolicyChoices.map(([value, label]) =>
-        '<option value="' + value + '"' + ((data.workspaceOverride || 'default') === value ? ' selected' : '') + '>' + escHtml(label) + '</option>'
-      ).join('');
+      ], value);
+    }
+
+    function renderSettings(data) {
+      const thinkingOpts = renderThinkingOptions(data.thinkingLevel);
+      const replyModeOpts = renderReplyOptions(data.slack);
+      const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
+      const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
+      const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
+      const doorPolicyOpts = renderDoorOptions(data.workspaceOverride || 'default', 'the');
       return [
         '<div class="config-grid">',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Model</h3>',
+          renderConfigCard('Model', [
             '<div class="config-row config-row-stack"><label>Model</label><select id="m-model-ref">' + renderModelOptions(data.provider, data.model) + '</select></div>',
             '<div class="config-row"><label>Thinking</label><select id="m-thinking">' + thinkingOpts + '</select></div>',
             '<p class="muted-note">Global default: ' + escHtml(globalModelLabel) + '</p>',
-            '<button class="primary-action-btn" onclick="saveModel(this)">Save model</button>',
-            '<div id="model-save-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Auto-reply</h3>',
-            '<div class="config-row"><label>Enabled</label><label class="toggle"><input type="checkbox" id="a-enabled"' + (data.autoReplyEnabled ? ' checked' : '') + '> on</label></div>',
-            '<div class="config-row config-row-stack"><label>Rules</label><textarea id="a-rules" rows="5" placeholder="一行一條規則">' + escHtml(rulesText) + '</textarea></div>',
-            '<button class="primary-action-btn" onclick="saveAutoReply(this)">Save auto-reply</button>',
-            '<div id="auto-save-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Office data policy</h3>',
+          ].join(''), 'saveModel', 'Save model', 'model-save-result'),
+
+          renderConfigCard('Office data policy', [
             '<div class="config-row"><label>Door policy</label><select id="m-door-policy">' + doorPolicyOpts + '</select></div>',
             '<p class="muted-note">Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout + ' / ' + (data.workspaceVisibility || 'public')) + '</p>',
             '<p class="muted-note">Changing the policy rebuilds the office sandbox container with the new mounts on its next message; the container contents are preserved.</p>',
-            '<button class="primary-action-btn" onclick="saveDoorPolicy(this)">Save door policy</button>',
-            '<div id="mount-save-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Slack</h3>',
+          ].join(''), 'saveDoorPolicy', 'Save door policy', 'mount-save-result'),
+          renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="m-slack-reply-mode">' + replyModeOpts + '</select></div>',
             '<p class="muted-note">Global default: ' + escHtml(globalReplyMode) + '</p>',
-            '<button class="primary-action-btn" onclick="saveSlack(this)">Save Slack</button>',
-            '<div id="slack-save-result" class="inline-result" style="display:none"></div>',
-          '</div>',
+          ].join(''), 'saveSlack', 'Save Slack', 'slack-save-result'),
         '</div>',
       ].join('');
     }
@@ -2347,13 +2308,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         return;
       }
       await saveConversationSetting(btn, result, 'model', { provider, model, thinkingLevel }, 'Save model');
-    }
-
-    async function saveAutoReply(btn) {
-      const enabled = document.getElementById('a-enabled').checked;
-      const rules = document.getElementById('a-rules').value.split('\\n').map((s) => s.trim()).filter(Boolean);
-      const result = document.getElementById('auto-save-result');
-      await saveConversationSetting(btn, result, 'auto-reply', { enabled, rules }, 'Save auto-reply');
     }
 
     async function saveSlack(btn) {
@@ -2478,15 +2432,19 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }).join('') + '</div>';
     }
 
-    async function loadPackages() {
-      const convEl = document.getElementById('pkg-conv-content');
-      const globalEl = document.getElementById('pkg-global-content');
+    const loadPackages = () => loadScopePanels('pkg', 'packages', (data, convEl, globalEl) => {
+      if (convEl) renderPackageList(convEl, data.conversation, 'conversation');
+      if (globalEl) renderPackageList(globalEl, data.global, 'global');
+    });
+
+    async function loadScopePanels(prefix, endpoint, render) {
+      const convEl = document.getElementById(prefix + '-conv-content');
+      const globalEl = document.getElementById(prefix + '-global-content');
       if (convEl) convEl.innerHTML = '<div class="loading-msg">Loading…</div>';
       if (globalEl) globalEl.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
-        const data = await apiGet('/admin/api/packages?' + scopeQuery());
-        if (convEl) renderPackageList(convEl, data.conversation, 'conversation');
-        if (globalEl) renderPackageList(globalEl, data.global, 'global');
+        const data = await apiGet('/admin/api/' + endpoint + '?' + scopeQuery());
+        render(data, convEl, globalEl);
       } catch (err) {
         if (convEl) convEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
         if (globalEl) globalEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
@@ -2761,22 +2719,12 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       },
     }, null, 2);
 
-    async function loadMcpServers() {
-      const convEl = document.getElementById('mcp-conv-content');
-      const globalEl = document.getElementById('mcp-global-content');
-      if (convEl) convEl.innerHTML = '<div class="loading-msg">Loading…</div>';
-      if (globalEl) globalEl.innerHTML = '<div class="loading-msg">Loading…</div>';
-      try {
-        const data = await apiGet('/admin/api/mcp-servers?' + scopeQuery());
-        mcpPresets = Array.isArray(data.presets) ? data.presets : [];
-        mcpServersByScope = { conversation: data.conversation || {}, global: data.global || {} };
-        if (convEl) renderMcpScope(convEl, 'conversation', mcpServersByScope.conversation);
-        if (globalEl) renderMcpScope(globalEl, 'global', mcpServersByScope.global);
-      } catch (err) {
-        if (convEl) convEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-        if (globalEl) globalEl.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-      }
-    }
+    const loadMcpServers = () => loadScopePanels('mcp', 'mcp-servers', (data, convEl, globalEl) => {
+      mcpPresets = Array.isArray(data.presets) ? data.presets : [];
+      mcpServersByScope = { conversation: data.conversation || {}, global: data.global || {} };
+      if (convEl) renderMcpScope(convEl, 'conversation', mcpServersByScope.conversation);
+      if (globalEl) renderMcpScope(globalEl, 'global', mcpServersByScope.global);
+    });
 
     async function mutateMcpServer(scope, action, name, extra) {
       mcpMessage(scope, action === 'test' ? '連線測試中…' : '儲存並測試連線中…', 'busy');
@@ -3215,27 +3163,9 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       return cards + legend + '<div class="tl-chart">' + peak + bars + '</div>' + axis + note;
     }
 
-    async function loadGlobalSettings() {
-      const container = document.getElementById('global-settings-content');
-      container.innerHTML = '<div class="loading-msg">Loading…</div>';
-      if (!modelsLoaded) await loadModels();
-      try {
-        const data = await apiGet('/admin/api/settings/global');
-        container.innerHTML = renderGlobalSettings(data);
-      } catch (err) {
-        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-      }
-    }
-
     function renderGlobalSettings(data) {
-      const thinking = ['off','minimal','low','medium','high','xhigh','max'];
-      const thinkingOpts = thinking.map((t) =>
-        '<option value="' + t + '"' + (data.thinkingLevel === t ? ' selected' : '') + '>' + t + '</option>'
-      ).join('');
-      const replyModes = ['top-level','thread'];
-      const replyModeOpts = replyModes.map((m) =>
-        '<option value="' + m + '"' + (((data.slack && data.slack.replyMode) || 'top-level') === m ? ' selected' : '') + '>' + m + '</option>'
-      ).join('');
+      const thinkingOpts = renderThinkingOptions(data.thinkingLevel);
+      const replyModeOpts = renderReplyOptions(data.slack);
       const gDoorKey = !data.workspaceDoorPolicy
         ? 'default'
         : (data.workspaceDoorPolicy === 'isolated'
@@ -3243,47 +3173,26 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
           : (data.workspaceLayout === 'full'
             ? 'trusted-full'
             : ((data.workspaceVisibility || 'public') === 'private' ? 'trusted-shared-support-private' : 'trusted-shared-support')));
-      const gDoorPolicyChoices = [
-        ['default', 'Automatic — follows each platform channel (public shares, private reads only, DMs isolated)'],
-        ['isolated', 'isolated — own office only'],
-        ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
-        ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
-        ['trusted-full', 'trusted / full — entire workspace'],
-      ];
-      const gDoorPolicyOpts = gDoorPolicyChoices.map(([value, label]) =>
-        '<option value="' + value + '"' + (gDoorKey === value ? ' selected' : '') + '>' + escHtml(label) + '</option>'
-      ).join('');
+      const gDoorPolicyOpts = renderDoorOptions(gDoorKey, 'each');
       return [
         '<div class="config-grid">',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Default model</h3>',
+          renderConfigCard('Default model', [
             '<div class="config-row config-row-stack"><label>Model</label><select id="g-model-ref">' + renderModelOptions(data.provider, data.model) + '</select></div>',
             '<div class="config-row"><label>Thinking</label><select id="g-thinking">' + thinkingOpts + '</select></div>',
-            '<button class="primary-action-btn" onclick="saveGlobalModel(this)">Save model</button>',
-            '<div id="g-model-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Sandbox limits</h3>',
+          ].join(''), 'saveGlobalModel', 'Save model', 'g-model-result'),
+          renderConfigCard('Sandbox limits', [
             '<div class="config-row"><label>CPUs</label><input id="g-cpus" placeholder="0.5" value="' + escAttr(data.sandboxCpus || '') + '"></div>',
             '<div class="config-row"><label>Memory</label><input id="g-mem" placeholder="1g" value="' + escAttr(data.sandboxMemory || '') + '"></div>',
             '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
             '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
-            '<button class="primary-action-btn" onclick="saveGlobalSandbox(this)">Save sandbox</button>',
-            '<div id="g-sandbox-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Office door policy</h3>',
+          ].join(''), 'saveGlobalSandbox', 'Save sandbox', 'g-sandbox-result'),
+          renderConfigCard('Office door policy', [
             '<div class="config-row"><label>Default</label><select id="g-door-policy">' + gDoorPolicyOpts + '</select></div>',
             '<p class="muted-note">Applies to offices without their own policy. Affected offices rebuild their sandbox container with the new mounts on the next message; container contents are preserved.</p>',
-            '<button class="primary-action-btn" onclick="saveGlobalWorkspace(this)">Save door policy</button>',
-            '<div id="g-workspace-result" class="inline-result" style="display:none"></div>',
-          '</div>',
-          '<div class="config-block">',
-            '<h3 class="card-subtitle">Slack</h3>',
+          ].join(''), 'saveGlobalWorkspace', 'Save door policy', 'g-workspace-result'),
+          renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="g-slack-reply-mode">' + replyModeOpts + '</select></div>',
-            '<button class="primary-action-btn" onclick="saveGlobalSlack(this)">Save Slack</button>',
-            '<div id="g-slack-result" class="inline-result" style="display:none"></div>',
-          '</div>',
+          ].join(''), 'saveGlobalSlack', 'Save Slack', 'g-slack-result'),
         '</div>',
       ].join('');
     }

@@ -124,7 +124,7 @@ async function askLlm(
   if (index === 0) {
     env.ANTHROPIC_API_KEY = await askRequired(io, "  ANTHROPIC_API_KEY: ", true);
     const model = (await io.ask("  Model [claude-sonnet-4-6]: ")).trim() || "claude-sonnet-4-6";
-    return { llm: { provider: "anthropic", model, autoReplyModel: "claude-haiku-4-5" } };
+    return { llm: { provider: "anthropic", model } };
   }
   if (index === 1) {
     env.OPENAI_API_KEY = await askRequired(io, "  OPENAI_API_KEY: ", true);

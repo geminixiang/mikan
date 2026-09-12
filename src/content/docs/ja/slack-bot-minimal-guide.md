@@ -81,7 +81,6 @@ Socket Mode だけでローカル開発する場合、公開 request URL は不�
 - `/pi-new` → 新しい DM session を開始
 - `/pi-session` → session viewer
 - `/pi-model` → この conversation の LLM を切り替え（`provider/model[:thinking]`、例：`anthropic/claude-sonnet-4-6:off`）
-- `/pi-auto-reply` → group/channel auto-reply rules を管理
 - `/pi-sandbox` → この conversation の sandbox を確認・調整
 - `/pi-admin` → 管理ポータルを開く
 

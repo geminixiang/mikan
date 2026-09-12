@@ -43,13 +43,6 @@ docs = "ARCHITECTURE.md#agent-execution"
 sources = ["src/agent/"]
 
 [[modules]]
-id = "mcp"
-name = "Host-side MCP integration"
-kind = "infrastructure"
-docs = "src/mcp/README.md"
-sources = ["src/mcp/"]
-
-[[modules]]
 id = "harness"
 name = "Agent harness"
 kind = "core"
@@ -178,10 +171,10 @@ docs = "ARCHITECTURE.md#agent-execution"
 
 [[seams]]
 id = "mcp-tools"
-owner = "mcp"
+owner = "harness"
 consumers = ["agent-runner"]
-interface = "loadMcpTools, provisionOfficeOpenConnectorToken"
-docs = "src/mcp/README.md"
+interface = "SessionStore.connectMcp, provisionOfficeOpenConnectorToken"
+docs = "src/harness/README.md"
 
 [[seams]]
 id = "harness-session"
@@ -202,7 +195,7 @@ consumers = [
   "workspace-projection",
   "packages",
   "side-services",
-  "mcp",
+  "harness",
 ]
 interface = "Workspace.office, Office"
 docs = "src/office/README.md"
@@ -353,10 +346,10 @@ docs = "src/vault/README.md"
 
 [[resources]]
 id = "openconnector-runtime-token"
-authority = "mcp"
+authority = "harness"
 scope = "conversation"
 classification = "credential"
-docs = "src/mcp/README.md"
+docs = "src/harness/README.md"
 
 [[resources]]
 id = "runner-state"
@@ -470,7 +463,7 @@ docs = "ARCHITECTURE.md#inv-process-shutdown-order"
 
 [[invariants]]
 id = "runner-materialization-rollback"
-owners = ["agent-runner", "mcp", "sessions"]
+owners = ["agent-runner", "harness", "sessions"]
 applies_to = ["runner-state", "mcp-tools", "session-files"]
 docs = "ARCHITECTURE.md#inv-runner-materialization-rollback"
 
@@ -518,7 +511,7 @@ docs = "ARCHITECTURE.md#inv-credential-least-authority"
 
 [[invariants]]
 id = "mcp-conversation-authority"
-owners = ["mcp", "conversation-runtime", "agent-runner"]
+owners = ["harness", "conversation-runtime", "agent-runner"]
 applies_to = ["mcp-tools", "openconnector-runtime-token", "office", "runner-state"]
 docs = "ARCHITECTURE.md#inv-mcp-conversation-authority"
 

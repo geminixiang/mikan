@@ -57,7 +57,9 @@ import type {
   SessionHeader,
   SessionInspection,
 } from "./types.js";
-import { CURRENT_SESSION_VERSION } from "./types.js";
+import { CURRENT_SESSION_VERSION, type McpServerConfig, type McpToolsResult } from "./types.js";
+import { loadMcpTools, formatMcpServerInstructions } from "./mcp.js";
+import * as log from "../log.js";
 
 interface CurrentSessionHeader {
   v: 4;
@@ -430,6 +432,7 @@ class CachedSessionInspection implements SessionInspection {
 }
 
 export class SessionStore implements SessionInspection {
+  private mcp: McpToolsResult | undefined;
   private mutationTail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closed = false;
@@ -638,6 +641,25 @@ export class SessionStore implements SessionInspection {
     return buildContext(await this.getBranch());
   }
 
+  /** Acquire host MCP capabilities under the same lifetime as the session writer. */
+  async connectMcp(servers: Record<string, McpServerConfig>, signal?: AbortSignal) {
+    return this.mutate(async () => {
+      if (this.mcp) throw new Error("SessionStore already has MCP connections");
+      this.mcp = await loadMcpTools(servers, signal);
+      for (const error of this.mcp.errors) {
+        log.logWarning(`MCP server unavailable: ${error.server}`, error.error);
+      }
+      signal?.throwIfAborted();
+      return this.mcp.tools;
+    });
+  }
+
+  /** MCP guidance remains attached when the caller refreshes its per-turn prompt. */
+  withMcpInstructions(prompt: string): string {
+    const instructions = formatMcpServerInstructions(this.mcp?.instructions ?? []);
+    return instructions ? `${prompt}\n\n${instructions}` : prompt;
+  }
+
   /** Attach Pi's runtime to this store's sole writable Session. */
   async createHarness(options: Omit<AgentHarnessOptions, "session">): Promise<AgentHarness> {
     return this.mutate(async () => {
@@ -729,12 +751,17 @@ export class SessionStore implements SessionInspection {
     this.closed = true;
     this.closePromise = this.mutationTail
       .then(async () => {
-        if (this.state.kind !== "live") return;
         try {
-          if (this.harness) await this.harness.close(TODO_CONTEXT);
-          else await this.state.session.close(TODO_CONTEXT);
+          await this.mcp?.dispose();
         } finally {
-          await this.state.repo?.close(TODO_CONTEXT);
+          if (this.state.kind === "live") {
+            try {
+              if (this.harness) await this.harness.close(TODO_CONTEXT);
+              else await this.state.session.close(TODO_CONTEXT);
+            } finally {
+              await this.state.repo?.close(TODO_CONTEXT);
+            }
+          }
         }
       })
       .finally(() => {

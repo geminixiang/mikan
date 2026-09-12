@@ -107,8 +107,7 @@ Consequences to keep in mind:
   without changing that domain rule. The directory is mounted only under
   `trusted` + `shared-support` or `full`; an `isolated` office cannot
   self-schedule. Event text is agent-visible and must never contain secrets.
-- Auto-reply config files live in the office dir and are therefore
-  agent-toggleable (feature is deprecated).
+- Retired auto-reply marker files are inert and are not deleted when settings are read.
 
 ### Paths in prompts and tool output
 

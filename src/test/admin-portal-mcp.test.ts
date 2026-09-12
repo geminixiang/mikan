@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../mcp/catalog.js";
+import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../harness/mcp-config.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { FileVaultManager } from "../vault/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../web/admin/portal.js";

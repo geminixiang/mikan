@@ -118,29 +118,29 @@ deploy または config change のたびにこれらのテストを実行しま�
 チェックリストを番号付けするためのもので、自動化された `e2e/slack` scenario 内の `S-0xx` の id とは
 無関係です。両者を対応付けないでください。
 
-| ID    | 動作                                               | 期待結果                                             |
-| ----- | -------------------------------------------------- | ---------------------------------------------------- |
-| S-001 | DM mikan: `hello`                                  | mikan が正常に返信                                   |
-| S-002 | Channel: `@mikan hello`                            | mikan だけが返信                                     |
-| S-003 | channel に mention なしのメッセージを送る          | auto-reply が明示的に有効でない限り bot は返信しない |
-| S-004 | thread 内で bot に返信                             | Bot が同じ thread で返信                             |
-| S-005 | mikan に短い指令/タスクを実行させる                | タスクが完了し結果を報告                             |
-| S-006 | mikan 実行中に `stop` を送る                       | 実行中タスクが停止、または停止済みと報告             |
-| S-007 | 小さなテキストファイルをアップロードして要約を依頼 | Bot がファイルを処理、または未対応を明確に説明       |
-| S-008 | 後続の bot メッセージを観察                        | reply loop が発生しない                              |
-| S-009 | one-shot event file を作成                         | mikan が reminder を Slack に送信                    |
+| ID    | 動作                                               | 期待結果                                       |
+| ----- | -------------------------------------------------- | ---------------------------------------------- |
+| S-001 | DM mikan: `hello`                                  | mikan が正常に返信                             |
+| S-002 | Channel: `@mikan hello`                            | mikan だけが返信                               |
+| S-003 | channel に mention なしのメッセージを送る          | bot は返信しない                               |
+| S-004 | thread 内で bot に返信                             | Bot が同じ thread で返信                       |
+| S-005 | mikan に短い指令/タスクを実行させる                | タスクが完了し結果を報告                       |
+| S-006 | mikan 実行中に `stop` を送る                       | 実行中タスクが停止、または停止済みと報告       |
+| S-007 | 小さなテキストファイルをアップロードして要約を依頼 | Bot がファイルを処理、または未対応を明確に説明 |
+| S-008 | 後続の bot メッセージを観察                        | reply loop が発生しない                        |
+| S-009 | one-shot event file を作成                         | mikan が reminder を Slack に送信              |
 
 ## Mikan Bot テストケース
 
 ### 基本 Slack インタラクション
 
-| ID    | 動作                                      | 期待結果                                       |
-| ----- | ----------------------------------------- | ---------------------------------------------- |
-| M-001 | DM mikan: `hello`                         | mikan が返信                                   |
-| M-002 | Channel: `@mikan hello`                   | mikan が返信                                   |
-| M-003 | Channel message without mention           | auto-reply が有効でない限り mikan は返信しない |
-| M-004 | thread 内で mikan に返信                  | mikan が同じ thread で返信                     |
-| M-005 | 2 つの異なるトピックの独立 threads を開始 | Sessions が分離を維持                          |
+| ID    | 動作                                      | 期待結果                   |
+| ----- | ----------------------------------------- | -------------------------- |
+| M-001 | DM mikan: `hello`                         | mikan が返信               |
+| M-002 | Channel: `@mikan hello`                   | mikan が返信               |
+| M-003 | Channel message without mention           | mikan は返信しない         |
+| M-004 | thread 内で mikan に返信                  | mikan が同じ thread で返信 |
+| M-005 | 2 つの異なるトピックの独立 threads を開始 | Sessions が分離を維持      |
 
 ### Agent と Tool 動作
 

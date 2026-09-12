@@ -81,7 +81,6 @@ Token 以 `xoxb-` 开头。
 - `/pi-new` → 开始新的 DM 会话
 - `/pi-session` → 会话查看器
 - `/pi-model` → 切换此对话的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
-- `/pi-auto-reply` → 管理群组/频道自动回复规则
 - `/pi-sandbox` → 检查或调整此对话的沙箱
 - `/pi-admin` → 打开管理 portal
 

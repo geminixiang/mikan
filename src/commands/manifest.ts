@@ -92,13 +92,6 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     slackCommand: "/pi-admin",
     slackRoute: { thread: true },
   },
-  {
-    name: "auto-reply",
-    description: "Enable, disable, or show auto-reply for this channel",
-    aliases: ["autoreply"],
-    slackCommand: "/pi-auto-reply",
-    slackRoute: { includeText: true },
-  },
 ];
 
 export function commandManifestEntry(name: string): CommandManifestEntry {

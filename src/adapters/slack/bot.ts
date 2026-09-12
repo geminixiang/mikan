@@ -230,6 +230,9 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
 export class SlackMessagingBot implements MessagingBot {
   private socketClient: SocketModeClient;
   private webClient: WebClient;
+  // Status is cosmetic: its rate limits must never pause the message client's queue.
+  private readonly statusClient: WebClient;
+  private readonly statusUpdates = new Map<string, Promise<void>>();
   private handler: MessagingEventHandler;
   private workspace: Workspace;
   private botToken: string;
@@ -286,6 +289,11 @@ export class SlackMessagingBot implements MessagingBot {
       clientPingTimeout: 12_000,
     });
     this.webClient = new WebClient(config.botToken);
+    this.statusClient = new WebClient(config.botToken, {
+      timeout: 3000,
+      retryConfig: { retries: 0 },
+      rejectRateLimitedCalls: true,
+    });
   }
 
   setEventsWatcher(watcher: EventsWatcher): void {
@@ -646,13 +654,23 @@ export class SlackMessagingBot implements MessagingBot {
 
   /** Set the status for an assistant thread (shows "thinking" state) */
   async setAssistantStatus(channel: string, threadTs: string, status: string): Promise<void> {
-    return slackRetry(async () => {
-      await this.webClient.assistant.threads.setStatus({
-        channel_id: channel,
-        thread_ts: threadTs,
-        status,
+    const key = `${channel}:${threadTs}`;
+    const previous = this.statusUpdates.get(key) ?? Promise.resolve();
+    const update = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await this.statusClient.assistant.threads.setStatus({
+          channel_id: channel,
+          thread_ts: threadTs,
+          status,
+        });
       });
-    });
+    this.statusUpdates.set(key, update);
+    try {
+      await update;
+    } finally {
+      if (this.statusUpdates.get(key) === update) this.statusUpdates.delete(key);
+    }
   }
 
   /** Offer starting points in a new assistant thread. */
@@ -974,7 +992,6 @@ export class SlackMessagingBot implements MessagingBot {
     event: SlackEvent;
     attachmentsPromise: Promise<Attachment[]>;
     queueKey: string;
-    isAutoReplyCandidate: boolean;
     addressed: boolean;
   }): Promise<void> {
     const kind = this.channelKindFor(options.event.conversationId);
@@ -994,8 +1011,7 @@ export class SlackMessagingBot implements MessagingBot {
     };
     return processMessageIntake({
       eventBase: options.event as unknown as ConversationEvent,
-      office: this.workspace.office(options.event.address),
-      isAutoReplyCandidate: options.isAutoReplyCandidate,
+      addressed: options.addressed,
       magicWord: { addressed: options.addressed, scopeFallback: "top-level" },
       busyPolicy: "queue",
       logEntryBase: {},
@@ -1418,7 +1434,6 @@ export class SlackMessagingBot implements MessagingBot {
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, sessionKey),
-      isAutoReplyCandidate: false,
       addressed: true,
     });
 
@@ -1473,8 +1488,8 @@ export class SlackMessagingBot implements MessagingBot {
 
     // message.im normally carries channel_type "im", but fall back to the
     // D-prefix convention (used by handleAppMention and session keys) so a
-    // missing channel_type cannot silently demote a DM to an auto-reply
-    // candidate that never triggers.
+    // missing channel_type cannot silently classify a DM as an unaddressed
+    // channel message that never triggers.
     const isDM = e.channel_type === "im" || e.channel.startsWith("D");
     const conversationKind: ConversationKind = isDM ? "direct" : "shared";
     const isMessagingBotMention = e.text?.includes(`<@${this.botUserId}>`);
@@ -1549,7 +1564,6 @@ export class SlackMessagingBot implements MessagingBot {
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
-      isAutoReplyCandidate: !isDM,
       addressed: isDM,
     });
 

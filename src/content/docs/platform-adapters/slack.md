@@ -24,7 +24,7 @@ The Slack adapter mainly handles:
 - Block Kit actions
 - assistant thread / status APIs
 
-DMs trigger mikan directly. Shared-channel messages require a mention, interaction, or matching auto-reply policy. An ordinary unmentioned human reply in a channel thread is logged but does not trigger a run; thread session isolation does not bypass the trigger policy.
+DMs trigger mikan directly. Shared-channel messages require a mention or interaction. An ordinary unmentioned human reply in a channel thread is logged but does not trigger a run; thread session isolation does not bypass the trigger policy.
 
 ## Session rules
 

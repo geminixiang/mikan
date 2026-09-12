@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../adapter.js";
 import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "../commands/admin.js";
-import { AutoReplyCommandHandler } from "../commands/auto-reply.js";
 import {
   conversationSettingsPath,
   createGlobalSettingsFile,
@@ -317,114 +316,6 @@ describe("AdminCommandHandler", () => {
   test("requires slash form", async () => {
     const ctx = buildContext({ commandText: "admin" });
     expect(await handler.tryHandle(ctx)).toBe(false);
-  });
-});
-
-// ── AutoReplyCommandHandler ─────────────────────────────────────────────────
-
-describe("AutoReplyCommandHandler", () => {
-  const handler = new AutoReplyCommandHandler();
-  let workingDir: string;
-
-  beforeEach(() => {
-    workingDir = join(tmpdir(), `mikan-auto-reply-test-${Date.now()}`);
-    mkdirSync(workingDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    rmSync(workingDir, { recursive: true, force: true });
-  });
-
-  test("declines unrelated commands and bare forms", async () => {
-    const ctx = buildContext({
-      commandText: "hello",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-    expect(await handler.tryHandle(ctx)).toBe(false);
-
-    const bareCtx = buildContext({
-      commandText: "auto-reply on",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-    expect(await handler.tryHandle(bareCtx)).toBe(false);
-  });
-
-  test("rejects private conversations", async () => {
-    const ctx = buildContext({
-      commandText: "/pi-auto-reply on",
-      privateConversation: true,
-      services: { workspace: testWorkspace(workingDir) },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("只能在 group/channel");
-  });
-
-  test("enables and disables auto-reply using mom-compatible marker files", async () => {
-    const enableCtx = buildContext({
-      commandText: "/pi-auto-reply on",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-    expect(await handler.tryHandle(enableCtx)).toBe(true);
-    expect(enableCtx.responder.responses[0]).toContain("Auto-reply is enabled");
-    expect(enableCtx.responder.responses[0]).toContain("Edit rules at:");
-
-    const enabledPath = join(
-      workingDir,
-      officeKey(createOfficeAddress("slack", "C123")),
-      "auto-reply",
-    );
-    expect(readFileSync(enabledPath, "utf-8")).toBe("");
-
-    writeFileSync(enabledPath, "Reply when someone asks about deployments.", "utf-8");
-
-    const disableCtx = buildContext({
-      commandText: "/pi-auto-reply off",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-    expect(await handler.tryHandle(disableCtx)).toBe(true);
-    expect(disableCtx.responder.responses[0]).toContain("Auto-reply is disabled");
-    expect(disableCtx.responder.responses[0]).toContain("Current rules:");
-    expect(disableCtx.responder.responses[0]).toContain(
-      "Reply when someone asks about deployments.",
-    );
-    expect(existsSync(enabledPath)).toBe(false);
-    expect(
-      readFileSync(
-        join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "auto-reply.disabled"),
-        "utf-8",
-      ),
-    ).toBe("Reply when someone asks about deployments.");
-  });
-
-  test("shows auto-reply file contents in status", async () => {
-    const conversationDir = join(workingDir, officeKey(createOfficeAddress("slack", "C123")));
-    mkdirSync(conversationDir, { recursive: true });
-    writeFileSync(
-      join(conversationDir, "auto-reply"),
-      "Reply when someone asks about deploys.",
-      "utf-8",
-    );
-
-    const ctx = buildContext({
-      commandText: "/pi-auto-reply status",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Auto-reply is enabled");
-    expect(ctx.responder.responses[0]).toContain("Current rules:");
-    expect(ctx.responder.responses[0]).toContain("Reply when someone asks about deploys.");
-  });
-
-  test("rejects rule management to match mom-compatible slash command surface", async () => {
-    const ctx = buildContext({
-      commandText: "/pi-auto-reply rule Reply when someone asks about deployments.",
-      services: { workspace: testWorkspace(workingDir) },
-    });
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("/pi-auto-reply on|off|status");
-    expect(existsSync(join(workingDir, "C123", "settings.json"))).toBe(false);
   });
 });
 

@@ -7,7 +7,6 @@ import type {
   OfficeAddress,
   SubagentProgressSnapshot,
 } from "../adapter.js";
-import type { Office } from "../office/types.js";
 import type { Attachment } from "../types.js";
 
 export type ChatResponseErrorOperation =
@@ -186,9 +185,8 @@ export interface SavedAttachments {
 
 export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   eventBase: TEvent;
-  /** The event's Conversation office; absent when auto-reply is unconfigured (embedders). */
-  office: Office | undefined;
-  isAutoReplyCandidate: boolean;
+  /** Explicit DM, mention, command or supported thread continuation. */
+  addressed: boolean;
   magicWord: MagicWordIntakeOptions;
   /**
    * "reject" bounces a new message while its session is already running

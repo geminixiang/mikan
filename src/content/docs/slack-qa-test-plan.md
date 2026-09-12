@@ -119,29 +119,29 @@ Run these tests after every deploy or config change. These `S-0xx` ids number th
 below and are independent of the `S-0xx` ids inside the automated `e2e/slack` scenarios — do not
 match them up.
 
-| ID    | Action                                         | Expected result                                              |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------ |
-| S-001 | DM mikan: `hello`                              | mikan responds normally                                      |
-| S-002 | Channel: `@mikan hello`                        | only mikan responds                                          |
-| S-003 | Send a channel message without mention         | bot does not respond unless auto-reply is explicitly enabled |
-| S-004 | Reply to the bot in a thread                   | bot replies in the same thread                               |
-| S-005 | Ask mikan to run a short command/task          | task completes and reports the result                        |
-| S-006 | Send `stop` while mikan is running             | running task stops or reports that it stopped                |
-| S-007 | Upload a small text file and ask for a summary | bot handles the file or clearly explains it is unsupported   |
-| S-008 | Observe later bot messages                     | no reply loop is created                                     |
-| S-009 | Create a one-shot event file                   | mikan sends the reminder to Slack                            |
+| ID    | Action                                         | Expected result                                            |
+| ----- | ---------------------------------------------- | ---------------------------------------------------------- |
+| S-001 | DM mikan: `hello`                              | mikan responds normally                                    |
+| S-002 | Channel: `@mikan hello`                        | only mikan responds                                        |
+| S-003 | Send a channel message without mention         | bot does not respond                                       |
+| S-004 | Reply to the bot in a thread                   | bot replies in the same thread                             |
+| S-005 | Ask mikan to run a short command/task          | task completes and reports the result                      |
+| S-006 | Send `stop` while mikan is running             | running task stops or reports that it stopped              |
+| S-007 | Upload a small text file and ask for a summary | bot handles the file or clearly explains it is unsupported |
+| S-008 | Observe later bot messages                     | no reply loop is created                                   |
+| S-009 | Create a one-shot event file                   | mikan sends the reminder to Slack                          |
 
 ## Mikan Bot test cases
 
 ### Basic Slack interaction
 
-| ID    | Action                                            | Expected result                                   |
-| ----- | ------------------------------------------------- | ------------------------------------------------- |
-| M-001 | DM mikan: `hello`                                 | mikan replies                                     |
-| M-002 | Channel: `@mikan hello`                           | mikan replies                                     |
-| M-003 | Channel message without mention                   | mikan does not reply unless auto-reply is enabled |
-| M-004 | Reply to mikan in a thread                        | mikan replies in the same thread                  |
-| M-005 | Start two independent threads on different topics | sessions stay isolated                            |
+| ID    | Action                                            | Expected result                  |
+| ----- | ------------------------------------------------- | -------------------------------- |
+| M-001 | DM mikan: `hello`                                 | mikan replies                    |
+| M-002 | Channel: `@mikan hello`                           | mikan replies                    |
+| M-003 | Channel message without mention                   | mikan does not reply             |
+| M-004 | Reply to mikan in a thread                        | mikan replies in the same thread |
+| M-005 | Start two independent threads on different topics | sessions stay isolated           |
 
 ### Agent and tool behavior
 

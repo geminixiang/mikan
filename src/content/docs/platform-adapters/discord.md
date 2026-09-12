@@ -26,7 +26,7 @@ The adapter handles:
 - slash commands: `login`, `session`, `new`, `stop`, `model`, and `sandbox`
 - message attachments
 
-DMs trigger directly. Guild messages normally require a mention, a reply/thread context that mikan handles, or a matching auto-reply policy. Stop commands are checked before the normal trigger gate.
+DMs trigger directly. Guild messages normally require a mention or a reply/thread context that mikan handles. Stop commands are checked before the normal trigger gate.
 
 ## Slash-command registration
 

@@ -7,7 +7,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
 - `agent-events.ts`: Broadcasts agent event envelopes over server-sent events to connected session-view clients, and serves the `/api/agent-events/stream` endpoint.
 - `agent/`: Agent runner — prompt authority, resource catalog, execution binding, run presentation, and the `createRunner` composition root.
-- `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, auto-reply, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
+- `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
 - `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.
 - `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
@@ -18,8 +18,6 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
 - `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown; also carries containers through the office-key rename and mount drift without losing their writable layer.
 - `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.
-- `subagent-progress.ts`: Owns the subagent progress snapshot end to end — producer construction, consumer parsing, display bounds, status tables, and response-source rendering — because the snapshot crosses an untyped tool-update transport.
-- `trigger.ts`: Decides whether a message should trigger the agent, including auto-reply rules and LLM judging.
 - `types.ts`: Cross-module domain types that no single module owns — office identity aliases, sandbox settings, workspace door policy/layout, event payload re-exports, and portal shell options.
 
 ## Subdirectories
@@ -29,7 +27,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
-- `harness/`: mikan's agent harness — session store, model catalog, run loop, skills, and subagents.
+- `harness/`: mikan's agent harness — session store, model catalog, run loop, MCP connections and configuration, skills, and subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
 - `packages/`: Git-sourced skill packages — source grammar, materialization, per-conversation resolution, read-only mounts, and the admin write path.

@@ -26,7 +26,7 @@ Adapter 處理：
 - slash commands：`login`、`session`、`new`、`stop`、`model` 與 `sandbox`
 - message attachments
 
-DM 會直接觸發。Guild 訊息通常需要 mention、mikan 處理的 reply/thread context，或符合 auto-reply policy。Stop commands 會在一般 trigger gate 前檢查。
+DM 會直接觸發。Guild 訊息通常需要 mention 或 mikan 處理的 reply/thread context。Stop commands 會在一般 trigger gate 前檢查。
 
 ## Slash command 註冊
 

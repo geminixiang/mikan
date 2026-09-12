@@ -6,7 +6,7 @@ description: 設定 BotFather privacy、long polling、reply-scoped sessions、c
 ## 設定
 
 1. 使用 [@BotFather](https://t.me/BotFather) 建立 bot 並複製 token。
-2. 決定 bot 是否必須接收一般群組訊息。BotFather privacy mode 通常會將群組送達限制在 commands、mentions 與給 bot 的 replies。只有 group-wide auto-reply rules 需要接收更多訊息時，才使用 `/setprivacy` 停用 privacy mode。
+2. 除非其他明確整合需要一般群組訊息，否則保留 BotFather privacy mode。Privacy mode 限制群組訊息送達；使用 `/setprivacy` 停用它也不會讓 mikan 回覆未被明確指向的訊息。
 3. 將 bot 加入每個群組，且僅授予讀取與傳送訊息或檔案所需的 group/admin permissions。
 4. 設定 token 並啟動 mikan：
 
@@ -25,7 +25,7 @@ Adapter 處理：
 - `/login`、`/session`、`/new`、`/stop`、`/model` 與 `/sandbox`——指令選單是透過 `setMyCommands` 從 `src/commands/manifest.ts` 註冊的，因此絕不會與共用清單脫節
 - replies、photos 與 documents
 
-私人訊息會直接觸發。群組訊息需要 command、mention、reply context 或符合 auto-reply policy。Telegram 必須先將訊息送達 bot；privacy mode 可能讓 auto-reply rule 看不到一般群組流量。
+私人訊息會直接觸發。群組訊息需要指向 bot 的 command、mention 或支援的 reply context。Telegram 必須先將訊息送達 bot；擴大送達範圍不會繞過明確觸發條件。
 
 ## Session 規則
 

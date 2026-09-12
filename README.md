@@ -141,7 +141,6 @@ For routing, mounts, vault behavior, managed container details, and Cloudflare n
 | `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                      |
 | `/sandbox` / `/pi-sandbox [boost\|door …]`       | Show sandbox status, boost limits, or set the office door policy |
 | `/admin` / `/pi-admin`                           | Open the admin portal                                            |
-| `/auto-reply` / `/pi-auto-reply on\|off\|status` | Control group/channel auto-reply                                 |
 | `stop` / `/stop`                                 | Stop the current run (works on every platform)                   |
 
 `session` is the only command accepted without a leading slash. See [src/content/docs/commands.mdx](src/content/docs/commands.mdx) for the full command reference and web session viewer setup.
@@ -224,3 +223,5 @@ PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit sty
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+Auto-reply has been retired. Existing `auto-reply` / `auto-reply.disabled` marker files and `llm.autoReply` / `autoReply` settings no longer take effect; reading configuration does not delete these files.

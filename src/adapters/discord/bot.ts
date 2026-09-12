@@ -596,7 +596,7 @@ export class DiscordMessagingBot implements MessagingBot {
     const referencedMsgId = msg.reference?.messageId;
     const isThreadReply = isInThread || !!referencedMsgId;
     const isMentioned = msg.mentions.users.has(this.botUserId ?? "");
-    const isAutoReplyCandidate = !isDM && !isMentioned && !isThreadReply;
+    const addressed = isDM || isMentioned || isThreadReply;
 
     const { conversationId, threadTs } = this.resolveConversationContext({
       channelId: msg.channelId,
@@ -648,9 +648,8 @@ export class DiscordMessagingBot implements MessagingBot {
 
     await processMessageIntake({
       eventBase,
-      office: this.workspace.office(eventBase.address),
-      isAutoReplyCandidate,
-      magicWord: { addressed: !isAutoReplyCandidate, scopeFallback: "top-level" },
+      addressed,
+      magicWord: { addressed, scopeFallback: "top-level" },
       busyPolicy: "queue",
       logEntryBase: {
         date: msg.createdAt.toISOString(),

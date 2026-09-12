@@ -8,14 +8,9 @@ import type { Workspace } from "../office/index.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
-import { defaultCommandHandlers } from "../commands/registry.js";
 import { commandManifestEntry } from "../commands/manifest.js";
 import { createGlobalSettingsFile } from "../config.js";
-import type { CommandServices } from "../commands/types.js";
-import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
-import type { SandboxConfig } from "../sandbox/index.js";
-import type { VaultManager } from "../vault/index.js";
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -28,38 +23,113 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
-/**
- * Every describe here points MIKAN_STATE_DIR at the same tmp dir it uses as the
- * workspace root, so office state dirs and the registry journal land beside the
- * office dirs the assertions read.
- */
-function makeCommandServices(workspace: Workspace): CommandServices {
-  const sandbox: SandboxConfig = { type: "host" };
-  return {
-    workspace,
-    sandbox,
-    vaultManager: {
-      hasEntry: () => false,
-      resolve: () => undefined,
-      list: () => [],
-      isEnabled: () => true,
-      upsertEnv: () => {},
-      upsertFile: () => {},
-      listSharedVaults: () => [],
-      deleteSharedVault: () => false,
-      copySharedVaultTo: () => ({ filesCopied: 0, envKeysCopied: 0 }),
-    } as VaultManager,
-    linkTokenStore: {
-      create: () => ({ token: "tok-link" }),
-    },
-    sessionViewTokenStore: {
-      create: () => ({ token: "tok-session" }),
-    },
-    adminTokenStore: {
-      create: () => ({ token: "tok-admin" }),
-    },
-  };
-}
+describe("Slack status transport", () => {
+  test("status timeout uses an abort signal, rejects once, and releases its queue", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
+    try {
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace: createWorkspace({ root: dir, stateDir: dir }),
+      });
+      const statusClient = (bot as any).statusClient;
+      const abort = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(abort.signal);
+      const fetch = vi.fn(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+              once: true,
+            });
+          }),
+      );
+      statusClient.fetchFn = fetch;
+      try {
+        const result = bot.setAssistantStatus("C1", "1", "Thinking");
+        const rejected = expect(result).rejects.toThrow();
+        await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+        expect(timeout).toHaveBeenCalledWith(3000);
+        abort.abort(new Error("test timeout"));
+        await rejected;
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect((bot as any).statusUpdates.size).toBe(0);
+      } finally {
+        timeout.mockRestore();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("serializes late Thinking and clear across callers without blocking chat or other threads", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
+    try {
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace: createWorkspace({ root: dir, stateDir: dir }),
+      });
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const sent: string[] = [];
+      const statusClient = (bot as any).statusClient;
+      statusClient.assistant.threads.setStatus = vi.fn(async ({ thread_ts, status }) => {
+        sent.push(`${thread_ts}:${status}`);
+        if (status === "Thinking") await gate;
+      });
+      const post = vi.fn().mockResolvedValue({ ts: "2" });
+      (bot as any).webClient.chat.postMessage = post;
+      const thinking = bot.setAssistantStatus("C1", "1", "Thinking");
+      const clear = bot.setAssistantStatus("C1", "1", "");
+      const next = bot.setAssistantStatus("C1", "1", "Next run");
+      try {
+        await bot.setAssistantStatus("C1", "other", "");
+        await bot.postMessage("C1", "answer");
+        expect(sent).toEqual(["1:Thinking", "other:"]);
+        expect(post).toHaveBeenCalledTimes(1);
+      } finally {
+        release();
+      }
+      await Promise.all([thinking, clear, next]);
+      expect(sent).toEqual(["1:Thinking", "other:", "1:", "1:Next run"]);
+      expect((bot as any).statusUpdates.size).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("real SDK status client rejects 429 without retry/pause and continues with clear", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
+    try {
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace: createWorkspace({ root: dir, stateDir: dir }),
+      });
+      const statusClient = (bot as any).statusClient;
+      expect(statusClient).not.toBe((bot as any).webClient);
+      expect(statusClient.timeout).toBe(3000);
+      expect(statusClient.retryConfig.retries).toBe(0);
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(new Response("", { status: 429, headers: { "retry-after": "60" } }))
+        .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+      statusClient.fetchFn = fetch;
+      const thinking = bot.setAssistantStatus("C1", "1", "Thinking");
+      const clear = bot.setAssistantStatus("C1", "1", "");
+      await expect(thinking).rejects.toMatchObject({
+        code: "slack_webapi_rate_limited_error",
+      });
+      await clear;
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect((bot as any).statusUpdates.size).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("SlackMessagingBot slash commands", () => {
   let workingDir: string;
@@ -217,125 +287,6 @@ describe("SlackMessagingBot slash commands", () => {
       user: "U123",
       text: "sandbox status",
     });
-  });
-
-  test("/pi-auto-reply in a shared channel routes to command handling ephemerally", async () => {
-    const handler = makeHandler();
-    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
-      await context.responder.respond("auto reply status");
-    });
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-      store: {} as any,
-    });
-
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    (bot as any).webClient = {
-      chat: {
-        postEphemeral,
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0004" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
-      },
-    };
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-
-    await (bot as any).handleSlashCommand({
-      body: {
-        command: "/pi-auto-reply",
-        text: "on",
-        channel_id: "C123",
-        user_id: "U123",
-        user_name: "alice",
-      },
-      ack: vi.fn().mockResolvedValue(undefined),
-    });
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      type: "mention",
-      conversationId: "C123",
-      conversationKind: "shared",
-      sessionKey: "C123",
-      text: "/pi-auto-reply on",
-    });
-    expect(postEphemeral).toHaveBeenCalledWith({
-      channel: "C123",
-      user: "U123",
-      text: "auto reply status",
-    });
-  });
-
-  test("/pi-auto-reply in a shared channel is accepted by the command handler", async () => {
-    const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-      store: {} as any,
-    });
-
-    const runtime = createConversationRuntime({
-      ...makeCommandServices(workspace),
-      commandHandlers: defaultCommandHandlers(),
-    });
-    (handler.handleEvent as any).mockImplementation(
-      (event: any, eventMessagingBot: any, context: any) =>
-        runtime.runSession({ event, bot: eventMessagingBot, context }),
-    );
-
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    (bot as any).webClient = {
-      chat: {
-        postEphemeral,
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0005" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
-      },
-    };
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-
-    await (bot as any).handleSlashCommand({
-      body: {
-        command: "/pi-auto-reply",
-        text: "on",
-        channel_id: "C123",
-        user_id: "U123",
-        user_name: "alice",
-      },
-      ack: vi.fn().mockResolvedValue(undefined),
-    });
-
-    // handleSlashCommand fires handlerPromise without awaiting it (fast-ack design);
-    // wait until the handler has actually finished before asserting.
-    await vi.waitFor(() =>
-      expect(postEphemeral).toHaveBeenCalledWith(
-        expect.objectContaining({
-          channel: "C123",
-          user: "U123",
-          text: expect.stringContaining("Auto-reply is enabled"),
-        }),
-      ),
-    );
-    expect(postEphemeral).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.stringContaining("Edit rules at:"),
-      }),
-    );
-    expect(postEphemeral).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.stringContaining("只能在 group/channel"),
-      }),
-    );
-    expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
-    expect(existsSync(join(workingDir, C123_OFFICE, "settings.json"))).toBe(false);
   });
 
   test("/pi-session in a shared channel returns the link ephemerally", async () => {
@@ -524,7 +475,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
   });
 
-  test("shared channel auto-reply candidates queue when auto-reply is enabled", async () => {
+  test("legacy auto-reply marker does not enable unaddressed channel messages", async () => {
     mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
@@ -578,18 +529,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
+    expect(queue.size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
-
-    queue.processing = false;
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
-      sessionKey: "C123",
-      text: "deployment failed",
-    });
+    expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
 
   test("shared channel auto-reply candidates only log when auto-reply is disabled", async () => {

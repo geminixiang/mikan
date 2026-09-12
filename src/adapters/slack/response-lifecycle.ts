@@ -112,6 +112,8 @@ interface SlackResponseLifecycleOptions {
 
 class SlackResponseLifecycle {
   private assistantStatusFailureWarned = false;
+  private statusEnded = false;
+  private statusRequested = false;
   /** The tail of an over-long response, awaiting delivery to a thread. */
   private pendingContinuation = "";
   private continuationAnchor: string | null = null;
@@ -184,31 +186,36 @@ class SlackResponseLifecycle {
     this.continuationSent = this.pendingContinuation;
   }
 
-  async deleteMessage(id: string): Promise<void> {
+  private requestStatus(status: string): void {
     const { event, sessionPlan, slack } = this.context;
-    if (sessionPlan.rootTs) {
-      await slack
-        .setAssistantStatus(event.channel, sessionPlan.rootTs, "")
-        .catch((err) => this.onAssistantStatusError("clear-on-delete", err));
-    }
+    if (!sessionPlan.rootTs) return;
+    void slack
+      .setAssistantStatus(event.channel, sessionPlan.rootTs, status)
+      .catch((err) => this.onAssistantStatusError(status ? "typing" : "clear-on-idle", err));
+  }
+
+  endStatus(): void {
+    if (this.statusEnded) return;
+    this.statusEnded = true;
+    this.requestStatus("");
+  }
+
+  async deleteMessage(id: string): Promise<void> {
+    this.endStatus();
+    const { event, slack } = this.context;
     await slack.deleteMessage(event.channel, id);
   }
 
   async setTyping(isTyping: boolean, responseId: string | null): Promise<void> {
-    const { event, eventFilename, sessionPlan, slack } = this.context;
-    if (!isTyping || responseId || !sessionPlan.rootTs) return;
-    const statusText = eventFilename ? `Starting event: ${eventFilename}` : "Thinking";
-    await slack
-      .setAssistantStatus(event.channel, sessionPlan.rootTs, statusText)
-      .catch((err) => this.onAssistantStatusError("typing", err));
+    const { eventFilename, sessionPlan } = this.context;
+    if (!isTyping || responseId || !sessionPlan.rootTs || this.statusEnded || this.statusRequested)
+      return;
+    this.statusRequested = true;
+    this.requestStatus(eventFilename ? `Starting event: ${eventFilename}` : "Thinking");
   }
 
-  async onWorkingChanged(working: boolean, responseId: string | null): Promise<void> {
-    const { event, sessionPlan, slack } = this.context;
-    if (working || !responseId || !sessionPlan.rootTs) return;
-    await slack
-      .setAssistantStatus(event.channel, sessionPlan.rootTs, "")
-      .catch((err) => this.onAssistantStatusError("clear-on-idle", err));
+  async onWorkingChanged(working: boolean): Promise<void> {
+    if (!working) this.endStatus();
   }
 
   async onFinish(text: string, responseId: string | null): Promise<void> {
@@ -221,11 +228,7 @@ class SlackResponseLifecycle {
         replyInThread ? sessionPlan.rootTs : undefined,
       );
     }
-    if (sessionPlan.rootTs) {
-      void slack
-        .setAssistantStatus(event.channel, sessionPlan.rootTs, "")
-        .catch((err) => this.onAssistantStatusError("clear-on-idle", err));
-    }
+    this.endStatus();
     await this.flushContinuation();
   }
 
@@ -354,5 +357,11 @@ export function createSlackResponseContext({
     },
   });
 
-  return responder;
+  return {
+    ...responder,
+    deleteResponse: async () => {
+      lifecycle.endStatus();
+      await responder.deleteResponse();
+    },
+  };
 }
