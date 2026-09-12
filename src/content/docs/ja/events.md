@@ -71,7 +71,7 @@ Cron 形式: `minute hour day-of-month month day-of-week`
 
 ## ルーティングフィールド
 
-`type`、`conversationId`、`text` はすべてのイベントファイルで必須です。その他は任意で、タイプ固有のフィールド（`at`、`schedule` + `timezone`）はそのタイプでのみ必須です。schema を所有するのは `src/harness/event-format.ts` であり、すべての reader と writer はその parser と builder を経由します。
+`type`、`conversationId`、`text` はすべてのイベントファイルで必須です。その他は任意で、タイプ固有のフィールド（`at`、`schedule` + `timezone`）はそのタイプでのみ必須です。schema を所有するのは `src/tools/event.ts` であり、すべての reader と writer はその parser と builder を経由します。
 
 | フィールド         | 説明                                                                                                                                             |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |

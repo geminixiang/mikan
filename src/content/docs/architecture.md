@@ -49,7 +49,6 @@ Responsibilities:
 
 ### C. Agent execution layer
 
-- `src/agent/`
 - `src/harness/*`
 - `src/tools/*`
 
@@ -129,7 +128,7 @@ sequenceDiagram
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
   participant S as sessions/store.ts
-  participant R as agent/runner.ts / PiAgentWrapper
+  participant R as harness/runner.ts / PiAgentWrapper
   participant T as tools/*
   participant X as sandbox Executor
   participant W as Office dir / sessions
@@ -253,7 +252,7 @@ This lets these capabilities share the same mechanism:
 
 In one sentence, the core of `mikan` is:
 
-> A multi-platform AI agent bot coordinated by `main.ts`, executed by `agent/runner.ts`, and supported by `office/session/vault/sandbox` infrastructure.
+> A multi-platform AI agent bot coordinated by `main.ts`, executed by `harness/runner.ts`, and supported by `office/session/vault/sandbox` infrastructure.
 
 You can think of it as 7 core subsystems:
 

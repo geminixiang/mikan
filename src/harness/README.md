@@ -1,32 +1,30 @@
 # src/harness
 
-mikan's model-facing integration of Pi 0.85's native `AgentHarness` and
+mikan's agent execution module, integrating Pi 0.85's native `AgentHarness` and
 `pi-ai` model catalog. Pi owns durable operations, the turn loop, tool execution,
 message persistence, retries, compaction, and recovery. mikan supplies prompt
-sources, authorized tools, per-request budgets, delegated-spend accounting, and
-platform event translation. Platform adapters and Sandbox backends stay outside
+sources, authorized execution and tools, response presentation, per-request budgets,
+delegated-spend accounting, and platform-neutral event translation. Platform adapters and Sandbox backends stay outside
 this module.
 
 ## Files
 
-| File                   | Authority                                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------------------------- |
-| `runner.ts`            | `MikanAgentSession`: native Pi integration, request budgets, delegated usage, and platform events |
-| `session-store.ts`     | Pi v4 JSONL session ownership, native harness attachment, and inspection                          |
-| `models.ts`            | model catalog and authentication resolution                                                       |
-| `mcp.ts`               | host MCP transports, tool discovery/calls, instructions, connection rollback and cleanup          |
-| `mcp-config.ts`        | MCP settings import validation and reviewed preset materialization                                |
-| `open-connector.ts`    | deployment-owned OpenConnector authority and office runtime-token provisioning                    |
-| `settings.ts`          | harness retry, compaction, and budget settings                                                    |
-| `skills.ts`            | `SKILL.md` parsing, discovery, diagnostics, and prompt formatting                                 |
-| `subagent-profiles.ts` | subagent profile discovery and validation                                                         |
-| `subagent-runner.ts`   | bounded isolated subagent execution                                                               |
-| `subagent-slots.ts`    | process-wide subagent concurrency slots                                                           |
-| `usage.ts`             | usage aggregation and cost accounting                                                             |
-| `event-format.ts`      | event-file payload schema shared by the event tool and watcher                                    |
-| `http.ts`              | shared HTTP dispatcher configuration                                                              |
-| `types.ts`             | exported harness and subagent types                                                               |
-| `index.ts`             | harness module exports                                                                            |
+| File                   | Authority                                                                                                                               |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.ts`            | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal |
+| `session.ts`           | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting             |
+| `session-store.ts`     | Pi v4 JSONL session ownership, native harness attachment, MCP lifetime and inspection                                                   |
+| `prompt.ts`            | Authorized system prompt and per-turn instruction construction                                                                          |
+| `presenter.ts`         | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                             |
+| `models.ts`            | Model catalog and authentication resolution                                                                                             |
+| `http.ts`              | Shared HTTP dispatcher configuration                                                                                                    |
+| `mcp.ts`               | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                   |
+| `open-connector.ts`    | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                          |
+| `skills.ts`            | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                 |
+| `subagent.ts`          | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                          |
+| `subagent-profiles.ts` | Subagent profile discovery and validation                                                                                               |
+| `types.ts`             | Shared harness, runner and subagent contracts                                                                                           |
+| `index.ts`             | Harness module exports                                                                                                                  |
 
 `SessionStore` persists the current Pi 0.85 v4 JSONL format: a header with
 `v: 4` and `storageVersion: 1`, followed by session mutations. mikan-specific
@@ -35,6 +33,12 @@ opening supports only this current format; legacy mikan v3 and Pi 0.84-generatio
 v4 files require `mikan sessions migrate` with the daemon stopped.
 
 ## Run lifecycle
+
+`runner.ts` constructs the conversation-scoped `PiAgentWrapper` and binds each
+run's authorized execution decision to its tools and runtime paths. `prompt.ts`
+owns prompt construction; `presenter.ts` turns session events into responder
+operations. These responsibilities share the harness module with the native Pi
+session integration rather than forming a separate agent-runner module.
 
 `SessionStore` owns one writable Pi Session and attaches one native
 `AgentHarness` with a `main` lane. Existing v4 branches are promoted by Pi without
@@ -101,7 +105,7 @@ leave other servers usable. Aborted runner construction closes acquired MCP
 connections before releasing its writer. Admin verification can use
 `loadMcpTools()` directly and must dispose its short-lived validation result.
 
-`mcp-config.ts` owns standard `mcpServers` JSON parsing, safe server names,
+`mcp.ts` also owns standard `mcpServers` JSON parsing, safe server names,
 credential redaction and reviewed presets. Installation materializes a preset
 into the existing global/conversation settings map; there is no second catalog
 of installed state. Settings credentials remain host-private.
@@ -135,7 +139,7 @@ through explicit platform, runtime, tool, or Sandbox interfaces.
 
 ## Subagents
 
-The built-in `subagent` tool and `SubagentRunner` use fresh in-memory sessions,
+The built-in `subagent` tool delegates to `subagent.ts`, using fresh in-memory sessions,
 explicit tool grants, bounded execution, and a non-recursion guard. A request
 may contain one task, parallel tasks, or a bounded DAG. Per-run concurrency is
 further limited by the process-wide slot pool so busy conversations cannot
@@ -148,9 +152,10 @@ siblings.
 ## Boundaries
 
 - The harness receives platform-neutral messages, responders, tools, prompt
-  sources, and execution context from `src/agent/` and `src/runtime/`.
+  sources, and execution context from `src/runtime/` and injected host capabilities.
 - Platform SDK objects and platform credentials do not enter the harness.
 - Sandbox filesystem/process operations cross only through the `Executor`
   interface.
+- Scheduled-event payload schema, parsing and building belong to `src/tools/event.ts`.
 - Session file naming, chat synchronization, rotation, and thread lineage stay
   in `src/sessions/`.

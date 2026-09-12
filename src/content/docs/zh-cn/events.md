@@ -71,7 +71,7 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 ## 路由字段
 
-每个事件文件都必须包含 `type`、`conversationId` 和 `text`；其余字段是可选的，而各类型专属字段（`at`、`schedule` + `timezone`）在其自身类型下是必需的。`src/harness/event-format.ts` 拥有该 schema——每个读取方和写入方都经过它的解析器和构建器。
+每个事件文件都必须包含 `type`、`conversationId` 和 `text`；其余字段是可选的，而各类型专属字段（`at`、`schedule` + `timezone`）在其自身类型下是必需的。`src/tools/event.ts` 拥有该 schema——每个读取方和写入方都经过它的解析器和构建器。
 
 | 字段               | 说明                                                                                |
 | ------------------ | ----------------------------------------------------------------------------------- |

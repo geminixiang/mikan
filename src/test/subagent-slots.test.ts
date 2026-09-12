@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SubagentSlotPool, unboundedSlotPool } from "../harness/subagent-slots.js";
+import { SubagentSlotPool, unboundedSlotPool } from "../harness/subagent.js";
 
 async function rejection(promise: Promise<unknown>): Promise<Error> {
   return promise.then(

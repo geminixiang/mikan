@@ -1,618 +1,862 @@
-/**
- * mikan's application adapter for pi-agent-core's durable AgentHarness.
- *
- * Pi owns the run/turn state machine, message persistence, tool execution,
- * retries, compaction, recovery, and cancellation. This adapter owns per-request
- * budgets, delegated-spend accounting, and the platform-facing event vocabulary.
- */
-import {
-  TODO_CONTEXT,
-  OperationMismatch,
-  getOrThrow,
-  type AgentHarness,
-  type AgentHarnessTool,
-  type AgentLane,
-  type AgentMessage,
-  type AgentTool,
-  type HarnessEvent as PiHarnessEvent,
-} from "@earendil-works/pi-agent-core";
-import type { ImageContent, Model, Api } from "@earendil-works/pi-ai";
-import * as log from "../log.js";
+import type { Office, Workspace } from "../office/index.js";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
+import { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
-import { resolveHarnessSettings } from "./settings.js";
+import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
+import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
+import { loadSubagentProfiles } from "./subagent-profiles.js";
+import { createMikanTools, createSubagentTool } from "../tools/index.js";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import type {
-  BudgetSettings,
-  HarnessEvent,
-  HarnessEventListener,
-  HarnessSettings,
-  MikanAgentSessionOptions,
-  SubagentUsage,
-  SubagentUsageSink,
+  ConversationMessage,
+  ConversationKind,
+  ConversationResponder,
+  MessagingInfo,
+  PlatformName,
+} from "../adapter.js";
+import { ActorExecutionResolver } from "../execution-resolver.js";
+import { resolveConversationPackages } from "../packages/index.js";
+import type { DockerContainerManager } from "../provisioner.js";
+import {
+  assertSandboxSupportsWorkspacePolicy,
+  createExecutor,
+  type Executor,
+  type RuntimePathContext,
+  type SandboxConfig,
+  getUnresolvedSandboxPathContext,
+} from "../sandbox/index.js";
+import type { VaultManager } from "../vault/index.js";
+import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
+import type {
+  RunnerExecutionContext,
+  PreparedRunContext,
+  RunPresentation,
+  RunnerSessionState,
 } from "./types.js";
-import { addUsage, copyUsage, createEmptyUsage } from "./usage.js";
+import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
+import { createHash } from "node:crypto";
+import { resolveConversationSettings } from "../config.js";
+import { provisionOfficeOpenConnectorToken } from "./open-connector.js";
+import { addLifecycleBreadcrumb, updateActiveSpanAttribution } from "../observability/sentry.js";
+import { ChatHistorySync } from "../sessions/chat-history-sync.js";
+import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
+import {
+  extractSessionUuid,
+  openManagedSession,
+  type ThreadRootMessage,
+} from "../sessions/store.js";
+import type { PlatformToolRunContext } from "../tools/types.js";
+import { loadMikanSkills } from "./skills.js";
+import {
+  normalizeAttachRuntimePath,
+  withStagedRuntimeFile,
+  buildPromptPayload,
+  buildSystemPrompt,
+  buildTurnInstructions,
+  getMemory,
+  resolveTriggerAttribution,
+} from "./prompt.js";
+import {
+  attachSessionEventHandlers,
+  activateRunPresentation,
+  createRunState,
+  finalizeRunResponse,
+  formatAgentActorName,
+  isEventTriggerAttribution,
+  reportUsageSummary,
+  sendAgentEvent,
+} from "./presenter.js";
 
-export type {
-  CompactionReason,
-  HarnessEvent,
-  HarnessEventListener,
-  MikanAgentSessionOptions,
-} from "./types.js";
+import * as log from "../log.js";
 
-interface RunTally {
-  usage: SubagentUsage;
-  llmCalls: number;
-  toolCalls: number;
-  toolCallCounts: Record<string, number>;
-  startedAt: number;
-  endedAt?: number;
+// One process-wide fan-out account: per-conversation queues serialize runs,
+// but each run can fan out up to the per-run cap — without this shared
+// ceiling, N busy conversations hold N × cap live subagent sessions.
+const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
+
+async function createConfiguredAgentSession(params: {
+  workspaceDir: string;
+  systemPrompt: string;
+  model: Model<Api>;
+  thinkingLevel: ThinkingLevel;
+  tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
+  sessionStore: SessionStore;
+  models: MikanModels;
+}): Promise<MikanAgentSession> {
+  const { workspaceDir, systemPrompt, model, thinkingLevel, tools, sessionStore, models } = params;
+  const loadedProfiles = loadSubagentProfiles(workspaceDir);
+  for (const diagnostic of loadedProfiles.diagnostics) {
+    log.logWarning(`Subagent profile ignored: ${diagnostic.path}`, diagnostic.message);
+  }
+
+  const availableToolNames = new Set(tools.map((tool) => tool.name));
+  const runnableProfiles = new Map(
+    [...loadedProfiles.profiles].filter(([, profile]) =>
+      profile.tools.every((tool) => availableToolNames.has(tool)),
+    ),
+  );
+  let session: MikanAgentSession | undefined;
+  const subagentTool = createSubagentTool(
+    (request, hooks) =>
+      runSubagent({
+        request,
+        ...(hooks?.onActivity ? { onActivity: hooks.onActivity } : {}),
+        defaultModel: model,
+        thinkingLevel,
+        models,
+        workspaceDir,
+        availableTools: tools,
+        profiles: runnableProfiles,
+        slots: globalSubagentSlots,
+        parentMessages: [...session!.messages],
+        onUsage: session!.captureExternalUsageSink(),
+      }),
+    runnableProfiles,
+  );
+
+  session = new MikanAgentSession({
+    systemPrompt,
+    model,
+    thinkingLevel,
+    tools: [...tools, subagentTool],
+    models,
+    sessionStore,
+  });
+  const reloaded = await session.reloadFromSession();
+  if (reloaded > 0) log.logInfo(`Reloaded ${reloaded} messages from session context`);
+  return session;
 }
 
-const FORWARDED_EVENTS = [
-  "run_start",
-  "run_end",
-  "message_start",
-  "message_update",
-  "entry_added",
-  "turn_start",
-  "turn_end",
-  "tool_start",
-  "tool_update",
-  "tool_end",
-  "retry_scheduled",
-  "retry_end",
-  "compaction_start",
-  "compaction_end",
-  "usage",
-  "fault",
-] as const;
+function createRunnerExecutionContext(
+  sandboxConfig: SandboxConfig,
+  vaultManager: VaultManager | undefined,
+  provisioner: DockerContainerManager | undefined,
+  workspace: Workspace,
+): RunnerExecutionContext {
+  const executionResolver =
+    vaultManager && sandboxConfig.type !== "host"
+      ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspace)
+      : undefined;
 
-export class MikanAgentSession {
-  readonly sessionStore: SessionStore;
-  readonly model: Model<Api>;
-  private readonly settings: HarnessSettings;
-  private readonly listeners = new Set<HarnessEventListener>();
-  private systemPrompt: string;
-  private transcript: AgentMessage[] = [];
-  private harness: AgentHarness | undefined;
-  private lane: AgentLane | undefined;
-  private runActive = false;
-  private runAborted = false;
-  private operationId: string | undefined;
-  private cancellation: Promise<void> | undefined;
-  private cancellationError: unknown;
-  private deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-  private deadlineNotification: Promise<void> | undefined;
-  private runBudget: BudgetSettings = {};
-  private budgetExceededReason: string | undefined;
-  private retryAttempt = 0;
-  private latestAssistantNeedsCall = false;
-  private latestAssistantErrored = false;
-  private runMessages: AgentMessage[] = [];
-  private readonly toolArgs = new Map<string, unknown>();
-  private tally: RunTally = {
-    usage: createEmptyUsage(),
-    llmCalls: 0,
-    toolCalls: 0,
-    toolCallCounts: {},
-    startedAt: 0,
+  // activeExecutor is replaced at the start of each run() call when executionResolver
+  // is present, so the stable `executor` wrapper always delegates to the latest resolved value.
+  let activeExecutor: Executor =
+    executionResolver !== undefined
+      ? createExecutor({ type: "host" })
+      : createExecutor(sandboxConfig);
+  const executor: Executor = {
+    exec(command, options) {
+      return activeExecutor.exec(command, options);
+    },
+    readFile(path, options) {
+      return activeExecutor.readFile(path, options);
+    },
+    readFileBase64(path, options) {
+      return activeExecutor.readFileBase64(path, options);
+    },
+    writeFile(path, content, options) {
+      return activeExecutor.writeFile(path, content, options);
+    },
+    getWorkspacePath(hostPath) {
+      return activeExecutor.getWorkspacePath(hostPath);
+    },
+    getSandboxConfig() {
+      return activeExecutor.getSandboxConfig();
+    },
+    getPathContext(hostWorkspaceRoot) {
+      return activeExecutor.getPathContext(hostWorkspaceRoot);
+    },
   };
 
-  constructor(private readonly options: MikanAgentSessionOptions) {
-    this.sessionStore = options.sessionStore;
-    this.model = options.model;
-    this.systemPrompt = options.systemPrompt;
-    this.settings = resolveHarnessSettings(options.settings);
-  }
+  return {
+    executor,
+    async resolveForRun(context) {
+      if (executionResolver) {
+        const decision = await executionResolver.resolve(context);
+        activeExecutor = decision.executor;
+        return {
+          pathContext: decision.pathContext,
+          projection: decision.projection,
+          packages: decision.packages,
+        };
+      }
 
-  get messages(): AgentMessage[] {
-    return this.transcript;
-  }
-  get isActiveRun(): boolean {
-    return this.runActive;
-  }
-
-  setSystemPrompt(prompt: string): void {
-    if (this.runActive) throw new Error("Cannot change the system prompt during a run");
-    this.systemPrompt = prompt;
-  }
-
-  getLastRunStats(): Readonly<{
-    usage: SubagentUsage;
-    tokens: number;
-    costUsd: number;
-    llmCalls: number;
-    toolCalls: number;
-    toolCallCounts: Record<string, number>;
-    durationMs: number;
-    budgetExceededReason?: string;
-  }> {
-    return {
-      usage: copyUsage(this.tally.usage),
-      tokens: this.tally.usage.totalTokens,
-      costUsd: this.tally.usage.cost.total,
-      llmCalls: this.tally.llmCalls,
-      toolCalls: this.tally.toolCalls,
-      toolCallCounts: { ...this.tally.toolCallCounts },
-      durationMs:
-        this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
-      ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
-    };
-  }
-
-  /** Bind delegated spend to its owning prompt, even when cleanup finishes late. */
-  captureExternalUsageSink(): SubagentUsageSink {
-    const tally = this.tally;
-    return async (usage) => {
-      addUsage(tally.usage, usage);
-      if (this.tally !== tally || !this.runActive || this.budgetExceededReason) return;
-      const reason = this.resourceOverBudgetReason();
-      if (reason) await this.exceedBudget(reason);
-    };
-  }
-
-  async foldExternalUsage(usage: SubagentUsage): Promise<void> {
-    await this.captureExternalUsageSink()(usage);
-  }
-
-  subscribe(listener: HarnessEventListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  async reloadFromSession(): Promise<number> {
-    this.transcript = (await this.sessionStore.buildSessionContext()).messages;
-    return this.transcript.length;
-  }
-
-  async prompt(
-    text: string,
-    options?: {
-      images?: ImageContent[];
-      budget?: BudgetSettings;
-      tools?: AgentTool[];
-    },
-  ): Promise<void> {
-    await this.run(text, options);
-  }
-
-  /** Resume an operation left open by a previous process using Pi's recovery rules. */
-  async resume(options?: { budget?: BudgetSettings; tools?: AgentTool[] }): Promise<void> {
-    await this.run(undefined, options);
-  }
-
-  private async run(
-    text: string | undefined,
-    options?: {
-      images?: ImageContent[];
-      budget?: BudgetSettings;
-      tools?: AgentTool[];
-    },
-  ): Promise<void> {
-    if (this.runActive) throw new Error("Agent is already processing a prompt");
-    this.runActive = true;
-    this.runAborted = false;
-    this.budgetExceededReason = undefined;
-    this.cancellationError = undefined;
-    this.retryAttempt = 0;
-    this.latestAssistantNeedsCall = false;
-    this.latestAssistantErrored = false;
-    this.runMessages = [];
-    this.runBudget = { ...this.settings.budget, ...options?.budget };
-    this.tally = {
-      usage: createEmptyUsage(),
-      llmCalls: 0,
-      toolCalls: 0,
-      toolCallCounts: {},
-      startedAt: Date.now(),
-    };
-    let runFailure: { error: unknown } | undefined;
-    try {
-      if (!(await this.checkCallBudget())) return;
-      this.armDeadline();
-      const auth = await this.options.models.getAuth(this.model);
-      if (this.runAborted) return;
-      if (!auth)
-        throw new Error(
-          `No credentials for provider "${this.model.provider}". Set the provider API key environment variable.`,
-        );
-      await this.initialize();
-      if (this.runAborted) return;
-      const harness = this.harness!;
-      const lane = this.lane!;
-      const tools = options?.tools ?? this.options.tools;
-      await harness.setTools(this.nativeTools(tools), TODO_CONTEXT);
-      await lane.setActiveTools(
-        tools.map((tool) => tool.name),
-        TODO_CONTEXT,
+      const office = workspace.office(context.address);
+      const projection = resolveWorkspaceProjection(office);
+      assertSandboxSupportsWorkspacePolicy(
+        sandboxConfig,
+        projection.doorPolicy,
+        projection.promptSources.globalMemoryReadOnly === true,
       );
-      await this.reloadFromSession();
-      if (!(await this.checkCallBudget())) return;
-      await this.driveOperation(lane, text, options?.images);
-    } catch (error) {
-      runFailure = { error };
-      throw error;
-    } finally {
-      await this.cleanupRun(runFailure);
-    }
+      return {
+        pathContext: executor.getPathContext(workspace.root),
+        projection,
+        packages: resolveConversationPackages({ office }),
+      };
+    },
+  };
+}
+
+function buildThreadSessionName(message: ThreadRootMessage | null): string | undefined {
+  const text = message?.text?.trim();
+  if (!text) return undefined;
+  const userLabel = message?.userName || message?.user || "unknown";
+  return `[${userLabel}]: ${text}`;
+}
+
+async function resolveRunnerMcpServers(options: {
+  office: Office;
+  trustModel: CreateRunnerOptions["trustModel"];
+  platformWorkspaceId?: string;
+  servers: ReturnType<typeof resolveConversationSettings>["mcpServers"];
+  openConnector?: CreateRunnerOptions["openConnector"];
+  signal?: AbortSignal;
+}): Promise<Awaited<ReturnType<typeof provisionOfficeOpenConnectorToken>>> {
+  if (options.trustModel === "open-trigger") return {};
+  return provisionOfficeOpenConnectorToken(
+    options.office,
+    options.platformWorkspaceId,
+    options.servers,
+    options.openConnector,
+    options.signal,
+  );
+}
+
+type PrepareRunParams = {
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
+  office: Office;
+  executor: Executor;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  session: MikanAgentSession;
+  setEventContext: (context: {
+    platform: string;
+    conversationId: string;
+    conversationKind: ConversationKind;
+    userId: string;
+  }) => void;
+  setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
+  setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
+  setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
+  setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
+  bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
+};
+
+type RunPromptContext = {
+  pathContext: RuntimePathContext;
+  memory: string;
+  systemPrompt: string;
+  triggerAttribution: string | undefined;
+};
+
+async function preparePromptContext(params: PrepareRunParams): Promise<RunPromptContext> {
+  const { message, platform, office, executor, resolveForRun, session } = params;
+  const conversationId = office.address.conversationId;
+  const decision = await resolveForRun({
+    address: message.address,
+    userId: message.userId,
+    trustModel: platform.trustModel,
+  });
+  const { pathContext, projection, packages } = decision;
+  for (const error of packages.errors) {
+    log.logWarning(`Package unavailable: ${error.source}`, error.message);
   }
 
-  private async driveOperation(
-    lane: AgentLane,
-    text: string | undefined,
-    images?: ImageContent[],
-  ): Promise<void> {
-    if (text === undefined) {
-      const current = await lane.inspectExecution(TODO_CONTEXT);
-      this.operationId = current.current?.id;
-      if (this.runAborted) this.requestCancellation();
-      const result = getOrThrow(await lane.resume(TODO_CONTEXT));
-      if (result.status === "failed") throw new Error(result.error?.message ?? "Pi run failed");
-      return;
-    }
-    // Pi owns admission, retries, compaction, persistence, and the tool loop.
-    const admission = getOrThrow(
-      await lane.accept({ kind: "prompt", prompt: text, images }, TODO_CONTEXT),
+  const reloaded = await session.reloadFromSession();
+  if (reloaded > 0) {
+    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
+  }
+
+  const memory = await getMemory(projection);
+  const conversationSkillLoad = loadMikanSkills(
+    office,
+    pathContext.runtimeWorkspaceRoot,
+    projection,
+    packages,
+  );
+  const triggerAttribution = resolveTriggerAttribution(message);
+  const systemPrompt = buildSystemPrompt({
+    workspacePath: pathContext.runtimeWorkspaceRoot,
+    office,
+    memory,
+    sandboxConfig: executor.getSandboxConfig(),
+    platform,
+    skills: conversationSkillLoad.skills,
+    projection,
+    skippedSkillLinks: conversationSkillLoad.skippedSkillLinks,
+  });
+  session.setSystemPrompt(systemPrompt);
+  // A stable hash across turns verifies that turn-specific data did not leak
+  // into the provider-cacheable system prompt.
+  const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
+  log.logInfo(
+    `[${conversationId}] System prompt (base): ${systemPrompt.length} chars, sha ${promptHash}`,
+  );
+  return { pathContext, memory, systemPrompt, triggerAttribution };
+}
+
+function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathContext): void {
+  const {
+    message,
+    responder,
+    platform,
+    office,
+    executor,
+    setEventContext,
+    setSandboxContext,
+    setUploadFunction,
+    setImageUploadFunction,
+    setReactFunction,
+    bindPlatformToolPacks,
+  } = params;
+  setEventContext({
+    platform: platform.name,
+    conversationId: office.address.conversationId,
+    conversationKind: message.conversationKind,
+    userId: message.userId,
+  });
+  setSandboxContext({ address: message.address, userId: message.userId });
+  setUploadFunction(async (filePath: string, title?: string) => {
+    const runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);
+    await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
+      responder.uploadFile(stagedPath, title),
     );
-    this.operationId = admission.operationId;
-    if (this.runAborted) this.requestCancellation();
-    const result = getOrThrow(
-      await lane.drive({ operationId: admission.operationId, waitForRetry: true }, TODO_CONTEXT),
-    );
-    // The assistant error is already persisted and presented when present.
+  });
+  // Generated images already live host-side and must not be staged through a sandbox.
+  setImageUploadFunction(async (hostPath: string, title?: string) => {
+    await responder.uploadFile(hostPath, title);
+  });
+  // Unset reaction support when the active responder cannot react.
+  setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
+  bindPlatformToolPacks({
+    conversationId: office.address.conversationId,
+    platformName: platform.name,
+    threadTs: message.threadTs,
+  });
+}
+
+async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunContext> {
+  const { message, platform, office, executor } = params;
+  const sessionConversation = conversationIdOf(message.sessionKey);
+  await mkdir(join(office.dir, "scratch"), { recursive: true });
+  const { pathContext, memory, systemPrompt, triggerAttribution } =
+    await preparePromptContext(params);
+  bindRunCapabilities(params, pathContext);
+
+  log.logInfo(
+    `Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`,
+  );
+  log.logInfo(`Channels: ${platform.channels.length}, Users: ${platform.users.length}`);
+
+  const { userMessage, imageAttachments } = await buildPromptPayload(
+    message,
+    pathContext.runtimeWorkspaceRoot,
+    pathContext,
+    (runtimePath) => executor.readFileBase64(runtimePath),
+  );
+  const turnInstructions = buildTurnInstructions(
+    message.id.startsWith("event:"),
+    triggerAttribution,
+    platform.name,
+  );
+  const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
+  return {
+    sessionConversation,
+    userMessage: finalUserMessage,
+    imageAttachments,
+    triggerAttribution,
+  };
+}
+
+async function buildInitialSystemPrompt(params: {
+  office: Office;
+  pathContext: RuntimePathContext;
+  projection: ReturnType<typeof resolveWorkspaceProjection>;
+  sandboxConfig: CreateRunnerOptions["sandboxConfig"];
+}): Promise<string> {
+  const { office, pathContext, projection, sandboxConfig } = params;
+  const memory = await getMemory(projection);
+  const { skills, skippedSkillLinks } = loadMikanSkills(
+    office,
+    pathContext.runtimeWorkspaceRoot,
+    projection,
+    resolveConversationPackages({ office }),
+  );
+  return buildSystemPrompt({
+    workspacePath: pathContext.runtimeWorkspaceRoot,
+    office,
+    memory,
+    sandboxConfig,
+    platform: {
+      name: "chat",
+      formattingGuide: "",
+      channels: [],
+      users: [],
+      trustModel: "membership",
+    },
+    skills,
+    projection,
+    skippedSkillLinks,
+  });
+}
+
+async function rollbackRunnerResource(label: string, cleanup: () => Promise<void>): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    log.logWarning(`Runner rollback failed to ${label}`, String(error));
+  }
+}
+
+async function openRunnerSessionManager(params: {
+  contextFile: string;
+  runtimeWorkspaceRoot: string;
+  sessionKey: string;
+  threadRootMessage: ThreadRootMessage | null;
+}) {
+  const { contextFile, runtimeWorkspaceRoot, sessionKey, threadRootMessage } = params;
+  const sessionManager = await openManagedSession(contextFile, runtimeWorkspaceRoot);
+  try {
+    const threadSessionName = buildThreadSessionName(threadRootMessage);
     if (
-      result.kind === "settled" &&
-      result.outcome.status === "failed" &&
-      !this.latestAssistantErrored
+      isThreadSessionKey(sessionKey) &&
+      threadSessionName &&
+      (await sessionManager.getSessionName()) !== threadSessionName
     ) {
-      throw new Error(result.outcome.error?.message ?? "Pi run failed");
+      await sessionManager.setSessionName(threadSessionName);
     }
+    return sessionManager;
+  } catch (error) {
+    await rollbackRunnerResource("close the session writer", () => sessionManager.close());
+    throw error;
+  }
+}
+
+async function createRunnerAgentSession(params: {
+  workspaceDir: string;
+  systemPrompt: string;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  tools: ReturnType<typeof createMikanTools>["tools"];
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  modelRegistry: MikanModels;
+  conversationId: string;
+  signal?: AbortSignal;
+}) {
+  const {
+    workspaceDir,
+    systemPrompt,
+    model,
+    agentConfig,
+    tools,
+    sessionManager,
+    modelRegistry,
+    signal,
+  } = params;
+  const mcpTools = await sessionManager.connectMcp(agentConfig.mcpServers ?? {}, signal);
+  return createConfiguredAgentSession({
+    workspaceDir,
+    systemPrompt,
+    model,
+    thinkingLevel: agentConfig.thinkingLevel,
+    tools: [...tools, ...mcpTools],
+    sessionStore: sessionManager,
+    models: modelRegistry,
+  });
+}
+
+type PreparedTurnParams = {
+  prepared: PreparedRunContext;
+  presentation: RunPresentation;
+  message: ConversationMessage;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
+  runState: RunnerSessionState;
+  session: MikanAgentSession;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  sessionUuid: string;
+  conversationId: string;
+  contextFile: string;
+  sessionView: CreateRunnerOptions["sessionView"];
+};
+
+async function runPreparedTurn(params: PreparedTurnParams): Promise<{
+  stopReason: string;
+  errorMessage?: string;
+}> {
+  const {
+    prepared,
+    presentation,
+    message,
+    responder,
+    platform,
+    runState,
+    session,
+    model,
+    agentConfig,
+    sessionUuid,
+    conversationId,
+    contextFile,
+    sessionView,
+  } = params;
+  if (runState.logCtx) {
+    log.logAgentRunStart(runState.logCtx, model.provider, model.id, model.name);
   }
 
-  private async cleanupRun(runFailure: { error: unknown } | undefined): Promise<void> {
-    clearTimeout(this.deadlineTimer);
-    this.deadlineTimer = undefined;
-    let cleanupFailure: { error: unknown } | undefined;
-    try {
-      await this.cancellation;
-      await this.deadlineNotification;
-      if (this.cancellationError) throw this.cancellationError;
-    } catch (error) {
-      cleanupFailure = { error };
-    } finally {
-      this.toolArgs.clear();
-      this.operationId = undefined;
-      this.cancellation = undefined;
-      this.deadlineNotification = undefined;
-      this.tally.endedAt = Date.now();
-      this.runActive = false;
-    }
-    if (!cleanupFailure) return;
-    if (runFailure) {
-      throw new AggregateError(
-        [runFailure.error, cleanupFailure.error],
-        "Agent run and cancellation cleanup failed",
-        { cause: runFailure.error },
-      );
-    }
-    throw cleanupFailure.error;
-  }
+  updateActiveSpanAttribution({
+    provider: model.provider,
+    model: agentConfig.model,
+    channel_id: prepared.sessionConversation,
+    session_id: sessionUuid,
+  });
+  addLifecycleBreadcrumb("agent.prompt.sent", {
+    provider: model.provider,
+    model: agentConfig.model,
+    channel_id: prepared.sessionConversation,
+    session_id: sessionUuid,
+    attachment_count: message.attachments?.length ?? 0,
+    image_attachment_count: prepared.imageAttachments.length,
+  });
+  sendAgentEvent({
+    sessionId: sessionUuid,
+    actorName: formatAgentActorName(message.userName, prepared.sessionConversation),
+    event: { kind: "sessionStart" },
+  });
 
-  /** Pi's durable cancellation gate stops providers, tools, retries, and summaries. */
-  abort(): void {
-    if (!this.runActive) return;
-    this.runAborted = true;
-    clearTimeout(this.deadlineTimer);
-    this.deadlineTimer = undefined;
-    this.requestCancellation();
-  }
+  const isEventRun = message.id.startsWith("event:");
+  await session.prompt(prepared.userMessage, {
+    ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
+    ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+  });
+  await presentation.wait();
 
-  private requestCancellation(): void {
-    if (!this.lane || !this.operationId || this.cancellation) return;
-    // Do not await a lane mutation inside an event listener: Pi serializes event
-    // delivery, and the abort mutation itself emits another event. The native
-    // gate closes synchronously; prompt() drains the mutation before releasing ownership.
-    this.cancellation = this.lane
-      .requestAbort(this.operationId, TODO_CONTEXT)
-      .then((result) => {
-        if (!result.ok && !(result.error instanceof OperationMismatch)) throw result.error;
-      })
-      .catch((error: unknown) => {
-        this.cancellationError = error;
+  const sessionViewTokenStore = sessionView?.tokenStore;
+  const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;
+  let sessionViewLink: string | undefined;
+  const createSessionViewLink =
+    sessionViewTokenStore && sessionViewPortalBaseUrl
+      ? () => {
+          if (!sessionViewLink) {
+            const token = sessionViewTokenStore.create({
+              platform: platform.name as PlatformName,
+              platformUserId: message.userId,
+              conversationId,
+              sessionKey: message.sessionKey,
+              sessionFile: contextFile,
+              platformUserName: message.userName,
+            });
+            sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
+          }
+          return sessionViewLink;
+        }
+      : undefined;
+
+  await finalizeRunResponse(responder, session, runState, {
+    triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
+      ? createSessionViewLink?.()
+      : undefined,
+    createOverflowLink: createSessionViewLink,
+    platform: platform.name,
+    model,
+    sessionConversation: prepared.sessionConversation,
+    sessionUuid,
+  });
+  await reportUsageSummary({
+    session,
+    runState,
+    responder,
+    platform,
+    model,
+    agentConfig,
+    sessionConversation: prepared.sessionConversation,
+    sessionUuid,
+    waitForQueue: presentation.wait,
+  });
+  return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+}
+
+type MikanToolBindings = ReturnType<typeof createMikanTools>;
+
+type RunnerInterfaceParams = {
+  conversationId: string;
+  conversationDir: string;
+  sessionKey: string;
+  office: Office;
+  sessionUuid: string;
+  contextFile: string;
+  sessionView: CreateRunnerOptions["sessionView"];
+  runState: RunnerSessionState;
+  executor: Executor;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  session: MikanAgentSession;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  chatSessionManager: ChatHistorySync;
+  toolBindings: MikanToolBindings;
+};
+
+function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
+  const {
+    conversationId,
+    conversationDir,
+    sessionKey,
+    office,
+    sessionUuid,
+    contextFile,
+    sessionView,
+    runState,
+    executor,
+    resolveForRun,
+    session,
+    model,
+    agentConfig,
+    sessionManager,
+    chatSessionManager,
+    toolBindings,
+  } = params;
+  return {
+    async syncChatHistory(currentMessageId?: string): Promise<void> {
+      await chatSessionManager.syncSessionManager({
+        conversationDir,
+        sessionKey,
+        sessionManager,
+        currentMessageId,
       });
-  }
+    },
 
-  private nativeTools(tools: AgentTool[]): AgentHarnessTool<object | undefined>[] {
-    return tools.map((tool) => ({
-      ...tool,
-      execute: (
-        ...[id, params, onUpdate, , , context]: Parameters<
-          AgentHarnessTool<object | undefined>["execute"]
-        >
-      ) => tool.execute(id, params, context.abortSignal, onUpdate),
-    }));
-  }
-
-  private async initialize(): Promise<void> {
-    if (this.harness) return;
-    this.harness = await this.sessionStore.createHarness({
-      models: this.options.models.models,
-      model: this.model,
-      thinkingLevel: this.options.thinkingLevel,
-      tools: this.nativeTools(this.options.tools),
-      systemPrompt: () => this.sessionStore.withMcpInstructions(this.systemPrompt),
-      retry: this.settings.retry,
-      compaction: this.settings.compaction,
-    });
-    this.lane = await this.harness.lane("main", TODO_CONTEXT);
-    // Restored lanes retain their old configuration; the runtime's selected
-    // model and thinking level apply to this session wrapper.
-    await this.lane.setModel(
-      { provider: this.model.provider, modelId: this.model.id },
-      TODO_CONTEXT,
-    );
-    await this.lane.setThinkingLevel(this.options.thinkingLevel, TODO_CONTEXT);
-    this.harness.hooks.on("before_request", async () => {
-      if (!(await this.checkCallBudget())) return undefined;
-      this.tally.llmCalls += 1;
-      return undefined;
-    });
-    for (const type of FORWARDED_EVENTS) {
-      this.harness.events.on(type, (event) => this.handlePiEvent(event));
-    }
-  }
-
-  private async emit(event: HarnessEvent): Promise<void> {
-    for (const listener of this.listeners) {
+    async run(message, responder, platform) {
+      const prepared = await prepareRunContext({
+        message,
+        responder,
+        platform,
+        office,
+        executor,
+        resolveForRun,
+        session,
+        setEventContext: toolBindings.setEventContext,
+        setSandboxContext: toolBindings.setSandboxContext,
+        setUploadFunction: toolBindings.setUploadFunction,
+        setImageUploadFunction: toolBindings.setImageUploadFunction,
+        setReactFunction: toolBindings.setReactFunction,
+        bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
+      });
+      const presentation = activateRunPresentation(runState, {
+        responder,
+        sessionConversation: prepared.sessionConversation,
+        userName: message.userName,
+        sessionUuid,
+        triggerAttribution: prepared.triggerAttribution,
+      });
       try {
-        await listener(event);
-      } catch (error) {
-        log.logWarning(
-          "Harness event listener failed",
-          error instanceof Error ? error.message : String(error),
-        );
+        return await runPreparedTurn({
+          prepared,
+          presentation,
+          message,
+          responder,
+          platform,
+          runState,
+          session,
+          model,
+          agentConfig,
+          sessionUuid,
+          conversationId,
+          contextFile,
+          sessionView,
+        });
+      } finally {
+        presentation.dispose();
       }
-    }
-  }
+    },
 
-  private async handlePiEvent(event: PiHarnessEvent): Promise<void> {
-    if (!this.runActive) return;
-    if ("lane" in event && event.lane !== undefined && event.lane !== "main") return;
-    switch (event.type) {
-      case "entry_added":
-        if (event.entry.type !== "message") return;
-        this.transcript.push(event.entry.message);
-        this.runMessages.push(event.entry.message);
-        if (event.entry.message.role === "assistant") {
-          const message = event.entry.message;
-          this.latestAssistantErrored = message.stopReason === "error";
-          this.latestAssistantNeedsCall =
-            message.stopReason === "error" ||
-            message.content.some((part) => part.type === "toolCall");
-        }
-        await this.emit({ type: "message_end", message: event.entry.message });
-        return;
-      case "message_start":
-        await this.emit({ type: "message_start", message: event.message });
-        return;
-      case "message_update":
-        await this.emit({
-          type: "message_update",
-          message: event.message,
-          assistantMessageEvent: event.event,
-        });
-        return;
-      case "turn_start":
-        await this.emit({ type: "turn_start" });
-        return;
-      case "turn_end":
-        await this.emit({
-          type: "turn_end",
-          message: event.message,
-          toolResults: event.toolResults,
-        });
-        return;
-      case "tool_start":
-      case "tool_update":
-      case "tool_end":
-        return this.handlePiToolEvent(event);
-      case "usage":
-        return this.recordUsage(event.row.usage);
-      case "run_start":
-      case "run_end":
-      case "retry_scheduled":
-      case "retry_end":
-      case "compaction_start":
-      case "compaction_end":
-        return this.handlePiLifecycleEvent(event);
-      case "fault":
-        throw new Error(event.message);
-    }
-  }
+    abort(): void {
+      session.abort();
+    },
 
-  private async recordUsage(usage: SubagentUsage): Promise<void> {
-    addUsage(this.tally.usage, usage);
-    const reason =
-      (this.latestAssistantNeedsCall && this.callOverBudgetReason()) ||
-      this.resourceOverBudgetReason();
-    if (reason) await this.exceedBudget(reason);
-  }
+    async dispose(): Promise<void> {
+      await sessionManager.close();
+    },
 
-  private async handlePiToolEvent(
-    event: Extract<PiHarnessEvent, { type: "tool_start" | "tool_update" | "tool_end" }>,
-  ): Promise<void> {
-    switch (event.type) {
-      case "tool_start":
-        this.toolArgs.set(event.toolCallId, event.args);
-        this.tally.toolCalls += 1;
-        this.tally.toolCallCounts[event.toolName] =
-          (this.tally.toolCallCounts[event.toolName] ?? 0) + 1;
-        await this.emit({
-          type: "tool_execution_start",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          args: event.args,
-        });
-        return;
-      case "tool_update":
-        await this.emit({
-          type: "tool_execution_update",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          args: this.toolArgs.get(event.toolCallId) ?? {},
-          partialResult: event.partialResult,
-        });
-        return;
-      case "tool_end":
-        this.toolArgs.delete(event.toolCallId);
-        await this.emit({
-          type: "tool_execution_end",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          result: event.result,
-          isError: event.isError,
-        });
-        return;
-    }
-  }
+    getCurrentStep(): { toolName?: string; label?: string } | undefined {
+      const first = runState.pendingTools.values().next().value;
+      if (!first) return undefined;
+      return {
+        toolName: first.toolName,
+        label: (first.args as { label?: string })?.label,
+      };
+    },
+  };
+}
 
-  private async handlePiLifecycleEvent(
-    event: Extract<
-      PiHarnessEvent,
-      {
-        type:
-          | "run_start"
-          | "run_end"
-          | "retry_scheduled"
-          | "retry_end"
-          | "compaction_start"
-          | "compaction_end";
-      }
-    >,
-  ): Promise<void> {
-    switch (event.type) {
-      case "run_start":
-        this.operationId = event.runId;
-        if (this.runAborted) this.requestCancellation();
-        await this.emit({ type: "agent_start" });
-        return;
-      case "retry_scheduled":
-        this.retryAttempt = event.attempt - 1;
-        await this.emit({
-          type: "auto_retry_start",
-          attempt: this.retryAttempt,
-          maxAttempts: event.maxAttempts - 1,
-          delayMs: event.delayMs,
-          errorMessage: event.errorMessage,
-        });
-        return;
-      case "retry_end":
-        this.retryAttempt = 0;
-        await this.emit({
-          type: "auto_retry_end",
-          attempt: event.attempt - 1,
-          success: event.success,
-          finalError: event.finalError,
-        });
-        return;
-      case "compaction_start":
-        await this.emit({ type: "compaction_start", reason: event.reason });
-        return;
-      case "compaction_end": {
-        const entry =
-          event.status === "completed"
-            ? await this.sessionStore.getEntry(event.entryId)
-            : undefined;
-        if (entry?.type === "compaction") await this.reloadFromSession();
-        await this.emit({
-          type: "compaction_end",
-          reason: event.reason,
-          aborted: event.status === "aborted",
-          ...(event.status === "failed" ? { errorMessage: event.error.message } : {}),
-          ...(entry?.type === "compaction"
-            ? {
-                result: {
-                  summary: entry.summary,
-                  retainedMessages: entry.retainedTail.length,
-                  tokensBefore: entry.tokensBefore,
-                },
-              }
-            : {}),
-        });
-        return;
-      }
-      case "run_end":
-        if (this.retryAttempt > 0) {
-          await this.emit({
-            type: "auto_retry_end",
-            attempt: this.retryAttempt,
-            success: false,
-            finalError: event.status === "aborted" ? "Retry cancelled" : event.error?.message,
-          });
-          this.retryAttempt = 0;
-        }
-        await this.emit({ type: "agent_end", messages: this.runMessages });
-        return;
-    }
-  }
-
-  private async exceedBudget(reason: string): Promise<void> {
-    if (this.budgetExceededReason) return;
-    this.budgetExceededReason = reason;
-    this.abort();
-    await this.emit({
-      type: "budget_exceeded",
-      reason,
-      tokens: this.tally.usage.totalTokens,
-      costUsd: this.tally.usage.cost.total,
-      llmCalls: this.tally.llmCalls,
-      durationMs: Date.now() - this.tally.startedAt,
+async function finishRunnerCreation(params: {
+  options: CreateRunnerOptions;
+  conversationId: string;
+  conversationDir: string;
+  workspaceDir: string;
+  executor: Executor;
+  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  model: Model<Api>;
+  modelRegistry: MikanModels;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  systemPrompt: string;
+  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  toolBindings: MikanToolBindings;
+}): Promise<PiAgentWrapper> {
+  const {
+    options,
+    conversationId,
+    conversationDir,
+    workspaceDir,
+    executor,
+    resolveForRun,
+    model,
+    modelRegistry,
+    agentConfig,
+    systemPrompt,
+    sessionManager,
+    toolBindings,
+  } = params;
+  const { sessionKey, office, sessionScope, sessionView } = options;
+  const { contextFile } = sessionScope;
+  try {
+    const sessionUuid = extractSessionUuid(contextFile);
+    const chatSessionManager = new ChatHistorySync();
+    const session = await createRunnerAgentSession({
+      workspaceDir,
+      systemPrompt,
+      model,
+      agentConfig,
+      tools: toolBindings.tools,
+      sessionManager,
+      modelRegistry,
+      conversationId,
+      signal: options.signal,
     });
-    log.logWarning("Run budget exceeded — aborting", reason);
-  }
+    options.signal?.throwIfAborted();
 
-  private async checkCallBudget(): Promise<boolean> {
-    if (this.runAborted || this.budgetExceededReason) {
-      this.requestCancellation();
-      return false;
-    }
-    const reason = this.callOverBudgetReason() ?? this.resourceOverBudgetReason();
-    if (reason) await this.exceedBudget(reason);
-    return !this.runAborted && !this.budgetExceededReason;
-  }
+    const runState = createRunState();
+    attachSessionEventHandlers({ session, runState, model, agentConfig });
 
-  private callOverBudgetReason(): string | undefined {
-    const limit = this.runBudget.maxLlmCalls;
-    if (limit !== undefined && this.tally.llmCalls >= limit)
-      return `${this.tally.llmCalls} LLM calls >= ${limit} limit`;
-    return undefined;
+    return createRunnerInterface({
+      conversationId,
+      conversationDir,
+      sessionKey,
+      office,
+      sessionUuid,
+      contextFile,
+      sessionView,
+      runState,
+      executor,
+      resolveForRun,
+      session,
+      model,
+      agentConfig,
+      sessionManager,
+      chatSessionManager,
+      toolBindings,
+    });
+  } catch (error) {
+    await rollbackRunnerResource("close the session writer", () => sessionManager.close());
+    throw error;
   }
+}
 
-  private resourceOverBudgetReason(): string | undefined {
-    const { maxTokens, maxCostUsd, maxDurationMs } = this.runBudget;
-    if (maxTokens !== undefined && this.tally.usage.totalTokens >= maxTokens)
-      return `${this.tally.usage.totalTokens} tokens >= ${maxTokens} limit`;
-    if (maxCostUsd !== undefined && this.tally.usage.cost.total >= maxCostUsd)
-      return `cost ${this.tally.usage.cost.total.toFixed(2)} USD >= ${maxCostUsd} USD limit`;
-    if (maxDurationMs !== undefined && Date.now() - this.tally.startedAt >= maxDurationMs)
-      return `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`;
-    return undefined;
-  }
+export async function createRunner(options: CreateRunnerOptions): Promise<PiAgentWrapper> {
+  options.signal?.throwIfAborted();
+  const {
+    sandboxConfig,
+    sessionKey,
+    office,
+    trustModel,
+    sessionScope,
+    vaultManager,
+    provisioner,
+    resourceController,
+    platformToolPackFactories,
+  } = options;
+  const conversationId = office.address.conversationId;
+  const conversationDir = office.dir;
+  const workspaceDir = office.workspace.root;
+  const resolvedAgentConfig = resolveConversationSettings(office);
+  const mcpServers = await resolveRunnerMcpServers({
+    office,
+    trustModel,
+    platformWorkspaceId: options.platformWorkspaceId,
+    servers: resolvedAgentConfig.mcpServers,
+    openConnector: options.openConnector,
+    signal: options.signal,
+  });
+  options.signal?.throwIfAborted();
+  const agentConfig = { ...resolvedAgentConfig, mcpServers };
 
-  private armDeadline(): void {
-    const maxDurationMs = this.runBudget.maxDurationMs;
-    if (maxDurationMs === undefined || !Number.isFinite(maxDurationMs) || this.runAborted) return;
-    const remaining = maxDurationMs - (Date.now() - this.tally.startedAt);
-    this.deadlineTimer = setTimeout(
-      () => {
-        if (Date.now() - this.tally.startedAt < maxDurationMs) {
-          this.armDeadline();
-          return;
-        }
-        this.deadlineNotification = this.exceedBudget(
-          `${Date.now() - this.tally.startedAt}ms >= ${maxDurationMs}ms limit`,
-        );
-      },
-      Math.min(Math.max(0, remaining), 2_147_483_647),
-    );
+  const projection = resolveWorkspaceProjection(office);
+  // Bootstrap validation fails runner creation early. resolveForRun repeats
+  // the check against the actor-specific decision before any provider call.
+  assertSandboxSupportsWorkspacePolicy(
+    sandboxConfig,
+    projection.doorPolicy,
+    projection.promptSources.globalMemoryReadOnly === true,
+  );
+  const { executor, resolveForRun } = createRunnerExecutionContext(
+    sandboxConfig,
+    vaultManager,
+    provisioner,
+    office.workspace,
+  );
+  const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
+
+  const modelRegistry = options.models ?? MikanModels.create();
+  if (modelRegistry.getError()) {
+    log.logWarning("models.json load error", modelRegistry.getError()!);
   }
+  const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
+
+  // Create tools (per-runner, with per-runner upload function setter)
+  const toolBindings = createMikanTools(
+    executor,
+    workspaceDir,
+    { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
+    platformToolPackFactories ?? [],
+    {
+      model,
+      getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
+      // The conversation's own office dir: mounted into the sandbox, unlike
+      // the workspace base — generated images must land somewhere the agent
+      // (and a future run) can still reach.
+      outputDir: conversationDir,
+    },
+  );
+
+  const systemPrompt = await buildInitialSystemPrompt({
+    office,
+    pathContext,
+    projection,
+    sandboxConfig,
+  });
+  options.signal?.throwIfAborted();
+  const { contextFile, threadRootMessage } = sessionScope;
+  const sessionManager = await openRunnerSessionManager({
+    contextFile,
+    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
+    sessionKey,
+    threadRootMessage,
+  });
+  return finishRunnerCreation({
+    options,
+    conversationId,
+    conversationDir,
+    workspaceDir,
+    executor,
+    resolveForRun,
+    model,
+    modelRegistry,
+    agentConfig,
+    systemPrompt,
+    sessionManager,
+    toolBindings,
+  });
 }

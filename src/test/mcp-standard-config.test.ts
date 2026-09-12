@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isValidMcpServerName,
-  parseStandardMcpServers,
-  redactMcpUrl,
-} from "../harness/mcp-config.js";
+import { isValidMcpServerName, parseStandardMcpServers, redactMcpUrl } from "../harness/mcp.js";
 
 describe("parseStandardMcpServers", () => {
   it("stores a pasted mcpServers block as-is, Bearer header intact", () => {

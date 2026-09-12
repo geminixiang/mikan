@@ -87,7 +87,7 @@ The complete machine-readable inventory is in `architecture.toml`. The main grou
 | Group                   | Modules                                                      | Detailed documentation                                                                                                                                                                                                       |
 | ----------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Platform edge           | Platform adapters, Conversation intake                       | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                                           |
-| Orchestration           | Composition root, Conversation runtime, Agent runner         | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`, `src/agent/`                                                                                                                                                |
+| Orchestration           | Composition root, Conversation runtime                       | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                                                              |
 | Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
 | Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
 | Execution and authority | Execution resolver, Sandbox, Vault, Packages                 | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md), [`src/packages/README.md`](src/packages/README.md)                                                                           |
@@ -134,7 +134,7 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 ### Agent execution
 
-`src/agent/` is the run-level orchestration module. It deliberately does not own conversation queueing or the underlying model loop. `runner.ts` is its composition root; prompt policy, resource catalog, execution binding, and response presentation live behind the neighboring authority modules.
+`src/harness/` owns both run-level composition and the Pi execution integration. `runner.ts` prepares the authorized tools, execution context, and prompt; `session.ts` integrates Pi's model loop. Prompt construction, skills, response presentation, and persistent session ownership have explicit implementations within this module. Conversation queueing remains in the runtime, and platform SDK transports remain in adapters.
 
 A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, package skills, concrete executor, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
@@ -316,7 +316,7 @@ Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/web/s
 
 **`runner-materialization-rollback`** — Runner construction either returns a fully owned runner or settles rollback before rejecting. Shutdown propagates an abort signal through Conversation runtime, OpenConnector provisioning, and MCP connection/tool discovery. Once acquired, MCP connections are disposed before the session writer is closed; cleanup failures are reported without replacing the original construction error, and the same office/session identity can be reconstructed immediately. Session lifecycle awaits cooperative rollback, but reports a non-zero shutdown failure after a fixed five-second materialization grace instead of waiting forever for non-cancellable repository I/O.
 
-Evidence: `src/agent/runner.ts`, `src/harness/mcp.ts`, `src/harness/session-store.ts`.
+Evidence: `src/harness/runner.ts`, `src/harness/mcp.ts`, `src/harness/session-store.ts`.
 
 ### INV run settlement
 
@@ -324,7 +324,7 @@ Evidence: `src/agent/runner.ts`, `src/harness/mcp.ts`, `src/harness/session-stor
 
 **`run-settlement`** — A run remains active through response delivery, usage, diagnostics, working-state cleanup, and post-run settlement. Session lifecycle owns the settlement record and runner lease; deferred invalidation and eviction run only after both are released.
 
-Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/`.
 
 ### INV projection coherence
 
@@ -372,7 +372,7 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 **`mcp-conversation-authority`** — A provisioned OpenConnector runtime token is scoped to one Slack Conversation office and named from the stable Slack workspace and channel IDs. Shared provider OAuth credentials remain in OpenConnector. The startup-owned `OPENCONNECTOR_ENDPOINT` defines the reserved server and the only origin that may receive the host-only admin token; global and conversation MCP settings cannot replace, disable, or select its destination. The conversation runtime token stays in the host-only office State-dir and is never projected into a managed Sandbox or the Vault. Failure to provision removes only OpenConnector from that runner. The fixed platform trust gate runs before provisioning and loading: `open-trigger` unconditionally gives the runner an empty MCP map, so configured servers are not launched and MCP tools/instructions cannot enter parent or subagent tool sets. Trust is static for an `OfficeAddress`, is not a runner cache key, and changing it requires runner replacement rather than another cache entry.
 
-Evidence: `src/runtime/conversation-runtime.ts`, `src/agent/runner.ts`, `src/harness/open-connector.ts`, `src/adapters/slack/bot.ts`.
+Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/runner.ts`, `src/harness/open-connector.ts`, `src/adapters/slack/bot.ts`.
 
 ### INV settings runner coherence
 

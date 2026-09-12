@@ -11,7 +11,7 @@ export {
 export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
 export { SessionStore } from "./harness/session-store.js";
 export { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "./sessions/migrate-v3.js";
-export { MikanAgentSession } from "./harness/runner.js";
+export { MikanAgentSession } from "./harness/session.js";
 export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./harness/skills.js";
 export { loadSubagentProfiles } from "./harness/subagent-profiles.js";
 export {
@@ -19,15 +19,15 @@ export {
   DEFAULT_EVENT_BUDGET,
   DEFAULT_RETRY_SETTINGS,
   resolveHarnessSettings,
-} from "./harness/settings.js";
-export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./harness/event-format.js";
+} from "./harness/session.js";
+export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./tools/event.js";
 export type { CreateMikanModelsOptions } from "./harness/models.js";
 export type {
   CompactionReason,
   HarnessEvent,
   HarnessEventListener,
   MikanAgentSessionOptions,
-} from "./harness/runner.js";
+} from "./harness/session.js";
 export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./harness/skills.js";
 export type {
   LoadSubagentProfilesResult,
@@ -38,7 +38,7 @@ export type {
   CompactionSettings,
   HarnessSettings,
   RetrySettings,
-} from "./harness/settings.js";
+} from "./harness/session.js";
 export type {
   EventConversationKind,
   EventFilePayload,
@@ -47,7 +47,7 @@ export type {
   ImmediateEventPayload,
   OneShotEventPayload,
   PeriodicEventPayload,
-} from "./harness/event-format.js";
+} from "./tools/event.js";
 export type {
   BranchSummaryEntry,
   CompactionEntry,

@@ -5,7 +5,7 @@ import {
   activateRunPresentation,
   attachSessionEventHandlers,
   createRunState,
-} from "../agent/presenter.js";
+} from "../harness/presenter.js";
 import type { HarnessEvent, HarnessEventListener, MikanAgentSession } from "../harness/index.js";
 
 function makeResponder(): ConversationResponder & {

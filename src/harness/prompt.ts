@@ -1,15 +1,152 @@
-import { type ImageContent } from "@earendil-works/pi-ai";
-import { formatSkillsForPrompt } from "../harness/index.js";
-import { lstatSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import type { Office } from "../office/index.js";
+import type { ImageContent } from "@earendil-works/pi-ai";
+import { existsSync, lstatSync } from "node:fs";
+import { chmod, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import type { ConversationMessage } from "../adapter.js";
+import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
+import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
-import * as log from "../log.js";
-import { type RuntimePathContext, type SandboxConfig } from "../sandbox/index.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
-import { buildRuntimePaths, collectMessageAttachments } from "./execution.js";
 import type { BuildSystemPromptOptions } from "./types.js";
 
+import * as log from "../log.js";
+
+function isWithinPathRoot(path: string, root: string): boolean {
+  const pathRelative = relative(root, path);
+  return (
+    pathRelative === "" ||
+    (pathRelative !== ".." && !pathRelative.startsWith(`..${sep}`) && !isAbsolute(pathRelative))
+  );
+}
+
+function hasParentTraversal(path: string): boolean {
+  return path.split(/[\\/]/).some((segment) => segment === "..");
+}
+
+export function translateAttachPathToHost(
+  filePath: string,
+  pathContext: RuntimePathContext,
+): string {
+  if (!pathContext.runtimeToHostPath) {
+    throw new Error(
+      "Cannot attach files: this sandbox has no host-backed runtime path mapping; attachments are unavailable for remote sandboxes such as Cloudflare",
+    );
+  }
+  if (hasParentTraversal(filePath)) {
+    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
+  }
+
+  const runtimeRoot = resolve(pathContext.runtimeWorkspaceRoot);
+  const runtimePath = posix.isAbsolute(filePath)
+    ? filePath
+    : posix.join(pathContext.runtimeWorkspaceRoot, filePath);
+  const normalizedRuntimePath = resolve(runtimePath);
+  if (!isWithinPathRoot(normalizedRuntimePath, runtimeRoot)) {
+    throw new Error("Cannot attach files: path must be within the runtime workspace");
+  }
+
+  const hostRoot = resolve(pathContext.hostWorkspaceRoot);
+  const translatedPath = pathContext.runtimeToHostPath(runtimePath);
+  const hostPath = resolve(translatedPath);
+  if (!isWithinPathRoot(hostPath, hostRoot)) {
+    throw new Error("Cannot attach files: path must be within the host workspace");
+  }
+
+  return hostPath;
+}
+
+/**
+ * Normalize an attachment path using runtime lexical semantics only. The
+ * executor remains the authority for reading the resulting runtime path.
+ */
+export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
+  if (hasParentTraversal(filePath)) {
+    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
+  }
+
+  const runtimeRoot = posix.resolve(runtimeWorkspaceRoot);
+  const runtimePath = posix.resolve(runtimeRoot, filePath);
+  const runtimeRelativePath = posix.relative(runtimeRoot, runtimePath);
+  if (
+    runtimeRelativePath === ".." ||
+    runtimeRelativePath.startsWith("../") ||
+    posix.isAbsolute(runtimeRelativePath)
+  ) {
+    throw new Error("Cannot attach files: path must be within the runtime workspace");
+  }
+  return runtimePath;
+}
+
+export async function withStagedRuntimeFile(
+  executor: Executor,
+  runtimePath: string,
+  upload: (stagedPath: string) => Promise<void>,
+): Promise<void> {
+  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
+  let stagingDir: string | undefined;
+  try {
+    stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
+    await chmod(stagingDir, 0o700);
+    const stagedPath = join(stagingDir, basename(runtimePath));
+    await writeFile(stagedPath, content, { mode: 0o600, flag: "wx" });
+    await chmod(stagedPath, 0o600);
+    await upload(stagedPath);
+  } finally {
+    if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
+  }
+}
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+async function collectMessageAttachments(
+  message: ConversationMessage,
+  workspacePath: string,
+  pathContext?: RuntimePathContext,
+  readAttachment?: (runtimePath: string) => Promise<string>,
+): Promise<{ imageAttachments: ImageContent[]; nonImagePaths: string[] }> {
+  const imageAttachments: ImageContent[] = [];
+  const nonImagePaths: string[] = [];
+
+  for (const attachment of message.attachments || []) {
+    const runtimePath = `${workspacePath}/${attachment.localPath}`;
+    const hostPath = pathContext?.runtimeToHostPath?.(runtimePath) ?? runtimePath;
+    const mimeType = IMAGE_MIME_TYPES[attachment.localPath.toLowerCase().split(".").pop() || ""];
+
+    if (mimeType && existsSync(hostPath) && readAttachment) {
+      try {
+        imageAttachments.push({
+          type: "image",
+          mimeType,
+          data: await readAttachment(runtimePath),
+        });
+      } catch {
+        nonImagePaths.push(runtimePath);
+      }
+    } else {
+      nonImagePaths.push(runtimePath);
+    }
+  }
+
+  return { imageAttachments, nonImagePaths };
+}
+
+function buildRuntimePaths(runtimeWorkspaceRoot: string, office: Office) {
+  const workspaceRoot = runtimeWorkspaceRoot.replace(/\/+$/, "") || "/";
+  const conversationPath = posix.join(workspaceRoot, office.key);
+  return {
+    workspaceRoot,
+    conversationPath,
+    scratchPath: posix.join(conversationPath, "scratch"),
+  };
+}
 export type { BuildSystemPromptOptions } from "./types.js";
 
 export async function buildPromptPayload(

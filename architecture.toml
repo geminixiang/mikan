@@ -36,13 +36,6 @@ docs = "src/runtime/README.md"
 sources = ["src/runtime/"]
 
 [[modules]]
-id = "agent-runner"
-name = "Agent runner"
-kind = "orchestrator"
-docs = "ARCHITECTURE.md#agent-execution"
-sources = ["src/agent/"]
-
-[[modules]]
 id = "harness"
 name = "Agent harness"
 kind = "core"
@@ -136,7 +129,7 @@ consumers = [
   "composition-root",
   "conversation-intake",
   "conversation-runtime",
-  "agent-runner",
+  "harness",
   "side-services",
 ]
 interface = "MessagingBot, ConversationEvent, ConversationResponder"
@@ -164,7 +157,7 @@ docs = "src/runtime/README.md"
 
 [[seams]]
 id = "runner"
-owner = "agent-runner"
+owner = "harness"
 consumers = ["conversation-runtime"]
 interface = "PiAgentWrapper"
 docs = "ARCHITECTURE.md#agent-execution"
@@ -172,14 +165,14 @@ docs = "ARCHITECTURE.md#agent-execution"
 [[seams]]
 id = "mcp-tools"
 owner = "harness"
-consumers = ["agent-runner"]
-interface = "SessionStore.connectMcp, provisionOfficeOpenConnectorToken"
+consumers = ["side-services"]
+interface = "loadMcpTools"
 docs = "src/harness/README.md"
 
 [[seams]]
 id = "harness-session"
 owner = "harness"
-consumers = ["agent-runner"]
+consumers = ["dream"]
 interface = "MikanAgentSession"
 docs = "src/harness/README.md"
 
@@ -218,28 +211,28 @@ docs = "ARCHITECTURE.md#configuration-authority"
 [[seams]]
 id = "projection"
 owner = "workspace-projection"
-consumers = ["agent-runner", "execution-resolver"]
+consumers = ["harness", "execution-resolver"]
 interface = "resolveWorkspaceProjection"
 docs = "src/workspace-projection/README.md"
 
 [[seams]]
 id = "execution-resolution"
 owner = "execution-resolver"
-consumers = ["agent-runner"]
+consumers = ["harness"]
 interface = "ActorExecutionResolver.resolve"
 docs = "ARCHITECTURE.md#execution-resolution"
 
 [[seams]]
 id = "executor"
 owner = "sandbox"
-consumers = ["execution-resolver", "agent-runner"]
+consumers = ["execution-resolver", "harness"]
 interface = "Executor, SandboxAdapter"
 docs = "src/sandbox/README.md"
 
 [[seams]]
 id = "session-store"
 owner = "sessions"
-consumers = ["conversation-runtime", "agent-runner", "harness", "dream"]
+consumers = ["conversation-runtime", "harness", "dream"]
 interface = "session-key policy, managed session store"
 docs = "src/sessions/README.md"
 
@@ -267,7 +260,7 @@ docs = "src/commands/README.md"
 [[seams]]
 id = "package-resolution"
 owner = "packages"
-consumers = ["agent-runner", "execution-resolver", "configuration", "side-services"]
+consumers = ["harness", "execution-resolver", "configuration", "side-services"]
 interface = "resolveConversationPackages"
 docs = "src/packages/README.md"
 
@@ -390,7 +383,6 @@ path = [
   "platform-adapters",
   "conversation-intake",
   "conversation-runtime",
-  "agent-runner",
   "harness",
   "platform-adapters",
 ]
@@ -398,7 +390,7 @@ docs = "ARCHITECTURE.md#conversation-run"
 
 [[flows]]
 id = "execution-resolution"
-path = ["agent-runner", "workspace-projection", "execution-resolver", "vault", "sandbox"]
+path = ["harness", "workspace-projection", "execution-resolver", "vault", "sandbox"]
 docs = "ARCHITECTURE.md#execution-resolution"
 
 [[flows]]
@@ -407,7 +399,7 @@ path = [
   "side-services",
   "platform-adapters",
   "conversation-runtime",
-  "agent-runner",
+  "harness",
   "platform-adapters",
 ]
 docs = "ARCHITECTURE.md#scheduled-execution"
@@ -463,20 +455,20 @@ docs = "ARCHITECTURE.md#inv-process-shutdown-order"
 
 [[invariants]]
 id = "runner-materialization-rollback"
-owners = ["agent-runner", "harness", "sessions"]
+owners = ["harness", "sessions"]
 applies_to = ["runner-state", "mcp-tools", "session-files"]
 docs = "ARCHITECTURE.md#inv-runner-materialization-rollback"
 
 [[invariants]]
 id = "run-settlement"
-owners = ["conversation-runtime", "agent-runner"]
+owners = ["conversation-runtime", "harness"]
 applies_to = ["runner-state", "platform-adapters"]
 docs = "ARCHITECTURE.md#inv-run-settlement"
 
 [[invariants]]
 id = "projection-coherence"
 owners = ["workspace-projection"]
-applies_to = ["office-directory", "workspace-projection", "agent-runner", "sandbox"]
+applies_to = ["office-directory", "workspace-projection", "harness", "sandbox"]
 docs = "ARCHITECTURE.md#inv-projection-coherence"
 
 [[invariants]]
@@ -511,7 +503,7 @@ docs = "ARCHITECTURE.md#inv-credential-least-authority"
 
 [[invariants]]
 id = "mcp-conversation-authority"
-owners = ["harness", "conversation-runtime", "agent-runner"]
+owners = ["harness", "conversation-runtime"]
 applies_to = ["mcp-tools", "openconnector-runtime-token", "office", "runner-state"]
 docs = "ARCHITECTURE.md#inv-mcp-conversation-authority"
 

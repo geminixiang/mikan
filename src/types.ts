@@ -5,7 +5,7 @@ import type {
   ImmediateEventPayload,
   OneShotEventPayload,
   PeriodicEventPayload,
-} from "./harness/event-format.js";
+} from "./tools/event.js";
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./commands/types.js";
 import type { MikanModels } from "./harness/models.js";
@@ -457,7 +457,7 @@ export interface ConversationLogMessage {
 
 // ── events ────────────────────────────────────────────────────────────────────
 // The wire format (payload union, schema, parser, builder) is owned by
-// src/harness/event-format.ts. These are the *resolved* runtime shapes: the
+// src/tools/event.ts. These are the *resolved* runtime shapes: the
 // EventsWatcher fills in the platform default and infers the conversation
 // kind before an event reaches a bot.
 

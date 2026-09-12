@@ -8,7 +8,7 @@ import type {
   RunningSession,
 } from "../adapter.js";
 import type { Workspace } from "../office/index.js";
-import { createRunner } from "../agent/runner.js";
+import { createRunner } from "../harness/runner.js";
 import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
 import type { PiAgentWrapper } from "../types.js";
 import { MikanModels } from "../harness/index.js";

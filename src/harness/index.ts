@@ -13,7 +13,7 @@ export {
 export { MikanModels, defaultModelsJsonPath } from "./models.js";
 export type { CreateMikanModelsOptions } from "./types.js";
 export { SessionStore } from "./session-store.js";
-export { MikanAgentSession } from "./runner.js";
+export { MikanAgentSession } from "./session.js";
 export type {
   CompactionReason,
   HarnessEvent,
@@ -30,23 +30,8 @@ export {
   DEFAULT_RETRY_SETTINGS,
   resolveHarnessSettings,
   type CompactionSettings,
-} from "./settings.js";
+} from "./session.js";
 export type { BudgetSettings, HarnessSettings, RetrySettings } from "./types.js";
-export {
-  buildEventPayload,
-  EventTypeSchema,
-  parseEventPayload,
-  validateEventFilename,
-} from "./event-format.js";
-export type {
-  EventConversationKind,
-  EventFilePayload,
-  EventPayloadInput,
-  EventType,
-  ImmediateEventPayload,
-  OneShotEventPayload,
-  PeriodicEventPayload,
-} from "./types.js";
 export {
   type SubagentModelSpec,
   type SubagentProfile,

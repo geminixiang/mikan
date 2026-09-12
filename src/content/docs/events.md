@@ -71,7 +71,7 @@ Common schedules:
 
 ## Routing fields
 
-`type`, `conversationId`, and `text` are required in every event file; the rest are optional, and per-type fields (`at`, `schedule` + `timezone`) are required for their own type. `src/harness/event-format.ts` owns the schema — every reader and writer goes through its parser and builder.
+`type`, `conversationId`, and `text` are required in every event file; the rest are optional, and per-type fields (`at`, `schedule` + `timezone`) are required for their own type. `src/tools/event.ts` owns the schema — every reader and writer goes through its parser and builder.
 
 | Field              | Description                                                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |

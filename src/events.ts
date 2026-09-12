@@ -12,7 +12,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createConversationEvent } from "./adapter.js";
 import type { ConversationKind, MessagingBot, PlatformName } from "./adapter.js";
-import { parseEventPayload } from "./harness/event-format.js";
+import { parseEventPayload } from "./tools/event.js";
 import { ensureDirExists } from "./utils/file-guards.js";
 import * as log from "./log.js";
 import { reportUserFacingError } from "./observability/sentry.js";
@@ -277,7 +277,7 @@ export class EventsWatcher {
 
   private parseEvent(content: string, filename: string): MikanEvent {
     // Format validation (shape, per-type fields, channelId alias) is owned by
-    // the event-format module; this watcher only resolves what needs runtime
+    // the event tool module; this watcher only resolves what needs runtime
     // context: the target platform and the conversation kind.
     const payload = parseEventPayload(content, filename);
     const platform = this.resolvePlatform(payload.platform, filename);

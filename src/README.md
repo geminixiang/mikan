@@ -6,7 +6,6 @@ This directory is the TypeScript source root for mikan; the entries below descri
 
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
 - `agent-events.ts`: Broadcasts agent event envelopes over server-sent events to connected session-view clients, and serves the `/api/agent-events/stream` endpoint.
-- `agent/`: Agent runner — prompt authority, resource catalog, execution binding, run presentation, and the `createRunner` composition root.
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
 - `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.
@@ -27,7 +26,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `commands/`: Chat command parsing and handlers.
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
-- `harness/`: mikan's agent harness — session store, model catalog, run loop, MCP connections and configuration, skills, and subagents.
+- `harness/`: Agent execution — `createRunner`, prompt and presentation, execution binding, native Pi session integration, session store, models, MCP capabilities, skills, and bounded subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
 - `packages/`: Git-sourced skill packages — source grammar, materialization, per-conversation resolution, read-only mounts, and the admin write path.

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { loadMikanSkills } from "../agent/catalog.js";
+import { loadMikanSkills } from "../harness/skills.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import {
   conversationPackageSkillMounts,

@@ -11,18 +11,13 @@ const mocks = vi.hoisted(() => ({
   loadMcpTools: vi.fn(),
 }));
 
-vi.mock("../agent/catalog.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../agent/catalog.js")>();
-  return { ...actual, createConfiguredAgentSession: mocks.createConfiguredAgentSession };
-});
-
 vi.mock("../harness/mcp.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../harness/mcp.js")>();
   return { ...actual, loadMcpTools: mocks.loadMcpTools };
 });
 
-import { createRunner } from "../agent/runner.js";
-import { MikanModels, SessionStore } from "../harness/index.js";
+import { createRunner } from "../harness/runner.js";
+import { MikanAgentSession, MikanModels, SessionStore } from "../harness/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
@@ -49,9 +44,13 @@ beforeEach(() => {
     dispose: mocks.disposeMcp,
   });
   mocks.createConfiguredAgentSession.mockReset();
+  vi.spyOn(MikanAgentSession.prototype, "reloadFromSession").mockImplementation(
+    mocks.createConfiguredAgentSession,
+  );
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   delete process.env.MIKAN_STATE_DIR;
   rmSync(dir, { recursive: true, force: true });
 });

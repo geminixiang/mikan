@@ -1,5 +1,11 @@
 import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
-import type { HarnessEvent, MikanAgentSession } from "../harness/index.js";
+import type {
+  HarnessEvent,
+  RunPresentation,
+  RunnerSessionState,
+  UsageReportContext,
+} from "./types.js";
+import type { MikanAgentSession } from "./session.js";
 import {
   mergeSubagentProgress,
   parseSubagentProgressSnapshot,
@@ -9,16 +15,17 @@ import {
 import type { ConversationResponder, SubagentProgressSnapshot } from "../adapter.js";
 import type { AgentEventPayload } from "../types.js";
 import type { resolveConversationSettings } from "../config.js";
-import * as log from "../log.js";
 import {
   addLifecycleBreadcrumb,
   metricAttributes,
   reportUserFacingError,
 } from "../observability/sentry.js";
-import * as Sentry from "@sentry/node";
 import { emitAgentEvent } from "../agent-events.js";
 import { appendTriggerAttribution } from "./prompt.js";
-import type { RunPresentation, RunnerSessionState, UsageReportContext } from "./types.js";
+
+import * as log from "../log.js";
+
+import * as Sentry from "@sentry/node";
 
 function createEmptyUsageTotals() {
   return {
@@ -186,6 +193,7 @@ async function replaceResponseWithToolProgress(
 }
 
 const TOOL_PROGRESS_DEBOUNCE_MS = 500;
+
 const SUBAGENT_PROGRESS_THROTTLE_MS = 2000;
 
 function subagentProgressDelay(runState: RunnerSessionState): number {
@@ -498,12 +506,19 @@ function emitPresenterEvent(context: PresenterEventContext, event: AgentEventPay
 }
 
 type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
+
 type ToolUpdateEvent = Extract<HarnessEvent, { type: "tool_execution_update" }>;
+
 type ToolEndEvent = Extract<HarnessEvent, { type: "tool_execution_end" }>;
+
 type MessageStartEvent = Extract<HarnessEvent, { type: "message_start" }>;
+
 type MessageUpdateEvent = Extract<HarnessEvent, { type: "message_update" }>;
+
 type MessageEndEvent = Extract<HarnessEvent, { type: "message_end" }>;
+
 type AssistantMessage = Extract<MessageEndEvent["message"], { role: "assistant" }>;
+
 type LifecycleEvent = Extract<
   HarnessEvent,
   { type: "compaction_start" | "compaction_end" | "auto_retry_start" | "budget_exceeded" }

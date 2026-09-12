@@ -1,12 +1,8 @@
+import { validateEventFilename } from "../../tools/event.js";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
-import {
-  MikanModels,
-  parseFrontmatter,
-  SessionStore,
-  validateEventFilename,
-} from "../../harness/index.js";
+import { MikanModels, parseFrontmatter, SessionStore } from "../../harness/index.js";
 import type { EventStore } from "../../tools/types.js";
 import type { PlatformName } from "../../adapter.js";
 import { InMemoryTokenStore } from "../token-store.js";
@@ -43,13 +39,9 @@ import {
   type SandboxSettings,
   type WorkspacePolicyChoice,
 } from "../../config.js";
-import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../harness/mcp-config.js";
+import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../harness/mcp.js";
 import { loadMcpTools } from "../../harness/mcp.js";
-import {
-  isValidMcpServerName,
-  parseStandardMcpServers,
-  redactMcpUrl,
-} from "../../harness/mcp-config.js";
+import { isValidMcpServerName, parseStandardMcpServers, redactMcpUrl } from "../../harness/mcp.js";
 import type { McpServerConfig } from "../../harness/types.js";
 import {
   applyConversationSettings,

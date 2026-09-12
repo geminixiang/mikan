@@ -1,11 +1,12 @@
-/**
- * Core types for the mikan agent harness.
- *
- * The harness is built directly on pi-agent-core and pi-ai. Sessions use
- * pi's current v4 entry model and JSONL storage format. mikan-owned
- * metadata uses a namespaced durable value; legacy v3 and Pi 0.84 v4 files
- * are handled exclusively by the offline session migrations.
- */
+import type { OfficeAddress, PlatformTrustModel } from "../types.js";
+import type { MikanAgentSession } from "./session.js";
+import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
+import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
+import type { resolveConversationSettings } from "../config.js";
+import type { ResolvedPackages } from "../packages/types.js";
+import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
+import type { WorkspaceProjection } from "../workspace-projection/types.js";
+import type { Office } from "../office/index.js";
 import type {
   AgentEvent,
   AgentMessage,
@@ -19,10 +20,92 @@ import type {
   CompactionSettings,
   Skill,
 } from "@earendil-works/pi-agent-core";
-import type { Api, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "./session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
+
+export interface BuildSystemPromptOptions {
+  workspacePath: string;
+  office: Office;
+  memory: string;
+  sandboxConfig: SandboxConfig;
+  platform: MessagingInfo;
+  skills: MikanSkill[];
+  projection: WorkspaceProjection;
+  skippedSkillLinks?: string[];
+}
+
+export interface RunnerSessionState {
+  responder: ConversationResponder | null;
+  logCtx: {
+    conversationId: string;
+    userName?: string;
+    conversationName?: string;
+    sessionId?: string;
+  } | null;
+  queue: {
+    enqueue(fn: () => Promise<void>, errorContext: string): void;
+  } | null;
+  pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
+  toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
+  subagentProgress: Map<string, SubagentProgressSnapshot>;
+  completedSubagentProgress: SubagentProgressSnapshot[];
+  subagentToolCalls: Set<string>;
+  subagentProgressShown: boolean;
+  suppressResponseDeltas: boolean;
+  lastSubagentProgressAt: number;
+  toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
+  totalUsage: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  };
+  llmCallCount: number;
+  stopReason: string;
+  errorMessage: string | undefined;
+  reportedLlmError: boolean;
+  finalResponseHandledByTool: boolean;
+  triggerAttribution?: string;
+}
+
+export interface UsageReportContext {
+  session: MikanAgentSession;
+  runState: RunnerSessionState;
+  responder: ConversationResponder;
+  platform: MessagingInfo;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  sessionConversation: string;
+  sessionUuid: string;
+  waitForQueue: () => Promise<void>;
+}
+
+export interface RunnerExecutionContext {
+  executor: Executor;
+  resolveForRun(context: {
+    address: OfficeAddress;
+    userId: string;
+    trustModel?: PlatformTrustModel;
+  }): Promise<{
+    pathContext: RuntimePathContext;
+    projection: WorkspaceProjection;
+    packages: ResolvedPackages;
+  }>;
+}
+
+export interface RunPresentation {
+  wait(): Promise<void>;
+  dispose(): void;
+}
+
+export interface PreparedRunContext {
+  sessionConversation: string;
+  userMessage: string;
+  imageAttachments: ImageContent[];
+  triggerAttribution?: string;
+}
 
 export type { BranchSummaryEntry, CompactionEntry, CustomEntry };
 
@@ -195,53 +278,6 @@ export interface SessionHeader {
 
 export interface CreateMikanModelsOptions {
   modelsJsonPath?: string;
-}
-
-export type EventConversationKind = "direct" | "shared";
-
-export type EventType = "immediate" | "one-shot" | "periodic";
-
-interface EventPayloadBase {
-  /** Target platform; may be omitted when only one platform is running. */
-  platform?: string;
-  conversationId: string;
-  conversationKind?: EventConversationKind;
-  userId?: string;
-  /** Self-contained task text; event runs do not inherit conversation history. */
-  text: string;
-}
-
-export interface ImmediateEventPayload extends EventPayloadBase {
-  type: "immediate";
-}
-
-export interface OneShotEventPayload extends EventPayloadBase {
-  type: "one-shot";
-  /** ISO 8601 timestamp with offset. */
-  at: string;
-}
-
-export interface PeriodicEventPayload extends EventPayloadBase {
-  type: "periodic";
-  /** Cron expression (croner syntax). */
-  schedule: string;
-  /** IANA timezone, e.g. "Asia/Taipei". */
-  timezone: string;
-}
-
-/** Wire shape of one event file. */
-export type EventFilePayload = ImmediateEventPayload | OneShotEventPayload | PeriodicEventPayload;
-
-export interface EventPayloadInput {
-  type: EventType;
-  platform?: string;
-  conversationId: string;
-  conversationKind?: EventConversationKind;
-  userId?: string;
-  text: string;
-  at?: string;
-  schedule?: string;
-  timezone?: string;
 }
 
 /**

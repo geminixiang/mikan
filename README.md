@@ -21,7 +21,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Conversation office** is the unit everything else hangs off: one conversation's working area plus its own sandbox runtime. An office is identified by its platform and raw conversation id, and its directory is named by an office key (`v1-<platform>-<readable-id>-<hash>`), so two platforms can never collide on the same raw id.
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
-- **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) runs the model loop, session persistence, compaction, and calls mikan tools.
+- **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
 - **Sandbox runtime** is where tool commands execute: host, Docker container/image, or the experimental Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 

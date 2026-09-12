@@ -16,7 +16,7 @@ import {
   DEFAULT_SUBAGENT_BUDGET,
   runSubagent,
   SUBAGENT_ABORT_GRACE_MS,
-} from "../harness/subagent-runner.js";
+} from "../harness/subagent.js";
 import {
   MikanAgentSession,
   MikanModels,
@@ -24,7 +24,7 @@ import {
   type SubagentUsage,
 } from "../harness/index.js";
 import { createSubagentTool } from "../tools/subagent.js";
-import { SubagentSlotPool } from "../harness/subagent-slots.js";
+import { SubagentSlotPool } from "../harness/subagent.js";
 
 let dir: string;
 

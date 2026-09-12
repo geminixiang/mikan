@@ -7,8 +7,8 @@ import {
   buildSystemPrompt,
   buildTurnInstructions,
   resolveTriggerAttribution,
-} from "../agent/prompt.js";
-import { translateAttachPathToHost } from "../agent/execution.js";
+} from "../harness/prompt.js";
+import { translateAttachPathToHost } from "../harness/prompt.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
