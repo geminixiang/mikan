@@ -366,9 +366,13 @@ export class SlackMessagingBot implements MessagingBot {
     return resolveSlackMentions(text, this.users.values());
   }
 
-  async postMessage(channel: string, text: string): Promise<string> {
+  async postMessage(channel: string, text: string, threadTs?: string): Promise<string> {
     return slackRetry(async () => {
-      const payload = { channel, ...renderSlackBlocks(this.resolveMentions(text)) };
+      const payload = {
+        channel,
+        ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
+        ...renderSlackBlocks(this.resolveMentions(text)),
+      };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
@@ -393,12 +397,14 @@ export class SlackMessagingBot implements MessagingBot {
     user: string,
     text: string,
     threadTs?: string,
+    blocks?: object[],
   ): Promise<void> {
     return slackRetry(async () => {
       await this.webClient.chat.postEphemeral({
         channel,
         user,
         text,
+        ...(blocks !== undefined ? { blocks: blocks as KnownBlock[] } : {}),
         ...(threadTs ? { thread_ts: threadTs } : {}),
       });
     });
@@ -411,20 +417,22 @@ export class SlackMessagingBot implements MessagingBot {
     blocks: object[],
     threadTs?: string,
   ): Promise<void> {
-    return slackRetry(async () => {
-      await this.webClient.chat.postEphemeral({
-        channel,
-        user,
-        text,
-        blocks: blocks as KnownBlock[],
-        ...(threadTs ? { thread_ts: threadTs } : {}),
-      });
-    });
+    return this.postEphemeral(channel, user, text, threadTs, blocks);
   }
 
-  async postMessageBlocks(channel: string, text: string, blocks: object[]): Promise<string> {
+  async postMessageBlocks(
+    channel: string,
+    text: string,
+    blocks: object[],
+    threadTs?: string,
+  ): Promise<string> {
     return slackRetry(async () => {
-      const payload = { channel, text, blocks: blocks as KnownBlock[] };
+      const payload = {
+        channel,
+        text,
+        blocks: blocks as KnownBlock[],
+        ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
+      };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
     });
@@ -735,15 +743,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-    return slackRetry(async () => {
-      const payload = {
-        channel,
-        thread_ts: threadTs,
-        ...renderSlackBlocks(this.resolveMentions(text)),
-      };
-      const result = await this.webClient.chat.postMessage(payload);
-      return result.ts as string;
-    });
+    return this.postMessage(channel, text, threadTs);
   }
 
   async postInThreadBlocks(
@@ -752,16 +752,7 @@ export class SlackMessagingBot implements MessagingBot {
     text: string,
     blocks: object[],
   ): Promise<string> {
-    return slackRetry(async () => {
-      const payload = {
-        channel,
-        thread_ts: threadTs,
-        text, // fallback for notifications
-        blocks: blocks as KnownBlock[],
-      };
-      const result = await this.webClient.chat.postMessage(payload);
-      return result.ts as string;
-    });
+    return this.postMessageBlocks(channel, text, blocks, threadTs);
   }
 
   async uploadFile(
@@ -1178,45 +1169,32 @@ export class SlackMessagingBot implements MessagingBot {
       attachments: [],
     });
 
-    const respond = async (responseText: string) => {
+    const respond = async (responseText: string, blocks?: object[]) => {
       if (options.ephemeralChannelId) {
         await this.postEphemeral(
           options.ephemeralChannelId,
           userId,
           responseText,
           options.threadTs,
-        );
-        return;
-      }
-      const messageTs = await this.postMessage(conversationId, responseText);
-      this.logBotResponse(conversationId, responseText, messageTs);
-    };
-
-    const respondMuted = async (responseText: string) => {
-      const blocks = [buildMrkdwnContextBlock(responseText)];
-      if (options.ephemeralChannelId) {
-        await this.postEphemeralBlocks(
-          options.ephemeralChannelId,
-          userId,
-          responseText,
           blocks,
-          options.threadTs,
         );
         return;
       }
-      const messageTs = await this.postMessageBlocks(conversationId, responseText, blocks);
+      const messageTs = blocks
+        ? await this.postMessageBlocks(conversationId, responseText, blocks)
+        : await this.postMessage(conversationId, responseText);
       this.logBotResponse(conversationId, responseText, messageTs);
     };
 
     const responder: ConversationResponder = {
       respond,
-      replaceResponse: respond,
+      replaceResponse: (responseText) => respond(responseText),
       respondDiagnostic: async (
         responseText: string,
         responseOptions?: { style?: "muted" | "error" },
       ) => {
         if (responseOptions?.style === "muted") {
-          await respondMuted(responseText);
+          await respond(responseText, [buildMrkdwnContextBlock(responseText)]);
           return;
         }
         await respond(responseOptions?.style === "error" ? `_${responseText}_` : responseText);

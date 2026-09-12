@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import type { ConversationKind } from "../adapter.js";
 import {
   buildEventPayload,
@@ -77,18 +77,8 @@ interface EventToolContext {
   userId: string;
 }
 
-type EventToolParams = {
-  action?: "create" | "list" | "read" | "update" | "delete";
-  filename?: string;
-  scope?: "conversation" | "all";
-  label?: string;
-  type?: "immediate" | "one-shot" | "periodic";
-  text?: string;
-  at?: string;
-  schedule?: string;
-  timezone?: string;
-  filenamePrefix?: string;
-};
+/** Derived from the advertised schema, so the two can never drift apart. */
+type EventToolParams = Static<typeof eventSchema>;
 
 export type { EventPayload, EventStore } from "./types.js";
 import type { EventPayload, EventStore } from "./types.js";
@@ -182,6 +172,19 @@ export class HostEventStore implements EventStore {
   }
 }
 
+/** Every event action answers with one text block and no structured details. */
+type EventToolResult = Awaited<ReturnType<AgentTool<typeof eventSchema>["execute"]>>;
+
+function textResult(text: string): EventToolResult {
+  return { content: [{ type: "text", text }], details: undefined };
+}
+
+/** Log verbs per write action, so each message states exactly one form. */
+const WRITE_VERBS = {
+  create: { present: "Writing", past: "Wrote", infinitive: "write" },
+  update: { present: "Updating", past: "Updated", infinitive: "update" },
+} as const;
+
 export function createEventTool(eventStore: EventStore): {
   tool: AgentTool<typeof eventSchema>;
   setEventContext: (context: EventToolContext) => void;
@@ -198,93 +201,10 @@ export function createEventTool(eventStore: EventStore): {
       if (signal?.aborted) {
         throw new Error("Operation aborted");
       }
-
       if (!eventContext) {
         throw new Error("Event context not configured");
       }
-
-      const action = params.action ?? "create";
-
-      if (action === "list") {
-        const events = await eventStore.list();
-        const { conversationId, platform } = eventContext;
-        const scopedEvents =
-          params.scope === "all"
-            ? events
-            : events.filter(
-                (event) =>
-                  event.payload?.conversationId === conversationId &&
-                  // Same raw id on another platform is another office. Files
-                  // written before payloads carried a platform stay visible.
-                  (event.payload.platform === undefined || event.payload.platform === platform),
-              );
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  scope: params.scope ?? "conversation",
-                  conversationId: params.scope === "all" ? undefined : conversationId,
-                  events: scopedEvents,
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-          details: undefined,
-        };
-      }
-
-      if (action === "read") {
-        const filename = requireFilename(params);
-        const event = await eventStore.read(filename);
-        return {
-          content: [{ type: "text", text: JSON.stringify(event, null, 2) }],
-          details: undefined,
-        };
-      }
-
-      if (action === "delete") {
-        const filename = requireFilename(params);
-        await eventStore.delete(filename);
-        return {
-          content: [{ type: "text", text: `Deleted event ${filename}` }],
-          details: undefined,
-        };
-      }
-
-      const payload = buildToolEventPayload(params, eventContext);
-      const filename =
-        action === "update"
-          ? requireFilename(params)
-          : `${sanitizeFileSegment(params.filenamePrefix || payload.type || "event")}-${Date.now()}.json`;
-
-      log.logInfo(
-        `${action === "update" ? "Updating" : "Writing"} event file via control plane store: ${filename} (type=${payload.type}, platform=${payload.platform}, conversation=${payload.conversationId})`,
-      );
-
-      try {
-        const result =
-          action === "update"
-            ? await eventStore.update(filename, payload)
-            : await eventStore.write(filename, payload);
-        log.logInfo(
-          `${action === "update" ? "Updated" : "Wrote"} event file via control plane store: ${result.path} (${result.size} bytes)`,
-        );
-      } catch (err) {
-        log.logWarning(
-          `Failed to ${action === "update" ? "update" : "write"} event file via control plane store: ${filename}`,
-          String(err),
-        );
-        throw err;
-      }
-
-      return {
-        content: [{ type: "text", text: formatEventWriteResult(action, filename, payload) }],
-        details: undefined,
-      };
+      return runEventAction(eventStore, params, eventContext);
     },
   };
 
@@ -294,6 +214,86 @@ export function createEventTool(eventStore: EventStore): {
       eventContext = context;
     },
   };
+}
+
+/** Dispatch one `event` call; `create` stays the default for older callers. */
+async function runEventAction(
+  eventStore: EventStore,
+  params: EventToolParams,
+  context: EventToolContext,
+): Promise<EventToolResult> {
+  const action = params.action ?? "create";
+
+  if (action === "list") return listEvents(eventStore, params, context);
+  if (action === "read") {
+    return textResult(JSON.stringify(await eventStore.read(requireFilename(params)), null, 2));
+  }
+  if (action === "delete") {
+    const filename = requireFilename(params);
+    await eventStore.delete(filename);
+    return textResult(`Deleted event ${filename}`);
+  }
+  return writeEvent(eventStore, action, params, context);
+}
+
+async function listEvents(
+  eventStore: EventStore,
+  params: EventToolParams,
+  context: EventToolContext,
+): Promise<EventToolResult> {
+  const all = params.scope === "all";
+  const listed = await eventStore.list();
+  const events = all ? listed : listed.filter((event) => isOwnEvent(event.payload, context));
+  const conversationId = all ? undefined : context.conversationId;
+  return textResult(
+    JSON.stringify({ scope: all ? "all" : "conversation", conversationId, events }, null, 2),
+  );
+}
+
+/**
+ * An event belongs to this conversation when the raw id matches on the same
+ * platform. The same raw id on another platform is another office; files
+ * written before payloads carried a platform stay visible.
+ */
+function isOwnEvent(payload: EventPayload | null, context: EventToolContext): boolean {
+  if (payload?.conversationId !== context.conversationId) return false;
+  return payload.platform === undefined || payload.platform === context.platform;
+}
+
+async function writeEvent(
+  eventStore: EventStore,
+  action: "create" | "update",
+  params: EventToolParams,
+  context: EventToolContext,
+): Promise<EventToolResult> {
+  const payload = buildToolEventPayload(params, context);
+  const filename =
+    action === "update"
+      ? requireFilename(params)
+      : `${sanitizeFileSegment(params.filenamePrefix || payload.type || "event")}-${Date.now()}.json`;
+  const verbs = WRITE_VERBS[action];
+
+  log.logInfo(
+    `${verbs.present} event file via control plane store: ${filename} (type=${payload.type}, platform=${payload.platform}, conversation=${payload.conversationId})`,
+  );
+
+  try {
+    const result =
+      action === "update"
+        ? await eventStore.update(filename, payload)
+        : await eventStore.write(filename, payload);
+    log.logInfo(
+      `${verbs.past} event file via control plane store: ${result.path} (${result.size} bytes)`,
+    );
+  } catch (err) {
+    log.logWarning(
+      `Failed to ${verbs.infinitive} event file via control plane store: ${filename}`,
+      String(err),
+    );
+    throw err;
+  }
+
+  return textResult(formatEventWriteResult(action, filename, payload));
 }
 
 function buildToolEventPayload(params: EventToolParams, context: EventToolContext): EventPayload {

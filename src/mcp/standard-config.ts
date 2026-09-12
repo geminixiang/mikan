@@ -44,14 +44,19 @@ export function parseStandardMcpServers(text: string): StandardMcpParseResult {
     }
     if (!isRecord(entry)) return { error: `"${name}" must be an object` };
     const hasCommand = typeof entry.command === "string" && entry.command.trim() !== "";
-    if (typeof entry.url === "string" && !URL.canParse(entry.url)) {
+    const hasUrl = typeof entry.url === "string";
+    // A broken url is named before the transport count, so a paste carrying
+    // both keys and a bad URL reports the URL rather than the ambiguity.
+    if (hasUrl && !URL.canParse(entry.url as string)) {
       return { error: `"${name}": url is not a valid URL` };
     }
-    const hasUrl = typeof entry.url === "string";
-    if (!hasCommand && !hasUrl) {
-      return { error: `"${name}": set either command (stdio) or url (HTTP)` };
+    // Exactly one transport: equal flags mean both were set, or neither was.
+    if (hasCommand === hasUrl) {
+      const detail = hasCommand
+        ? "set only one of command / url"
+        : "set either command (stdio) or url (HTTP)";
+      return { error: `"${name}": ${detail}` };
     }
-    if (hasCommand && hasUrl) return { error: `"${name}": set only one of command / url` };
     servers[name] = {
       ...(hasCommand ? { command: entry.command as string } : {}),
       ...(Array.isArray(entry.args) ? { args: entry.args.map(String) } : {}),

@@ -60,6 +60,27 @@ async function post(path: string, body: object): Promise<{ status: number; body:
   return { status: res.status, body: await res.json() };
 }
 
+test.each([
+  ["model", { provider: "anthropic", model: "example" }],
+  ["sandbox", { doorPolicy: "isolated" }],
+  ["slack", { replyMode: "thread" }],
+  ["auto-reply", { enabled: true }],
+  ["session-link", {}],
+])("conversation %s rejects invalid scope before applying settings", async (route, values) => {
+  const result = await post(`/admin/api/conversations/${route}`, {
+    ...values,
+    platform: "not-a-platform",
+    conversationId: CONVERSATION_ID,
+  });
+  expect(result.status).toBe(403);
+  expect(result.body.error).toBeTruthy();
+});
+
+test("model field validation still precedes conversation scope validation", async () => {
+  const result = await post("/admin/api/conversations/model", { platform: "not-a-platform" });
+  expect(result).toEqual({ status: 400, body: { error: "Missing provider or model" } });
+});
+
 function globalPackages(): string[] {
   const raw = readFileSync(join(stateDir, "settings.json"), "utf-8");
   return (JSON.parse(raw) as { packages?: string[] }).packages ?? [];

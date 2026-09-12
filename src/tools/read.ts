@@ -65,6 +65,28 @@ interface ReadToolDetails {
   truncation?: TruncationResult;
 }
 
+/**
+ * The bracketed notice appended after the content: what was shown and which
+ * offset resumes it. Empty when the selection already reached end of file.
+ */
+function continuationNotice(state: {
+  truncation: TruncationResult;
+  startLine: number;
+  totalFileLines: number;
+  userLimitedLines: number | undefined;
+}): string {
+  const { truncation, startLine, totalFileLines, userLimitedLines } = state;
+  if (truncation.truncated) {
+    const endLine = startLine + truncation.outputLines - 1;
+    const limit =
+      truncation.truncatedBy === "lines" ? "" : ` (${formatSize(DEFAULT_MAX_BYTES)} limit)`;
+    return `\n\n[Showing lines ${startLine}-${endLine} of ${totalFileLines}${limit}. Use offset=${endLine + 1} to continue]`;
+  }
+  const shownThrough = startLine - 1 + (userLimitedLines ?? 0);
+  if (userLimitedLines === undefined || shownThrough >= totalFileLines) return "";
+  return `\n\n[${totalFileLines - shownThrough} more lines in file. Use offset=${startLine + userLimitedLines} to continue]`;
+}
+
 export function createReadTool(executor: Executor): AgentTool<typeof readSchema> {
   return {
     name: "read",
@@ -112,7 +134,6 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
 
       // Apply offset if specified (1-indexed)
       const startLine = offset ? Math.max(1, offset) : 1;
-      const startLineDisplay = startLine;
 
       // Check if offset is out of bounds
       if (startLine > totalFileLines) {
@@ -133,9 +154,6 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
       // Apply truncation (respects both line and byte limits)
       const truncation = truncateHead(selectedContent);
 
-      let outputText: string;
-      let details: ReadToolDetails | undefined;
-
       if (truncation.firstLineExceedsLimit) {
         // Serve the line in byte-addressed slices rather than pointing at
         // another tool: the caller may not hold one, and a dead end there
@@ -144,45 +162,30 @@ export function createReadTool(executor: Executor): AgentTool<typeof readSchema>
         const start = Math.max(0, Math.min(byteOffset ?? 0, lineBuffer.length));
         const slice = trimToCharBoundary(lineBuffer.subarray(start, start + DEFAULT_MAX_BYTES));
         const end = start + slice.length;
-
-        outputText = slice.toString("utf-8");
-        outputText += `\n\n[Line ${startLineDisplay} is ${formatSize(lineBuffer.length)}; showing bytes ${start}-${end}.`;
-        outputText +=
+        const more =
           end < lineBuffer.length ? ` Use byteOffset=${end} to continue]` : " End of line reached]";
-        details = { truncation };
-      } else if (truncation.truncated) {
-        // Truncation occurred - build actionable notice
-        const endLineDisplay = startLineDisplay + truncation.outputLines - 1;
-        const nextOffset = endLineDisplay + 1;
-
-        outputText = truncation.content;
-
-        if (truncation.truncatedBy === "lines") {
-          outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines}. Use offset=${nextOffset} to continue]`;
-        } else {
-          outputText += `\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} of ${totalFileLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=${nextOffset} to continue]`;
-        }
-        details = { truncation };
-      } else if (userLimitedLines !== undefined) {
-        // User specified limit, check if there's more content
-        const linesFromStart = startLine - 1 + userLimitedLines;
-        if (linesFromStart < totalFileLines) {
-          const remaining = totalFileLines - linesFromStart;
-          const nextOffset = startLine + userLimitedLines;
-
-          outputText = truncation.content;
-          outputText += `\n\n[${remaining} more lines in file. Use offset=${nextOffset} to continue]`;
-        } else {
-          outputText = truncation.content;
-        }
-      } else {
-        // No truncation, no user limit exceeded
-        outputText = truncation.content;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${slice.toString("utf-8")}\n\n[Line ${startLine} is ${formatSize(lineBuffer.length)}; showing bytes ${start}-${end}.${more}`,
+            },
+          ],
+          details: { truncation },
+        };
       }
 
+      // Everything else returns the truncated content plus, when the file has
+      // more to give, one actionable notice naming the next offset.
+      const notice = continuationNotice({
+        truncation,
+        startLine,
+        totalFileLines,
+        userLimitedLines,
+      });
       return {
-        content: [{ type: "text", text: outputText }],
-        details,
+        content: [{ type: "text", text: truncation.content + notice }],
+        details: truncation.truncated ? { truncation } : undefined,
       };
     },
   };

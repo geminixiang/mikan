@@ -31,10 +31,7 @@ function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {
   const raw = readEnv(envKey);
   if (!raw) return fallback;
 
-  const scopes = raw
-    .split(/[\s,]+/)
-    .map((scope) => scope.trim())
-    .filter(Boolean);
+  const scopes = raw.split(/[\s,]+/).filter(Boolean);
 
   return scopes.length > 0 ? scopes : fallback;
 }
@@ -104,21 +101,61 @@ function getBuiltinOAuthServices(): OAuthService[] {
   ];
 }
 
+function trimmedString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
+function parseAccessTokenEnvKeys(
+  value: Record<string, unknown>,
+  index: number,
+  id: string,
+): string[] | undefined | null {
+  const keys = [trimmedString(value.accessTokenEnvKey)];
+  for (const field of ["additionalAccessTokenEnvKeys", "accessTokenEnvKeys"] as const) {
+    const parsed = parseStringArray(value[field], field, index, id);
+    if (parsed === null) return null;
+    keys.push(...(parsed ?? []).map((key) => key.trim()));
+  }
+  const unique = [...new Set(keys.filter((key): key is string => !!key))];
+  return unique.length > 0 ? unique : undefined;
+}
+
+function parseFileOutput(
+  value: unknown,
+  index: number,
+  id: string,
+): OAuthService["fileOutput"] | null {
+  if (!isRecord(value)) return undefined;
+  const additionalEnvKeys = parseStringArray(
+    value.additionalEnvKeys,
+    "fileOutput.additionalEnvKeys",
+    index,
+    id,
+  );
+  if (additionalEnvKeys === null) return null;
+  const relativePath = trimmedString(value.relativePath);
+  if (trimmedString(value.type) !== "authorized_user" || !relativePath) return undefined;
+  return {
+    type: "authorized_user",
+    relativePath,
+    targetPath: trimmedString(value.targetPath),
+    envKey: trimmedString(value.envKey),
+    additionalEnvKeys,
+  };
+}
+
 function parseOAuthService(value: unknown, index: number): OAuthService | null {
   if (!isRecord(value)) {
     log.logWarning(`Skipping OAUTH_SERVICES_JSON[${index}]: expected an object`);
     return null;
   }
 
-  const id = typeof value.id === "string" ? value.id.trim() : "";
-  const label = typeof value.label === "string" ? value.label.trim() : "";
-  const authorizationUrl =
-    typeof value.authorizationUrl === "string" ? value.authorizationUrl.trim() : "";
-  const tokenUrl = typeof value.tokenUrl === "string" ? value.tokenUrl.trim() : "";
-  const clientIdEnvKey =
-    typeof value.clientIdEnvKey === "string" ? value.clientIdEnvKey.trim() : "";
-  const clientSecretEnvKey =
-    typeof value.clientSecretEnvKey === "string" ? value.clientSecretEnvKey.trim() : "";
+  const id = trimmedString(value.id) ?? "";
+  const label = trimmedString(value.label) ?? "";
+  const authorizationUrl = trimmedString(value.authorizationUrl) ?? "";
+  const tokenUrl = trimmedString(value.tokenUrl) ?? "";
+  const clientIdEnvKey = trimmedString(value.clientIdEnvKey) ?? "";
+  const clientSecretEnvKey = trimmedString(value.clientSecretEnvKey) ?? "";
   const missing = [
     ["id", id],
     ["label", label],
@@ -150,46 +187,10 @@ function parseOAuthService(value: unknown, index: number): OAuthService | null {
   );
   if (authorizationParams === null) return null;
 
-  const accessTokenEnvKeys: string[] = [];
-  if (typeof value.accessTokenEnvKey === "string" && value.accessTokenEnvKey.trim()) {
-    accessTokenEnvKeys.push(value.accessTokenEnvKey.trim());
-  }
-  for (const field of ["additionalAccessTokenEnvKeys", "accessTokenEnvKeys"] as const) {
-    const keys = parseStringArray(value[field], field, index, id);
-    if (keys === null) return null;
-    for (const key of keys ?? []) {
-      const trimmed = key.trim();
-      if (trimmed && !accessTokenEnvKeys.includes(trimmed)) accessTokenEnvKeys.push(trimmed);
-    }
-  }
-
-  let fileOutput: OAuthService["fileOutput"];
-  if (isRecord(value.fileOutput)) {
-    const fileOutputObj = value.fileOutput;
-    const type = typeof fileOutputObj.type === "string" ? fileOutputObj.type.trim() : "";
-    const relativePath =
-      typeof fileOutputObj.relativePath === "string" ? fileOutputObj.relativePath.trim() : "";
-    const targetPath =
-      typeof fileOutputObj.targetPath === "string" ? fileOutputObj.targetPath.trim() : undefined;
-    const envKey =
-      typeof fileOutputObj.envKey === "string" ? fileOutputObj.envKey.trim() : undefined;
-    const additionalEnvKeys = parseStringArray(
-      fileOutputObj.additionalEnvKeys,
-      "fileOutput.additionalEnvKeys",
-      index,
-      id,
-    );
-    if (additionalEnvKeys === null) return null;
-    if (type === "authorized_user" && relativePath) {
-      fileOutput = {
-        type: "authorized_user",
-        relativePath,
-        targetPath,
-        envKey,
-        additionalEnvKeys,
-      };
-    }
-  }
+  const accessTokenEnvKeys = parseAccessTokenEnvKeys(value, index, id);
+  if (accessTokenEnvKeys === null) return null;
+  const fileOutput = parseFileOutput(value.fileOutput, index, id);
+  if (fileOutput === null) return null;
 
   return {
     id: id.toLowerCase(),
@@ -200,9 +201,8 @@ function parseOAuthService(value: unknown, index: number): OAuthService | null {
     scopes: scopes ?? [],
     clientIdEnvKey,
     clientSecretEnvKey,
-    accessTokenEnvKeys: accessTokenEnvKeys.length > 0 ? accessTokenEnvKeys : undefined,
-    refreshTokenEnvKey:
-      typeof value.refreshTokenEnvKey === "string" ? value.refreshTokenEnvKey.trim() : undefined,
+    accessTokenEnvKeys,
+    refreshTokenEnvKey: trimmedString(value.refreshTokenEnvKey),
     authorizationParams: authorizationParams ?? undefined,
     fileOutput,
   };
@@ -262,9 +262,7 @@ export function getOAuthServices(): OAuthService[] {
   const custom = parsed
     .map((serviceValue, index) => parseOAuthService(serviceValue, index))
     .filter((service): service is OAuthService => service !== null);
-  const byId = new Map<string, OAuthService>();
-  for (const service of builtins) byId.set(service.id, service);
-  for (const service of custom) byId.set(service.id, service);
+  const byId = new Map([...builtins, ...custom].map((service) => [service.id, service]));
   return [...byId.values()];
 }
 

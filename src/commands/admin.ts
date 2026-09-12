@@ -1,5 +1,4 @@
-import { slashForms } from "./manifest.js";
-import { matchCommand } from "./manifest.js";
+import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
 

@@ -11,7 +11,7 @@
 import { join, resolve } from "node:path";
 import { findPi084SessionFiles, migratePi084SessionFile } from "../sessions/migrate-pi-084.js";
 import { findV3SessionFiles, migrateSessionFile } from "../sessions/migrate-v3.js";
-import { resolveStateDir, scanArgs } from "./arg-grammar.js";
+import { reportUnknownFlag, resolveStateDir, scanArgs } from "./arg-grammar.js";
 
 const USAGE = `Usage:
   mikan sessions migrate [--state-dir <dir>] [--workspace <dir>] [--dry-run]`;
@@ -26,10 +26,7 @@ export async function runSessionsCommand(argv: string[]): Promise<number> {
     values: ["--workspace", "--state-dir"], // --state-dir is read by resolveStateDir
     flags: [["--dry-run"]],
   });
-  if (scan.unknown) {
-    console.error(`Unknown flag: ${scan.unknown}\n${USAGE}`);
-    return 1;
-  }
+  if (scan.unknown) return reportUnknownFlag(scan.unknown, USAGE);
   if (scan.positionals[0] !== "migrate" || scan.positionals.length !== 1) {
     console.error(USAGE);
     return 1;

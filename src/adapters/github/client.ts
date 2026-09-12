@@ -102,7 +102,7 @@ export class GithubClient {
   private async rawRequest<T>(
     method: string,
     path: string,
-    options: { auth: string; body?: unknown; conditional?: boolean },
+    options: { auth: string; body?: unknown; conditional?: boolean; responseText?: boolean },
   ): Promise<T | null> {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
@@ -119,7 +119,7 @@ export class GithubClient {
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
-    if (response.status === 304) {
+    if (response.status === 304 && !options.responseText) {
       return null;
     }
     if (!response.ok) {
@@ -130,10 +130,10 @@ export class GithubClient {
       const etag = response.headers.get("etag");
       if (etag) this.etags.set(path, etag);
     }
-    if (response.status === 204) {
+    if (response.status === 204 && !options.responseText) {
       return null;
     }
-    return (await response.json()) as T;
+    return (await (options.responseText ? response.text() : response.json())) as T;
   }
 
   /**
@@ -143,7 +143,7 @@ export class GithubClient {
   private async request<T>(
     method: string,
     path: string,
-    options: { body?: unknown; conditional?: boolean } = {},
+    options: { body?: unknown; conditional?: boolean; responseText?: boolean } = {},
   ): Promise<T | null> {
     const token = await this.getInstallationToken();
     return this.rawRequest<T>(method, path, { ...options, auth: `Bearer ${token}` });
@@ -320,21 +320,12 @@ export class GithubClient {
    * Authorization header is dropped cross-origin, which is what we want.
    */
   async getJobLog(owner: string, repo: string, jobId: number): Promise<string> {
-    const path = `/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`;
-    const token = await this.getInstallationToken();
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "mikan",
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
-      throw new GithubApiError(response.status, "GET", path, detail || response.statusText);
-    }
-    return response.text();
+    const text = await this.request<string>(
+      "GET",
+      `/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`,
+      { responseText: true },
+    );
+    return text!;
   }
 
   async listInstallationRepositories(): Promise<GithubRepository[]> {

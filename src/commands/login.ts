@@ -1,8 +1,7 @@
 import * as log from "../log.js";
 import { credentialAuthorizationKey, runtimeResourceKey } from "../sandbox/identity.js";
 import { sharedVaultKey } from "../vault/index.js";
-import { slashForms } from "./manifest.js";
-import { matchCommand } from "./manifest.js";
+import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { portalNotConfiguredLines, replySummary } from "./utils.js";
 import { createOfficeAddress } from "../office/index.js";
@@ -95,6 +94,11 @@ export class LoginCommandHandler implements CommandHandler {
   }
 }
 
+/** Surface a vault-manager failure to the user without failing the command. */
+async function replyVaultError(context: CommandContext, error: unknown): Promise<void> {
+  await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+}
+
 async function listSharedProfiles(context: CommandContext): Promise<void> {
   const profiles = context.services.vaultManager.listSharedVaults();
   await replySummary(
@@ -115,7 +119,7 @@ async function deleteSharedProfile(context: CommandContext, name: string): Promi
         : `Shared login profile \`${name}\` does not exist.`,
     ]);
   } catch (error) {
-    await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+    await replyVaultError(context, error);
   }
 }
 
@@ -131,7 +135,7 @@ async function copySharedProfile(context: CommandContext, name: string): Promise
       ...(refreshNote ? [refreshNote] : []),
     ]);
   } catch (error) {
-    await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+    await replyVaultError(context, error);
   }
 }
 

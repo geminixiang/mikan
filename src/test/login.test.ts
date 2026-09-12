@@ -13,7 +13,117 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const customService = {
+  id: "custom",
+  label: "Custom",
+  authorizationUrl: "https://example.com/auth",
+  tokenUrl: "https://example.com/token",
+  clientIdEnvKey: "CUSTOM_CLIENT_ID",
+  clientSecretEnvKey: "CUSTOM_CLIENT_SECRET",
+};
+
+function configuredService(overrides: Record<string, unknown>) {
+  process.env.OAUTH_SERVICES_JSON = JSON.stringify([{ ...customService, ...overrides }]);
+  return getOAuthServices().find((service) => service.id === "custom");
+}
+
 describe("OAuth services", () => {
+  test("normalizes scalar fields and token keys without normalizing aliases or scopes", () => {
+    expect(
+      configuredService({
+        id: " CUSTOM ",
+        label: " Custom ",
+        clientIdEnvKey: " ID ",
+        accessTokenEnvKey: " FIRST ",
+        additionalAccessTokenEnvKeys: [" SECOND ", "FIRST", "", "  "],
+        accessTokenEnvKeys: ["SECOND", " third ", "FIRST"],
+        refreshTokenEnvKey: " ",
+        aliases: [" ALIAS "],
+        scopes: [" scope "],
+        authorizationParams: { prompt: " consent " },
+      }),
+    ).toMatchObject({
+      id: "custom",
+      label: "Custom",
+      clientIdEnvKey: "ID",
+      accessTokenEnvKeys: ["FIRST", "SECOND", "third"],
+      refreshTokenEnvKey: "",
+      aliases: [" alias "],
+      scopes: [" scope "],
+      authorizationParams: { prompt: " consent " },
+    });
+  });
+
+  test("keeps absent and empty token grants undefined", () => {
+    expect(configuredService({})?.accessTokenEnvKeys).toBeUndefined();
+    expect(
+      configuredService({ accessTokenEnvKey: 1, accessTokenEnvKeys: [" ", ""] })
+        ?.accessTokenEnvKeys,
+    ).toBeUndefined();
+    expect(configuredService({})?.aliases).toEqual(["custom"]);
+    expect(configuredService({ aliases: [] })?.aliases).toEqual([]);
+  });
+
+  test("parses authorized-user output and preserves empty optional strings", () => {
+    expect(
+      configuredService({
+        fileOutput: {
+          type: " authorized_user ",
+          relativePath: " creds.json ",
+          targetPath: " ",
+          envKey: 1,
+          additionalEnvKeys: [" RAW "],
+        },
+      })?.fileOutput,
+    ).toEqual({
+      type: "authorized_user",
+      relativePath: "creds.json",
+      targetPath: "",
+      envKey: undefined,
+      additionalEnvKeys: [" RAW "],
+    });
+  });
+
+  test.each([
+    null,
+    [],
+    "file",
+    { type: "other", relativePath: "file" },
+    { type: "authorized_user", relativePath: " " },
+  ])("ignores unsupported file output %j without rejecting the service", (fileOutput) => {
+    const service = configuredService({ fileOutput });
+    expect(service).toBeDefined();
+    expect(service?.fileOutput).toBeUndefined();
+  });
+
+  test.each([
+    "aliases",
+    "scopes",
+    "authorizationParams",
+    "additionalAccessTokenEnvKeys",
+    "accessTokenEnvKeys",
+  ])("rejects invalid %s with the existing warning", (field) => {
+    const warning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    expect(configuredService({ [field]: [1] })).toBeUndefined();
+    expect(warning).toHaveBeenCalledWith(
+      `Skipping OAUTH_SERVICES_JSON[0] (custom): ${field} must be strings`,
+    );
+  });
+
+  test("validates file env keys even for unsupported output and keeps warning precedence", () => {
+    const warning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    const fileOutput = { type: "other", additionalEnvKeys: [1] };
+    expect(configuredService({ fileOutput })).toBeUndefined();
+    expect(warning).toHaveBeenLastCalledWith(
+      "Skipping OAUTH_SERVICES_JSON[0] (custom): fileOutput.additionalEnvKeys must be strings",
+    );
+    warning.mockClear();
+    expect(configuredService({ aliases: [1], scopes: [1], fileOutput })).toBeUndefined();
+    expect(warning).toHaveBeenCalledExactlyOnceWith(
+      "Skipping OAUTH_SERVICES_JSON[0] (custom): aliases must be strings",
+    );
+  });
+
   test("resolveOAuthService returns known services and aliases", () => {
     expect(resolveOAuthService("github")?.id).toBe("github");
     expect(resolveOAuthService("github_oauth")?.id).toBe("github");

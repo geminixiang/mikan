@@ -43,14 +43,7 @@ export function resolveStateDir(
   args: string[] = process.argv.slice(2),
   envValue: string | undefined = readEnv("STATE_DIR"),
 ): string {
-  let flagValue: string | undefined;
-  for (let i = 0; i < args.length; i++) {
-    const taken = takeValueFlag(args, i, "--state-dir");
-    if (taken) {
-      flagValue = taken.value;
-      i = taken.lastIndex;
-    }
-  }
+  const flagValue = scanArgs(args, { values: ["--state-dir"] }).values.get("--state-dir");
   if (flagValue !== undefined) return resolve(flagValue);
   if (envValue) return resolve(envValue);
   return defaultStateDir();
@@ -94,6 +87,12 @@ export function scanArgs(args: string[], spec: ArgSpec = {}): ArgScan {
     i = consumeArg(args, i, spec, scan);
   }
   return scan;
+}
+
+/** Report an unrecognized flag alongside the command's usage; yields its exit code. */
+export function reportUnknownFlag(unknown: string, usage: string): number {
+  console.error(`Unknown flag: ${unknown}\n${usage}`);
+  return 1;
 }
 
 /** Fold `args[i]` into `scan`; returns the last argv index it consumed. */

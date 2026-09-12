@@ -3,86 +3,81 @@ import { Type } from "@sinclair/typebox";
 import * as Diff from "diff";
 import type { Executor } from "../sandbox/index.js";
 
+/** A diff part's lines, without the empty string a trailing newline leaves behind. */
+function splitLines(value: string): string[] {
+  const lines = value.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines;
+}
+
+function isChange(part: Diff.Change | undefined): boolean {
+  return part !== undefined && (part.added === true || part.removed === true);
+}
+
 /**
- * Generate a unified diff string with line numbers and context
+ * The slice of an unchanged run that survives into the diff: `contextLines`
+ * leading into a change and `contextLines` trailing out of one. A run that
+ * touches no change is dropped entirely; an elided end is reported so the
+ * caller can mark it with `...`.
+ */
+function contextWindow(
+  lines: string[],
+  options: { afterChange: boolean; beforeChange: boolean; contextLines: number },
+): { lines: string[]; elidedHead: boolean; elidedTail: boolean } {
+  if (!options.afterChange && !options.beforeChange) {
+    return { lines: [], elidedHead: false, elidedTail: false };
+  }
+  const start = options.afterChange ? 0 : Math.max(0, lines.length - options.contextLines);
+  const end = options.beforeChange
+    ? lines.length
+    : Math.min(lines.length, start + options.contextLines);
+  return { lines: lines.slice(start, end), elidedHead: start > 0, elidedTail: end < lines.length };
+}
+
+/**
+ * Generate a unified diff string with line numbers and context.
+ *
+ * Added and removed runs are numbered in their own file's sequence. An
+ * unchanged run is numbered from the old file's current line and advances both
+ * counters by its full length, so the lines shown after an elision carry the
+ * run's opening numbers rather than their true position.
  */
 function generateDiffString(oldContent: string, newContent: string, contextLines = 4): string {
   const parts = Diff.diffLines(oldContent, newContent);
+  const width = String(
+    Math.max(oldContent.split("\n").length, newContent.split("\n").length),
+  ).length;
+  const number =
+    (marker: string, start: number) =>
+    (line: string, offset: number): string =>
+      `${marker}${String(start + offset).padStart(width, " ")} ${line}`;
+  const elision = ` ${"".padStart(width, " ")} ...`;
+
   const output: string[] = [];
-
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-  const maxLineNum = Math.max(oldLines.length, newLines.length);
-  const lineNumWidth = String(maxLineNum).length;
-
   let oldLineNum = 1;
   let newLineNum = 1;
-  let lastWasChange = false;
 
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part === undefined) continue;
-    const raw = part.value.split("\n");
-    if (raw[raw.length - 1] === "") {
-      raw.pop();
-    }
-
+  for (const [index, part] of parts.entries()) {
+    const lines = splitLines(part.value);
+    // A changed run is numbered against its own file and advances only that
+    // file's counter; the other side stands still.
     if (part.added || part.removed) {
-      for (const line of raw) {
-        if (part.added) {
-          const lineNum = String(newLineNum).padStart(lineNumWidth, " ");
-          output.push(`+${lineNum} ${line}`);
-          newLineNum++;
-        } else {
-          const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
-          output.push(`-${lineNum} ${line}`);
-          oldLineNum++;
-        }
-      }
-      lastWasChange = true;
-    } else {
-      const nextPart = parts[i + 1];
-      const nextPartIsChange = nextPart !== undefined && (nextPart.added || nextPart.removed);
-
-      if (lastWasChange || nextPartIsChange) {
-        let linesToShow = raw;
-        let skipStart = 0;
-        let skipEnd = 0;
-
-        if (!lastWasChange) {
-          skipStart = Math.max(0, raw.length - contextLines);
-          linesToShow = raw.slice(skipStart);
-        }
-
-        if (!nextPartIsChange && linesToShow.length > contextLines) {
-          skipEnd = linesToShow.length - contextLines;
-          linesToShow = linesToShow.slice(0, contextLines);
-        }
-
-        if (skipStart > 0) {
-          output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
-        }
-
-        for (const line of linesToShow) {
-          const lineNum = String(oldLineNum).padStart(lineNumWidth, " ");
-          output.push(` ${lineNum} ${line}`);
-          oldLineNum++;
-          newLineNum++;
-        }
-
-        if (skipEnd > 0) {
-          output.push(` ${"".padStart(lineNumWidth, " ")} ...`);
-        }
-
-        oldLineNum += skipStart + skipEnd;
-        newLineNum += skipStart + skipEnd;
-      } else {
-        oldLineNum += raw.length;
-        newLineNum += raw.length;
-      }
-
-      lastWasChange = false;
+      const toNew = part.added === true;
+      output.push(...lines.map(number(toNew ? "+" : "-", toNew ? newLineNum : oldLineNum)));
+      if (toNew) newLineNum += lines.length;
+      else oldLineNum += lines.length;
+      continue;
     }
+    const window = contextWindow(lines, {
+      afterChange: isChange(parts[index - 1]),
+      beforeChange: isChange(parts[index + 1]),
+      contextLines,
+    });
+    if (window.elidedHead) output.push(elision);
+    output.push(...window.lines.map(number(" ", oldLineNum)));
+    if (window.elidedTail) output.push(elision);
+    oldLineNum += lines.length;
+    newLineNum += lines.length;
   }
 
   return output.join("\n");

@@ -43,9 +43,9 @@ describe("github_read tool", () => {
 
     const text = await textOf(tool, { action: "pr" });
     expect(read).toHaveBeenCalledWith({ action: "pr" });
-    expect(text).toContain("PR #5: Fix widget [open, draft]");
-    expect(text).toContain("pi/fix-5 → main | 3 files, +40 -12");
-    expect(text).toContain("author: @alice");
+    expect(text).toBe(
+      "PR #5: Fix widget [open, draft]\npi/fix-5 → main | 3 files, +40 -12\nauthor: @alice\nFixes the widget.",
+    );
   });
 
   test("pr_files action lists one line per file", async () => {
@@ -140,8 +140,7 @@ describe("github_read tool", () => {
 
     const text = await textOf(tool, { action: "list", labels: "bug", state: "open" });
     expect(read).toHaveBeenCalledWith({ action: "list", labels: "bug", state: "open" });
-    expect(text).toContain("#9 [open issue] Bug A (bug)");
-    expect(text).toContain("#10 [open PR] Feature B");
+    expect(text).toBe("#9 [open issue] Bug A (bug)\n#10 [open PR] Feature B");
   });
 
   test("truncates oversized bodies", async () => {
@@ -162,6 +161,132 @@ describe("github_read tool", () => {
     const text = await textOf(tool, { action: "issue" });
     expect(text.length).toBeLessThan(1500);
     expect(text).toContain("…");
+  });
+
+  test.each([
+    [
+      { kind: "pr", pr: { number: 1, html_url: "u" } },
+      "PR #1:  [unknown]\n? → ? | ? files, +? -?\n(no description)",
+    ],
+    [
+      {
+        kind: "pr",
+        pr: {
+          number: 1,
+          html_url: "u",
+          state: "closed",
+          title: "Done",
+          merged: true,
+          draft: true,
+          mergeable_state: "clean",
+          head: { ref: "", sha: "s" },
+          base: { ref: "main" },
+          additions: 0,
+          deletions: 0,
+          changed_files: 0,
+          user: { login: "a", type: "User" },
+          body: " ",
+        },
+      },
+      "PR #1: Done [closed, draft, merged, mergeable_state: clean]\n → main | 0 files, +0 -0\nauthor: @a\n ",
+    ],
+    [{ kind: "pr_files", files: [] }, "No changed files."],
+    [
+      { kind: "pr_files", files: [{ filename: "a", status: "added", additions: 0, deletions: 0 }] },
+      "1 changed file(s):\nadded    a +0 -0",
+    ],
+    [{ kind: "comments", comments: [] }, "No comments."],
+    [{ kind: "list", issues: [] }, "No matching issues."],
+    [
+      { kind: "pr_reviews", reviews: [], threads: [] },
+      "No submitted reviews.\n\nNo inline review threads.",
+    ],
+  ] satisfies Array<[GithubReadResult, string]>)(
+    "preserves exact output for %j",
+    async (result, expected) => {
+      expect(await textOf(makeTool(result).tool, { action: result.kind })).toBe(expected);
+    },
+  );
+
+  test("reviews preserve whitespace, truncation, root order, null lines and reply counts", async () => {
+    const root = {
+      id: 1,
+      body: "x".repeat(301),
+      user: { login: "a", type: "User" },
+      created_at: "c",
+      updated_at: "u",
+      pull_request_url: "p",
+      path: "a.ts",
+      line: null,
+      diff_hunk: "",
+    };
+    const { tool } = makeTool({
+      kind: "pr_reviews",
+      reviews: [
+        { id: 1, user: root.user, state: "PENDING", body: "hidden" },
+        { id: 2, user: root.user, state: "APPROVED", body: " \n " },
+        { id: 3, user: root.user, state: "COMMENTED", body: " " + "r".repeat(300) },
+      ],
+      threads: [
+        root,
+        { ...root, id: 2, line: 0, body: "zero" },
+        { ...root, id: 3, body: "one" },
+        { ...root, id: 4, in_reply_to_id: 1 },
+        { ...root, id: 5, in_reply_to_id: 1 },
+        { ...root, id: 6, in_reply_to_id: 3 },
+        { ...root, id: 7, in_reply_to_id: 999 },
+      ],
+    });
+    expect(await textOf(tool, { action: "pr_reviews" })).toBe(
+      `Reviews:\n@a: APPROVED\n@a: COMMENTED — ${" " + "r".repeat(299)}…\n\nInline threads (reply with github_review_reply):\nrc-1 a.ts @a (2 replies): ${"x".repeat(300)}…\nrc-2 a.ts:0 @a: zero\nrc-3 a.ts @a (1 reply): one`,
+    );
+  });
+
+  test("issue and comment text preserve exact truncation boundaries", async () => {
+    const issue = {
+      id: 1,
+      number: 5,
+      title: "Big",
+      body: "x".repeat(1000),
+      user: { login: "a", type: "User" },
+      created_at: "c",
+      updated_at: "u",
+    };
+    expect(await textOf(makeTool({ kind: "issue", issue }).tool, { action: "issue" })).toBe(
+      `#5: Big [unknown]\nauthor: @a\n${issue.body}`,
+    );
+    expect(
+      await textOf(
+        makeTool({
+          kind: "issue",
+          issue: {
+            ...issue,
+            body: null,
+            pull_request: {},
+            labels: [{ name: "bug" }, { name: "help" }],
+            assignees: [{ login: "b", type: "User" }],
+          },
+        }).tool,
+        { action: "issue" },
+      ),
+    ).toBe("#5: Big [unknown, PR]\nlabels: bug, help\nassignees: @b\nauthor: @a\n(no body)");
+    const comment = {
+      id: 1,
+      user: issue.user,
+      body: "x".repeat(500),
+      created_at: "c",
+      updated_at: "u",
+      issue_url: "i",
+    };
+    expect(
+      await textOf(
+        makeTool({
+          kind: "comments",
+          comments: [comment, { ...comment, id: 2, body: comment.body + "y" }],
+        }).tool,
+        { action: "comments" },
+      ),
+    ).toBe(`@a (c): ${comment.body}\n@a (c): ${comment.body}…`);
   });
 
   test("unsetting the read function disables the tool again", async () => {

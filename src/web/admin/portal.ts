@@ -286,6 +286,21 @@ function requireAdminWorkspace(res: ServerResponse, services: AdminServices): Wo
   return services.workspace;
 }
 
+function requireConversationWorkspace(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): { scope: AdminConversationScope; workspace: Workspace } | undefined {
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return undefined;
+  }
+  const workspace = requireAdminWorkspace(res, services);
+  return workspace ? { scope, workspace } : undefined;
+}
+
 // ── API handlers ───────────────────────────────────────────────────────────────
 
 /**
@@ -724,13 +739,9 @@ function serveConversationModelUpdate(
     jsonRes(res, 400, { error: "Missing provider or model" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const target = requireConversationWorkspace(res, body, services, token);
+  if (!target) return;
+  const { scope, workspace } = target;
 
   try {
     const result = applyConversationSettings(services.runtime, workspace.office(scope.address), {
@@ -801,13 +812,9 @@ function serveConversationSandboxUpdate(
     });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const target = requireConversationWorkspace(res, body, services, token);
+  if (!target) return;
+  const { scope, workspace } = target;
   try {
     const result = applyConversationWorkspacePolicy(
       services.runtime,
@@ -837,12 +844,10 @@ function serveGlobalWorkspaceUpdate(
     });
     return;
   }
-  try {
+  respondWithSettingsUpdate(res, () => {
     const result = applyGlobalWorkspacePolicy(services.runtime, parsed.choice);
-    jsonRes(res, 200, { ok: true, staleConversations: result.staleConversations.length });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+    return { ok: true, staleConversations: result.staleConversations.length };
+  });
 }
 
 function serveConversationSlackUpdate(
@@ -856,21 +861,15 @@ function serveConversationSlackUpdate(
     jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
-  try {
+  const target = requireConversationWorkspace(res, body, services, token);
+  if (!target) return;
+  const { scope, workspace } = target;
+  respondWithSettingsUpdate(res, () => {
     applyConversationSettings(services.runtime, workspace.office(scope.address), {
       slack: { replyMode },
     });
-    jsonRes(res, 200, { ok: true });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+    return { ok: true };
+  });
 }
 
 function serveConversationAutoReplyUpdate(
@@ -888,24 +887,15 @@ function serveConversationAutoReplyUpdate(
     jsonRes(res, 400, { error: "rules must be an array of strings" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const target = requireConversationWorkspace(res, body, services, token);
+  if (!target) return;
+  const { scope, workspace } = target;
   const dir = workspace.office(scope.address).dir;
-  try {
+  respondWithSettingsUpdate(res, () => {
     const existing = loadConversationAutoReplyConfig(dir);
-    saveConversationAutoReplyConfig(dir, {
-      enabled,
-      rules: rules ?? existing.rules,
-    });
-    jsonRes(res, 200, { ok: true });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+    saveConversationAutoReplyConfig(dir, { enabled, rules: rules ?? existing.rules });
+    return { ok: true };
+  });
 }
 
 function serveConversationSessionLink(
@@ -914,13 +904,9 @@ function serveConversationSessionLink(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const target = requireConversationWorkspace(res, body, services, token);
+  if (!target) return;
+  const { scope, workspace } = target;
   if (!services.sessionViewTokenStore) {
     jsonRes(res, 503, { error: "Session view token store not available" });
     return;
@@ -1028,21 +1014,19 @@ function serveGlobalModelUpdate(
     return;
   }
 
-  try {
+  respondWithSettingsUpdate(res, () => {
     const result = applyGlobalSettings(services.runtime, {
       provider,
       model,
       ...(thinkingLevel ? { thinkingLevel } : {}),
     });
-    jsonRes(res, 200, {
+    return {
       ok: true,
       staleConversations: result.staleConversations.map(
         (office) => `${office.platform}:${office.conversationId}`,
       ),
-    });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+    };
+  });
 }
 
 function serveGlobalSlackUpdate(
@@ -1056,12 +1040,10 @@ function serveGlobalSlackUpdate(
     return;
   }
 
-  try {
+  respondWithSettingsUpdate(res, () => {
     applyGlobalSettings(services.runtime, { slack: { replyMode } });
-    jsonRes(res, 200, { ok: true });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
+    return { ok: true };
+  });
 }
 
 function serveGlobalSandboxUpdate(
@@ -1091,9 +1073,15 @@ function serveGlobalSandboxUpdate(
     return;
   }
 
-  try {
+  respondWithSettingsUpdate(res, () => {
     applyGlobalSettings(services.runtime, { sandbox: update });
-    jsonRes(res, 200, { ok: true });
+    return { ok: true };
+  });
+}
+
+function respondWithSettingsUpdate(res: ServerResponse, update: () => object): void {
+  try {
+    jsonRes(res, 200, update());
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
@@ -2131,11 +2119,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]
       ));
     }
-    function escAttr(str) {
-      return String(str).replace(/["'&<>]/g, (c) => (
-        {'"':'&quot;',"'":'&#39;','&':'&amp;','<':'&lt;','>':'&gt;'}[c]
-      ));
-    }
+    const escAttr = escHtml;
     async function copyToClipboard(text) {
       try { await navigator.clipboard.writeText(text); } catch { prompt('Copy this link:', text); }
     }
@@ -2362,68 +2346,42 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         result.textContent = 'Provider and model are required';
         return;
       }
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        const data = await apiPost('/admin/api/conversations/model', {
-          ...scopeBody(), provider, model, thinkingLevel,
-        });
-        result.style.display = 'block'; result.className = 'inline-result ok';
-        result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err';
-        result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save model';
-      }
+      await saveConversationSetting(btn, result, 'model', { provider, model, thinkingLevel }, 'Save model');
     }
 
     async function saveAutoReply(btn) {
       const enabled = document.getElementById('a-enabled').checked;
       const rules = document.getElementById('a-rules').value.split('\\n').map((s) => s.trim()).filter(Boolean);
       const result = document.getElementById('auto-save-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        await apiPost('/admin/api/conversations/auto-reply', {
-          ...scopeBody(), enabled, rules,
-        });
-        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save auto-reply';
-      }
+      await saveConversationSetting(btn, result, 'auto-reply', { enabled, rules }, 'Save auto-reply');
     }
 
     async function saveSlack(btn) {
       const replyMode = document.getElementById('m-slack-reply-mode').value;
       const result = document.getElementById('slack-save-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        await apiPost('/admin/api/conversations/slack', {
-          ...scopeBody(), replyMode,
-        });
-        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save Slack';
-      }
+      await saveConversationSetting(btn, result, 'slack', { replyMode }, 'Save Slack');
     }
 
     async function saveDoorPolicy(btn) {
       const doorPolicy = document.getElementById('m-door-policy').value;
       const result = document.getElementById('mount-save-result');
+      await saveConversationSetting(btn, result, 'sandbox', { doorPolicy }, 'Save door policy', loadSettings);
+    }
+
+    function saveConversationSetting(btn, result, setting, values, label, onSaved) {
+      return saveSetting(btn, result, 'conversations/' + setting, { ...scopeBody(), ...values }, label, onSaved);
+    }
+
+    async function saveSetting(btn, result, path, values, label, onSaved) {
       btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
       try {
-        await apiPost('/admin/api/conversations/sandbox', {
-          ...scopeBody(), doorPolicy,
-        });
+        await apiPost('/admin/api/' + path, values);
         result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-        loadSettings();
+        if (onSaved) onSaved();
       } catch (err) {
         result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
       } finally {
-        btn.disabled = false; btn.textContent = 'Save door policy';
+        btn.disabled = false; btn.textContent = label;
       }
     }
 
@@ -2978,36 +2936,19 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Vault (Login link) ───────────────────────────────────────────────────────
 
-    async function openLogin(silent) {
-      const result = document.getElementById('vault-link-result');
-      const frame = document.getElementById('login-frame');
+    const openLogin = (silent) => openPortalLink('vault', 'login', silent);
+    const openSessionView = (silent) => openPortalLink('session', 'session', silent);
+
+    async function openPortalLink(resultId, kind, silent) {
+      const result = document.getElementById(resultId + '-link-result');
+      const frame = document.getElementById(kind + '-frame');
       if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
       result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
       try {
-        const data = await apiPost('/admin/api/conversations/login-link', scopeBody());
+        const data = await apiPost('/admin/api/conversations/' + kind + '-link', scopeBody());
         result.className = 'link-result ok';
         result.innerHTML =
-          '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' +
-          '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
-          '<button class="copy-link-btn" data-admin-action="copy-link" data-copy-text="' + escAttr(data.url) + '">Copy</button>';
-        frame.src = data.url; frame.style.display = 'block';
-      } catch (err) {
-        result.className = 'link-result err'; result.textContent = err.message;
-        frame.removeAttribute('src'); frame.style.display = 'none';
-      }
-    }
-
-    // ── Session View ─────────────────────────────────────────────────────────────
-
-    async function openSessionView(silent) {
-      const result = document.getElementById('session-link-result');
-      const frame = document.getElementById('session-frame');
-      if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
-      result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
-      try {
-        const data = await apiPost('/admin/api/conversations/session-link', scopeBody());
-        result.className = 'link-result ok';
-        result.innerHTML =
+          (kind === 'login' ? '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' : '') +
           '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
           '<button class="copy-link-btn" data-admin-action="copy-link" data-copy-text="' + escAttr(data.url) + '">Copy</button>';
         frame.src = data.url; frame.style.display = 'block';
@@ -3019,35 +2960,21 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Events ───────────────────────────────────────────────────────────────────
 
-    async function loadConversationEvents() {
-      const container = document.getElementById('events-content');
-      if (!container) return;
-      container.innerHTML = '<div class="loading-msg">Loading…</div>';
-      try {
-        const data = await apiGet('/admin/api/conversations/events?' + scopeQuery());
-        if (data.events.length === 0) {
-          container.innerHTML = '<div class="empty-state">沒有關聯此對話的 event</div>';
-          return;
-        }
-        container.innerHTML = '<div class="events-list">' +
-          data.events.map((e) => renderEventRow(e, true)).join('') + '</div>';
-      } catch (err) {
-        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-      }
-    }
+    const loadConversationEvents = () => loadEventList(true);
+    const loadEvents = () => loadEventList(false);
 
-    async function loadEvents() {
-      const container = document.getElementById('global-events-content');
+    async function loadEventList(conversation) {
+      const container = document.getElementById(conversation ? 'events-content' : 'global-events-content');
       if (!container) return;
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       try {
-        const data = await apiGet('/admin/api/events');
+        const data = await apiGet(conversation ? '/admin/api/conversations/events?' + scopeQuery() : '/admin/api/events');
         if (data.events.length === 0) {
-          container.innerHTML = '<div class="empty-state">No events scheduled</div>';
+          container.innerHTML = '<div class="empty-state">' + (conversation ? '沒有關聯此對話的 event' : 'No events scheduled') + '</div>';
           return;
         }
         container.innerHTML = '<div class="events-list">' +
-          data.events.map((e) => renderEventRow(e, false)).join('') + '</div>';
+          data.events.map((e) => renderEventRow(e, conversation)).join('') + '</div>';
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
@@ -3388,15 +3315,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       const boostCpus = document.getElementById('g-bcpus').value.trim();
       const boostMemory = document.getElementById('g-bmem').value.trim();
       const result = document.getElementById('g-sandbox-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        await apiPost('/admin/api/settings/sandbox', { cpus, memory, boostCpus, boostMemory });
-        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save sandbox';
-      }
+      await saveSetting(btn, result, 'settings/sandbox', { cpus, memory, boostCpus, boostMemory }, 'Save sandbox');
     }
 
     async function saveGlobalWorkspace(btn) {
@@ -3419,15 +3338,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     async function saveGlobalSlack(btn) {
       const replyMode = document.getElementById('g-slack-reply-mode').value;
       const result = document.getElementById('g-slack-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        await apiPost('/admin/api/settings/slack', { replyMode });
-        result.style.display = 'block'; result.className = 'inline-result ok'; result.textContent = 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save Slack';
-      }
+      await saveSetting(btn, result, 'settings/slack', { replyMode }, 'Save Slack');
     }
 
     async function loadGlobalSkills() {

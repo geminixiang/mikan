@@ -29,6 +29,34 @@ function makeClient(fetchImpl: typeof fetch): GithubClient {
   });
 }
 
+describe("GithubClient job logs", () => {
+  test.each([
+    [200, "plain log\nnot JSON"],
+    [204, ""],
+  ])("reads text for status %i", async (status, expected) => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(status === 204 ? null : expected, { status }));
+    expect(await makeClient(fetchImpl).getJobLog("o", "r", 7)).toBe(expected);
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      "https://api.github.com/repos/o/r/actions/jobs/7/logs",
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({ Authorization: "Bearer ghs_installation" }),
+      }),
+    );
+  });
+
+  test.each([304, 403, 404, 500])("rejects unsuccessful text response %i", async (status) => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(status === 304 ? null : "failure", { status }));
+    await expect(makeClient(fetchImpl).getJobLog("o", "r", 7)).rejects.toMatchObject({ status });
+  });
+});
+
 describe("GithubClient auth", () => {
   test("signs a verifiable RS256 app JWT with the app id as issuer", async () => {
     const calls: { url: string; headers: Record<string, string> }[] = [];

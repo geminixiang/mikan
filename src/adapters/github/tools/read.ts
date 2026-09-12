@@ -1,7 +1,12 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
-import type { GithubReadFn, GithubReadRequest, GithubReadResult } from "../types.js";
+import type {
+  GithubPullRequest,
+  GithubReadFn,
+  GithubReadRequest,
+  GithubReadResult,
+} from "../types.js";
 
 export type { GithubReadFn } from "../types.js";
 
@@ -45,25 +50,59 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+function formatPr(pr: GithubPullRequest): string {
+  const flags = [
+    pr.state ?? "unknown",
+    pr.draft ? "draft" : null,
+    pr.merged ? "merged" : null,
+    pr.mergeable_state ? `mergeable_state: ${pr.mergeable_state}` : null,
+  ].filter(Boolean);
+  return [
+    `PR #${pr.number}: ${pr.title ?? ""} [${flags.join(", ")}]`,
+    `${pr.head?.ref ?? "?"} → ${pr.base?.ref ?? "?"} | ${pr.changed_files ?? "?"} files, +${pr.additions ?? "?"} -${pr.deletions ?? "?"}`,
+    pr.user ? `author: @${pr.user.login}` : null,
+    pr.body ? truncate(pr.body, MAX_BODY_CHARS) : "(no description)",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function formatReviews({
+  reviews,
+  threads,
+}: Extract<GithubReadResult, { kind: "pr_reviews" }>): string {
+  const reviewLines = reviews
+    .filter((review) => review.state !== "PENDING")
+    .map((review) => {
+      const body = review.body?.trim() ? ` — ${truncate(review.body, MAX_REVIEW_BODY_CHARS)}` : "";
+      return `@${review.user.login}: ${review.state}${body}`;
+    });
+  // Count once rather than rescanning every comment for each root. Orphan replies
+  // still count only toward their own parent; they never become root threads.
+  const replyCounts = new Map<number | undefined, number>();
+  for (const { in_reply_to_id: parent } of threads) {
+    replyCounts.set(parent, (replyCounts.get(parent) ?? 0) + 1);
+  }
+  const threadLines = threads
+    .filter((comment) => comment.in_reply_to_id === undefined)
+    .map((comment) => {
+      const location = comment.line !== null ? `${comment.path}:${comment.line}` : comment.path;
+      const count = replyCounts.get(comment.id) ?? 0;
+      const replyNote = count ? ` (${count} repl${count === 1 ? "y" : "ies"})` : "";
+      return `rc-${comment.id} ${location} @${comment.user.login}${replyNote}: ${truncate(comment.body, MAX_REVIEW_BODY_CHARS)}`;
+    });
+  return [
+    reviewLines.length ? `Reviews:\n${reviewLines.join("\n")}` : "No submitted reviews.",
+    threadLines.length
+      ? `Inline threads (reply with github_review_reply):\n${threadLines.join("\n")}`
+      : "No inline review threads.",
+  ].join("\n\n");
+}
+
 function formatResult(result: GithubReadResult): string {
   switch (result.kind) {
-    case "pr": {
-      const pr = result.pr;
-      const flags = [
-        pr.state ?? "unknown",
-        pr.draft ? "draft" : null,
-        pr.merged ? "merged" : null,
-        pr.mergeable_state ? `mergeable_state: ${pr.mergeable_state}` : null,
-      ].filter(Boolean);
-      return [
-        `PR #${pr.number}: ${pr.title ?? ""} [${flags.join(", ")}]`,
-        `${pr.head?.ref ?? "?"} → ${pr.base?.ref ?? "?"} | ${pr.changed_files ?? "?"} files, +${pr.additions ?? "?"} -${pr.deletions ?? "?"}`,
-        pr.user ? `author: @${pr.user.login}` : null,
-        pr.body ? truncate(pr.body, MAX_BODY_CHARS) : "(no description)",
-      ]
-        .filter(Boolean)
-        .join("\n");
-    }
+    case "pr":
+      return formatPr(result.pr);
     case "pr_files": {
       if (result.files.length === 0) return "No changed files.";
       const lines = result.files.map(
@@ -71,34 +110,8 @@ function formatResult(result: GithubReadResult): string {
       );
       return [`${result.files.length} changed file(s):`, ...lines].join("\n");
     }
-    case "pr_reviews": {
-      const reviewLines = result.reviews
-        .filter((review) => review.state !== "PENDING")
-        .map((review) => {
-          const body = review.body?.trim()
-            ? ` — ${truncate(review.body, MAX_REVIEW_BODY_CHARS)}`
-            : "";
-          return `@${review.user.login}: ${review.state}${body}`;
-        });
-      // Thread roots only: replies belong to their root's thread. The rc- id
-      // is what github_review_reply takes.
-      const rootThreads = result.threads.filter((comment) => comment.in_reply_to_id === undefined);
-      const threadLines = rootThreads.map((comment) => {
-        const location = comment.line !== null ? `${comment.path}:${comment.line}` : comment.path;
-        const replies = result.threads.filter((reply) => reply.in_reply_to_id === comment.id);
-        const replyNote =
-          replies.length > 0
-            ? ` (${replies.length} repl${replies.length === 1 ? "y" : "ies"})`
-            : "";
-        return `rc-${comment.id} ${location} @${comment.user.login}${replyNote}: ${truncate(comment.body, MAX_REVIEW_BODY_CHARS)}`;
-      });
-      return [
-        reviewLines.length > 0 ? `Reviews:\n${reviewLines.join("\n")}` : "No submitted reviews.",
-        threadLines.length > 0
-          ? `Inline threads (reply with github_review_reply):\n${threadLines.join("\n")}`
-          : "No inline review threads.",
-      ].join("\n\n");
-    }
+    case "pr_reviews":
+      return formatReviews(result);
     case "issue": {
       const issue = result.issue;
       const labels = (issue.labels ?? []).map((label) => label.name).join(", ");
@@ -114,23 +127,25 @@ function formatResult(result: GithubReadResult): string {
         .join("\n");
     }
     case "comments": {
-      if (result.comments.length === 0) return "No comments.";
-      return result.comments
-        .map(
-          (comment) =>
-            `@${comment.user.login} (${comment.created_at}): ${truncate(comment.body, MAX_COMMENT_CHARS)}`,
-        )
-        .join("\n");
+      return (
+        result.comments
+          .map(
+            (comment) =>
+              `@${comment.user.login} (${comment.created_at}): ${truncate(comment.body, MAX_COMMENT_CHARS)}`,
+          )
+          .join("\n") || "No comments."
+      );
     }
     case "list": {
-      if (result.issues.length === 0) return "No matching issues.";
-      return result.issues
-        .map((issue) => {
-          const labels = (issue.labels ?? []).map((label) => label.name).join(", ");
-          const kind = issue.pull_request ? "PR" : "issue";
-          return `#${issue.number} [${issue.state ?? "?"} ${kind}] ${issue.title}${labels ? ` (${labels})` : ""}`;
-        })
-        .join("\n");
+      return (
+        result.issues
+          .map((issue) => {
+            const labels = (issue.labels ?? []).map((label) => label.name).join(", ");
+            const kind = issue.pull_request ? "PR" : "issue";
+            return `#${issue.number} [${issue.state ?? "?"} ${kind}] ${issue.title}${labels ? ` (${labels})` : ""}`;
+          })
+          .join("\n") || "No matching issues."
+      );
     }
   }
 }

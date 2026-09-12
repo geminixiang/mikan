@@ -4,8 +4,7 @@ import {
   loadConversationAutoReplyConfig,
   saveConversationAutoReplyConfig,
 } from "../config.js";
-import { slashForms } from "./manifest.js";
-import { matchCommand } from "./manifest.js";
+import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { formatCommandSummary, replyDiagnosticWithContext, replySummary } from "./utils.js";
 

@@ -10,9 +10,8 @@
  * stopped so the directory is not moving under a live runtime.
  */
 import { join, resolve } from "node:path";
-import { assertPlatformName } from "../office/index.js";
-import { OfficeRegistry } from "../office/index.js";
-import { resolveStateDir, scanArgs } from "./arg-grammar.js";
+import { assertPlatformName, OfficeRegistry } from "../office/index.js";
+import { reportUnknownFlag, resolveStateDir, scanArgs } from "./arg-grammar.js";
 
 const USAGE = `Usage:
   mikan office list [--state-dir <dir>] [--workspace <dir>]
@@ -22,10 +21,7 @@ export function runOfficeCommand(argv: string[]): number {
   const scan = scanArgs(argv, {
     values: ["--workspace", "--state-dir"], // --state-dir is read by resolveStateDir
   });
-  if (scan.unknown) {
-    console.error(`Unknown flag: ${scan.unknown}\n${USAGE}`);
-    return 1;
-  }
+  if (scan.unknown) return reportUnknownFlag(scan.unknown, USAGE);
 
   const stateDir = resolveStateDir(argv);
   const workspaceArg = scan.values.get("--workspace");
