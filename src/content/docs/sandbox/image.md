@@ -37,8 +37,7 @@ the office key is the `v1-<platform>-<readable-id>-<hash>` segment that also nam
 the host. An `isolated` projection makes that the only workspace mount; trusted `shared-support`
 adds the workspace-global `MEMORY.md`, `skills/`, and `events/`. Private visibility marks the global
 memory bind read-only, while public visibility leaves it read-write. `trusted` / `full` mounts the
-whole workspace root at `/workspace`. Skills shipped by a package mount read-only outside
-`/workspace`, at `/mikan/packages/<slug>/skills`.
+whole workspace root at `/workspace`.
 
 Changing the door policy does not reset the container. When the desired mounts no longer match the
 running container, mikan snapshots it, recreates it with the translated mounts, and starts it again,

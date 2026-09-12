@@ -29,7 +29,7 @@ export interface Workspace {
   /** Host workspace root directory. */
   readonly root: string;
   /**
-   * Host-only state root (settings, credentials, package checkouts).
+   * Host-only state root (settings, credentials, and office records).
    * Not part of the Workspace projection; carried here so offices can
    * derive their state dirs and the registry knows where its journal lives.
    */

@@ -123,7 +123,6 @@ describe("ActorExecutionResolver", () => {
       runtimeWorkspaceRoot: "/workspace",
     });
     expect(decision.projection.doorPolicy).toBe("isolated");
-    expect(decision.packages.skillDirs).toEqual([]);
     expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 

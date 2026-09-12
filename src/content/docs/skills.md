@@ -7,7 +7,6 @@ description: Load locations, sandbox paths, and tool structure for workspace-lev
 | --------------------------------- | ---------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
 | Workspace-level (global skills)   | Shared tools available to all conversations in a workspace | `<workspace>/skills/<skill-name>/`              | `/workspace/skills/<skill-name>/`              |
 | Conversation-level (local skills) | Tools for one conversation / channel / DM only             | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/` |
-| Package skills                    | Skills shipped by an installed package                     | a git checkout under the state dir              | `/mikan/packages/<slug>/skills/` (read-only)   |
 
 The office key is the `v1-<platform>-<readable-id>-<hash>` directory name mikan derives for each
 conversation; you do not construct it by hand. The admin portal's skills view lists both levels and
@@ -60,5 +59,3 @@ Usage: {baseDir}/run.sh <args>
 Workspace-level skills are good for shared tools: company APIs, common scripts, release helpers, reporting tools, or any capability used by multiple conversations. They require a trusted door policy.
 
 Conversation-level skills are good for local tools: a specific channel workflow, a temporary helper, or tools that should not appear in other conversations. They work under every door policy, and are the only writable level an isolated office has.
-
-Package skills are for distributing a skill set across installations. They mount read-only, outside `/workspace`, because the host owns those files — the directory is a git checkout that an update replaces wholesale, so an agent edit would be discarded on the next refresh. The filesystem refuses the write instead.

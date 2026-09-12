@@ -115,34 +115,34 @@ describe("admin embedded UI shared flows", () => {
     expect(p.fetch.mock.calls[1]?.[0]).toContain("conversationId=C2&platform=telegram");
   });
 
-  test.each([
-    ["loadPackages", "pkg"],
-    ["loadMcpServers", "mcp"],
-  ])("%s displays escaped errors in both scopes", async (load, prefix) => {
-    const p = page();
-    p.fetch.mockRejectedValue(new Error("<denied>"));
-    await p.run(`${load}()`);
-    for (const scope of ["conv", "global"])
-      expect(p.get(`${prefix}-${scope}-content`).innerHTML).toBe(
-        '<div class="err-msg">&lt;denied&gt;</div>',
-      );
-  });
+  test.each([["loadMcpServers", "mcp"]])(
+    "%s displays escaped errors in both scopes",
+    async (load, prefix) => {
+      const p = page();
+      p.fetch.mockRejectedValue(new Error("<denied>"));
+      await p.run(`${load}()`);
+      for (const scope of ["conv", "global"])
+        expect(p.get(`${prefix}-${scope}-content`).innerHTML).toBe(
+          '<div class="err-msg">&lt;denied&gt;</div>',
+        );
+    },
+  );
 
-  test.each([
-    ["loadPackages", "pkg"],
-    ["loadMcpServers", "mcp"],
-  ])("%s retains empty-state success and tolerates absent panels", async (load, prefix) => {
-    const p = page();
-    p.fetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ conversation: [], global: [], presets: [] }),
-    });
-    await p.run(`${load}()`);
-    expect(p.get(`${prefix}-conv-content`).innerHTML).not.toContain("Loading…");
-    expect(p.get(`${prefix}-global-content`).innerHTML).not.toContain("err-msg");
-    p.run("document.getElementById = () => null");
-    await expect(p.run(`${load}()`)).resolves.toBeUndefined();
-  });
+  test.each([["loadMcpServers", "mcp"]])(
+    "%s retains empty-state success and tolerates absent panels",
+    async (load, prefix) => {
+      const p = page();
+      p.fetch.mockResolvedValue({
+        ok: true,
+        json: async () => ({ conversation: [], global: [], presets: [] }),
+      });
+      await p.run(`${load}()`);
+      expect(p.get(`${prefix}-conv-content`).innerHTML).not.toContain("Loading…");
+      expect(p.get(`${prefix}-global-content`).innerHTML).not.toContain("err-msg");
+      p.run("document.getElementById = () => null");
+      await expect(p.run(`${load}()`)).resolves.toBeUndefined();
+    },
+  );
 
   test("global settings loader retains unscoped route and escaped errors", async () => {
     const p = page();

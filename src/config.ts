@@ -109,8 +109,6 @@ const SettingsFileSchema = Type.Object({
       defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
-  /** Package sources for this scope; see `src/packages`. */
-  packages: Type.Optional(Type.Array(Type.String())),
   /**
    * MCP servers, keyed by name. Merged per key across scopes: a conversation
    * entry overrides (or, with `disabled: true`, turns off) the same-name
@@ -150,22 +148,8 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
     ...(config.sandbox !== undefined ? { sandbox: normalizeSandboxSettings(config.sandbox) } : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
-    ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
-}
-
-/** Drop blank entries and duplicates while preserving the author's order. */
-function normalizePackages(packages: string[]): string[] {
-  const seen = new Set<string>();
-  const normalized: string[] = [];
-  for (const entry of packages) {
-    const trimmed = entry.trim();
-    if (!trimmed || seen.has(trimmed)) continue;
-    seen.add(trimmed);
-    normalized.push(trimmed);
-  }
-  return normalized;
 }
 
 /**
@@ -247,7 +231,6 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const sentryDsn = sentryDsnFrom(fromFile.sentryDsn);
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
-  const packages = fromFile.packages;
   const mcpServers = fromFile.mcpServers;
 
   return {
@@ -257,7 +240,6 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     sentryDsn,
     sandbox,
     slack,
-    packages,
     mcpServers,
   };
 }
@@ -348,13 +330,6 @@ export function resolveConversationSettings(office: Office): AgentConfig {
     ...globalConfig,
     ...conversationConfig,
     ...(sandbox ? { sandbox } : {}),
-    // Packages are additive across scopes, so the spread above would be wrong
-    // twice over: an unset conversation list would read as the global list
-    // (loading every global package a second time under the conversation
-    // scope), and a set one would read as if it had replaced the global list.
-    // Report only this conversation's entries; resolveConversationPackages
-    // combines the scopes.
-    packages: conversationConfig.packages,
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
   });
 }
@@ -371,7 +346,7 @@ export function isPathInside(child: string, parent: string): boolean {
 }
 
 /**
- * The state dir (settings, package checkouts, vaults) must never live inside
+ * The state dir (settings, office records, vaults) must never live inside
  * the working dir: conversation opt-in "full" mode mounts the entire working
  * dir read-write into sandbox containers, which would expose host-authoritative
  * state and credentials. Fatal under sandboxed modes; host mode has no mounts,
@@ -386,7 +361,7 @@ export function assertStateDirOutsideWorkspace(
   const message =
     `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
     `sandbox containers mount the working directory, and a mounted state dir ` +
-    `would expose settings, package checkouts, vaults, and credentials to sandboxed code.`;
+    `would expose settings, office records, vaults, and credentials to sandboxed code.`;
   if (sandboxType === "host") {
     log.logWarning("Insecure state dir location", message);
     return;
@@ -445,10 +420,7 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
-    // An empty list is meaningful (the admin removed the last package) and
-    // must survive the round trip, so this checks for the key, not for values.
-    ...(config.packages !== undefined ? { packages: config.packages } : {}),
-    // Same key-presence rule: an empty map means "all servers removed".
+    // An empty map means "all servers removed".
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
 }
@@ -477,10 +449,7 @@ function patchSettingsConfig(
       ...existing.slack,
       ...config.slack,
     },
-    // The package list is replaced wholesale, not merged: the portal edits it
-    // as a list, and a merge would make removal impossible.
-    ...(config.packages !== undefined ? { packages: normalizePackages(config.packages) } : {}),
-    // Same wholesale rule for MCP servers: the portal edits the full map, and
+    // The portal edits the full MCP map, and
     // a merge would make removing a server impossible.
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };

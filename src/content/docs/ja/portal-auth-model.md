@@ -36,7 +36,6 @@ Admin portal でできること：
 - conversation model、thinking level、workspace の door policy と layout、Slack reply mode を読み取り・更新する。
 - global model、sandbox のリソース既定値、グローバルな door policy、Slack defaults を読み取り・更新する。
 - 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集する。
-- ある scope の package sources を一覧表示・変更する。
 - session と conversation の使用状況を確認する。
 - 選択した conversation の events を削除する。
 - 対象 conversation 用の session view link または login/vault link を生成する。

@@ -13,8 +13,8 @@ its host-side directory layout, its durable record, and the legacy migration.
     whose digest is SHA-256 over both values (ADR 0005) — the readable
     middle is a hint, the digest is the authority.
     `officeStateDir(stateDir, address)` is the one path helper exported for
-    stateDir-only surfaces that hold no Office value: CLI subcommands and
-    package materialization. `officeDir` is
+    stateDir-only surfaces that hold no Office value, such as migration and
+    settings helpers. `officeDir` is
     module-internal, because callers outside `src/office/` use `Office.dir`.
   - **Layout**: `createWorkspace({root, stateDir})` builds the per-process
     `Workspace` (workspace-global paths, reserved-name set, office factory);
@@ -53,9 +53,8 @@ state dir now carry one `office` field, and callers read `office.dir`,
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
 | conversation settings  | `conversationSettingsPath(office)`, `resolveConversationSettings(office)` (`src/config.ts`)    |
 | workspace projection   | `resolveWorkspaceProjection(office)` (`src/workspace-projection/`)                             |
-| packages               | `ResolvePackagesOptions {office, fetchMissing?}`, `PackageAdminContext {office, runtime?}`     |
 | conversation vault     | vault key = `officeKey(address)` (`src/vault/`)                                                |
 | chat log + attachments | `appendChannelLog(office, …)`, `saveIncomingAttachments(office, …)` (`src/adapters/shared.ts`) |
 
-`officeStateDir(stateDir, address)` covers the surfaces that genuinely hold
-no Office (CLI subcommands and package materialization).
+`officeStateDir(stateDir, address)` covers migration and settings surfaces
+that genuinely hold no Office.

@@ -45,7 +45,7 @@ Default office runtimes are single-node by design. Moving a live office between 
 - **Office registry**: The host-only directory of Conversation offices (`office-registry.json` in the State dir). Office directories are named by office key — platform-scoped, collision-resistant, and not reversible to raw platform ids — so the registry records each office's `(platform, conversationId)` at creation and journals legacy-directory migrations. Raw-id-scoped surfaces (Admin) resolve offices through it.
 - **Host workspace root**: The directory on the mikan host machine that stores workspace data.
 - **Runtime workspace root**: The path at which an authorized Workspace projection appears inside a conversation's Sandbox runtime. The model only ever sees runtime paths.
-- **State dir**: mikan's host-only private storage for settings, credentials, office records, and materialized package repositories. It is never part of a Workspace projection.
+- **State dir**: mikan's host-only private storage for settings, credentials, and office records. It is never part of a Workspace projection.
 - **Conversation integration identity**: A host-side service credential that identifies one Conversation office while using a shared external account. For OpenConnector on Slack, the runtime token name is `mikan:slack:<workspace-id>:<channel-id>`; provider OAuth remains shared in OpenConnector.
 
 ## Security boundaries

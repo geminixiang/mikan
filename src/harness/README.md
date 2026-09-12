@@ -128,13 +128,10 @@ parent MCP clients. MCP connection setup/cleanup is not performed per turn.
 ## Skills
 
 Skills are directories containing `SKILL.md` frontmatter and instructions.
-They may come from authorized prompt sources or resolved packages. Package
-skills remain external files rather than being inlined, so scripts and
-templates beside `SKILL.md` are available through their read-only Sandbox
-mount.
+They come from the authorized workspace or conversation prompt sources, so
+scripts and templates beside `SKILL.md` remain available to the agent.
 
-mikan deliberately does not load executable plugins from package or state
-directories. New host behavior is implemented in the repository and exposed
+mikan deliberately does not load executable plugins from state directories. New host behavior is implemented in the repository and exposed
 through explicit platform, runtime, tool, or Sandbox interfaces.
 
 ## Subagents

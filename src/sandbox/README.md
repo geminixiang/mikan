@@ -15,7 +15,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 ## Host / sandbox path boundary (image mode)
 
 mikan's primary deployment is `image:*`: the mikan process (LLM calls, session
-persistence, package resolution, platform bots) runs on the **host**, while
+persistence, platform bots) runs on the **host**, while
 agent tool commands execute inside a per-conversation **container**.
 
 Host paths that belong to one conversation are keyed by its **office key**
@@ -26,20 +26,16 @@ trust classes:
 
 ### Host-only — under the state dir (`~/.mikan`), never mounted
 
-| Path                                             | Contents                                                                                                                                  |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `settings.json`                                  | global settings                                                                                                                           |
-| `conversations/<office key>/settings.json`       | conversation settings (model, door policy, …)                                                                                             |
-| `models.json`                                    | model catalog                                                                                                                             |
-| `global/git/`, `conversations/<office key>/git/` | materialized package repositories; only resolved `skills/` directories are mounted read-only into a Sandbox                               |
-| `vaults/…`                                       | credentials; the conversation vault key is the office key. The legacy `vaults/extensions/` namespace remains reserved but is never loaded |
-| `office-registry.json`                           | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                          |
+| Path                                       | Contents                                                                                                                                  |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `settings.json`                            | global settings                                                                                                                           |
+| `conversations/<office key>/settings.json` | conversation settings (model, door policy, …)                                                                                             |
+| `models.json`                              | model catalog                                                                                                                             |
+| `vaults/…`                                 | credentials; the conversation vault key is the office key. The legacy `vaults/extensions/` namespace remains reserved but is never loaded |
+| `office-registry.json`                     | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                          |
 
 Rules enforced in code:
 
-- Package repositories remain under the host-only state dir. mikan does not
-  import package modules; only resolved skill directories cross into a Sandbox
-  as read-only mounts.
 - Conversation settings are read from the state dir only. They historically
   lived at `<office dir>/settings.json` — which is bind-mounted rw — so a
   sandboxed agent could widen its own door policy and remount the whole
@@ -79,22 +75,6 @@ drift: the provisioner recreates the container with the new binds while
 keeping its writable layer, so installed packages survive the switch. The
 same translation carries containers across the raw-id → office-key rename.
 
-### Mounted read-only into the container
-
-| Mount                                                                        | Purpose                     |
-| ---------------------------------------------------------------------------- | --------------------------- |
-| `<scope>/git/<host>/<owner>/<repo>/skills` → `/mikan/packages/<slug>/skills` | skills shipped by a package |
-
-`<scope>` is `global` or `conversations/<office key>`, both under the
-host-only state dir. Package skills are the one thing the agent can see but
-not write. The host owns those files — the directory is a git checkout that
-an update replaces wholesale — so an agent edit would be silently discarded
-on the next refresh; `ContainerMount.readOnly` makes the filesystem refuse it
-instead (docker `:ro`). They mount **outside**
-`/workspace` because under `trusted` + `full` `/workspace` is the whole
-working directory and a `/workspace/packages` target would shadow a real
-`packages/` directory. See `src/packages/README.md`.
-
 Consequences to keep in mind:
 
 - **Session files are agent-writable.** A corrupted session header makes
@@ -111,11 +91,9 @@ Consequences to keep in mind:
 
 ### Paths in prompts and tool output
 
-The model only ever sees **runtime** paths (`/workspace/…` or
-`/mikan/packages/…`); the host only ever touches **host** paths.
-`createMountedRuntimePathContext` (`utils.ts`) translates between them for
-skill locations and upload paths. Package skills remain files and are
-referenced through their read-only runtime mount.
+The model only ever sees **runtime** paths under `/workspace`; the host only
+ever touches **host** paths. `createMountedRuntimePathContext` (`utils.ts`)
+translates between them for skill locations and upload paths.
 
 ### File transport
 

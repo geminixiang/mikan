@@ -3,11 +3,10 @@ title: スキル
 description: workspace-level と conversation-level skills の読み込み場所、sandbox path、tool 構造。
 ---
 
-| レベル                             | 用途                                                     | Host path                                       | Sandbox 内 runtime path                          |
-| ---------------------------------- | -------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------ |
-| Workspace-level（global skills）   | workspace 全体のすべての conversations で使える共有 tool | `<workspace>/skills/<skill-name>/`              | `/workspace/skills/<skill-name>/`                |
-| Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/`   |
-| Package skills                     | インストール済み package が同梱する skills               | state dir 配下の git checkout                   | `/mikan/packages/<slug>/skills/`（読み取り専用） |
+| レベル                             | 用途                                                     | Host path                                       | Sandbox 内 runtime path                        |
+| ---------------------------------- | -------------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
+| Workspace-level（global skills）   | workspace 全体のすべての conversations で使える共有 tool | `<workspace>/skills/<skill-name>/`              | `/workspace/skills/<skill-name>/`              |
+| Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/` |
 
 office key は、mikan が各 conversation に対して導出する `v1-<platform>-<readable-id>-<hash>` という
 directory 名です。手で組み立てるものではありません。admin portal の skills view は両方のレベルを
@@ -59,5 +58,3 @@ Usage: {baseDir}/run.sh <args>
 Workspace-level skills は共有 tool に適しています：会社 API、よく使う scripts、release helpers、reporting tools、または複数 conversations で使う能力。これらには trusted な door policy が必要です。
 
 Conversation-level skills はローカル tool に適しています：特定 channel workflow、一時的な helper、または他の conversations に出すべきではない tool。これらはどの door policy でも動作し、isolated な office が書き込める唯一のレベルです。
-
-Package skills は、複数のインストールに skill セットを配布するためのものです。これらは `/workspace` の外に読み取り専用で mount されます。ホストがそれらのファイルを所有しているからです。その directory は git checkout であり、更新のたびにまるごと置き換えられるため、agent による編集は次の refresh で破棄されてしまいます。そうなる代わりに、ファイルシステムが書き込みを拒否します。

@@ -36,7 +36,6 @@ Admin portal 可以：
 - 讀取與更新 conversation model、thinking level、workspace door policy 與 layout 與 Slack reply mode。
 - 讀取與更新 global model、sandbox 資源預設值、全域 door policy 與 Slack defaults。
 - 檢視有限範圍的 workspace files、skills、events metadata/files，並可在任一層級建立或編輯 skills。
-- 列出並變更某個 scope 的 package sources。
 - 檢視 session 與 conversation 使用量。
 - 刪除所選 conversation 的 events。
 - 為目標 conversation 產生 session view link 或 login/vault link。

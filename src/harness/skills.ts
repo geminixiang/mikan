@@ -1,14 +1,10 @@
 import type { Office } from "../office/index.js";
 import type { MikanSkill, SkillDiagnostic, LoadSkillsResult } from "./types.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
-import { packageSkillRuntimeDir } from "../packages/index.js";
-import type { ResolvedPackages } from "../packages/types.js";
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import * as log from "../log.js";
-
-const keepPath = (path: string): string => path;
 
 /** Register skills under their prompt-side paths; a later source overrides an earlier one. */
 function addSkills(
@@ -41,7 +37,6 @@ export function loadMikanSkills(
   office: Office,
   workspacePath: string,
   projection: WorkspaceProjection,
-  packages: ResolvedPackages,
 ): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const skillMap = new Map<string, MikanSkill>();
 
@@ -52,16 +47,6 @@ export function loadMikanSkills(
     hostPath.startsWith(hostWorkspacePath)
       ? workspacePath + hostPath.slice(hostWorkspacePath.length)
       : hostPath;
-
-  // Package skills are lowest precedence. In sandbox modes they are mounted
-  // read-only outside the workspace so scripts and templates remain available.
-  const mounted = workspacePath !== hostWorkspacePath;
-  for (const { slug, dir } of packages.skillDirs) {
-    const runtimeDir = packageSkillRuntimeDir(slug);
-    const toMountPath = (path: string): string => runtimeDir + path.slice(dir.length);
-    const loaded = loadSkillsFromDir({ dir, source: `package:${slug}`, rejectSymlinks: true });
-    addSkills(skillMap, loaded.skills, mounted ? toMountPath : keepPath);
-  }
 
   const workspaceSkillsDir = projection.promptSources.globalSkillsDir;
   if (workspaceSkillsDir) {

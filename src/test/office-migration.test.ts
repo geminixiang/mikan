@@ -450,8 +450,8 @@ describe("buildContainerBindTranslator", () => {
 
   test("rewrites workspace, state-tree, and vault sources plus the guest segment", () => {
     expect(translate("/w/C123:/workspace/C123")).toBe(`/w/${key}:/workspace/${key}`);
-    expect(translate("/s/conversations/C123/extensions:/mikan/packages/p/skills:ro")).toBe(
-      `/s/conversations/${key}/extensions:/mikan/packages/p/skills:ro`,
+    expect(translate("/s/conversations/C123/cache:/opt/cache:ro")).toBe(
+      `/s/conversations/${key}/cache:/opt/cache:ro`,
     );
     const legacyVault = legacyConversationCredentialKey("C123");
     expect(translate(`/s/vaults/${legacyVault}/.ssh:/root/.ssh`)).toBe(

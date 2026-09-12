@@ -70,12 +70,12 @@ describe("DockerContainerManager", () => {
     const LEGACY_BINDS = [
       "/w/C123:/workspace/C123",
       "/state/vaults/c123-oldhash/.ssh:/root/.ssh",
-      "/state/global/skills:/mikan/packages/x/skills:ro",
+      "/state/shared/data:/opt/shared/data:ro",
     ];
     const NEW_BINDS = [
       "/w/v1-slack-c123-k:/workspace/v1-slack-c123-k",
       "/state/vaults/v1-slack-c123-k/.ssh:/root/.ssh",
-      "/state/global/skills:/mikan/packages/x/skills:ro",
+      "/state/shared/data:/opt/shared/data:ro",
     ];
     const translator = (spec: string): string => {
       const index = LEGACY_BINDS.indexOf(spec);
@@ -374,8 +374,8 @@ describe("DockerContainerManager", () => {
     await manager.provision("alice", {
       mounts: [
         {
-          source: "/state/global/git/example/pkg/skills",
-          target: "/mikan/packages/x/skills",
+          source: "/state/shared/data",
+          target: "/opt/shared/data",
           readOnly: true,
         },
         { source: "/work/C1", target: "/workspace/C1" },
@@ -384,18 +384,18 @@ describe("DockerContainerManager", () => {
     });
 
     const runArgs = execMock.mock.calls[3][1];
-    expect(runArgs).toContain("/state/global/git/example/pkg/skills:/mikan/packages/x/skills:ro");
+    expect(runArgs).toContain("/state/shared/data:/opt/shared/data:ro");
     // Read-write mounts keep their two-part spec.
     expect(runArgs).toContain("/work/C1:/workspace/C1");
   });
 
   test("flipping an existing mount to read-only is drift, so the container is recreated preserving contents", async () => {
-    const mounts = [{ source: "/pkg/skills", target: "/mikan/packages/x/skills", readOnly: true }];
+    const mounts = [{ source: "/state/shared/data", target: "/opt/shared/data", readOnly: true }];
     // A container created before the mount became read-only reports the
     // two-part bind; the expected spec now carries :ro, so they disagree.
     const { exec, calls } = routerMock({
       status: "running",
-      binds: ["/pkg/skills:/mikan/packages/x/skills"],
+      binds: ["/state/shared/data:/opt/shared/data"],
     });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
 
@@ -403,11 +403,11 @@ describe("DockerContainerManager", () => {
 
     const commit = calls.find((args) => args[0] === "commit");
     expect(commit).toContain(
-      `LABEL mikan.migrate-binds=${JSON.stringify(JSON.stringify(["/pkg/skills:/mikan/packages/x/skills:ro"]))}`,
+      `LABEL mikan.migrate-binds=${JSON.stringify(JSON.stringify(["/state/shared/data:/opt/shared/data:ro"]))}`,
     );
     expect(calls.some((args) => args[0] === "rm" && args[1] === "-f")).toBe(true);
     const createArgs = calls.find((args) => args[0] === "create");
-    expect(createArgs).toContain("/pkg/skills:/mikan/packages/x/skills:ro");
+    expect(createArgs).toContain("/state/shared/data:/opt/shared/data:ro");
     expect(createArgs).toContain("mikan-migrate:mikan-sandbox-alice");
     expect(calls.some((args) => args[0] === "start")).toBe(true);
     expect(calls.some((args) => args[0] === "run")).toBe(false);

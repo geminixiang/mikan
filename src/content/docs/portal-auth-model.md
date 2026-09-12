@@ -36,7 +36,6 @@ The admin portal can:
 - read and update conversation model, thinking level, workspace door policy and layout, and Slack reply mode
 - read and update global model, sandbox resource defaults, global door policy, and Slack defaults
 - view limited workspace files, skills, and events metadata/files, and create or edit skills at either level
-- list and mutate the package sources for a scope
 - view session and conversation usage
 - delete events for the selected conversation
 - generate a session view link or login/vault link for the target conversation

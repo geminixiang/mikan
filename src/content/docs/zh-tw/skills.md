@@ -7,7 +7,6 @@ description: workspace-level 與 conversation-level skills 的載入位置、san
 | ---------------------------------- | ---------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
 | Workspace-level（global skills）   | 整個 workspace 內所有 conversations 都可用的共用工具 | `<workspace>/skills/<skill-name>/`              | `/workspace/skills/<skill-name>/`              |
 | Conversation-level（local skills） | 只給單一 conversation / channel / DM 使用的工具      | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/` |
-| Package skills                     | 由已安裝的 package 提供的 skills                     | state dir 底下的一份 git checkout               | `/mikan/packages/<slug>/skills/`（唯讀）       |
 
 office key 是 mikan 為每個對話推導出的 `v1-<platform>-<readable-id>-<hash>` 目錄名稱；你不需要自己組出它。Admin portal 的 skills 檢視會列出兩個層級，也能在任一層級建立 skill。
 
@@ -54,5 +53,3 @@ Usage: {baseDir}/run.sh <args>
 Workspace-level skills 適合共用工具：公司 API、常用 scripts、release helpers、reporting tools，或任何多個 conversations 都會用到的能力。它們需要 trusted door policy。
 
 Conversation-level skills 適合本地工具：特定 channel workflow、暫時 helper，或不應出現在其他 conversations 的工具。它們在任何 door policy 下都能運作，也是 isolated office 唯一可寫的層級。
-
-Package skills 則用於在多個安裝之間散布一組 skills。它們以唯讀方式掛在 `/workspace` 之外，因為那些檔案由 host 擁有——該目錄是一份 git checkout，更新時會被整個取代，所以 agent 的修改會在下次刷新時被丟棄。因此檔案系統會直接拒絕寫入。

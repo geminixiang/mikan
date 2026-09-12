@@ -1,6 +1,6 @@
 ---
 title: コアインターフェース
-description: mikan の platform、runtime、harness、session、execution、vault、package、host の各レイヤー間でサポートされる境界。
+description: mikan の platform、runtime、harness、session、execution、vault、host の各レイヤー間でサポートされる境界。
 ---
 
 このページでは、mikan の**アーキテクチャ上のインターフェース**、すなわちサブシステム、プロセス、永続化、パッケージのいずれかの境界をまたぐ契約を説明します。エクスポートされたヘルパーをすべて列挙したものではありません。1 つのサブシステム内でのみ使われるヘルパーは、TypeScript が現在 `export` としてマークしていても実装の詳細です。
@@ -218,9 +218,9 @@ adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意�
 Credential フローは次のとおりです:
 
 1. runtime が platform trust、conversation、user、sandbox topology を供給する。
-2. execution resolver が Workspace projection と packages を一度だけ解決し、actor/vault identity を選択する。
+2. execution resolver が Workspace projection を解決し、actor/vault identity を選択する。
 3. `VaultManager` が env と mounts を解決し、collision と backend capability checks が grant 全体を検証する。
-4. 1 つの execution decision が projection、packages、runtime path context、およびその run 用 credentials だけを持つ concrete executor を返す。
+4. 1 つの execution decision が projection、runtime path context、およびその run 用 credentials だけを持つ concrete executor を返す。
 5. Prompt memory/skills と filesystem execution は同じ decision を使い、authorization を別々に再計算しない。
 
 Host sandbox 実行は決して vault 注入を受け取りません。Open-trigger platforms は決して ambient shared vault を受け取りません。これらはセキュリティの不変条件であり、便宜的な既定値ではありません。

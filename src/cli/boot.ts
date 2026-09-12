@@ -93,7 +93,7 @@ Usage:
       Writes settings.json, ~/.mikan/mikan.env, and models.json as needed.
 
 Options:
-  --state-dir <dir>      State directory (settings.json, vaults, packages).
+  --state-dir <dir>      State directory (settings, vaults, and office records).
                          Default: ~/.mikan
   --sandbox <spec>       Execution sandbox. One of:
                            host

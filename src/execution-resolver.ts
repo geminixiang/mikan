@@ -1,7 +1,5 @@
 import { posix } from "node:path";
 import type { Workspace } from "./office/index.js";
-import { conversationPackageSkillMounts, resolveConversationPackages } from "./packages/index.js";
-import type { ResolvedPackages } from "./packages/types.js";
 import { loadGlobalSettings } from "./config.js";
 import { DockerContainerManager, type ContainerMount } from "./provisioner.js";
 import {
@@ -34,7 +32,7 @@ export class ActorExecutionResolver {
   ) {}
 
   async resolve(context: ActorContext) {
-    const { plan, projection, packages } = this.resolvePlan(context);
+    const { plan, projection } = this.resolvePlan(context);
     const executor = createExecutor(
       plan.sandboxConfig,
       plan.env,
@@ -44,14 +42,12 @@ export class ActorExecutionResolver {
       executor,
       pathContext: executor.getPathContext(this.workspace.root),
       projection,
-      packages,
     };
   }
 
   private resolvePlan(context: ActorContext): {
     plan: ExecutionPlan;
     projection: WorkspaceProjection;
-    packages: ResolvedPackages;
   } {
     const scope = { userId: context.userId, address: context.address };
     const credentialKey = credentialAuthorizationKey(this.baseConfig, scope);
@@ -68,14 +64,13 @@ export class ActorExecutionResolver {
     const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
     const office = this.workspace.office(context.address);
     const projection = resolveWorkspaceProjection(office);
-    const packages = resolveConversationPackages({ office });
     const injection = resolveVaultInjection({
       vault,
       capabilities,
       sandboxType: this.baseConfig.type,
       address: office.address,
     });
-    const mounts = this.resolveMounts(injection.mounts, projection, packages);
+    const mounts = this.resolveMounts(injection.mounts, projection);
     assertSandboxSupportsWorkspacePolicy(
       this.baseConfig,
       projection.doorPolicy,
@@ -90,7 +85,6 @@ export class ActorExecutionResolver {
         mounts,
       },
       projection,
-      packages,
     };
   }
 
@@ -176,14 +170,8 @@ export class ActorExecutionResolver {
   private resolveMounts(
     vaultMounts: ContainerMount[],
     projection: WorkspaceProjection,
-    packages: ResolvedPackages,
   ): ContainerMount[] {
-    const workspaceMounts = projection.mounts;
-    // Package skills mount outside /workspace, so they cannot collide with the
-    // workspace projection; they are still checked against vault mounts below,
-    // which are administrator-chosen targets and could be aimed anywhere.
-    const packageMounts = conversationPackageSkillMounts(packages);
-    const protectedMounts = [...workspaceMounts, ...packageMounts];
+    const protectedMounts = projection.mounts;
     for (let index = 0; index < vaultMounts.length; index += 1) {
       const vaultMount = vaultMounts[index];
       if (vaultMount === undefined) continue;

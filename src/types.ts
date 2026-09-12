@@ -421,16 +421,6 @@ export interface AgentConfig {
     replyMode?: "top-level" | "thread";
   };
   /**
-   * Package sources (see `src/packages`) declared by ONE scope. Unlike every
-   * other key here, packages are additive across scopes rather than
-   * overriding: a conversation's list does not replace the global list, it
-   * extends it. `resolveConversationSettings` therefore reports only the
-   * conversation's own entries — combining the two scopes (and resolving
-   * same-package collisions in the conversation's favour) is
-   * `resolveConversationPackages`'s job.
-   */
-  packages?: string[];
-  /**
    * MCP servers available to this scope, keyed by server name. Global and
    * conversation entries merge per key (conversation wins); an entry with
    * `disabled: true` turns off the inherited server. The reserved
@@ -488,7 +478,7 @@ export interface PeriodicEventInfo {
 // ── execution-resolver ────────────────────────────────────────────────────────
 
 export interface ActorContext {
-  /** Canonical office identity; vault and package keys use its raw id. */
+  /** Canonical office identity used by vault and execution policy. */
   address: OfficeAddress;
   userId: string;
   /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
@@ -538,10 +528,8 @@ export interface ContainerMount {
   source: string;
   target: string;
   /**
-   * Mount without write access. Used for content the host owns and the agent
-   * must not edit — package-provided skills, whose host copy is a git checkout
-   * that a reinstall replaces wholesale. Absent means read-write, which is the
-   * right default for everything the agent is meant to author.
+   * Mount without write access. Used for shared content an isolated runtime
+   * may read but must not modify. Absent means read-write.
    */
   readOnly?: boolean;
 }

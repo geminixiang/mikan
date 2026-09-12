@@ -160,7 +160,7 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
     const elsewhere = writeSkill(join(dir, ".agents"), "linked-skill");
     symlinkSync(elsewhere, join(dir, "linked-skill"));
 
-    const { skills } = loadSkillsFromDir({ dir, source: "package:x" });
+    const { skills } = loadSkillsFromDir({ dir, source: "workspace" });
 
     expect(skills.map((skill) => skill.name)).toEqual(["linked-skill"]);
   });
@@ -199,9 +199,9 @@ describe("formatSkillsForPrompt", () => {
         name: "triage",
         description: "Triage follow-ups",
         content: "Always triage <first>.",
-        filePath: "/state/packages/toolkit/skills/triage/SKILL.md",
-        baseDir: "/state/packages/toolkit/skills/triage",
-        source: "package:toolkit",
+        filePath: "/workspace/skills/triage/SKILL.md",
+        baseDir: "/workspace/skills/triage",
+        source: "workspace",
         inline: true,
       },
     ]);

@@ -32,7 +32,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## Mount 與 conversation office
 
-該對話的 office 目錄會以可讀寫的方式 bind mount 在 `/workspace/<office-key>`，其中 office key 就是 `v1-<platform>-<readable-id>-<hash>` 這段、同時也是宿主機上該目錄的名稱。isolated projection 只掛載這個目錄；trusted 的 `shared-support` layout 會再加上 workspace 全域的 `MEMORY.md`、`skills/` 與 `events/`。private visibility 會把全域記憶 bind 設為唯讀，public visibility 則維持讀寫；`trusted` / `full` 會把整個 workspace root 掛在 `/workspace`。由 package 提供的 skills 會以唯讀方式掛在 `/workspace` 之外的 `/mikan/packages/<slug>/skills`。
+該對話的 office 目錄會以可讀寫的方式 bind mount 在 `/workspace/<office-key>`，其中 office key 就是 `v1-<platform>-<readable-id>-<hash>` 這段、同時也是宿主機上該目錄的名稱。isolated projection 只掛載這個目錄；trusted 的 `shared-support` layout 會再加上 workspace 全域的 `MEMORY.md`、`skills/` 與 `events/`。private visibility 會把全域記憶 bind 設為唯讀，public visibility 則維持讀寫；`trusted` / `full` 會把整個 workspace root 掛在 `/workspace`。
 
 變更 door policy 不會重置 container。當期望的 mount 與執行中的 container 不再相符時，mikan 會對它做 snapshot、用轉譯後的 mount 重新建立並再次啟動，因此在 container 自有檔案系統中安裝或寫入的東西都會在變更後存活下來。開機時 layout 遷移所做的 office 目錄改名，也走同一條路徑。
 

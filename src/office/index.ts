@@ -116,9 +116,8 @@ export function officeDir(workspaceRoot: string, address: OfficeAddress): string
 /**
  * Resolve the host-only state directory for an office.
  *
- * Transitional: settings/package callers that only hold a
- * `stateDir` string keep using this until their option bags carry an
- * `Office` value (which exposes the same path as `stateDir`).
+ * Settings and migration callers that only hold a `stateDir` string use this
+ * when no materialized `Office` value is available.
  */
 export function officeStateDir(stateDir: string, address: OfficeAddress): string {
   return join(stateDir, "conversations", officeKey(address));

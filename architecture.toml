@@ -106,13 +106,6 @@ docs = "src/adapters/commands/README.md"
 sources = ["src/adapters/commands/"]
 
 [[modules]]
-id = "packages"
-name = "Skill packages"
-kind = "authority"
-docs = "src/packages/README.md"
-sources = ["src/packages/"]
-
-[[modules]]
 id = "side-services"
 name = "Web and scheduled-event services"
 kind = "infrastructure"
@@ -145,13 +138,7 @@ docs = "src/adapters/README.md#files"
 [[seams]]
 id = "runtime"
 owner = "conversation-runtime"
-consumers = [
-  "composition-root",
-  "conversation-intake",
-  "side-services",
-  "configuration",
-  "packages",
-]
+consumers = ["composition-root", "conversation-intake", "side-services", "configuration"]
 interface = "ConversationRuntime"
 docs = "src/runtime/README.md"
 
@@ -186,7 +173,6 @@ consumers = [
   "vault",
   "configuration",
   "workspace-projection",
-  "packages",
   "side-services",
   "harness",
 ]
@@ -202,7 +188,6 @@ consumers = [
   "commands",
   "workspace-projection",
   "execution-resolver",
-  "packages",
   "side-services",
 ]
 interface = "resolve settings, apply settings mutations"
@@ -256,13 +241,6 @@ owner = "commands"
 consumers = ["platform-adapters", "conversation-runtime"]
 interface = "COMMAND_MANIFEST"
 docs = "src/adapters/commands/README.md"
-
-[[seams]]
-id = "package-resolution"
-owner = "packages"
-consumers = ["harness", "execution-resolver", "configuration", "side-services"]
-interface = "resolveConversationPackages"
-docs = "src/packages/README.md"
 
 # Resources record global ownership and security classification. Paths are
 # conceptual locations; detailed layouts belong to the owning module docs.
@@ -352,13 +330,6 @@ classification = "ephemeral"
 docs = "src/runtime/README.md"
 
 [[resources]]
-id = "package-store"
-authority = "packages"
-scope = "deployment-and-conversation"
-classification = "host-private"
-docs = "src/packages/README.md"
-
-[[resources]]
 id = "events-bus"
 authority = "side-services"
 scope = "workspace"
@@ -419,7 +390,7 @@ adr = "docs/adr/0005-office-address-identity.md"
 [[invariants]]
 id = "identity-office-key"
 owners = ["office"]
-applies_to = ["configuration", "sessions", "vault", "packages"]
+applies_to = ["configuration", "sessions", "vault"]
 docs = "ARCHITECTURE.md#inv-identity-office-key"
 adr = "docs/adr/0005-office-address-identity.md"
 
@@ -474,13 +445,7 @@ docs = "ARCHITECTURE.md#inv-projection-coherence"
 [[invariants]]
 id = "state-dir-host-only"
 owners = ["configuration"]
-applies_to = [
-  "state-dir",
-  "workspace-projection",
-  "vault-store",
-  "package-store",
-  "dream-checkpoint",
-]
+applies_to = ["state-dir", "workspace-projection", "vault-store", "dream-checkpoint"]
 docs = "ARCHITECTURE.md#inv-state-dir-host-only"
 
 [[invariants]]

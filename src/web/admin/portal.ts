@@ -50,12 +50,6 @@ import {
   applyGlobalWorkspacePolicy,
 } from "../../settings-mutation.js";
 import {
-  addPackage,
-  inspectConversationPackages,
-  refreshPackage,
-  removePackage,
-} from "../../packages/index.js";
-import {
   escapeHtml,
   jsonResponse as jsonRes,
   readJsonBody,
@@ -167,8 +161,6 @@ async function routeGetApiRequest(
       return serveSkillsList(res, url, services, token);
     case "/admin/api/skills/file":
       return serveSkillFile(res, url, services, token);
-    case "/admin/api/packages":
-      return servePackagesList(res, url, services, token);
     case "/admin/api/mcp-servers":
       return serveMcpServersList(res, url, services, token);
     case "/admin/api/events":
@@ -208,8 +200,6 @@ async function routePostApiRequest(
       return serveConversationEventDelete(res, body, services, token);
     case "/admin/api/mcp-servers/mutate":
       return serveMcpServerMutation(res, body, services, token);
-    case "/admin/api/packages/mutate":
-      return servePackageMutation(res, body, services, token);
     case "/admin/api/settings/model":
       return serveGlobalModelUpdate(res, body, services);
     case "/admin/api/settings/workspace":
@@ -1348,85 +1338,6 @@ export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"
   return out.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Inventory of both scopes' declared packages for the selected conversation. */
-async function servePackagesList(
-  res: ServerResponse,
-  url: URL,
-  services: AdminServices,
-  token: AdminToken,
-): Promise<void> {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
-  try {
-    const inventory = await inspectConversationPackages({
-      office: workspace.office(scope.address),
-    });
-    jsonRes(res, 200, { conversationId: scope.conversationId, ...inventory });
-  } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
-/**
- * Add / remove / refresh, in one route because they share validation and all
- * three answer with the freshly re-read inventory: the panel never has to
- * guess what the write did.
- */
-function servePackageMutation(
-  res: ServerResponse,
-  body: Record<string, unknown>,
-  services: AdminServices,
-  token: AdminToken,
-): void {
-  const action = body.action;
-  if (action !== "add" && action !== "remove" && action !== "refresh") {
-    jsonRes(res, 400, { error: "action must be 'add', 'remove', or 'refresh'" });
-    return;
-  }
-  const packageScope = body.scope === "global" ? "global" : "conversation";
-  const source = typeof body.source === "string" ? body.source.trim() : "";
-  if (!source) {
-    jsonRes(res, 400, { error: "source is required" });
-    return;
-  }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
-
-  const context = {
-    office: workspace.office(scope.address),
-    runtime: services.runtime,
-  };
-
-  try {
-    if (action === "add") {
-      const result = addPackage(packageScope, source, context);
-      jsonRes(res, 200, { ok: true, source: result.source, dir: result.dir });
-      return;
-    }
-    if (action === "refresh") {
-      const result = refreshPackage(packageScope, source, context);
-      jsonRes(res, 200, { ok: true, source: result.source, dir: result.dir });
-      return;
-    }
-    const removed = removePackage(packageScope, source, context);
-    jsonRes(res, removed ? 200 : 404, removed ? { ok: true } : { error: "Not declared here." });
-  } catch (err) {
-    // Fetch/validation failures are the admin's problem to fix, not a server
-    // fault: report them as a bad request with git's own message.
-    jsonRes(res, 400, { error: err instanceof Error ? err.message : String(err) });
-  }
-}
-
 /**
  * List MCP servers for both scopes, with env/header VALUES redacted to key
  * names: they carry API keys, and this response renders in a browser. The
@@ -1571,7 +1482,7 @@ function planMcpMutation(
 /**
  * Import / install / remove / toggle / test MCP servers in one scope. Reads
  * the scope's raw map, applies the change, and writes the full map back
- * (wholesale, like packages — merge would make removal impossible). Runner
+ * wholesale because merging would make removal impossible. Runner
  * caches refresh via applyGlobalSettings/applyConversationSettings.
  *
  * Writes persist even when the follow-up connection check fails: the
@@ -1852,25 +1763,6 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
         </div>
       </section>
 
-      <section class="card sect" id="sect-packages" data-section="packages">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Skill Packages</p>
-            <h2 class="card-title">此對話的 skill 套件</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadPackages()">↻</button>
-        </header>
-        <div class="pkg-add">
-          <input id="pkg-conv-url" class="pkg-input" type="text" spellcheck="false"
-            placeholder="github:owner/repo 或 https://github.com/owner/repo.git" />
-          <input id="pkg-conv-ref" class="pkg-input pkg-input-ref" type="text" spellcheck="false"
-            placeholder="tag / branch / commit（可留空）" />
-          <button class="primary-action-btn" onclick="addPackage('conversation')">Add</button>
-        </div>
-        <div id="pkg-conv-msg" class="pkg-msg" style="display:none"></div>
-        <div id="pkg-conv-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
       <section class="card sect" id="sect-mcp" data-section="mcp">
         <header class="sect-head">
           <div>
@@ -1879,7 +1771,7 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
           </div>
           <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
         </header>
-        <div id="mcp-conv-msg" class="pkg-msg" style="display:none"></div>
+        <div id="mcp-conv-msg" class="status-msg" style="display:none"></div>
         <div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
@@ -1963,31 +1855,12 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
       <section class="card sect">
         <header class="sect-head">
           <div>
-            <p class="eyebrow">Global Skill Packages</p>
-            <h2 class="card-title">所有對話都會載入的 skill 套件</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadPackages()">↻</button>
-        </header>
-        <div class="pkg-add">
-          <input id="pkg-global-url" class="pkg-input" type="text" spellcheck="false"
-            placeholder="github:owner/repo 或 https://github.com/owner/repo.git" />
-          <input id="pkg-global-ref" class="pkg-input pkg-input-ref" type="text" spellcheck="false"
-            placeholder="tag / branch / commit（可留空）" />
-          <button class="primary-action-btn" onclick="addPackage('global')">Add</button>
-        </div>
-        <div id="pkg-global-msg" class="pkg-msg" style="display:none"></div>
-        <div id="pkg-global-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
             <p class="eyebrow">Global MCP Servers</p>
             <h2 class="card-title">所有對話都可用的 MCP servers</h2>
           </div>
           <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
         </header>
-        <div id="mcp-global-msg" class="pkg-msg" style="display:none"></div>
+        <div id="mcp-global-msg" class="status-msg" style="display:none"></div>
         <div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>
       </section>
 
@@ -2025,7 +1898,7 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
       <div id="mcp-dialog-content"></div>
       <div id="mcp-dialog-error" class="inline-result err" style="display:none"></div>
       <div class="mcp-dialog-actions">
-        <button class="pkg-btn" type="button" onclick="closeMcpInstall()">Cancel</button>
+        <button class="mcp-btn" type="button" onclick="closeMcpInstall()">Cancel</button>
         <button id="mcp-dialog-install" class="primary-action-btn" type="button" onclick="installMcpPreset(this)">Install preset</button>
       </div>
     </dialog>
@@ -2041,7 +1914,7 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
       <div id="mcp-custom-dialog-content"></div>
       <div id="mcp-custom-dialog-error" class="inline-result err" style="display:none"></div>
       <div class="mcp-dialog-actions">
-        <button class="pkg-btn" type="button" onclick="closeMcpCustomDialog()">Cancel</button>
+        <button class="mcp-btn" type="button" onclick="closeMcpCustomDialog()">Cancel</button>
         <button id="mcp-custom-dialog-submit" class="primary-action-btn" type="button" onclick="submitMcpCustomDialog(this)">新增並測試連線</button>
       </div>
     </dialog>`;
@@ -2209,7 +2082,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       loadSettings();
       loadWorkspace();
       loadSkills();
-      loadPackages();
       loadMcpServers();
       loadConversationEvents();
       openLogin(true);
@@ -2388,47 +2260,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Skills ───────────────────────────────────────────────────────────────────
 
-    function packageMessage(scope, text, kind) {
-      const el = document.getElementById(scope === 'global' ? 'pkg-global-msg' : 'pkg-conv-msg');
-      if (!text) { el.style.display = 'none'; return; }
-      el.className = 'pkg-msg pkg-msg-' + kind;
-      el.textContent = text;
-      el.style.display = 'block';
-    }
-
-    function renderPackageList(container, rows, scope) {
-      if (rows.length === 0) {
-        container.innerHTML = '<div class="empty-state">尚未加入任何套件</div>';
-        return;
-      }
-      container.innerHTML = '<div class="pkg-list">' + rows.map((p) => {
-        const provides = p.skills.map((s) => 'skill: ' + s);
-        const status = p.error
-          ? '<span class="pkg-badge pkg-badge-err">' + escHtml(p.error) + '</span>'
-          : p.shadowed
-            ? '<span class="pkg-badge pkg-badge-warn">被此對話的同名套件覆蓋，不會載入</span>'
-            : '<span class="pkg-badge pkg-badge-ok">已下載</span>'
-              + '<span class="pkg-badge pkg-badge-warn">需 /pi-new 才會載入</span>';
-        return '<div class="pkg-row">' +
-          '<div class="pkg-row-main">' +
-            '<code class="pkg-source">' + escHtml(p.source) + '</code>' + status +
-          '</div>' +
-          (provides.length > 0
-            ? '<div class="pkg-provides">' + provides.map((t) => '<span class="pkg-chip">' + escHtml(t) + '</span>').join('') + '</div>'
-            : '<div class="pkg-provides pkg-provides-empty">此套件沒有提供 skill</div>') +
-          '<div class="pkg-actions">' +
-            '<button class="pkg-btn" data-pkg-action="refresh" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Update</button>' +
-            '<button class="pkg-btn pkg-btn-danger" data-pkg-action="remove" data-pkg-scope="' + scope + '" data-pkg-source="' + escAttr(p.source) + '">Remove</button>' +
-          '</div>' +
-        '</div>';
-      }).join('') + '</div>';
-    }
-
-    const loadPackages = () => loadScopePanels('pkg', 'packages', (data, convEl, globalEl) => {
-      if (convEl) renderPackageList(convEl, data.conversation, 'conversation');
-      if (globalEl) renderPackageList(globalEl, data.global, 'global');
-    });
-
     async function loadScopePanels(prefix, endpoint, render) {
       const convEl = document.getElementById(prefix + '-conv-content');
       const globalEl = document.getElementById(prefix + '-global-content');
@@ -2443,56 +2274,13 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    async function mutatePackage(scope, action, source) {
-      packageMessage(scope, action === 'remove' ? '移除中…' : '取得中…', 'busy');
-      try {
-        const result = await apiPost('/admin/api/packages/mutate', {
-          action: action,
-          scope: scope,
-          source: source,
-          ...scopeBody(),
-        });
-        packageMessage(
-          scope,
-          action === 'remove'
-            ? '已移除。對話輸入 /pi-new 生效。'
-            : '完成：' + result.source + '（對話輸入 /pi-new 生效）',
-          'ok',
-        );
-        await loadPackages();
-      } catch (err) {
-        // Fetch and validation failures land here, next to the input that
-        // caused them, rather than turning into a silently missing feature.
-        packageMessage(scope, err.message, 'err');
-      }
-    }
-
-    async function addPackage(scope) {
-      const urlEl = document.getElementById(scope === 'global' ? 'pkg-global-url' : 'pkg-conv-url');
-      const refEl = document.getElementById(scope === 'global' ? 'pkg-global-ref' : 'pkg-conv-ref');
-      const url = urlEl.value.trim();
-      const ref = refEl.value.trim();
-      if (!url) { packageMessage(scope, '請填入 git URL', 'err'); return; }
-      // Assembled here so nobody has to hand-write the @ref form, whose
-      // ambiguity with git@host:owner/repo is the one sharp edge in the syntax.
-      await mutatePackage(scope, 'add', ref ? url + '@' + ref : url);
-      urlEl.value = '';
-      refEl.value = '';
-    }
-
-    document.addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-pkg-action]');
-      if (!btn) return;
-      void mutatePackage(btn.dataset.pkgScope, btn.dataset.pkgAction, btn.dataset.pkgSource);
-    });
-
     // ── MCP servers ───────────────────────────────────────────────────────────────────────
 
     function mcpMessage(scope, text, kind) {
       const el = document.getElementById(scope === 'global' ? 'mcp-global-msg' : 'mcp-conv-msg');
       if (!el) return;
       el.style.display = 'block';
-      el.className = 'pkg-msg pkg-msg-' + kind;
+      el.className = 'status-msg status-msg-' + kind;
       el.textContent = text;
     }
 
@@ -2510,15 +2298,15 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       return '<article class="mcp-preset mcp-installed-card">' +
         '<div class="mcp-preset-top">' +
           '<span class="mcp-preset-category">' + (server.command ? 'STDIO' : 'HTTP') + '</span>' +
-          (server.disabled ? '<span class="pkg-badge pkg-badge-warn">disabled</span>' : '<span class="pkg-badge pkg-badge-ok">enabled</span>') +
+          (server.disabled ? '<span class="mcp-badge mcp-badge-warn">disabled</span>' : '<span class="mcp-badge mcp-badge-ok">enabled</span>') +
         '</div>' +
         '<h3>' + escHtml(name) + '</h3>' +
         '<p class="mcp-preset-meta mcp-installed-transport">' + escHtml(transport) + '</p>' +
         (keys.length ? '<div class="mcp-preset-meta">' + escHtml(keys.join(' · ')) + '</div>' : '') +
         '<div class="mcp-preset-actions">' +
-          '<button class="pkg-btn" data-mcp-action="test" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Test</button>' +
-          '<button class="pkg-btn" data-mcp-action="toggle" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">' + (server.disabled ? 'Enable' : 'Disable') + '</button>' +
-          '<button class="pkg-btn pkg-btn-danger" data-mcp-action="remove" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Remove</button>' +
+          '<button class="mcp-btn" data-mcp-action="test" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Test</button>' +
+          '<button class="mcp-btn" data-mcp-action="toggle" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">' + (server.disabled ? 'Enable' : 'Disable') + '</button>' +
+          '<button class="mcp-btn mcp-btn-danger" data-mcp-action="remove" data-mcp-scope="' + scope + '" data-mcp-name="' + escAttr(name) + '">Remove</button>' +
         '</div>' +
       '</article>';
     }
@@ -2529,7 +2317,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       return '<article class="mcp-preset">' +
         '<div class="mcp-preset-top">' +
           '<span class="mcp-preset-category">' + escHtml(preset.category) + '</span>' +
-          (installed ? '<span class="pkg-badge pkg-badge-ok">Installed here</span>' : '') +
+          (installed ? '<span class="mcp-badge mcp-badge-ok">Installed here</span>' : '') +
         '</div>' +
         '<h3>' + escHtml(preset.name) + '</h3>' +
         '<p>' + escHtml(preset.description) + '</p>' +
@@ -2559,20 +2347,20 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     function renderMcpGuidedForm(scope) {
       return '<div class="mcp-guided-grid">' +
-        '<label class="mcp-field"><span>Server 名稱</span><input id="mcp-' + scope + '-g-name" class="pkg-input mcp-json" placeholder="例如 github" autocomplete="off" /></label>' +
+        '<label class="mcp-field"><span>Server 名稱</span><input id="mcp-' + scope + '-g-name" class="form-input mcp-json" placeholder="例如 github" autocomplete="off" /></label>' +
         '<div class="mcp-transport-toggle">' +
           '<label><input type="radio" name="mcp-' + scope + '-g-transport" value="stdio" checked /> 本機指令 (stdio)</label>' +
           '<label><input type="radio" name="mcp-' + scope + '-g-transport" value="http" /> 遠端服務 (HTTP)</label>' +
         '</div>' +
         '<div id="mcp-' + scope + '-g-stdio" class="mcp-transport-fields">' +
-          '<label class="mcp-field"><span>指令</span><input id="mcp-' + scope + '-g-command" class="pkg-input mcp-json" placeholder="npx" autocomplete="off" /></label>' +
-          '<label class="mcp-field"><span>參數（以逗號分隔）</span><input id="mcp-' + scope + '-g-args" class="pkg-input mcp-json" placeholder="-y, @modelcontextprotocol/server-github" autocomplete="off" /></label>' +
+          '<label class="mcp-field"><span>指令</span><input id="mcp-' + scope + '-g-command" class="form-input mcp-json" placeholder="npx" autocomplete="off" /></label>' +
+          '<label class="mcp-field"><span>參數（以逗號分隔）</span><input id="mcp-' + scope + '-g-args" class="form-input mcp-json" placeholder="-y, @modelcontextprotocol/server-github" autocomplete="off" /></label>' +
         '</div>' +
         '<div id="mcp-' + scope + '-g-http" class="mcp-transport-fields" style="display:none">' +
-          '<label class="mcp-field"><span>URL</span><input id="mcp-' + scope + '-g-url" class="pkg-input mcp-json" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>' +
+          '<label class="mcp-field"><span>URL</span><input id="mcp-' + scope + '-g-url" class="form-input mcp-json" placeholder="https://mcp.example.com/mcp" autocomplete="off" /></label>' +
         '</div>' +
         '<div class="mcp-kv-block">' +
-          '<div class="mcp-kv-head"><span id="mcp-' + scope + '-g-kv-label">環境變數 (env)</span><button type="button" class="pkg-btn" data-mcp-kv-add="' + scope + '">+ 新增一列</button></div>' +
+          '<div class="mcp-kv-head"><span id="mcp-' + scope + '-g-kv-label">環境變數 (env)</span><button type="button" class="mcp-btn" data-mcp-kv-add="' + scope + '">+ 新增一列</button></div>' +
           '<div id="mcp-' + scope + '-g-kv" class="mcp-kv-rows"></div>' +
         '</div>' +
       '</div>';
@@ -2580,9 +2368,9 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     function renderMcpKvRow() {
       return '<div class="mcp-kv-row">' +
-        '<input class="pkg-input mcp-json" placeholder="KEY" data-kv-key autocomplete="off" />' +
-        '<input class="pkg-input mcp-json" type="password" placeholder="value" data-kv-value autocomplete="off" />' +
-        '<button type="button" class="pkg-btn pkg-btn-danger" data-mcp-kv-remove>移除</button>' +
+        '<input class="form-input mcp-json" placeholder="KEY" data-kv-key autocomplete="off" />' +
+        '<input class="form-input mcp-json" type="password" placeholder="value" data-kv-value autocomplete="off" />' +
+        '<button type="button" class="mcp-btn mcp-btn-danger" data-mcp-kv-remove>移除</button>' +
       '</div>';
     }
 
@@ -2615,7 +2403,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
         '<div id="mcp-custom-guided-panel" class="mcp-panel">' + renderMcpGuidedForm('custom') + '</div>' +
         '<div id="mcp-custom-json-panel" class="mcp-panel" style="display:none">' +
           '<p class="mcp-manual-hint">貼上 MCP server 文件給的 <code>mcpServers</code> JSON，原樣保存到這個 scope。remote 走 Streamable HTTP，local 走 stdio。</p>' +
-          '<textarea id="mcp-custom-json" class="pkg-input mcp-json" spellcheck="false" rows="9" placeholder="' + escAttr(MCP_JSON_PLACEHOLDER) + '"></textarea>' +
+          '<textarea id="mcp-custom-json" class="form-input mcp-json" spellcheck="false" rows="9" placeholder="' + escAttr(MCP_JSON_PLACEHOLDER) + '"></textarea>' +
         '</div>';
       const dialogError = document.getElementById('mcp-custom-dialog-error');
       dialogError.style.display = 'none';
@@ -3269,7 +3057,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       loadSettings();
       loadWorkspace();
       loadSkills();
-      loadPackages();
       loadMcpServers();
       loadConversationEvents();
     });
@@ -3466,61 +3253,32 @@ const adminViewStyles = `
   .skill-source-conversation { background: rgba(217,119,6,0.1); color: var(--accent); }
   .skill-desc { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.5; }
 
-  /* ── Packages ───────────────────────────────────────────────────────── */
+  /* ── MCP marketplace ───────────────────────────────────────────────── */
 
-  .pkg-add { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-  .pkg-input {
+  .form-input {
     flex: 1 1 240px; min-width: 0; padding: 8px 10px;
     border: 1px solid var(--border); border-radius: 8px; background: var(--card);
     font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.8rem; color: var(--text);
   }
-  .pkg-input-ref { flex: 0 1 200px; }
-  .pkg-msg {
+  .status-msg {
     padding: 8px 12px; border-radius: 8px; margin-bottom: 12px;
     font-size: 0.82rem; line-height: 1.5; word-break: break-word;
   }
-  .pkg-msg-ok { background: rgba(22,163,74,0.1); color: #15803d; }
-  .pkg-msg-err { background: rgba(220,38,38,0.1); color: #b91c1c; }
-  .pkg-msg-busy { background: rgba(0,0,0,0.05); color: var(--muted); }
-  .pkg-list { display: flex; flex-direction: column; gap: 8px; }
-  .pkg-row {
-    padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
-    background: rgba(0,0,0,0.02);
-  }
-  .pkg-row-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .pkg-source {
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.78rem; color: var(--text); word-break: break-all;
-  }
-  .pkg-badge {
-    padding: 1px 8px; border-radius: 999px; font-size: 0.7rem;
-    font-weight: 600; letter-spacing: 0.03em;
-  }
-  .pkg-badge-ok { background: rgba(22,163,74,0.1); color: #15803d; }
-  .pkg-badge-warn { background: rgba(217,119,6,0.12); color: var(--accent); }
-  .pkg-badge-err { background: rgba(220,38,38,0.1); color: #b91c1c; }
-  .pkg-provides { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
-  .pkg-provides-empty { color: var(--subtle); font-size: 0.78rem; }
-  .pkg-chip {
-    padding: 1px 8px; border-radius: 6px; background: rgba(59,130,246,0.1);
-    color: #1d4ed8; font-size: 0.72rem;
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-  }
-  .pkg-actions { margin-top: 8px; display: flex; gap: 8px; }
-  .pkg-btn {
+  .status-msg-ok { background: rgba(22,163,74,0.1); color: #15803d; }
+  .status-msg-err { background: rgba(220,38,38,0.1); color: #b91c1c; }
+  .status-msg-busy { background: rgba(0,0,0,0.05); color: var(--muted); }
+  .mcp-btn {
     padding: 4px 10px; border: 1px solid var(--border); border-radius: 7px;
     background: var(--card); color: var(--text); font-size: 0.76rem; cursor: pointer;
   }
-  .pkg-btn:hover { background: rgba(0,0,0,0.05); }
-  .pkg-btn-danger { color: #b91c1c; }
-  .pkg-group { margin-bottom: 16px; }
-  .pkg-group-head {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
-    font-size: 0.85rem;
+  .mcp-btn:hover { background: rgba(0,0,0,0.05); }
+  .mcp-btn-danger { color: #b91c1c; }
+  .mcp-badge {
+    padding: 1px 8px; border-radius: 999px; font-size: 0.7rem;
+    font-weight: 600; letter-spacing: 0.03em;
   }
-  .pkg-group-head .pkg-btn { margin-left: auto; }
-
-  /* ── MCP marketplace ───────────────────────────────────────────────── */
+  .mcp-badge-ok { background: rgba(22,163,74,0.1); color: #15803d; }
+  .mcp-badge-warn { background: rgba(217,119,6,0.12); color: var(--accent); }
 
   .mcp-market-head {
     display: flex; align-items: end; justify-content: space-between; gap: 16px;
@@ -3598,7 +3356,7 @@ const adminViewStyles = `
   .mcp-kv-head span { font-size: 0.78rem; font-weight: 650; color: var(--muted); }
   .mcp-kv-rows { display: grid; gap: 6px; }
   .mcp-kv-row { display: flex; gap: 8px; }
-  .mcp-kv-row .pkg-input { flex: 1 1 auto; }
+  .mcp-kv-row .form-input { flex: 1 1 auto; }
   .mcp-json {
     width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.8rem; line-height: 1.45; resize: vertical;

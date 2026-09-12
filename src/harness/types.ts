@@ -3,7 +3,6 @@ import type { MikanAgentSession } from "./session.js";
 import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
 import type { resolveConversationSettings } from "../config.js";
-import type { ResolvedPackages } from "../packages/types.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
 import type { WorkspaceProjection } from "../workspace-projection/types.js";
 import type { Office } from "../office/index.js";
@@ -91,7 +90,6 @@ export interface RunnerExecutionContext {
   }): Promise<{
     pathContext: RuntimePathContext;
     projection: WorkspaceProjection;
-    packages: ResolvedPackages;
   }>;
 }
 

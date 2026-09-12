@@ -36,8 +36,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 同样命名该目录的 `v1-<platform>-<readable-id>-<hash>` 路径段。isolated 投影只挂载该目录；受信任的
 `shared-support` 布局会额外加上工作区级的 `MEMORY.md`、`skills/` 和 `events/`。private visibility 会把
 全局记忆 bind 标记为只读，public visibility 则维持读写；`trusted` / `full` 会把整个工作区根目录挂载到
-`/workspace`。由 package 提供的 skill 以只读方式挂载在
-`/workspace` 之外，位于 `/mikan/packages/<slug>/skills`。
+`/workspace`。
 
 更改门禁策略不会重置容器。当期望的 mount 与运行中的容器不再匹配时，mikan 会对它做快照，用转换后的 mount
 重新创建并再次启动，因此容器自身文件系统中安装或写入的内容都能在这次更改中存活。启动时布局迁移所做的

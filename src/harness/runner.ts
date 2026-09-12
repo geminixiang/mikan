@@ -17,7 +17,6 @@ import type {
   PlatformName,
 } from "../adapter.js";
 import { ActorExecutionResolver } from "../execution-resolver.js";
-import { resolveConversationPackages } from "../packages/index.js";
 import type { DockerContainerManager } from "../provisioner.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
@@ -179,7 +178,6 @@ function createRunnerExecutionContext(
         return {
           pathContext: decision.pathContext,
           projection: decision.projection,
-          packages: decision.packages,
         };
       }
 
@@ -193,7 +191,6 @@ function createRunnerExecutionContext(
       return {
         pathContext: executor.getPathContext(workspace.root),
         projection,
-        packages: resolveConversationPackages({ office }),
       };
     },
   };
@@ -260,11 +257,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     userId: message.userId,
     trustModel: platform.trustModel,
   });
-  const { pathContext, projection, packages } = decision;
-  for (const error of packages.errors) {
-    log.logWarning(`Package unavailable: ${error.source}`, error.message);
-  }
-
+  const { pathContext, projection } = decision;
   const reloaded = await session.reloadFromSession();
   if (reloaded > 0) {
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
@@ -275,7 +268,6 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
-    packages,
   );
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt({
@@ -383,7 +375,6 @@ async function buildInitialSystemPrompt(params: {
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
-    resolveConversationPackages({ office }),
   );
   return buildSystemPrompt({
     workspacePath: pathContext.runtimeWorkspaceRoot,

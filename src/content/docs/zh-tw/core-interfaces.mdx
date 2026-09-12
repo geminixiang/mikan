@@ -1,6 +1,6 @@
 ---
 title: 核心介面
-description: mikan 的 platform、runtime、harness、session、execution、vault、package 與 host 各層之間受支援的邊界。
+description: mikan 的 platform、runtime、harness、session、execution、vault 與 host 各層之間受支援的邊界。
 ---
 
 本頁記錄 mikan 的**架構介面**：跨越子系統、行程、持久化或套件邊界的契約。它並非每個已匯出 helper 的清單。只在單一子系統內部使用的 helper 屬於實作細節，即使 TypeScript 目前把它標為 `export` 也一樣。
@@ -218,9 +218,9 @@ Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 
 憑證流程為：
 
 1. Runtime 提供平台信任、conversation、user 與 sandbox 拓撲。
-2. execution resolver 只解析一次 Workspace projection 與 packages，接著選出 actor/vault identity。
+2. execution resolver 解析 Workspace projection，接著選出 actor/vault identity。
 3. `VaultManager` 解析 env 與 mount；collision 與 backend capability checks 驗證完整 grant。
-4. 單一 execution decision 回傳 projection、packages、runtime path context，以及只帶本次 run 所需憑證的 concrete executor。
+4. 單一 execution decision 回傳 projection、runtime path context，以及只帶本次 run 所需憑證的 concrete executor。
 5. Prompt memory/skills 與 filesystem execution 使用同一份 decision，不再各自重算 authorization。
 
 Host sandbox 執行絕不會收到 vault injection。Open-trigger 平台絕不會收到環境式的 shared vault。這些是安全不變式，不是為了方便的預設值。

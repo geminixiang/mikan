@@ -37,8 +37,7 @@ office key は、host 上でもその directory を命名する `v1-<platform>-<
 です。isolated projection はこの directory だけを mount します。trusted な `shared-support` layout は
 workspace 全体の `MEMORY.md`、`skills/`、`events/` を追加します。private visibility は global memory
 bind を read-only にし、public visibility は read-write のままです。`trusted` / `full` は workspace root
-全体を `/workspace` に mount します。package が同梱する skills は
-`/workspace` の外、`/mikan/packages/<slug>/skills` に読み取り専用で mount されます。
+全体を `/workspace` に mount します。
 
 door policy を変更しても container はリセットされません。求められる mount が実行中の container と
 一致しなくなると、mikan はそれを snapshot し、変換後の mount で再作成して再度起動します。そのため、

@@ -28,7 +28,6 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `harness/`: Agent execution — `createRunner`, prompt and presentation, execution binding, native Pi session integration, session store, models, MCP capabilities, skills, and bounded subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
-- `packages/`: Git-sourced skill packages — source grammar, materialization, per-conversation resolution, read-only mounts, and the admin write path.
 - `runtime/`: Conversation and session runtime orchestration.
 - `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors.
 - `sessions/`: Chat-history synchronization, session file management, and session policy.
