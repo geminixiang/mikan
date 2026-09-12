@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SessionStore } from "../harness/session-store.js";
+import { SessionStore } from "../sessions/session-store.js";
 import {
   findPi084SessionFiles,
   isPi084SessionFile,

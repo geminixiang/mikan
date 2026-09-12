@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationEvent } from "../adapter.js";
-import { EventsWatcher } from "../events.js";
+import { EventsWatcher } from "../events/watcher.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 
 vi.mock("../observability/sentry.js", () => ({

@@ -17,7 +17,8 @@ vi.mock("../harness/mcp.js", async (importOriginal) => {
 });
 
 import { createRunner } from "../harness/runner.js";
-import { MikanAgentSession, MikanModels, SessionStore } from "../harness/index.js";
+import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";

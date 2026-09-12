@@ -15,7 +15,7 @@ import type {
   SubagentUsageSink,
 } from "./types.js";
 import { MikanAgentSession, copyUsage, createEmptyUsage } from "./session.js";
-import { SessionStore } from "./session-store.js";
+import { SessionStore } from "../sessions/session-store.js";
 
 import * as log from "../log.js";
 

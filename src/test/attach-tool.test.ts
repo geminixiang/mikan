@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createAttachTool } from "../adapters/slack/tools/attach.js";
+import { createAttachTool } from "../harness/tools/attach.js";
 
 describe("attach tool", () => {
   test("passes relative paths through for runtime workspace resolution", async () => {

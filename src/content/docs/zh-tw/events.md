@@ -71,7 +71,7 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 ## 路由欄位
 
-每個事件檔案都必須有 `type`、`conversationId` 與 `text`；其餘為選填，而各類型專屬的欄位（`at`、`schedule` + `timezone`）在該類型中則是必填。schema 由 `src/tools/event.ts` 擁有——每個讀取者與寫入者都會經過它的 parser 與 builder。
+每個事件檔案都必須有 `type`、`conversationId` 與 `text`；其餘為選填，而各類型專屬的欄位（`at`、`schedule` + `timezone`）在該類型中則是必填。schema 由 `src/events/index.ts` 擁有——每個讀取者與寫入者都會經過它的 parser 與 builder。
 
 | 欄位               | 說明                                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------------ |

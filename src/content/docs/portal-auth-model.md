@@ -119,14 +119,14 @@ Even if a full dashboard is added later, these boundaries should remain:
 
 ## Implementation locations
 
-| Feature              | Main code                                 |
-| -------------------- | ----------------------------------------- |
-| Portal HTTP server   | `startWebServer()` in `src/web/server.ts` |
-| Admin portal         | `src/web/admin/portal.ts`                 |
-| Login / vault portal | `src/web/login/portal.ts`                 |
-| Session view         | `src/web/session-view/portal.ts`          |
-| Shared token store   | `src/web/token-store.ts`                  |
-| Shared portal shell  | `src/web/portal-shell.ts`                 |
+| Feature              | Main code                                          |
+| -------------------- | -------------------------------------------------- |
+| Portal HTTP server   | `startWebServer()` in `src/adapters/web/server.ts` |
+| Admin portal         | `src/adapters/web/admin/portal.ts`                 |
+| Login / vault portal | `src/adapters/web/login/portal.ts`                 |
+| Session view         | `src/adapters/web/session-view/portal.ts`          |
+| Shared token store   | `src/adapters/web/token-store.ts`                  |
+| Shared portal shell  | `src/adapters/web/portal-shell.ts`                 |
 
 `startWebServer()` dispatch order:
 

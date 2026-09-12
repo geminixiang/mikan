@@ -67,7 +67,7 @@ platform event
   → platform response
 ```
 
-The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. The harness owns the model/tool loop, append-only session tree, retry, compaction, budgets, skills, and bounded subagents.
+The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. Sessions owns the append-only session tree and its single writer; the harness owns the model/tool loop, retry, compaction, budgets, skills, and bounded subagents.
 
 ### Authority axis
 
@@ -84,14 +84,15 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                                      | Detailed documentation                                                                                                                                                                                                       |
-| ----------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform edge           | Platform adapters, Conversation intake                       | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                                           |
-| Orchestration           | Composition root, Conversation runtime                       | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                                                              |
-| Agent core              | Harness                                                      | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                             |
-| Identity and data       | Office, Sessions, Dream, Configuration, Workspace projection | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/workspace-projection/README.md`](src/workspace-projection/README.md) |
-| Execution and authority | Execution resolver, Sandbox, Vault                           | [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                                                                                                               |
-| Control surfaces        | Commands, Web and scheduled-event services                   | [`src/adapters/commands/README.md`](src/adapters/commands/README.md), [`src/web/README.md`](src/web/README.md)                                                                                                               |
+| Group                   | Modules                                      | Detailed documentation                                                                                                                                                               |
+| ----------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Platform edge           | Platform adapters, Conversation intake       | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
+| Orchestration           | Composition root, Conversation runtime       | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
+| Agent core              | Harness and generic agent tools              | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
+| Identity and data       | Office, Sessions, Dream, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md)                                     |
+| Execution and authority | Harness execution resolution, Sandbox, Vault | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
+| External/control edges  | Platform/Web adapters and Commands           | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
+| Scheduling              | Scheduled-event protocol, store, and watcher | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
 
 ## Main flows
 
@@ -124,7 +125,7 @@ Every platform feeds the same intake and runtime model:
 5. Session policy resolves history, rotation, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
 7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips OpenConnector provisioning, while `membership` preserves the configured map and replaces a deployment-wide OpenConnector credential with the Slack Conversation office's host-private runtime token when automatic provisioning is enabled.
-8. The harness session store owns MCP connections alongside the session writer. If runner construction fails, the runner closes that owner; it disposes MCP connections before releasing the writer, preserves the original construction failure, and allows the same session to be reconstructed immediately.
+8. The sessions-owned `SessionStore` owns MCP connections alongside the session writer. If runner construction fails, the runner closes that owner; it disposes MCP connections before releasing the writer, preserves the original construction failure, and allows the same session to be reconstructed immediately.
 9. For each run, the runner resolves one execution decision containing the Workspace projection, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
 10. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
 11. The runner streams and finalizes the response through platform capabilities.
@@ -134,7 +135,7 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 ### Agent execution
 
-`src/harness/` owns both run-level composition and the Pi execution integration. `runner.ts` prepares the authorized tools, execution context, and prompt; `session.ts` integrates Pi's model loop. Prompt construction, skills, response presentation, and persistent session ownership have explicit implementations within this module. Conversation queueing remains in the runtime, and platform SDK transports remain in adapters.
+`src/harness/` owns run-level composition, the Pi execution integration, and platform-neutral agent tools. `runner.ts` prepares the authorized tools, execution context, and prompt; `session.ts` integrates Pi's model loop; `tools/` owns generic tool adapters including attach and the agent-facing event tool. Prompt construction, skills, response presentation, and persistent session ownership have explicit implementations within this module. Platform-specific tool packs remain in their adapters and are injected into each runner; the harness does not import a platform adapter implementation. Conversation queueing remains in the runtime, and platform SDK transports remain in adapters.
 
 A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, concrete executor, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
@@ -145,7 +146,7 @@ The presenter owns response delivery. The Conversation runtime invokes and settl
 Execution authority is resolved for every agent environment rather than inferred from a filesystem path:
 
 1. Workspace projection resolves the effective Door policy into both runtime mounts and authorized prompt sources.
-2. The execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
+2. The harness-owned execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
 3. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
 4. Sandbox capability checks reject policies the selected backend cannot enforce, including isolated projections and read-only shared memory.
 5. The resulting execution decision carries the concrete executor, runtime path context, and projection to the runner; that executor was created from the same final non-overlapping mounts and credential grant.
@@ -155,10 +156,14 @@ For every provider call, prompt authorization and filesystem authorization consu
 ### Scheduled execution
 
 The workspace `events/` directory is an agent-writable, workspace-wide
-scheduling bus. A due file is converted into a normal conversation event,
-submitted through the target platform bot, and enters the regular runtime
-path. It therefore shares session context, queueing, credentials, tools, stop
-behavior, and platform settlement with normal chat.
+scheduling bus. `src/events/` owns its wire protocol, host store, filename
+validation, and watcher lifecycle. The agent-facing adapter remains with the
+other generic tools at `src/harness/tools/event.ts`; the Admin HTTP surface
+consumes the events-owned store from `src/adapters/web/`. A due file is
+converted into a normal conversation event, submitted through the target
+platform bot, and enters the regular runtime path. It therefore shares session
+context, queueing, credentials, tools, stop behavior, and platform settlement
+with normal chat.
 
 An isolated office does not mount shared events and therefore cannot
 self-schedule. Trusted layouts may expose the bus. Cross-conversation
@@ -293,7 +298,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 **`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work plus Dream a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter/Dream promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
 
-Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/web/server.ts`, `src/runtime/conversation-runtime.ts`.
+Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/watcher.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV runner materialization rollback
 
@@ -301,7 +306,7 @@ Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/web/s
 
 **`runner-materialization-rollback`** — Runner construction either returns a fully owned runner or settles rollback before rejecting. Shutdown propagates an abort signal through Conversation runtime, OpenConnector provisioning, and MCP connection/tool discovery. Once acquired, MCP connections are disposed before the session writer is closed; cleanup failures are reported without replacing the original construction error, and the same office/session identity can be reconstructed immediately. Session lifecycle awaits cooperative rollback, but reports a non-zero shutdown failure after a fixed five-second materialization grace instead of waiting forever for non-cancellable repository I/O.
 
-Evidence: `src/harness/runner.ts`, `src/harness/mcp.ts`, `src/harness/session-store.ts`.
+Evidence: `src/harness/runner.ts`, `src/harness/mcp.ts`, `src/sessions/session-store.ts`.
 
 ### INV run settlement
 
@@ -317,7 +322,7 @@ Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/`.
 
 **`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. An isolated policy always resolves to conversation-only data, and callers cannot independently recompute prompt visibility after executor resolution.
 
-Evidence: `src/workspace-projection/index.ts`.
+Evidence: `src/office/projection.ts`.
 
 ### INV state dir host only
 
@@ -325,7 +330,7 @@ Evidence: `src/workspace-projection/index.ts`.
 
 **`state-dir-host-only`** — The State dir is host-private, outside the Workspace root, and never projected into a Sandbox. Important state writes are private and atomic where readers must not observe partial content.
 
-Evidence: `src/config.ts`, `src/utils/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
+Evidence: `src/config.ts`, `src/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
 
 ### INV Dream commit order
 
@@ -341,7 +346,7 @@ Evidence: `src/dream/`, `src/runtime/session-lifecycle.ts`, `src/runtime/convers
 
 **`execution-policy-enforcement`** — A Door policy is accepted only when the selected sandbox backend can enforce its projection. Unsupported isolation or read-only shared memory fails closed rather than degrading to a wider or writable view.
 
-Evidence: `src/execution-resolver.ts`, `src/sandbox/index.ts`.
+Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/index.ts`.
 
 ### INV credential least authority
 
@@ -349,7 +354,7 @@ Evidence: `src/execution-resolver.ts`, `src/sandbox/index.ts`.
 
 **`credential-least-authority`** — Credential access derives from actor, office, trigger trust, and sandbox capabilities. Open-trigger conversations receive no ambient shared vault, and credential mounts cannot shadow workspace mounts.
 
-Evidence: `src/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
+Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
 
 ### INV MCP conversation authority
 
@@ -373,7 +378,7 @@ Evidence: `src/settings-mutation.ts`.
 
 **`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. Legacy mikan v3 and Pi 0.84-generation v4 files are converted offline with `mikan sessions migrate` while the daemon is stopped; originals remain as `*.v3.bak` or `*.pi-084.bak`. Thread lineage remains stable across top-level rotation.
 
-Evidence: `src/harness/session-store.ts`, `src/sessions/store.ts`, `src/sessions/migrate-v3.ts`, `src/sessions/migrate-pi-084.ts`.
+Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/sessions/migrate-v3.ts`, `src/sessions/migrate-pi-084.ts`.
 
 ## Known deviations
 

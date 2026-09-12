@@ -12,7 +12,7 @@ import {
   type CompactionSettings,
 } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model, Api, Usage } from "@earendil-works/pi-ai";
-import type { SessionStore } from "./session-store.js";
+import type { SessionStore } from "../sessions/session-store.js";
 import type {
   BudgetSettings,
   HarnessEvent,

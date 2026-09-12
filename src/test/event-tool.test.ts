@@ -3,7 +3,9 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createEventTool, HostEventStore, type EventPayload } from "../tools/event.js";
+import { HostEventStore } from "../events/index.js";
+import type { EventPayload } from "../events/index.js";
+import { createEventTool } from "../harness/tools/event.js";
 
 function createWorkspaceEventTool(workspaceDir: string) {
   return createEventTool(HostEventStore.fromWorkspaceDir(workspaceDir));

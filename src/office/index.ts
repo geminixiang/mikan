@@ -34,7 +34,7 @@ export type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
 import { parseGithubConversationId } from "../adapters/github/ids.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
-import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../utils/file-guards.js";
+import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 
 // ── Office identity (address & keys) ──────────────────────────────────────────
 

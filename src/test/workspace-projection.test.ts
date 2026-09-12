@@ -21,7 +21,7 @@ import {
   readPlatformChannelKind,
   recordPlatformChannelKind,
   resolveWorkspaceProjection,
-} from "../workspace-projection/index.js";
+} from "../office/projection.js";
 import {
   createOfficeAddress,
   createWorkspace,

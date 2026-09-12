@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { SessionStore } from "../harness/index.js";
+import { SessionStore } from "./session-store.js";
 import {
   atomicWritePrivateFile,
   isRecord,
   parseJsonValue,
   readTextFileIfExists,
-} from "../utils/file-guards.js";
+} from "../file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 export type {

@@ -7,7 +7,7 @@ import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:
 import type { ConversationMessage } from "../adapter.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
 import { formatSkillsForPrompt } from "./skills.js";
-import type { WorkspaceProjection } from "../workspace-projection/types.js";
+import type { WorkspaceProjection } from "../office/types.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import type { BuildSystemPromptOptions } from "./types.js";
 

@@ -57,25 +57,11 @@ docs = "ARCHITECTURE.md#configuration-authority"
 sources = ["src/config.ts", "src/settings-mutation.ts"]
 
 [[modules]]
-id = "workspace-projection"
-name = "Workspace projection"
-kind = "policy"
-docs = "src/workspace-projection/README.md"
-sources = ["src/workspace-projection/"]
-
-[[modules]]
-id = "execution-resolver"
-name = "Execution resolver"
-kind = "policy"
-docs = "ARCHITECTURE.md#execution-resolution"
-sources = ["src/execution-resolver.ts"]
-
-[[modules]]
 id = "sandbox"
 name = "Sandbox execution"
 kind = "infrastructure"
 docs = "src/sandbox/README.md"
-sources = ["src/sandbox/", "src/provisioner.ts"]
+sources = ["src/sandbox/"]
 
 [[modules]]
 id = "sessions"
@@ -106,11 +92,18 @@ docs = "src/adapters/commands/README.md"
 sources = ["src/adapters/commands/"]
 
 [[modules]]
-id = "side-services"
-name = "Web and scheduled-event services"
+id = "web-adapter"
+name = "Web adapter"
+kind = "adapter"
+docs = "src/adapters/web/README.md"
+sources = ["src/adapters/web/"]
+
+[[modules]]
+id = "events"
+name = "Scheduled events"
 kind = "infrastructure"
-docs = "src/web/README.md"
-sources = ["src/web/", "src/events.ts"]
+docs = "src/events/README.md"
+sources = ["src/events/"]
 
 # A seam is a stable relationship callers depend on. Interface names refer to
 # source-level contracts or authority entry points; details stay in docs/code.
@@ -123,7 +116,8 @@ consumers = [
   "conversation-intake",
   "conversation-runtime",
   "harness",
-  "side-services",
+  "web-adapter",
+  "events",
 ]
 interface = "MessagingBot, ConversationEvent, ConversationResponder"
 docs = "src/adapters/README.md"
@@ -138,7 +132,7 @@ docs = "src/adapters/README.md#files"
 [[seams]]
 id = "runtime"
 owner = "conversation-runtime"
-consumers = ["composition-root", "conversation-intake", "side-services", "configuration"]
+consumers = ["composition-root", "conversation-intake", "web-adapter", "configuration"]
 interface = "ConversationRuntime"
 docs = "src/runtime/README.md"
 
@@ -152,7 +146,7 @@ docs = "ARCHITECTURE.md#agent-execution"
 [[seams]]
 id = "mcp-tools"
 owner = "harness"
-consumers = ["side-services"]
+consumers = ["web-adapter"]
 interface = "loadMcpTools"
 docs = "src/harness/README.md"
 
@@ -172,8 +166,7 @@ consumers = [
   "sessions",
   "vault",
   "configuration",
-  "workspace-projection",
-  "side-services",
+  "web-adapter",
   "harness",
 ]
 interface = "Workspace.office, Office"
@@ -186,31 +179,24 @@ consumers = [
   "composition-root",
   "conversation-runtime",
   "commands",
-  "workspace-projection",
-  "execution-resolver",
-  "side-services",
+  "office",
+  "harness",
+  "web-adapter",
 ]
 interface = "resolve settings, apply settings mutations"
 docs = "ARCHITECTURE.md#configuration-authority"
 
 [[seams]]
 id = "projection"
-owner = "workspace-projection"
-consumers = ["harness", "execution-resolver"]
-interface = "resolveWorkspaceProjection"
-docs = "src/workspace-projection/README.md"
-
-[[seams]]
-id = "execution-resolution"
-owner = "execution-resolver"
+owner = "office"
 consumers = ["harness"]
-interface = "ActorExecutionResolver.resolve"
-docs = "ARCHITECTURE.md#execution-resolution"
+interface = "resolveWorkspaceProjection"
+docs = "src/office/README.md"
 
 [[seams]]
 id = "executor"
 owner = "sandbox"
-consumers = ["execution-resolver", "harness"]
+consumers = ["harness"]
 interface = "Executor, SandboxAdapter"
 docs = "src/sandbox/README.md"
 
@@ -231,7 +217,7 @@ docs = "src/dream/README.md"
 [[seams]]
 id = "vault-resolution"
 owner = "vault"
-consumers = ["execution-resolver", "side-services"]
+consumers = ["harness", "web-adapter"]
 interface = "VaultManager"
 docs = "src/vault/README.md"
 
@@ -241,6 +227,13 @@ owner = "commands"
 consumers = ["platform-adapters", "conversation-runtime"]
 interface = "COMMAND_MANIFEST"
 docs = "src/adapters/commands/README.md"
+
+[[seams]]
+id = "event-protocol"
+owner = "events"
+consumers = ["harness", "web-adapter"]
+interface = "EventStore, buildEventPayload, parseEventPayload"
+docs = "src/events/README.md"
 
 # Resources record global ownership and security classification. Paths are
 # conceptual locations; detailed layouts belong to the owning module docs.
@@ -303,10 +296,10 @@ docs = "src/adapters/README.md"
 
 [[resources]]
 id = "workspace-projection"
-authority = "workspace-projection"
+authority = "office"
 scope = "conversation-runtime"
 classification = "authorized-view"
-docs = "src/workspace-projection/README.md"
+docs = "src/office/README.md"
 
 [[resources]]
 id = "vault-store"
@@ -331,7 +324,7 @@ docs = "src/runtime/README.md"
 
 [[resources]]
 id = "events-bus"
-authority = "side-services"
+authority = "events"
 scope = "workspace"
 classification = "agent-writable-scheduling"
 docs = "ARCHITECTURE.md#scheduled-execution"
@@ -344,7 +337,8 @@ path = [
   "configuration",
   "conversation-runtime",
   "platform-adapters",
-  "side-services",
+  "web-adapter",
+  "events",
 ]
 docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
 
@@ -361,18 +355,12 @@ docs = "ARCHITECTURE.md#conversation-run"
 
 [[flows]]
 id = "execution-resolution"
-path = ["harness", "workspace-projection", "execution-resolver", "vault", "sandbox"]
+path = ["harness", "office", "harness", "vault", "sandbox"]
 docs = "ARCHITECTURE.md#execution-resolution"
 
 [[flows]]
 id = "scheduled-text-event"
-path = [
-  "side-services",
-  "platform-adapters",
-  "conversation-runtime",
-  "harness",
-  "platform-adapters",
-]
+path = ["events", "platform-adapters", "conversation-runtime", "harness", "platform-adapters"]
 docs = "ARCHITECTURE.md#scheduled-execution"
 
 [[flows]]
@@ -420,8 +408,8 @@ docs = "ARCHITECTURE.md#inv-session-serialization"
 
 [[invariants]]
 id = "process-shutdown-order"
-owners = ["composition-root", "platform-adapters", "side-services", "conversation-runtime"]
-applies_to = ["platform-adapters", "side-services", "events-bus", "runner-state"]
+owners = ["composition-root", "platform-adapters", "web-adapter", "events", "conversation-runtime"]
+applies_to = ["platform-adapters", "web-adapter", "events", "events-bus", "runner-state"]
 docs = "ARCHITECTURE.md#inv-process-shutdown-order"
 
 [[invariants]]
@@ -438,8 +426,8 @@ docs = "ARCHITECTURE.md#inv-run-settlement"
 
 [[invariants]]
 id = "projection-coherence"
-owners = ["workspace-projection"]
-applies_to = ["office-directory", "workspace-projection", "harness", "sandbox"]
+owners = ["office"]
+applies_to = ["office", "office-directory", "workspace-projection", "harness", "sandbox"]
 docs = "ARCHITECTURE.md#inv-projection-coherence"
 
 [[invariants]]
@@ -456,13 +444,13 @@ docs = "ARCHITECTURE.md#inv-dream-commit-order"
 
 [[invariants]]
 id = "execution-policy-enforcement"
-owners = ["execution-resolver", "sandbox"]
+owners = ["harness", "sandbox"]
 applies_to = ["workspace-projection"]
 docs = "ARCHITECTURE.md#inv-execution-policy-enforcement"
 
 [[invariants]]
 id = "credential-least-authority"
-owners = ["execution-resolver", "vault"]
+owners = ["harness", "vault"]
 applies_to = ["vault-store", "sandbox"]
 docs = "ARCHITECTURE.md#inv-credential-least-authority"
 
@@ -490,7 +478,7 @@ docs = "ARCHITECTURE.md#inv-session-format-compatibility"
 [[deviations]]
 id = "cloudflare-factory-floor"
 status = "open"
-affects = ["sandbox", "execution-resolver"]
+affects = ["sandbox", "harness"]
 docs = "ARCHITECTURE.md#dev-cloudflare-factory-floor"
 adr = "docs/adr/0002-sandbox-runtime-vs-task-executor.md"
 

@@ -3,8 +3,8 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { startWebServer } from "../web/server.js";
-import { InMemoryLinkTokenStore } from "../web/login/portal.js";
+import { startWebServer } from "../adapters/web/server.js";
+import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { FileVaultManager } from "../vault/index.js";
 
 const originalFetch = globalThis.fetch;

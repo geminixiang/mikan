@@ -11,7 +11,7 @@ import {
   readJsonFileIfExists,
   readJsonSchemaFileIfExists,
   readTextFileIfExists,
-} from "../utils/file-guards.js";
+} from "../file-guards.js";
 
 describe("ensureDirExists", () => {
   let dir: string;

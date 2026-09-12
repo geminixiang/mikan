@@ -9,7 +9,7 @@ export {
   parseHttpIdleTimeoutMs,
 } from "./harness/http.js";
 export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
-export { SessionStore } from "./harness/session-store.js";
+export { SessionStore } from "./sessions/session-store.js";
 export { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "./sessions/migrate-v3.js";
 export { MikanAgentSession } from "./harness/session.js";
 export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./harness/skills.js";
@@ -20,7 +20,7 @@ export {
   DEFAULT_RETRY_SETTINGS,
   resolveHarnessSettings,
 } from "./harness/session.js";
-export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./tools/event.js";
+export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./events/index.js";
 export type { CreateMikanModelsOptions } from "./harness/models.js";
 export type {
   CompactionReason,
@@ -47,15 +47,11 @@ export type {
   ImmediateEventPayload,
   OneShotEventPayload,
   PeriodicEventPayload,
-} from "./tools/event.js";
+} from "./events/index.js";
 export type {
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
-  SessionContext,
-  SessionEntry,
-  SessionHeader,
-  SessionMessageEntry,
   SubagentModelSpec,
   SubagentParentContext,
   SubagentProfile,
@@ -67,7 +63,13 @@ export type {
   SubagentUsage,
   SubagentUsageSink,
 } from "./harness/types.js";
-export { CURRENT_SESSION_VERSION } from "./harness/types.js";
+export type {
+  SessionContext,
+  SessionEntry,
+  SessionHeader,
+  SessionMessageEntry,
+} from "./sessions/types.js";
+export { CURRENT_SESSION_VERSION } from "./sessions/types.js";
 
 export {
   ChatHistorySync,

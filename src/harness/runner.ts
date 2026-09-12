@@ -2,11 +2,11 @@ import type { Office, Workspace } from "../office/index.js";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
-import type { SessionStore } from "./session-store.js";
+import type { SessionStore } from "../sessions/session-store.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
-import { createMikanTools, createSubagentTool } from "../tools/index.js";
+import { createMikanTools, createSubagentTool } from "./tools/index.js";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -16,8 +16,8 @@ import type {
   MessagingInfo,
   PlatformName,
 } from "../adapter.js";
-import { ActorExecutionResolver } from "../execution-resolver.js";
-import type { DockerContainerManager } from "../provisioner.js";
+import { ActorExecutionResolver } from "./execution-resolver.js";
+import type { DockerContainerManager } from "../sandbox/provisioner.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   createExecutor,
@@ -27,7 +27,7 @@ import {
   getUnresolvedSandboxPathContext,
 } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
-import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
+import { resolveWorkspaceProjection } from "../office/projection.js";
 import type {
   RunnerExecutionContext,
   PreparedRunContext,
@@ -46,7 +46,7 @@ import {
   openManagedSession,
   type ThreadRootMessage,
 } from "../sessions/store.js";
-import type { PlatformToolRunContext } from "../tools/types.js";
+import type { PlatformToolRunContext } from "./tools/types.js";
 import { loadMikanSkills } from "./skills.js";
 import {
   normalizeAttachRuntimePath,

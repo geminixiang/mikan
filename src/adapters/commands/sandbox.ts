@@ -1,5 +1,5 @@
 import type { WorkspacePolicyChoice } from "../../config.js";
-import { resolveWorkspaceProjection } from "../../workspace-projection/index.js";
+import { resolveWorkspaceProjection } from "../../office/projection.js";
 import { runtimeResourceKey } from "../../sandbox/identity.js";
 import { applyConversationWorkspacePolicy } from "../../settings-mutation.js";
 import { slashForms, matchCommand } from "./manifest.js";

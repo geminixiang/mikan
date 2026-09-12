@@ -2,10 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { HostEventStore } from "../tools/event.js";
-import { listAllEvents, readSkillsFromDir, resolveConversationScope } from "../web/admin/portal.js";
+import { HostEventStore } from "../events/index.js";
+import {
+  listAllEvents,
+  readSkillsFromDir,
+  resolveConversationScope,
+} from "../adapters/web/admin/portal.js";
 import { createOfficeAddress } from "../office/index.js";
-import type { AdminToken } from "../web/admin/portal.js";
+import type { AdminToken } from "../adapters/web/admin/portal.js";
 
 const tempDirs: string[] = [];
 

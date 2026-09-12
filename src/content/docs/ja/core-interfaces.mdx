@@ -152,7 +152,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 ## 5. Harness インターフェース
 
-ソース: `src/harness/index.ts`、`runner.ts`、`session-store.ts`、`models.ts`、`types.ts`。
+ソース: `src/harness/index.ts`、`src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts`、`src/harness/types.ts`。
 
 ### `MikanAgentSession`
 
@@ -176,9 +176,9 @@ Harness listeners は model/tool のライフサイクルイベントを観測�
 
 ## 6. Tool と platform capability のインターフェース
 
-ソース: `src/tools/types.ts`。
+ソース: `src/harness/tools/types.ts`。
 
-Core tools は、runner が供給する executor と host services を使います。`EventStore` は event files の正規の CRUD port です。無効な event JSON は `payload: null` として引き続き列挙可能で、admin が診断または削除できます。
+Core tools は、runner が供給する executor と host services を使います。`src/events/index.ts` の `EventStore` は event files の正規の CRUD port です。無効な event JSON は `payload: null` として引き続き列挙可能で、admin が診断または削除できます。
 
 `PlatformToolPackFactory` は runner ごとに private な `PlatformToolPack` を作成します。`bindRun` は、その tools が現在の platform/conversation に適用されるかどうかを選択します。この factory 境界は、GitHub 固有の tools を core tool list から締め出しつつ、conversation をまたぐ mutable な binding を防ぎます。
 
@@ -271,7 +271,7 @@ Session keys は `conversationId[:suffix]` を使い、**生の platform 値の�
 
 ## 10. Event-file インターフェース
 
-ソース: `src/tools/event.ts`。
+ソース: `src/events/index.ts`。
 
 `events/*.json` は workspace レベルの scheduling bus です。正規の union は次のとおりです:
 
@@ -308,7 +308,7 @@ state directory は sandbox から見える workspace 内に置いてはなり�
 
 ## 12. HTTP インターフェース
 
-ソース: `src/web/server.ts` と portal modules。これらのルートは mikan の同梱 UI を支えるものであり、汎用の public REST API ではありません。
+ソース: `src/adapters/web/server.ts` と portal modules。これらのルートは mikan の同梱 UI を支えるものであり、汎用の public REST API ではありません。
 
 | 面             | ルート                                                                                 | 認証モデル                       |
 | -------------- | -------------------------------------------------------------------------------------- | -------------------------------- |

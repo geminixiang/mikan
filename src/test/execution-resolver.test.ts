@@ -4,10 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { createGlobalSettingsFile } from "../config.js";
-import { ActorExecutionResolver } from "../execution-resolver.js";
+import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { FileVaultManager } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import { recordPlatformChannelKind } from "../workspace-projection/index.js";
+import { recordPlatformChannelKind } from "../office/projection.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 

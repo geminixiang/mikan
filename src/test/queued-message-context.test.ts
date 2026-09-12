@@ -13,7 +13,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SessionStore } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { openManagedSession } from "../sessions/store.js";

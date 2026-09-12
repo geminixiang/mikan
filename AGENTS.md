@@ -10,7 +10,7 @@ TypeScript ESM, Node `>=22.19.0`, `tsgo`, Vitest, `oxlint` + `oxfmt`. Tool confi
 - `CONTEXT.md`, `ARCHITECTURE.md`, `architecture.toml`, `docs/adr/` — domain model and architectural decisions.
 - `src/harness/`, `src/agent/` — agent execution; `src/runtime/`, `src/sessions/` — conversation orchestration and persistence.
 - `src/adapters/`, `src/adapters/commands/`, `src/cli/` — platform and command entry points.
-- `src/office/`, `src/sandbox/`, `src/execution-resolver.ts`, `src/workspace-projection/`, `src/vault/` — office identity, execution, mounts, credentials.
+- `src/office/`, `src/harness/execution-resolver.ts`, `src/sandbox/`, `src/vault/` — office identity and workspace projection, execution resolution, sandbox lifecycle, and credentials.
 - `src/test/` — unit/integration tests; `e2e/` — real-platform tests.
 - `src/content/docs/` — product docs; `docs/` — internal docs; `deploy/` — deployment assets and examples.
 
@@ -37,7 +37,7 @@ Choose verification proportional to the change. Behavior changes need relevant t
 - Prefer **LBYL and Early Error Returns**: check preconditions up front, return or throw early for invalid/error cases, and keep the happy path unnested. Use EAFP when check-then-act would race, duplicate expensive work, or make error handling less clear.
 - Edit source, not generated `dist/`. `src/index.ts` is the published API; consider its consumers when changing exports.
 - Office paths and vault keys use office keys, not raw platform conversation IDs. Derive paths from an `Office` value; see `src/office/README.md` and ADRs 0003–0005.
-- Keep credential and mount isolation intact across sandbox backends. Secret file permissions should be explicit. Use `atomicWritePrivateFile` for state that must not be partially visible; reuse `src/utils/file-guards.ts` for optional/schema-validated reads where appropriate.
+- Keep credential and mount isolation intact across sandbox backends. Secret file permissions should be explicit. Use `atomicWritePrivateFile` for state that must not be partially visible; reuse `src/file-guards.ts` for optional/schema-validated reads where appropriate.
 - Provider-facing tool schemas must have an object root. OpenAI rejects top-level unions, `anyOf`, and `oneOf`; validate alternate invocation modes within the object.
 - Slack Socket Mode delivers an event to only one connected client. Before real Slack E2E, check for competing QA daemons using `docs/testing/slack-e2e.md`. Missing replies require intake evidence, not assumptions about model timeouts.
 

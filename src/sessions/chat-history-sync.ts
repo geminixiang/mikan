@@ -1,10 +1,10 @@
-import type { SessionEntry } from "../harness/index.js";
+import type { SessionEntry } from "./types.js";
 import { officeSessionsDir } from "../office/index.js";
-import { SessionStore } from "../harness/index.js";
+import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../utils/file-guards.js";
+import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";

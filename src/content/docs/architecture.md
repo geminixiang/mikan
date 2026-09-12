@@ -50,7 +50,8 @@ Responsibilities:
 ### C. Agent execution layer
 
 - `src/harness/*`
-- `src/tools/*`
+- `src/harness/execution-resolver.ts`
+- `src/harness/tools/*`
 
 Responsibilities:
 
@@ -59,12 +60,12 @@ Responsibilities:
 - send user messages into mikan's own agent harness (`src/harness/`, built on `pi-agent-core` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
+- use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
 
 ### D. Execution environment layer
 
 - `src/sandbox/*`
-- `src/provisioner.ts`
-- `src/execution-resolver.ts`
+- `src/sandbox/provisioner.ts`
 
 Responsibilities:
 
@@ -72,13 +73,12 @@ Responsibilities:
 - split sandbox runtimes by workspace capability:
   - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
   - managed projection: `image:<image>`, which can enforce isolated offices and read-only shared memory
-- use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
 - in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
 ### E. Conversation office layer
 
 - `src/office/*`
-- `src/workspace-projection/index.ts`
+- `src/office/projection.ts`
 
 Every conversation is an **office**: its own persistent working area and data boundary. This module owns that identity and layout.
 
@@ -94,6 +94,7 @@ Responsibilities:
 ### F. State and persistence layer
 
 - `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
@@ -106,14 +107,14 @@ Responsibilities:
 
 ### G. Supporting services layer
 
-- `src/web/login/*`
-- `src/web/admin/*`
-- `src/web/session-view/*`
-- `src/events.ts`
+- `src/adapters/web/login/*`
+- `src/adapters/web/admin/*`
+- `src/adapters/web/session-view/*`
+- `src/events/`
 
 Responsibilities:
 
-- `src/web/server.ts` owns the HTTP server and mounts login/vault, admin, session-view, and agent-event routes
+- `src/adapters/web/server.ts` owns the HTTP server and mounts login/vault, admin, session-view, and agent-event routes
 - provide a web login portal that supports API key and OAuth writes into the vault
 - provide an admin portal for conversation/settings/workspace/events/skills management and link generation
 - provide a session viewer; it can currently display session timelines and, when interactive wiring is enabled, send messages through `/session/message`
@@ -223,7 +224,7 @@ flowchart TD
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
-  VaultManager --> Resolver["execution-resolver.ts"]
+  VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import type { Executor } from "../sandbox/index.js";
-import { createBashTool } from "../tools/bash.js";
+import { createBashTool } from "../harness/tools/bash.js";
 import { DEFAULT_MAX_LINES } from "@earendil-works/pi-agent-core";
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {

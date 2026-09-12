@@ -37,8 +37,8 @@ export default defineConfig({
         "src/observability/instrument.ts",
         // Dominated by server-rendered HTML/JS template strings; covered
         // behavior lives in the sibling service/store modules
-        "src/web/admin/portal.ts",
-        "src/web/session-view/portal.ts",
+        "src/adapters/web/admin/portal.ts",
+        "src/adapters/web/session-view/portal.ts",
       ],
       thresholds: {
         // Global ratchet: set just below current actuals so coverage can only
@@ -48,13 +48,13 @@ export default defineConfig({
         functions: 75,
         lines: 77,
         // Files that already meet a high bar stay held to it.
-        "src/{commands/auto-reply,commands/utils,tools/event,tools/write}.ts": {
+        "src/{adapters/commands/utils,events/index,harness/tools/event,harness/tools/write}.ts": {
           statements: 95,
           branches: 90,
           functions: 95,
           lines: 95,
         },
-        "src/utils/file-guards.ts": {
+        "src/file-guards.ts": {
           statements: 95,
           branches: 90,
           functions: 95,
@@ -66,7 +66,7 @@ export default defineConfig({
           functions: 95,
           lines: 95,
         },
-        "src/{store,tools/read,tools/bash,sandbox/utils}.ts": {
+        "src/{harness/tools/read,harness/tools/bash,sandbox/utils}.ts": {
           statements: 90,
           branches: 75,
           functions: 90,

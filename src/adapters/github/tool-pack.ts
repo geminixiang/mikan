@@ -4,7 +4,7 @@ import { createGithubIssueTool } from "./tools/issue.js";
 import { createGithubReadTool } from "./tools/read.js";
 import { createGithubReviewReplyTool } from "./tools/review-reply.js";
 import { createGithubSyncTool } from "./tools/sync.js";
-import type { PlatformToolPack } from "../../tools/types.js";
+import type { PlatformToolPack } from "../../harness/tools/types.js";
 import type { PlatformGithubOps } from "./types.js";
 
 /**

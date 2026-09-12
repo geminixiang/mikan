@@ -35,7 +35,8 @@ its host-side directory layout, its durable record, and the legacy migration.
     crash recovery. Unowned dirs fail boot until `mikan office claim` names
     an owner. Also the container bind translator that lets managed
     containers survive the rename with writable layers intact.
-- `types.ts`: The exported `Workspace`/`Office` interfaces.
+- `types.ts`: The exported `Workspace`/`Office` interfaces and projection contracts.
+- `projection.ts`: The office-owned data-view policy seam. `resolveWorkspaceProjection(office)` converts the effective door policy into concrete runtime mounts and authorized prompt sources.
 
 ## Consumers
 
@@ -52,7 +53,7 @@ state dir now carry one `office` field, and callers read `office.dir`,
 | Consumer               | Entry point                                                                                    |
 | ---------------------- | ---------------------------------------------------------------------------------------------- |
 | conversation settings  | `conversationSettingsPath(office)`, `resolveConversationSettings(office)` (`src/config.ts`)    |
-| workspace projection   | `resolveWorkspaceProjection(office)` (`src/workspace-projection/`)                             |
+| workspace projection   | `resolveWorkspaceProjection(office)` (`src/office/projection.ts`)                              |
 | conversation vault     | vault key = `officeKey(address)` (`src/vault/`)                                                |
 | chat log + attachments | `appendChannelLog(office, …)`, `saveIncomingAttachments(office, …)` (`src/adapters/shared.ts`) |
 

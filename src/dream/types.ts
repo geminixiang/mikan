@@ -1,5 +1,5 @@
 import type { OfficeAddress } from "../adapter.js";
-import type { SessionEntry } from "../harness/index.js";
+import type { SessionEntry } from "../sessions/types.js";
 
 interface DreamSessionCheckpoint {
   throughEntryId: string;

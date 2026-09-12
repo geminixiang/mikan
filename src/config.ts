@@ -4,8 +4,8 @@ import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./env-manifest.js";
-import { ensureDirExists, readJsonSchemaFileIfExists } from "./utils/file-guards.js";
-import { atomicWritePrivateFile } from "./utils/file-guards.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
+import { atomicWritePrivateFile } from "./file-guards.js";
 import * as log from "./log.js";
 
 export class MissingGlobalSettingsError extends Error {

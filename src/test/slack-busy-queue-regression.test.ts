@@ -5,7 +5,8 @@ import { expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { MikanAgentSession, MikanModels, SessionStore } from "../harness/index.js";
+import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 
 // Reproduce S-023 without Slack, network, model sampling, or wall-clock sleeps.

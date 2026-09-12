@@ -9,45 +9,39 @@ this module.
 
 ## Files
 
-| File                   | Authority                                                                                                                               |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `runner.ts`            | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal |
-| `session.ts`           | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting             |
-| `session-store.ts`     | Pi v4 JSONL session ownership, native harness attachment, MCP lifetime and inspection                                                   |
-| `prompt.ts`            | Authorized system prompt and per-turn instruction construction                                                                          |
-| `presenter.ts`         | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                             |
-| `models.ts`            | Model catalog and authentication resolution                                                                                             |
-| `http.ts`              | Shared HTTP dispatcher configuration                                                                                                    |
-| `mcp.ts`               | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                   |
-| `open-connector.ts`    | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                          |
-| `skills.ts`            | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                 |
-| `subagent.ts`          | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                          |
-| `subagent-profiles.ts` | Subagent profile discovery and validation                                                                                               |
-| `types.ts`             | Shared harness, runner and subagent contracts                                                                                           |
-| `index.ts`             | Harness module exports                                                                                                                  |
-
-`SessionStore` persists the current Pi 0.85 v4 JSONL format: a header with
-`v: 4` and `storageVersion: 1`, followed by session mutations. mikan-specific
-metadata is stored as the durable namespaced value `mikan/metadata`. Runtime
-opening supports only this current format; legacy mikan v3 and Pi 0.84-generation
-v4 files require `mikan sessions migrate` with the daemon stopped.
+| File                    | Authority                                                                                                                                      |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal        |
+| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness |
+| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                    |
+| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                 |
+| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                    |
+| `models.ts`             | Model catalog and authentication resolution                                                                                                    |
+| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                           |
+| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                          |
+| `open-connector.ts`     | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                                 |
+| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                        |
+| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                 |
+| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                      |
+| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                           |
+| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                  |
+| `index.ts`              | Harness module exports                                                                                                                         |
 
 ## Run lifecycle
 
-`runner.ts` constructs the conversation-scoped `PiAgentWrapper` and binds each
-run's authorized execution decision to its tools and runtime paths. `prompt.ts`
-owns prompt construction; `presenter.ts` turns session events into responder
-operations. These responsibilities share the harness module with the native Pi
-session integration rather than forming a separate agent-runner module.
+`runner.ts` constructs the conversation-scoped `PiAgentWrapper` and uses
+`execution-resolver.ts` to bind each actor's authorized executor, runtime paths,
+workspace projection, Vault credentials, and managed image-container readiness
+to that run's tools and prompt. The resolver rejects overlapping mount targets
+before executor creation and reports provisioning failures without changing
+cleanup ownership. `prompt.ts` owns prompt construction; `presenter.ts` turns
+session events into responder operations. These responsibilities share the
+harness module with the native Pi session integration rather than forming a
+separate agent-runner module.
 
-`SessionStore` owns one writable Pi Session and attaches one native
-`AgentHarness` with a `main` lane. Existing v4 branches are promoted by Pi without
-rewriting conversation history. Once attached, host history writes also go
-through that lane so its durable state and transcript have the same owner.
-Closing the store first closes its MCP connections, then its harness, Session,
-repository, and writer lease. MCP cleanup failure cannot skip writer cleanup.
-`close()` is single-flight, including failed close attempts; pending in-memory
-stores also release MCP resources even if no native Session was materialized.
+The session-owned `SessionStore` in `src/sessions/` supplies the writable Pi
+Session and native `AgentHarness` lane consumed here. The harness drives that
+lane but does not own its persistence, writer lease, or lifecycle.
 
 `MikanAgentSession.prompt()` resolves authentication, applies the current prompt
 and tool grants, then calls Pi's `lane.accept()` and `lane.drive()`. Pi alone
@@ -94,9 +88,10 @@ remain in `src/runtime/` and `src/sessions/`.
 
 MCP belongs to the harness, not a separate integration module. `mcp.ts` connects
 stdio or streamable-HTTP servers, namespaces tools as `mcp__<server>__<tool>`,
-and preserves server instructions. `SessionStore.connectMcp()` acquires these
-capabilities under the session writer's lifetime and returns only the tools;
-the agent runner does not retain a separate cleanup handle. The native harness
+and preserves server instructions. The session-owned
+`SessionStore.connectMcp()` acquires these capabilities under the session writer's
+lifetime and returns only the tools; the agent runner does not retain a separate
+cleanup handle. The native harness
 system-prompt supplier composes the stored MCP guidance with each refreshed
 base prompt, so later turns cannot discard server instructions.
 
@@ -152,7 +147,8 @@ siblings.
   sources, and execution context from `src/runtime/` and injected host capabilities.
 - Platform SDK objects and platform credentials do not enter the harness.
 - Sandbox filesystem/process operations cross only through the `Executor`
-  interface.
-- Scheduled-event payload schema, parsing and building belong to `src/tools/event.ts`.
+  interface; Sandbox owns container provisioning while the harness resolver
+  supplies the authorized execution plan and readiness callback.
+- Scheduled-event payload schema, parsing and building belong to `src/events/index.ts`.
 - Session file naming, chat synchronization, rotation, and thread lineage stay
   in `src/sessions/`.

@@ -23,7 +23,7 @@ import {
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import { resolveConversationSettings } from "../../config.js";
-import type { EventsWatcher } from "../../events.js";
+import type { EventsWatcher } from "../../events/watcher.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";
 import type {
@@ -33,7 +33,7 @@ import type {
   SlackEvent,
   SlackUser,
 } from "./types.js";
-import { isRecord, readTextFileIfExists } from "../../utils/file-guards.js";
+import { isRecord, readTextFileIfExists } from "../../file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../../platform-messages.js";
 import {
   appendBotResponseLog,
@@ -44,10 +44,7 @@ import {
   withRetry,
 } from "../shared.js";
 import { processMessageIntake } from "../intake.js";
-import {
-  recordPlatformChannelKind,
-  type PlatformChannelKind,
-} from "../../workspace-projection/index.js";
+import { recordPlatformChannelKind, type PlatformChannelKind } from "../../office/projection.js";
 import {
   AssistantThreadRegistry,
   handleAgentContextChanged,

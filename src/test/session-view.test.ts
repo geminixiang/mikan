@@ -10,9 +10,12 @@ import {
   getThreadSessionFile,
   openManagedSession,
 } from "../sessions/store.js";
-import { parseUserBody } from "../web/session-view/portal.js";
+import { parseUserBody } from "../adapters/web/session-view/portal.js";
 import { commandForms, matchCommand } from "../adapters/commands/manifest.js";
-import { loadSessionViewModel, resolveExistingSessionFile } from "../web/session-view/portal.js";
+import {
+  loadSessionViewModel,
+  resolveExistingSessionFile,
+} from "../adapters/web/session-view/portal.js";
 
 let workspaceDir: string;
 let conversationDir: string;

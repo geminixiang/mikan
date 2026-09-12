@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SessionStore } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import { getThreadSessionFile, openManagedSession } from "../sessions/store.js";

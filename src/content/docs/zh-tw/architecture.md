@@ -50,7 +50,8 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 ### C. Agent 執行層
 
 - `src/harness/*`
-- `src/tools/*`
+- `src/harness/execution-resolver.ts`
+- `src/harness/tools/*`
 
 職責：
 
@@ -59,12 +60,12 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-agent-core` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 結果回寫 session，並透過 adapter 回傳給平台
+- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
 
 ### D. 執行環境層
 
 - `src/sandbox/*`
-- `src/provisioner.ts`
-- `src/execution-resolver.ts`
+- `src/sandbox/provisioner.ts`
 
 職責：
 
@@ -72,13 +73,12 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - sandbox runtime 分成兩類：
   - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
   - isolated: `image:<image>` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
-- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
 ### E. Conversation office 層
 
 - `src/office/*`
-- `src/workspace-projection/index.ts`
+- `src/office/projection.ts`
 
 每個對話都是一個 **office**：它自己的持久工作區域與資料邊界。這個模組擁有該身分與佈局。
 
@@ -94,6 +94,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 ### F. 狀態與持久化層
 
 - `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
@@ -106,14 +107,14 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 ### G. 輔助服務層
 
-- `src/web/login/*`
-- `src/web/admin/*`
-- `src/web/session-view/*`
-- `src/events.ts`
+- `src/adapters/web/login/*`
+- `src/adapters/web/admin/*`
+- `src/adapters/web/session-view/*`
+- `src/events/`
 
 職責：
 
-- `src/web/server.ts` 負責 HTTP server，並掛接 login/vault、admin、session-view、agent-event routes
+- `src/adapters/web/server.ts` 負責 HTTP server，並掛接 login/vault、admin、session-view、agent-event routes
 - 提供 Web login portal，支援 API key 與 OAuth 寫入 vault
 - 提供 admin portal，支援 conversation/settings/workspace/events/skills 管理與 link generation
 - 提供 session viewer；目前可顯示 session timeline，且在 interactive wiring 啟用時可透過 `/session/message` 送訊息
@@ -223,7 +224,7 @@ flowchart TD
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
-  VaultManager --> Resolver["execution-resolver.ts"]
+  VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
 

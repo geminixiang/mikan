@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-import { defineHostFnTool } from "../../../tools/host-fn-tool.js";
+import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubPrRequest, GithubPrResult } from "../types.js";
 
 const githubPrSchema = Type.Object({

@@ -50,7 +50,8 @@ description: mikan のプラットフォーム接続、conversation office、セ
 ### C. Agent 実行レイヤー
 
 - `src/harness/*`
-- `src/tools/*`
+- `src/harness/execution-resolver.ts`
+- `src/harness/tools/*`
 
 責務:
 
@@ -59,12 +60,12 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-agent-core` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets and bounded subagents を実行する
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
 - tool の結果を session に書き戻し、adapter 経由でプラットフォームへ返す
+- `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
 
 ### D. 実行環境レイヤー
 
 - `src/sandbox/*`
-- `src/provisioner.ts`
-- `src/execution-resolver.ts`
+- `src/sandbox/provisioner.ts`
 
 責務:
 
@@ -72,13 +73,12 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - sandbox runtime を workspace capability で分ける:
   - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
   - managed projection: `image:<image>`。isolated office と read-only shared memory を強制できる
-- `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
 ### E. Conversation office レイヤー
 
 - `src/office/*`
-- `src/workspace-projection/index.ts`
+- `src/office/projection.ts`
 
 すべての conversation は **office** です。つまり、それぞれが専用の永続作業領域とデータ境界を持ちます。このモジュールがその identity と layout を所有します。
 
@@ -94,6 +94,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 ### F. 状態と永続化レイヤー
 
 - `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
@@ -106,14 +107,14 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 ### G. 補助サービスレイヤー
 
-- `src/web/login/*`
-- `src/web/admin/*`
-- `src/web/session-view/*`
-- `src/events.ts`
+- `src/adapters/web/login/*`
+- `src/adapters/web/admin/*`
+- `src/adapters/web/session-view/*`
+- `src/events/`
 
 責務:
 
-- `src/web/server.ts` は HTTP server を所有し、login/vault、admin、session-view、agent-event routes をマウントする
+- `src/adapters/web/server.ts` は HTTP server を所有し、login/vault、admin、session-view、agent-event routes をマウントする
 - Web login portal を提供し、API key と OAuth の vault 書き込みをサポートする
 - admin portal を提供し、conversation/settings/workspace/events/skills 管理と link generation をサポートする
 - session viewer を提供する。現在は session timeline を表示でき、interactive wiring が有効な場合は `/session/message` からメッセージを送れる
@@ -223,7 +224,7 @@ flowchart TD
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
-  VaultManager --> Resolver["execution-resolver.ts"]
+  VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
 

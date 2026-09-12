@@ -13,7 +13,7 @@ description: Slack 适配器的 Socket Mode 事件、话题路由、Block Kit �
 | `src/adapters/slack/session.ts`            | Slack 频道/话题会话 key 规则。                                                         |
 | `src/adapters/slack/response-lifecycle.ts` | Slack 回复生命周期和流式更新。                                                         |
 | `src/adapters/slack/tool-pack.ts`          | 注入运行时的 Slack 工具包。                                                            |
-| `src/adapters/slack/tools/*`               | Slack 专用工具，例如附件和 Block Kit 支持。                                            |
+| `src/adapters/slack/tools/*`               | Slack 专用的 Block Kit 工具。                                                          |
 
 ## 事件来源
 

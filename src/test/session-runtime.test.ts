@@ -13,7 +13,8 @@ import type {
   ConversationResponder,
   MessagingInfo,
 } from "../adapter.js";
-import { MikanModels, SessionStore } from "../harness/index.js";
+import { MikanModels } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import {
   createManagedSessionFile,

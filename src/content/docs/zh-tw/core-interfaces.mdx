@@ -152,7 +152,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ## 5. Harness 介面
 
-來源：`src/harness/index.ts`、`runner.ts`、`session-store.ts`、`models.ts` 與 `types.ts`。
+來源：`src/harness/index.ts`、`src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts` 與 `src/harness/types.ts`。
 
 ### `MikanAgentSession`
 
@@ -176,9 +176,9 @@ Harness listener 會觀察 model/tool lifecycle event。預算設定會限制 to
 
 ## 6. Tool 與平台能力介面
 
-來源：`src/tools/types.ts`。
+來源：`src/harness/tools/types.ts`。
 
-核心工具使用 runner 提供的 executor 與 host 服務。`EventStore` 是 event file 的正規 CRUD port。無效的 event JSON 仍會以 `payload: null` 保持可列出，讓 admin 能診斷或刪除它。
+核心工具使用 runner 提供的 executor 與 host 服務。`src/events/index.ts` 的 `EventStore` 是 event file 的正規 CRUD port。無效的 event JSON 仍會以 `payload: null` 保持可列出，讓 admin 能診斷或刪除它。
 
 `PlatformToolPackFactory` 會為每個 runner 建立一個私有的 `PlatformToolPack`。`bindRun` 會選擇其工具是否套用於目前的 platform/conversation。這個 factory 邊界讓 GitHub 專屬工具不進入核心工具清單，同時避免跨對話的可變 binding。
 
@@ -271,7 +271,7 @@ Session key 使用 `conversationId[:suffix]`，而且維持**原始平台值**�
 
 ## 10. Event-file 介面
 
-來源：`src/tools/event.ts`。
+來源：`src/events/index.ts`。
 
 `events/*.json` 是 workspace 層級的排程 bus。正規 union 為：
 
@@ -308,7 +308,7 @@ state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態�
 
 ## 12. HTTP 介面
 
-來源：`src/web/server.ts` 與 portal 模組。這些路由支援 mikan 隨附的 UI；它們不是一般公用的 REST API。
+來源：`src/adapters/web/server.ts` 與 portal 模組。這些路由支援 mikan 隨附的 UI；它們不是一般公用的 REST API。
 
 | 面向           | 路由                                                                                   | 驗證模型                         |
 | -------------- | -------------------------------------------------------------------------------------- | -------------------------------- |

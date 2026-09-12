@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../harness/mcp.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { FileVaultManager } from "../vault/index.js";
-import { handleAdminRequest, InMemoryAdminTokenStore } from "../web/admin/portal.js";
-import type { AdminServices } from "../web/admin/types.js";
+import { handleAdminRequest, InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
+import type { AdminServices } from "../adapters/web/admin/types.js";
 
 const CONVERSATION_ID = "C-MCP";
 const ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);

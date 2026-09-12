@@ -12,7 +12,14 @@ export {
 } from "./http.js";
 export { MikanModels, defaultModelsJsonPath } from "./models.js";
 export type { CreateMikanModelsOptions } from "./types.js";
-export { SessionStore } from "./session-store.js";
+export { SessionStore } from "../sessions/session-store.js";
+export type {
+  SessionContext,
+  SessionEntry,
+  SessionHeader,
+  SessionMessageEntry,
+} from "../sessions/types.js";
+export { CURRENT_SESSION_VERSION } from "../sessions/types.js";
 export { MikanAgentSession } from "./session.js";
 export type {
   CompactionReason,
@@ -43,12 +50,7 @@ export {
   type SubagentRunStatus,
   type SubagentUsage,
   type SubagentUsageSink,
-  CURRENT_SESSION_VERSION,
   type BranchSummaryEntry,
   type CompactionEntry,
   type CustomEntry,
-  type SessionContext,
-  type SessionEntry,
-  type SessionHeader,
-  type SessionMessageEntry,
 } from "./types.js";

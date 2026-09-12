@@ -6,7 +6,7 @@ import {
   parseSubagentProgressSnapshot,
   renderSubagentDashboard,
   settleSubagentProgress,
-} from "../tools/subagent.js";
+} from "../harness/tools/subagent.js";
 import type { SubagentProgressSnapshot } from "../types.js";
 
 function snapshot(overrides?: Partial<SubagentProgressSnapshot>): SubagentProgressSnapshot {

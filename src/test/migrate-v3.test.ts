@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SessionStore } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "../sessions/migrate-v3.js";
 
 let dir: string;

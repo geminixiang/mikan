@@ -14,17 +14,17 @@ import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
-import type { PlatformToolPackFactory } from "./tools/types.js";
+import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { DreamScheduler } from "./dream/index.js";
-import { EventsWatcher } from "./events.js";
+import { EventsWatcher } from "./events/watcher.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./process-lifecycle.js";
-import { startWebServer } from "./web/server.js";
-import { InMemoryAdminTokenStore } from "./web/admin/portal.js";
-import { InMemoryLinkTokenStore } from "./web/login/portal.js";
-import { InMemorySessionViewTokenStore } from "./web/session-view/portal.js";
-import { DockerContainerManager } from "./provisioner.js";
+import { startWebServer } from "./adapters/web/server.js";
+import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
+import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
+import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
+import { DockerContainerManager } from "./sandbox/provisioner.js";
 import {
   assertStateDirOutsideWorkspace,
   loadGlobalSettings,
@@ -37,7 +37,7 @@ import {
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./utils/file-guards.js";
+import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { runOnboardCommand } from "./cli/onboard.js";

@@ -14,7 +14,7 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 const fs = await import("node:fs");
-const { atomicWritePrivateFile } = await import("../utils/file-guards.js");
+const { atomicWritePrivateFile } = await import("../file-guards.js");
 
 describe("atomicWritePrivateFile error handling", () => {
   beforeEach(() => {

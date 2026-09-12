@@ -12,7 +12,7 @@ import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";
-import { atomicWritePrivateFile, readTextFileIfExists } from "../utils/file-guards.js";
+import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/sentry.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
 import type { PlatformTrustModel } from "../types.js";

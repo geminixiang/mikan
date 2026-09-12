@@ -1,0 +1,209 @@
+import { posix } from "node:path";
+import type { Workspace } from "../office/index.js";
+import { loadGlobalSettings } from "../config.js";
+import { DockerContainerManager, type ContainerMount } from "../sandbox/provisioner.js";
+import {
+  assertSandboxSupportsWorkspacePolicy,
+  createExecutor,
+  getSandboxCredentialCapabilities,
+  type SandboxConfig,
+} from "../sandbox/index.js";
+import { reportUserFacingError } from "../observability/sentry.js";
+import { normalizeSharedVaultName, type VaultManager } from "../vault/index.js";
+import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
+import {
+  credentialAuthorizationKey,
+  legacyExactCredentialAuthorizationKey,
+  runtimeResourceKey,
+  scopeCloudflareSandboxId,
+} from "../sandbox/identity.js";
+import { resolveWorkspaceProjection } from "../office/projection.js";
+import type { WorkspaceProjection } from "../office/types.js";
+
+export type { ActorContext } from "../types.js";
+import type { ActorContext, ExecutionPlan } from "../types.js";
+
+export class ActorExecutionResolver {
+  constructor(
+    private baseConfig: SandboxConfig,
+    private vaultManager: VaultManager,
+    private provisioner: DockerContainerManager | undefined,
+    private workspace: Workspace,
+  ) {}
+
+  async resolve(context: ActorContext) {
+    const { plan, projection } = this.resolvePlan(context);
+    const executor = createExecutor(
+      plan.sandboxConfig,
+      plan.env,
+      this.buildEnsureReadyCallback(plan, context.address.conversationId),
+    );
+    return {
+      executor,
+      pathContext: executor.getPathContext(this.workspace.root),
+      projection,
+    };
+  }
+
+  private resolvePlan(context: ActorContext): {
+    plan: ExecutionPlan;
+    projection: WorkspaceProjection;
+  } {
+    const scope = { userId: context.userId, address: context.address };
+    const credentialKey = credentialAuthorizationKey(this.baseConfig, scope);
+    const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, scope);
+    const resourceKey = runtimeResourceKey(this.baseConfig, {
+      userId: context.userId,
+      address: context.address,
+    });
+    this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
+
+    const vault =
+      this.vaultManager.resolve(credentialKey) ??
+      (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
+    const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
+    const office = this.workspace.office(context.address);
+    const projection = resolveWorkspaceProjection(office);
+    const injection = resolveVaultInjection({
+      vault,
+      capabilities,
+      sandboxType: this.baseConfig.type,
+      address: office.address,
+    });
+    const mounts = this.resolveMounts(injection.mounts, projection);
+    assertSandboxSupportsWorkspacePolicy(
+      this.baseConfig,
+      projection.doorPolicy,
+      projection.promptSources.globalMemoryReadOnly === true,
+    );
+    return {
+      plan: {
+        credentialKey,
+        resourceKey,
+        sandboxConfig: this.resolveSandboxConfig(resourceKey),
+        env: injection.env,
+        mounts,
+      },
+      projection,
+    };
+  }
+
+  private ensureDefaultSharedVault(
+    credentialKey: string,
+    legacyCredentialKey: string | undefined,
+    trustModel: ActorContext["trustModel"],
+  ): void {
+    if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
+    if (
+      this.vaultManager.hasEntry(credentialKey) ||
+      (legacyCredentialKey && this.vaultManager.hasEntry(legacyCredentialKey))
+    ) {
+      return;
+    }
+
+    let profile: string | undefined;
+    try {
+      profile = loadGlobalSettings().sandbox?.defaultSharedVault;
+    } catch {
+      return;
+    }
+    if (!profile || normalizeSharedVaultName(profile) !== profile) return;
+    this.vaultManager.copySharedVaultTo(profile, credentialKey);
+  }
+
+  private resolveSandboxConfig(resourceKey: string): SandboxConfig {
+    if (this.baseConfig.type === "cloudflare") {
+      return {
+        type: "cloudflare",
+        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
+      };
+    }
+    if (this.baseConfig.type !== "image") return this.baseConfig;
+    return {
+      type: "container",
+      container: DockerContainerManager.containerName(resourceKey),
+    };
+  }
+
+  private buildEnsureReadyCallback(
+    plan: ExecutionPlan,
+    conversationId: string,
+  ): (() => Promise<void>) | undefined {
+    if (this.baseConfig.type !== "image" || plan.sandboxConfig.type !== "container") {
+      return undefined;
+    }
+
+    return async () => {
+      const expected = plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "";
+      let actual: string | undefined;
+      try {
+        actual = await this.provisioner?.provision(plan.resourceKey, {
+          containerName: expected,
+          mounts: plan.mounts,
+          conversationId,
+        });
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "sandbox",
+          surface: "sandbox_provision",
+          operation: "ensure_image_container_ready",
+          severity: "error",
+          context: {
+            sandboxType: "image",
+            conversationId,
+            credentialKey: plan.credentialKey,
+            resourceKey: plan.resourceKey,
+            expectedContainer: expected,
+            hasVault: Boolean(plan.env || plan.mounts.length > 0),
+          },
+        });
+        throw err;
+      }
+      if (actual && actual !== expected) {
+        throw new Error(
+          `Provisioner returned container "${actual}" for resource key "${plan.resourceKey}", expected "${expected}"`,
+        );
+      }
+    };
+  }
+
+  private resolveMounts(
+    vaultMounts: ContainerMount[],
+    projection: WorkspaceProjection,
+  ): ContainerMount[] {
+    const protectedMounts = projection.mounts;
+    for (let index = 0; index < vaultMounts.length; index += 1) {
+      const vaultMount = vaultMounts[index];
+      if (vaultMount === undefined) continue;
+      const workspaceCollision = protectedMounts.find((protectedMount) =>
+        targetsOverlap(protectedMount.target, vaultMount.target),
+      );
+      if (workspaceCollision) {
+        throw new Error(
+          `Vault mount target "${vaultMount.target}" overlaps protected workspace target "${workspaceCollision.target}"`,
+        );
+      }
+
+      const vaultCollision = vaultMounts
+        .slice(0, index)
+        .find((other) => targetsOverlap(other.target, vaultMount.target));
+      if (vaultCollision) {
+        throw new Error(
+          `Vault mount target "${vaultMount.target}" overlaps vault target "${vaultCollision.target}"`,
+        );
+      }
+    }
+    return [...protectedMounts, ...vaultMounts];
+  }
+}
+
+function targetsOverlap(left: string, right: string): boolean {
+  const a = normalizeMountTarget(left);
+  const b = normalizeMountTarget(right);
+  return a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+}
+
+function normalizeMountTarget(value: string): string {
+  const normalized = posix.normalize(value);
+  return normalized.replace(/\/+$/, "") || "/";
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildEventPayload, parseEventPayload } from "../tools/event.js";
+import { buildEventPayload, parseEventPayload } from "../events/index.js";
 
 describe("event-format round-trip", () => {
   test("build → serialize → parse is identity for every event type", () => {

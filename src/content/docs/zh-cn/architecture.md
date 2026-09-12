@@ -50,7 +50,8 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 ### C. 代理执行层
 
 - `src/harness/*`
-- `src/tools/*`
+- `src/harness/execution-resolver.ts`
+- `src/harness/tools/*`
 
 职责：
 
@@ -59,12 +60,12 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-agent-core` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
 - 将工具调用连接到本地 `read/bash/edit/write/event/attach`
 - 将工具结果写回会话，并通过适配器返回回复
+- 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
 
 ### D. 执行环境层
 
 - `src/sandbox/*`
-- `src/provisioner.ts`
-- `src/execution-resolver.ts`
+- `src/sandbox/provisioner.ts`
 
 职责：
 
@@ -72,13 +73,12 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - 将沙箱运行时分为两类：
   - 共享：`host` / `container:<name>`，共享同一主机或命名容器
   - 隔离：`image:<image>` / `cloudflare:*`，按参与者/对话/vault 路由到隔离执行环境
-- 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
 - 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
 
 ### E. 对话办公室层
 
 - `src/office/*`
-- `src/workspace-projection/index.ts`
+- `src/office/projection.ts`
 
 每个对话都是一间**办公室**：拥有自己的持久工作区域和数据边界。此模块负责这一身份与布局。
 
@@ -94,6 +94,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 ### F. 状态和持久化层
 
 - `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
 
@@ -106,14 +107,14 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 ### G. 辅助服务层
 
-- `src/web/login/*`
-- `src/web/admin/*`
-- `src/web/session-view/*`
-- `src/events.ts`
+- `src/adapters/web/login/*`
+- `src/adapters/web/admin/*`
+- `src/adapters/web/session-view/*`
+- `src/events/`
 
 职责：
 
-- `src/web/server.ts` 管理 HTTP 服务器并挂载 login/vault、admin、session-view 和 agent-event 路由
+- `src/adapters/web/server.ts` 管理 HTTP 服务器并挂载 login/vault、admin、session-view 和 agent-event 路由
 - 提供 Web 登录 portal，支持将 API key 和 OAuth 写入 vault
 - 提供管理 portal，用于管理对话/设置/工作区/事件/技能并生成链接
 - 提供会话查看器；目前可以显示会话时间线，并在启用交互 wiring 时通过 `/session/message` 发送消息
@@ -223,7 +224,7 @@ flowchart TD
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
-  VaultManager --> Resolver["execution-resolver.ts"]
+  VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
 

@@ -116,14 +116,14 @@ Session view token 錨定到 base session file。使用 `/session?session=<file.
 
 ## 實作位置
 
-| 功能                 | 主要程式碼                                |
-| -------------------- | ----------------------------------------- |
-| Portal HTTP server   | `src/web/server.ts` 的 `startWebServer()` |
-| Admin portal         | `src/web/admin/portal.ts`                 |
-| Login / vault portal | `src/web/login/portal.ts`                 |
-| Session view         | `src/web/session-view/portal.ts`          |
-| 共用 token store     | `src/web/token-store.ts`                  |
-| 共用 portal shell    | `src/web/portal-shell.ts`                 |
+| 功能                 | 主要程式碼                                         |
+| -------------------- | -------------------------------------------------- |
+| Portal HTTP server   | `src/adapters/web/server.ts` 的 `startWebServer()` |
+| Admin portal         | `src/adapters/web/admin/portal.ts`                 |
+| Login / vault portal | `src/adapters/web/login/portal.ts`                 |
+| Session view         | `src/adapters/web/session-view/portal.ts`          |
+| 共用 token store     | `src/adapters/web/token-store.ts`                  |
+| 共用 portal shell    | `src/adapters/web/portal-shell.ts`                 |
 
 `startWebServer()` 的 dispatch 順序是：
 

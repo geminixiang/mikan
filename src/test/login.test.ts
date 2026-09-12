@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { getOAuthServices, resolveOAuthService } from "../web/login/oauth.js";
+import { getOAuthServices, resolveOAuthService } from "../adapters/web/login/oauth.js";
 import * as log from "../log.js";
 
 const originalOAuthServicesJson = process.env.OAUTH_SERVICES_JSON;

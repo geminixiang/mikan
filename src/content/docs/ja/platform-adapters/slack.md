@@ -13,7 +13,7 @@ description: Slack adapter の Socket Mode イベント、thread routing、Block
 | `src/adapters/slack/session.ts`            | Slack channel/thread session key のルール。                                                                   |
 | `src/adapters/slack/response-lifecycle.ts` | Slack 返信ライフサイクルと streaming 更新。                                                                   |
 | `src/adapters/slack/tool-pack.ts`          | runtime に注入される Slack tool pack。                                                                        |
-| `src/adapters/slack/tools/*`               | 添付ファイルや Block Kit サポートなどの Slack 専用ツール。                                                    |
+| `src/adapters/slack/tools/*`               | Slack 専用の Block Kit ツール。                                                                               |
 
 ## イベントソース
 

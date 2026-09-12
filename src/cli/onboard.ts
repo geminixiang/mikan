@@ -25,7 +25,7 @@ import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
 import { createGlobalSettingsFile } from "../config.js";
 import type { OnboardLlmChoice } from "../types.js";
 import { defaultModelsJsonPath } from "../harness/models.js";
-import { atomicWritePrivateFile } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../file-guards.js";
 import type { OnboardIo } from "./types.js";
 
 class OnboardAborted extends Error {

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
-import { createWriteTool } from "../tools/write.js";
+import { createWriteTool } from "../harness/tools/write.js";
 
 describe("createWriteTool", () => {
   let dir: string;

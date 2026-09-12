@@ -1,6 +1,6 @@
 # src/adapters
 
-This directory contains chat platform adapters and shared adapter helpers.
+This directory contains external adapters for chat platforms and Web HTTP/OAuth/admin/session-view surfaces, plus shared adapter helpers.
 
 Every adapter is constructed with a `Workspace` and reaches per-conversation
 state through an `Office` resolved from a typed `OfficeAddress` (see
@@ -28,3 +28,4 @@ failed shutdown.
 - `github/`: GitHub App polling bot (one issue/PR = one conversation), REST client, and response context.
 - `slack/`: Slack bot, Slack session/thread rules, native Block Kit rendering, and Slack response context.
 - `telegram/`: Telegram bot, Telegram HTML sanitization, and Telegram response context.
+- `web/`: HTTP server, login/OAuth and vault portal, Admin portal, Session View, shared portal shell, and short-lived token stores.

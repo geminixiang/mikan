@@ -25,7 +25,7 @@ import {
   type Entry as PiEntry,
   type JsonValue,
 } from "@earendil-works/pi-agent-core";
-import { SessionStore } from "../harness/session-store.js";
+import { SessionStore } from "./session-store.js";
 import {
   commitMigration,
   findSessionFiles,

@@ -1,20 +1,15 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type {
-  ImmediateEventPayload,
-  OneShotEventPayload,
-  PeriodicEventPayload,
-} from "./tools/event.js";
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./adapters/commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { Office } from "./office/types.js";
-import type { DockerContainerManager } from "./provisioner.js";
+import type { DockerContainerManager } from "./sandbox/provisioner.js";
 import type { SandboxConfig } from "./sandbox/types.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
-import type { PlatformToolPackFactory } from "./tools/types.js";
+import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import type { VaultManager } from "./vault/types.js";
 
 const execFileAsync = promisify(execFile);
@@ -445,36 +440,6 @@ export interface ConversationLogMessage {
   isMessagingBot?: boolean;
 }
 
-// ── events ────────────────────────────────────────────────────────────────────
-// The wire format (payload union, schema, parser, builder) is owned by
-// src/tools/event.ts. These are the *resolved* runtime shapes: the
-// EventsWatcher fills in the platform default and infers the conversation
-// kind before an event reaches a bot.
-
-interface ResolvedEventFields {
-  platform: string;
-  conversationKind: ConversationKind;
-}
-
-export type ImmediateEvent = ImmediateEventPayload & ResolvedEventFields;
-
-export type OneShotEvent = OneShotEventPayload & ResolvedEventFields;
-
-export type PeriodicEvent = PeriodicEventPayload & ResolvedEventFields;
-
-export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
-
-export interface PeriodicEventInfo {
-  filename: string;
-  platform: string;
-  conversationId: string;
-  conversationKind: ConversationKind;
-  text: string;
-  schedule: string;
-  timezone: string;
-  nextRun: string | null;
-}
-
 // ── execution-resolver ────────────────────────────────────────────────────────
 
 export interface ActorContext {
@@ -496,7 +461,7 @@ export interface LogContext {
   sessionId?: string;
 }
 
-// ── portal shell (src/web/portal-shell.ts) ────────────────────────────────────
+// ── portal shell (src/adapters/web/portal-shell.ts) ────────────────────────────────────
 
 type PortalView = "admin" | "session" | "vault";
 

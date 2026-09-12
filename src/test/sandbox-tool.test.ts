@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOfficeAddress, officeKey } from "../office/index.js";
-import { createSandboxTool } from "../tools/sandbox.js";
+import { createSandboxTool } from "../harness/tools/sandbox.js";
 
 describe("createSandboxTool", () => {
   test("serializes state-changing limit operations", () => {

@@ -1,6 +1,6 @@
 import type { Office } from "../office/index.js";
 import type { MikanSkill, SkillDiagnostic, LoadSkillsResult } from "./types.js";
-import type { WorkspaceProjection } from "../workspace-projection/types.js";
+import type { WorkspaceProjection } from "../office/types.js";
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 

@@ -9,7 +9,7 @@ import {
   ensureDirExists,
   isRecord,
   readJsonSchemaFileIfExists,
-} from "../utils/file-guards.js";
+} from "../file-guards.js";
 import type { McpServerConfig } from "./types.js";
 
 const OPEN_CONNECTOR_SERVER = "open-connector";

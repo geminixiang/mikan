@@ -1,4 +1,4 @@
-import { resolveExistingSessionFile } from "../../web/session-view/portal.js";
+import { resolveExistingSessionFile } from "../web/session-view/portal.js";
 import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";

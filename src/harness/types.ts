@@ -4,23 +4,20 @@ import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-wor
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
 import type { resolveConversationSettings } from "../config.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
-import type { WorkspaceProjection } from "../workspace-projection/types.js";
+import type { WorkspaceProjection } from "../office/types.js";
 import type { Office } from "../office/index.js";
 import type {
   AgentEvent,
-  AgentMessage,
   AgentTool,
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
-  Entry,
-  MessageEntry,
   ThinkingLevel,
   CompactionSettings,
   Skill,
 } from "@earendil-works/pi-agent-core";
 import type { MikanModels } from "./models.js";
-import type { SessionStore } from "./session-store.js";
+import type { SessionStore } from "../sessions/session-store.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 
 export interface BuildSystemPromptOptions {
@@ -106,34 +103,6 @@ export interface PreparedRunContext {
 }
 
 export type { BranchSummaryEntry, CompactionEntry, CustomEntry };
-
-/** Model-visible messages reconstructed from the active session branch. */
-export interface SessionContext {
-  messages: AgentMessage[];
-}
-
-/** Message entry as stored in mikan session files (pi v4). */
-export type SessionMessageEntry = MessageEntry;
-
-/** Union of entry types mikan reads and writes. Alias of pi's v4 entry. */
-export type SessionEntry = Entry;
-
-export const CURRENT_SESSION_VERSION = 4;
-
-export interface SessionCreateInfo {
-  id?: string;
-  parentSession?: string;
-  parentSessionId?: string;
-}
-
-/** Immutable session queries available to portals, admin, and migration code. */
-export interface SessionInspection {
-  getHeader(): SessionHeader;
-  getEntries(): Promise<Entry[]>;
-  getSessionName(): Promise<string | undefined>;
-  getBranch(fromId?: string): Promise<Entry[]>;
-  buildSessionContext(): Promise<SessionContext>;
-}
 
 export interface SubagentModelSpec {
   provider: string;
@@ -256,23 +225,6 @@ interface SubagentRunIncompleteResult extends SubagentRunMetadata {
 export type SubagentRunResult<TOutput = string> =
   | SubagentRunCompletedResult<TOutput>
   | SubagentRunIncompleteResult;
-
-/**
- * Compatibility header view synthesized from the v4 file header for callers
- * that read mikan session lineage. `metadata` carries mikan header extras (for
- * example `parentSessionPath` and the legacy `source` marker preserved by
- * the v3 migration).
- */
-export interface SessionHeader {
-  type: "session";
-  version?: number;
-  id: string;
-  timestamp: string;
-  cwd: string;
-  parentSession?: string;
-  parentSessionId?: string;
-  [extra: string]: unknown;
-}
 
 export interface CreateMikanModelsOptions {
   modelsJsonPath?: string;

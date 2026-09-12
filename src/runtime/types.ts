@@ -15,7 +15,7 @@ import type {
   SessionViewTokenStoreLike,
 } from "../adapters/commands/types.js";
 import type { MikanModels } from "../harness/index.js";
-import type { PlatformToolPackFactory } from "../tools/types.js";
+import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { VaultManager } from "../vault/index.js";
 
 export interface SessionLifecycleOptions {

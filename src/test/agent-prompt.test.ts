@@ -11,7 +11,7 @@ import {
 import { translateAttachPathToHost } from "../harness/prompt.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { resolveWorkspaceProjection } from "../workspace-projection/index.js";
+import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../config.js";
 
 const PLATFORM = {

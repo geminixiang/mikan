@@ -15,7 +15,7 @@ import {
 import { join } from "node:path";
 import type { Entry as PiEntry, JsonValue } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
-import { atomicWritePrivateFile } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../file-guards.js";
 
 /** Deep-copy a JSON-derived value into a `JsonValue`. */
 export function jsonValue(value: unknown): JsonValue {

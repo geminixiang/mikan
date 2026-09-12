@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
-import { createEditTool } from "../tools/edit.js";
+import { createEditTool } from "../harness/tools/edit.js";
 
 /**
  * The edit tool's `details.diff` is what the agent and the channel see after a

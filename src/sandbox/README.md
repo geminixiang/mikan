@@ -9,6 +9,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - `host.ts`: Implements the host executor by running commands directly through the local shell.
 - `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
 - `index.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door or read-only shared memory).
+- `provisioner.ts`: Manages per-resource Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown; it also preserves writable layers across mount drift and the office-key layout migration.
 - `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
 - `utils.ts`: Provides `SandboxError` (user-facing CLI diagnostics), simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
 
@@ -50,7 +51,7 @@ Rules enforced in code:
 ### Workspace mounts
 
 The mount set is chosen by the office's door policy, resolved in one place
-(`resolveWorkspaceProjection`, `src/workspace-projection/README.md`):
+(`resolveWorkspaceProjection`, `src/office/README.md`):
 
 | Mount                                       | Purpose                                                             | Present in                      |
 | ------------------------------------------- | ------------------------------------------------------------------- | ------------------------------- |

@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
-import { MikanAgentSession, MikanModels, SessionStore } from "../harness/index.js";
+import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 
 let dir: string;
 

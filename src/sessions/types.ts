@@ -1,6 +1,7 @@
 import type { ConversationKind } from "../adapter.js";
-import type { SessionStore } from "../harness/index.js";
+import type { AgentMessage, Entry, MessageEntry } from "@earendil-works/pi-agent-core";
 import type { ConversationLogMessage } from "../types.js";
+import type { SessionStore } from "./session-store.js";
 
 // ── session metadata ─────────────────────────────────────────────────────────
 
@@ -31,6 +32,51 @@ export interface ResolveSessionKeyOptions {
 }
 
 // ── session store ────────────────────────────────────────────────────────────
+
+/** Model-visible messages reconstructed from the active session branch. */
+export interface SessionContext {
+  messages: AgentMessage[];
+}
+
+/** Message entry as stored in mikan session files (Pi v4). */
+export type SessionMessageEntry = MessageEntry;
+
+/** Union of entry types mikan reads and writes. Alias of Pi's v4 entry. */
+export type SessionEntry = Entry;
+
+export const CURRENT_SESSION_VERSION = 4;
+
+export interface SessionCreateInfo {
+  id?: string;
+  parentSession?: string;
+  parentSessionId?: string;
+}
+
+/** Immutable session queries available to portals, admin, and migration code. */
+export interface SessionInspection {
+  getHeader(): SessionHeader;
+  getEntries(): Promise<Entry[]>;
+  getSessionName(): Promise<string | undefined>;
+  getBranch(fromId?: string): Promise<Entry[]>;
+  buildSessionContext(): Promise<SessionContext>;
+}
+
+/**
+ * Compatibility header view synthesized from the v4 file header for callers
+ * that read mikan session lineage. `metadata` carries mikan header extras (for
+ * example `parentSessionPath` and the legacy `source` marker preserved by
+ * the v3 migration).
+ */
+export interface SessionHeader {
+  type: "session";
+  version?: number;
+  id: string;
+  timestamp: string;
+  cwd: string;
+  parentSession?: string;
+  parentSessionId?: string;
+  [extra: string]: unknown;
+}
 
 export interface ParentSessionRef {
   path: string;

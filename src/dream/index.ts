@@ -3,8 +3,10 @@ import { contentText } from "@earendil-works/pi-ai";
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveConversationSettings } from "../config.js";
-import type { MikanModels, SessionEntry } from "../harness/index.js";
-import { MikanAgentSession, SessionStore } from "../harness/index.js";
+import type { MikanModels } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
+import type { SessionEntry } from "../sessions/types.js";
 import * as log from "../log.js";
 import { listRegisteredOffices, type Office, type Workspace } from "../office/index.js";
 import {
@@ -12,7 +14,7 @@ import {
   isRecord,
   readJsonFileIfExists,
   readTextFileIfExists,
-} from "../utils/file-guards.js";
+} from "../file-guards.js";
 import type {
   DreamEntryEvidence,
   DreamPlan,

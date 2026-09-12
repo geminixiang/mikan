@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createGenerateImageTool } from "../tools/generate-image.js";
+import { createGenerateImageTool } from "../harness/tools/generate-image.js";
 
 const dirs: string[] = [];
 afterEach(async () => {

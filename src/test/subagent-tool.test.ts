@@ -6,7 +6,7 @@ import type {
   SubagentRunResult,
   SubagentUsage,
 } from "../harness/types.js";
-import { createSubagentTool } from "../tools/subagent.js";
+import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
 import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/sentry.js";
 

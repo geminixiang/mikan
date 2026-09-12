@@ -3,7 +3,7 @@ import { runInNewContext } from "node:vm";
 import { describe, expect, test, vi } from "vitest";
 
 // Execute the actual embedded script without its page-load requests.
-const source = readFileSync(new URL("../web/admin/portal.ts", import.meta.url), "utf8");
+const source = readFileSync(new URL("../adapters/web/admin/portal.ts", import.meta.url), "utf8");
 const literal = source
   .slice(
     source.indexOf("const adminViewScript = `") + "const adminViewScript = ".length,

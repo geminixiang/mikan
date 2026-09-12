@@ -1,4 +1,4 @@
-import type { PlatformToolPack } from "../../tools/types.js";
+import type { PlatformToolPack } from "../../harness/tools/types.js";
 import { createSlackBlockKitTool } from "./tools/blockkit.js";
 export type { PlatformSlackOps } from "./types.js";
 import type { PlatformSlackOps } from "./types.js";

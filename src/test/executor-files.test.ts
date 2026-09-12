@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import { execReadFile, execWriteFile } from "../sandbox/utils.js";
-import { createEditTool } from "../tools/edit.js";
+import { createEditTool } from "../harness/tools/edit.js";
 
 /**
  * Contract test for the Executor file transport: the same matrix runs against

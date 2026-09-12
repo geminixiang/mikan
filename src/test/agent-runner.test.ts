@@ -20,7 +20,7 @@ import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
-import type { PlatformToolPackFactory } from "../tools/types.js";
+import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { CreateRunnerOptions } from "../types.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 

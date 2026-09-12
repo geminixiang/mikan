@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { atomicWritePrivateFile } from "../utils/file-guards.js";
+import { atomicWritePrivateFile } from "../file-guards.js";
 
 describe("atomicWritePrivateFile", () => {
   let dir: string;

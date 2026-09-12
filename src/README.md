@@ -9,31 +9,26 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
 - `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.
-- `events.ts`: Watches `events/` JSON files and fires immediate, one-shot, and periodic bot events.
-- `execution-resolver.ts`: Resolves the concrete executor and credential injection for an actor, office, vault, and sandbox.
+- `file-guards.ts`: Provides guarded optional text/JSON reads, JSON value parsing, record checks, directory creation, and atomic/private file replacement primitives.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
 - `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, scheduled Dream maintenance, and platform bots.
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
-- `provisioner.ts`: Manages per-vault Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown; also carries containers through the office-key rename and mount drift without losing their writable layer.
 - `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.
 - `types.ts`: Cross-module domain types that no single module owns — office identity aliases, sandbox settings, workspace door policy/layout, event payload re-exports, and portal shell options.
 
 ## Subdirectories
 
-- `adapters/`: Chat platform adapters, shared chat commands (`commands/`), and adapter utilities.
+- `adapters/`: External adapters for chat platforms, Web HTTP/OAuth/admin/session-view surfaces, shared chat commands (`commands/`), and adapter utilities.
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
-- `harness/`: Agent execution — `createRunner`, prompt and presentation, execution binding, native Pi session integration, session store, models, MCP capabilities, skills, and bounded subagents.
+- `events/`: Scheduled-event wire protocol, host store, and watcher lifecycle.
+- `harness/`: Agent execution — `createRunner`, prompt and presentation, actor/executor resolution, native Pi session integration, generic agent tools, models, MCP capabilities, skills, and bounded subagents.
 - `observability/`: Sentry initialization, error reporting helpers, and startup instrumentation.
-- `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, the durable office registry journal, and the boot-time legacy migration.
+- `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, workspace projection policy, the durable office registry journal, and the boot-time legacy migration.
 - `runtime/`: Conversation and session runtime orchestration.
-- `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors.
-- `sessions/`: Chat-history synchronization, session file management, and session policy.
+- `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors, including managed Docker container provisioning and lifecycle.
+- `sessions/`: Chat-history synchronization, single-writer session-tree storage, session file management, and session policy.
 - `test/`: The whole test suite (unit, integration, and e2e specs) for every module above.
-- `tools/`: Agent tools such as read, bash, edit, write, event, react, generate_image, subagent, and sandbox.
-- `utils/`: Low-level utilities — environment variable reading, atomic file writes, safe JSON/text helpers, HTTP body reading, and HTML escaping.
 - `vault/`: File-backed credential vault implementation, vault-key routing, and credential injection.
-- `web/`: Web portals — admin, login/OAuth, session view, and the agent-event stream.
-- `workspace-projection/`: Resolves an office's door policy into the concrete sandbox mount list and the authorized prompt sources.

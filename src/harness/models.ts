@@ -43,7 +43,7 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { readJsonFileIfExists } from "../utils/file-guards.js";
+import { readJsonFileIfExists } from "../file-guards.js";
 import type { CreateMikanModelsOptions } from "./types.js";
 
 export type { CreateMikanModelsOptions } from "./types.js";

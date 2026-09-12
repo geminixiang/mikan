@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { DockerContainerManager } from "../provisioner.js";
+import { DockerContainerManager } from "../sandbox/provisioner.js";
 import { legacyConversationResourceKey } from "../sandbox/identity.js";
 
 function createDeferred<T>(): {

@@ -13,7 +13,7 @@ description: Slack adapter 的 Socket Mode 事件、thread routing、Block Kit �
 | `src/adapters/slack/session.ts`            | Slack channel/thread session key 規則。                                                     |
 | `src/adapters/slack/response-lifecycle.ts` | Slack 回覆生命週期與 streaming 更新。                                                       |
 | `src/adapters/slack/tool-pack.ts`          | 注入 runtime 的 Slack tool pack。                                                           |
-| `src/adapters/slack/tools/*`               | Slack 專用工具，例如附件與 Block Kit 支援。                                                 |
+| `src/adapters/slack/tools/*`               | Slack 專用的 Block Kit 工具。                                                               |
 
 ## 事件來源
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { AgentMessage, Entry, JsonValue } from "@earendil-works/pi-agent-core";
-import { SessionStore } from "../harness/session-store.js";
-import { isRecord } from "../utils/file-guards.js";
+import { SessionStore } from "./session-store.js";
+import { isRecord } from "../file-guards.js";
 import {
   commitMigration,
   findSessionFiles,

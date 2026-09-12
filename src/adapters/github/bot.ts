@@ -4,8 +4,8 @@ import { Type } from "@sinclair/typebox";
 import type { MessagingBot, MessagingEventHandler, MessagingInfo } from "../../adapter.js";
 import { createConversationEvent, type ConversationEvent } from "../../adapter.js";
 import * as log from "../../log.js";
-import { ensureDirExists, readJsonSchemaFileIfExists } from "../../utils/file-guards.js";
-import { atomicWritePrivateFile } from "../../utils/file-guards.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "../../file-guards.js";
+import { atomicWritePrivateFile } from "../../file-guards.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   appendBotResponseLog,

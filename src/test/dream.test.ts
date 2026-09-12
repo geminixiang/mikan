@@ -20,7 +20,8 @@ import {
   prepareOfficeDream,
 } from "../dream/index.js";
 import type { DreamPlan, DreamRuntime, DreamState } from "../dream/types.js";
-import { MikanAgentSession, MikanModels, SessionStore } from "../harness/index.js";
+import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office, Workspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";

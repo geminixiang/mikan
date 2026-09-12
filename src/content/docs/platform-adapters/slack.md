@@ -13,7 +13,7 @@ description: Socket Mode events, thread routing, Block Kit, and response lifecyc
 | `src/adapters/slack/session.ts`            | Slack channel/thread session key rules.                                                                |
 | `src/adapters/slack/response-lifecycle.ts` | Slack response lifecycle and streaming updates.                                                        |
 | `src/adapters/slack/tool-pack.ts`          | The Slack tool pack injected into the runtime.                                                         |
-| `src/adapters/slack/tools/*`               | Slack-specific tools such as attachment and Block Kit support.                                         |
+| `src/adapters/slack/tools/*`               | Slack-specific Block Kit tools.                                                                        |
 
 ## Event sources
 

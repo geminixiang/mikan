@@ -17,7 +17,7 @@ vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
 }));
 
 import { loadMcpTools } from "../harness/mcp.js";
-import { SessionStore } from "../harness/session-store.js";
+import { SessionStore } from "../sessions/session-store.js";
 
 describe("MCP connection rollback", () => {
   test("the pending session owns connections and preserves guidance across prompt replacements", async () => {

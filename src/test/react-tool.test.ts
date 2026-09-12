@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createReactTool } from "../tools/react.js";
+import { createReactTool } from "../harness/tools/react.js";
 
 describe("createReactTool", () => {
   test("calls the react function with the emoji and confirms", async () => {
