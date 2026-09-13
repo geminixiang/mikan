@@ -11,7 +11,6 @@ import {
   withSentryRunScope,
 } from "./sentry.js";
 import { isOpenTelemetryMetricsEnabled, shutdownOpenTelemetry } from "./otel.js";
-import { telemetryIdentifier } from "./privacy.js";
 import type {
   ObservabilityAttributes,
   ReportUserFacingErrorOptions,
@@ -20,7 +19,6 @@ import type {
 } from "./types.js";
 
 export type { ObservabilityAttributes, RunScopeContext } from "./types.js";
-export { telemetryIdentifier } from "./privacy.js";
 
 export interface ObservabilitySpan {
   end(options?: { attributes?: ObservabilityAttributes; error?: unknown }): void;
@@ -113,24 +111,22 @@ export function recordGauge(
 }
 
 export function createRunAttributionAttributes(context: RunScopeContext): ObservabilityAttributes {
-  const conversationId = telemetryIdentifier("conv", context.conversationId);
-  const sessionId = telemetryIdentifier("session", context.sessionKey);
   return metricAttributes({
-    conversation_id: conversationId,
-    channel_id: conversationId,
-    session_key: sessionId,
-    message_id: telemetryIdentifier("message", context.messageId),
+    conversation_id: context.conversationId,
+    channel_id: context.conversationId,
+    session_key: context.sessionKey,
+    message_id: context.messageId,
     platform: context.platform,
     conversation_kind: context.conversationKind,
-    user_id: telemetryIdentifier("user", context.userId),
-    thread_id: context.threadTs ? telemetryIdentifier("thread", context.threadTs) : undefined,
+    user_id: context.userId,
+    thread_id: context.threadTs,
     provider: context.provider,
     model: context.model,
     "gen_ai.operation.name": "invoke_agent",
     "gen_ai.agent.name": "mikan",
-    "gen_ai.conversation.id": sessionId,
+    "gen_ai.conversation.id": context.sessionKey,
     "openinference.span.kind": "AGENT",
-    "session.id": sessionId,
+    "session.id": context.sessionKey,
   });
 }
 

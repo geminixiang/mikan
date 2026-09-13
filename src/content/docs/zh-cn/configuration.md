@@ -154,7 +154,7 @@ mikan 只维护一条 OpenTelemetry traces/metrics pipeline，并通过标准 OT
 
 `SENTRY_DSN`（或兼容的 `sentry.dsn`）启用 Sentry issue reporting，并把错误链接到当前 OpenTelemetry trace；Sentry 不会创建第二条 application trace/metric pipeline。如需把同一份 traces 同时发送到 Phoenix 和 Sentry，请使用 OpenTelemetry Collector fan-out。Sentry direct OTLP 当前支持 traces/logs，不支持 OTLP metrics。
 
-仅支持 `http/protobuf`；`OTEL_TRACES_EXPORTER=none`、`OTEL_METRICS_EXPORTER=none` 可分别关闭 signal。mikan 不会输出 prompts、completions、消息文本、tool arguments/results、文件内容、credentials、tokens 或绝对路径；但会输出 model ID、token/cost 总量、耗时、payload 大小、tool 类别，以及 retry/compaction/budget 次数等无内容的操作 metadata。平台 conversation、session、message、thread 与 user identifiers 只会以 opaque hash 导出；设置 secret `TELEMETRY_HASH_KEY` 后会使用 deployment-specific HMAC。resource attributes 采用 allowlist，请勿在 `OTEL_RESOURCE_ATTRIBUTES` 中放入 secrets 或 paths。shutdown 会先 drain conversation work，再 flush/shutdown OTLP，最后 close Sentry。
+仅支持 `http/protobuf`；`OTEL_TRACES_EXPORTER=none`、`OTEL_METRICS_EXPORTER=none` 可分别关闭 signal。mikan 不会输出 prompts、completions、消息文本、tool arguments/results、文件内容、credentials、tokens 或绝对路径；但会输出 model ID、token/cost 总量、耗时、payload 大小、tool 类别，以及 retry/compaction/budget 次数等无内容的操作 metadata。平台 conversation、session、message、thread 与 user identifiers 会以 raw operational ID 导出，让 trace 能直接对应来源；human-readable username、channel name 与 workspace name 仍不会输出。resource attributes 采用 allowlist，请勿在 `OTEL_RESOURCE_ATTRIBUTES` 中放入 secrets 或 paths。shutdown 会先 drain conversation work，再 flush/shutdown OTLP，最后 close Sentry。
 
 ## 环境变量别名
 

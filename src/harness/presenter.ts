@@ -22,7 +22,6 @@ import {
   recordGauge,
   reportUserFacingError,
   startOperationSpan,
-  telemetryIdentifier,
   updateActiveSpanAttribution,
   type ObservabilitySpan,
 } from "../observability/index.js";
@@ -478,13 +477,11 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   const contextWindow = model.contextWindow || 200000;
 
   const { totalUsage } = runState;
-  const channelId = telemetryIdentifier("conv", sessionConversation);
-  const sessionId = telemetryIdentifier("session_file", sessionUuid);
   const runMetricAttributes = metricAttributes({
     provider: model.provider,
     model: model.id,
-    channel_id: channelId,
-    session_id: sessionId,
+    channel_id: sessionConversation,
+    session_id: sessionUuid,
     stop_reason: runState.stopReason,
     llm_calls: runState.llmCallCount,
   });
@@ -1000,10 +997,8 @@ export function attachSessionEventHandlers(params: {
       logCtx: runState.logCtx,
       queue: runState.queue,
       baseAttrs: {
-        channel_id: telemetryIdentifier("conv", runState.logCtx.conversationId),
-        session_id: runState.logCtx.sessionId
-          ? telemetryIdentifier("session_file", runState.logCtx.sessionId)
-          : undefined,
+        channel_id: runState.logCtx.conversationId,
+        session_id: runState.logCtx.sessionId,
       },
       model,
       agentConfig,

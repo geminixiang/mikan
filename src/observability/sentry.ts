@@ -72,7 +72,6 @@ export type {
   SentrySpanPayload,
   SentryTransactionPayload,
 } from "./types.js";
-import { telemetryIdentifier } from "./privacy.js";
 import type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
@@ -240,17 +239,15 @@ function setOptionalTag(scope: Scope, key: string, value: string | undefined): v
 export function createRunAttributionAttributes(
   context: SentryRunScopeContext,
 ): SentryAttributionAttributes {
-  const conversationId = telemetryIdentifier("conv", context.conversationId);
-  const sessionId = telemetryIdentifier("session", context.sessionKey);
   return metricAttributes({
-    conversation_id: conversationId,
-    channel_id: conversationId,
-    session_key: sessionId,
-    message_id: telemetryIdentifier("message", context.messageId),
+    conversation_id: context.conversationId,
+    channel_id: context.conversationId,
+    session_key: context.sessionKey,
+    message_id: context.messageId,
     platform: context.platform,
     conversation_kind: context.conversationKind,
-    user_id: telemetryIdentifier("user", context.userId),
-    thread_id: context.threadTs ? telemetryIdentifier("thread", context.threadTs) : undefined,
+    user_id: context.userId,
+    thread_id: context.threadTs,
     provider: context.provider,
     model: context.model,
   });
@@ -279,7 +276,7 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
     scope.setTag(key, value);
   }
   scope.setAttributes(attributes);
-  // Agent Monitoring groups spans by an opaque, stable session identifier.
+  // Agent Monitoring groups spans by the platform session identifier.
   scope.setUser({ id: String(attributes.user_id) });
   scope.setConversationId(String(attributes.session_key));
   scope.setContext("agent_run", {
