@@ -1729,91 +1729,105 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
     </nav>
 
     <div class="tab-panel active" id="panel-conversation">
-      <section class="card sect" id="sect-settings" data-section="settings">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-settings" data-section="settings" open>
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Settings</p>
             <h2 class="card-title">模型 / Thinking / Auto-reply / Workspace mount</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadSettings()">↻</button>
-        </header>
-        <div id="settings-content"><div class="loading-msg">Loading…</div></div>
-      </section>
+          </div></div>
+          <button class="refresh-btn" onclick="event.stopPropagation(); loadSettings()">↻</button>
+        </summary>
+        <div class="sect-body">
+          <div id="settings-content"><div class="loading-msg">Loading…</div></div>
+        </div>
+      </details>
 
-      <section class="card sect" id="sect-workspace" data-section="workspace">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-workspace" data-section="workspace">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Workspace</p>
             <h2 class="card-title">檔案瀏覽 (只讀)</h2>
+          </div></div>
+          <button class="refresh-btn" onclick="event.stopPropagation(); loadWorkspace()">↻</button>
+        </summary>
+        <div class="sect-body">
+          <div class="workspace-split">
+            <div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
+            <div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div>
           </div>
-          <button class="refresh-btn" onclick="loadWorkspace()">↻</button>
-        </header>
-        <div class="workspace-split">
-          <div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
-          <div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div>
         </div>
-      </section>
+      </details>
 
-      <section class="card sect" id="sect-skills" data-section="skills">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-skills" data-section="skills">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Skills</p>
             <h2 class="card-title">可用的 skills</h2>
+          </div></div>
+          <button class="refresh-btn" onclick="event.stopPropagation(); loadSkills()">↻</button>
+        </summary>
+        <div class="sect-body">
+          <div class="workspace-split">
+            <div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
+            <div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
           </div>
-          <button class="refresh-btn" onclick="loadSkills()">↻</button>
-        </header>
-        <div class="workspace-split">
-          <div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
-          <div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
         </div>
-      </section>
+      </details>
 
-      <section class="card sect" id="sect-mcp" data-section="mcp">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-mcp" data-section="mcp">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">MCP Servers</p>
             <h2 class="card-title">此對話的 MCP servers</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
-        </header>
-        <div id="mcp-conv-msg" class="status-msg" style="display:none"></div>
-        <div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>
-      </section>
+          </div></div>
+          <button class="refresh-btn" onclick="event.stopPropagation(); loadMcpServers()">↻</button>
+        </summary>
+        <div class="sect-body">
+          <div id="mcp-conv-msg" class="status-msg" style="display:none"></div>
+          <div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>
+        </div>
+      </details>
 
-      <section class="card sect" id="sect-vault" data-section="vault">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-vault" data-section="vault">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Vault</p>
             <h2 class="card-title">該對話的憑證</h2>
-          </div>
-          <button class="primary-action-btn" onclick="openLogin()">Open login form</button>
-        </header>
-        <div id="vault-link-result" class="link-result" style="display:none"></div>
-        <iframe id="login-frame" class="portal-frame" title="Login" style="display:none"></iframe>
-      </section>
+          </div></div>
+          <button class="primary-action-btn" onclick="event.stopPropagation(); openLogin()">Open in new tab ↗</button>
+        </summary>
+        <div class="sect-body">
+          <div id="vault-link-result" class="link-result" style="display:none"></div>
+          <p class="card-desc">Opens the one-time credential form for this conversation's vault in a new tab.</p>
+        </div>
+      </details>
 
-      <section class="card sect" id="sect-events" data-section="events">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-events" data-section="events">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Events</p>
             <h2 class="card-title">關聯此對話的 events</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadConversationEvents()">↻</button>
-        </header>
-        <div id="events-content"><div class="loading-msg">Loading…</div></div>
-      </section>
+          </div></div>
+          <button class="refresh-btn" onclick="event.stopPropagation(); loadConversationEvents()">↻</button>
+        </summary>
+        <div class="sect-body">
+          <div id="events-content"><div class="loading-msg">Loading…</div></div>
+        </div>
+      </details>
 
-      <section class="card sect" id="sect-session" data-section="session">
-        <header class="sect-head">
-          <div>
+      <details class="card sect" id="sect-session" data-section="session">
+        <summary class="sect-head">
+          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
             <p class="eyebrow">Session View</p>
             <h2 class="card-title">對話歷史檢視</h2>
-          </div>
-          <button class="primary-action-btn" onclick="openSessionView()">Open session view</button>
-        </header>
-        <div id="session-link-result" class="link-result" style="display:none"></div>
-        <iframe id="session-frame" class="portal-frame" title="Session View" style="display:none"></iframe>
-      </section>
+          </div></div>
+          <button class="primary-action-btn" onclick="event.stopPropagation(); openSessionView()">Open in new tab ↗</button>
+        </summary>
+        <div class="sect-body">
+          <div id="session-link-result" class="link-result" style="display:none"></div>
+          <p class="card-desc">Opens the session timeline for this conversation in a new tab.</p>
+        </div>
+      </details>
     </div>
 
     <div class="tab-panel" id="panel-global">
@@ -2079,16 +2093,64 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
+    // Sections load lazily: only when their <details> is (or becomes) open,
+    // so switching conversations or opening the admin page doesn't fire every
+    // API at once. sectionLoaded is cleared on conversation switch so an
+    // already-open section refetches for the new scope.
+    //
+    // Looked up by name (not collected into an object up front) because the
+    // loaders below are const declarations further down this same script;
+    // referencing them before their own line runs would hit the temporal
+    // dead zone. By the time this function is actually called (after a
+    // <details> toggle, always after the whole script has executed), they're
+    // all initialized.
+    function sectionLoader(key) {
+      switch (key) {
+        case 'settings': return loadSettings;
+        case 'workspace': return loadWorkspace;
+        case 'skills': return loadSkills;
+        case 'mcp': return loadMcpServers;
+        case 'events': return loadConversationEvents;
+        default: return undefined;
+      }
+    }
+    const sectionLoaded = new Set();
+
+    function conversationSectionEls() {
+      return document.querySelectorAll('#panel-conversation > details[data-section]');
+    }
+
+    function ensureSectionLoaded(key) {
+      if (sectionLoaded.has(key)) return;
+      const loader = sectionLoader(key);
+      if (!loader) return;
+      sectionLoaded.add(key);
+      loader();
+    }
+
+    function initSections() {
+      conversationSectionEls().forEach((el) => {
+        const key = el.dataset.section;
+        const stored = localStorage.getItem('admin-sect-' + key);
+        if (stored !== null) el.open = stored === '1';
+        if (el.open) ensureSectionLoaded(key);
+        el.addEventListener('toggle', () => {
+          localStorage.setItem('admin-sect-' + key, el.open ? '1' : '0');
+          if (el.open) ensureSectionLoaded(key);
+        });
+      });
+    }
+
     function setActiveConversation(key) {
       activeConversationKey = key;
       const sel = document.getElementById('conv-switcher');
       if (sel && sel.value !== key) sel.value = key;
-      // Reset all conversation sections.
-      loadSettings();
-      loadWorkspace();
-      loadSkills();
-      loadMcpServers();
-      loadConversationEvents();
+      // Data is scoped to the previous conversation; drop it so any open
+      // section refetches, and closed sections load fresh on next expand.
+      sectionLoaded.clear();
+      conversationSectionEls().forEach((el) => {
+        if (el.open) ensureSectionLoaded(el.dataset.section);
+      });
       openLogin(true);
       openSessionView(true);
     }
@@ -2672,10 +2734,13 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     const openLogin = (silent) => openPortalLink('vault', 'login', silent);
     const openSessionView = (silent) => openPortalLink('session', 'session', silent);
 
+    // Generates a fresh one-time/short-lived link for the other portal and
+    // opens it in a new tab — the login and session-view tokens are separate
+    // capabilities from the admin token (see docs/portal-auth-model.md), so
+    // this always mints a new link rather than reusing anything cached here.
     async function openPortalLink(resultId, kind, silent) {
       const result = document.getElementById(resultId + '-link-result');
-      const frame = document.getElementById(kind + '-frame');
-      if (silent) { frame.removeAttribute('src'); frame.style.display = 'none'; result.style.display = 'none'; return; }
+      if (silent) { result.style.display = 'none'; return; }
       result.style.display = 'block'; result.className = 'link-result loading'; result.textContent = 'Generating link…';
       try {
         const data = await apiPost('/admin/api/conversations/' + kind + '-link', scopeBody());
@@ -2684,10 +2749,9 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
           (kind === 'login' ? '<span class="link-vault">vault: <code>' + escHtml(data.vaultId) + '</code></span>' : '') +
           '<a href="' + escAttr(data.url) + '" target="_blank" rel="noopener">' + escHtml(data.url) + '</a>' +
           '<button class="copy-link-btn" data-admin-action="copy-link" data-copy-text="' + escAttr(data.url) + '">Copy</button>';
-        frame.src = data.url; frame.style.display = 'block';
+        window.open(data.url, '_blank', 'noopener');
       } catch (err) {
         result.className = 'link-result err'; result.textContent = err.message;
-        frame.removeAttribute('src'); frame.style.display = 'none';
       }
     }
 
@@ -3057,14 +3121,10 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Init ─────────────────────────────────────────────────────────────────────
 
+    // Sections load on demand (see initSections); loadSettingsPanel already
+    // calls loadModels() itself the first time it's needed.
     initConvSwitcher();
-    loadModels().finally(() => {
-      loadSettings();
-      loadWorkspace();
-      loadSkills();
-      loadMcpServers();
-      loadConversationEvents();
-    });
+    initSections();
   `;
 
 function renderAdminPage(token: AdminToken): string {
@@ -3147,11 +3207,6 @@ const adminViewStyles = `
     cursor: pointer; flex-shrink: 0;
   }
 
-  .portal-frame {
-    width: 100%; min-height: 720px;
-    border: 1px solid var(--border); border-radius: 14px; background: #fff;
-  }
-
   .config-grid {
     display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
   }
@@ -3177,11 +3232,27 @@ const adminViewStyles = `
 
   /* ── Sections (Conversation page stack) ─────────────────────────────── */
 
+  /* Each section is a <details>; the card's own padding sits on the
+     <summary>/<div class="sect-body"> instead of the <details> element so a
+     collapsed section is just its header row. */
+  details.sect { padding: 0; overflow: hidden; }
+  details.sect > summary.sect-head {
+    padding: 24px 28px; margin-bottom: 0; cursor: pointer; list-style: none;
+  }
+  details.sect > summary.sect-head::-webkit-details-marker { display: none; }
+  details.sect > .sect-body { padding: 0 28px 24px; }
+
   .sect-head {
     display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+    gap: 12px; flex-wrap: wrap;
   }
   .sect-head .card-title { margin-bottom: 0; }
+  .sect-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+  .sect-caret {
+    flex-shrink: 0; margin-top: 3px; color: var(--subtle);
+    transition: transform 140ms; display: inline-block;
+  }
+  details.sect[open] > summary.sect-head .sect-caret { transform: rotate(90deg); }
   .sect-disabled { opacity: 0.7; }
 
   .refresh-btn {
@@ -3558,7 +3629,6 @@ const adminViewStyles = `
     .tab-btn { padding: 9px 12px; font-size: 0.82rem; min-width: 60px; }
     .config-grid { grid-template-columns: 1fr; }
     .config-row { grid-template-columns: 1fr; gap: 4px; }
-    .portal-frame { min-height: 520px; }
     .workspace-split { grid-template-columns: 1fr; }
     .workspace-tree, .workspace-preview { max-height: 260px; }
     .mcp-preset-grid { grid-template-columns: 1fr; }

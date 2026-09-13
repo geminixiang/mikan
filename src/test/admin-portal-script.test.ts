@@ -43,14 +43,21 @@ function page() {
     ok: true,
     json: async () => ({ url: "https://example.com/?a=1&b=2", vaultId: "<vault>", events: [] }),
   });
+  const windowOpen = vi.fn();
   const context = {
     defaultConversationKey: "slack:C1",
     adminToken: "secret",
     document: { getElementById: get, addEventListener: vi.fn(), querySelectorAll: () => [] },
     fetch,
+    window: { open: windowOpen },
   };
   runInNewContext(script.slice(0, script.indexOf("    // ── Init")), context);
-  return { get, fetch, run: (code: string) => runInNewContext(code, context) };
+  return {
+    get,
+    fetch,
+    windowOpen,
+    run: (code: string) => runInNewContext(code, context),
+  };
 }
 
 describe("admin embedded UI shared flows", () => {
@@ -158,18 +165,24 @@ describe("admin embedded UI shared flows", () => {
   test.each([
     ["openLogin", "vault", "login"],
     ["openSessionView", "session", "session"],
-  ])("%s retains route, frame, escaping and silent reset", async (action, resultId, kind) => {
-    const p = page();
-    await p.run(`${action}()`);
-    expect(p.fetch.mock.calls[0]?.[0]).toBe(`/admin/api/conversations/${kind}-link`);
-    const result = p.get(`${resultId}-link-result`);
-    expect(result.innerHTML).toContain("a=1&amp;b=2");
-    expect(result.innerHTML.includes("&lt;vault&gt;")).toBe(kind === "login");
-    expect(p.get(`${kind}-frame`).src).toContain("example.com");
-    await p.run(`${action}(true)`);
-    expect(result.style.display).toBe("none");
-    expect(p.get(`${kind}-frame`).removeAttribute).toHaveBeenCalledWith("src");
-  });
+  ])(
+    "%s retains route, new-tab open, escaping and silent reset",
+    async (action, resultId, kind) => {
+      const p = page();
+      await p.run(`${action}()`);
+      expect(p.fetch.mock.calls[0]?.[0]).toBe(`/admin/api/conversations/${kind}-link`);
+      const result = p.get(`${resultId}-link-result`);
+      expect(result.innerHTML).toContain("a=1&amp;b=2");
+      expect(result.innerHTML.includes("&lt;vault&gt;")).toBe(kind === "login");
+      expect(p.windowOpen).toHaveBeenCalledWith(
+        "https://example.com/?a=1&b=2",
+        "_blank",
+        "noopener",
+      );
+      await p.run(`${action}(true)`);
+      expect(result.style.display).toBe("none");
+    },
+  );
 
   test.each(["loadConversationEvents", "loadEvents"])(
     "%s retains scope and delete permissions",
