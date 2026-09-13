@@ -154,7 +154,7 @@ mikan は単一の OpenTelemetry traces/metrics pipeline を所有し、標準 O
 
 `SENTRY_DSN`（または互換の `sentry.dsn`）は Sentry issue reporting を有効にし、error を active OpenTelemetry trace に link します。Sentry が第2の application trace/metric pipeline を作ることはありません。同じ traces を Phoenix と Sentry の両方へ送る場合は OpenTelemetry Collector で fan-out してください。Sentry direct OTLP は現在 traces/logs をサポートしますが OTLP metrics はサポートしません。
 
-サポート protocol は `http/protobuf` のみです。`OTEL_TRACES_EXPORTER=none` と `OTEL_METRICS_EXPORTER=none` で signal ごとに無効化できます。prompts、completions、message text、tool arguments/results、file contents、credentials、tokens、absolute paths は送信しません。resource attributes は allowlist されるため、`OTEL_RESOURCE_ATTRIBUTES` に secrets や paths を入れないでください。shutdown は conversation work を drain した後に OTLP を flush/shutdown し、最後に Sentry を close します。
+サポート protocol は `http/protobuf` のみです。`OTEL_TRACES_EXPORTER=none` と `OTEL_METRICS_EXPORTER=none` で signal ごとに無効化できます。prompts、completions、message text、tool arguments/results、file contents、credentials、tokens、absolute paths は送信しません。一方で model ID、token/cost totals、timings、payload sizes、tool categories、retry/compaction/budget counts など、content-free な運用 metadata は送信します。platform conversation、session、message、thread、user identifiers は opaque hash としてのみ export され、secret `TELEMETRY_HASH_KEY` を設定すると deployment-specific HMAC を使用します。resource attributes は allowlist されるため、`OTEL_RESOURCE_ATTRIBUTES` に secrets や paths を入れないでください。shutdown は conversation work を drain した後に OTLP を flush/shutdown し、最後に Sentry を close します。
 
 ## 環境変数のエイリアス
 

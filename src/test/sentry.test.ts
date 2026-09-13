@@ -48,6 +48,7 @@ import {
   sanitizeEvent,
   sanitizeValue,
 } from "../observability/sentry.js";
+import { telemetryIdentifier } from "../observability/privacy.js";
 
 describe("Sentry initialization", () => {
   test("keeps gen_ai inputs and outputs off by never declaring dataCollection", () => {
@@ -306,13 +307,13 @@ describe("run attribution", () => {
         model: "gpt-5.5",
       }),
     ).toEqual({
-      conversation_id: "C1",
-      channel_id: "C1",
-      session_key: "C1:T1",
-      message_id: "M1",
+      conversation_id: telemetryIdentifier("conv", "C1"),
+      channel_id: telemetryIdentifier("conv", "C1"),
+      session_key: telemetryIdentifier("session", "C1:T1"),
+      message_id: telemetryIdentifier("message", "M1"),
       platform: "slack",
-      user_id: "U1",
-      thread_ts: "T1",
+      user_id: telemetryIdentifier("user", "U1"),
+      thread_id: telemetryIdentifier("thread", "T1"),
       provider: "openai",
       model: "gpt-5.5",
     });
@@ -328,13 +329,20 @@ describe("run attribution", () => {
       userName: "alice",
     });
 
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("conversation_id", "C1");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("session_key", "C1:T1");
+    const conversationId = telemetryIdentifier("conv", "C1");
+    const sessionId = telemetryIdentifier("session", "C1:T1");
+    const userId = telemetryIdentifier("user", "U1");
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("conversation_id", conversationId);
+    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("session_key", sessionId);
     expect(sentryMock.scope.setAttributes).toHaveBeenCalledWith(
-      expect.objectContaining({ conversation_id: "C1", channel_id: "C1", user_id: "U1" }),
+      expect.objectContaining({
+        conversation_id: conversationId,
+        channel_id: conversationId,
+        user_id: userId,
+      }),
     );
-    expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: "U1", username: "alice" });
-    expect(sentryMock.scope.setConversationId).toHaveBeenCalledWith("C1:T1");
+    expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: userId });
+    expect(sentryMock.scope.setConversationId).toHaveBeenCalledWith(sessionId);
   });
 
   test("propagates root attribution onto child spans", () => {

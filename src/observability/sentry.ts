@@ -72,6 +72,7 @@ export type {
   SentrySpanPayload,
   SentryTransactionPayload,
 } from "./types.js";
+import { telemetryIdentifier } from "./privacy.js";
 import type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
@@ -239,14 +240,17 @@ function setOptionalTag(scope: Scope, key: string, value: string | undefined): v
 export function createRunAttributionAttributes(
   context: SentryRunScopeContext,
 ): SentryAttributionAttributes {
+  const conversationId = telemetryIdentifier("conv", context.conversationId);
+  const sessionId = telemetryIdentifier("session", context.sessionKey);
   return metricAttributes({
-    conversation_id: context.conversationId,
-    channel_id: context.conversationId,
-    session_key: context.sessionKey,
-    message_id: context.messageId,
+    conversation_id: conversationId,
+    channel_id: conversationId,
+    session_key: sessionId,
+    message_id: telemetryIdentifier("message", context.messageId),
     platform: context.platform,
-    user_id: context.userId,
-    thread_ts: context.threadTs,
+    conversation_kind: context.conversationKind,
+    user_id: telemetryIdentifier("user", context.userId),
+    thread_id: context.threadTs ? telemetryIdentifier("thread", context.threadTs) : undefined,
     provider: context.provider,
     model: context.model,
   });
@@ -275,21 +279,17 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
     scope.setTag(key, value);
   }
   scope.setAttributes(attributes);
-  // Agent Monitoring groups gen_ai spans by this id. The session key is the
-  // thread-level unit (a shared channel has one conversationId across many
-  // threads) and is already emitted as the session_key tag.
-  scope.setConversationId(context.sessionKey);
-  scope.setUser({
-    id: context.userId,
-    username: context.userName,
-  });
+  // Agent Monitoring groups spans by an opaque, stable session identifier.
+  scope.setUser({ id: String(attributes.user_id) });
+  scope.setConversationId(String(attributes.session_key));
   scope.setContext("agent_run", {
-    conversationId: context.conversationId,
-    channelId: context.conversationId,
-    sessionKey: context.sessionKey,
-    messageId: context.messageId,
-    threadTs: context.threadTs,
+    conversationId: attributes.conversation_id,
+    channelId: attributes.channel_id,
+    sessionKey: attributes.session_key,
+    messageId: attributes.message_id,
+    threadId: attributes.thread_id,
     platform: context.platform,
+    conversationKind: context.conversationKind,
     provider: context.provider,
     model: context.model,
   });

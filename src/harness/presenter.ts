@@ -22,14 +22,22 @@ import {
   recordGauge,
   reportUserFacingError,
   startOperationSpan,
+  telemetryIdentifier,
+  updateActiveSpanAttribution,
   type ObservabilitySpan,
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
 
 import * as log from "../log.js";
 
+type LlmOperationSpan = {
+  span: ObservabilitySpan;
+  startedAt: number;
+  firstTokenAt?: number;
+};
+
 type RunOperationSpans = {
-  llm: ObservabilitySpan[];
+  llm: LlmOperationSpan[];
   tools: Map<string, ObservabilitySpan>;
 };
 
@@ -54,7 +62,7 @@ function endOutstandingOperationSpans(runState: RunnerSessionState): void {
   const spans = operationSpans.get(runState);
   if (!spans) return;
   const aborted = operationError("AbortError");
-  for (const span of spans.llm) span.end({ error: aborted });
+  for (const entry of spans.llm) entry.span.end({ error: aborted });
   for (const span of spans.tools.values()) span.end({ error: aborted });
   operationSpans.delete(runState);
 }
@@ -85,6 +93,18 @@ export function createRunState(): RunnerSessionState {
     toolProgressTimer: undefined,
     totalUsage: createEmptyUsageTotals(),
     llmCallCount: 0,
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    toolInputCharacters: 0,
+    toolOutputCharacters: 0,
+    assistantMessageCount: 0,
+    outputCharacters: 0,
+    reasoningTokens: 0,
+    retryCount: 0,
+    compactionCount: 0,
+    budgetExceeded: false,
+    firstTokenLatencyMs: undefined,
+    responseModel: undefined,
     stopReason: "stop",
     errorMessage: undefined,
     reportedLlmError: false,
@@ -123,6 +143,18 @@ export function activateRunPresentation(
   runState.toolProgressTimer = undefined;
   runState.totalUsage = createEmptyUsageTotals();
   runState.llmCallCount = 0;
+  runState.toolCallCount = 0;
+  runState.toolErrorCount = 0;
+  runState.toolInputCharacters = 0;
+  runState.toolOutputCharacters = 0;
+  runState.assistantMessageCount = 0;
+  runState.outputCharacters = 0;
+  runState.reasoningTokens = 0;
+  runState.retryCount = 0;
+  runState.compactionCount = 0;
+  runState.budgetExceeded = false;
+  runState.firstTokenLatencyMs = undefined;
+  runState.responseModel = undefined;
   runState.stopReason = "stop";
   runState.errorMessage = undefined;
   runState.reportedLlmError = false;
@@ -428,7 +460,6 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     responder,
     platform,
     model,
-    agentConfig,
     sessionConversation,
     sessionUuid,
     waitForQueue,
@@ -447,11 +478,13 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   const contextWindow = model.contextWindow || 200000;
 
   const { totalUsage } = runState;
+  const channelId = telemetryIdentifier("conv", sessionConversation);
+  const sessionId = telemetryIdentifier("session_file", sessionUuid);
   const runMetricAttributes = metricAttributes({
     provider: model.provider,
-    model: agentConfig.model,
-    channel_id: sessionConversation,
-    session_id: sessionUuid,
+    model: model.id,
+    channel_id: channelId,
+    session_id: sessionId,
     stop_reason: runState.stopReason,
     llm_calls: runState.llmCallCount,
   });
@@ -470,9 +503,34 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   recordDistribution("agent.run.cost", totalUsage.cost.total, {
     attributes: runMetricAttributes,
   });
-  recordGauge("agent.context.utilization", contextTokens / contextWindow, {
+  const contextUtilization = contextTokens / contextWindow;
+  recordGauge("agent.context.utilization", contextUtilization, {
     unit: "ratio",
     attributes: runMetricAttributes,
+  });
+  updateActiveSpanAttribution({
+    "gen_ai.request.model": model.id,
+    "gen_ai.response.model": runState.responseModel ?? model.id,
+    "gen_ai.usage.input_tokens": totalUsage.input + totalUsage.cacheRead + totalUsage.cacheWrite,
+    "gen_ai.usage.input_tokens.cached": totalUsage.cacheRead,
+    "gen_ai.usage.input_tokens.cache_write": totalUsage.cacheWrite,
+    "gen_ai.usage.output_tokens": totalUsage.output,
+    "gen_ai.usage.output_tokens.reasoning": runState.reasoningTokens,
+    "mikan.usage.cost_usd": totalUsage.cost.total,
+    "mikan.context.utilization": contextUtilization,
+    "mikan.llm.call_count": runState.llmCallCount,
+    "mikan.tool.call_count": runState.toolCallCount,
+    "mikan.tool.error_count": runState.toolErrorCount,
+    "mikan.tool.input.characters": runState.toolInputCharacters,
+    "mikan.tool.output.characters": runState.toolOutputCharacters,
+    "mikan.output.message_count": runState.assistantMessageCount,
+    "mikan.output.characters": runState.outputCharacters,
+    "mikan.retry.count": runState.retryCount,
+    "mikan.compaction.count": runState.compactionCount,
+    "mikan.budget.exceeded": runState.budgetExceeded,
+    ...(runState.firstTokenLatencyMs === undefined
+      ? {}
+      : { "mikan.response.first_token_ms": runState.firstTokenLatencyMs }),
   });
 
   const summary = log.logUsageSummary(
@@ -504,6 +562,24 @@ function toolResultContentText(result: unknown): string | undefined {
 function extractToolResultText(result: unknown): string {
   if (typeof result === "string") return result;
   return toolResultContentText(result) ?? JSON.stringify(result);
+}
+
+function serializedLength(value: unknown): number {
+  if (typeof value === "string") return value.length;
+  try {
+    return JSON.stringify(value)?.length ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+function toolCategory(name: string): string {
+  if (["read", "write", "edit", "bash"].includes(name)) return "sandbox";
+  if (name === "subagent") return "agent";
+  if (name.startsWith("mcp__")) return "mcp";
+  if (name.startsWith("github_")) return "github";
+  if (name === "slack_blockkit") return "platform";
+  return "function";
 }
 
 type PresenterEventContext = {
@@ -539,6 +615,8 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
   const { runState, responder, logCtx, queue, baseAttrs } = context;
   const args = (event.args ?? {}) as { label?: string };
   const label = args.label || event.toolName;
+  runState.toolCallCount += 1;
+  runState.toolInputCharacters += serializedLength(event.args);
   runState.pendingTools.set(event.toolCallId, {
     toolName: event.toolName,
     args: event.args,
@@ -563,6 +641,9 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
       metricAttributes({
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": event.toolName,
+        "gen_ai.tool.type": "function",
+        "mikan.tool.category": toolCategory(event.toolName),
+        "mikan.tool.input.characters": serializedLength(event.args),
         "openinference.span.kind": "TOOL",
         ...baseAttrs,
       }),
@@ -610,6 +691,9 @@ function recordToolMetrics(
 function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): void {
   const { runState, responder, logCtx } = context;
   const resultStr = extractToolResultText(event.result);
+  const outputCharacters = serializedLength(event.result);
+  runState.toolOutputCharacters += outputCharacters;
+  if (event.isError) runState.toolErrorCount += 1;
   const pending = runState.pendingTools.get(event.toolCallId);
   const progress = runState.toolProgress.get(event.toolCallId);
   if (progress) progress.status = event.isError ? "error" : "done";
@@ -630,6 +714,9 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   toolSpan?.end({
     attributes: metricAttributes({
       "gen_ai.tool.name": event.toolName,
+      "gen_ai.tool.type": "function",
+      "mikan.tool.category": toolCategory(event.toolName),
+      "mikan.tool.output.characters": outputCharacters,
       "openinference.span.kind": "TOOL",
       duration_ms: durationMs,
       ...context.baseAttrs,
@@ -649,20 +736,21 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
   if (event.message.role !== "assistant") return;
   context.runState.llmCallCount += 1;
-  spansFor(context.runState).llm.push(
-    startOperationSpan(
-      `chat ${context.agentConfig.model}`,
+  spansFor(context.runState).llm.push({
+    span: startOperationSpan(
+      `chat ${context.model.id}`,
       metricAttributes({
         "gen_ai.operation.name": "chat",
         "gen_ai.provider.name": context.model.provider,
-        "gen_ai.request.model": context.agentConfig.model,
+        "gen_ai.request.model": context.model.id,
         "openinference.span.kind": "LLM",
         "llm.provider": context.model.provider,
-        "llm.model_name": context.agentConfig.model,
+        "llm.model_name": context.model.id,
         ...context.baseAttrs,
       }),
     ),
-  );
+    startedAt: Date.now(),
+  });
   addLifecycleEvent("agent.llm.call.started", {
     call_index: context.runState.llmCallCount,
     provider: context.model.provider,
@@ -675,6 +763,11 @@ function handleMessageStart(event: MessageStartEvent, context: PresenterEventCon
 function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventContext): void {
   const update = event.assistantMessageEvent;
   if (update.type !== "text_delta" || !update.delta) return;
+  const llmEntry = spansFor(context.runState).llm[0];
+  if (llmEntry && llmEntry.firstTokenAt === undefined) {
+    llmEntry.firstTokenAt = Date.now();
+    context.runState.firstTokenLatencyMs ??= llmEntry.firstTokenAt - llmEntry.startedAt;
+  }
   if (context.responder.appendResponseDelta && !context.runState.suppressResponseDeltas) {
     context.queue.enqueue(async () => {
       await context.responder.appendResponseDelta?.(update.delta);
@@ -694,6 +787,8 @@ function recordAssistantUsage(message: AssistantMessage, context: PresenterEvent
   totalUsage.cost.cacheRead += message.usage.cost.cacheRead;
   totalUsage.cost.cacheWrite += message.usage.cost.cacheWrite;
   totalUsage.cost.total += message.usage.cost.total;
+  context.runState.reasoningTokens += message.usage.reasoning ?? 0;
+  context.runState.responseModel = message.responseModel ?? message.model;
 
   const attributes = metricAttributes({
     provider: context.model.provider,
@@ -772,27 +867,43 @@ function presentAssistantMessage(message: AssistantMessage, context: PresenterEv
 function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext): void {
   if (event.message.role !== "assistant") return;
   const message = event.message;
+  context.runState.assistantMessageCount += 1;
+  context.runState.outputCharacters += message.content.reduce(
+    (total, part) => total + (part.type === "text" ? part.text.length : 0),
+    0,
+  );
   if (message.stopReason) {
     context.runState.stopReason = message.stopReason;
     // The settling message clears any stale error left by a recovered retry.
     context.runState.errorMessage = message.errorMessage;
   }
   recordAssistantUsage(message, context);
-  const llmSpan = spansFor(context.runState).llm.shift();
+  const llmEntry = spansFor(context.runState).llm.shift();
   const inputTokens = message.usage
     ? message.usage.input + message.usage.cacheRead + message.usage.cacheWrite
     : undefined;
-  llmSpan?.end({
+  llmEntry?.span.end({
     attributes: metricAttributes({
       "gen_ai.provider.name": context.model.provider,
-      "gen_ai.request.model": context.agentConfig.model,
+      "gen_ai.request.model": context.model.id,
+      "gen_ai.response.model": message.responseModel ?? message.model,
       "gen_ai.usage.input_tokens": inputTokens,
       "gen_ai.usage.output_tokens": message.usage?.output,
-      "gen_ai.usage.cache_read.input_tokens": message.usage?.cacheRead,
-      "gen_ai.usage.cache_write.input_tokens": message.usage?.cacheWrite,
+      "gen_ai.usage.input_tokens.cached": message.usage?.cacheRead,
+      "gen_ai.usage.input_tokens.cache_write": message.usage?.cacheWrite,
+      "gen_ai.usage.output_tokens.reasoning": message.usage?.reasoning,
+      "mikan.usage.cost_usd": message.usage?.cost.total,
+      "mikan.response.first_token_ms":
+        llmEntry?.firstTokenAt === undefined
+          ? undefined
+          : llmEntry.firstTokenAt - llmEntry.startedAt,
+      "mikan.output.characters": message.content.reduce(
+        (total, part) => total + (part.type === "text" ? part.text.length : 0),
+        0,
+      ),
       "openinference.span.kind": "LLM",
       "llm.provider": context.model.provider,
-      "llm.model_name": context.agentConfig.model,
+      "llm.model_name": context.model.id,
       "llm.token_count.prompt": inputTokens,
       "llm.token_count.completion": message.usage?.output,
       "llm.token_count.total":
@@ -809,6 +920,7 @@ function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext
 
 function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventContext): void {
   if (event.type === "compaction_start") {
+    context.runState.compactionCount += 1;
     const text = "_Compacting context..._";
     log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
     context.queue.enqueue(() => context.responder.respond(text), "compaction start");
@@ -823,12 +935,14 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
     return;
   }
   if (event.type === "auto_retry_start") {
+    context.runState.retryCount += 1;
     log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
     const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
     context.queue.enqueue(() => context.responder.respond(text), "retry");
     return;
   }
 
+  context.runState.budgetExceeded = true;
   log.logWarning(
     "Run stopped by budget circuit breaker",
     `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
@@ -886,8 +1000,10 @@ export function attachSessionEventHandlers(params: {
       logCtx: runState.logCtx,
       queue: runState.queue,
       baseAttrs: {
-        channel_id: runState.logCtx.conversationId,
-        session_id: runState.logCtx.sessionId,
+        channel_id: telemetryIdentifier("conv", runState.logCtx.conversationId),
+        session_id: runState.logCtx.sessionId
+          ? telemetryIdentifier("session_file", runState.logCtx.sessionId)
+          : undefined,
       },
       model,
       agentConfig,

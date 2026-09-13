@@ -40,7 +40,11 @@ import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../type
 import { createHash } from "node:crypto";
 import { resolveConversationSettings } from "../config.js";
 import { provisionOfficeOpenConnectorToken } from "./open-connector.js";
-import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
+import {
+  addLifecycleEvent,
+  telemetryIdentifier,
+  updateActiveSpanAttribution,
+} from "../observability/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import {
@@ -515,9 +519,14 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 
   updateActiveSpanAttribution({
     provider: model.provider,
-    model: agentConfig.model,
-    channel_id: prepared.sessionConversation,
-    session_id: sessionUuid,
+    model: model.id,
+    channel_id: telemetryIdentifier("conv", prepared.sessionConversation),
+    session_id: telemetryIdentifier("session_file", sessionUuid),
+    "mikan.input.message_count": 1,
+    "mikan.input.characters": prepared.userMessage.length,
+    "mikan.input.attachment_count": message.attachments?.length ?? 0,
+    "mikan.input.image_count": prepared.imageAttachments.length,
+    "mikan.input.has_text": prepared.userMessage.length > 0,
   });
   addLifecycleEvent("agent.prompt.sent", {
     provider: model.provider,

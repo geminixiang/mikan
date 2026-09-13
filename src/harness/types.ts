@@ -61,6 +61,18 @@ export interface RunnerSessionState {
     cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
   };
   llmCallCount: number;
+  toolCallCount: number;
+  toolErrorCount: number;
+  toolInputCharacters: number;
+  toolOutputCharacters: number;
+  assistantMessageCount: number;
+  outputCharacters: number;
+  reasoningTokens: number;
+  retryCount: number;
+  compactionCount: number;
+  budgetExceeded: boolean;
+  firstTokenLatencyMs?: number;
+  responseModel?: string;
   stopReason: string;
   errorMessage: string | undefined;
   reportedLlmError: boolean;

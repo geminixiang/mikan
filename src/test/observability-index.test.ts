@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   order: [] as string[],
@@ -26,7 +26,10 @@ import {
   createRunAttributionAttributes,
   metricAttributes,
   shutdownObservability,
+  telemetryIdentifier,
 } from "../observability/index.js";
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("vendor-neutral observability privacy", () => {
   test("emits content-free standard GenAI and Phoenix attribution", () => {
@@ -43,9 +46,9 @@ describe("vendor-neutral observability privacy", () => {
     expect(attributes).toMatchObject({
       "gen_ai.operation.name": "invoke_agent",
       "gen_ai.agent.name": "mikan",
-      "gen_ai.conversation.id": "session-1",
+      "gen_ai.conversation.id": telemetryIdentifier("session", "session-1"),
       "openinference.span.kind": "AGENT",
-      "session.id": "session-1",
+      "session.id": telemetryIdentifier("session", "session-1"),
     });
     expect(Object.keys(attributes)).not.toEqual(
       expect.arrayContaining([
@@ -56,6 +59,14 @@ describe("vendor-neutral observability privacy", () => {
         "output.value",
       ]),
     );
+  });
+
+  test("uses a deployment key for stable opaque identifiers", () => {
+    vi.stubEnv("TELEMETRY_HASH_KEY", "deployment-secret");
+    const first = telemetryIdentifier("conv", "C123");
+    expect(first).toBe(telemetryIdentifier("conv", "C123"));
+    expect(first).not.toContain("C123");
+    expect(first).not.toBe(telemetryIdentifier("user", "C123"));
   });
 
   test("sanitizes sensitive keys, credentials, and absolute paths before recording", () => {

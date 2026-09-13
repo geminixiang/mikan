@@ -12,6 +12,7 @@ export interface RunScopeContext {
   sessionKey: string;
   messageId: string;
   platform: string;
+  conversationKind?: "direct" | "shared";
   userId: string;
   userName?: string;
   threadTs?: string;

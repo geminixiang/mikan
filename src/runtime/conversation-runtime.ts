@@ -477,6 +477,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       messageId: message.id,
       platform: platform.name,
+      conversationKind: message.conversationKind,
       userId: message.userId,
       userName: message.userName,
       threadTs: message.threadTs,
@@ -490,14 +491,16 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         sessionKey,
         messageId: message.id,
         platform: platform.name,
+        conversationKind: message.conversationKind,
         userId: message.userId,
         userName: message.userName,
         threadTs: message.threadTs,
       },
       async () => {
         addLifecycleEvent("agent.run.started", {
-          channel_id: conversationId,
+          channel_id: attribution.channel_id,
           platform: platform.name,
+          conversation_kind: message.conversationKind,
           has_attachments: (message.attachments?.length ?? 0) > 0,
         });
 
@@ -514,7 +517,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           });
           recordCounter("agent.run.completed", 1, completionAttrs);
           addLifecycleEvent("agent.run.completed", {
-            channel_id: conversationId,
+            channel_id: attribution.channel_id,
             platform: platform.name,
             stop_reason: result.stopReason,
             duration_ms: durationMs,

@@ -158,6 +158,10 @@ describe("presenter event routing", () => {
     await runQueue.wait();
 
     expect(runState.llmCallCount).toBe(1);
+    expect(runState.assistantMessageCount).toBe(1);
+    expect(runState.outputCharacters).toBe(5);
+    expect(runState.responseModel).toBe(complete.model);
+    expect(runState.firstTokenLatencyMs).toBeTypeOf("number");
     expect(runState.stopReason).toBe("stop");
     expect(runState.totalUsage).toEqual({
       input: complete.usage.input,
@@ -191,6 +195,10 @@ describe("presenter event routing", () => {
     await runQueue.wait();
 
     expect(runState.pendingTools.has("tool-1")).toBe(false);
+    expect(runState.toolCallCount).toBe(1);
+    expect(runState.toolErrorCount).toBe(0);
+    expect(runState.toolInputCharacters).toBeGreaterThan(0);
+    expect(runState.toolOutputCharacters).toBe("contents".length);
     expect(runState.toolProgress.get("tool-1")).toEqual({
       label: "Inspect file",
       status: "done",
@@ -300,7 +308,7 @@ describe("presenter event routing", () => {
   });
 
   test("routes compaction, retry, and budget lifecycle diagnostics", async () => {
-    const { emit, responder, runQueue } = attachPresenter();
+    const { emit, responder, runQueue, runState } = attachPresenter();
 
     await emit({ type: "compaction_start", reason: "threshold" });
     await emit({
@@ -328,6 +336,9 @@ describe("presenter event routing", () => {
       "_Stopped: run budget exceeded (call limit)_",
       { style: "error" },
     );
+    expect(runState.compactionCount).toBe(1);
+    expect(runState.retryCount).toBe(1);
+    expect(runState.budgetExceeded).toBe(true);
   });
 
   test("reactivation clears completed tool progress, subagent dashboard, and attribution", async () => {
