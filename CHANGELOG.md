@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.56]
+
+### Added
+
+- Add content-free agent diagnostics for actual model IDs, token and cost totals, first-token latency, context utilization, message and attachment counts, payload sizes, tool categories and status, and retry, compaction, and budget summaries.
+
+### Security
+
+- Replace raw conversation, session, message, thread, and user telemetry identifiers with stable opaque values, support deployment-specific HMACs through `TELEMETRY_HASH_KEY`, and stop sending usernames to Sentry.
+
 ## [1.0.0-beta.55]
 
 ### Added
