@@ -145,8 +145,8 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   workspaceDir: string;
   availableTools: MikanHarnessTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
-  /** Sandbox-backed execution env forwarded to the child session's tools. */
-  toolContext: ExecutionToolContext;
+  /** Sandbox-backed execution env; may be omitted when no native execution tools are granted. */
+  toolContext?: ExecutionToolContext;
   /** Process-wide launch pool shared by all parent runs. */
   slots?: SubagentSlotPool;
   /** Host-snapshotted parent transcript; never sourced from the public request. */

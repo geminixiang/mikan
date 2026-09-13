@@ -110,6 +110,21 @@ describe("ContainerExecutor", () => {
     vi.restoreAllMocks();
   });
 
+  test("applies guest cwd only to docker, preserving host timeout and cancellation", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
+    const signal = new AbortController().signal;
+
+    await executor.exec("pwd", { cwd: "/guest-only/work space", timeout: 5, signal });
+
+    expect(exec).toHaveBeenCalledWith(expect.stringContaining("-w '/guest-only/work space'"), {
+      timeout: 5,
+      signal,
+    });
+  });
+
   test("bootstraps git credential helper when GitHub token env is injected", async () => {
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")

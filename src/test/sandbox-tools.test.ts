@@ -4,9 +4,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   TODO_CONTEXT,
+  createReadTool,
+  createWriteTool,
+  createEditTool,
+  createBashTool,
   type AgentHarnessToolInvocation,
   type ExecutionEnv,
 } from "@earendil-works/pi-agent-core";
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import { HostExecutor } from "../sandbox/host.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
@@ -43,8 +48,16 @@ describe("sandbox tools", () => {
     return found;
   };
 
-  const run = (name: string, params: Record<string, unknown>) =>
-    tool(name).execute("call-1", params, () => {}, { env }, invocation, TODO_CONTEXT);
+  const run = async (name: string, params: Record<string, unknown>) => {
+    const candidate = tool(name);
+    const validated = validateToolArguments(candidate, {
+      type: "toolCall",
+      id: "call-1",
+      name,
+      arguments: params,
+    });
+    return candidate.execute("call-1", validated, () => {}, { env }, invocation, TODO_CONTEXT);
+  };
 
   beforeEach(() => {
     dir = join(tmpdir(), `mikan-sandbox-tools-${Date.now()}-${Math.random()}`);
@@ -69,6 +82,35 @@ describe("sandbox tools", () => {
         .properties;
       expect(properties).toHaveProperty("label");
     }
+  });
+
+  test("preserves native schemas when adding an optional label", () => {
+    for (const native of [
+      createReadTool(),
+      createWriteTool(),
+      createEditTool(),
+      createBashTool(),
+    ]) {
+      const { properties, ...schema } = tool(native.name).parameters as {
+        properties: Record<string, unknown>;
+      };
+      const { properties: nativeProperties, ...nativeSchema } = native.parameters;
+      expect(schema).toEqual(nativeSchema);
+      expect(properties).toEqual(expect.objectContaining(nativeProperties));
+    }
+  });
+
+  test("rejects native tools without an explicit execution env", async () => {
+    await expect(
+      tool("read").execute(
+        "call-1",
+        { path: "README.md" },
+        () => {},
+        undefined!,
+        invocation,
+        TODO_CONTEXT,
+      ),
+    ).rejects.toThrow("requires toolContext.env");
   });
 
   test("write then read round-trips content", async () => {
@@ -136,6 +178,13 @@ describe("sandbox tools", () => {
   test("bash runs a command and returns its output", async () => {
     const result = await run("bash", { command: "echo hello-from-bash", label: "say hi" });
     expect(textOf(result as never)).toContain("hello-from-bash");
+  });
+
+  test("read and bash accept native minimal arguments without label or optional fields", async () => {
+    const path = join(dir, "minimal.txt");
+    writeFileSync(path, "minimal read");
+    expect(textOf(await run("read", { path }))).toContain("minimal read");
+    expect(textOf(await run("bash", { command: "printf minimal-bash" }))).toContain("minimal-bash");
   });
 
   test("bash reports a non-zero exit", async () => {

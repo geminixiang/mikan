@@ -76,6 +76,12 @@ Use `setSystemPrompt(text)` between prompts instead of mutating the removed
 is no longer exposed. Per-prompt tool grants use `prompt(text, { tools })`;
 subsequent prompts use the session's default tools unless overridden again.
 
+File and shell behavior comes from pi-agent-core's native tools. mikan's thin
+adapter preserves their schemas, adds the presentation `label`, and supplies
+an authorized sandbox `ExecutionEnv`. Native execution tools require
+`toolContext.env`; there is no implicit host fallback. Existing integrations
+using only plain `AgentTool`s may omit `toolContext`.
+
 `resume({ budget, tools })` delegates recovery of an open operation to Pi's native
 lane. It can be used after reopening a store that contains an accepted or
 interrupted operation. A normal new `prompt()` preserves Pi's busy-lane rejection

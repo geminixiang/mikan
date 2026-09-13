@@ -38,19 +38,27 @@ function tagHarnessTool(tool: MikanHarnessTool): MikanHarnessTool {
  * and it is stripped before the original tool sees the arguments.
  */
 function withLabel(tool: MikanHarnessTool): MikanHarnessTool {
-  const schema = tool.parameters as unknown as { properties?: Record<string, TSchema> };
-  const parameters = Type.Object({
-    ...schema.properties,
-    label: Type.Optional(
-      Type.String({ description: "Brief description of this action (shown to user)" }),
-    ),
-  });
+  const schema = tool.parameters as TSchema;
+  // Pi uses `typebox`, not mikan's `@sinclair/typebox`. Preserve its JSON
+  // Schema (especially required) instead of rebuilding optional markers.
+  const parameters = {
+    ...schema,
+    properties: {
+      ...schema.properties,
+      label: Type.String({ description: "Brief description of this action (shown to user)" }),
+    },
+  };
 
   return tagHarnessTool({
     ...tool,
     parameters,
-    execute: (...args: Parameters<MikanHarnessTool["execute"]>) => {
+    execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
       const [toolCallId, params, onUpdate, toolContext, invocation, context] = args;
+      if (!toolContext?.env) {
+        throw new Error(
+          `Tool ${tool.name} requires toolContext.env; supply an authorized execution env.`,
+        );
+      }
       const { label: _label, ...rest } = params as Record<string, unknown>;
       return tool.execute(
         toolCallId,

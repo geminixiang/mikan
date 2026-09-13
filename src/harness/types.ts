@@ -345,7 +345,8 @@ export interface MikanAgentSessionOptions {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: MikanToolInput[];
-  toolContext: ExecutionToolContext;
+  /** Required by native execution tools; plain AgentTools need no execution env. */
+  toolContext?: ExecutionToolContext;
   models: MikanModels;
   sessionStore: SessionStore;
   settings?: {
