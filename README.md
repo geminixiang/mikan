@@ -140,6 +140,7 @@ For routing, mounts, vault behavior, managed container details, and Cloudflare n
 | `/new` / `/pi-new`                               | Reset the current session                                        |
 | `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                      |
 | `/sandbox` / `/pi-sandbox [boost\|door …]`       | Show sandbox status, boost limits, or set the office door policy |
+| `/pi-auto-reply <on\|off>`                       | Toggle mention-free replies for the current Slack channel        |
 | `/admin` / `/pi-admin`                           | Open the admin portal                                            |
 | `stop` / `/stop`                                 | Stop the current run (works on every platform)                   |
 
@@ -224,4 +225,4 @@ PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit sty
 
 MIT — see [LICENSE](LICENSE).
 
-Auto-reply has been retired. Existing `auto-reply` / `auto-reply.disabled` marker files and `llm.autoReply` / `autoReply` settings no longer take effect; reading configuration does not delete these files.
+Slack auto-reply is a per-conversation on/off switch stored as `slack.autoReply`. Legacy marker files, rules, and `llm.autoReply` judge-model settings remain retired and are ignored.

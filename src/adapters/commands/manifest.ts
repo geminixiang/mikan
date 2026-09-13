@@ -71,6 +71,18 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     telegramCommand: true,
   },
   {
+    name: "autoreply",
+    aliases: ["auto-reply"],
+    description: "Enable or disable replies without mentions",
+    arg: {
+      name: "state",
+      description: "on or off",
+      required: true,
+    },
+    slackCommand: "/pi-auto-reply",
+    slackRoute: { includeText: true },
+  },
+  {
     name: "stop",
     description: "Stop the current conversation",
     magicWord: true,
@@ -91,6 +103,9 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     description: "Open the admin portal",
     slackCommand: "/pi-admin",
     slackRoute: { thread: true },
+    discord: true,
+    telegramMenu: {},
+    telegramCommand: true,
   },
 ];
 

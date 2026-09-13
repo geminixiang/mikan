@@ -1,5 +1,6 @@
 import { MikanModels } from "../../harness/index.js";
 import { AdminCommandHandler } from "./admin.js";
+import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { LoginCommandHandler } from "./login.js";
 import { COMMAND_MANIFEST } from "./manifest.js";
 import { ModelCommandHandler } from "./model.js";
@@ -17,6 +18,7 @@ import type { CommandContext, CommandHandler, ModelRegistry } from "./types.js";
  */
 const HANDLER_FACTORIES: Record<string, (modelRegistry: ModelRegistry) => CommandHandler> = {
   admin: () => new AdminCommandHandler(),
+  autoreply: () => new AutoReplyCommandHandler(),
   login: () => new LoginCommandHandler(),
   session: () => new SessionViewCommandHandler(),
   model: (modelRegistry) => new ModelCommandHandler(modelRegistry),

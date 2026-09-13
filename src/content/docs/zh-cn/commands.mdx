@@ -28,6 +28,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/new` / `/pi-new`                                                   | 重置当前会话。仅限 DM。                                                                       |
 | `/model` / `/pi-model [provider/model[:thinking]]`                   | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
 | `stop` / `/stop`                                                     | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                   |
+| `/pi-auto-reply <on\|off>`                                           | 开启或关闭当前 Slack channel 无需 mention 的回复。                                            |
 | `/admin` / `/pi-admin`                                               | 打开有效期 30 分钟的管理 portal。                                                             |
 | `/sandbox` / `/pi-sandbox`                                           | 显示当前沙箱限制，以及本办公室的门禁策略和工作区布局。                                        |
 | `/pi-sandbox boost`                                                  | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                             |

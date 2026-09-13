@@ -353,6 +353,7 @@ describe("TelegramMessagingBot startup", () => {
       { command: "sandbox", description: "Show or boost sandbox limits" },
       { command: "stop", description: "Stop ongoing conversation" },
       { command: "new", description: "Reset conversation history and start fresh" },
+      { command: "admin", description: "Open the admin portal" },
     ]);
   });
 });

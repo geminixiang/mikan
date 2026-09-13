@@ -9,7 +9,7 @@ import type { Workspace } from "../office/index.js";
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { commandManifestEntry } from "../adapters/commands/manifest.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile, updateConversationSettings } from "../config.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -534,7 +534,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
 
-  test("shared channel auto-reply candidates only log when auto-reply is disabled", async () => {
+  test("shared channel messages trigger only when auto-reply is enabled", async () => {
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
@@ -585,6 +585,27 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(ack).toHaveBeenCalled();
     expect((bot as any).getQueue("C123").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
+
+    updateConversationSettings(workspace.office(createOfficeAddress("slack", "C123")), {
+      slack: { autoReply: true },
+    });
+    messageHandler?.({
+      event: {
+        text: "try the deployment again",
+        channel: "C123",
+        user: "U123",
+        ts: "1002.0001",
+        channel_type: "channel",
+      },
+      ack: vi.fn(),
+    });
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "C123",
+      sessionKey: "C123",
+      text: "try the deployment again",
+    });
   });
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {

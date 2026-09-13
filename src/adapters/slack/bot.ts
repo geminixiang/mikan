@@ -22,7 +22,7 @@ import {
 } from "../../adapter.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
-import { resolveConversationSettings } from "../../config.js";
+import { slackConversationAutoReplyEnabled, resolveConversationSettings } from "../../config.js";
 import type { EventsWatcher } from "../../events/watcher.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";
@@ -1551,17 +1551,14 @@ export class SlackMessagingBot implements MessagingBot {
 
     const activeSessionKey =
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
-    // Auto-reply top-level channel messages start with no sessionKey because
-    // they are only candidates until the policy allows them. Persist the
-    // resolved key on the event; otherwise the runtime fallback treats the
-    // message ts as a thread session (`channel:ts`) instead of the persistent
-    // top-level channel session.
     slackEvent.sessionKey = activeSessionKey;
+    const autoReply =
+      !isDM && slackConversationAutoReplyEnabled(this.workspace.office(slackEvent.address));
     const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
-      addressed: isDM,
+      addressed: isDM || autoReply,
     });
 
     ack();

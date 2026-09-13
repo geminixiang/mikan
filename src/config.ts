@@ -72,6 +72,7 @@ const SettingsFileSchema = Type.Object({
   slack: Type.Optional(
     Type.Object({
       replyMode: Type.Optional(Type.Union([Type.Literal("top-level"), Type.Literal("thread")])),
+      autoReply: Type.Optional(Type.Boolean()),
     }),
   ),
   sandbox: Type.Optional(
@@ -314,6 +315,13 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
+export function slackConversationAutoReplyEnabled(office: Office): boolean {
+  const conversationConfig = normalizeSettingsConfig(
+    loadSettingsFile(conversationSettingsPath(office)) ?? {},
+  );
+  return conversationConfig.slack?.autoReply === true;
+}
+
 export function resolveConversationSettings(office: Office): AgentConfig {
   const globalConfig = loadRawGlobalSettings();
   const conversationConfig = normalizeSettingsConfig(
@@ -323,13 +331,16 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   // servers without losing the rest of the global set. Runner construction
   // removes the reserved open-connector entry before loading servers.
   const mcpServers = { ...globalConfig.mcpServers, ...conversationConfig.mcpServers };
-  // The sandbox group merges at the leaf level (see mergeSandboxSettings):
-  // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
+  // Nested setting groups merge at the leaf level: a conversation that only
+  // enables Slack auto-reply keeps the global reply mode, just as a sandbox
+  // memory override keeps the global CPU limit.
   const sandbox = mergeSandboxSettings(globalConfig.sandbox, conversationConfig.sandbox);
+  const slack = { ...globalConfig.slack, ...conversationConfig.slack };
   return toAgentConfig({
     ...globalConfig,
     ...conversationConfig,
     ...(sandbox ? { sandbox } : {}),
+    ...(Object.keys(slack).length > 0 ? { slack } : {}),
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
   });
 }

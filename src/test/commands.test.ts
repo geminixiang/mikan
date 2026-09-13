@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../adapter.js";
 import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
+import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";
 import {
+  slackConversationAutoReplyEnabled,
   conversationSettingsPath,
   createGlobalSettingsFile,
   loadConversationWorkspaceOverride,
@@ -314,12 +316,54 @@ describe("ModelCommandHandler", () => {
 
 // ── AdminCommandHandler ─────────────────────────────────────────────────────
 
+describe("AutoReplyCommandHandler", () => {
+  test("enables and disables unaddressed replies for the current conversation", async () => {
+    const root = mkdtempSync(join(tmpdir(), "mikan-auto-reply-command-"));
+    try {
+      const workspace = testWorkspace(root);
+      const handler = new AutoReplyCommandHandler();
+      const on = buildContext({ commandText: "/pi-auto-reply on", services: { workspace } });
+      const office = workspace.office(on.address);
+
+      expect(await handler.tryHandle(on)).toBe(true);
+      expect(slackConversationAutoReplyEnabled(office)).toBe(true);
+
+      const off = buildContext({ commandText: "/pi-auto-reply off", services: { workspace } });
+      expect(await handler.tryHandle(off)).toBe(true);
+      expect(slackConversationAutoReplyEnabled(office)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts only on or off", async () => {
+    const handler = new AutoReplyCommandHandler();
+    const ctx = buildContext({ commandText: "/pi-auto-reply status" });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(ctx.responder.responses.join("\n")).toContain("<on|off>");
+  });
+});
+
 describe("AdminCommandHandler", () => {
   const handler = new AdminCommandHandler();
 
   test("requires slash form", async () => {
     const ctx = buildContext({ commandText: "admin" });
     expect(await handler.tryHandle(ctx)).toBe(false);
+  });
+
+  test("does not expose an admin link in shared conversations without private replies", async () => {
+    const create = vi.fn(() => ({ token: "tok-admin" }));
+    const ctx = buildContext({
+      commandText: "/admin",
+      platform: "telegram",
+      services: { adminTokenStore: { create } },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(create).not.toHaveBeenCalled();
+    expect(ctx.responder.responses.join("\n")).toContain("direct conversation");
   });
 });
 
