@@ -9,10 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.58]
+
 ### Added
 
 - Restore Slack `/pi-auto-reply on|off` with the original per-conversation marker files, without judge models or rules.
 - Expose the admin portal command on Discord and Telegram.
+
+### Changed
+
+- Collapse conversation sections in the Admin portal, load their data only when opened, remember their open state, and open Vault and Session View links in new tabs.
 
 ## [1.0.0-beta.57]
 
