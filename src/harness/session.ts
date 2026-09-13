@@ -3,10 +3,8 @@ import {
   OperationMismatch,
   getOrThrow,
   type AgentHarness,
-  type AgentHarnessTool,
   type AgentLane,
   type AgentMessage,
-  type AgentTool,
   type HarnessEvent as PiHarnessEvent,
   DEFAULT_COMPACTION_SETTINGS,
   type CompactionSettings,
@@ -19,12 +17,15 @@ import type {
   HarnessEventListener,
   HarnessSettings,
   MikanAgentSessionOptions,
+  MikanHarnessTool,
+  MikanToolInput,
   SubagentUsage,
   SubagentUsageSink,
   RetrySettings,
 } from "./types.js";
 
 import * as log from "../log.js";
+import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 
 export type { CompactionReason } from "./types.js";
 export type { HarnessEvent } from "./types.js";
@@ -162,14 +163,14 @@ export class MikanAgentSession {
     options?: {
       images?: ImageContent[];
       budget?: BudgetSettings;
-      tools?: AgentTool[];
+      tools?: MikanToolInput[];
     },
   ): Promise<void> {
     await this.run(text, options);
   }
 
   /** Resume an operation left open by a previous process using Pi's recovery rules. */
-  async resume(options?: { budget?: BudgetSettings; tools?: AgentTool[] }): Promise<void> {
+  async resume(options?: { budget?: BudgetSettings; tools?: MikanToolInput[] }): Promise<void> {
     await this.run(undefined, options);
   }
 
@@ -178,7 +179,7 @@ export class MikanAgentSession {
     options?: {
       images?: ImageContent[];
       budget?: BudgetSettings;
-      tools?: AgentTool[];
+      tools?: MikanToolInput[];
     },
   ): Promise<void> {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
@@ -212,8 +213,8 @@ export class MikanAgentSession {
       if (this.runAborted) return;
       const harness = this.harness!;
       const lane = this.lane!;
-      const tools = options?.tools ?? this.options.tools;
-      await harness.setTools(this.nativeTools(tools), TODO_CONTEXT);
+      const tools = this.toHarnessTools(options?.tools ?? this.options.tools);
+      await harness.setTools(tools, TODO_CONTEXT);
       await lane.setActiveTools(
         tools.map((tool) => tool.name),
         TODO_CONTEXT,
@@ -314,15 +315,9 @@ export class MikanAgentSession {
       });
   }
 
-  private nativeTools(tools: AgentTool[]): AgentHarnessTool<object | undefined>[] {
-    return tools.map((tool) => ({
-      ...tool,
-      execute: (
-        ...[id, params, onUpdate, , , context]: Parameters<
-          AgentHarnessTool<object | undefined>["execute"]
-        >
-      ) => tool.execute(id, params, context.abortSignal, onUpdate),
-    }));
+  /** Upgrade mikan's own `AgentTool`s; harness-native tools pass through. */
+  private toHarnessTools(tools: MikanToolInput[]): MikanHarnessTool[] {
+    return tools.map((tool) => (isHarnessTool(tool) ? tool : adaptAgentTool(tool)));
   }
 
   private async initialize(): Promise<void> {
@@ -331,7 +326,8 @@ export class MikanAgentSession {
       models: this.options.models.models,
       model: this.model,
       thinkingLevel: this.options.thinkingLevel,
-      tools: this.nativeTools(this.options.tools),
+      tools: this.toHarnessTools(this.options.tools),
+      toolContext: this.options.toolContext,
       systemPrompt: () => this.sessionStore.withMcpInstructions(this.systemPrompt),
       retry: this.settings.retry,
       compaction: this.settings.compaction,

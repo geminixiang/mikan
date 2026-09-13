@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type {
+  AgentMessage,
+  ExecutionToolContext,
+  ThinkingLevel,
+} from "@earendil-works/pi-agent-core";
 import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Kind, Type, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import type { MikanModels } from "./models.js";
 import type {
+  MikanHarnessTool,
   SubagentProfile,
   SubagentModelSpec,
   SubagentRunOutput,
@@ -138,8 +143,10 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   thinkingLevel: ThinkingLevel;
   models: MikanModels;
   workspaceDir: string;
-  availableTools: AgentTool[];
+  availableTools: MikanHarnessTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
+  /** Sandbox-backed execution env forwarded to the child session's tools. */
+  toolContext: ExecutionToolContext;
   /** Process-wide launch pool shared by all parent runs. */
   slots?: SubagentSlotPool;
   /** Host-snapshotted parent transcript; never sourced from the public request. */
@@ -236,13 +243,16 @@ function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
   return resolved;
 }
 
-function selectTools(requested: string[] | undefined, available: AgentTool[]): AgentTool[] {
+function selectTools(
+  requested: string[] | undefined,
+  available: MikanHarnessTool[],
+): MikanHarnessTool[] {
   if (!requested || requested.length === 0) return [];
-  const byName = new Map<string, AgentTool>();
+  const byName = new Map<string, MikanHarnessTool>();
   for (const tool of available) {
     if (!byName.has(tool.name)) byName.set(tool.name, tool);
   }
-  const selected: AgentTool[] = [];
+  const selected: MikanHarnessTool[] = [];
   for (const name of new Set(requested)) {
     const tool = byName.get(name);
     if (!tool) throw new Error(`Unknown or unavailable subagent tool: ${name}`);
@@ -560,6 +570,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
     model,
     thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
     tools: granted,
+    toolContext: options.toolContext,
     models: options.models,
     sessionStore: SessionStore.inMemory(options.workspaceDir),
     settings: { compaction: { enabled: false } },

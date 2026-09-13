@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { resolveConversationSettings } from "../config.js";
 import type { MikanModels } from "../harness/index.js";
 import { MikanAgentSession } from "../harness/index.js";
+import { createSandboxExecutionEnv } from "../harness/execution-env.js";
+import { createExecutor } from "../sandbox/index.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { SessionEntry } from "../sessions/types.js";
 import * as log from "../log.js";
@@ -104,6 +106,9 @@ export async function generateMemoryAnchor(
     model,
     thinkingLevel: settings.thinkingLevel,
     tools: [],
+    toolContext: {
+      env: createSandboxExecutionEnv(createExecutor({ type: "host" }), "host", office.dir),
+    },
     models,
     sessionStore: SessionStore.inMemory(office.dir),
     settings: { compaction: { enabled: false } },

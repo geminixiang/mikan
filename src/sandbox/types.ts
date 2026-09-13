@@ -80,6 +80,8 @@ export interface RuntimePathContext {
 
 export interface ExecOptions {
   timeout?: number;
+  /** Working directory for the command. Defaults to the backend's own cwd. */
+  cwd?: string;
   signal?: AbortSignal;
 }
 

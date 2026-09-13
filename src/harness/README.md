@@ -9,23 +9,24 @@ this module.
 
 ## Files
 
-| File                    | Authority                                                                                                                                      |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal        |
-| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness |
-| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                    |
-| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                 |
-| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                    |
-| `models.ts`             | Model catalog and authentication resolution                                                                                                    |
-| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                           |
-| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                          |
-| `open-connector.ts`     | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                                 |
-| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                        |
-| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                 |
-| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                      |
-| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                           |
-| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                  |
-| `index.ts`              | Harness module exports                                                                                                                         |
+| File                    | Authority                                                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal         |
+| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness  |
+| `execution-env.ts`      | `createSandboxExecutionEnv`: bridges a sandbox `Executor` to pi's `ExecutionEnv` (FileSystem + Shell) for the native read/write/edit/bash tools |
+| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                     |
+| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                  |
+| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                     |
+| `models.ts`             | Model catalog and authentication resolution                                                                                                     |
+| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
+| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                           |
+| `open-connector.ts`     | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                                  |
+| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                         |
+| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                  |
+| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                       |
+| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                            |
+| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                   |
+| `index.ts`              | Harness module exports                                                                                                                          |
 
 ## Run lifecycle
 

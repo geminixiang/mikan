@@ -110,7 +110,7 @@ export class CloudflareSandboxExecutor implements Executor {
     const payload: CloudflareExecPayload = {
       sandboxId: this.sandboxId,
       command,
-      cwd: this.cwd,
+      cwd: options?.cwd ?? this.cwd,
     };
     if (options?.timeout) payload.timeoutSeconds = options.timeout;
     if (this.env && Object.keys(this.env).length > 0) payload.env = this.env;

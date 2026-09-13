@@ -1,20 +1,15 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { TSchema } from "@sinclair/typebox";
 import type { ConversationKind } from "../../adapter.js";
 import { createAttachTool } from "./attach.js";
 import type { Executor, SandboxConfig } from "../../sandbox/index.js";
 import type { OfficeAddress, SandboxResourceController } from "../../types.js";
-import { createBashTool } from "./bash.js";
-import { createEditTool } from "./edit.js";
 import { HostEventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
+import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
 import { createReactTool } from "./react.js";
-import { createReadTool } from "./read.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
-import { createWriteTool } from "./write.js";
 
 export { createSubagentTool } from "./subagent.js";
 
@@ -34,7 +29,7 @@ export function createMikanTools(
     outputDir: string;
   },
 ): {
-  tools: AgentTool<TSchema>[];
+  tools: MikanHarnessTool[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   /** Upload for generate_image. Receives the file's HOST path — the tool
    *  writes host-side, so this must not stage through the sandbox like the
@@ -63,16 +58,14 @@ export function createMikanTools(
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
   return {
     tools: [
-      createReadTool(executor),
-      createBashTool(executor, { hostWorkspaceRoot: workspaceDir }),
-      createEditTool(executor),
-      createWriteTool(executor),
-      eventTool,
-      sandboxTool,
-      attachTool,
-      ...(imageTool ? [imageTool.tool] : []),
-      reactTool,
-      ...packTools,
+      // pi-native read/write/edit/bash, addressed through the sandbox env.
+      ...createSandboxTools(),
+      adaptAgentTool(eventTool),
+      adaptAgentTool(sandboxTool),
+      adaptAgentTool(attachTool),
+      ...(imageTool ? [adaptAgentTool(imageTool.tool)] : []),
+      adaptAgentTool(reactTool),
+      ...packTools.map(adaptAgentTool),
     ],
     setUploadFunction,
     setImageUploadFunction: (fn) => {

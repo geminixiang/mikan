@@ -1,10 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import { execReadFile, execWriteFile } from "../sandbox/utils.js";
-import { createEditTool } from "../harness/tools/edit.js";
 
 /**
  * Contract test for the Executor file transport: the same matrix runs against
@@ -83,52 +82,5 @@ describe.each([
 
   test("read of a missing file rejects", async () => {
     await expect(transport.readFile(join(dir, "missing.txt"))).rejects.toThrow();
-  });
-});
-
-describe("edit tool through the executor file transport", () => {
-  let dir: string;
-
-  test("serializes read-modify-write edits", () => {
-    expect(createEditTool(host).executionMode).toBe("sequential");
-  });
-
-  beforeEach(() => {
-    dir = join(tmpdir(), `mikan-edit-transport-${Date.now()}-${Math.random()}`);
-    mkdirSync(dir, { recursive: true });
-  });
-
-  afterEach(() => {
-    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
-  });
-
-  test("edits survive shell-hostile content", async () => {
-    const path = join(dir, "config.sh");
-    const original = `PASSWORD='it\\'s $ecret'\necho "done" # 100%\n`;
-    writeFileSync(path, original);
-
-    const tool = createEditTool(host);
-    await tool.execute("1", {
-      label: "rotate password",
-      path,
-      oldText: "$ecret",
-      newText: 'n3w-"$ecret"-`v2`',
-    });
-
-    expect(readFileSync(path, "utf-8")).toBe(
-      `PASSWORD='it\\'s n3w-"$ecret"-\`v2\`'\necho "done" # 100%\n`,
-    );
-  });
-
-  test("missing file yields a readable error", async () => {
-    const tool = createEditTool(host);
-    await expect(
-      tool.execute("1", {
-        label: "edit",
-        path: join(dir, "nope.txt"),
-        oldText: "a",
-        newText: "b",
-      }),
-    ).rejects.toThrow();
   });
 });

@@ -29,7 +29,7 @@ function parseHostSandboxArg(value: string): HostSandboxConfig | undefined {
 export class HostExecutor implements Executor {
   async exec(command: string, options?: ExecOptions): Promise<ExecResult> {
     return new Promise((resolve, reject) => {
-      const child = spawnShell(command);
+      const child = spawnShell(command, options?.cwd);
       const capture = captureOutput(child);
       let timedOut = false;
 
@@ -95,11 +95,12 @@ export class HostExecutor implements Executor {
   }
 }
 
-function spawnShell(command: string): ChildProcess {
+function spawnShell(command: string, cwd?: string): ChildProcess {
   const isWindows = process.platform === "win32";
   return spawn(isWindows ? "cmd" : "sh", [isWindows ? "/c" : "-c", command], {
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
+    ...(cwd ? { cwd } : {}),
   });
 }
 

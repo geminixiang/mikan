@@ -8,10 +8,12 @@ import type { WorkspaceProjection } from "../office/types.js";
 import type { Office } from "../office/index.js";
 import type {
   AgentEvent,
+  AgentHarnessTool,
   AgentTool,
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
+  ExecutionToolContext,
   ThinkingLevel,
   CompactionSettings,
   Skill,
@@ -324,11 +326,26 @@ export type HarnessEvent =
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
+/**
+ * A tool as the harness sees it: pi-native tools (read/write/edit/bash) and
+ * mikan tools adapted at the tool-list boundary. The context carries the
+ * sandbox-backed execution env.
+ */
+export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
+
+/**
+ * A session tool entry: a harness tool (pi-native or adapted), or a plain
+ * mikan `AgentTool` that the session upgrades at the boundary. The union keeps
+ * the published `MikanAgentSession` API accepting the legacy `AgentTool` shape.
+ */
+export type MikanToolInput = AgentTool | MikanHarnessTool;
+
 export interface MikanAgentSessionOptions {
   systemPrompt: string;
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
-  tools: AgentTool[];
+  tools: MikanToolInput[];
+  toolContext: ExecutionToolContext;
   models: MikanModels;
   sessionStore: SessionStore;
   settings?: {

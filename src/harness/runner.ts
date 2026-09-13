@@ -1,5 +1,5 @@
 import type { Office, Workspace } from "../office/index.js";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ExecutionToolContext, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
@@ -7,6 +7,8 @@ import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools, createSubagentTool } from "./tools/index.js";
+import { adaptAgentTool } from "./tools/pi-tools.js";
+import { createSandboxExecutionEnv } from "./execution-env.js";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -79,10 +81,20 @@ async function createConfiguredAgentSession(params: {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
+  toolContext: ExecutionToolContext;
   sessionStore: SessionStore;
   models: MikanModels;
 }): Promise<MikanAgentSession> {
-  const { workspaceDir, systemPrompt, model, thinkingLevel, tools, sessionStore, models } = params;
+  const {
+    workspaceDir,
+    systemPrompt,
+    model,
+    thinkingLevel,
+    tools,
+    toolContext,
+    sessionStore,
+    models,
+  } = params;
   const loadedProfiles = loadSubagentProfiles(workspaceDir);
   for (const diagnostic of loadedProfiles.diagnostics) {
     log.logWarning(`Subagent profile ignored: ${diagnostic.path}`, diagnostic.message);
@@ -107,6 +119,7 @@ async function createConfiguredAgentSession(params: {
         availableTools: tools,
         profiles: runnableProfiles,
         slots: globalSubagentSlots,
+        toolContext,
         parentMessages: [...session!.messages],
         onUsage: session!.captureExternalUsageSink(),
       }),
@@ -117,7 +130,8 @@ async function createConfiguredAgentSession(params: {
     systemPrompt,
     model,
     thinkingLevel,
-    tools: [...tools, subagentTool],
+    tools: [...tools, adaptAgentTool(subagentTool)],
+    toolContext,
     models,
     sessionStore,
   });
@@ -430,6 +444,7 @@ async function createRunnerAgentSession(params: {
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   tools: ReturnType<typeof createMikanTools>["tools"];
+  toolContext: ExecutionToolContext;
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   modelRegistry: MikanModels;
   conversationId: string;
@@ -441,6 +456,7 @@ async function createRunnerAgentSession(params: {
     model,
     agentConfig,
     tools,
+    toolContext,
     sessionManager,
     modelRegistry,
     signal,
@@ -451,7 +467,8 @@ async function createRunnerAgentSession(params: {
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
-    tools: [...tools, ...mcpTools],
+    tools: [...tools, ...mcpTools.map(adaptAgentTool)],
+    toolContext,
     sessionStore: sessionManager,
     models: modelRegistry,
   });
@@ -689,6 +706,7 @@ async function finishRunnerCreation(params: {
   systemPrompt: string;
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   toolBindings: MikanToolBindings;
+  toolContext: ExecutionToolContext;
 }): Promise<PiAgentWrapper> {
   const {
     options,
@@ -703,6 +721,7 @@ async function finishRunnerCreation(params: {
     systemPrompt,
     sessionManager,
     toolBindings,
+    toolContext,
   } = params;
   const { sessionKey, office, sessionScope, sessionView } = options;
   const { contextFile } = sessionScope;
@@ -715,6 +734,7 @@ async function finishRunnerCreation(params: {
       model,
       agentConfig,
       tools: toolBindings.tools,
+      toolContext,
       sessionManager,
       modelRegistry,
       conversationId,
@@ -792,6 +812,11 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     office.workspace,
   );
   const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
+  // The env wraps the stable executor wrapper, which delegates to the
+  // actor-resolved executor per call, so one env serves every run.
+  const toolContext: ExecutionToolContext = {
+    env: createSandboxExecutionEnv(executor, sandboxConfig.type, pathContext.runtimeWorkspaceRoot),
+  };
 
   const modelRegistry = options.models ?? MikanModels.create();
   if (modelRegistry.getError()) {
@@ -842,5 +867,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     systemPrompt,
     sessionManager,
     toolBindings,
+    toolContext,
   });
 }

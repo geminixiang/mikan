@@ -72,9 +72,11 @@ function buildContainerExecCommand(
   container: string,
   command: string,
   envFilePath?: string,
+  cwd?: string,
 ): string {
   const envPart = envFilePath ? `--env-file ${shellEscape(envFilePath)} ` : "";
-  return `docker exec ${envPart}-w /workspace ${container} sh -c ${shellEscape(command)}`;
+  const workdir = cwd === undefined ? "/workspace" : shellEscape(cwd);
+  return `docker exec ${envPart}-w ${workdir} ${container} sh -c ${shellEscape(command)}`;
 }
 
 function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
@@ -114,6 +116,7 @@ export class ContainerExecutor implements Executor {
         this.container,
         withRuntimeBootstrap(command, this.env),
         temp?.envFilePath,
+        options?.cwd,
       );
       return await this.hostExecutor.exec(dockerCmd, options);
     } finally {
