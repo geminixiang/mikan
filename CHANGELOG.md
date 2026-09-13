@@ -9,11 +9,28 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.55]
+
+### Added
+
+- Export explicitly configured, content-free traces and metrics over standard OTLP HTTP/protobuf, including GenAI and OpenInference attribution for Arize Phoenix. Sentry remains available for sanitized issues and legacy metric fallback without duplicate spans; zero configuration remains network-free.
+- Add a guided Admin dialog for configuring MCP servers, with structured fields or pasted standard `mcpServers` JSON and card-based installed-server management.
+
 ### Changed
 
-- Replace application-level Sentry telemetry coupling with a vendor-neutral observability facade and one manually instrumented OpenTelemetry pipeline. Standard OTLP over HTTP/protobuf now exports explicitly configured traces and metrics, including content-free GenAI/OpenInference attribution for Arize Phoenix; Sentry remains available for sanitized issues and legacy metric fallback without duplicating OTLP spans. Zero configuration stays network-free, and graceful shutdown flushes OpenTelemetry before closing Sentry.
-- Upgrade `pi-agent-core` and `pi-ai` to 0.85.1 (pi-ai: GPT-6 Astra catalog entries, 30-minute prompt-cache TTL for GPT-5.6+ Responses models). `MikanSkill` now extends Pi's native `Skill` type.
-- Harness: `MikanAgentSession` delegates the run loop, retries, compaction, persistence, and cancellation to Pi's native `AgentHarness`; mikan keeps budgets, delegated-spend accounting, and platform event translation. `setSystemPrompt()` replaces the removed `session.agent.state.systemPrompt`, and `resume()` recovers an open operation through Pi's lane.
+- Delegate the agent run loop, retries, compaction, persistence, cancellation, and the native `read`, `write`, `edit`, and `bash` tools to Pi's `AgentHarness` and execution-tool implementations. mikan retains budgets, platform presentation, authorization, and sandbox-backed execution routing.
+- Upgrade `pi-agent-core` and `pi-ai` to 0.85.1, including GPT-6 Astra catalog entries and the 30-minute prompt-cache TTL for GPT-5.6+ Responses models.
+- Consolidate harness, office, session, sandbox, web-adapter, and shared-command ownership without changing the published root exports.
+
+### Removed
+
+- Remove managed skill packages and their Admin/package materialization surfaces. Workspace and conversation skills remain supported.
+- Remove the auto-reply judge, command, configuration, and UI; explicit platform triggers remain supported.
+- Remove the unused `/api/agent-events/stream` SSE mirror, its token setting, and supporting event types. The authenticated session viewer continues to use `/session/stream`.
+
+### Fixed
+
+- Preserve Pi's native optional tool schemas, require an explicit authorized execution environment for native file/shell tools, and keep container working directories inside the guest instead of applying them to the host Docker process.
 
 ## [1.0.0-beta.54]
 
