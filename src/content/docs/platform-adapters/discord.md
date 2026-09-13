@@ -23,7 +23,7 @@ Channel permission overrides still apply. A successful installation does not gua
 The adapter handles:
 
 - `messageCreate` in DMs, guild channels, and Discord thread channels
-- slash commands: `login`, `session`, `new`, `stop`, `model`, and `sandbox`
+- slash commands: `login`, `session`, `new`, `stop`, `model`, `sandbox`, and `admin`
 - message attachments
 
 DMs trigger directly. Guild messages normally require a mention or a reply/thread context that mikan handles. Stop commands are checked before the normal trigger gate.

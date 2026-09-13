@@ -29,6 +29,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/new` / `/pi-new`                                                   | Reset the current session. DM only.                                                                                        |
 | `/model` / `/pi-model [provider/model[:thinking]]`                   | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
 | `stop` / `/stop`                                                     | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
+| `/pi-auto-reply <on\|off>`                                           | Enable or disable mention-free replies for the current Slack channel.                                                      |
 | `/admin` / `/pi-admin`                                               | Open the 30-minute admin portal.                                                                                           |
 | `/sandbox` / `/pi-sandbox`                                           | Show the current sandbox limits plus this office's door policy and workspace layout.                                       |
 | `/pi-sandbox boost`                                                  | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
@@ -56,8 +57,9 @@ The change takes effect on the next message, when the sandbox runtime is rebuilt
   `src/adapters/commands/manifest.ts`: Discord's application commands and Telegram's command menu
   are derived from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names.
   Because Discord rejects an option description longer than 100 characters, the manifest's argument
-  descriptions are length-checked by the command tests. Slack's App manifest (`/pi-login`,
-  `/pi-session`, `/pi-new`, in the Slack App configuration by hand.
+  descriptions are length-checked by the command tests. Slack commands (`/pi-login`, `/pi-session`,
+  `/pi-new`, `/pi-model`, `/pi-sandbox`, `/pi-auto-reply`, and `/pi-admin`) must also be registered
+  in the Slack App manifest.
 </Aside>
 
 ## Shared vault commands

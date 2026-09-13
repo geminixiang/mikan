@@ -475,7 +475,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
   });
 
-  test("legacy auto-reply marker does not enable unaddressed channel messages", async () => {
+  test("auto-reply marker enables unaddressed channel messages", async () => {
     mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
@@ -529,12 +529,12 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(0);
+    expect(queue.size()).toBe(1);
     expect(handler.handleEvent).not.toHaveBeenCalled();
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
 
-  test("shared channel auto-reply candidates only log when auto-reply is disabled", async () => {
+  test("shared channel messages trigger only when auto-reply is enabled", async () => {
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
@@ -585,6 +585,26 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(ack).toHaveBeenCalled();
     expect((bot as any).getQueue("C123").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
+
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
+    messageHandler?.({
+      event: {
+        text: "try the deployment again",
+        channel: "C123",
+        user: "U123",
+        ts: "1002.0001",
+        channel_type: "channel",
+      },
+      ack: vi.fn(),
+    });
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "C123",
+      sessionKey: "C123",
+      text: "try the deployment again",
+    });
   });
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {

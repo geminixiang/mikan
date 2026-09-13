@@ -1,12 +1,19 @@
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
-import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
+import { portalNotConfiguredLines, replySummary, replySummaryPrivately } from "./utils.js";
 
 const ADMIN_COMMANDS = slashForms("admin");
 
 export class AdminCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!matchCommand(context.commandText, ADMIN_COMMANDS, { stripMention: true })) return false;
+
+    if (!context.privateConversation && !context.bot.postPrivate) {
+      await replySummary(context, "Admin", [
+        "For privacy, open a direct conversation with mikan and run `/admin` there.",
+      ]);
+      return true;
+    }
 
     if (!context.services.portalBaseUrl) {
       await replySummaryPrivately(context, "Admin", portalNotConfiguredLines("Admin portal"));

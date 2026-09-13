@@ -31,6 +31,14 @@ describe("command manifest", () => {
     expect(commandForms("login")).not.toContain("login");
   });
 
+  test("admin is exposed on all three chat platforms", () => {
+    const admin = commandManifestEntry("admin");
+    expect(admin.slackCommand).toBe("/pi-admin");
+    expect(admin.discord).toBe(true);
+    expect(admin.telegramMenu).toEqual({});
+    expect(admin.telegramCommand).toBe(true);
+  });
+
   test("stop is registration-only: a magic word, never a Slack slash command", () => {
     const stop = COMMAND_MANIFEST.find((entry) => entry.name === "stop");
     expect(stop?.magicWord).toBe(true);
@@ -47,18 +55,27 @@ describe("command manifest", () => {
       { command: "sandbox", description: "Show or boost sandbox limits" },
       { command: "stop", description: "Stop ongoing conversation" },
       { command: "new", description: "Reset conversation history and start fresh" },
+      { command: "admin", description: "Open the admin portal" },
     ]);
   });
 
-  test("slash forms include aliases in both plain and pi- spellings", () => {
-    expect(COMMAND_MANIFEST.some((command) => command.name === "auto-reply")).toBe(false);
+  test("auto-reply keeps the legacy Slack spelling and portable command name", () => {
+    const entry = commandManifestEntry("autoreply");
+    expect(entry.aliases).toContain("auto-reply");
+    expect(entry.slackCommand).toBe("/pi-auto-reply");
+    expect(slashForms("autoreply")).toEqual([
+      "/autoreply",
+      "/pi-autoreply",
+      "/auto-reply",
+      "/pi-auto-reply",
+    ]);
   });
 
-  test("every slack slash command name is the pi- form of its entry name", () => {
+  test("every Slack slash command uses a pi-prefixed accepted spelling", () => {
     for (const entry of COMMAND_MANIFEST) {
-      if (entry.slackCommand) {
-        expect(entry.slackCommand).toBe(`/pi-${entry.name}`);
-      }
+      if (!entry.slackCommand) continue;
+      const accepted = [entry.name, ...(entry.aliases ?? [])].map((name) => `/pi-${name}`);
+      expect(accepted).toContain(entry.slackCommand);
     }
   });
 

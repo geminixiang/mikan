@@ -84,7 +84,7 @@ office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/offi
 
 `/pi-model` 写入部分对话覆盖，`/pi-sandbox door <default|isolated|shared|shared-private|full>` 写入该对话的 `sandbox.workspace` 覆盖值；管理 portal 既可以设置按办公室的门禁策略，也可以设置全局门禁策略。
 
-Auto-reply 已退役。已有的 `auto-reply`／`auto-reply.disabled` 标记文件与 `llm.autoReply`／`autoReply` 设置不再生效；读取设置不会删除这些文件。
+Slack auto-reply 可通过 `/pi-auto-reply on|off` 修改，并以 conversation office 中的 `auto-reply`（on）或 `auto-reply.disabled`（off）标记文件保存。标记内容会被忽略：启用后，该 Slack channel 中未明确 address mikan 的 top-level human message 会直接触发，不使用 rules 或 judge model。Top-level `autoReply` 与 `llm.autoReply` JSON 设置仍保持退役并被忽略。
 
 Onboarding 不会写入 `sandbox.workspace`。没有显式的全局或对话覆盖时，mikan 会跟随已记录的平台频道可见性。目前 Slack 公开频道解析为 `trusted` + `shared-support` + `public`，因此可以读写工作区全局 `MEMORY.md`；Slack 私密频道解析为 `trusted` + `shared-support` + `private`，全局记忆以只读方式挂载。Slack DM、外部共享频道、未知频道类型，以及未记录频道可见性的其他平台均解析为 `isolated`。这意味着新部署中的 Slack 公开频道无需额外门禁命令，就会向共享工作区记忆写入内容。
 

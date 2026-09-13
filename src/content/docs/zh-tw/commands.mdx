@@ -28,6 +28,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/new` / `/pi-new`                                                   | 重設目前工作階段。僅限 DM。                                                                            |
 | `/model` / `/pi-model [provider/model[:thinking]]`                   | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
 | `stop` / `/stop`                                                     | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
+| `/pi-auto-reply <on\|off>`                                           | 開啟或關閉目前 Slack channel 不需 mention 的回覆。                                                     |
 | `/admin` / `/pi-admin`                                               | 開啟 30 分鐘有效的管理 portal。                                                                        |
 | `/sandbox` / `/pi-sandbox`                                           | 顯示目前 sandbox 的限制，以及這個 office 的 door policy 與 workspace layout。                          |
 | `/pi-sandbox boost`                                                  | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
@@ -54,7 +55,8 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
   原生 slash commands 也必須向平台註冊。指令清單位於 `src/adapters/commands/manifest.ts`：Discord 的
   application commands 與 Telegram 的指令選單會在啟動時由它派生，Slack 的路由也辨識清單中的 `/pi-*`
   名稱。由於 Discord 會拒絕長度超過 100 個字元的 option description，清單中的參數說明會由 command
-  測試檢查長度。Slack 的 App manifest（`/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、
+  測試檢查長度。Slack 的 `/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、`/pi-sandbox`、
+  `/pi-auto-reply` 與 `/pi-admin` 也必須註冊在 Slack App manifest。
 </Aside>
 
 ## 共享 vault 指令
