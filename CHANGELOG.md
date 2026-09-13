@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.57]
+
+### Changed
+
+- Export raw platform conversation, channel, session, thread, message, and user identifiers so Sentry traces can be mapped directly back to their source while continuing to exclude human-readable names and conversation or tool content.
+
+### Removed
+
+- Remove telemetry identifier hashing and the `TELEMETRY_HASH_KEY` deployment setting.
+
 ## [1.0.0-beta.56]
 
 ### Added
