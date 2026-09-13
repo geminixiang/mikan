@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { effectiveStateDir } from "./cli/arg-grammar.js";
 import { readEnv } from "./env-manifest.js";
@@ -72,7 +72,6 @@ const SettingsFileSchema = Type.Object({
   slack: Type.Optional(
     Type.Object({
       replyMode: Type.Optional(Type.Union([Type.Literal("top-level"), Type.Literal("thread")])),
-      autoReply: Type.Optional(Type.Boolean()),
     }),
   ),
   sandbox: Type.Optional(
@@ -315,11 +314,27 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
+const AUTO_REPLY_FILE = "auto-reply";
+const AUTO_REPLY_DISABLED_FILE = "auto-reply.disabled";
+
 export function slackConversationAutoReplyEnabled(office: Office): boolean {
-  const conversationConfig = normalizeSettingsConfig(
-    loadSettingsFile(conversationSettingsPath(office)) ?? {},
-  );
-  return conversationConfig.slack?.autoReply === true;
+  return existsSync(join(office.dir, AUTO_REPLY_FILE));
+}
+
+export function setSlackConversationAutoReply(office: Office, enabled: boolean): void {
+  ensureDirExists(office.dir);
+  const enabledPath = join(office.dir, AUTO_REPLY_FILE);
+  const disabledPath = join(office.dir, AUTO_REPLY_DISABLED_FILE);
+  const targetPath = enabled ? enabledPath : disabledPath;
+  const otherPath = enabled ? disabledPath : enabledPath;
+
+  if (existsSync(otherPath)) {
+    renameSync(otherPath, targetPath);
+    return;
+  }
+  if (enabled && !existsSync(targetPath)) {
+    atomicWritePrivateFile(targetPath, "");
+  }
 }
 
 export function resolveConversationSettings(office: Office): AgentConfig {
@@ -331,16 +346,13 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   // servers without losing the rest of the global set. Runner construction
   // removes the reserved open-connector entry before loading servers.
   const mcpServers = { ...globalConfig.mcpServers, ...conversationConfig.mcpServers };
-  // Nested setting groups merge at the leaf level: a conversation that only
-  // enables Slack auto-reply keeps the global reply mode, just as a sandbox
-  // memory override keeps the global CPU limit.
+  // The sandbox group merges at the leaf level (see mergeSandboxSettings):
+  // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
   const sandbox = mergeSandboxSettings(globalConfig.sandbox, conversationConfig.sandbox);
-  const slack = { ...globalConfig.slack, ...conversationConfig.slack };
   return toAgentConfig({
     ...globalConfig,
     ...conversationConfig,
     ...(sandbox ? { sandbox } : {}),
-    ...(Object.keys(slack).length > 0 ? { slack } : {}),
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
   });
 }

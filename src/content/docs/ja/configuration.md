@@ -84,7 +84,7 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 `/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox door <default|isolated|shared|shared-private|full>` は conversation の `sandbox.workspace` 上書きを書き込みます。admin portal は office ごとの door policy とグローバルな door policy の両方を設定します。
 
-Slack auto-reply は `slack.autoReply` に保存される conversation-level boolean で、`/pi-auto-reply on|off` で変更できます。有効にすると、その Slack channel 内の mikan 宛てでない top-level human message も実行を開始します。旧マーカーファイル、rules、top-level `autoReply`、`llm.autoReply` judge-model 設定は引き続き廃止済みとして無視されます。
+Slack auto-reply は `/pi-auto-reply on|off` で変更し、conversation office の `auto-reply`（on）または `auto-reply.disabled`（off）marker file に保存します。Marker の内容は無視されます。有効な channel では mikan 宛てでない top-level human message も rules や judge model なしで実行を開始します。Top-level `autoReply` と `llm.autoReply` JSON 設定は引き続き廃止済みとして無視されます。
 
 Onboarding は `sandbox.workspace` を書き込みません。global または conversation の明示的な上書きがない場合、mikan は記録された platform channel visibility に従います。現在、Slack public channel は `trusted` + `shared-support` + `public` に解決され、workspace-global `MEMORY.md` を読み書きします。Slack private channel は `trusted` + `shared-support` + `private` に解決され、global memory は読み取り専用です。Slack DM、externally shared channel、unknown channel kind、および channel visibility を記録しない platform は `isolated` に解決されます。そのため、新しい Slack public channel は追加の door-policy command なしで shared workspace memory に情報を追加します。
 

@@ -9,7 +9,7 @@ import type { Workspace } from "../office/index.js";
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { commandManifestEntry } from "../adapters/commands/manifest.js";
-import { createGlobalSettingsFile, updateConversationSettings } from "../config.js";
+import { createGlobalSettingsFile } from "../config.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -475,7 +475,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
   });
 
-  test("legacy auto-reply marker does not enable unaddressed channel messages", async () => {
+  test("auto-reply marker enables unaddressed channel messages", async () => {
     mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
@@ -529,7 +529,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(0);
+    expect(queue.size()).toBe(1);
     expect(handler.handleEvent).not.toHaveBeenCalled();
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
@@ -586,9 +586,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect((bot as any).getQueue("C123").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
 
-    updateConversationSettings(workspace.office(createOfficeAddress("slack", "C123")), {
-      slack: { autoReply: true },
-    });
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
     messageHandler?.({
       event: {
         text: "try the deployment again",

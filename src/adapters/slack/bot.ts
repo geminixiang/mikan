@@ -990,6 +990,7 @@ export class SlackMessagingBot implements MessagingBot {
     attachmentsPromise: Promise<Attachment[]>;
     queueKey: string;
     addressed: boolean;
+    magicWordAddressed?: boolean;
   }): Promise<void> {
     const kind = this.channelKindFor(options.event.conversationId);
     if (kind) {
@@ -1009,7 +1010,10 @@ export class SlackMessagingBot implements MessagingBot {
     return processMessageIntake({
       eventBase: options.event as unknown as ConversationEvent,
       addressed: options.addressed,
-      magicWord: { addressed: options.addressed, scopeFallback: "top-level" },
+      magicWord: {
+        addressed: options.magicWordAddressed ?? options.addressed,
+        scopeFallback: "top-level",
+      },
       busyPolicy: "queue",
       logEntryBase: {},
       processAttachments: () => options.attachmentsPromise,
@@ -1559,6 +1563,7 @@ export class SlackMessagingBot implements MessagingBot {
       attachmentsPromise,
       queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
       addressed: isDM || autoReply,
+      magicWordAddressed: isDM,
     });
 
     ack();

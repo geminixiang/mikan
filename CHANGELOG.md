@@ -11,7 +11,7 @@ any release.
 
 ### Added
 
-- Restore Slack `/pi-auto-reply on|off` as a simple per-conversation switch without judge models or rules.
+- Restore Slack `/pi-auto-reply on|off` with the original per-conversation marker files, without judge models or rules.
 - Expose the admin portal command on Discord and Telegram.
 
 ## [1.0.0-beta.57]

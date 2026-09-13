@@ -279,21 +279,15 @@ describe("loadGlobalSettings", () => {
     expect(config.mcpServers?.local?.command).toBe("./bin/local-mcp");
   });
 
-  test("conversation Slack leaves merge with global Slack settings", () => {
+  test("conversation slack config overrides global reply mode", () => {
     updateGlobalSettings({ slack: { replyMode: "top-level" } });
     const conversation = office();
-    updateConversationSettings(conversation, { slack: { autoReply: true } });
+    updateConversationSettings(conversation, { slack: { replyMode: "thread" } });
 
     const config = resolveConversationSettings(conversation);
-    expect(config.slack).toEqual({ replyMode: "top-level", autoReply: true });
+    expect(config.slack?.replyMode).toBe("thread");
     expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
-      slack: { autoReply: true },
-    });
-
-    updateConversationSettings(conversation, { slack: { replyMode: "thread" } });
-    expect(resolveConversationSettings(conversation).slack).toEqual({
-      replyMode: "thread",
-      autoReply: true,
+      slack: { replyMode: "thread" },
     });
   });
 

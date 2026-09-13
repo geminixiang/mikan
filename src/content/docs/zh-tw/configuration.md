@@ -84,7 +84,7 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 `/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|shared-private|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。
 
-Slack auto-reply 現在是儲存在 `slack.autoReply` 的 conversation-level boolean，可透過 `/pi-auto-reply on|off` 修改。啟用後，該 Slack channel 中未明確 address mikan 的 top-level human message 也會觸發執行。舊 marker 檔、rules、top-level `autoReply` 與 `llm.autoReply` judge-model 設定仍維持退役並被忽略。
+Slack auto-reply 可透過 `/pi-auto-reply on|off` 修改，並以 conversation office 裡的 `auto-reply`（on）或 `auto-reply.disabled`（off）marker 檔保存。Marker 內容會被忽略：啟用後，該 Slack channel 中未明確 address mikan 的 top-level human message 會直接觸發，不使用 rules 或 judge model。Top-level `autoReply` 與 `llm.autoReply` JSON 設定仍維持退役並被忽略。
 
 Onboarding 不會寫入 `sandbox.workspace`。若沒有明確的全域或對話覆寫，mikan 會跟隨已記錄的平台頻道可見性。目前 Slack 公開頻道會解析為 `trusted` + `shared-support` + `public`，因此可讀寫 workspace 全域 `MEMORY.md`；Slack 私密頻道會解析為 `trusted` + `shared-support` + `private`，全域記憶以唯讀方式掛載。Slack DM、外部共享頻道、未知頻道類型，以及未記錄頻道可見性的其他平台都會解析為 `isolated`。這表示新部署的 Slack 公開頻道不需要額外 door-policy 指令，就會把內容寫入共享 workspace 記憶。
 

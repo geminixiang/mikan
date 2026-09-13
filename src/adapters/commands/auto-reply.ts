@@ -1,5 +1,4 @@
-import { slackConversationAutoReplyEnabled } from "../../config.js";
-import { applyConversationSettings } from "../../settings-mutation.js";
+import { setSlackConversationAutoReply, slackConversationAutoReplyEnabled } from "../../config.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replySummary } from "./utils.js";
@@ -32,9 +31,7 @@ export class AutoReplyCommandHandler implements CommandHandler {
     }
 
     const office = context.services.workspace.office(context.address);
-    applyConversationSettings(context.services.runtime, office, {
-      slack: { autoReply: value === "on" },
-    });
+    setSlackConversationAutoReply(office, value === "on");
     const enabled = slackConversationAutoReplyEnabled(office);
     await replySummary(context, "Auto-reply", [
       enabled

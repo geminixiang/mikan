@@ -225,4 +225,4 @@ PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commit sty
 
 MIT — see [LICENSE](LICENSE).
 
-Slack auto-reply is a per-conversation on/off switch stored as `slack.autoReply`. Legacy marker files, rules, and `llm.autoReply` judge-model settings remain retired and are ignored.
+Slack auto-reply uses the conversation's `auto-reply` / `auto-reply.disabled` marker files. File contents are ignored: only the on/off marker name matters; rules and `llm.autoReply` judge-model settings remain retired.

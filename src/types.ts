@@ -397,8 +397,6 @@ export interface AgentConfig {
   sandbox?: SandboxSettings;
   slack?: {
     replyMode?: "top-level" | "thread";
-    /** Whether unaddressed human messages trigger runs in this Slack conversation. */
-    autoReply?: boolean;
   };
   /**
    * MCP servers available to this scope, keyed by server name. Global and

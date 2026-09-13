@@ -327,10 +327,13 @@ describe("AutoReplyCommandHandler", () => {
 
       expect(await handler.tryHandle(on)).toBe(true);
       expect(slackConversationAutoReplyEnabled(office)).toBe(true);
+      expect(existsSync(join(office.dir, "auto-reply"))).toBe(true);
 
       const off = buildContext({ commandText: "/pi-auto-reply off", services: { workspace } });
       expect(await handler.tryHandle(off)).toBe(true);
       expect(slackConversationAutoReplyEnabled(office)).toBe(false);
+      expect(existsSync(join(office.dir, "auto-reply"))).toBe(false);
+      expect(existsSync(join(office.dir, "auto-reply.disabled"))).toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
