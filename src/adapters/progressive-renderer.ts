@@ -322,8 +322,13 @@ class ProgressiveRenderer {
           (elapsed >= this.flushIntervalMs && this.state.pendingChars > 0)
         ) {
           this.state.pendingChars = 0;
-          this.state.source = await this.renderDelta(this.state.source);
-          this.state.lastFlushAt = this.now();
+          try {
+            this.state.source = await this.renderDelta(this.state.source);
+          } finally {
+            // A rejected edit still spent an API call. Pace subsequent deltas
+            // from its completion too, retaining source for the next attempt.
+            this.state.lastFlushAt = this.now();
+          }
         }
       },
       () => ({ textLength: delta.length, accumulatedLength: this.state.source.length }),

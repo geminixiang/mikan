@@ -17,7 +17,10 @@ const STREAM_MIN_DELTA_CHARS = 256;
 
 const MAX_THREAD_LENGTH = 20000;
 const FALLBACK_MAIN_LENGTH = 3000;
-const WORKING_INDICATOR = " ...";
+// A separate paragraph preserves a rich_text block while headings/tables grow.
+// Inline suffixes become part of header/table, and Slack can reject replacing
+// an existing rich_text-only message with that non-rich-text-only shape.
+const WORKING_INDICATOR = "\n\n...";
 const TRUNCATION_NOTE_INCREMENTAL =
   "\n\n_(message truncated, ask me to elaborate on specific parts)_";
 const formatSlackContinuation = (partNum: number): string => `_(continued ${partNum})_`;

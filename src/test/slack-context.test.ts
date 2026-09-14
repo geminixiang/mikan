@@ -203,6 +203,19 @@ describe("respond() — non-threaded", () => {
     expect(bot.logBotResponse).toHaveBeenCalledWith("C001", "final", "MSG1", undefined);
   });
 
+  test.each(["# Heading", "| A | B |\n|---|---|\n| 1 | 2 |", "```\ncode"])(
+    "keeps the working indicator outside headings, tables, and fences: %s",
+    async (source) => {
+      const bot = makeSlackMessagingBot({ postMessage: vi.fn().mockResolvedValue("MSG1") });
+      const { responder } = createSlackAdapters(makeEvent({ thread_ts: undefined }), bot);
+      await responder.replaceResponse(source);
+      const closed = source.startsWith("```") ? `${source}\n\`\`\`` : source;
+      expect(bot.postMessage).toHaveBeenCalledWith("C001", `${closed}\n\n...`);
+      await responder.finishResponse?.(closed);
+      expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", closed);
+    },
+  );
+
   test("progress replacement keeps the next assistant turn on the same message", async () => {
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn().mockResolvedValue("MSG1"),
@@ -217,7 +230,7 @@ describe("respond() — non-threaded", () => {
 
     expect(bot.postMessage).toHaveBeenCalledTimes(1);
     expect(bot.startMessageStream).not.toHaveBeenCalled();
-    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "MSG1", "final answer ...");
+    expect(bot.updateMessage).toHaveBeenCalledWith("C001", "MSG1", "final answer\n\n...");
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final answer");
   });
 
