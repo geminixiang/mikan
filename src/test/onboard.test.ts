@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -29,6 +29,12 @@ function scriptedIo(answers: string[]): OnboardIo & { transcript: string[] } {
   return {
     ask: next,
     askSecret: next,
+    select: async (query, labels) => {
+      const index = Number(await next(query)) - 1;
+      if (index < 0 || index >= labels.length) throw new Error("Invalid scripted selection");
+      return index;
+    },
+    confirm: async () => true,
     print: (line) => transcript.push(line),
     close: () => {},
     transcript,
@@ -132,10 +138,9 @@ describe("runOnboardWizard", () => {
     );
   });
 
-  test("re-prompts on invalid choice and empty required answers", async () => {
+  test("re-prompts on empty required answers", async () => {
     const envFile = join(dir, "mikan.env");
     const io = scriptedIo([
-      "9", // invalid platform
       "3", // Discord
       "", // empty token → re-ask
       "dc-token",
@@ -146,6 +151,36 @@ describe("runOnboardWizard", () => {
     ]);
     expect(await runOnboardWizard(dir, io, { envFilePath: envFile })).toBe(0);
     expect(readFileSync(envFile, "utf-8")).toContain("DISCORD_BOT_TOKEN=dc-token");
+  });
+
+  test("declining confirmation leaves all files untouched and hides secrets", async () => {
+    const io = scriptedIo(["2", "tg-secret", "1", "api-secret", "", "1"]);
+    io.confirm = async () => false;
+    expect(await runOnboardWizard(dir, io)).toBe(1);
+    expect(existsSync(join(dir, "settings.json"))).toBe(false);
+    expect(existsSync(join(dir, "mikan.env"))).toBe(false);
+    expect(io.transcript.join("\n")).not.toContain("api-secret");
+    expect(io.transcript.join("\n")).not.toContain("tg-secret");
+  });
+
+  test("existing models file aborts without writing or printing credentials", async () => {
+    const modelsFile = join(dir, "models.json");
+    writeFileSync(modelsFile, "{}");
+    const io = scriptedIo([
+      "2",
+      "tg-secret",
+      "3",
+      "custom",
+      "https://example.com/v1",
+      "api-secret",
+      "model",
+      "1",
+    ]);
+    expect(await runOnboardWizard(dir, io, { modelsJsonPath: modelsFile })).toBe(1);
+    expect(existsSync(join(dir, "settings.json"))).toBe(false);
+    expect(existsSync(join(dir, "mikan.env"))).toBe(false);
+    expect(readFileSync(modelsFile, "utf8")).toBe("{}");
+    expect(io.transcript.join("\n")).not.toContain("api-secret");
   });
 
   test("refuses to overwrite existing settings.json", async () => {

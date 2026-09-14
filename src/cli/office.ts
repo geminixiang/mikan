@@ -11,27 +11,37 @@
  */
 import { join, resolve } from "node:path";
 import { assertPlatformName, OfficeRegistry } from "../office/index.js";
-import { reportUnknownFlag, resolveStateDir, scanArgs } from "./arg-grammar.js";
-
-const USAGE = `Usage:
-  mikan office list [--state-dir <dir>] [--workspace <dir>]
-  mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]`;
+import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
 
 export function runOfficeCommand(argv: string[]): number {
-  const scan = scanArgs(argv, {
-    values: ["--workspace", "--state-dir"], // --state-dir is read by resolveStateDir
-  });
-  if (scan.unknown) return reportUnknownFlag(scan.unknown, USAGE);
-
-  const stateDir = resolveStateDir(argv);
-  const workspaceArg = scan.values.get("--workspace");
-  const workspaceRoot = workspaceArg ? resolve(workspaceArg) : join(stateDir, "workspace");
-  const [action, ...rest] = scan.positionals;
-
-  if (action === "list") return listOffices(stateDir);
-  if (action === "claim") return claimOffice(stateDir, workspaceRoot, rest);
-  console.error(USAGE);
-  return 1;
+  const command = cliCommand("mikan office")
+    .description("Inspect conversation offices and claim legacy directories")
+    .option("--state-dir <dir>", "State directory", nonEmptyValue)
+    .option("--workspace <dir>", "Workspace directory", nonEmptyValue);
+  let result = 1;
+  command
+    .command("list")
+    .description("List registered offices")
+    .action(() => {
+      result = listOffices(resolveStateDir(argv));
+    });
+  command
+    .command("claim <conversationId> <platform>")
+    .description("Claim a legacy directory (stop the daemon first)")
+    .action((conversationId: string, platform: string) => {
+      const stateDir = resolveStateDir(argv);
+      const { workspace } = command.opts<{ workspace?: string }>();
+      result = claimOffice(stateDir, workspace ? resolve(workspace) : join(stateDir, "workspace"), [
+        conversationId,
+        platform,
+      ]);
+    });
+  try {
+    command.parse(argv, { from: "user" });
+    return result;
+  } catch (error) {
+    return commandExitCode(error, command);
+  }
 }
 
 function listOffices(stateDir: string): number {
@@ -54,10 +64,7 @@ function listOffices(stateDir: string): number {
 
 function claimOffice(stateDir: string, workspaceRoot: string, rest: string[]): number {
   const [rawConversationId, platform] = rest;
-  if (!rawConversationId || !platform) {
-    console.error(USAGE);
-    return 1;
-  }
+  if (!rawConversationId || !platform) return 1;
   try {
     const record = new OfficeRegistry(stateDir).prepareLegacyMigration({
       rawConversationId,
