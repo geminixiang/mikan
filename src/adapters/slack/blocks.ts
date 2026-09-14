@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import { normalizeSlackCurrencyBold } from "./markdown.js";
 import type Token from "markdown-it/lib/token.mjs";
 import type { KnownBlock } from "@slack/types";
 import {
@@ -112,7 +113,7 @@ function plainTextFallback(tokens: Token[]): string {
 
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
   const normalized = normalizeMarkdownTables(
-    source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)"),
+    normalizeSlackCurrencyBold(source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)")),
   );
   const lines = normalized.split("\n");
 

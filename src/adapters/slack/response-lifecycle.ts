@@ -5,6 +5,7 @@ import { formatToolArgs, splitText } from "../shared.js";
 import type { HandleTooLongInput } from "../types.js";
 import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { renderSlackBlocks } from "./blocks.js";
+import { normalizeSlackCurrencyBold } from "./markdown.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 
 const MAX_MAIN_LENGTH = 35000;
@@ -102,6 +103,7 @@ function closeOpenFences(text: string): string {
 }
 
 function needsCanonicalRender(text: string): boolean {
+  if (normalizeSlackCurrencyBold(text) !== text) return true;
   return renderSlackBlocks(text).blocks.some((block) => block.type === "table");
 }
 
@@ -273,6 +275,7 @@ function formatProvisionalSlackText(text: string, working: boolean): string {
 }
 
 function prepareSlackSource(text: string, working: boolean): string {
+  text = normalizeSlackCurrencyBold(text);
   const limit = working ? MAX_MAIN_LENGTH - WORKING_INDICATOR.length : MAX_MAIN_LENGTH;
   if (text.length <= limit) return text;
   return `${text.slice(0, Math.max(0, limit - TRUNCATION_NOTE_INCREMENTAL.length))}${TRUNCATION_NOTE_INCREMENTAL}`;
