@@ -9,9 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.60]
+
 ### Fixed
 
 - Separate CJK-adjacent bold dollar amounts for Slack's Markdown parser while preserving code and link destinations.
+- Validate Session View selections through read-only inspection so active and repeatedly selected historical sessions do not conflict with writer ownership or appear corrupted.
 
 ## [1.0.0-beta.59]
 
