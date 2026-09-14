@@ -9,6 +9,11 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep Slack's working indicator in its own paragraph so progressive heading and table updates can replace existing rich-text messages without `block_mismatch`.
+- Pace failed progressive redraws as well as successful ones, retaining accumulated text for recovery instead of retrying on every delta.
+
 ### Changed
 
 - Use Commander for CLI option parsing, subcommand validation, and generated help.

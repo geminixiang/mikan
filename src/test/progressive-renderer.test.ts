@@ -263,6 +263,33 @@ describe("native streaming: delta buffering", () => {
  * landed.
  */
 describe("redraw pacing", () => {
+  test("failed redraws remain paced and later recovery retains all text", async () => {
+    vi.useFakeTimers();
+    try {
+      let reject = true;
+      const { responder, calls } = makeRenderer("buffered", "anchor", {
+        flushIntervalMs: 1000,
+        update: async () => {
+          if (reject) throw new Error("block_mismatch");
+        },
+      });
+      await responder.appendResponseDelta?.("a");
+      for (const delta of ["b", "c", "d"]) {
+        vi.advanceTimersByTime(100);
+        await responder.appendResponseDelta?.(delta);
+      }
+      expect(calls).toHaveLength(1);
+      reject = false;
+      vi.advanceTimersByTime(1000);
+      await responder.appendResponseDelta?.("e");
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.text).toBe("abcde ...");
+      await responder.finishResponse?.("abcde");
+      expect(calls.at(-1)?.text).toBe("abcde");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   test("volume alone does not trigger a redraw before the interval", async () => {
     vi.useFakeTimers();
     const { responder, calls } = makeRenderer("buffered", undefined, { flushIntervalMs: 1000 });
