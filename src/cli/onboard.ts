@@ -19,8 +19,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Writable } from "node:stream";
-import { createInterface } from "node:readline/promises";
+import * as prompts from "@clack/prompts";
 import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
 import { createGlobalSettingsFile } from "../config.js";
 import type { OnboardLlmChoice } from "../types.js";
@@ -34,36 +33,27 @@ class OnboardAborted extends Error {
   }
 }
 
-/** Terminal-backed IO; secret answers are not echoed. */
+/** Cancellation is handled before any settings are written. */
+async function answer<T>(result: Promise<T>): Promise<Exclude<T, symbol>> {
+  const value = await result;
+  if (prompts.isCancel(value)) throw new OnboardAborted();
+  return value as Exclude<T, symbol>;
+}
+
 function terminalIo(): OnboardIo {
-  const gate = { muted: false };
-  const output = new Writable({
-    write(chunk: Buffer, _enc, cb) {
-      if (!gate.muted) process.stdout.write(chunk);
-      cb();
-    },
-  });
-  const rl = createInterface({ input: process.stdin, output, terminal: true });
-  // Ctrl+D closes readline mid-question; surface it as a clean abort.
-  const closed = new Promise<never>((_, reject) => {
-    rl.on("close", () => reject(new OnboardAborted()));
-  });
-  closed.catch(() => {}); // observed via Promise.race below
   return {
-    ask: (query) => Promise.race([rl.question(query), closed]),
-    askSecret: async (query) => {
-      process.stdout.write(query);
-      gate.muted = true;
-      try {
-        const value = await Promise.race([rl.question(""), closed]);
-        process.stdout.write("\n");
-        return value;
-      } finally {
-        gate.muted = false;
-      }
-    },
-    print: (line) => console.log(line),
-    close: () => rl.close(),
+    ask: (message) => answer(prompts.text({ message: message.trim() })),
+    askSecret: (message) => answer(prompts.password({ message: message.trim() })),
+    select: (message, labels) =>
+      answer(
+        prompts.select({
+          message,
+          options: labels.map((label, value) => ({ label, value })),
+        }),
+      ),
+    confirm: (message) => answer(prompts.confirm({ message, initialValue: true })),
+    print: (line) => prompts.log.info(line.trim()),
+    close: () => {},
   };
 }
 
@@ -76,13 +66,7 @@ async function askRequired(io: OnboardIo, query: string, secret = false): Promis
 }
 
 async function askChoice(io: OnboardIo, labels: string[], prompt: string): Promise<number> {
-  labels.forEach((label, i) => io.print(`  ${i + 1}. ${label}`));
-  for (;;) {
-    const raw = (await io.ask(`${prompt} [1-${labels.length}]: `)).trim();
-    const n = Number(raw);
-    if (Number.isInteger(n) && n >= 1 && n <= labels.length) return n - 1;
-    io.print("  (enter a number from the list)");
-  }
+  return io.select(prompt, labels);
 }
 
 /** Q1: pick a platform group from the manifest and collect its vars. */
@@ -217,18 +201,27 @@ export async function runOnboardWizard(
   const { llm, modelsJson } = await askLlm(io, env);
   const sandboxArg = await askSandbox(io);
 
+  const modelsPath = paths?.modelsJsonPath ?? defaultModelsJsonPath();
+  if (modelsJson && existsSync(modelsPath)) {
+    io.print(
+      `models.json already exists at ${modelsPath}. Add the provider manually before retrying; nothing was written.`,
+    );
+    return 1;
+  }
+  io.print(
+    `Review settings\nProvider: ${llm.provider}\nModel: ${llm.model}\nSandbox: ${sandboxArg ?? "host"}\nSettings: ${settingsPath}\nCredentials: ${paths?.envFilePath ?? join(stateDir, "mikan.env")}${modelsJson ? `\nModels: ${modelsPath}` : ""}\nSecrets are hidden.`,
+  );
+  if (!(await io.confirm("Save these settings?"))) {
+    io.print("Onboarding cancelled; nothing was written.");
+    return 1;
+  }
+
   createGlobalSettingsFile(stateDir, llm);
   io.print(`\nWrote ${settingsPath}`);
 
   if (modelsJson) {
-    const modelsPath = paths?.modelsJsonPath ?? defaultModelsJsonPath();
-    if (existsSync(modelsPath)) {
-      io.print(`models.json already exists at ${modelsPath} — add this provider manually:`);
-      io.print(modelsJson);
-    } else {
-      atomicWritePrivateFile(modelsPath, `${modelsJson}\n`);
-      io.print(`Wrote ${modelsPath}`);
-    }
+    atomicWritePrivateFile(modelsPath, `${modelsJson}\n`);
+    io.print(`Wrote ${modelsPath}`);
   }
 
   // Lives beside settings.json; at the default state dir this is exactly
@@ -258,12 +251,15 @@ export async function runOnboardCommand(stateDir: string): Promise<number> {
     );
     return 0;
   }
+  prompts.intro("Mikan setup · arrows to choose · Esc / Ctrl+C to cancel");
   const io = terminalIo();
   try {
-    return await runOnboardWizard(stateDir, io);
+    const code = await runOnboardWizard(stateDir, io);
+    prompts.outro(code === 0 ? "Setup complete" : "Setup not saved");
+    return code;
   } catch (err) {
     if (err instanceof OnboardAborted) {
-      console.log("\nOnboarding aborted; nothing was written.");
+      prompts.cancel("Onboarding aborted; nothing was written.");
       return 1;
     }
     throw err;

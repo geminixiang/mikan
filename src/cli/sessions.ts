@@ -11,10 +11,7 @@
 import { join, resolve } from "node:path";
 import { findPi084SessionFiles, migratePi084SessionFile } from "../sessions/migrate-pi-084.js";
 import { findV3SessionFiles, migrateSessionFile } from "../sessions/migrate-v3.js";
-import { reportUnknownFlag, resolveStateDir, scanArgs } from "./arg-grammar.js";
-
-const USAGE = `Usage:
-  mikan sessions migrate [--state-dir <dir>] [--workspace <dir>] [--dry-run]`;
+import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
 
 interface Candidate {
   file: string;
@@ -22,20 +19,31 @@ interface Candidate {
 }
 
 export async function runSessionsCommand(argv: string[]): Promise<number> {
-  const scan = scanArgs(argv, {
-    values: ["--workspace", "--state-dir"], // --state-dir is read by resolveStateDir
-    flags: [["--dry-run"]],
-  });
-  if (scan.unknown) return reportUnknownFlag(scan.unknown, USAGE);
-  if (scan.positionals[0] !== "migrate" || scan.positionals.length !== 1) {
-    console.error(USAGE);
-    return 1;
+  const command = cliCommand("mikan sessions")
+    .description("Session-file maintenance (stop the daemon first)")
+    .option("--state-dir <dir>", "State directory", nonEmptyValue)
+    .option("--workspace <dir>", "Workspace directory", nonEmptyValue);
+  let result = 1;
+  command
+    .command("migrate")
+    .description("Migrate legacy sessions, preserving backups")
+    .option("--dry-run", "Preview migration without writing")
+    .action(async (options: { dryRun?: boolean }) => {
+      const { workspace } = command.opts<{ workspace?: string }>();
+      const workspaceRoot = workspace
+        ? resolve(workspace)
+        : join(resolveStateDir(argv), "workspace");
+      result = await migrateWorkspace(workspaceRoot, options.dryRun ?? false);
+    });
+  try {
+    await command.parseAsync(argv, { from: "user" });
+    return result;
+  } catch (error) {
+    return commandExitCode(error, command);
   }
+}
 
-  const workspaceArg = scan.values.get("--workspace");
-  const workspaceRoot = workspaceArg
-    ? resolve(workspaceArg)
-    : join(resolveStateDir(argv), "workspace");
+async function migrateWorkspace(workspaceRoot: string, dryRun: boolean): Promise<number> {
   const candidates = findCandidates(workspaceRoot);
   if (candidates.length === 0) {
     console.log(`No legacy session files found under ${workspaceRoot}`);
@@ -43,7 +51,6 @@ export async function runSessionsCommand(argv: string[]): Promise<number> {
   }
 
   console.log(`Found ${candidates.length} legacy session file(s) under ${workspaceRoot}`);
-  const dryRun = scan.flags.has("--dry-run");
   const { migrated, failed } = await migrateCandidates(candidates, dryRun);
   console.log(
     dryRun

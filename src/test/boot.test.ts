@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { defaultStateDir, resolveStateDir, takeValueFlag } from "../cli/arg-grammar.js";
+import { defaultStateDir, resolveStateDir } from "../cli/arg-grammar.js";
 import { resolveBoot, helpText } from "../cli/boot.js";
 
 const HOME_STATE = join(homedir(), ".mikan");
@@ -92,11 +92,11 @@ describe("resolveBoot", () => {
   });
 
   test("unknown flags are an error, not silently ignored", () => {
-    expect(() => resolveBoot(["--sandox=host"])).toThrow(/Unknown flag: --sandox=host/);
+    expect(() => resolveBoot(["--sandox=host"])).toThrow(/unknown option '--sandox=host'/);
   });
 
   test("removed --worker-token flag is rejected", () => {
-    expect(() => resolveBoot(["--worker-token"])).toThrow(/Unknown flag: --worker-token/);
+    expect(() => resolveBoot(["--worker-token"])).toThrow(/unknown option '--worker-token'/);
   });
 
   test("office subcommand short-circuits with its own argv", () => {
@@ -134,11 +134,14 @@ describe("arg-grammar", () => {
     expect(defaultStateDir()).toBe(HOME_STATE);
   });
 
-  test("takeValueFlag handles both spellings and consumption width", () => {
-    expect(takeValueFlag(["--x", "v"], 0, "--x")).toEqual({ value: "v", lastIndex: 1 });
-    expect(takeValueFlag(["--x=v"], 0, "--x")).toEqual({ value: "v", lastIndex: 0 });
-    expect(takeValueFlag(["--y=v"], 0, "--x")).toBeUndefined();
-    expect(takeValueFlag(["--x"], 0, "--x")).toEqual({ value: "", lastIndex: 1 });
+  test.each([
+    ["--state-dir"],
+    ["--state-dir", "--help"],
+    ["--state-dir="],
+    ["--download"],
+    ["--sandbox"],
+  ])("rejects missing option values: %j", (...args) => {
+    expect(() => resolveBoot(args)).toThrow();
   });
 
   test("resolveStateDir matches the full parser's answer", () => {

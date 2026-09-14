@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Use Commander for CLI option parsing, subcommand validation, and generated help.
+- Guide interactive onboarding with arrow-key selections, masked credentials, and a final confirmation before saving. Cancel without writing settings.
+- Refuse custom-provider onboarding when models.json already exists, without printing credentials or writing partial settings.
+
 ## [1.0.0-beta.58]
 
 ### Added

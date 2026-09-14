@@ -4,6 +4,8 @@ import type { SandboxConfig } from "../sandbox/types.js";
 export interface OnboardIo {
   ask(query: string): Promise<string>;
   askSecret(query: string): Promise<string>;
+  select(query: string, labels: string[]): Promise<number>;
+  confirm(query: string): Promise<boolean>;
   print(line: string): void;
   close(): void;
 }
