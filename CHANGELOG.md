@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Publish the already built and verified npm package without rerunning build and repository setup lifecycle scripts.
+- Keep the documented and CI coverage commands as stable entry points while maintaining their shared Vitest invocation in one place.
+- Validate debug Session View selections from their path and header, leaving full parsing to consumers that load session content instead of inspecting the same file twice.
+
 ## [1.0.0-beta.60]
 
 ### Fixed

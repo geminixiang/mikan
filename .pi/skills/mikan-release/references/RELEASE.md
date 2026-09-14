@@ -125,8 +125,9 @@ If it already exists, use `gh release edit <version> ...` and keep prerelease/st
 
 Publishing the GitHub release is what ships the package: `.github/workflows/publish.yml`
 runs on `release: published` and does `npm ci` → `npm run build` → `npm test` →
-`node scripts/check-npm-package.mjs` → `npm publish --provenance --access public`,
-adding `--tag beta` when the version contains a `-`. A red workflow means the
+`node scripts/check-npm-package.mjs` → `npm publish --ignore-scripts --provenance --access public`,
+adding `--tag beta` when the version contains a `-`. Lifecycle scripts are skipped at publish
+because the workflow has already built and verified `dist`. A red workflow means the
 release exists but nothing reached npm.
 
 ```bash

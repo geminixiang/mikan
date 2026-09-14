@@ -36,11 +36,13 @@ jobs:
       - name: Verify npm package
         run: node scripts/check-npm-package.mjs
 
-      - name: Publish to npm
+      - name: Publish verified package to npm
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          # Build and package verification already ran above. Skipping lifecycle
+          # scripts avoids rebuilding dist after the verified package check.
           if [[ "$VERSION" == *-* ]]; then
-            npm publish --provenance --access public --tag beta
+            npm publish --ignore-scripts --provenance --access public --tag beta
           else
-            npm publish --provenance --access public
+            npm publish --ignore-scripts --provenance --access public
           fi

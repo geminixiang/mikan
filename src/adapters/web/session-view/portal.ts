@@ -1934,7 +1934,7 @@ async function resolveRequestedSessionFile(
   if (!existsSync(candidate)) return null;
 
   try {
-    await SessionStore.inspect(candidate);
+    if (!SessionStore.readHeader(candidate)) throw new Error("Invalid session header");
   } catch (err) {
     throw new Error(
       `Session file is corrupted: ${candidate}: ${

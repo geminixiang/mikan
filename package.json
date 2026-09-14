@@ -47,7 +47,7 @@
     "dev": "tsgo -p src/tsconfig.build.json --watch --preserveWatchOutput",
     "test": "vitest --run --config .config/vitest.config.ts",
     "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
-    "test:coverage:check": "vitest --run --coverage --config .config/vitest.config.ts",
+    "test:coverage:check": "npm run test:coverage",
     "test:office:docker": "node scripts/verify-office-docker.mjs",
     "lint": "oxlint -c .config/oxlintrc.json",
     "lint:fix": "oxlint -c .config/oxlintrc.json --fix",

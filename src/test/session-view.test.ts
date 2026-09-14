@@ -1,5 +1,5 @@
 import { officeSessionsDir } from "../office/index.js";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -161,6 +161,23 @@ describe("session view selection", () => {
 
     expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
     expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
+  });
+
+  test("rejects a selected session with an invalid header", async () => {
+    const sessionDir = officeSessionsDir(conversationDir);
+    const currentFile = createManagedSessionFile(sessionDir, conversationDir);
+    const invalidFile = join(sessionDir, "invalid.jsonl");
+    writeFileSync(invalidFile, "not json\n");
+    const tokenStore = new InMemorySessionViewTokenStore();
+    const token = tokenStore.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D123",
+      sessionKey: "D123",
+      sessionFile: currentFile,
+    });
+
+    expect(await requestSessionPage(tokenStore, token.token, invalidFile)).toBe(500);
   });
 });
 
