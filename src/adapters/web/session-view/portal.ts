@@ -1934,7 +1934,7 @@ async function resolveRequestedSessionFile(
   if (!existsSync(candidate)) return null;
 
   try {
-    await SessionStore.open(candidate);
+    await SessionStore.inspect(candidate);
   } catch (err) {
     throw new Error(
       `Session file is corrupted: ${candidate}: ${

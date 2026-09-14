@@ -1,5 +1,6 @@
 import { officeSessionsDir } from "../office/index.js";
 import { mkdirSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -10,7 +11,11 @@ import {
   getThreadSessionFile,
   openManagedSession,
 } from "../sessions/store.js";
-import { parseUserBody } from "../adapters/web/session-view/portal.js";
+import {
+  handleSessionViewRequest,
+  InMemorySessionViewTokenStore,
+  parseUserBody,
+} from "../adapters/web/session-view/portal.js";
 import { commandForms, matchCommand } from "../adapters/commands/manifest.js";
 import {
   loadSessionViewModel,
@@ -94,6 +99,68 @@ describe("resolveExistingSessionFile", () => {
     expect(resolveExistingSessionFile(join(workspaceDir, "C123"), "C123:1000.0001")).toBe(
       sessionFile,
     );
+  });
+});
+
+async function requestSessionPage(
+  tokenStore: InMemorySessionViewTokenStore,
+  token: string,
+  sessionFile: string,
+): Promise<number> {
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    await handleSessionViewRequest(req, res, url, tokenStore);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test server address");
+    const params = new URLSearchParams({ token, session: basename(sessionFile) });
+    return (await fetch(`http://127.0.0.1:${address.port}/session?${params}`)).status;
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+}
+
+describe("session view selection", () => {
+  test("can select the active session without claiming its writer lease", async () => {
+    const sessionDir = officeSessionsDir(conversationDir);
+    const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
+    const activeSession = await openManagedSession(sessionFile, conversationDir);
+    await activeSession.appendMessage(makeUserMessage("active"));
+    const tokenStore = new InMemorySessionViewTokenStore();
+    const token = tokenStore.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D123",
+      sessionKey: "D123",
+      sessionFile,
+    });
+
+    try {
+      expect(await requestSessionPage(tokenStore, token.token, sessionFile)).toBe(200);
+    } finally {
+      await activeSession.close();
+    }
+  });
+
+  test("can select the same historical session repeatedly without leaking a writer lease", async () => {
+    const sessionDir = officeSessionsDir(conversationDir);
+    const currentFile = createManagedSessionFile(sessionDir, conversationDir);
+    const historicalFile = createManagedSessionFile(sessionDir, conversationDir);
+    const tokenStore = new InMemorySessionViewTokenStore();
+    const token = tokenStore.create({
+      platform: "slack",
+      platformUserId: "U1",
+      conversationId: "D123",
+      sessionKey: "D123",
+      sessionFile: currentFile,
+    });
+
+    expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
+    expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
   });
 });
 
