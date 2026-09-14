@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.59]
+
 ### Fixed
 
 - Keep Slack's working indicator in its own paragraph so progressive heading and table updates can replace existing rich-text messages without `block_mismatch`.
