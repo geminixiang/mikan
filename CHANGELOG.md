@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Separate CJK-adjacent bold dollar amounts for Slack's Markdown parser while preserving code and link destinations.
+
 ## [1.0.0-beta.59]
 
 ### Fixed
