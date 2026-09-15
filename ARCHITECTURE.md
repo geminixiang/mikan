@@ -1,5 +1,7 @@
 # mikan Architecture
 
+Interactive visual overview: [`docs/architecture.html`](docs/architecture.html) — system ownership, Slack DM task flow, and current session topology versus native Pi v4 lanes.
+
 This document explains mikan's system-level architecture: the concepts that span modules, the main execution paths, the security and persistence model, and the invariants that must survive implementation changes.
 
 The machine-readable global index is [`architecture.toml`](architecture.toml). Its normative schema and maintenance workflow live in [`.pi/skills/mikan-architecture/`](.pi/skills/mikan-architecture/SKILL.md). Detailed module behavior lives beside its implementation in `src/*/README.md`. Accepted trade-offs live in `docs/adr/`.

@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>mikan Architecture — beta.61</title>
+    <style>
+      :root {
+        --paper: #f5f2e9;
+        --ink: #253629;
+        --muted: #60685f;
+        --line: #d4d8c9;
+        --green: #24543e;
+        --orange: #bd4c1e;
+        --blue: #255e80;
+        --card: #fffdf7;
+        --mono: "SFMono-Regular", Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          16px/1.6 "Avenir Next",
+          "PingFang TC",
+          "Noto Sans TC",
+          sans-serif;
+      }
+      main {
+        max-width: 1440px;
+        margin: auto;
+        padding: 42px 42px 60px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        border-bottom: 2px solid var(--ink);
+        padding-bottom: 24px;
+        gap: 24px;
+      }
+      .eyebrow,
+      .label {
+        font: 12px/1.5 var(--mono);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .eyebrow {
+        color: var(--orange);
+      }
+      h1 {
+        font:
+          500 clamp(38px, 5vw, 66px)/1.05 Georgia,
+          serif;
+        letter-spacing: -0.04em;
+        margin: 10px 0 12px;
+      }
+      h1 span {
+        color: var(--orange);
+      }
+      p {
+        margin: 0;
+      }
+      header p {
+        color: var(--muted);
+        max-width: 680px;
+      }
+      .version {
+        text-align: right;
+        white-space: nowrap;
+        font: 12px/1.8 var(--mono);
+      }
+      .version strong {
+        display: block;
+        color: var(--green);
+        font-size: 16px;
+      }
+      .intro {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        margin: 24px 0;
+      }
+      .legend {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .dot {
+        display: inline-block;
+        width: 9px;
+        height: 9px;
+        margin-right: 7px;
+        background: var(--green);
+      }
+      .orange {
+        background: var(--orange);
+      }
+      .blue {
+        background: var(--blue);
+      }
+      nav {
+        display: flex;
+        gap: 4px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 24px;
+      }
+      button {
+        font: inherit;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        padding: 12px 18px;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+      }
+      button[aria-selected="true"] {
+        border-color: var(--orange);
+        color: var(--ink);
+        font-weight: 600;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid var(--orange);
+        outline-offset: 3px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr) 280px;
+        gap: 22px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 20px;
+      }
+      .card h3 {
+        font-size: 19px;
+        margin: 6px 0 9px;
+        line-height: 1.35;
+      }
+      .card p,
+      .card li {
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .card small {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+      .band {
+        border-left: 4px solid var(--green);
+      }
+      .band.control {
+        border-left-color: var(--orange);
+      }
+      .band.native {
+        border-left-color: var(--blue);
+      }
+      .label {
+        color: var(--muted);
+      }
+      .source {
+        display: block;
+        margin-top: 12px;
+        color: var(--muted);
+        font: 11px/1.6 var(--mono);
+        overflow-wrap: anywhere;
+      }
+      a {
+        color: inherit;
+        text-decoration-color: var(--line);
+      }
+      .pill {
+        display: inline-block;
+        border: 1px solid currentColor;
+        padding: 2px 7px;
+        font: 11px/1.6 var(--mono);
+        color: var(--green);
+        margin: 4px 4px 0 0;
+      }
+      .flow-arrow {
+        text-align: center;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+        padding: 7px;
+      }
+      .flow-arrow strong {
+        display: block;
+        font-size: 23px;
+        line-height: 1;
+      }
+      .core {
+        background: #e8eee3;
+        border: 1px solid #bccbb5;
+        padding: 20px;
+      }
+      .core-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .core h2 {
+        font-size: 23px;
+        margin: 0;
+      }
+      .twocol {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .notice {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .bottom {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 18px;
+        margin-top: 22px;
+      }
+      .bottom h3 {
+        font-size: 16px;
+      }
+      .footnote {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 20px;
+      }
+      ul {
+        padding-left: 19px;
+        margin: 8px 0;
+      }
+      .wide {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 24px;
+      }
+      .timeline {
+        counter-reset: step;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+      }
+      .step {
+        position: relative;
+        margin-left: 16px;
+        border-left: 1px solid var(--line);
+        padding: 0 0 24px 32px;
+        counter-increment: step;
+      }
+      .step:before {
+        content: counter(step);
+        position: absolute;
+        left: -16px;
+        top: 0;
+        width: 31px;
+        height: 31px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        border-radius: 50%;
+        text-align: center;
+        font: 13px/29px var(--mono);
+      }
+      .step h3 {
+        margin: 0 0 5px;
+        font-size: 18px;
+      }
+      .step p {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .chat {
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 25px;
+      }
+      .bubble {
+        padding: 14px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .bubble b {
+        display: block;
+        font: 12px var(--mono);
+        color: var(--orange);
+        margin-bottom: 8px;
+      }
+      .thread {
+        margin: 16px 0 16px 20px;
+        padding: 12px 18px;
+        border-left: 3px solid var(--green);
+        background: #eef2e8;
+      }
+      .thread p {
+        margin: 9px 0;
+        font-size: 14px;
+      }
+      .code {
+        white-space: pre-wrap;
+        font: 13px/1.9 var(--mono);
+        background: #263a2c;
+        color: #e1e9d9;
+        padding: 25px;
+        margin: 0;
+      }
+      .compare {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      .compare th,
+      .compare td {
+        text-align: left;
+        border-bottom: 1px solid var(--line);
+        padding: 12px;
+        vertical-align: top;
+      }
+      .compare th {
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .callout {
+        padding: 17px 20px;
+        background: #f6e6d9;
+        border: 1px solid #d9b79e;
+        font-size: 14px;
+        margin-top: 18px;
+      }
+      .section-title {
+        font-size: 28px;
+        font-weight: 500;
+        margin: 0 0 6px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 14px;
+        margin-bottom: 24px;
+      }
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        border-top: 1px solid var(--ink);
+        padding-top: 18px;
+        margin-top: 34px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (max-width: 1050px) {
+        .grid {
+          grid-template-columns: 1fr 2fr;
+        }
+        .side {
+          grid-column: 1/-1;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .bottom {
+          grid-template-columns: 1fr 1fr;
+        }
+        .version {
+          white-space: normal;
+        }
+      }
+      @media (max-width: 680px) {
+        main {
+          padding: 24px 18px;
+        }
+        header {
+          align-items: start;
+          flex-direction: column;
+        }
+        .version {
+          text-align: left;
+        }
+        .intro {
+          flex-direction: column;
+        }
+        .grid,
+        .twocol,
+        .wide,
+        .bottom,
+        .side {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+        nav {
+          overflow: auto;
+        }
+        button {
+          white-space: nowrap;
+          padding: 10px 12px;
+        }
+        .core {
+          padding: 14px;
+        }
+        .core-title {
+          align-items: start;
+          gap: 10px;
+        }
+        .compare {
+          font-size: 12px;
+        }
+        .compare td,
+        .compare th {
+          padding: 9px 5px;
+        }
+        footer {
+          flex-direction: column;
+        }
+      }
+      @media print {
+        body {
+          background: white;
+        }
+        main {
+          padding: 15px;
+          max-width: none;
+        }
+        nav,
+        .intro {
+          display: none;
+        }
+        section[hidden] {
+          display: block !important;
+        }
+        section {
+          break-before: page;
+          margin-top: 25px;
+        }
+        section:first-of-type {
+          break-before: auto;
+        }
+        header {
+          padding-bottom: 10px;
+        }
+        .card,
+        .core,
+        .chat,
+        .step {
+          break-inside: avoid;
+        }
+        h1 {
+          font-size: 38px;
+        }
+        .grid {
+          grid-template-columns: 180px 1fr 230px;
+        }
+        .wide {
+          grid-template-columns: 1fr 1fr;
+        }
+        footer {
+          margin-top: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">System atlas / implemented architecture</div>
+          <h1>mikan <span>Architecture</span></h1>
+          <p>對話持續，工作獨立。mikan 管理路由、授權與交付；Pi 管理持久化執行。</p>
+        </div>
+        <div class="version">
+          <strong>1.0.0-beta.61</strong>Source baseline · 10c116b<br />2026-09-15 · current
+          implementation
+        </div>
+      </header>
+      <div class="intro">
+        <span class="label">Three views, one system</span>
+        <div class="legend">
+          <span><i class="dot"></i>mikan ownership</span
+          ><span><i class="dot blue"></i>Pi native ownership</span
+          ><span><i class="dot orange"></i>Control / delivery</span>
+        </div>
+      </div>
+      <nav role="tablist" aria-label="架構視圖">
+        <button id="tab-system" role="tab" aria-controls="system" aria-selected="true" tabindex="0">
+          01 / 系統全貌</button
+        ><button id="tab-task" role="tab" aria-controls="task" aria-selected="false" tabindex="-1">
+          02 / 對話與任務</button
+        ><button
+          id="tab-session"
+          role="tab"
+          aria-controls="session"
+          aria-selected="false"
+          tabindex="-1"
+        >
+          03 / Session 與 Lane
+        </button>
+      </nav>
+      <section id="system" role="tabpanel" aria-labelledby="tab-system">
+        <div class="grid">
+          <div class="stack">
+            <div class="card band">
+              <div class="label">Platform edge</div>
+              <h3>使用者入口</h3>
+              <p>Slack · Discord<br />Telegram · GitHub</p>
+              <div class="notice">平台負責觸發政策、身分、訊息／thread 定位與附件。</div>
+              <span class="source">src/adapters/*/bot.ts</span>
+            </div>
+            <div class="flow-arrow">Normalized event + context<strong>↓</strong></div>
+            <div class="card band control">
+              <div class="label">Control intake</div>
+              <h3>接話，不只排隊</h3>
+              <p>stop 優先控制<br />commands 決定性 dispatch<br />一般訊息走 session queue</p>
+              <span class="source">adapters/intake.ts<br />adapters/commands/</span>
+            </div>
+            <div class="card">
+              <div class="label">Other entry points</div>
+              <h3>Web / Scheduled events</h3>
+              <p>
+                Session View 可送訊息。Event watcher 將到期事件交付平台；不是第二套 Agent loop。
+              </p>
+            </div>
+          </div>
+          <div>
+            <div class="core">
+              <div class="core-title">
+                <h2>Conversation office</h2>
+                <span class="pill">platform + conversation ID</span>
+              </div>
+              <div class="card band">
+                <div class="label">01 / orchestration</div>
+                <h3>ConversationRuntime + SessionLifecycle</h3>
+                <p>
+                  以 OfficeAddress + sessionKey 串行同一對話；不同 session 可獨立執行。管理 runner
+                  lease、settlement、停止、淘汰與 shutdown。
+                </p>
+                <span class="source">src/runtime/</span>
+              </div>
+              <div class="flow-arrow">Acquire authorized runner<strong>↓</strong></div>
+              <div class="card band">
+                <div class="label">02 / run composition</div>
+                <h3>Runner</h3>
+                <p>
+                  同步聊天歷史、建立 prompt、載入 skills，綁定 actor 的執行環境、工具與
+                  responder。不是把模型或工具搬到主機直接執行。
+                </p>
+                <span class="source">harness/runner.ts · execution-resolver.ts</span>
+              </div>
+              <div class="flow-arrow">prompt / steer / abort<strong>↓</strong></div>
+              <div class="card band native">
+                <div class="label">03 / native execution</div>
+                <h3>Pi AgentHarness + pi-ai</h3>
+                <p>
+                  模型與工具迴圈、重試、壓縮、operation、inbox 與恢復規則。mikan
+                  提供預算策略及平台事件轉譯。
+                </p>
+                <span class="pill">read</span><span class="pill">write</span
+                ><span class="pill">edit</span><span class="pill">bash</span
+                ><span class="source"
+                  >harness/session.ts → pi-agent-core<br />Model providers → pi-ai</span
+                >
+              </div>
+              <div class="notice">
+                <strong>一個 Office，不是一個任務。</strong> 同 Office 的主對話與 task thread 有不同
+                session，但通常共用 workspace／sandbox；不等於檔案操作互相隔離。
+              </div>
+            </div>
+            <div class="flow-arrow">Model text + tool events<strong>↓</strong></div>
+            <div class="card band control">
+              <div class="label">04 / delivery</div>
+              <h3>Presenter → Responder → Slack / other platforms</h3>
+              <p>
+                進度串流、最終替換、檔案上傳與通知。最終交付錯誤會上拋；不能把 Pi completed 當作
+                Slack 已送達。
+              </p>
+              <span class="source">harness/presenter.ts · adapters/progressive-renderer.ts</span>
+            </div>
+          </div>
+          <div class="stack side">
+            <div class="card band">
+              <div class="label">Authority</div>
+              <h3>Office / Vault / Sandbox</h3>
+              <p>OfficeKey 定位資料。Door policy 決定掛載與 prompt 來源；Vault 注入授權憑證。</p>
+              <div class="notice">
+                原生檔案／shell 工具透過 authorized ExecutionEnv 操作 sandbox。缺少 env 不回退主機。
+              </div>
+              <span class="source">office/ · vault/ · sandbox/<br />harness/execution-env.ts</span>
+            </div>
+            <div class="card band native">
+              <div class="label">Persistence</div>
+              <h3>SessionStore → Pi v4</h3>
+              <p>
+                mikan 管理檔案路徑、單一 writer 與 MCP 壽命；Pi 管理
+                entries、branch、lane、operation 與 transaction。
+              </p>
+              <span class="source"
+                >sessions/session-store.ts<br />sessions/chat-history-sync.ts</span
+              >
+            </div>
+            <div class="card band control">
+              <div class="label">Observability</div>
+              <h3>Sentry + OTLP</h3>
+              <p>
+                錯誤事件、trace 與設定啟用的 metrics。使用操作 ID
+                關聯，不輸出對話、工具參數、檔案內容或憑證。
+              </p>
+              <div class="notice">
+                只有明確配置才啟用匯出。程序被強制殺掉或網路中斷時，不保證即時收件。
+              </div>
+              <span class="source">src/observability/</span>
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <div class="card">
+            <div class="label">Tools & skills</div>
+            <h3>能力不是另一個 runtime</h3>
+            <p>
+              Skills 是授權範圍內的指引與腳本。平台 tools／MCP 是明確綁定的能力，不是任意 host
+              plugin。
+            </p>
+          </div>
+          <div class="card">
+            <div class="label">Delegation</div>
+            <h3>Subagent</h3>
+            <p>
+              父 run 內的有界委派，可並行／DAG；父工具等待結果，使用 in-memory
+              session，不自動釋放主對話。
+            </p>
+          </div>
+          <div class="card">
+            <div class="label">Maintenance</div>
+            <h3>Dream</h3>
+            <p>
+              獨立的記憶整理工作，透過 Office maintenance barrier 讀取 session 證據，更新
+              MEMORY.md；不由 /new 隱式觸發。
+            </p>
+          </div>
+        </div>
+      </section>
+      <section id="task" role="tabpanel" aria-labelledby="tab-task" hidden>
+        <h2 class="section-title">交出去的是工作，不是對話關係。</h2>
+        <p class="sub">
+          beta.61 自動 handoff 先限頂層 Slack DM。一般簡短問題仍直接回答，既有任務 thread 不再遞迴
+          handoff。
+        </p>
+        <div class="wide">
+          <div class="timeline">
+            <div class="step">
+              <h3>主 DM 理解請求</h3>
+              <p>
+                模型選擇直接回答，或單獨呼叫 start_task。混合 handoff 與其他工具的同批呼叫會被阻擋。
+              </p>
+            </div>
+            <div class="step">
+              <h3>Slack 建立確認訊息與 task thread</h3>
+              <p>
+                記錄 task root，建立獨立 scoped
+                session，交付完整任務文字與附件引用。它不自動继承主對話全部工具歷史。
+              </p>
+            </div>
+            <div class="step">
+              <h3>主對話結束本輪，任務獨立執行</h3>
+              <p>
+                Task 使用自己的 queue、runner 與 v4 session；主 DM 可接下一則問題，不等待 task
+                完成。
+              </p>
+            </div>
+            <div class="step">
+              <h3>同一任務可觀察、引導與停止</h3>
+              <p>
+                常見純進度問句直接查 runtime／v4。其他自由問法可用 task_status。文字補充由 steering
+                送到下一個工具批次邊界；stop 走優先取消。
+              </p>
+            </div>
+            <div class="step">
+              <h3>交付結果，再通知請求人</h3>
+              <p>
+                結果留在 thread，符合通知條件時新增原生 mention。停止通知也留在輸入
+                thread；停止後明確續作是同 session 的新 operation。
+              </p>
+            </div>
+          </div>
+          <div>
+            <div class="chat">
+              <div class="label">User-visible flow / illustration</div>
+              <div class="bubble"><b>YOU · MAIN DM</b>幫我整理最近更新，挑幾個重點。</div>
+              <div class="bubble"><b>MIKAN · TASK ROOT</b>好，我來整理一下，弄好再通知你。</div>
+              <div class="thread">
+                <span class="label">Independent task thread</span>
+                <p>工具執行與結果</p>
+                <p>
+                  <strong>你：</strong>有進展嗎？<br /><strong>mikan：</strong>依實際狀態回覆，不猜
+                  ETA。
+                </p>
+                <p><strong>你：</strong>只要三個重點。<br />→ steering，不立即打斷已開始的工具。</p>
+                <p><strong>你：</strong>stop<br />→ Stopping… → Stopped.</p>
+                <p><strong>正常交付：</strong>@請求人，這一輪處理已結束。</p>
+              </div>
+              <div class="bubble">
+                <b>YOU · MAIN DM, WHILE TASK RUNS</b>順便問一下，DM 是什麼意思？
+              </div>
+              <div class="bubble"><b>MIKAN</b>DM 是 Direct Message，也就是私訊。</div>
+            </div>
+            <div class="callout">
+              <strong>不是所有對話都背景化。</strong><br />Thread 是平台位置；task 是用途；session
+              是歷史與執行身分。圖中文字是互動示意，不保證模型逐字照說。
+            </div>
+          </div>
+        </div>
+        <div class="bottom">
+          <div class="card">
+            <h3>進度不改任務</h3>
+            <p>
+              純狀態 shortcut 不跑模型、不送 steering。多個 active task
+              時不猜；歷史查詢限制十筆，但保留所有 active task。
+            </p>
+          </div>
+          <div class="card">
+            <h3>取消不是回滾</h3>
+            <p>
+              記錄 control input 處置，避免取消後被 history sync 加回。Abort
+              需等待合作式收尾，無法撤銷已完成的外部操作。
+            </p>
+          </div>
+          <div class="card">
+            <h3>目前限制</h3>
+            <p>
+              未提供自動 crash recovery、完整主 DM 自然語言取消定位。Steering 限當前 actor
+              的文字；新附件需停止後續作。
+            </p>
+          </div>
+        </div>
+      </section>
+      <section id="session" role="tabpanel" aria-labelledby="tab-session" hidden>
+        <h2 class="section-title">Session 是容器，lane 是工作線。</h2>
+        <p class="sub">
+          Pi v4 原生支援 multi-lane，但目前 mikan 採用「每個平台 session key 對應一份 session
+          檔，使用 main lane」。
+        </p>
+        <div class="wide">
+          <div>
+            <div class="label" style="margin-bottom: 10px">Implemented / mikan beta.61</div>
+            <pre class="code">
+Conversation office · Slack D123
+│
+├─ sessions/current → timestamp_UUID.jsonl
+│  └─ main lane
+│     └─ 主 DM 的 operations
+│
+├─ sessions/123.456.jsonl
+│  └─ main lane
+│     └─ Task thread 的 operations
+│
+└─ sessions/789.012.jsonl
+   └─ main lane
+      └─ 另一個一般 thread／event 工作
+
+Subagent / Dream
+└─ 獨立 in-memory session</pre>
+            <div class="notice">
+              Task session 就是該 task 的 thread session，不是 task 底下再包一層 thread
+              session。停止／續作不必建立新檔案。
+            </div>
+          </div>
+          <div>
+            <div class="label" style="margin-bottom: 10px">
+              Native capability / not adopted as mikan topology
+            </div>
+            <pre class="code">
+One Pi v4 session
+│
+├─ main lane ───── 主對話
+│   ├─ branch tip
+│   ├─ model / thinking / tools
+│   ├─ inbox
+│   └─ current operation / last result
+│
+└─ task lane ───── 獨立任務
+    ├─ 從共同歷史位置建立分支
+    ├─ 自己的 inbox / operation
+    └─ 分支後不自動合併對話</pre>
+            <div class="callout">
+              <strong>Multi-lane ≠ 多個 sandbox。</strong><br />同一 session 多 lane
+              可以獨立執行，但共用 harness 的部分配置與生命週期。採用前需整理 mikan 的 actor
+              綁定、事件路由、writer 管理與 Session View。
+            </div>
+          </div>
+        </div>
+        <table class="compare" style="margin-top: 24px">
+          <thead>
+            <tr>
+              <th>層級</th>
+              <th>Pi v4 已有</th>
+              <th>mikan 負責</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session / branch</td>
+              <td>歷史樹、transaction、values、branch tips</td>
+              <td>Office 路徑、writer ownership、平台歷史同步</td>
+            </tr>
+            <tr>
+              <td>Lane</td>
+              <td>模型配置、啟用工具、持久 inbox</td>
+              <td>目前固定 main；平台 session key 決定 runner 身分</td>
+            </tr>
+            <tr>
+              <td>Operation</td>
+              <td>accept / drive / steer / abort / resume、terminal result</td>
+              <td>授權、預算、準備與 settlement、控制入口</td>
+            </tr>
+            <tr>
+              <td>Recovery</td>
+              <td>重開可辨認未結束 operation；safe replay 與未知結果</td>
+              <td>啟動／恢復政策與使用者回饋；目前不自動恢復任務</td>
+            </tr>
+            <tr>
+              <td>Delivery</td>
+              <td>operation completed 不證明外部訊息送達</td>
+              <td>Responder 最終發送、錯誤上報、requester mention</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="footnote">
+          Fork 複製選定歷史，不複製正在執行的 operation／pending queue。已完成取消後的「繼續」是新
+          prompt；crash recovery 的 resume 是另一種操作。
+        </p>
+      </section>
+      <footer>
+        <div>
+          mikan / architecture atlas<br />HTML + CSS · 無外部依賴 · 可離線開啟 · 列印包含全部視圖
+        </div>
+        <div>
+          <a href="../ARCHITECTURE.md">Architecture reference</a> ·
+          <a href="../architecture.toml">Module index</a><br /><a
+            href="research/conversation-task-handoff.md"
+            >Task flow evidence & limitations</a
+          >
+        </div>
+      </footer>
+    </main>
+    <script>
+      const tabs = [...document.querySelectorAll("[role=tab]")];
+      function select(tab) {
+        for (const item of tabs) {
+          const active = item === tab;
+          item.setAttribute("aria-selected", String(active));
+          item.tabIndex = active ? 0 : -1;
+          document.getElementById(item.getAttribute("aria-controls")).hidden = !active;
+        }
+      }
+      for (const [index, tab] of tabs.entries()) {
+        tab.addEventListener("click", () => select(tab));
+        tab.addEventListener("keydown", (event) => {
+          let next;
+          if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
+          if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+          if (event.key === "Home") next = 0;
+          if (event.key === "End") next = tabs.length - 1;
+          if (next !== undefined) {
+            event.preventDefault();
+            select(tabs[next]);
+            tabs[next].focus();
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
