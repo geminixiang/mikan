@@ -345,6 +345,33 @@ async function openFileSession(
   }
 }
 
+/** Both inspection surfaces share one snapshot lifetime; neither claims the source writer. */
+async function withSessionSnapshot<T>(
+  path: string,
+  read: (session: Session<JsonlSessionMetadata>, header: CurrentSessionHeader) => Promise<T>,
+): Promise<T> {
+  const resolvedPath = canonicalSessionPath(path);
+  const dir = mkdtempSync(join(tmpdir(), "mikan-session-inspect-"));
+  const snapshot = join(dir, basename(resolvedPath));
+  let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
+  try {
+    writeFileSync(snapshot, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
+    const header = parseCurrentHeader(resolvedPath, readHeaderLine(snapshot));
+    opened = await openFileSession(snapshot, header);
+    return await read(opened.session, header);
+  } finally {
+    try {
+      await opened?.session.close(TODO_CONTEXT);
+    } finally {
+      try {
+        await opened?.repo.close(TODO_CONTEXT);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+  }
+}
+
 async function mainBranch(session: Session, create: boolean): Promise<Branch | undefined> {
   const existing = await session.branch("main", TODO_CONTEXT);
   if (existing || !create) return existing;
@@ -494,47 +521,24 @@ export class SessionStore implements SessionInspection {
     open: boolean;
     result?: { status: "completed" | "aborted" | "failed" | "declined"; endedAt: number };
   }> {
-    const snapshotDir = mkdtempSync(join(tmpdir(), "mikan-execution-inspect-"));
-    const snapshotPath = join(snapshotDir, "session.jsonl");
-    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
-    try {
-      writeFileSync(snapshotPath, readFileSync(path), { mode: 0o600, flag: "wx" });
-      opened = await openFileSession(
-        snapshotPath,
-        parseCurrentHeader(path, readHeaderLine(snapshotPath)),
-      );
-      const state = (await opened.session.getValue(laneState("main"), TODO_CONTEXT))?.value;
+    return withSessionSnapshot(path, async (session) => {
+      const state = (await session.getValue(laneState("main"), TODO_CONTEXT))?.value;
       const result = state?.lastOperationId
-        ? (await opened.session.getValue(operationResult(state.lastOperationId), TODO_CONTEXT))
-            ?.value
+        ? (await session.getValue(operationResult(state.lastOperationId), TODO_CONTEXT))?.value
         : undefined;
       return {
         open: state?.currentOperationId != null,
         ...(result ? { result: { status: result.status, endedAt: result.endedAt } } : {}),
       };
-    } finally {
-      try {
-        await opened?.session.close(TODO_CONTEXT);
-      } finally {
-        await opened?.repo.close(TODO_CONTEXT);
-        rmSync(snapshotDir, { recursive: true, force: true });
-      }
-    }
+    });
   }
 
   static async inspect(path: string): Promise<SessionInspection> {
-    const resolvedPath = canonicalSessionPath(path);
-    const snapshotDir = mkdtempSync(join(tmpdir(), "mikan-session-inspect-"));
-    const snapshotPath = join(snapshotDir, basename(resolvedPath));
-    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
-    try {
-      writeFileSync(snapshotPath, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
-      const header = parseCurrentHeader(resolvedPath, readHeaderLine(snapshotPath));
-      opened = await openFileSession(snapshotPath, header);
-      const metadata = (await opened.session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
-      const entries = await opened.session.findEntries({ order: "asc" }, TODO_CONTEXT);
-      const name = await opened.session.getName(TODO_CONTEXT);
-      const branchObject = await mainBranch(opened.session, false);
+    return withSessionSnapshot(path, async (session, header) => {
+      const metadata = (await session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
+      const entries = await session.findEntries({ order: "asc" }, TODO_CONTEXT);
+      const name = await session.getName(TODO_CONTEXT);
+      const branchObject = await mainBranch(session, false);
       const branch = branchObject
         ? await branchObject.findEntries({ order: "oldestFirst" }, TODO_CONTEXT)
         : [];
@@ -546,13 +550,7 @@ export class SessionStore implements SessionInspection {
         branch,
         context,
       );
-    } finally {
-      if (opened) {
-        await opened.session.close(TODO_CONTEXT);
-        await opened.repo.close(TODO_CONTEXT);
-      }
-      rmSync(snapshotDir, { recursive: true, force: true });
-    }
+    });
   }
 
   static async create(

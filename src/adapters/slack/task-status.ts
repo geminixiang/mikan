@@ -37,51 +37,44 @@ export async function querySlackTasks(
   const matching = [...roots]
     .toReversed()
     .filter(([root]) => !sessionKey || resolveSlackSessionKey(channel, root) === sessionKey);
-  const activeKeys = new Set(
+  const activeByKey = new Map(
     running
       .filter((s) => s.address.platform === "slack" && s.address.conversationId === channel)
-      .map((s) => s.sessionKey),
+      .map((s) => [s.sessionKey, s]),
   );
   // Never hide active work behind the recent-completed history limit.
   const selected = matching.filter(
-    ([root], index) => index < 10 || activeKeys.has(resolveSlackSessionKey(channel, root)),
+    ([root], index) => index < 10 || activeByKey.has(resolveSlackSessionKey(channel, root)),
   );
-  return Promise.all(
-    selected.map(async ([root, acknowledgement]) => {
-      const key = resolveSlackSessionKey(channel, root);
-      const active = running.find(
-        (s) =>
-          activeKeys.has(key) &&
-          s.sessionKey === key &&
-          s.address.platform === "slack" &&
-          s.address.conversationId === channel,
-      );
-      const observation: TaskStatus = {
-        sessionKey: key,
-        threadTs: root,
-        acknowledgement,
-        observedAt: new Date().toISOString(),
-        status: "unknown",
-      };
-      if (active) {
-        observation.status = active.stopping ? "stopping" : "running";
-        observation.currentTool = active.currentTool;
-        return observation;
+  const observations: TaskStatus[] = [];
+  for (const [root, acknowledgement] of selected) {
+    const key = resolveSlackSessionKey(channel, root);
+    const active = activeByKey.get(key);
+    const observation: TaskStatus = {
+      sessionKey: key,
+      threadTs: root,
+      acknowledgement,
+      observedAt: new Date().toISOString(),
+      status: "unknown",
+    };
+    if (active) {
+      observation.status = active.stopping ? "stopping" : "running";
+      observation.currentTool = active.currentTool;
+      observations.push(observation);
+      continue;
+    }
+    try {
+      const state = await SessionStore.inspectExecution(getThreadSessionFile(conversationDir, key));
+      if (!state.open && state.result) {
+        observation.status = state.result.status;
+        observation.endedAt = new Date(state.result.endedAt).toISOString();
       }
-      try {
-        const state = await SessionStore.inspectExecution(
-          getThreadSessionFile(conversationDir, key),
-        );
-        if (!state.open && state.result) {
-          observation.status = state.result.status;
-          observation.endedAt = new Date(state.result.endedAt).toISOString();
-        }
-      } catch {
-        // No runtime or durable outcome: do not invent queued/completed state.
-      }
-      return observation;
-    }),
-  );
+    } catch {
+      // No runtime or durable outcome: do not invent queued/completed state.
+    }
+    observations.push(observation);
+  }
+  return observations;
 }
 
 export function formatTaskStatus(tasks: TaskStatus[]): string {
@@ -92,11 +85,11 @@ export function formatTaskStatus(tasks: TaskStatus[]): string {
         case "running":
           return `還在處理${task.currentTool ? `，目前正在：${task.currentTool}` : ""}。目前無法可靠估計還要多久，結束後會通知你。`;
         case "completed":
-          return "這一輪已結束，結果在這個對話串上方。";
+          return "這一輪執行已結束。這是執行狀態，不代表結果訊息已成功送達；請查看任務對話串。";
         case "aborted":
           return "這一輪已停止，不會自行繼續。你可以補充新要求後再繼續。";
         case "failed":
-          return "這一輪執行失敗，請查看上方的錯誤訊息。";
+          return "這一輪執行失敗。";
         case "queued":
           return "任務尚未開始執行。";
         case "declined":

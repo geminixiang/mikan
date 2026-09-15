@@ -346,7 +346,7 @@ test("status questions in an active task are read-only, immediate, and do not ad
   expect(faux.state.callCount).toBe(3);
   expect(bot.postMessage).toHaveBeenCalledWith(
     "D123",
-    expect.stringContaining("這一輪已結束"),
+    expect.stringContaining("這一輪執行已結束"),
     root,
   );
   expect(vi.mocked(bot.postMessage).mock.calls.filter((c) => c[1].includes("<@U1>"))).toHaveLength(
@@ -503,4 +503,26 @@ test("task membership parser tolerates malformed logs and status isolates platfo
   );
   expect(observations[0].status).toBe("completed");
   expect(observations[0].currentTool).toBeUndefined();
+});
+
+test("main DM pure status observes the single active task without a model turn", async () => {
+  faux.setResponses([handoff(), callHold()]);
+  await startTask();
+  await dm("好了嗎？");
+  expect(faux.state.callCount).toBe(2);
+  expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("還在處理"));
+});
+
+test("main DM status does not guess between concurrent tasks", async () => {
+  faux.setResponses([handoff(), callHold(), handoff(), callHold()]);
+  await startTask();
+  await dm("another investigation");
+  await vi.waitFor(() =>
+    expect(
+      runtime.getRunningSessions().filter((s) => s.sessionKey.startsWith("D123:")),
+    ).toHaveLength(2),
+  );
+  await dm("好了嗎？");
+  expect(faux.state.callCount).toBe(4);
+  expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("多個任務"));
 });

@@ -1577,39 +1577,36 @@ export class SlackMessagingBot implements MessagingBot {
     event: SlackEvent,
     attachmentsPromise: Promise<Attachment[]>,
   ): Promise<boolean> {
-    if (
-      event.conversationKind === "direct" &&
-      event.thread_ts &&
-      this.isTaskThread(event.channel, event.thread_ts) &&
-      matchMagicWord(event.text) !== "stop" &&
-      !event.text.startsWith("/")
-    ) {
-      event.attachments = await attachmentsPromise;
-      const context = this.createContext(event);
-      try {
-        if (!event.attachments?.length && isTaskStatusQuestion(event.text)) {
-          const tasks = await context.responder.getTaskStatus!(event.sessionKey);
-          const text = formatTaskStatus(tasks);
-          const ts = await this.postInThread(event.channel, event.thread_ts, text);
-          this.logBotResponse(event.channel, text, ts, event.thread_ts);
-          return true;
-        }
-        if (await this.handler.steer?.(context.message)) {
-          await this.postInThread(
-            event.channel,
-            event.thread_ts,
-            "Update received; it will be considered at the next step.",
-          );
-          return true;
-        }
-      } catch (error) {
-        await this.postInThread(
-          event.channel,
-          event.thread_ts,
-          error instanceof Error ? error.message : "Could not deliver task update.",
+    if (matchMagicWord(event.text) === "stop" || event.text.startsWith("/")) return false;
+    event.attachments = await attachmentsPromise;
+    const context = this.createContext(event);
+    const post = (text: string) =>
+      event.thread_ts
+        ? this.postInThread(event.channel, event.thread_ts, text)
+        : this.postMessage(event.channel, text);
+    try {
+      if (!event.attachments?.length && isTaskStatusQuestion(event.text)) {
+        const tasks = await context.responder.getTaskStatus!(
+          event.thread_ts ? event.sessionKey : undefined,
         );
+        if (!tasks.length) return false;
+        const active = tasks.filter((t) => t.status === "running" || t.status === "stopping");
+        const selection = event.thread_ts ? tasks : active.length ? active : tasks.slice(0, 1);
+        const text =
+          selection.length > 1
+            ? "目前有多個任務在處理，請到你想查詢的任務對話串詢問，避免弄錯。"
+            : formatTaskStatus(selection);
+        const ts = await post(text);
+        this.logBotResponse(event.channel, text, ts, event.thread_ts);
         return true;
       }
+      if (event.thread_ts && (await this.handler.steer?.(context.message))) {
+        await post("收到補充，會在下一個處理步驟納入；目前的操作不會立即中斷。");
+        return true;
+      }
+    } catch (error) {
+      await post(error instanceof Error ? error.message : "Could not deliver task update.");
+      return true;
     }
     return false;
   }
@@ -1694,7 +1691,9 @@ export class SlackMessagingBot implements MessagingBot {
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
     slackEvent.sessionKey = activeSessionKey;
     const taskThread = isDM && !!e.thread_ts && this.isTaskThread(e.channel, e.thread_ts);
-    if (taskThread) {
+    const taskControl =
+      taskThread || (isDM && !e.thread_ts && isTaskStatusQuestion(slackEvent.text));
+    if (taskControl) {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
     }
@@ -1708,7 +1707,7 @@ export class SlackMessagingBot implements MessagingBot {
       magicWordAddressed: isDM,
     });
 
-    if (!taskThread) ack();
+    if (!taskControl) ack();
     await intake;
   }
 

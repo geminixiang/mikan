@@ -60,10 +60,15 @@ read-only v4 snapshot, without claiming the live writer. An open operation with
 no active runtime is unknown, not claimed to be running. Task acknowledgement
 text identifies the work, not its current progress. No ETA is inferred.
 
-Task threads have a narrow, full-message shortcut for common pure status
+DMs and task threads share a narrow, full-message shortcut for common pure status
 questions. This reads state without a model call or steering. Mixed requests
 (e.g. status plus a changed instruction) still follow normal agent handling;
-this is not a general natural-language intent classifier. Main-DM free-form
+this is not a general natural-language intent classifier. Other main-DM free-form
 queries use the model's read-only task_status tool. Status-only tool activity
 is not shown in the progress list. Plain textual followups and status-only
 runs no longer send completion mentions; initial handoffs (including reasoning-only tasks) and runs doing other tools still do.
+
+Pure status queries select the sole active task in main DM; multiple active tasks
+require explicit disambiguation. Historical selection defaults to the latest task.
+Execution completion no longer asserts successful delivery. Historical snapshots
+are read sequentially to avoid retaining ten full session snapshots concurrently.

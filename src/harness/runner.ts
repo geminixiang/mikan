@@ -250,8 +250,7 @@ type PrepareRunParams = {
   setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
-  setTaskStatusFunction: ReturnType<typeof createMikanTools>["setTaskStatusFunction"];
-  setTaskFunction: ReturnType<typeof createMikanTools>["setTaskFunction"];
+  bindTasks: ReturnType<typeof createMikanTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
 };
@@ -316,8 +315,7 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
     setUploadFunction,
     setImageUploadFunction,
     setReactFunction,
-    setTaskFunction,
-    setTaskStatusFunction,
+    bindTasks,
     bindPlatformToolPacks,
   } = params;
   setEventContext({
@@ -338,8 +336,7 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
     await responder.uploadFile(hostPath, title);
   });
   // Unset reaction support when the active responder cannot react.
-  setTaskFunction(responder.startTask?.bind(responder));
-  setTaskStatusFunction(responder.getTaskStatus?.bind(responder));
+  bindTasks(responder);
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
   bindPlatformToolPacks({
     conversationId: office.address.conversationId,
@@ -686,8 +683,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
           setUploadFunction: toolBindings.setUploadFunction,
           setImageUploadFunction: toolBindings.setImageUploadFunction,
           setReactFunction: toolBindings.setReactFunction,
-          setTaskFunction: toolBindings.setTaskFunction,
-          setTaskStatusFunction: toolBindings.setTaskStatusFunction,
+          bindTasks: toolBindings.bindTasks,
           bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
         });
         if (stopped) return { stopReason: "aborted" };

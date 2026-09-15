@@ -569,3 +569,43 @@ Combined live acceptance, isolated local daemon PID 59297:
 Private evidence: `/tmp/mikan-task-feature-64oBJD/five-cycles-acceptance.json` and daemon log. Timing/transport experiments are local deterministic tests, not platform outage reproduction. Feature daemon remains running for requester testing.
 
 Remaining draft blockers: execution completed is still distinct from durable delivery outcome; startup queue admission and crash before control submission; status snapshot staleness while model composes reply; completion mention transport failure; same-session repeated concurrent stop ownership; status-query cost for large archives. Required final delivery now propagates failure, but the existing status text can still imply a result is visible after transport failure. Do not move this PR out of draft on the strength of the five cycles alone.
+
+## Five-cycle convergence group and stopping decision
+
+Baseline `0f700b2`; no feature-scope expansion. Each cycle ran focused tests;
+full gate before live acceptance: 128 files / 1,784 tests.
+
+1. Consolidated task tools/binding: two setter pipelines became one `bindTasks`;
+   removed `harness/tools/task-status.ts` without changing model-visible tool names.
+2. Status query uses one office-scoped map and sequential historical snapshots;
+   avoids repeated running-list scans and up to ten simultaneous parsed snapshots.
+   Completed wording no longer asserts result delivery. This is structural reasoning,
+   not a measured performance benchmark.
+3. Red/green main-DM pure-status regression; main and thread share observation
+   behavior. Multiple active tasks produce disambiguation rather than guessing.
+4. Both SessionStore inspections use one snapshot lifetime helper; cleanup now
+   removes temporary files even if repository cleanup throws. Existing inspection,
+   task and portal tests remain green; no new storage backend or cache.
+5. Status-only model turns omit user-facing usage chatter while keeping metrics;
+   mixed instructions continue to reach the model, not swallowed by the shortcut.
+
+Live `/pi-new` acceptance on geminixiang (local daemon PID 75884): natural ten-version
+upgrade-risk request, anchor `1789449162.827189`. Main 「好了嗎？」 at
+`1789449183.841989` got an actual current-tool response at `1789449184.417909`
+(~0.58s), without a model run. Thread 「還要多久？」 used the same read-only
+observation during task output generation. Final requester mention at
+`1789449242.262879`. Every test input is in local intake; task reports remain
+model-generated content, not independently fact-checked here.
+
+Code comparison before documentation/test additions: product edits total 161 added,
+165 removed, net -4 lines and one fewer file. This is modest overall reduction;
+real gains are fewer binding/snapshot/query decision points and direct status UX.
+Do NOT claim that the whole task architecture has converged or that five full
+platform test matrices were executed.
+
+Stop after this group: further incremental moves have marginal benefit. A larger
+module redesign would need an explicit replacement interface/ownership decision,
+not more pass-through helpers. Remaining blockers include delivery-state semantics,
+admission durability, control acceptance atomicity, and general natural-language
+status/control routing. Draft stays draft. Local evidence:
+`/tmp/mikan-task-feature-64oBJD/convergence-acceptance.json`.

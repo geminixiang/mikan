@@ -544,7 +544,13 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     contextTokens,
     contextWindow,
   );
-  if (platform.diagnostics?.showUsageSummary === true && !runState.finalResponseHandledByTool) {
+  const toolNames = Object.keys(session.getLastRunStats().toolCallCounts);
+  const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === "task_status");
+  if (
+    platform.diagnostics?.showUsageSummary === true &&
+    !runState.finalResponseHandledByTool &&
+    !statusOnly
+  ) {
     runState.queue!.enqueue(
       () => responder.respondDiagnostic(summary, { style: "muted" }),
       "usage summary",
