@@ -11,6 +11,7 @@ export {
   parseHttpIdleTimeoutMs,
 } from "./http.js";
 export { MikanModels, defaultModelsJsonPath } from "./models.js";
+export { PiAiAgentsModel } from "./openai/pi-model.js";
 export type { CreateMikanModelsOptions } from "./types.js";
 export { SessionStore } from "../sessions/session-store.js";
 export type {
