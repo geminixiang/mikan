@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.64]
+
+### Changed
+
+- The retired door-policy keys (`sandbox.image.workspaceMount`, `sandbox.workspace`) are dropped at load time and no longer appear in the resolved sandbox settings or the Admin office view.
+
+### Added
+
+- `mikan office migrate-door-policy` removes the retired keys from the global and every registered office settings file, preserving all other settings and leaving files without them untouched. Only an explicit shared-support `private` visibility is carried into `office.visibility`; `full`, `isolated`, and legacy `private` are removed without deriving any grant.
+
 ## [1.0.0-beta.63]
 
 ### Changed
