@@ -5,6 +5,13 @@
  *   mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]
  *   mikan office migrate-openconnector [--state-dir <dir>] [--workspace <dir>]
  *   mikan office migrate-events [--state-dir <dir>] [--workspace <dir>]
+ *   mikan office migrate-door-policy [--state-dir <dir>] [--workspace <dir>]
+ *
+ * `migrate-door-policy` removes the retired `sandbox.image.workspaceMount` and
+ * `sandbox.workspace` keys from the global and every office settings file
+ * (ADR 0008). Only an explicit shared-support `private` visibility is carried
+ * into `office.visibility`; nothing else is derived. Run it with the daemon
+ * stopped.
  *
  * `migrate-events` moves legacy `<workspace>/events/*.json` records into the
  * owning office's host-only state (`conversations/<key>/events/`). Records
@@ -24,9 +31,10 @@
 import { join, resolve } from "node:path";
 import { assertPlatformName, OfficeRegistry } from "../office/index.js";
 import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
-import { readEnv } from "../env-manifest.js";
+import { readEnv, setEnvAliases } from "../env-manifest.js";
 import { migrateLegacyOpenConnectorTokens } from "../harness/open-connector.js";
 import { migrateLegacyWorkspaceEvents } from "../events/index.js";
+import { migrateLegacyDoorPolicy } from "../config.js";
 import { createWorkspace } from "../office/index.js";
 
 export function runOfficeCommand(argv: string[]): number {
@@ -76,6 +84,17 @@ export function runOfficeCommand(argv: string[]): number {
         workspace ? resolve(workspace) : join(stateDir, "workspace"),
       );
     });
+  command
+    .command("migrate-door-policy")
+    .description("Remove retired door-policy settings (stop the daemon first)")
+    .action(() => {
+      const stateDir = resolveStateDir(argv);
+      const { workspace } = command.opts<{ workspace?: string }>();
+      result = migrateDoorPolicy(
+        stateDir,
+        workspace ? resolve(workspace) : join(stateDir, "workspace"),
+      );
+    });
   try {
     command.parse(argv, { from: "user" });
     return result;
@@ -100,6 +119,24 @@ function listOffices(stateDir: string): number {
     }
   }
   return 0;
+}
+
+function migrateDoorPolicy(stateDir: string, workspaceRoot: string): number {
+  // Settings readers resolve the global file from the process state dir.
+  setEnvAliases("STATE_DIR", stateDir);
+  const report = migrateLegacyDoorPolicy(createWorkspace({ root: workspaceRoot, stateDir }));
+  console.log(
+    report.global.length > 0
+      ? `Global settings: removed ${report.global.join(", ")}`
+      : "Global settings: nothing to remove",
+  );
+  console.log(`Offices changed: ${report.conversations.length}`);
+  for (const entry of report.conversations) {
+    const carried = entry.visibility ? ` (kept as office.visibility=${entry.visibility})` : "";
+    console.log(`  ${entry.key}: removed ${entry.removed.join(", ")}${carried}`);
+  }
+  for (const entry of report.skipped) console.log(`  skipped ${entry.key}: ${entry.reason}`);
+  return report.skipped.length > 0 ? 1 : 0;
 }
 
 function migrateEvents(stateDir: string, workspaceRoot: string): number {

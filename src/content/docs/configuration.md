@@ -90,7 +90,7 @@ Office visibility follows the Slack conversation type (ADR 0008). Public channel
 
 Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` run every office in one filesystem and are trusted deployments; a private office there is served with a one-time logged warning.
 
-The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) still parse so old files load, but they no longer change the projection. An office that still declares `full` is reported once per process; other public channels remain reachable through `/workspace/public`, and access to another private office needs the membership-based grants described in ADR 0008 rather than a wider mount.
+The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) still parse so old files load, but they are dropped from the resolved configuration and never change the projection. Remove them with `mikan office migrate-door-policy` (daemon stopped): it strips those keys from the global and every office settings file, carrying only an explicit shared-support `private` visibility into `office.visibility`. Nothing else is derived — reaching another private office needs the membership-based grants described in ADR 0008, not a wider mount.
 
 ## MCP servers
 

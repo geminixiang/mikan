@@ -16,10 +16,10 @@ export class MissingGlobalSettingsError extends Error {
 }
 
 export type { AgentConfig, SandboxSettings } from "./types.js";
-import type { AgentConfig, SandboxSettings } from "./types.js";
+import type { AgentConfig, OfficeKey, SandboxSettings } from "./types.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { OnboardLlmChoice } from "./types.js";
-import type { Office } from "./office/index.js";
+import { listRegisteredOffices, type Office, type Workspace } from "./office/index.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -91,6 +91,11 @@ const SettingsFileSchema = Type.Object({
           memory: Type.Optional(Type.String()),
         }),
       ),
+      /**
+       * Retired door-policy keys (ADR 0008). Still accepted so existing files
+       * load, never copied into AgentConfig, and removed by
+       * `mikan office migrate-door-policy`.
+       */
       image: Type.Optional(
         Type.Object({
           workspaceMount: Type.Optional(
@@ -139,6 +144,7 @@ const SettingsFileSchema = Type.Object({
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
+type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
@@ -165,23 +171,14 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
  * whitespace-only `defaultSharedVault` means "no default" and is dropped;
  * non-empty values are trimmed. Everything else passes through as-is.
  */
-function normalizeSandboxSettings(sandbox: SandboxSettings): SandboxSettings {
+function normalizeSandboxSettings(sandbox: SandboxFileSettings): SandboxSettings {
   const defaultSharedVault = sandbox.defaultSharedVault?.trim();
-  const legacyWorkspace =
-    sandbox.image?.workspaceMount === "private"
-      ? { doorPolicy: "trusted" as const, layout: "shared-support" as const }
-      : sandbox.image?.workspaceMount === "full"
-        ? { doorPolicy: "trusted" as const, layout: "full" as const }
-        : undefined;
-  const workspace = legacyWorkspace
-    ? { ...legacyWorkspace, ...sandbox.workspace }
-    : sandbox.workspace;
+  // Retired `image.workspaceMount` and `workspace` are dropped here: office
+  // visibility comes from the platform (ADR 0008), never from these keys.
   return {
     ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
     ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
-    ...(sandbox.image !== undefined ? { image: sandbox.image } : {}),
-    ...(workspace !== undefined ? { workspace } : {}),
     ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
 }
@@ -203,10 +200,6 @@ function mergeSandboxSettings(
     ...base,
     ...override,
     ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
-    ...(base.image || override.image ? { image: { ...base.image, ...override.image } } : {}),
-    ...(base.workspace || override.workspace
-      ? { workspace: { ...base.workspace, ...override.workspace } }
-      : {}),
   };
 }
 
@@ -566,12 +559,87 @@ export function setOfficeVisibilityOverride(office: Office, visibility: "private
   );
 }
 
+export interface DoorPolicyMigrationReport {
+  /** Retired keys removed from the global settings file. */
+  global: string[];
+  conversations: { key: OfficeKey; removed: string[]; visibility?: "private" }[];
+  skipped: { key: OfficeKey | "global"; reason: string }[];
+}
+
+const RETIRED_KEYS = {
+  image: "sandbox.image.workspaceMount",
+  workspace: "sandbox.workspace",
+} as const;
+
 /**
- * Legacy door-policy override kept readable only so the observation period
- * can report which offices still declare `full`; it no longer changes the
- * projection (ADR 0008).
+ * Strip the retired door-policy keys from one settings file. Returns the
+ * removed key paths, or an empty list when nothing had to change (the file is
+ * then left byte-for-byte alone, which also preserves `{}` migration markers).
+ * The only value carried forward is an explicit shared-support `private`
+ * visibility, which maps onto `office.visibility` (ADR 0008). Every other
+ * retired combination — `full`, `isolated`, legacy `private` — is dropped
+ * without deriving a grant.
  */
-export function loadLegacyFullOverride(office: Office): boolean {
-  const sandbox = loadSettingsFile(conversationSettingsPath(office))?.sandbox;
-  return sandbox?.workspace?.layout === "full" || sandbox?.image?.workspaceMount === "full";
+function stripRetiredDoorPolicy(
+  settingsPath: string,
+  allowVisibilityCarry: boolean,
+): { removed: string[]; visibility?: "private" } {
+  const existing = loadSettingsFile(settingsPath);
+  if (!existing?.sandbox) return { removed: [] };
+  const { image, workspace, ...sandboxRest } = existing.sandbox;
+  const removed: string[] = [];
+  if (image?.workspaceMount !== undefined) removed.push(RETIRED_KEYS.image);
+  if (workspace !== undefined) removed.push(RETIRED_KEYS.workspace);
+  if (removed.length === 0) return { removed };
+  const carry =
+    allowVisibilityCarry &&
+    workspace?.doorPolicy === "trusted" &&
+    workspace.layout !== "full" &&
+    workspace.visibility === "private";
+  const { workspaceMount: _mount, ...imageRest } = image ?? {};
+  const sandbox: SandboxFileSettings = {
+    ...sandboxRest,
+    ...(hasDefinedValue(imageRest) ? { image: imageRest } : {}),
+  };
+  const next: SettingsFileConfig = {
+    ...existing,
+    sandbox,
+    ...(carry ? { office: { ...existing.office, visibility: "private" as const } } : {}),
+  };
+  atomicWritePrivateFile(settingsPath, JSON.stringify(compactSettingsConfig(next), null, 2));
+  return { removed, ...(carry ? { visibility: "private" as const } : {}) };
+}
+
+/**
+ * One-time removal of the retired door-policy settings from the global file
+ * and every registered office (ADR 0008). Run with the daemon stopped.
+ */
+export function migrateLegacyDoorPolicy(workspace: Workspace): DoorPolicyMigrationReport {
+  const report: DoorPolicyMigrationReport = { global: [], conversations: [], skipped: [] };
+  try {
+    report.global = stripRetiredDoorPolicy(
+      join(workspace.stateDir, "settings.json"),
+      false,
+    ).removed;
+  } catch (error) {
+    report.skipped.push({
+      key: "global",
+      reason: error instanceof Error ? error.message : String(error),
+    });
+  }
+  for (const record of listRegisteredOffices(workspace.stateDir)) {
+    const office = workspace.office(record);
+    const settingsPath = join(office.stateDir, "settings.json");
+    if (!existsSync(settingsPath)) continue;
+    try {
+      const result = stripRetiredDoorPolicy(settingsPath, true);
+      if (result.removed.length > 0) report.conversations.push({ key: office.key, ...result });
+    } catch (error) {
+      report.skipped.push({
+        key: office.key,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return report;
 }

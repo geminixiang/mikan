@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
-import { loadLegacyFullOverride, loadOfficeVisibilityOverride } from "../config.js";
+import { loadOfficeVisibilityOverride } from "../config.js";
 import { listRegisteredOffices, type Office } from "./index.js";
 import * as log from "../log.js";
 import type { ContainerMount, WorkspaceVisibility } from "../types.js";
@@ -10,7 +10,6 @@ import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
 const CHANNEL_KIND_FILE = "channel-kind";
-const reportedLegacyFull = new Set<string>();
 const CHANNEL_KINDS: readonly PlatformChannelKind[] = [
   "public_channel",
   "private_channel",
@@ -113,18 +112,8 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   ensureRegularFile(workspace.memoryPath, "Workspace memory");
   ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
   const ro = { readOnly: true as const };
-  const legacyFull = loadLegacyFullOverride(office);
-  if (legacyFull && !reportedLegacyFull.has(office.key)) {
-    reportedLegacyFull.add(office.key);
-    log.logWarning(
-      `Office ${office.key} still declares the retired "full" door policy`,
-      `visibility is now ${decision.visibility} (${decision.source}); other offices are reachable only through /workspace/public`,
-    );
-  }
-
   return {
     ...decision,
-    legacyFull,
     mounts: [
       { source: office.dir, target: `/workspace/${office.key}` },
       {

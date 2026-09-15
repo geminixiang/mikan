@@ -513,7 +513,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
   });
 
-  test("a legacy full override still gets the uniform office mounts", async () => {
+  test("a retired full override still gets the uniform office mounts", async () => {
     mkdirSync(join(tmpDir, D123_OFFICE), { recursive: true });
     writeFileSync(
       join(tmpDir, D123_OFFICE, "settings.json"),
@@ -547,7 +547,6 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
       ],
     });
-    expect(decision.projection.legacyFull).toBe(true);
     expect(exec).toHaveBeenCalledWith(
       `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
       undefined,

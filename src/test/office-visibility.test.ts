@@ -1,12 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  createGlobalSettingsFile,
-  setOfficeVisibilityOverride,
-  updateConversationSettings,
-} from "../config.js";
+import { createGlobalSettingsFile, setOfficeVisibilityOverride } from "../config.js";
 import {
   recordPlatformChannelKind,
   resolveOfficeVisibility,
@@ -80,9 +76,10 @@ describe("resolveOfficeVisibility", () => {
 
   test("legacy door-policy settings no longer widen visibility", () => {
     const dm = office("D1", "im");
-    updateConversationSettings(dm, {
-      sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
-    });
+    writeFileSync(
+      join(dm.stateDir, "settings.json"),
+      JSON.stringify({ sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } } }),
+    );
     expect(resolveOfficeVisibility(dm)).toEqual({ visibility: "private", source: "platform" });
   });
 });
@@ -134,13 +131,14 @@ describe("resolveWorkspaceProjection", () => {
     );
   });
 
-  test("no layout mounts the workspace root", () => {
+  test("a retired full override never mounts the workspace root", () => {
     const own = office("D1", "im");
-    updateConversationSettings(own, {
-      sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
-    });
+    writeFileSync(
+      join(own.stateDir, "settings.json"),
+      JSON.stringify({ sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } } }),
+    );
     const projection = resolveWorkspaceProjection(own);
     expect(projection.mounts.some((mount) => mount.source === workspace.root)).toBe(false);
-    expect(projection.legacyFull).toBe(true);
+    expect(projection.visibility).toBe("private");
   });
 });

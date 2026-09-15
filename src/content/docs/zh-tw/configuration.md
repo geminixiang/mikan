@@ -88,7 +88,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）。公開頻道是 **pu
 
 只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
-已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）仍可解析以載入舊檔，但不再影響投影。仍宣告 `full` 的 office 會在每次程序啟動時被回報一次；其他公開頻道仍可透過 `/workspace/public` 讀取，要存取其他 private office 則需要 ADR 0008 描述的成員身分授權，而不是更大的掛載。
+已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）仍可解析以載入舊檔，但會從解析後的設定中移除，永不影響投影。請在停止 daemon 後執行 `mikan office migrate-door-policy` 清除：它會從全域與每個 office 的 settings 檔移除這些 key，只把明確的 shared-support `private` visibility 轉為 `office.visibility`。不會推導其他任何東西——要存取其他 private office 需要 ADR 0008 描述的成員身分授權，而不是更大的掛載。
 
 ## MCP servers
 

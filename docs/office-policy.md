@@ -91,16 +91,16 @@ management requires explicit grants; it is not enabled merely to preserve legacy
 
 This document defines the target, not a release security guarantee.
 
-| Area                                                | Status                                                                                                                                                                     |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Event tool ownership and enumeration                | Office-confined store; other offices' records unreachable; `scope=all` denied                                                                                              |
-| Event storage and scheduling                        | Host-only per-office state; no sandbox mount; no filesystem watcher; delete cancels not-yet-started work                                                                   |
-| Operator and actor-to-target grants                 | Not implemented                                                                                                                                                            |
-| Office visibility and uniform projection (ADR 0008) | Implemented: platform-derived public/private, own dir rw, other public offices ro, shared knowledge rw/ro; no workspace-root mount; `full` retired (reported, not honored) |
-| Admin, login, MCP operation gates                   | Not implemented                                                                                                                                                            |
-| Viewer capabilities and host reader containment     | Not implemented                                                                                                                                                            |
-| Credential revocation, running-work revocation      | Not implemented                                                                                                                                                            |
-| Production legacy settings and data                 | Legacy door-policy settings parse but no longer affect projection; `channel-kind` backfilled from the Slack channel list at startup                                        |
+| Area                                                | Status                                                                                                                                                           |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Event tool ownership and enumeration                | Office-confined store; other offices' records unreachable; `scope=all` denied                                                                                    |
+| Event storage and scheduling                        | Host-only per-office state; no sandbox mount; no filesystem watcher; delete cancels not-yet-started work                                                         |
+| Operator and actor-to-target grants                 | Not implemented                                                                                                                                                  |
+| Office visibility and uniform projection (ADR 0008) | Implemented: platform-derived public/private, own dir rw, other public offices ro, shared knowledge rw/ro; no workspace-root mount; `full` retired               |
+| Admin, login, MCP operation gates                   | Not implemented                                                                                                                                                  |
+| Viewer capabilities and host reader containment     | Not implemented                                                                                                                                                  |
+| Credential revocation, running-work revocation      | Not implemented                                                                                                                                                  |
+| Production legacy settings and data                 | Retired door-policy keys are dropped at load and removed by `mikan office migrate-door-policy`; `channel-kind` backfilled from the Slack channel list at startup |
 
 The event store is now confined per office and no longer shares a writable bus
 with sandboxes, so the earlier read-check-write race and create-overwrite are

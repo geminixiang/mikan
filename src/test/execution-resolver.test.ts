@@ -56,7 +56,6 @@ describe("ActorExecutionResolver", () => {
       userId: "U123",
       address: createOfficeAddress("slack", "C123"),
     });
-    expect(decision.projection.legacyFull).toBe(true);
     expect(decision.projection.mounts.some((mount) => mount.source === workspaceDir)).toBe(false);
   });
 

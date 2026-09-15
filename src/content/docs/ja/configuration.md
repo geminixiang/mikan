@@ -88,7 +88,7 @@ Office visibility は Slack の conversation type に従います（ADR 0008）�
 
 visibility を強制できるのは `image:*` だけです。`host`、`container:*`、`cloudflare:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
 
-廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は古いファイルを読み込むために引き続き解析されますが、projection には影響しません。まだ `full` を宣言している office はプロセスごとに一度報告されます。他の public channel は `/workspace/public` 経由で引き続き読め、他の private office へのアクセスには ADR 0008 のメンバーシップに基づく権限付与が必要で、より広い mount では実現しません。
+廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は古いファイルを読み込むために引き続き解析されますが、解決後の設定からは取り除かれ、projection には一切影響しません。daemon を停止して `mikan office migrate-door-policy` を実行すると、global と各 office の settings ファイルからこれらの key が削除され、明示的な shared-support `private` visibility だけが `office.visibility` に引き継がれます。それ以外は何も導出されません。他の private office へのアクセスには ADR 0008 のメンバーシップに基づく権限付与が必要で、より広い mount では実現しません。
 
 ## MCP servers
 

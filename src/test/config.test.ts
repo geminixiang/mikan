@@ -223,17 +223,22 @@ describe("loadGlobalSettings", () => {
     });
   });
 
-  test("conversation sandbox config overrides global image workspace mount", () => {
+  test("retired door-policy keys load but are dropped from the resolved config", () => {
     createGlobalSettingsFile(stateDir);
     const conversation = office();
-    updateConversationSettings(conversation, {
-      sandbox: { image: { workspaceMount: "full" } },
-    });
+    mkdirSync(conversation.stateDir, { recursive: true });
+    writeFileSync(
+      conversationSettingsPath(conversation),
+      JSON.stringify({
+        sandbox: { memory: "2g", image: { workspaceMount: "full" }, workspace: { layout: "full" } },
+      }),
+    );
 
     const config = resolveConversationSettings(conversation);
-    expect(config.sandbox?.image?.workspaceMount).toBe("full");
-    expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
-      sandbox: { image: { workspaceMount: "full" } },
+    expect(config.sandbox).toEqual({
+      cpus: "0.5",
+      memory: "2g",
+      boost: { cpus: "2", memory: "4g" },
     });
   });
 
@@ -296,10 +301,10 @@ describe("loadGlobalSettings", () => {
     const conversation = office();
     mkdirSync(conversation.dir, { recursive: true });
     const legacyPath = join(conversation.dir, "settings.json");
-    writeFileSync(legacyPath, JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }));
+    writeFileSync(legacyPath, JSON.stringify({ sandbox: { memory: "3g" } }));
 
     const config = resolveConversationSettings(conversation);
-    expect(config.sandbox?.image?.workspaceMount).toBe("full");
+    expect(config.sandbox?.memory).toBe("3g");
     // Legacy file was moved out of the (sandbox-mounted) conversation dir.
     expect(existsSync(legacyPath)).toBe(false);
     expect(existsSync(conversationSettingsPath(conversation))).toBe(true);
@@ -440,19 +445,13 @@ describe("updateGlobalSettings", () => {
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });
 
-  test("saves global workspace mount and shared vault settings", () => {
-    updateGlobalSettings({
-      sandbox: { image: { workspaceMount: "full" }, defaultSharedVault: "shared-team" },
-    });
+  test("saves global shared vault settings", () => {
+    updateGlobalSettings({ sandbox: { defaultSharedVault: "shared-team" } });
 
     const config = loadGlobalSettings();
-    expect(config.sandbox?.image?.workspaceMount).toBe("full");
     expect(config.sandbox?.defaultSharedVault).toBe("shared-team");
     expect(
       JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8")).sandbox,
-    ).toMatchObject({
-      image: { workspaceMount: "full" },
-      defaultSharedVault: "shared-team",
-    });
+    ).toMatchObject({ defaultSharedVault: "shared-team" });
   });
 });

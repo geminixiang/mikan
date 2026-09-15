@@ -394,21 +394,10 @@ export interface PiAgentWrapper {
  */
 export type WorkspaceVisibility = "public" | "private";
 
-/** Retired door-policy fields, still parsed so legacy files load and `full` can be reported. */
-interface WorkspaceSettings {
-  doorPolicy?: "isolated" | "trusted";
-  layout?: "conversation" | "shared-support" | "full";
-  visibility?: WorkspaceVisibility;
-}
-
 export interface SandboxSettings {
   cpus?: string;
   memory?: string;
   boost?: { cpus?: string; memory?: string };
-  /** Legacy image-specific workspace setting; new installations use workspace. */
-  image?: { workspaceMount?: "private" | "full" };
-  /** Backend-neutral office data policy and layout. */
-  workspace?: WorkspaceSettings;
   defaultSharedVault?: string;
 }
 

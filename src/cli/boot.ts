@@ -96,7 +96,7 @@ export function helpText(): string {
     bootCommand().helpInformation() +
     `
 Commands:
-  mikan office <list|claim|migrate-openconnector|migrate-events>  Inspect offices, claim legacy directories, migrate legacy state.
+  mikan office <list|claim|migrate-openconnector|migrate-events|migrate-door-policy>  Inspect offices, claim legacy directories, migrate legacy state.
   mikan sessions migrate     Migrate legacy sessions (stop the daemon first).
   mikan env                  Show environment-variable inventory.
   mikan onboard              Interactive first-run setup.

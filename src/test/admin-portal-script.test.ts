@@ -67,7 +67,7 @@ describe("admin embedded UI shared flows", () => {
       const p = page();
       const global = render === "renderGlobalSettings";
       const html = p.run(
-        `${render}({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, officeVisibility: 'private', officeVisibilitySource: 'override', officeVisibilityOverride: 'private', officeLegacyFull: true, autoReplyRules: ['<rule>'] })`,
+        `${render}({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, officeVisibility: 'private', officeVisibilitySource: 'override', officeVisibilityOverride: 'private', autoReplyRules: ['<rule>'] })`,
       ) as string;
       expect(html.match(/class="config-block"/g)).toHaveLength(3);
       expect(html).toContain('<option value="high" selected>high</option>');
@@ -75,7 +75,6 @@ describe("admin embedded UI shared flows", () => {
       if (!global) {
         expect(html).toContain('<option value="private" selected>');
         expect(html).toContain("<strong>private</strong>");
-        expect(html).toContain("retired <code>full</code>");
       }
       const ids = global
         ? [

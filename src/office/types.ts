@@ -112,12 +112,6 @@ export interface WorkspaceProjection {
   visibility: WorkspaceVisibility;
   /** Where the visibility came from, for operator display. */
   source: "platform" | "override" | "unknown";
-  /**
-   * The office still declares the retired `full` door policy. Observation
-   * only: it no longer widens mounts, but cross-office access is logged so
-   * the migration can be verified before the setting is dropped (ADR 0008).
-   */
-  legacyFull: boolean;
   mounts: ContainerMount[];
   promptSources: WorkspacePromptSources;
 }

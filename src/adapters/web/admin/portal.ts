@@ -639,7 +639,6 @@ function serveConversationState(
     officeVisibility: conversationWorkspace.visibility,
     officeVisibilitySource: conversationWorkspace.source,
     officeVisibilityOverride: loadOfficeVisibilityOverride(office),
-    officeLegacyFull: conversationWorkspace.legacyFull,
     slack: {
       replyMode:
         conversationConfig.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
@@ -2153,7 +2152,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
               : data.officeVisibilitySource === 'platform' ? 'from the Slack conversation type'
               : 'conversation type unknown; private until observed') + '</p>',
             '<p class="muted-note">Public offices can be read by every other office and may write shared MEMORY.md and skills. Private offices (private channels, DMs) are visible only to themselves and read shared knowledge without writing it. Nothing can be made more visible than Slack allows.</p>',
-            (data.officeLegacyFull ? '<p class="muted-note">This office still declares the retired <code>full</code> door policy; it no longer widens access.</p>' : ''),
           ].join(''), 'saveVisibility', 'Save visibility', 'mount-save-result'),
           renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="m-slack-reply-mode">' + replyModeOpts + '</select></div>',
