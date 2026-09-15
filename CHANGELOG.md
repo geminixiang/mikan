@@ -9,6 +9,28 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.62]
+
+### Changed
+
+- Scheduled events now live in host-only per-office state (`<state dir>/conversations/<office key>/events/`) and are never mounted into a sandbox. The `event` tool and the Admin portal are the only writers, both confined to the current office; `create` never overwrites, deleting a record cancels its timer or cron immediately, and the Slack App Home lists only the opener's DM office schedules. The filesystem watcher is gone: hand-edited records take effect on the next start.
+- OpenConnector is an ordinary MCP server with a deployment default. When a Slack conversation has not declared `open-connector`, mikan mints that conversation's runtime token with `OPENCONNECTOR_ADMIN_TOKEN` and saves a normal `mcpServers` entry in its settings; conversations may override it with a self-hosted server or disable it like any other MCP entry. The loader no longer fills `connectionName`; connection selection belongs to OpenConnector.
+
+### Added
+
+- `mikan office migrate-events` moves legacy `<workspace>/events/*.json` records into the owning office's state and reports records it cannot attribute.
+- `mikan office migrate-openconnector` converts legacy `open-connector-runtime-token.json` files into conversation MCP entries.
+
+### Fixed
+
+- The agent `event` tool can no longer list, read, update, or delete another office's events, and `scope=all` is rejected.
+
+### Docs and maintenance
+
+- Redraw the architecture diagram as a single rounded page and refresh the README image.
+- Support local Slack E2E runs, capture intake and session markers on failure, and schedule E2E events through the `event` tool instead of writing files.
+- Record the Office isolation policy, storage inventory, and OpenConnector history audit under `docs/`.
+
 ## [1.0.0-beta.61]
 
 ### Added
