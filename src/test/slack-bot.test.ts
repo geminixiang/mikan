@@ -10,6 +10,7 @@ const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { commandManifestEntry } from "../adapters/commands/manifest.js";
 import { createGlobalSettingsFile } from "../config.js";
+import { readPlatformChannelKind } from "../office/projection.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
 
 function makeHandler(): MessagingEventHandler {
@@ -22,6 +23,38 @@ function makeHandler(): MessagingEventHandler {
     handleNewCommand: vi.fn(),
   };
 }
+
+describe("Slack channel kind backfill", () => {
+  test("records kinds for registered offices from the loaded channel list", () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-kind-backfill-"));
+    try {
+      const workspace = createWorkspace({ root: join(dir, "ws"), stateDir: join(dir, "state") });
+      mkdirSync(workspace.root, { recursive: true });
+      const publicOffice = workspace.office(createOfficeAddress("slack", "CPUB"));
+      const privateOffice = workspace.office(createOfficeAddress("slack", "CPRIV"));
+      const dm = workspace.office(createOfficeAddress("slack", "D1"));
+      const unknown = workspace.office(createOfficeAddress("slack", "CGONE"));
+      for (const office of [publicOffice, privateOffice, dm, unknown]) office.ensure();
+
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace,
+      });
+      (bot as any).channels.set("CPUB", { id: "CPUB", name: "pub", isPrivate: false });
+      (bot as any).channels.set("CPRIV", { id: "CPRIV", name: "priv", isPrivate: true });
+      (bot as any).backfillChannelKinds();
+
+      expect(readPlatformChannelKind(publicOffice)).toBe("public_channel");
+      expect(readPlatformChannelKind(privateOffice)).toBe("private_channel");
+      expect(readPlatformChannelKind(dm)).toBe("im");
+      // Not in the channel list: left unrecorded, so it stays private by default.
+      expect(readPlatformChannelKind(unknown)).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("Slack status transport", () => {
   test("status timeout uses an abort signal, rejects once, and releases its queue", async () => {

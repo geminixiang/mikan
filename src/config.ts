@@ -15,8 +15,8 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, SandboxSettings, WorkspacePolicyChoice } from "./types.js";
-import type { AgentConfig, SandboxSettings, WorkspacePolicyChoice } from "./types.js";
+export type { AgentConfig, SandboxSettings } from "./types.js";
+import type { AgentConfig, SandboxSettings } from "./types.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { OnboardLlmChoice } from "./types.js";
 import type { Office } from "./office/index.js";
@@ -37,11 +37,8 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       cpus: "2",
       memory: "4g",
     },
-    // No pinned workspace door policy: with nothing set, the projection
-    // follows the platform's own channel vocabulary (public channels share
-    // workspace memory, private channels read it without writing, DMs stay
-    // isolated — see workspace-projection platformDerivedWorkspace).
-    // Deployments that predate this keep their explicit isolated setting.
+    // Office visibility is not a setting here: it follows the platform
+    // conversation type (see office/projection resolveOfficeVisibility).
     defaultSharedVault: "",
   },
 };
@@ -72,6 +69,16 @@ const SettingsFileSchema = Type.Object({
   slack: Type.Optional(
     Type.Object({
       replyMode: Type.Optional(Type.Union([Type.Literal("top-level"), Type.Literal("thread")])),
+    }),
+  ),
+  /**
+   * Conversation-only office policy. `visibility: "private"` marks a
+   * platform-public conversation as private; nothing can widen visibility
+   * beyond what the platform grants, so "public" is never stored here.
+   */
+  office: Type.Optional(
+    Type.Object({
+      visibility: Type.Optional(Type.Literal("private")),
     }),
   ),
   sandbox: Type.Optional(
@@ -443,6 +450,7 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
+    ...(hasDefinedValue(config.office) ? { office: config.office } : {}),
     // An empty map means "all servers removed".
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
@@ -472,6 +480,9 @@ function patchSettingsConfig(
       ...existing.slack,
       ...config.slack,
     },
+    // Office visibility has its own writer (setOfficeVisibilityOverride); the
+    // generic patch must not drop it.
+    ...(existing.office !== undefined ? { office: existing.office } : {}),
     // The portal edits the full MCP map, and
     // a merge would make removing a server impossible.
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
@@ -532,64 +543,35 @@ export function loadScopeMcpServers(office: Office): {
 }
 
 /**
- * The conversation's own door-policy override (legacy `image.workspaceMount`
- * included), or null when the office follows the global default. Missing
- * `visibility` on a shared-support choice defaults to "public" downstream
- * (see resolveEffectiveWorkspace), preserving today's read-write behavior for
- * every office that predates this setting.
+ * The conversation's own visibility override, or null when it follows the
+ * platform. Only "private" can be stored: an operator may narrow a public
+ * channel, never widen a private one (see ADR 0008).
  */
-export function loadConversationWorkspaceOverride(office: Office): WorkspacePolicyChoice | null {
-  const file = loadSettingsFile(conversationSettingsPath(office));
-  const sandbox = file?.sandbox;
-  if (sandbox?.workspace?.doorPolicy === "isolated") return { doorPolicy: "isolated" };
-  if (sandbox?.workspace?.doorPolicy === "trusted") {
-    if (sandbox.workspace.layout === "full") return { doorPolicy: "trusted", layout: "full" };
-    return {
-      doorPolicy: "trusted",
-      layout: "shared-support",
-      ...(sandbox.workspace.visibility ? { visibility: sandbox.workspace.visibility } : {}),
-    };
-  }
-  if (sandbox?.image?.workspaceMount === "full") return { doorPolicy: "trusted", layout: "full" };
-  if (sandbox?.image?.workspaceMount === "private") {
-    return { doorPolicy: "trusted", layout: "shared-support" };
-  }
-  return null;
+export function loadOfficeVisibilityOverride(office: Office): "private" | null {
+  return loadSettingsFile(conversationSettingsPath(office))?.office?.visibility ?? null;
 }
 
-export function setConversationWorkspacePolicy(
-  office: Office,
-  choice: WorkspacePolicyChoice | null,
-): void {
-  writeWorkspacePolicy(conversationSettingsPath(office), choice, {});
-}
-
-export function setGlobalWorkspacePolicy(choice: WorkspacePolicyChoice | null): void {
-  writeWorkspacePolicy(getSettingsPath(), choice, ONBOARD_SETTINGS);
-}
-
-/**
- * The generic settings patch merges leaves and cannot remove keys, so the
- * door-policy writer edits the file shape directly: it always drops the
- * legacy `image.workspaceMount` (the explicit choice replaces it) and either
- * sets or removes the `workspace` group.
- */
-function writeWorkspacePolicy(
-  settingsPath: string,
-  choice: WorkspacePolicyChoice | null,
-  defaultSettings: SettingsFileConfig,
-): void {
-  const existing = loadSettingsFileForUpdate(settingsPath, defaultSettings);
-  const { workspaceMount: _legacy, ...image } = existing.sandbox?.image ?? {};
-  const { workspace: _previous, image: _image, ...sandboxRest } = existing.sandbox ?? {};
-  const sandbox: SandboxSettings = {
-    ...sandboxRest,
-    ...(hasDefinedValue(image) ? { image } : {}),
-    ...(choice ? { workspace: choice } : {}),
-  };
+export function setOfficeVisibilityOverride(office: Office, visibility: "private" | null): void {
+  const settingsPath = conversationSettingsPath(office);
+  const existing = loadSettingsFileForUpdate(settingsPath, {});
+  const { office: _previous, ...rest } = existing;
   ensureDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
-    JSON.stringify(compactSettingsConfig({ ...existing, sandbox }), null, 2),
+    JSON.stringify(
+      compactSettingsConfig({ ...rest, ...(visibility ? { office: { visibility } } : {}) }),
+      null,
+      2,
+    ),
   );
+}
+
+/**
+ * Legacy door-policy override kept readable only so the observation period
+ * can report which offices still declare `full`; it no longer changes the
+ * projection (ADR 0008).
+ */
+export function loadLegacyFullOverride(office: Office): boolean {
+  const sandbox = loadSettingsFile(conversationSettingsPath(office))?.sandbox;
+  return sandbox?.workspace?.layout === "full" || sandbox?.image?.workspaceMount === "full";
 }

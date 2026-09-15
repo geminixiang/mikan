@@ -18,16 +18,18 @@ describe("sandbox command parsing", () => {
     });
   });
 
-  test("does not expose workspace door mutations through chat", () => {
+  test("does not expose bare visibility words or the retired door verb", () => {
     expect(parseSandboxCommand("/pi-sandbox private")).toEqual({});
     expect(parseSandboxCommand("/pi-sandbox full")).toEqual({});
+    expect(parseSandboxCommand("/pi-sandbox door full")).toEqual({});
   });
 
-  test("parses the shared-private door argument", () => {
-    expect(parseSandboxCommand("/pi-sandbox door shared-private")).toEqual({
-      action: "door",
-      doorPolicy: "shared-private",
+  test("parses the visibility argument", () => {
+    expect(parseSandboxCommand("/pi-sandbox visibility private")).toEqual({
+      action: "visibility",
+      visibility: "private",
     });
+    expect(parseSandboxCommand("/pi-sandbox visibility")).toEqual({ action: "visibility" });
   });
 
   test("ignores other commands", () => {

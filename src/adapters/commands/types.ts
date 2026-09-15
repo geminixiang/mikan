@@ -145,9 +145,9 @@ export interface ParsedModelCommand {
 }
 
 export interface ParsedSandboxCommand {
-  action?: "boost" | "door";
-  /** Raw door-policy argument; the handler validates it so typos get a usage reply. */
-  doorPolicy?: string;
+  action?: "boost" | "visibility";
+  /** Raw visibility argument; the handler validates it so typos get a usage reply. */
+  visibility?: string;
 }
 
 export type ParsedLoginCommand =

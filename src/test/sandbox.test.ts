@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import * as log from "../log.js";
 import {
   CloudflareSandboxExecutor,
   ContainerExecutor,
@@ -64,20 +65,22 @@ describe("assertSandboxSupportsWorkspacePolicy", () => {
     { type: "host" } as const,
     { type: "container", container: "mikan-sandbox" } as const,
     { type: "cloudflare", sandboxId: "mikan-remote" } as const,
-  ])("rejects read-only shared memory on $type", (sandboxConfig) => {
-    expect(() => assertSandboxSupportsWorkspacePolicy(sandboxConfig, "trusted", true)).toThrow(
-      /cannot enforce read-only shared workspace memory/,
-    );
+  ])("warns once about an unenforced private office on $type", (sandboxConfig) => {
+    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    const key = `k-${sandboxConfig.type}`;
+    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "private", key);
+    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "private", key);
+    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "public", key);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toMatch(/cannot enforce private office visibility/);
+    warn.mockRestore();
   });
 
-  test("allows read-only shared memory in image mode", () => {
-    expect(() =>
-      assertSandboxSupportsWorkspacePolicy(
-        { type: "image", image: "ubuntu:24.04" },
-        "trusted",
-        true,
-      ),
-    ).not.toThrow();
+  test("image mode enforces visibility silently", () => {
+    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    assertSandboxSupportsWorkspacePolicy({ type: "image", image: "ubuntu:24.04" }, "private", "k");
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

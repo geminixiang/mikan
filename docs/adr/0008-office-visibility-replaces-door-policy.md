@@ -1,0 +1,23 @@
+---
+status: accepted
+---
+
+# Office visibility follows the platform and replaces the door policy
+
+An office's data policy is a single dimension — **is this office private?** — derived from the platform conversation type rather than chosen from a menu. Public offices (Slack public channels) can be read by every other office and may write the workspace-global `MEMORY.md` and `skills/`. Private offices (private channels, DMs, group DMs, Slack Connect) are readable only by themselves, read the global knowledge without writing it, and can still read every public office. Every office has read-write-execute access to its own directory. The `isolated / shared-support / full` door policy, its `public|private` visibility flag, and the legacy `image.workspaceMount` setting are retired.
+
+## Considered Options
+
+- **Visibility derived from the platform, one manual override (chosen)** — mirrors what Slack already enforces about who can see a conversation; the only setting an operator can change is marking a public channel as private. Nothing can be made more visible than the platform allows.
+- **Keep the five-way door policy and rename it** — the existing menu exposes three internal fields (`doorPolicy`, `layout`, `visibility`) as five combined strings; operators could not tell what they were choosing. Renaming would preserve a model whose `full` option grants read-write access to every DM and private channel in one step, which contradicts ADR 0003's isolation default.
+- **Explicit grant lists for every cross-office read** — precise but heavy: reading public offices is the normal case for DM-driven work, and gating it on per-pair grants would recreate the pressure to choose `full`. Grants remain the mechanism for **writing** to another office and for managing it, which this ADR does not define.
+
+## Consequences
+
+- Projection mounts become uniform: the office's own directory read-write; every public office's directory read-only; global `MEMORY.md` and `skills/` read-write for public offices and read-only for private ones. No layout mounts the whole workspace root.
+- Private offices' agents cannot publish knowledge or executable skills workspace-wide; anything they create stays in their own office. This is the visible behavior change for private channels and DMs that previously ran under shared-support.
+- Unknown conversation kind fails closed to private. Because most production offices predate channel-kind recording, the host backfills the kind from the platform at startup (metadata only) so the policy actually takes effect.
+- `full` is not translated into any grant. Offices that used it to read other public channels keep that ability through the uniform public read mount; anything that relied on reading or writing other offices must go through the second layer below. Cross-office access is logged for one release before `full` stops being honored, so migration is evidence-driven rather than assumed.
+- **Second layer — acting on another office from a DM.** Visibility answers "who may read"; managing another office (writing its files, scheduling its events, running work in it) is a separate, per-turn decision: the requesting user must be a current member of the target conversation, verified against the platform (Slack `conversations.members`) at the time of the request, and the turn executes _as the target office_ — in its sandbox, with its files and credentials — with only the result returned to the DM. No target directory is ever mounted into the DM's sandbox. Membership is the authorization source for both public and private targets; for public channels it is normally trivially true, for private channels it is exactly the boundary Slack enforces. Leaving the channel revokes access without any mikan-side bookkeeping. The execution and result-delivery mechanics are specified in a later ADR.
+- The Admin "door policy" control and `/pi-sandbox door` are replaced by one boolean ("treat this public channel as private"); the effective visibility and its source (platform, override) are shown instead of internal field values.
+- Scheduled events (ADR-independent, host-only per office) and the Vault are unaffected by visibility; they were never part of the projection.

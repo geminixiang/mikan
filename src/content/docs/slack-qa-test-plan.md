@@ -76,24 +76,14 @@ Each scenario has its own `*.e2e.ts` file. When required env vars (`SLACK_QA_USE
 - `/new` discarding transient context while durable memory survives
 - self-tests for the reply-waiting helpers themselves
 
-Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The working and event directories default to `.workspace/mikan-workspace` under the repo root; override them with `SLACK_QA_WORKING_DIR` and `SLACK_QA_EVENTS_DIR`. Scenarios that read a conversation's history resolve its office key themselves — the daemon writes under `<workspace>/v1-slack-<channel>-<digest>/`, not under the raw channel id.
+Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID`, `SLACK_QA_BOT_USER_ID`, and `SLACK_BOT_TOKEN`. The working directory defaults to `.workspace/mikan-workspace` under the repo root; override it with `SLACK_QA_WORKING_DIR`. Scenarios that read a conversation's history resolve its office key themselves — the daemon writes under `<workspace>/v1-slack-<channel>-<digest>/`, not under the raw channel id.
 
-### Door policy for the test daemon
+### Office visibility and the test daemon
 
-The suite drives a real mikan daemon. With no workspace override, public Slack channels derive a
-trusted read-write projection, but DM scenarios stay isolated and private channels request read-only
-shared memory. `host` cannot enforce either boundary, so a host-mode QA daemon needs an explicit
-trusted read-write policy in the test state dir's `settings.json`:
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-This is appropriate for a disposable single-tenant QA runner and nowhere else.
+The suite drives a real mikan daemon. Office visibility follows the Slack conversation type, and the
+DM scenarios run as private offices. A host-mode QA daemon cannot enforce that visibility; it serves
+the private offices anyway and logs one warning per office. No settings override is needed. This is
+appropriate for a disposable single-tenant QA runner and nowhere else.
 
 The QA user token must be able to post messages, read channel history/replies, and upload files for S-009 in the test channel. For the DM scenarios it must also authenticate as a human user (`auth.test` without `bot_id`): mikan deliberately does not reply to DMs from bots, so a bot-flavored token makes S-017/S-018 fail fast with a misconfiguration error. The E2E manifest in `deploy/examples/slack-app-manifest.e2e.json` includes these required user scopes; the normal `deploy/examples/slack-app-manifest.json` does not.
 

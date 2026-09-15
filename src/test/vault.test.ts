@@ -468,25 +468,6 @@ describe("ActorExecutionResolver image mode", () => {
     });
   });
 
-  test("rejects cloudflare as a persistent conversation office", async () => {
-    const mgr = new FileVaultManager(tmpDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "mikan-remote" },
-      mgr,
-      undefined,
-      workspace(),
-    );
-
-    await expect(
-      resolver.resolve({
-        userId: "U123",
-        address: createOfficeAddress("slack", "D123"),
-      }),
-    ).rejects.toThrow(/cannot provide an isolated conversation office/);
-
-    expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
-  });
-
   test("provisions per-conversation container with inferred vault mounts", async () => {
     const vaultKey = credentialAuthorizationKey(
       { type: "image", image: "ubuntu:24.04" },
@@ -521,6 +502,9 @@ describe("ActorExecutionResolver image mode", () => {
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
+        { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md", readOnly: true },
+        { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
+        { source: join(tmpDir, "public"), target: "/workspace/public", readOnly: true },
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
@@ -530,7 +514,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
   });
 
-  test("mounts the full workspace when conversation sandbox mode is full", async () => {
+  test("a legacy full override still gets the uniform office mounts", async () => {
     mkdirSync(join(tmpDir, D123_OFFICE), { recursive: true });
     writeFileSync(
       join(tmpDir, D123_OFFICE, "settings.json"),
@@ -558,8 +542,14 @@ describe("ActorExecutionResolver image mode", () => {
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
       containerName: `mikan-sandbox-${D123_OFFICE}`,
       conversationId: "D123",
-      mounts: [{ source: tmpDir, target: "/workspace" }],
+      mounts: [
+        { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
+        { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md", readOnly: true },
+        { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
+        { source: join(tmpDir, "public"), target: "/workspace/public", readOnly: true },
+      ],
     });
+    expect(decision.projection.legacyFull).toBe(true);
     expect(exec).toHaveBeenCalledWith(
       `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
       undefined,

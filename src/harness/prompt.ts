@@ -318,27 +318,21 @@ function buildWorkspaceSkillsPrompt(
 ): string {
   const { office, projection, skills, skippedSkillLinks = [] } = input;
   const { workspaceRoot, conversationPath, scratchPath } = paths;
-  const workspaceLayout =
-    projection.layout === "full"
-      ? `${workspaceRoot}/ contains the complete trusted workspace.`
-      : projection.layout === "shared-support"
-        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, and this conversation's directory.`
-        : `${conversationPath}/ is the only conversation workspace mounted; global memory and skills are not available.`;
-  const skillStorageGuidance =
-    projection.doorPolicy === "trusted"
-      ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
-      : `Store skills in \`${conversationPath}/skills/<name>/\`; this office cannot access workspace-global skills.`;
+  const knowledgeReadOnly = projection.promptSources.globalKnowledgeReadOnly === true;
+  const workspaceLayout = knowledgeReadOnly
+    ? `${workspaceRoot}/ contains this private conversation's directory, read-only shared MEMORY.md and skills/, and read-only public/ with every public channel's office.`
+    : `${workspaceRoot}/ contains this public conversation's directory, shared MEMORY.md and skills/, and read-only public/ with every public channel's office.`;
+  const skillStorageGuidance = knowledgeReadOnly
+    ? `Store skills in \`${conversationPath}/skills/<name>/\`; shared \`${workspaceRoot}/skills/\` is read-only for this private office.`
+    : `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`;
 
   return `## Workspace Layout
 ${workspaceLayout}
-${
-  projection.layout === "conversation"
-    ? `${conversationPath}/           # This conversation`
-    : `${workspaceRoot}/
-├── MEMORY.md                    # Global memory (all conversations)
-├── skills/                      # Global CLI tools you create
-└── ${office.key}/           # This conversation`
-}
+${workspaceRoot}/
+├── MEMORY.md                    # Shared memory${knowledgeReadOnly ? " (read-only here)" : " (all public conversations)"}
+├── skills/                      # Shared CLI tools${knowledgeReadOnly ? " (read-only here)" : " you create"}
+├── public/<office-key>/         # Other public channels' offices (read-only)
+└── ${office.key}/           # This conversation
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
     ├── sessions/                # Structured session history used for context reconstruction
@@ -382,17 +376,13 @@ function buildOperatingPrompt(input: BuildSystemPromptOptions, paths: RuntimePro
   const { memory, projection, sandboxConfig } = input;
   const { workspaceRoot, conversationPath } = paths;
   const isContainerLike = sandboxConfig.type === "container" || sandboxConfig.type === "image";
-  const globalMemoryReadOnly = projection.promptSources.globalMemoryReadOnly === true;
-  const memoryGuidance =
-    projection.doorPolicy === "trusted"
-      ? globalMemoryReadOnly
-        ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this office (private visibility): you can read what other offices have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
-        : `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`
-      : `Write durable knowledge only to \`${conversationPath}/MEMORY.md\`; this office cannot access workspace-global memory.`;
-  const systemLogPath =
-    projection.layout === "conversation"
-      ? `${conversationPath}/SYSTEM.md`
-      : `${workspaceRoot}/SYSTEM.md`;
+  const globalMemoryReadOnly = projection.promptSources.globalKnowledgeReadOnly === true;
+  const memoryGuidance = globalMemoryReadOnly
+    ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this private office: you can read what public channels have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
+    : `Write important shared knowledge to \`${workspaceRoot}/MEMORY.md\` and conversation-specific knowledge to \`${conversationPath}/MEMORY.md\`.`;
+  const systemLogPath = globalMemoryReadOnly
+    ? `${conversationPath}/SYSTEM.md`
+    : `${workspaceRoot}/SYSTEM.md`;
 
   return `## Events
 Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It is the only way to manage this conversation's scheduled events: they live host-side, not in the workspace, and fill routing fields for the current conversation automatically.

@@ -2,6 +2,7 @@ import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
+import * as log from "../log.js";
 import type {
   Executor,
   ImageSandboxConfig,
@@ -83,27 +84,29 @@ export function getSandboxWorkspaceCapabilities(
   return requireSandboxAdapter(type).workspace;
 }
 
+const warnedUnenforcedPrivacy = new Set<string>();
+
+/**
+ * Only backends with a managed Workspace projection enforce office
+ * visibility (read-only global knowledge, no access to other private
+ * offices). Host, shared-container, and remote backends run every office in
+ * one filesystem and are documented as trusted deployments (ADR 0003), so a
+ * private office there is served with a one-time warning rather than
+ * refused: refusing would take every DM offline on those backends.
+ */
 export function assertSandboxSupportsWorkspacePolicy(
   sandboxConfig: SandboxConfig,
-  doorPolicy: "isolated" | "trusted",
-  // Required on purpose: this is a fail-closed security check, and a default
-  // of false would let a future caller silently skip the read-only shared
-  // memory gate. A missing argument must be a compile error, not a pass.
-  globalMemoryReadOnly: boolean,
+  visibility: "public" | "private",
+  officeKey: string,
 ): void {
   const capabilities = getSandboxWorkspaceCapabilities(sandboxConfig.type);
-  if (capabilities.managedProjection) return;
-
-  if (doorPolicy === "isolated") {
-    throw new SandboxError(
-      `Sandbox '${sandboxConfig.type}' cannot provide an isolated conversation office; use image:*, or explicitly choose trusted workspace policy`,
-    );
-  }
-  if (globalMemoryReadOnly) {
-    throw new SandboxError(
-      `Sandbox '${sandboxConfig.type}' cannot enforce read-only shared workspace memory; use image:*, or explicitly choose isolated or trusted read-write workspace policy`,
-    );
-  }
+  if (capabilities.managedProjection || visibility === "public") return;
+  if (warnedUnenforcedPrivacy.has(officeKey)) return;
+  warnedUnenforcedPrivacy.add(officeKey);
+  log.logWarning(
+    `Sandbox '${sandboxConfig.type}' cannot enforce private office visibility for ${officeKey}`,
+    "host, container, and cloudflare backends share one filesystem; use image:* to isolate private channels and DMs",
+  );
 }
 
 export function parseSandboxArg(value: string): SandboxConfig {

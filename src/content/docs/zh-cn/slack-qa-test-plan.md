@@ -76,23 +76,11 @@ npm run test:e2e:slack
 - `/new` 丢弃临时上下文，而持久记忆得以保留。
 - 针对 reply-waiting 辅助函数自身的 self-test。
 
-本机 E2E 只需要四个变数：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 与 `SLACK_BOT_TOKEN`。working directory 与 event directory 默认位于仓库根目录下的 `.workspace/mikan-workspace`；可用 `SLACK_QA_WORKING_DIR` 与 `SLACK_QA_EVENTS_DIR` 覆盖。读取某个对话历史记录的 scenario 会自行解析它的 office key——daemon 写入的是 `<workspace>/v1-slack-<channel>-<digest>/`，而不是原始 channel id。
+本机 E2E 只需要四个变数：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 与 `SLACK_BOT_TOKEN`。working directory 默认位于仓库根目录下的 `.workspace/mikan-workspace`；可用 `SLACK_QA_WORKING_DIR` 覆盖。读取某个对话历史记录的 scenario 会自行解析它的 office key——daemon 写入的是 `<workspace>/v1-slack-<channel>-<digest>/`，而不是原始 channel id。
 
-### 测试 daemon 的门禁策略
+### 办公室 visibility 与测试 daemon
 
-这套 suite 驱动的是一个真实的 mikan daemon。如果你以 `host` sandbox 模式运行该 daemon，它会在默认的
-`isolated` 门禁策略下拒绝开始工作，于是每个 scenario 都会因为没有 bot 回复而失败。请在测试 state dir 的
-`settings.json` 中显式选用受信任策略：
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-这只适用于一次性的单租户 QA runner，其他场合一律不适用。
+这套 suite 驱动的是一个真实的 mikan daemon。办公室 visibility 跟随 Slack 对话类型，DM scenario 以 private office 运行。host 模式的 QA daemon 无法强制执行该 visibility；它仍会照常服务这些 private office，并对每个办公室记录一次警告。不需要任何设置覆盖。这只适用于一次性的单租户 QA runner，其他场合一律不适用。
 
 QA user token 必须能在测试 channel 发文、读取 channel history/replies，并为 S-009 上传档案。DM scenario 另外要求 token 是人类使用者身分（`auth.test` 不带 `bot_id`）：mikan 依设计不回复来自 bot 的 DM，bot 身分的 token 会让 S-017/S-018 直接以设定错误 fail fast。`deploy/examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含这些必要 user scopes；一般的 `deploy/examples/slack-app-manifest.json` 不包含。
 

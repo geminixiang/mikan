@@ -388,27 +388,16 @@ export interface PiAgentWrapper {
 
 // ── config ────────────────────────────────────────────────────────────────────
 
-export type WorkspaceDoorPolicy = "isolated" | "trusted";
-export type WorkspaceLayout = "conversation" | "shared-support" | "full";
-/** An explicit office door-policy selection. */
-export type WorkspacePolicyChoice =
-  | { doorPolicy: "isolated" }
-  | { doorPolicy: "trusted"; layout: "full" }
-  | { doorPolicy: "trusted"; layout: "shared-support"; visibility?: WorkspaceVisibility };
 /**
- * Read/write posture for the workspace-global MEMORY.md a `shared-support`
- * office mounts, modeled on Claude Tag's public/private channel memory:
- * `public` offices read and write it (today's default, unchanged behavior);
- * `private` offices read it but cannot write it, so information can flow in
- * from the shared pool but never leak out through a single trusted-but-
- * private office. Meaningless for `full` layout, which mounts the whole
- * workspace read-write as one bind and has no separate memory file to gate.
+ * Office visibility (ADR 0008): public offices may be read by every office and
+ * write shared knowledge; private ones are visible only to themselves.
  */
 export type WorkspaceVisibility = "public" | "private";
 
+/** Retired door-policy fields, still parsed so legacy files load and `full` can be reported. */
 interface WorkspaceSettings {
-  doorPolicy?: WorkspaceDoorPolicy;
-  layout?: WorkspaceLayout;
+  doorPolicy?: "isolated" | "trusted";
+  layout?: "conversation" | "shared-support" | "full";
   visibility?: WorkspaceVisibility;
 }
 
@@ -465,8 +454,6 @@ export interface ActorContext {
   /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
   trustModel?: PlatformTrustModel;
 }
-
-export type ImageWorkspaceMountMode = "private" | "full";
 
 // ── log ───────────────────────────────────────────────────────────────────────
 

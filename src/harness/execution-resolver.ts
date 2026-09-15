@@ -71,11 +71,7 @@ export class ActorExecutionResolver {
       address: office.address,
     });
     const mounts = this.resolveMounts(injection.mounts, projection);
-    assertSandboxSupportsWorkspacePolicy(
-      this.baseConfig,
-      projection.doorPolicy,
-      projection.promptSources.globalMemoryReadOnly === true,
-    );
+    assertSandboxSupportsWorkspacePolicy(this.baseConfig, projection.visibility, office.key);
     return {
       plan: {
         credentialKey,

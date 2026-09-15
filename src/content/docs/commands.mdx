@@ -15,42 +15,39 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
     old files for inspection.
   </Card>
   <Card title="Administration" icon="setting">
-    `/admin` opens the 30-minute admin portal; model, sandbox limits, office door policy, reply
+    `/admin` opens the 30-minute admin portal; model, sandbox limits, office visibility, reply
     policy, skills, events, and conversation state can be inspected there.
   </Card>
 </CardGrid>
 
 ## Command quick reference
 
-| Command                                                              | Purpose and scope                                                                                                          |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                               | Open a 15-minute login/vault link. DM only.                                                                                |
-| `session` / `/session` / `/pi-session`                               | Open the current session viewer. DM only.                                                                                  |
-| `/new` / `/pi-new`                                                   | Reset the current session. DM only.                                                                                        |
-| `/model` / `/pi-model [provider/model[:thinking]]`                   | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
-| `stop` / `/stop`                                                     | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
-| `/pi-auto-reply <on\|off>`                                           | Enable or disable mention-free replies for the current Slack channel.                                                      |
-| `/admin` / `/pi-admin`                                               | Open the 30-minute admin portal.                                                                                           |
-| `/sandbox` / `/pi-sandbox`                                           | Show the current sandbox limits plus this office's door policy and workspace layout.                                       |
-| `/pi-sandbox boost`                                                  | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
-| `/pi-sandbox door`                                                   | Report the office's effective door policy and layout, with the available values.                                           |
-| `/pi-sandbox door <default\|isolated\|shared\|shared-private\|full>` | Set this office's door policy. See [Office door policy](#office-door-policy) below.                                        |
+| Command                                            | Purpose and scope                                                                                                          |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | Open a 15-minute login/vault link. DM only.                                                                                |
+| `session` / `/session` / `/pi-session`             | Open the current session viewer. DM only.                                                                                  |
+| `/new` / `/pi-new`                                 | Reset the current session. DM only.                                                                                        |
+| `/model` / `/pi-model [provider/model[:thinking]]` | Show or switch the current conversation model. Thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. |
+| `stop` / `/stop`                                   | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                           |
+| `/pi-auto-reply <on\|off>`                         | Enable or disable mention-free replies for the current Slack channel.                                                      |
+| `/admin` / `/pi-admin`                             | Open the 30-minute admin portal.                                                                                           |
+| `/sandbox` / `/pi-sandbox`                         | Show the current sandbox limits plus this office's visibility.                                                             |
+| `/pi-sandbox boost`                                | Apply configured boost limits until the managed sandbox runtime stops.                                                     |
+| `/pi-sandbox visibility`                           | Report the office's effective visibility and where it came from.                                                           |
+| `/pi-sandbox visibility <private\|default>`        | Narrow this public channel to a private office, or clear that override. See [Office visibility](#office-visibility) below. |
 
 `/pi-sandbox` applies to managed sandbox runtimes only: in `host` or `container:<name>` mode it replies that the command needs `image:*`.
 
-### Office door policy
+### Office visibility
 
-`/pi-sandbox door` writes the conversation's own door-policy override. The same setting is available per office, and as a global default, in the admin portal.
+Visibility follows the Slack conversation type (ADR 0008): public channels are public offices, readable by every other office under `/workspace/public/` and allowed to write shared `MEMORY.md` and `skills/`; private channels, DMs, group DMs, and externally shared channels are private offices, visible only to themselves. `/pi-sandbox visibility` is the admin escape hatch for the one adjustment the model allows: treating a public channel as private. The same switch is in the admin portal per office.
 
-| Word             | Effect                                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `default`        | Clear the override; follow global `sandbox.workspace`, or platform visibility when the global setting is absent. |
-| `isolated`       | Mount only this office's own directory.                                                                          |
-| `shared`         | Trusted door: the office plus read-write workspace-level `MEMORY.md`, `skills/`, and `events/`.                  |
-| `shared-private` | Trusted door: the same shared-support layout, but workspace-level `MEMORY.md` is read-only.                      |
-| `full`           | Trusted door: mount the entire workspace.                                                                        |
+| Word      | Effect                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `default` | Clear the override; follow the Slack conversation type.                                                            |
+| `private` | Treat this public channel as private. Has no further effect on a DM or private channel, which are already private. |
 
-The change takes effect on the next message, when the sandbox runtime is rebuilt with the new mounts; existing container contents are preserved. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `sandbox.workspace` fields.
+The change takes effect on the next message, when the sandbox runtime is rebuilt with the new mounts; existing container contents are preserved. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `office.visibility` field.
 
 <Aside type="note" title="Platform command registration">
   Native slash commands must also be registered with the platform. The command inventory lives in

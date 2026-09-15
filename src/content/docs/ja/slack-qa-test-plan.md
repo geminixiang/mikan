@@ -76,23 +76,11 @@ npm run test:e2e:slack
 - `/new` が一時的な文脈を破棄する一方、永続 memory は残ること。
 - reply 待ちヘルパー自体の self-test。
 
-ローカル E2E に必要な変数は 4 つだけです：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID`、`SLACK_BOT_TOKEN`。working directory と event directory は、既定でリポジトリ root 配下の `.workspace/mikan-workspace` になります。`SLACK_QA_WORKING_DIR` と `SLACK_QA_EVENTS_DIR` で上書きできます。conversation の履歴を読む scenario は、自分で office key を解決します。daemon が書き込むのは生の channel id 配下ではなく、`<workspace>/v1-slack-<channel>-<digest>/` 配下です。
+ローカル E2E に必要な変数は 4 つだけです：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID`、`SLACK_BOT_TOKEN`。working directory は、既定でリポジトリ root 配下の `.workspace/mikan-workspace` になります。`SLACK_QA_WORKING_DIR` で上書きできます。conversation の履歴を読む scenario は、自分で office key を解決します。daemon が書き込むのは生の channel id 配下ではなく、`<workspace>/v1-slack-<channel>-<digest>/` 配下です。
 
-### テスト用 daemon の door policy
+### Office visibility とテスト用 daemon
 
-この suite は実際の mikan daemon を動かします。その daemon を `host` sandbox mode で実行すると、既定の
-`isolated` door policy では作業の開始を拒否し、bot からの返信がないまま全 scenario が失敗します。
-テスト用 state dir の `settings.json` で、trusted な policy を明示的に選択してください：
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-これは使い捨てのシングルテナント QA runner に限って適切であり、それ以外では適切ではありません。
+この suite は実際の mikan daemon を駆動します。office visibility は Slack の conversation type に従い、DM scenario は private office として動きます。host mode の QA daemon はその visibility を強制できませんが、private office をそのまま提供し、office ごとに一度警告を記録します。設定の上書きは不要です。これは使い捨ての single-tenant QA runner にのみ適切であり、それ以外の場所では適切ではありません。
 
 QA user token は、テスト channel への投稿、channel history/replies の読み取り、S-009 のファイルアップロードが可能である必要があります。DM scenario ではさらに人間ユーザーの身分（`auth.test` に `bot_id` なし）が必要です：mikan は設計上 bot からの DM に応答しないため、bot 身分の token では S-017/S-018 は設定エラーとして即座に fail します。`deploy/examples/slack-app-manifest.e2e.json` の E2E manifest にはこれらの必要な user scopes が含まれています。通常の `deploy/examples/slack-app-manifest.json` には含まれていません。
 

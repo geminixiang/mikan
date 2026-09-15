@@ -31,17 +31,7 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 
    Keys can equally come from plain environment variables (`<PROVIDER>_API_KEY`, e.g. `ANTHROPIC_API_KEY`); the env file is just a persistent home for them that the pm2 template loads.
 
-   Onboarding leaves the workspace policy unset so platform visibility can decide it. Telegram private chats fail closed to `isolated`, which only the managed Docker sandbox can enforce; this guide uses `host`, so mark the workspace as trusted by merging this into `~/.mikan/settings.json`:
-
-   ```json
-   {
-     "sandbox": {
-       "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-     }
-   }
-   ```
-
-   If you start with the managed [image sandbox](/sandbox/image/) instead (`--sandbox=image:…`), skip this edit — it enforces the platform-derived isolated projection as-is.
+   Onboarding does not write any office policy: visibility follows the platform conversation type. Telegram private chats are private offices, which only the managed Docker sandbox can enforce; this guide uses `host`, which runs every office in one filesystem and logs a one-time warning per private office instead. That is fine for a first try on your own machine.
 
 3. Create a Telegram bot. Message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the token it returns:
 
@@ -69,8 +59,7 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
   In `host` mode the agent's commands run directly on your machine with your permissions. It is the
   right mode for a first try on a trusted machine. Before letting other people talk to the bot,
   switch to the managed [image sandbox](/sandbox/image/), which gives each conversation an isolated
-  Docker container — and remove the trusted door-policy override so platform-derived workspace
-  policy applies again.
+  Docker container and enforces office visibility.
 </Aside>
 
 ## Where to go next

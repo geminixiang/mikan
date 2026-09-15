@@ -196,11 +196,7 @@ function createRunnerExecutionContext(
 
       const office = workspace.office(context.address);
       const projection = resolveWorkspaceProjection(office);
-      assertSandboxSupportsWorkspacePolicy(
-        sandboxConfig,
-        projection.doorPolicy,
-        projection.promptSources.globalMemoryReadOnly === true,
-      );
+      assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.visibility, office.key);
       return {
         pathContext: executor.getPathContext(workspace.root),
         projection,
@@ -857,11 +853,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const projection = resolveWorkspaceProjection(office);
   // Bootstrap validation fails runner creation early. resolveForRun repeats
   // the check against the actor-specific decision before any provider call.
-  assertSandboxSupportsWorkspacePolicy(
-    sandboxConfig,
-    projection.doorPolicy,
-    projection.promptSources.globalMemoryReadOnly === true,
-  );
+  assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.visibility, office.key);
   const { executor, resolveForRun } = createRunnerExecutionContext(
     sandboxConfig,
     vaultManager,

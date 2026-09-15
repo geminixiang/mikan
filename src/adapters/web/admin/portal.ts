@@ -32,13 +32,12 @@ export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
 }
 
 import {
-  loadConversationWorkspaceOverride,
+  loadOfficeVisibilityOverride,
   loadGlobalSettings,
   loadScopeMcpServers,
   resolveConversationSettings,
   type AgentConfig,
   type SandboxSettings,
-  type WorkspacePolicyChoice,
 } from "../../../config.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../../harness/mcp.js";
 import { loadMcpTools } from "../../../harness/mcp.js";
@@ -50,9 +49,8 @@ import {
 import type { McpServerConfig } from "../../../harness/types.js";
 import {
   applyConversationSettings,
-  applyConversationWorkspacePolicy,
+  applyOfficeVisibility,
   applyGlobalSettings,
-  applyGlobalWorkspacePolicy,
 } from "../../../settings-mutation.js";
 import {
   escapeHtml,
@@ -194,8 +192,8 @@ async function routePostApiRequest(
   switch (url.pathname) {
     case "/admin/api/conversations/model":
       return serveConversationModelUpdate(res, body, services, token);
-    case "/admin/api/conversations/sandbox":
-      return serveConversationSandboxUpdate(res, body, services, token);
+    case "/admin/api/conversations/visibility":
+      return serveConversationVisibilityUpdate(res, body, services, token);
     case "/admin/api/conversations/slack":
       return serveConversationSlackUpdate(res, body, services, token);
     case "/admin/api/conversations/session-link":
@@ -208,8 +206,6 @@ async function routePostApiRequest(
       return serveMcpServerMutation(res, body, services, token);
     case "/admin/api/settings/model":
       return serveGlobalModelUpdate(res, body, services);
-    case "/admin/api/settings/workspace":
-      return serveGlobalWorkspaceUpdate(res, body, services);
     case "/admin/api/settings/sandbox":
       return serveGlobalSandboxUpdate(res, body, services);
     case "/admin/api/settings/slack":
@@ -631,7 +627,6 @@ function serveConversationState(
   const globalConfig = loadGlobalSettings();
   const conversationConfig = resolveConversationSettings(office);
   const conversationWorkspace = resolveWorkspaceProjection(office);
-  const globalWorkspaceSettings = globalConfig.sandbox?.workspace;
 
   jsonRes(res, 200, {
     conversationId,
@@ -641,13 +636,10 @@ function serveConversationState(
     globalProvider: globalConfig.provider,
     globalModel: globalConfig.model,
     globalThinkingLevel: globalConfig.thinkingLevel,
-    workspaceDoorPolicy: conversationWorkspace.doorPolicy,
-    workspaceLayout: conversationWorkspace.layout,
-    workspaceVisibility: conversationWorkspace.visibility,
-    workspaceOverride: doorPolicyChoiceKey(loadConversationWorkspaceOverride(office)),
-    globalWorkspaceDoorPolicy: globalWorkspaceSettings?.doorPolicy ?? "isolated",
-    globalWorkspaceLayout: globalWorkspaceSettings?.layout ?? "conversation",
-    globalWorkspaceVisibility: globalWorkspaceSettings?.visibility ?? "public",
+    officeVisibility: conversationWorkspace.visibility,
+    officeVisibilitySource: conversationWorkspace.source,
+    officeVisibilityOverride: loadOfficeVisibilityOverride(office),
+    officeLegacyFull: conversationWorkspace.legacyFull,
     slack: {
       replyMode:
         conversationConfig.slack?.replyMode ?? globalConfig.slack?.replyMode ?? "top-level",
@@ -667,9 +659,6 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxMemory: config.sandbox?.memory ?? null,
       sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
       sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
-      workspaceDoorPolicy: config.sandbox?.workspace?.doorPolicy ?? null,
-      workspaceLayout: config.sandbox?.workspace?.layout ?? null,
-      workspaceVisibility: config.sandbox?.workspace?.visibility ?? null,
       defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
@@ -742,65 +731,24 @@ function serveConversationModelUpdate(
   }
 }
 
-/**
- * Wire values for a door-policy selection; "default" clears the office's
- * override. `trusted-shared-support` keeps the historical read-write shared
- * MEMORY.md; `trusted-shared-support-private` is the same layout with the
- * shared MEMORY.md mounted read-only (modeled on Claude Tag's private-
- * channel memory: read the shared pool, never write into it).
- */
-function parseDoorPolicyChoice(
-  value: unknown,
-): { choice: WorkspacePolicyChoice | null } | undefined {
-  switch (value) {
-    case "default":
-      return { choice: null };
-    case "isolated":
-      return { choice: { doorPolicy: "isolated" } };
-    case "trusted-shared-support":
-      return { choice: { doorPolicy: "trusted", layout: "shared-support", visibility: "public" } };
-    case "trusted-shared-support-private":
-      return {
-        choice: { doorPolicy: "trusted", layout: "shared-support", visibility: "private" },
-      };
-    case "trusted-full":
-      return { choice: { doorPolicy: "trusted", layout: "full" } };
-    default:
-      return undefined;
-  }
-}
-
-function doorPolicyChoiceKey(choice: WorkspacePolicyChoice | null): string {
-  if (!choice) return "default";
-  if (choice.doorPolicy === "isolated") return "isolated";
-  if (choice.layout === "full") return "trusted-full";
-  return choice.visibility === "private"
-    ? "trusted-shared-support-private"
-    : "trusted-shared-support";
-}
-
-function serveConversationSandboxUpdate(
+function serveConversationVisibilityUpdate(
   res: ServerResponse,
   body: Record<string, unknown>,
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const parsed = parseDoorPolicyChoice(body.doorPolicy);
-  if (!parsed) {
-    jsonRes(res, 400, {
-      error:
-        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', 'trusted-shared-support-private', or 'trusted-full'",
-    });
+  if (body.visibility !== "private" && body.visibility !== "default") {
+    jsonRes(res, 400, { error: "visibility must be 'private' or 'default'" });
     return;
   }
   const target = requireConversationWorkspace(res, body, services, token);
   if (!target) return;
   const { scope, workspace } = target;
   try {
-    const result = applyConversationWorkspacePolicy(
+    const result = applyOfficeVisibility(
       services.runtime,
       workspace.office(scope.address),
-      parsed.choice,
+      body.visibility === "private" ? "private" : null,
     );
     if (!result.ok) {
       jsonRes(res, 409, { error: "Conversation is busy; retry when the current run finishes" });
@@ -810,25 +758,6 @@ function serveConversationSandboxUpdate(
   } catch (err) {
     jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
   }
-}
-
-function serveGlobalWorkspaceUpdate(
-  res: ServerResponse,
-  body: Record<string, unknown>,
-  services: AdminServices,
-): void {
-  const parsed = parseDoorPolicyChoice(body.doorPolicy);
-  if (!parsed) {
-    jsonRes(res, 400, {
-      error:
-        "doorPolicy must be 'default', 'isolated', 'trusted-shared-support', 'trusted-shared-support-private', or 'trusted-full'",
-    });
-    return;
-  }
-  respondWithSettingsUpdate(res, () => {
-    const result = applyGlobalWorkspacePolicy(services.runtime, parsed.choice);
-    return { ok: true, staleConversations: result.staleConversations.length };
-  });
 }
 
 function serveConversationSlackUpdate(
@@ -2199,23 +2128,12 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     function renderReplyOptions(slack) {
       return renderOptions(['top-level','thread'].map((m) => [m, m]), (slack && slack.replyMode) || 'top-level');
     }
-    function renderDoorOptions(value, channel) {
-      return renderOptions([
-        ['default', 'Automatic — follows ' + channel + ' platform channel (public shares, private reads only, DMs isolated)'],
-        ['isolated', 'isolated — own office only'],
-        ['trusted-shared-support', 'trusted / shared-support (public) — office + shared memory, skills, events — read-write'],
-        ['trusted-shared-support-private', 'trusted / shared-support (private) — same, but shared MEMORY.md is read-only'],
-        ['trusted-full', 'trusted / full — entire workspace'],
-      ], value);
-    }
-
     function renderSettings(data) {
       const thinkingOpts = renderThinkingOptions(data.thinkingLevel);
       const replyModeOpts = renderReplyOptions(data.slack);
       const globalReplyMode = (data.slack && data.slack.globalReplyMode) || 'top-level';
       const globalModel = [data.globalProvider, data.globalModel].filter(Boolean).join('/');
       const globalModelLabel = globalModel + (data.globalThinkingLevel ? ':' + data.globalThinkingLevel : '');
-      const doorPolicyOpts = renderDoorOptions(data.workspaceOverride || 'default', 'the');
       return [
         '<div class="config-grid">',
           renderConfigCard('Model', [
@@ -2224,11 +2142,19 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
             '<p class="muted-note">Global default: ' + escHtml(globalModelLabel) + '</p>',
           ].join(''), 'saveModel', 'Save model', 'model-save-result'),
 
-          renderConfigCard('Office data policy', [
-            '<div class="config-row"><label>Door policy</label><select id="m-door-policy">' + doorPolicyOpts + '</select></div>',
-            '<p class="muted-note">Effective: ' + escHtml(data.workspaceDoorPolicy + ' / ' + data.workspaceLayout + ' / ' + (data.workspaceVisibility || 'public')) + '</p>',
-            '<p class="muted-note">Changing the policy rebuilds the office sandbox container with the new mounts on its next message; the container contents are preserved.</p>',
-          ].join(''), 'saveDoorPolicy', 'Save door policy', 'mount-save-result'),
+          renderConfigCard('Office visibility', [
+            '<div class="config-row"><label>Visibility</label><select id="m-visibility">' +
+              renderOptions([
+                ['default', 'Follow the Slack conversation type (default)'],
+                ['private', 'Private — treat this public channel as private'],
+              ], data.officeVisibilityOverride === 'private' ? 'private' : 'default') + '</select></div>',
+            '<p class="muted-note">Effective: <strong>' + escHtml(data.officeVisibility) + '</strong> · ' + escHtml(
+              data.officeVisibilitySource === 'override' ? 'set here'
+              : data.officeVisibilitySource === 'platform' ? 'from the Slack conversation type'
+              : 'conversation type unknown; private until observed') + '</p>',
+            '<p class="muted-note">Public offices can be read by every other office and may write shared MEMORY.md and skills. Private offices (private channels, DMs) are visible only to themselves and read shared knowledge without writing it. Nothing can be made more visible than Slack allows.</p>',
+            (data.officeLegacyFull ? '<p class="muted-note">This office still declares the retired <code>full</code> door policy; it no longer widens access.</p>' : ''),
+          ].join(''), 'saveVisibility', 'Save visibility', 'mount-save-result'),
           renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="m-slack-reply-mode">' + replyModeOpts + '</select></div>',
             '<p class="muted-note">Global default: ' + escHtml(globalReplyMode) + '</p>',
@@ -2257,10 +2183,10 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       await saveConversationSetting(btn, result, 'slack', { replyMode }, 'Save Slack');
     }
 
-    async function saveDoorPolicy(btn) {
-      const doorPolicy = document.getElementById('m-door-policy').value;
+    async function saveVisibility(btn) {
+      const visibility = document.getElementById('m-visibility').value;
       const result = document.getElementById('mount-save-result');
-      await saveConversationSetting(btn, result, 'sandbox', { doorPolicy }, 'Save door policy', loadSettings);
+      await saveConversationSetting(btn, result, 'visibility', { visibility }, 'Save visibility', loadSettings);
     }
 
     function saveConversationSetting(btn, result, setting, values, label, onSaved) {
@@ -3025,14 +2951,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
     function renderGlobalSettings(data) {
       const thinkingOpts = renderThinkingOptions(data.thinkingLevel);
       const replyModeOpts = renderReplyOptions(data.slack);
-      const gDoorKey = !data.workspaceDoorPolicy
-        ? 'default'
-        : (data.workspaceDoorPolicy === 'isolated'
-          ? 'isolated'
-          : (data.workspaceLayout === 'full'
-            ? 'trusted-full'
-            : ((data.workspaceVisibility || 'public') === 'private' ? 'trusted-shared-support-private' : 'trusted-shared-support')));
-      const gDoorPolicyOpts = renderDoorOptions(gDoorKey, 'each');
       return [
         '<div class="config-grid">',
           renderConfigCard('Default model', [
@@ -3045,10 +2963,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
             '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
             '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
           ].join(''), 'saveGlobalSandbox', 'Save sandbox', 'g-sandbox-result'),
-          renderConfigCard('Office door policy', [
-            '<div class="config-row"><label>Default</label><select id="g-door-policy">' + gDoorPolicyOpts + '</select></div>',
-            '<p class="muted-note">Applies to offices without their own policy. Affected offices rebuild their sandbox container with the new mounts on the next message; container contents are preserved.</p>',
-          ].join(''), 'saveGlobalWorkspace', 'Save door policy', 'g-workspace-result'),
           renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="g-slack-reply-mode">' + replyModeOpts + '</select></div>',
           ].join(''), 'saveGlobalSlack', 'Save Slack', 'g-slack-result'),
@@ -3084,23 +2998,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       const boostMemory = document.getElementById('g-bmem').value.trim();
       const result = document.getElementById('g-sandbox-result');
       await saveSetting(btn, result, 'settings/sandbox', { cpus, memory, boostCpus, boostMemory }, 'Save sandbox');
-    }
-
-    async function saveGlobalWorkspace(btn) {
-      const doorPolicy = document.getElementById('g-door-policy').value;
-      const result = document.getElementById('g-workspace-result');
-      btn.disabled = true; btn.textContent = 'Saving…'; result.style.display = 'none';
-      try {
-        const data = await apiPost('/admin/api/settings/workspace', { doorPolicy });
-        result.style.display = 'block'; result.className = 'inline-result ok';
-        result.textContent = data.staleConversations > 0
-          ? 'Saved ✓ (' + data.staleConversations + ' busy conversation(s) refresh after their current run)'
-          : 'Saved ✓';
-      } catch (err) {
-        result.style.display = 'block'; result.className = 'inline-result err'; result.textContent = err.message;
-      } finally {
-        btn.disabled = false; btn.textContent = 'Save door policy';
-      }
     }
 
     async function saveGlobalSlack(btn) {

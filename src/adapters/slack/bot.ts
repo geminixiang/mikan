@@ -20,7 +20,7 @@ import {
   type PlatformHistoryOptions,
   type PlatformUserInfo,
 } from "../../adapter.js";
-import { createOfficeAddress, type Workspace } from "../../office/index.js";
+import { createOfficeAddress, listRegisteredOffices, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import { slackConversationAutoReplyEnabled, resolveConversationSettings } from "../../config.js";
 import type { EventScheduler } from "../../events/scheduler.js";
@@ -44,7 +44,11 @@ import {
   withRetry,
 } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
-import { recordPlatformChannelKind, type PlatformChannelKind } from "../../office/projection.js";
+import {
+  readPlatformChannelKind,
+  recordPlatformChannelKind,
+  type PlatformChannelKind,
+} from "../../office/projection.js";
 import {
   AssistantThreadRegistry,
   handleAgentContextChanged,
@@ -411,6 +415,7 @@ export class SlackMessagingBot implements MessagingBot {
     await Promise.all([this.fetchUsers(), this.fetchChannels()]);
     if (this.stopped) return;
     log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
+    this.backfillChannelKinds();
 
     // Record startup time before opening the socket. Slack may replay older events;
     // those should be logged but not processed. Backfill runs in the background up
@@ -1087,6 +1092,31 @@ export class SlackMessagingBot implements MessagingBot {
     if (channel.isPrivate === true) return "private_channel";
     if (channel.isPrivate === false) return "public_channel";
     return undefined;
+  }
+
+  /**
+   * Office visibility follows the recorded channel kind, and an unrecorded
+   * kind fails closed to private (ADR 0008). Offices created before kinds
+   * were recorded would therefore lose public status until their next
+   * message; the channel list loaded at startup already knows every kind, so
+   * record it for all registered Slack offices now. Metadata only.
+   */
+  private backfillChannelKinds(): void {
+    let recorded = 0;
+    for (const record of listRegisteredOffices(this.workspace.stateDir)) {
+      if (record.platform !== "slack") continue;
+      const kind = this.channelKindFor(record.conversationId);
+      if (!kind) continue;
+      try {
+        const office = this.workspace.office(record);
+        if (readPlatformChannelKind(office) === kind) continue;
+        recordPlatformChannelKind(office, kind);
+        recorded++;
+      } catch (err) {
+        log.logWarning("Failed to backfill Slack channel kind", String(err));
+      }
+    }
+    if (recorded > 0) log.logInfo(`Recorded channel kind for ${recorded} Slack offices`);
   }
 
   private processSlackMessageIntake(options: {

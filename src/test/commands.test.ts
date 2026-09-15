@@ -10,7 +10,7 @@ import {
   slackConversationAutoReplyEnabled,
   conversationSettingsPath,
   createGlobalSettingsFile,
-  loadConversationWorkspaceOverride,
+  loadOfficeVisibilityOverride,
 } from "../config.js";
 import { dispatchCommand } from "../adapters/commands/registry.js";
 import { COMMAND_MANIFEST } from "../adapters/commands/manifest.js";
@@ -20,6 +20,7 @@ import { NewCommandHandler } from "../adapters/commands/new.js";
 import { SandboxCommandHandler } from "../adapters/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../adapters/commands/session-view.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import { recordPlatformChannelKind } from "../office/projection.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
 import type {
   CommandContext,
@@ -648,11 +649,12 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
-    expect(ctx.responder.responses[0]).toContain("Workspace layout: conversation");
+    expect(ctx.responder.responses[0]).toContain(
+      "Office visibility: private（頻道類型未知，預設 private）",
+    );
   });
 
-  test.each(["private", "full"])("does not expose %s door mutation through chat", async (mode) => {
+  test.each(["private", "full"])("does not expose bare %s mutation through chat", async (mode) => {
     const ctx = buildContext({
       commandText: `/pi-sandbox ${mode}`,
       conversationId: "C123",
@@ -670,7 +672,7 @@ describe("SandboxCommandHandler", () => {
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(existsSync(conversationSettingsPath(doorOffice()))).toBe(true);
     expect(JSON.parse(readFileSync(conversationSettingsPath(doorOffice()), "utf-8"))).toEqual({});
-    expect(ctx.responder.responses[0]).toContain("Workspace policy: isolated");
+    expect(ctx.responder.responses[0]).toContain("Office visibility: private");
   });
 
   function doorContext(commandText: string, refreshResult = true) {
@@ -703,66 +705,52 @@ describe("SandboxCommandHandler", () => {
   }
 
   function doorOverride() {
-    return loadConversationWorkspaceOverride(doorOffice());
+    return loadOfficeVisibilityOverride(doorOffice());
   }
 
-  test("door without an argument shows usage and the current policy", async () => {
-    const ctx = doorContext("/pi-sandbox door");
+  test("visibility without an argument shows usage and the current visibility", async () => {
+    recordPlatformChannelKind(doorOffice(), "public_channel");
+    const ctx = doorContext("/pi-sandbox visibility");
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Current: isolated / conversation / public");
-    expect(ctx.responder.responses[0]).toContain(
-      "door <default|isolated|shared|shared-private|full>",
-    );
+    expect(ctx.responder.responses[0]).toContain("Current: public（依平台頻道類型）");
+    expect(ctx.responder.responses[0]).toContain("visibility <private|default>");
     expect(doorOverride()).toBeNull();
   });
 
-  test("door full writes the override, clears the runner, and warns about the rebuild", async () => {
-    const ctx = doorContext("/pi-sandbox door full");
+  test("visibility private narrows a public channel, clears the runner, and warns about the rebuild", async () => {
+    recordPlatformChannelKind(doorOffice(), "public_channel");
+    const ctx = doorContext("/pi-sandbox visibility private");
     expect(await handler.tryHandle(ctx)).toBe(true);
     const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
-    expect(written.sandbox.workspace).toEqual({ doorPolicy: "trusted", layout: "full" });
+    expect(written.office).toEqual({ visibility: "private" });
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
-    expect(ctx.responder.responses[0]).toContain("Effective: trusted / full / public");
+    expect(ctx.responder.responses[0]).toContain("Current: private（admin 覆寫）");
     expect(ctx.responder.responses[0]).toContain("重建 sandbox 容器");
   });
 
-  test("door shared-private writes a read-only shared workspace memory override", async () => {
-    const ctx = doorContext("/pi-sandbox door shared-private");
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
-    expect(written.sandbox.workspace).toEqual({
-      doorPolicy: "trusted",
-      layout: "shared-support",
-      visibility: "private",
-    });
-    expect(ctx.responder.responses[0]).toContain("Effective: trusted / shared-support / private");
-  });
-
-  test("door default clears an existing override", async () => {
-    const setCtx = doorContext("/pi-sandbox door shared");
-    expect(await handler.tryHandle(setCtx)).toBe(true);
-    const clearCtx = doorContext("/pi-sandbox door default");
+  test("visibility default clears an existing override", async () => {
+    recordPlatformChannelKind(doorOffice(), "public_channel");
+    expect(await handler.tryHandle(doorContext("/pi-sandbox visibility private"))).toBe(true);
+    const clearCtx = doorContext("/pi-sandbox visibility default");
     expect(await handler.tryHandle(clearCtx)).toBe(true);
-    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
-    expect(written.sandbox?.workspace).toBeUndefined();
-    expect(clearCtx.responder.responses[0]).toContain(
-      "Effective: isolated / conversation / public",
-    );
+    expect(doorOverride()).toBeNull();
+    expect(clearCtx.responder.responses[0]).toContain("Current: public（依平台頻道類型）");
   });
 
-  test("door refuses while the conversation is busy", async () => {
-    const ctx = doorContext("/pi-sandbox door isolated", false);
+  test("visibility refuses while the conversation is busy", async () => {
+    const ctx = doorContext("/pi-sandbox visibility private", false);
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.responder.responses[0]).toContain("工作正在執行");
     expect(doorOverride()).toBeNull();
   });
 
-  test("door rejects unknown policies with the accepted values", async () => {
-    const ctx = doorContext("/pi-sandbox door banana");
+  test("visibility rejects unknown values with the accepted ones", async () => {
+    const ctx = doorContext("/pi-sandbox visibility banana");
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("未知的 door policy");
+    expect(ctx.responder.responses[0]).toContain("未知的值");
+    expect(ctx.responder.responses[0]).toContain("`private`、`default`");
     expect(doorOverride()).toBeNull();
   });
 

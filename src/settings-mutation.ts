@@ -17,11 +17,9 @@
  *   automatically before their next turn.
  */
 import {
-  setConversationWorkspacePolicy,
-  setGlobalWorkspacePolicy,
+  setOfficeVisibilityOverride,
   updateConversationSettings,
   updateGlobalSettings,
-  type WorkspacePolicyChoice,
 } from "./config.js";
 import type { Office } from "./office/index.js";
 import type {
@@ -75,29 +73,19 @@ export function applyGlobalSettings(
 }
 
 /**
- * Door-policy changes follow the same clear-or-refuse contract as model
- * changes: the system prompt bakes the workspace projection (layout line,
- * memory and skill guidance), so the cached runner must clear before the
- * write, and the container is re-provisioned on the next message when its
- * mount signature no longer matches.
+ * Visibility changes follow the same clear-or-refuse contract as model
+ * changes: the system prompt bakes the workspace projection, so the cached
+ * runner must clear before the write, and the container is re-provisioned on
+ * the next message when its mount signature no longer matches.
  */
-export function applyConversationWorkspacePolicy(
+export function applyOfficeVisibility(
   runtime: RunnerCacheControl | undefined,
   office: Office,
-  choice: WorkspacePolicyChoice | null,
+  visibility: "private" | null,
 ): SettingsApplyResult {
   if (runtime && !runtime.refreshConversationEnvironment(office.address)) {
     return { ok: false, reason: "busy" };
   }
-  setConversationWorkspacePolicy(office, choice);
+  setOfficeVisibilityOverride(office, visibility);
   return { ok: true, runtimeSwitched: runtime ? true : null };
-}
-
-export function applyGlobalWorkspacePolicy(
-  runtime: GlobalRunnerCacheControl | undefined,
-  choice: WorkspacePolicyChoice | null,
-): { ok: true; staleConversations: OfficeAddress[] } {
-  setGlobalWorkspacePolicy(choice);
-  const staleConversations = runtime ? runtime.refreshAllConversations().busy : [];
-  return { ok: true, staleConversations };
 }

@@ -75,7 +75,7 @@ The runtime owns queueing and lifecycle. The runner owns one agent run's environ
 
 mikan separates four kinds of authority:
 
-1. **Conversation data** — office files and sessions visible according to Door policy.
+1. **Conversation data** — office files and sessions visible according to office visibility.
 2. **Host-authoritative state** — settings and registry under the State dir.
 3. **Credential authority** — vault contents injected only after actor and sandbox resolution.
 4. **Host capabilities** — platform clients and repository-defined services that never become ambient sandbox authority.
@@ -149,10 +149,10 @@ The presenter owns response delivery. The Conversation runtime invokes and settl
 
 Execution authority is resolved for every agent environment rather than inferred from a filesystem path:
 
-1. Workspace projection resolves the effective Door policy into both runtime mounts and authorized prompt sources.
+1. Workspace projection resolves the office's visibility into both runtime mounts and authorized prompt sources.
 2. The harness-owned execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
 3. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
-4. Sandbox capability checks reject policies the selected backend cannot enforce, including isolated projections and read-only shared memory.
+4. Sandbox capability checks report when the selected backend cannot enforce a private office's visibility; only `image:*` enforces it, and the other backends are operator-selected trusted modes.
 5. The resulting execution decision carries the concrete executor, runtime path context, and projection to the runner; that executor was created from the same final non-overlapping mounts and credential grant.
 
 For every provider call, prompt authorization and filesystem authorization consume the same execution decision. Runner construction uses a bootstrap prompt to initialize the harness, but replaces it from the actor-specific decision before the model can see it. This prevents host-side memory or skills from bypassing an isolated filesystem view.
@@ -231,13 +231,13 @@ This ordering prevents disk settings and the behavior of an apparently current r
 
 ### Execution isolation
 
-A managed office-runtime backend gives each Conversation office an independent runtime. Widening a trusted Workspace projection does not weaken this runtime separation.
+A managed office-runtime backend gives each Conversation office an independent runtime. Office visibility never changes this runtime separation.
 
-Not every supported execution mode provides this property: host execution and explicitly shared containers are operator-selected trusted modes. Backend capability checks, not backend names alone, decide which Door policies are enforceable.
+Not every supported execution mode provides this property: host execution and explicitly shared containers are operator-selected trusted modes. Backend capability checks, not backend names alone, decide whether a private office's visibility is enforced; unenforced private offices are served with a logged warning.
 
 ### Data isolation
 
-An `isolated` Door policy produces a conversation-only projection. Without an explicit override, observed Slack public channels derive trusted read-write shared support, private channels derive trusted shared support with read-only global memory, and DMs, external channels, or unknown kinds fail closed to isolated. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
+Office visibility (ADR 0008) is derived from the platform conversation type: Slack public channels are public; private channels, DMs, group DMs, externally shared channels, and unknown kinds are private. Every office projects the same shape — its own directory read-write, `<state dir>/public/` read-only (a symlink per public office, rebuilt from the registry on each projection), and workspace-global `MEMORY.md`/`skills/` read-write for public offices or read-only for private ones. No projection mounts the workspace root. An operator may narrow a public channel to private through Admin or `/pi-sandbox visibility`; nothing widens beyond the platform. Offices still declaring the retired `full` door policy are reported once per process and receive the same uniform mounts. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
 
 ### Credential authority
 
@@ -327,7 +327,7 @@ Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/`.
 
 <a id="inv-projection-coherence"></a>
 
-**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. An isolated policy always resolves to conversation-only data, and callers cannot independently recompute prompt visibility after executor resolution.
+**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. A private office never receives another private office's data, no projection mounts the workspace root, and callers cannot independently recompute prompt visibility after executor resolution.
 
 Evidence: `src/office/projection.ts`.
 
@@ -351,7 +351,7 @@ Evidence: `src/dream/`, `src/runtime/session-lifecycle.ts`, `src/runtime/convers
 
 <a id="inv-execution-policy-enforcement"></a>
 
-**`execution-policy-enforcement`** — A Door policy is accepted only when the selected sandbox backend can enforce its projection. Unsupported isolation or read-only shared memory fails closed rather than degrading to a wider or writable view.
+**`execution-policy-enforcement`** — Only `image:*` enforces office visibility (read-only global knowledge, no reach into other private offices). Host, shared-container, and remote backends are operator-selected trusted modes: a private office there is served with a one-time logged warning per office rather than a wider projection being silently presented as enforced.
 
 Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/index.ts`.
 

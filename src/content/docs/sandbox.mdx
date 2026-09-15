@@ -7,9 +7,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="Local development" icon="setting">
-    `host` has the least setup and does not inject vault env. It cannot enforce an isolated
-    office or read-only shared memory, so it needs an explicit trusted read-write policy when
-    the platform-derived projection requests either boundary.
+    `host` has the least setup and does not inject vault env. It runs every office in one
+    filesystem, so it cannot enforce a private office's visibility and is a trusted deployment.
   </Card>
   <Card title="Mainline isolation" icon="rocket">
     `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
@@ -38,29 +37,26 @@ Each conversation owns one directory under the workspace root — its _office_ �
 rather than by the platform's raw conversation id. Sandbox mounts follow that directory, so inside
 a runtime the office is at `/workspace/<office-key>`.
 
-Which parts of the workspace a runtime sees is the **door policy**, a `sandbox.workspace` setting
-the admin portal can set globally or per conversation (the `/pi-sandbox door` chat command does the
-same for one conversation, but only under `image:*`):
+Which parts of the workspace a runtime sees follows the office's **visibility** (ADR 0008), derived
+from the Slack conversation type: public channels are public; private channels, DMs, group DMs,
+externally shared channels, and unknown kinds are private. Every office gets the same mount shape;
+only the read-only flags differ:
 
-| Door policy / layout / visibility        | Mounted under `/workspace`                                                        |
-| ---------------------------------------- | --------------------------------------------------------------------------------- |
-| `isolated` / `conversation`              | only `<office-key>/`                                                              |
-| `trusted` / `shared-support` / `public`  | `<office-key>/` plus shared `MEMORY.md`, `skills/`, and `events/`, all read-write |
-| `trusted` / `shared-support` / `private` | the same support paths, but shared `MEMORY.md` is read-only                       |
-| `trusted` / `full`                       | the entire workspace root                                                         |
+| Mounted under `/workspace`                   | Public office | Private office |
+| -------------------------------------------- | ------------- | -------------- |
+| `<office-key>/` — the office itself          | read-write    | read-write     |
+| `MEMORY.md`, `skills/` — shared knowledge    | read-write    | read-only      |
+| `public/<office-key>/` — every public office | read-only     | read-only      |
 
-Without an explicit workspace setting, recorded Slack public channels derive trusted/public shared
-support, private channels derive trusted/private shared support, and DMs, external channels,
-unknown kinds, and platforms without recorded visibility derive isolated. Only `image:*` can enforce
-isolated projections or read-only shared memory. The other modes report `managedProjection: false`
-and refuse those runs until an admin chooses `image:*` or an explicit trusted read-write policy.
-Field semantics and the legacy `sandbox.image.workspaceMount` translation are documented in
-[Configuration](/configuration/).
+Nothing mounts the workspace root. The admin portal or `/pi-sandbox visibility private` can narrow a
+public channel; nothing can widen beyond Slack. Only `image:*` enforces visibility; the other modes
+report `managedProjection: false` and serve a private office with a one-time logged warning. Field
+semantics and the retired door-policy settings are documented in [Configuration](/configuration/).
 
-<Aside type="caution" title="A trusted door is not an extra sandbox">
-  Door policy decides which host directories are projected into the runtime. It is not an execution
+<Aside type="caution" title="Visibility is not an extra sandbox">
+  Visibility decides which host directories are projected into the runtime. It is not an execution
   boundary: `host` mode runs tools directly on the host with no filesystem or process isolation
-  whatever policy is chosen, and a `full` layout gives the runtime every conversation's office.
+  whatever the office's visibility.
 </Aside>
 
 ### Upgrading from the raw-id layout
@@ -115,17 +111,16 @@ container, so the writable layer is preserved rather than rebuilt from the base 
 | per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅                 |
 | automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                 |
 | automatic workspace mount                    | host           | self-managed           | ✅              | ❌                 |
-| isolated conversation office                 | ❌             | ❌                     | ✅              | ❌                 |
-| read-only shared workspace memory            | ❌             | ❌                     | ✅              | ❌                 |
+| enforced office visibility                   | ❌             | ❌                     | ✅              | ❌                 |
 | idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                 |
 | default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                 |
 | `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                 |
 | agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌                 |
 | recommendation level                         | local dev      | legacy / compatibility | mainline        | under construction |
 
-These ❌ rows are refusals rather than silent downgrades. A mode that cannot enforce an isolated
-projection raises `Sandbox '<type>' cannot provide an isolated conversation office`; one that cannot
-enforce private visibility raises `Sandbox '<type>' cannot enforce read-only shared workspace memory`.
+Most ❌ rows are refusals rather than silent downgrades. The exception is office visibility: a mode
+that cannot enforce it logs `Sandbox '<type>' cannot enforce private office visibility` once per
+office and continues, because those modes are trusted deployments by definition.
 A mode that cannot mount vault files raises `Sandbox type "<type>" does not support vault file mounts`
 instead of running without the credential. On modes that cannot project files, keep vault credentials
 in `env` only.

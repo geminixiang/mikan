@@ -67,12 +67,16 @@ describe("admin embedded UI shared flows", () => {
       const p = page();
       const global = render === "renderGlobalSettings";
       const html = p.run(
-        `${render}({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, workspaceOverride: 'trusted-full', workspaceDoorPolicy: 'trusted', workspaceLayout: 'full', autoReplyRules: ['<rule>'] })`,
+        `${render}({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, officeVisibility: 'private', officeVisibilitySource: 'override', officeVisibilityOverride: 'private', officeLegacyFull: true, autoReplyRules: ['<rule>'] })`,
       ) as string;
-      expect(html.match(/class="config-block"/g)).toHaveLength(global ? 4 : 3);
+      expect(html.match(/class="config-block"/g)).toHaveLength(3);
       expect(html).toContain('<option value="high" selected>high</option>');
       expect(html).toContain('<option value="thread" selected>thread</option>');
-      expect(html).toContain('<option value="trusted-full" selected>');
+      if (!global) {
+        expect(html).toContain('<option value="private" selected>');
+        expect(html).toContain("<strong>private</strong>");
+        expect(html).toContain("retired <code>full</code>");
+      }
       const ids = global
         ? [
             "g-model-ref",
@@ -81,26 +85,22 @@ describe("admin embedded UI shared flows", () => {
             "g-mem",
             "g-bcpus",
             "g-bmem",
-            "g-door-policy",
             "g-slack-reply-mode",
             "g-model-result",
             "g-sandbox-result",
-            "g-workspace-result",
             "g-slack-result",
           ]
         : [
             "m-model-ref",
             "m-thinking",
-            "m-door-policy",
+            "m-visibility",
             "m-slack-reply-mode",
             "model-save-result",
             "mount-save-result",
             "slack-save-result",
           ];
       for (const id of ids) expect(html).toContain(`id="${id}"`);
-      expect(html).toContain(
-        global ? "follows each platform channel" : "follows the platform channel",
-      );
+      if (!global) expect(html).toContain("Follow the Slack conversation type");
       expect(html).not.toContain("auto-save-result");
     },
   );
@@ -204,18 +204,18 @@ describe("admin embedded UI shared flows", () => {
   test("conversation settings retain scope, token and success callback", async () => {
     const p = page();
     await p.run(
-      "saveConversationSetting(document.getElementById('button'), document.getElementById('result'), 'sandbox', { doorPolicy: 'isolated' }, 'Save door policy', () => { document.getElementById('callback').textContent = 'called'; })",
+      "saveConversationSetting(document.getElementById('button'), document.getElementById('result'), 'visibility', { visibility: 'private' }, 'Save visibility', () => { document.getElementById('callback').textContent = 'called'; })",
     );
-    expect(p.fetch.mock.calls[0]?.[0]).toBe("/admin/api/conversations/sandbox");
+    expect(p.fetch.mock.calls[0]?.[0]).toBe("/admin/api/conversations/visibility");
     expect(JSON.parse(p.fetch.mock.calls[0]?.[1].body)).toEqual({
       token: "secret",
       platform: "slack",
       conversationId: "C1",
-      doorPolicy: "isolated",
+      visibility: "private",
     });
     expect(p.get("result").textContent).toBe("Saved ✓");
     expect(p.get("callback").textContent).toBe("called");
-    expect(p.get("button").textContent).toBe("Save door policy");
+    expect(p.get("button").textContent).toBe("Save visibility");
   });
 
   test("setting failure restores button and exposes error without a success callback", async () => {

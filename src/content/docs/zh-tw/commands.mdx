@@ -14,42 +14,39 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
     `session` 會開啟目前的工作階段檢視器；`/new` 會重設目前的 DM 工作階段，同時保留舊檔案供檢查。
   </Card>
   <Card title="管理" icon="setting">
-    `/admin` 會開啟 30 分鐘有效的管理 portal；可在其中檢查模型、sandbox 限制、office door
-    policy、回覆 policy、skills、events 與對話狀態。
+    `/admin` 會開啟 30 分鐘有效的管理 portal；可在其中檢查模型、sandbox 限制、office
+    visibility、回覆 policy、skills、events 與對話狀態。
   </Card>
 </CardGrid>
 
 ## 指令速查
 
-| 指令                                                                 | 用途與範圍                                                                                             |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `/login` / `/pi-login`                                               | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
-| `session` / `/session` / `/pi-session`                               | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
-| `/new` / `/pi-new`                                                   | 重設目前工作階段。僅限 DM。                                                                            |
-| `/model` / `/pi-model [provider/model[:thinking]]`                   | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `stop` / `/stop`                                                     | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
-| `/pi-auto-reply <on\|off>`                                           | 開啟或關閉目前 Slack channel 不需 mention 的回覆。                                                     |
-| `/admin` / `/pi-admin`                                               | 開啟 30 分鐘有效的管理 portal。                                                                        |
-| `/sandbox` / `/pi-sandbox`                                           | 顯示目前 sandbox 的限制，以及這個 office 的 door policy 與 workspace layout。                          |
-| `/pi-sandbox boost`                                                  | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
-| `/pi-sandbox door`                                                   | 回報這個 office 生效中的 door policy 與 layout，並列出可用的值。                                       |
-| `/pi-sandbox door <default\|isolated\|shared\|shared-private\|full>` | 設定這個 office 的 door policy。見下方 [Office door policy](#office-door-policy)。                     |
+| 指令                                               | 用途與範圍                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
+| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
+| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                            |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
+| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
+| `/pi-auto-reply <on\|off>`                         | 開啟或關閉目前 Slack channel 不需 mention 的回覆。                                                     |
+| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                        |
+| `/sandbox` / `/pi-sandbox`                         | 顯示目前 sandbox 的限制，以及這個 office 的 visibility。                                               |
+| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
+| `/pi-sandbox visibility`                           | 回報這個 office 生效中的 visibility 與其來源。                                                         |
+| `/pi-sandbox visibility <private\|default>`        | 把這個公開頻道縮為 private office，或清除該覆寫。見下方 [Office visibility](#office-visibility)。      |
 
 `/pi-sandbox` 只適用於受管理的 sandbox runtime：在 `host` 或 `container:<name>` 模式下，它會回覆這個指令需要 `image:*`。
 
-### Office door policy
+### Office visibility
 
-`/pi-sandbox door` 會寫入該對話自己的 door-policy 覆寫。同一項設定也可在 admin portal 中依 office 設定，或設為全域預設值。
+Visibility 跟隨 Slack 對話類型（ADR 0008）：公開頻道是 public office，其他所有 office 都能在 `/workspace/public/` 唯讀它，且它可寫入共用的 `MEMORY.md` 與 `skills/`；私人頻道、DM、群組 DM 與外部共享頻道是 private office，只有自己看得到。`/pi-sandbox visibility` 是 admin 的逃生口，只允許模型認可的唯一調整：把公開頻道視為 private。admin portal 中每個 office 也有同一個開關。
 
-| 字詞             | 效果                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| `default`        | 清除覆寫；若沒有全域 `sandbox.workspace`，則跟隨平台可見性。                         |
-| `isolated`       | 只掛載這個 office 自己的目錄。                                                       |
-| `shared`         | Trusted door：該 office 再加上可讀寫的 workspace `MEMORY.md`、`skills/`、`events/`。 |
-| `shared-private` | 使用相同的 shared-support layout，但 workspace-level `MEMORY.md` 為唯讀。            |
-| `full`           | Trusted door：掛載整個 workspace。                                                   |
+| 字詞      | 效果                                                                             |
+| --------- | -------------------------------------------------------------------------------- |
+| `default` | 清除覆寫；跟隨 Slack 對話類型。                                                  |
+| `private` | 把這個公開頻道視為 private。對 DM 或私人頻道沒有額外效果，它們本來就是 private。 |
 
-變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；既有的 container 內容會被保留。對話忙碌時切換會被拒絕。底層的 `sandbox.workspace` 欄位請見[設定](/zh-tw/configuration/)。
+變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；既有的 container 內容會被保留。對話忙碌時切換會被拒絕。底層的 `office.visibility` 欄位請見[設定](/zh-tw/configuration/)。
 
 <Aside type="note" title="平台指令註冊">
   原生 slash commands 也必須向平台註冊。指令清單位於 `src/adapters/commands/manifest.ts`：Discord 的

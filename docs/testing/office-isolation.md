@@ -4,8 +4,8 @@ The office architecture uses layered tests rather than treating a mount-list uni
 
 ## Test layers
 
-1. `src/test/workspace-projection.test.ts` verifies canonical/legacy policy resolution, prompt-source authorization, source materialization, wrong types, symlinks, and malformed-settings fail-closed behavior.
-2. `src/test/execution-resolver.test.ts` verifies image/Gondolin plan consumption, mount collision checks, and rejection of backends that cannot provide a persistent isolated office.
+1. `src/test/office-visibility.test.ts` verifies visibility derivation (platform kind, operator override, unknown → private), the uniform mount shape, the host public view, and that legacy `full` never mounts the workspace root; `src/test/workspace-projection.test.ts` covers source materialization, wrong types, symlinks, and malformed-settings fail-closed behavior.
+2. `src/test/execution-resolver.test.ts` verifies image/Gondolin plan consumption, mount collision checks, and the one-time warning for backends that cannot enforce a private office's visibility.
 3. Agent runner tests verify host-side prompt loading does not follow conversation memory or skill symlinks.
 4. `npm run test:office:docker` performs an adversarial test against a real Docker daemon and kernel mount namespace.
 
@@ -20,7 +20,7 @@ Requirements:
 
 The script creates two temporary host offices but mounts only office A. It verifies:
 
-- office B and shared roots are invisible;
+- an unmounted office B and unmounted shared roots are invisible (the kernel property the private-office projection relies on);
 - office A writes survive container teardown and a fresh container run;
 - absolute and sibling-relative symlinks cannot reveal unmounted host data;
 - outbound network remains available;

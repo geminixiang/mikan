@@ -15,40 +15,37 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
     DM session をリセットします。
   </Card>
   <Card title="管理" icon="setting">
-    `/admin` は 30 分間有効な admin portal を開きます。model、sandbox limits、office の door
-    policy、reply policy、skills、events、conversation state を確認できます。
+    `/admin` は 30 分間有効な admin portal を開きます。model、sandbox limits、office
+    visibility、reply policy、skills、events、conversation state を確認できます。
   </Card>
 </CardGrid>
 
 ## コマンド早見表
 
-| コマンド                                                             | 用途と scope                                                                                                                     |
-| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                               | 15 分間有効な login/vault link を開きます。DM のみ。                                                                             |
-| `session` / `/session` / `/pi-session`                               | 現在の session viewer を開きます。DM のみ。                                                                                      |
-| `/new` / `/pi-new`                                                   | 現在の session をリセットします。DM のみ。                                                                                       |
-| `/model` / `/pi-model [provider/model[:thinking]]`                   | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `stop` / `/stop`                                                     | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。            |
-| `/pi-auto-reply <on\|off>`                                           | 現在の Slack channel で mention なしの応答を有効または無効にします。                                                             |
-| `/admin` / `/pi-admin`                                               | 30 分間有効な admin portal を開きます。                                                                                          |
-| `/sandbox` / `/pi-sandbox`                                           | 現在の sandbox の制限と、この office の door policy・workspace layout を表示します。                                             |
-| `/pi-sandbox boost`                                                  | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                   |
-| `/pi-sandbox door`                                                   | office の実効 door policy と layout を、指定可能な値とあわせて表示します。                                                       |
-| `/pi-sandbox door <default\|isolated\|shared\|shared-private\|full>` | この office の door policy を設定します。下の [Office door policy](#office-door-policy) を参照してください。                     |
+| コマンド                                           | 用途と scope                                                                                                                        |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                                |
+| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                                         |
+| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                          |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。    |
+| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。               |
+| `/pi-auto-reply <on\|off>`                         | 現在の Slack channel で mention なしの応答を有効または無効にします。                                                                |
+| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                             |
+| `/sandbox` / `/pi-sandbox`                         | 現在の sandbox の制限と、この office の visibility を表示します。                                                                   |
+| `/pi-sandbox boost`                                | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                      |
+| `/pi-sandbox visibility`                           | office の実効 visibility とその由来を表示します。                                                                                   |
+| `/pi-sandbox visibility <private\|default>`        | この public channel を private office に狭めるか、その override を解除します。下の [Office visibility](#office-visibility) を参照。 |
 
-### Office door policy
+### Office visibility
 
-`/pi-sandbox door` は conversation 自身の door policy override を書き込みます。同じ設定は admin portal からも、office 単位でもグローバル既定値としても指定できます。
+visibility は Slack の conversation type に従います（ADR 0008）。public channel は public office で、他のすべての office が `/workspace/public/` で読み取り専用に参照でき、共有の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel は private office で、自分自身にだけ見えます。`/pi-sandbox visibility` は admin 向けの escape hatch で、モデルが許す唯一の調整——public channel を private として扱う——だけを行います。admin portal にも office ごとに同じスイッチがあります。
 
-| 単語             | 効果                                                                                          |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| `default`        | override を解除します。global `sandbox.workspace` がなければ platform visibility に従います。 |
-| `isolated`       | この office 自身の directory だけを mount します。                                            |
-| `shared`         | Trusted door: office に加えて read-write の workspace `MEMORY.md`、`skills/`、`events/`。     |
-| `shared-private` | 同じ shared-support layout ですが、workspace-level `MEMORY.md` は read-only です。            |
-| `full`           | Trusted door: workspace 全体を mount します。                                                 |
+| 単語      | 効果                                                                                                               |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `default` | override を解除し、Slack の conversation type に従います。                                                         |
+| `private` | この public channel を private として扱います。DM や private channel は既に private なので追加の効果はありません。 |
 
-変更は次のメッセージから有効になり、その時点で sandbox runtime が新しい mount で再構築されます。既存の container の内容は保持されます。conversation が実行中の場合、切り替えは拒否されます。背後にある `sandbox.workspace` fields は [設定](/ja/configuration/) を参照してください。
+変更は次のメッセージから有効になり、その時点で sandbox runtime が新しい mount で再構築されます。既存の container の内容は保持されます。conversation が実行中の場合、切り替えは拒否されます。背後にある `office.visibility` field は [設定](/ja/configuration/) を参照してください。
 
 <Aside type="note" title="プラットフォームへのコマンド登録">
   Native slash commands はプラットフォームにも登録する必要があります。コマンド一覧は

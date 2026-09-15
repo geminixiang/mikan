@@ -30,7 +30,7 @@ trust classes:
 | Path                                       | Contents                                                                                                                                  |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `settings.json`                            | global settings                                                                                                                           |
-| `conversations/<office key>/settings.json` | conversation settings (model, door policy, …)                                                                                             |
+| `conversations/<office key>/settings.json` | conversation settings (model, visibility override, …)                                                                                     |
 | `models.json`                              | model catalog                                                                                                                             |
 | `vaults/…`                                 | credentials; the conversation vault key is the office key. The legacy `vaults/extensions/` namespace remains reserved but is never loaded |
 | `office-registry.json`                     | the durable office journal (raw id ↔ office key; office keys are not reversible)                                                          |
@@ -39,7 +39,7 @@ Rules enforced in code:
 
 - Conversation settings are read from the state dir only. They historically
   lived at `<office dir>/settings.json` — which is bind-mounted rw — so a
-  sandboxed agent could widen its own door policy and remount the whole
+  sandboxed agent could widen its own visibility and remount the whole
   workspace. `conversationSettingsPath(office)` migrates legacy files once
   and never reads the mounted location again; malformed settings throw
   rather than falling back to the mounted copy.
@@ -50,22 +50,24 @@ Rules enforced in code:
 
 ### Workspace mounts
 
-The mount set is chosen by the office's door policy, resolved in one place
-(`resolveWorkspaceProjection`, `src/office/README.md`):
+Every office receives the same mount shape (ADR 0008), resolved in one place
+(`resolveWorkspaceProjection`, `src/office/README.md`); only the read-only
+flags depend on the office's visibility:
 
-| Mount                                       | Purpose                                                             | Present in                      |
-| ------------------------------------------- | ------------------------------------------------------------------- | ------------------------------- |
-| `<office key>/` → `/workspace/<office key>` | sessions, attachments, scratch, office skills                       | every policy                    |
-| `MEMORY.md` → `/workspace/MEMORY.md`        | agent-maintained workspace memory; read-only for private visibility | `trusted` + `shared-support`    |
-| `skills/` → `/workspace/skills`             | agent-creatable workspace skills                                    | `trusted` + `shared-support`    |
-| `events/` → `/workspace/events`             | event files (agent self-scheduling)                                 | `trusted` + `shared-support`    |
-| vault mounts                                | per-user credential injection                                       | every policy (when provisioned) |
+| Mount                                       | Purpose                                                | Public office    | Private office   |
+| ------------------------------------------- | ------------------------------------------------------ | ---------------- | ---------------- |
+| `<office key>/` → `/workspace/<office key>` | sessions, attachments, scratch, office skills          | rw               | rw               |
+| `MEMORY.md` → `/workspace/MEMORY.md`        | agent-maintained workspace memory                      | rw               | ro               |
+| `skills/` → `/workspace/skills`             | agent-creatable workspace skills                       | rw               | ro               |
+| `<state dir>/public/` → `/workspace/public` | symlink per public office; the only cross-office reach | ro               | ro               |
+| vault mounts                                | per-user credential injection                          | when provisioned | when provisioned |
 
-Without an explicit override, recorded Slack public channels derive trusted
-read-write shared support, private channels derive trusted shared support with
-read-only global memory, and DMs, external channels, or unknown kinds derive
-`isolated`. `trusted` + `full` (admin, or `/pi-sandbox door full`) mounts the
-entire working directory at `/workspace` instead of the list above.
+Visibility follows the Slack conversation type: public channels are public;
+private channels, DMs, group DMs, externally shared channels, and unknown kinds
+are private. An operator may narrow a public channel with Admin or
+`/pi-sandbox visibility private`. Nothing mounts the workspace root; offices
+still declaring the retired `full` door policy get the same shape and are
+reported once per process.
 
 Only the managed `image:*` backend consumes and enforces these mount flags.
 Host, existing-container, and Cloudflare modes fail closed when a projection
@@ -82,12 +84,9 @@ Consequences to keep in mind:
   `SessionStore.open` throw instead of silently starting a fresh session
   (which would erase history on the next append); `/new` recovers.
 - **The events dir is a workspace-level scheduling bus — by design.** It is
-  global and agent-writable, so an authorized conversation agent or host
-  administrator can schedule runs in _any_ conversation. One mikan workspace
-  is one trust domain for scheduling. Do not scope events per conversation
-  without changing that domain rule. The directory is mounted only under
-  `trusted` + `shared-support` or `full`; an `isolated` office cannot
-  self-schedule. Event text is agent-visible and must never contain secrets.
+  host-only per office (`conversations/<office key>/events/`) and never
+  mounted; the `event` tool is the only agent path and reaches only the
+  current office. Event text is agent-visible and must never contain secrets.
 - Retired auto-reply marker files are inert and are not deleted when settings are read.
 
 ### Paths in prompts and tool output

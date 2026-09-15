@@ -6,7 +6,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="本地开发" icon="setting">
-    `host` 最少设置、不注入 vault env。它无法提供隔离的对话办公室，因此还需要显式的受信任门禁策略。
+    `host` 最少设置、不注入 vault env。所有办公室共用同一个文件系统，无法强制 private office 的
+    visibility，属于受信任部署。
   </Card>
   <Card title="主线隔离" icon="rocket">
     `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
@@ -21,7 +22,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 | 模式                      | 执行位置              | Vault env injection | Vault key             | 备注                                                                         |
 | ------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------- |
-| `host`                    | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；需要显式的受信任门禁策略                                       |
+| `host`                    | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；无法强制 office visibility                                     |
 | `container:<name>`        | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault               |
 | `image:<image>`           | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`               |
 | `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key            | 建设中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
@@ -32,18 +33,19 @@ office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，�
 
 每个对话在 workspace 根目录下拥有一个目录——它的**办公室**——按 office key 命名，而不是按平台的原始对话 id。Sandbox mount 跟随该目录，因此在 runtime 内部，办公室位于 `/workspace/<office-key>`。
 
-| 门禁策略 / 布局              | 挂载到 `/workspace` 下的内容                                   |
-| ---------------------------- | -------------------------------------------------------------- |
-| `isolated`（默认）           | 仅 `<office-key>/`                                             |
-| `trusted` / `shared-support` | `<office-key>/` 外加共享的 `MEMORY.md`、`skills/` 和 `events/` |
-| `trusted` / `full`           | 整个 workspace 根目录                                          |
+runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility**（ADR 0008），由 Slack 对话类型推导：公开频道是 public；私有频道、DM、群组 DM、外部共享频道与未知类型是 private。每个办公室的挂载形状相同，只差在只读标志：
 
-只有 `image:*` 能强制执行隔离投影。其他模式报告 `managedProjection: false`，而由于 `isolated` 是默认值，它们会拒绝启动运行，直到有人为该办公室显式选择受信任策略。字段语义以及旧版 `sandbox.image.workspaceMount` 的转换记录在[配置](/zh-cn/configuration/)中。
+| 挂载到 `/workspace` 下的内容               | Public office | Private office |
+| ------------------------------------------ | ------------- | -------------- |
+| `<office-key>/`——办公室本身                | 可读写        | 可读写         |
+| `MEMORY.md`、`skills/`——共享知识           | 可读写        | 只读           |
+| `public/<office-key>/`——所有 public office | 只读          | 只读           |
 
-<Aside type="caution" title="受信任门禁不是额外的 sandbox">
-  门禁策略决定哪些主机目录被投影进 runtime。它不是执行边界：无论选择哪种策略，`host`
-  模式都直接在宿主机上运行工具，没有任何文件系统或进程隔离；而 `full` 布局会把每个对话的办公室都交给
-  runtime。
+没有任何布局会挂载 workspace 根目录。admin portal 或 `/pi-sandbox visibility private` 可把公开频道收窄为 private；不能放宽超过 Slack 的设置。只有 `image:*` 会强制执行 visibility；其他模式报告 `managedProjection: false`，private office 在这些模式下会照常服务并记录一次警告。字段语义与已退役的门禁策略设置见[配置](/zh-cn/configuration/)。
+
+<Aside type="caution" title="visibility 不是额外的 sandbox">
+  Visibility 决定哪些主机目录被投影进 runtime。它不是执行边界：无论办公室的 visibility 为何，`host`
+  模式都直接在宿主机上运行工具，没有任何文件系统或进程隔离。
 </Aside>
 
 ### 从原始 id 布局升级
@@ -89,11 +91,11 @@ office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，�
 | per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | vault file 自动投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | workspace 自动挂载 | host | 需自行挂载 | ✅ | ✅ | 需自行挂载 | ❌ |
-| 隔离的对话办公室 | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| 强制执行 office visibility | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | idle auto-stop / recreate | 不适用 | ❌ | ✅ | ✅ | ❌ | ❌ |
 | CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | agent `sandbox` tool 设置 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | 推荐程度 | 本地开发 | legacy / 兼容 | 主线 | preview | alpha | 建设中 |
 
-上表中的两类 ❌ 都是拒绝，而非静默降级。无法强制执行隔离投影的模式会抛出 `Sandbox '<type>' cannot provide an isolated conversation office`，而不是挂载超出策略要求的内容；无法 mount vault file 的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是在缺少凭证的情况下运行。在无法投影文件的模式上，请只用 `env` 保存 vault 凭证。
+上表中大多数 ❌ 都是拒绝，而非静默降级。例外是 office visibility：无法强制执行的模式会针对每个办公室记录一次 `Sandbox '<type>' cannot enforce private office visibility` 并继续，因为这些模式本身就是受信任部署。无法 mount vault file 的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是在缺少凭证的情况下运行。在无法投影文件的模式上，请只用 `env` 保存 vault 凭证。

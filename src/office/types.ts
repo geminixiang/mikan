@@ -1,11 +1,4 @@
-import type {
-  ContainerMount,
-  OfficeAddress,
-  OfficeKey,
-  WorkspaceDoorPolicy,
-  WorkspaceLayout,
-  WorkspaceVisibility,
-} from "../types.js";
+import type { ContainerMount, OfficeAddress, OfficeKey, WorkspaceVisibility } from "../types.js";
 
 export interface OfficeMigrationRunSummary {
   /** Raw ids whose directories moved to the office-key layout this run. */
@@ -109,17 +102,24 @@ interface WorkspacePromptSources {
   conversationDir: string;
   conversationMemoryPath: string;
   conversationSkillsDir: string;
-  globalMemoryPath?: string;
-  globalSkillsDir?: string;
-  /** True when globalMemoryPath is mounted read-only (shared-support + private visibility). */
-  globalMemoryReadOnly?: boolean;
+  globalMemoryPath: string;
+  globalSkillsDir: string;
+  /** Host read-only view of every public office, mounted at `/workspace/public`. */
+  publicOfficesDir: string;
+  /** True for private offices: global MEMORY.md and skills are mounted read-only. */
+  globalKnowledgeReadOnly?: boolean;
 }
 
 export interface WorkspaceProjection {
-  doorPolicy: WorkspaceDoorPolicy;
-  layout: WorkspaceLayout;
-  /** Only meaningful for shared-support layout; "public" is the default and preserves prior read-write behavior. */
   visibility: WorkspaceVisibility;
+  /** Where the visibility came from, for operator display. */
+  source: "platform" | "override" | "unknown";
+  /**
+   * The office still declares the retired `full` door policy. Observation
+   * only: it no longer widens mounts, but cross-office access is logged so
+   * the migration can be verified before the setting is dropped (ADR 0008).
+   */
+  legacyFull: boolean;
   mounts: ContainerMount[];
   promptSources: WorkspacePromptSources;
 }

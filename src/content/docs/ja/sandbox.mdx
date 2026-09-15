@@ -6,8 +6,8 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 <CardGrid>
   <Card title="ローカル開発" icon="setting">
-    `host` は設定が最小で、vault env を注入しません。隔離された conversation office を提供できないため、
-    明示的な trusted door policy も必要です。
+    `host` は設定が最小で、vault env を注入しません。すべての office が一つの filesystem を共有するため、
+    private office の visibility を強制できない trusted deployment です。
   </Card>
   <Card title="主流の隔離" icon="rocket">
     `image:<image>` は mikan が lifecycle、workspace mount、vault env、リソース制限を管理します。
@@ -22,7 +22,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 | モード                    | 実行場所              | Vault env injection | Vault key                        | 備考                                                                                                 |
 | ------------------------- | --------------------- | ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `host`                    | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。明示的な trusted door policy が必要                                                |
+| `host`                    | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                                   |
 | `container:<name>`        | 既存 Docker container | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します                |
 | `image:<image>`           | mikan 管理の Docker   | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                           |
 | `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key                       | 構築中。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は同期されません |
@@ -37,24 +37,20 @@ office key は、workspace 配下でその conversation の directory も命名�
 directory はプラットフォームの生の conversation id ではなく office key で命名されます。sandbox の
 mount はこの directory に従うため、runtime の中では office は `/workspace/<office-key>` にあります。
 
-runtime が workspace のどの部分を見るかは **door policy** で決まります。これは `sandbox.workspace`
-設定で、admin portal からグローバルにも conversation ごとにも設定できます（`/pi-sandbox door` チャット
-コマンドは 1 つの conversation について同じことをしますが、`image:*` でのみ有効です）：
+runtime が workspace のどの部分を見るかは、その office の **visibility**（ADR 0008）に従います。visibility は Slack の conversation type から導出されます。public channel は public、private channel・DM・group DM・外部共有 channel・未知の種別は private です。すべての office は同じ mount 形状を持ち、違うのは読み取り専用フラグだけです：
 
-| Door policy / layout         | `/workspace` 配下に mount されるもの                             |
-| ---------------------------- | ---------------------------------------------------------------- |
-| `isolated`（既定）           | `<office-key>/` のみ                                             |
-| `trusted` / `shared-support` | `<office-key>/` に加えて共有の `MEMORY.md`、`skills/`、`events/` |
-| `trusted` / `full`           | workspace root 全体                                              |
+| `/workspace` 配下に mount されるもの            | Public office | Private office |
+| ----------------------------------------------- | ------------- | -------------- |
+| `<office-key>/` — office 自身                   | 読み書き      | 読み書き       |
+| `MEMORY.md`、`skills/` — 共有知識               | 読み書き      | 読み取り専用   |
+| `public/<office-key>/` — すべての public office | 読み取り専用  | 読み取り専用   |
 
-`managedProjection: false` を報告し、`isolated` が既定であるため、その office について誰かが明示的に
-trusted な policy を選ぶまで実行を開始しません。フィールドの意味と旧来の
-`sandbox.image.workspaceMount` の変換は [設定](/ja/configuration/) に記載しています。
+workspace root を mount する layout はありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `image:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
 
-<Aside type="caution" title="trusted な door は追加の sandbox ではありません">
-  Door policy が決めるのは、どの host directory が runtime に投影されるかです。実行の境界では
-  ありません。`host` mode はどの policy を選んでも、ファイルシステムやプロセスの隔離なしに host 上で
-  直接ツールを実行しますし、`full` layout は runtime にすべての conversation の office を渡します。
+<Aside type="caution" title="visibility は追加の sandbox ではありません">
+  visibility が決めるのは、どの host directory が runtime に投影されるかです。実行の境界では
+  ありません。`host` mode は office の visibility
+  にかかわらず、ファイルシステムやプロセスの隔離なしに host 上で直接ツールを実行します。
 </Aside>
 
 ### 生 id 配置からのアップグレード
@@ -111,16 +107,16 @@ conversation ごとの host state — そして各移動が journal されるた
 | per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | vault file 自動投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | workspace 自動マウント | host | 自分で mount が必要 | ✅ | ✅ | 自分で mount が必要 | ❌ |
-| 隔離された conversation office | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
+| office visibility の強制 | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | idle auto-stop / recreate | 対象外 | ❌ | ✅ | ✅ | ❌ | ❌ |
 | CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | agent `sandbox` tool 設定 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | 推奨度 | ローカル開発 | legacy / 互換 | 主流 | preview | alpha | 構築中 |
 
-上の 2 つの ❌ の行は、黙って機能を落とすのではなく拒否します。isolated な projection を強制できない
-モードは、policy が求めた以上を mount する代わりに
-`Sandbox '<type>' cannot provide an isolated conversation office` を送出します。vault file を mount
+上の ❌ の行の多くは、黙って機能を落とすのではなく拒否します。例外は office visibility で、強制できない
+モードは office ごとに一度 `Sandbox '<type>' cannot enforce private office visibility` を記録して
+続行します。これらのモードは定義上 trusted deployment だからです。vault file を mount
 できないモードは、認証情報なしで実行する代わりに
 `Sandbox type "<type>" does not support vault file mounts` を送出します。ファイルを投影できない
 モードでは、vault の認証情報は `env` のみに留めてください。

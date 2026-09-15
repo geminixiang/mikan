@@ -76,21 +76,11 @@ npm run test:e2e:slack
 - `/new` 會丟棄暫時性 context，但持久記憶會存活。
 - 針對這些等待回覆 helper 本身的 self-test。
 
-本機 E2E 只需要四個變數：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 與 `SLACK_BOT_TOKEN`。Working 與 event directory 預設在 repo 根目錄底下的 `.workspace/mikan-workspace`；可用 `SLACK_QA_WORKING_DIR` 與 `SLACK_QA_EVENTS_DIR` 覆寫。需要讀取某個對話歷史的 scenario 會自行解析它的 office key——daemon 寫入的位置是 `<workspace>/v1-slack-<channel>-<digest>/`，而不是原始 channel id 底下。
+本機 E2E 只需要四個變數：`SLACK_QA_USER_TOKEN`、`SLACK_QA_CHANNEL_ID`、`SLACK_QA_BOT_USER_ID` 與 `SLACK_BOT_TOKEN`。Working directory 預設在 repo 根目錄底下的 `.workspace/mikan-workspace`；可用 `SLACK_QA_WORKING_DIR` 覆寫。需要讀取某個對話歷史的 scenario 會自行解析它的 office key——daemon 寫入的位置是 `<workspace>/v1-slack-<channel>-<digest>/`，而不是原始 channel id 底下。
 
-### 測試用 daemon 的 door policy
+### Office visibility 與測試用 daemon
 
-這套 suite 會驅動一個真實的 mikan daemon。沒有 workspace 覆寫時，Slack 公開頻道會推導出 trusted 讀寫 projection，但 DM scenario 維持 isolated，私密頻道則要求唯讀共享記憶。`host` 無法強制這兩種邊界，因此 host-mode QA daemon 必須在測試用 state dir 的 `settings.json` 中明確選用 trusted 讀寫 policy：
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-這只適合用完即丟的單租戶 QA runner，其他情境都不適用。
+這套 suite 會驅動一個真實的 mikan daemon。Office visibility 跟隨 Slack 對話類型，DM scenario 以 private office 執行。host 模式的 QA daemon 無法強制執行該 visibility；它仍會照常服務這些 private office，並對每個 office 記錄一次警告。不需要任何設定覆寫。這只適合用在可丟棄的單租戶 QA runner，其他地方都不適合。
 
 QA user token 必須能在測試 channel 發文、讀取 channel history/replies，並為 S-009 上傳檔案。DM scenario 另外要求 token 是人類使用者身分（`auth.test` 不帶 `bot_id`）：mikan 依設計不回覆來自 bot 的 DM，bot 身分的 token 會讓 S-017/S-018 直接以設定錯誤 fail fast。`deploy/examples/slack-app-manifest.e2e.json` 的 E2E manifest 包含這些必要 user scopes；一般的 `deploy/examples/slack-app-manifest.json` 不包含。
 

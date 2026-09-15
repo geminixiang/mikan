@@ -204,16 +204,15 @@ describe("system prompt memory guidance", () => {
     // settings.json, since this test only cares about how buildSystemPrompt
     // renders a given projection shape.
     const base = resolveWorkspaceProjection(office);
+    const { globalKnowledgeReadOnly: _ignored, ...sources } = base.promptSources;
     return {
       ...base,
-      doorPolicy: "trusted",
-      layout: "shared-support",
       visibility,
       promptSources: {
-        ...base.promptSources,
+        ...sources,
         globalMemoryPath: join(workspaceDir, "MEMORY.md"),
         globalSkillsDir: join(workspaceDir, "skills"),
-        ...(visibility === "private" ? { globalMemoryReadOnly: true } : {}),
+        ...(visibility === "private" ? { globalKnowledgeReadOnly: true } : {}),
       },
     };
   }
@@ -252,7 +251,7 @@ describe("system prompt memory guidance", () => {
       projection,
     });
 
-    expect(prompt).toContain("mounted read-only for this office (private visibility)");
+    expect(prompt).toContain("mounted read-only for this private office");
     expect(prompt).toContain("writes to it are rejected");
     expect(prompt).toContain("it never leaves this conversation");
   });

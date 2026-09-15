@@ -31,7 +31,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 - **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
-- **Conversation offices** — one office directory and one sandbox runtime per conversation, with platform-derived workspace sharing and explicit door-policy overrides
+- **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
 - **Sandbox execution** — host, shared container, per-conversation managed container, or Cloudflare bridge (experimental)
 - **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
@@ -127,24 +127,24 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 | `image:<image>`           | Auto-provision one Docker container and one vault per conversation office     |
 | `cloudflare:<sandbox-id>` | Cloudflare Worker bridge (experimental; no auto workspace sync)               |
 
-Each office's data view is set by its **door policy**. Without an explicit workspace setting, Slack follows the channel kind: public channels use trusted shared support and can update workspace `MEMORY.md`; private channels can read that shared memory but receive it read-only; DMs, external channels, unknown channel kinds, and other platforms stay isolated. The admin portal or `/pi-sandbox door <default|isolated|shared|shared-private|full>` can override that result. Door policy governs data access only; execution isolation is unaffected.
+Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal or `/pi-sandbox visibility private` can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
 
-Only `image:*` can enforce isolated projections and read-only shared memory. `host`, `container:*`, and `cloudflare:*` therefore fail closed for isolated or private-channel projections; an admin must either use `image:*` or explicitly select a trusted read-write layout.
+Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` share one filesystem and are trusted deployments; a private office there is served with a logged warning.
 
 For routing, mounts, vault behavior, managed container details, and Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
 ## Chat commands
 
-| Command                                          | Purpose                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------- |
-| `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows                       |
-| `session` / `/session`                           | Open a read-only web view of the current session                 |
-| `/new` / `/pi-new`                               | Reset the current session                                        |
-| `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                      |
-| `/sandbox` / `/pi-sandbox [boost\|door …]`       | Show sandbox status, boost limits, or set the office door policy |
-| `/pi-auto-reply <on\|off>`                       | Toggle mention-free replies for the current Slack channel        |
-| `/admin` / `/pi-admin`                           | Open the admin portal                                            |
-| `stop` / `/stop`                                 | Stop the current run (works on every platform)                   |
+| Command                                          | Purpose                                                        |
+| ------------------------------------------------ | -------------------------------------------------------------- |
+| `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows                     |
+| `session` / `/session`                           | Open a read-only web view of the current session               |
+| `/new` / `/pi-new`                               | Reset the current session                                      |
+| `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                    |
+| `/sandbox` / `/pi-sandbox [boost\|visibility …]` | Show sandbox status, boost limits, or narrow office visibility |
+| `/pi-auto-reply <on\|off>`                       | Toggle mention-free replies for the current Slack channel      |
+| `/admin` / `/pi-admin`                           | Open the admin portal                                          |
+| `stop` / `/stop`                                 | Stop the current run (works on every platform)                 |
 
 `session` is the only command accepted without a leading slash. See [src/content/docs/commands.mdx](src/content/docs/commands.mdx) for the full command reference and web session viewer setup.
 

@@ -1,20 +1,25 @@
 import { dirname, join } from "node:path";
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
-import { resolveConversationSettings } from "../config.js";
-import type { Office } from "./index.js";
+import { loadLegacyFullOverride, loadOfficeVisibilityOverride } from "../config.js";
+import { listRegisteredOffices, type Office, type Workspace } from "./index.js";
 import * as log from "../log.js";
-import type {
-  ImageWorkspaceMountMode,
-  WorkspaceDoorPolicy,
-  WorkspaceLayout,
-  WorkspaceVisibility,
-} from "../types.js";
+import type { WorkspaceVisibility } from "../types.js";
 import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
 export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
 const CHANNEL_KIND_FILE = "channel-kind";
+const reportedLegacyFull = new Set<string>();
 const CHANNEL_KINDS: readonly PlatformChannelKind[] = [
   "public_channel",
   "private_channel",
@@ -46,7 +51,7 @@ export function readPlatformChannelKind(office: Office): PlatformChannelKind | u
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     log.logWarning(
-      "Could not read platform channel kind; falling back to isolated workspace",
+      "Could not read platform channel kind; treating the office as private",
       `${path}: ${err instanceof Error ? err.message : String(err)}`,
     );
     return undefined;
@@ -57,142 +62,125 @@ export function readPlatformChannelKind(office: Office): PlatformChannelKind | u
     : undefined;
 }
 
+/** Where an office's visibility came from; shown to operators instead of raw values. */
+export interface OfficeVisibilityDecision {
+  visibility: WorkspaceVisibility;
+  source: "platform" | "override" | "unknown";
+}
+
+/**
+ * One dimension, derived from the platform (ADR 0008): public channels are
+ * public; private channels, DMs, group DMs, and externally shared
+ * conversations are private; an unknown kind fails closed to private. An
+ * operator may narrow a public conversation to private, never the reverse.
+ * Legacy door-policy settings are not consulted.
+ */
+export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecision {
+  if (loadOfficeVisibilityOverride(office) === "private") {
+    return { visibility: "private", source: "override" };
+  }
+  const kind = readPlatformChannelKind(office);
+  if (kind === undefined) return { visibility: "private", source: "unknown" };
+  return { visibility: kind === "public_channel" ? "public" : "private", source: "platform" };
+}
+
+/** Host-side read-only view of every public office: `<state dir>/public/<key>` → office dir. */
+function publicOfficesViewDir(workspace: Workspace): string {
+  return join(workspace.stateDir, "public");
+}
+
+/**
+ * Rebuild the public view from the registry so it reflects current
+ * visibility: a symlink per public office, and nothing for private ones. The
+ * view directory itself is what containers mount (read-only), so a channel
+ * changing visibility never changes any container's mount signature.
+ */
+function syncPublicOfficesView(workspace: Workspace): string {
+  const view = publicOfficesViewDir(workspace);
+  ensureDirectoryRoot(view, "Public offices view");
+  const wanted = new Map<string, string>();
+  for (const record of listRegisteredOffices(workspace.stateDir)) {
+    const other = workspace.office(record);
+    if (resolveOfficeVisibility(other).visibility === "public" && exists(other.dir)) {
+      wanted.set(other.key, other.dir);
+    }
+  }
+  for (const name of readdirSync(view)) {
+    const linkPath = join(view, name);
+    const target = wanted.get(name);
+    if (target !== undefined) {
+      try {
+        if (lstatSync(linkPath).isSymbolicLink() && readlinkSync(linkPath) === target) {
+          wanted.delete(name);
+          continue;
+        }
+      } catch {
+        // Fall through and recreate.
+      }
+    }
+    rmSync(linkPath, { recursive: true, force: true });
+  }
+  for (const [name, target] of wanted) {
+    symlinkSync(target, join(view, name));
+  }
+  return view;
+}
+
 /**
  * The single policy seam for a managed office. It both materializes the
  * host-side roots and authorizes the prompt sources that describe them.
- * Legacy image settings are deliberately translated here, never at callers.
+ * Every office gets the same shape (ADR 0008): its own directory read-write,
+ * the public view read-only, and the workspace-global knowledge read-write
+ * for public offices or read-only for private ones. No layout mounts the
+ * workspace root.
  */
 export function resolveWorkspaceProjection(office: Office): WorkspaceProjection {
   const { workspace } = office;
-  const effective = resolveEffectiveWorkspace(office);
+  const decision = resolveOfficeVisibility(office);
+  const readOnlyKnowledge = decision.visibility === "private";
 
   assertDirectory(workspace.root, "Host workspace root");
   office.ensure();
-  const shared = effective.layout === "shared-support";
-  if (shared) {
-    ensureRegularFile(workspace.memoryPath, "Workspace memory");
-    ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
+  ensureRegularFile(workspace.memoryPath, "Workspace memory");
+  ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
+  const publicView = syncPublicOfficesView(workspace);
+  const ro = { readOnly: true as const };
+  const legacyFull = loadLegacyFullOverride(office);
+  if (legacyFull && !reportedLegacyFull.has(office.key)) {
+    reportedLegacyFull.add(office.key);
+    log.logWarning(
+      `Office ${office.key} still declares the retired "full" door policy`,
+      `visibility is now ${decision.visibility} (${decision.source}); other offices are reachable only through /workspace/public`,
+    );
   }
 
-  // Private visibility only changes anything for shared-support: the shared
-  // MEMORY.md is the one file that leaks information between offices when
-  // writable, so a private office reads it but cannot write it (modeled on
-  // Claude Tag's private-channel memory). "full" mounts the whole workspace
-  // as one read-write bind with no separate memory file to gate, and
-  // "conversation" never sees workspace memory at all.
-  //
-  // The `readOnly` mount flag below is a kernel-enforced boundary only for
-  // backends with managed Workspace projection. Runner and actor execution
-  // resolution reject every other backend before the agent can start.
-  const globalMemoryReadOnly = shared && effective.visibility === "private";
-  const mounts =
-    effective.layout === "full"
-      ? [{ source: workspace.root, target: "/workspace" }]
-      : effective.layout === "shared-support"
-        ? [
-            {
-              source: workspace.memoryPath,
-              target: "/workspace/MEMORY.md",
-              ...(globalMemoryReadOnly ? { readOnly: true as const } : {}),
-            },
-            { source: workspace.skillsDir, target: "/workspace/skills" },
-            { source: office.dir, target: `/workspace/${office.key}` },
-          ]
-        : [{ source: office.dir, target: `/workspace/${office.key}` }];
-
   return {
-    ...effective,
-    mounts,
+    ...decision,
+    legacyFull,
+    mounts: [
+      { source: office.dir, target: `/workspace/${office.key}` },
+      {
+        source: workspace.memoryPath,
+        target: "/workspace/MEMORY.md",
+        ...(readOnlyKnowledge ? ro : {}),
+      },
+      {
+        source: workspace.skillsDir,
+        target: "/workspace/skills",
+        ...(readOnlyKnowledge ? ro : {}),
+      },
+      { source: publicView, target: "/workspace/public", ...ro },
+    ],
     promptSources: {
       conversationDir: office.dir,
       conversationMemoryPath: office.memoryPath,
       conversationSkillsDir: office.skillsDir,
-      ...(effective.layout === "shared-support" || effective.layout === "full"
-        ? {
-            globalMemoryPath: workspace.memoryPath,
-            globalSkillsDir: workspace.skillsDir,
-            ...(globalMemoryReadOnly ? { globalMemoryReadOnly: true } : {}),
-          }
-        : {}),
+      globalMemoryPath: workspace.memoryPath,
+      globalSkillsDir: workspace.skillsDir,
+      publicOfficesDir: publicView,
+      ...(readOnlyKnowledge ? { globalKnowledgeReadOnly: true } : {}),
     },
   };
-}
-
-function resolveEffectiveWorkspace(
-  office: Office,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
-  try {
-    const settings = resolveConversationSettings(office).sandbox;
-    if (settings?.workspace) {
-      return normalizeWorkspace(
-        settings.workspace.doorPolicy,
-        settings.workspace.layout,
-        settings.workspace.visibility,
-      );
-    }
-    if (settings?.image?.workspaceMount) {
-      return legacyWorkspace(settings.image.workspaceMount);
-    }
-    return platformDerivedWorkspace(office);
-  } catch (err) {
-    // Settings are host-authoritative. A malformed file must not fall back to
-    // an unvalidated value from a mounted legacy location.
-    log.logWarning(
-      "Refusing to resolve workspace projection from malformed settings",
-      err instanceof Error ? err.message : String(err),
-    );
-    throw new Error("Cannot resolve workspace projection: settings are malformed", { cause: err });
-  }
-}
-
-/**
- * No explicit workspace setting anywhere: follow the platform's own channel
- * vocabulary (modeled on Claude Tag). A public channel's knowledge is shared
- * workspace-wide read-write; a private channel reads the shared pool but
- * writes only its own conversation memory; DMs, externally shared channels,
- * and conversations whose kind was never observed stay fully isolated —
- * platform-public is a necessary condition for sharing, never assumed.
- * An admin's explicit setting (conversation or global) always wins over this.
- */
-function platformDerivedWorkspace(
-  office: Office,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
-  switch (readPlatformChannelKind(office)) {
-    case "public_channel":
-      return { doorPolicy: "trusted", layout: "shared-support", visibility: "public" };
-    case "private_channel":
-      return { doorPolicy: "trusted", layout: "shared-support", visibility: "private" };
-    default:
-      return { doorPolicy: "isolated", layout: "conversation", visibility: "public" };
-  }
-}
-
-function normalizeWorkspace(
-  doorPolicy: WorkspaceDoorPolicy | undefined,
-  layout: WorkspaceLayout | undefined,
-  visibility: WorkspaceVisibility | undefined,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
-  const policy = doorPolicy ?? "isolated";
-  if (policy === "isolated") {
-    return { doorPolicy: policy, layout: "conversation", visibility: "public" };
-  }
-  return {
-    doorPolicy: policy,
-    layout: layout === "full" ? "full" : "shared-support",
-    // Missing visibility defaults to "public": every office that predates this
-    // setting keeps today's read-write shared MEMORY.md behavior unchanged.
-    visibility: visibility ?? "public",
-  };
-}
-
-function legacyWorkspace(
-  mode: ImageWorkspaceMountMode | undefined,
-): Pick<WorkspaceProjection, "doorPolicy" | "layout" | "visibility"> {
-  return mode === "full"
-    ? { doorPolicy: "trusted", layout: "full", visibility: "public" }
-    : mode === "private"
-      ? { doorPolicy: "trusted", layout: "shared-support", visibility: "public" }
-      : { doorPolicy: "isolated", layout: "conversation", visibility: "public" };
 }
 
 function ensureDirectoryRoot(path: string, label: string): void {

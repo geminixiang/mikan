@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as log from "../log.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { createGlobalSettingsFile } from "../config.js";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
@@ -28,14 +29,15 @@ describe("ActorExecutionResolver", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }
   });
 
-  test("fails closed instead of escalating from raw fallback settings", async () => {
-    writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
+  test("a legacy full override never escalates to a workspace-root mount", async () => {
+    createGlobalSettingsFile(stateDir);
     const conversationDir = join(workspaceDir, C123_OFFICE);
     mkdirSync(conversationDir, { recursive: true });
     writeFileSync(
@@ -50,9 +52,12 @@ describe("ActorExecutionResolver", () => {
       workspace(),
     );
 
-    await expect(
-      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
-    ).rejects.toThrow(/settings are malformed/);
+    const decision = await resolver.resolve({
+      userId: "U123",
+      address: createOfficeAddress("slack", "C123"),
+    });
+    expect(decision.projection.legacyFull).toBe(true);
+    expect(decision.projection.mounts.some((mount) => mount.source === workspaceDir)).toBe(false);
   });
 
   test("fails closed when legacy conversation settings are malformed", async () => {
@@ -69,7 +74,7 @@ describe("ActorExecutionResolver", () => {
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
-    ).rejects.toThrow(/settings are malformed/);
+    ).rejects.toThrow(/Malformed settings file/);
   });
 
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
@@ -101,7 +106,7 @@ describe("ActorExecutionResolver", () => {
     }
   });
 
-  test("materializes the isolated conversation office directory on resolve", async () => {
+  test("materializes the conversation office directory on resolve", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
@@ -122,7 +127,8 @@ describe("ActorExecutionResolver", () => {
       hostWorkspaceRoot: workspaceDir,
       runtimeWorkspaceRoot: "/workspace",
     });
-    expect(decision.projection.doorPolicy).toBe("isolated");
+    // Unknown channel kind fails closed to private.
+    expect(decision.projection).toMatchObject({ visibility: "private", source: "unknown" });
     expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
 
@@ -213,11 +219,12 @@ describe("ActorExecutionResolver", () => {
     ["container", { type: "container", container: "mikan-sandbox" }],
     ["cloudflare", { type: "cloudflare", sandboxId: "mikan-remote" }],
   ] as const)(
-    "rejects %s for a platform-derived private channel",
-    async (_label, sandboxConfig) => {
+    "serves a private channel on %s with an unenforced-visibility warning",
+    async (label, sandboxConfig) => {
       createGlobalSettingsFile(stateDir);
       const currentWorkspace = workspace();
-      const address = createOfficeAddress("slack", "C123");
+      // The warning is once per office key process-wide, so each case uses its own.
+      const address = createOfficeAddress("slack", `C${label.toUpperCase()}PRIV`);
       recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
       const resolver = new ActorExecutionResolver(
         sandboxConfig,
@@ -225,9 +232,12 @@ describe("ActorExecutionResolver", () => {
         undefined,
         currentWorkspace,
       );
+      const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
 
-      await expect(resolver.resolve({ userId: "U123", address })).rejects.toThrow(
-        /cannot enforce read-only shared workspace memory/,
+      await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringMatching(/cannot enforce private office visibility/),
+        expect.any(String),
       );
     },
   );
@@ -247,7 +257,7 @@ describe("ActorExecutionResolver", () => {
     await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
   });
 
-  test("rejects host as an isolated office after preserving legacy credential lookup", async () => {
+  test("host mode resolves an unknown-kind office after preserving legacy credential lookup", async () => {
     createGlobalSettingsFile(stateDir);
     const resolvedKeys: string[] = [];
     const vault = {
@@ -258,10 +268,11 @@ describe("ActorExecutionResolver", () => {
       },
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
+    vi.spyOn(log, "logWarning").mockImplementation(() => {});
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
-    ).rejects.toThrow(/cannot provide an isolated conversation office/);
+    ).resolves.toBeDefined();
 
     expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/), "U123"]);
   });
@@ -320,7 +331,7 @@ describe("ActorExecutionResolver", () => {
     ).rejects.toThrow(/does not support vault file mounts/);
   });
 
-  test("derives cloudflare actor identity before rejecting it as an office", async () => {
+  test("cloudflare resolves an office with an unenforced-visibility warning", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
       { type: "cloudflare", sandboxId: "mikan-remote" },
@@ -328,12 +339,11 @@ describe("ActorExecutionResolver", () => {
       undefined,
       workspace(),
     );
+    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
 
     await expect(
-      resolver.resolve({
-        userId: "alice",
-        address: createOfficeAddress("slack", "C123"),
-      }),
-    ).rejects.toThrow(/cannot provide an isolated conversation office/);
+      resolver.resolve({ userId: "alice", address: createOfficeAddress("slack", "CCFUNKNOWN") }),
+    ).resolves.toBeDefined();
+    expect(warn).toHaveBeenCalled();
   });
 });

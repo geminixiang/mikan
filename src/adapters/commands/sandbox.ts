@@ -1,35 +1,9 @@
-import type { WorkspacePolicyChoice } from "../../config.js";
 import { resolveWorkspaceProjection } from "../../office/projection.js";
 import { runtimeResourceKey } from "../../sandbox/identity.js";
-import { applyConversationWorkspacePolicy } from "../../settings-mutation.js";
+import { applyOfficeVisibility } from "../../settings-mutation.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { replySummary } from "./utils.js";
-
-/**
- * Word → selection; null clears the override, undefined is an unknown word.
- * `shared`/`shared-support` default to public visibility (today's read-write
- * behavior, unchanged); `shared-private` reads workspace memory but cannot
- * write it, so information can flow in without leaking back out.
- */
-function doorChoiceFromWord(word: string): WorkspacePolicyChoice | null | undefined {
-  switch (word) {
-    case "default":
-      return null;
-    case "isolated":
-      return { doorPolicy: "isolated" };
-    case "shared":
-    case "shared-support":
-    case "shared-public":
-      return { doorPolicy: "trusted", layout: "shared-support", visibility: "public" };
-    case "shared-private":
-      return { doorPolicy: "trusted", layout: "shared-support", visibility: "private" };
-    case "full":
-      return { doorPolicy: "trusted", layout: "full" };
-    default:
-      return undefined;
-  }
-}
 
 export type { ParsedSandboxCommand } from "./types.js";
 
@@ -43,10 +17,10 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   if (action === "boost" && matched.args.length === 1) {
     return { action };
   }
-  if (action === "door" && matched.args.length <= 2) {
+  if (action === "visibility" && matched.args.length <= 2) {
     return {
       action,
-      ...(matched.args.length === 2 ? { doorPolicy: matched.args[1]?.toLowerCase() } : {}),
+      ...(matched.args.length === 2 ? { visibility: matched.args[1]?.toLowerCase() } : {}),
     };
   }
   return {};
@@ -71,8 +45,8 @@ export class SandboxCommandHandler implements CommandHandler {
     });
     if (parsed.action === "boost") {
       await handleBoost(context, controller, containerKey);
-    } else if (parsed.action === "door") {
-      await handleDoor(context, parsed);
+    } else if (parsed.action === "visibility") {
+      await handleVisibility(context, parsed);
     } else {
       await showSandboxStatus(context, controller, containerKey);
     }
@@ -102,44 +76,53 @@ async function handleBoost(
   ]);
 }
 
-async function handleDoor(context: CommandContext, parsed: ParsedSandboxCommand): Promise<void> {
+function describeVisibility(projection: ReturnType<typeof resolveWorkspaceProjection>): string {
+  const source =
+    projection.source === "override"
+      ? "admin 覆寫"
+      : projection.source === "platform"
+        ? "依平台頻道類型"
+        : "頻道類型未知，預設 private";
+  return `${projection.visibility}（${source}）`;
+}
+
+async function handleVisibility(
+  context: CommandContext,
+  parsed: ParsedSandboxCommand,
+): Promise<void> {
   const office = context.services.workspace.office(context.address);
   const projection = resolveWorkspaceProjection(office);
-  if (parsed.doorPolicy === undefined) {
-    await replySummary(context, "Sandbox Door", [
-      `Current: ${projection.doorPolicy} / ${projection.layout} / ${projection.visibility}`,
+  if (parsed.visibility === undefined) {
+    await replySummary(context, "Office Visibility", [
+      `Current: ${describeVisibility(projection)}`,
       "",
-      "預設不需要設定：共享範圍直接跟隨平台頻道屬性（public 頻道共享、private 頻道只讀、DM 隔離）。",
-      "以下為 admin 覆寫選項：`/pi-sandbox door <default|isolated|shared|shared-private|full>`",
-      "- `default`：清除覆寫，回到自動判定",
-      "- `isolated`：強制只掛載自己辦公室",
-      "- `shared`：強制共用 MEMORY.md / skills / events（可讀寫）",
-      "- `shared-private`：同 shared，但共用 MEMORY.md 只讀不可寫",
-      "- `full`：強制掛載整個 workspace（全開）",
+      "public：其他 office 可唯讀這個 office，且可寫入共用 MEMORY.md / skills。",
+      "private：只有自己看得到，共用 MEMORY.md / skills 唯讀。",
+      "預設跟隨 Slack 頻道類型；private 頻道與 DM 一律 private。",
+      "admin 覆寫：`/pi-sandbox visibility <private|default>`（只能把 public 頻道改為 private）",
     ]);
     return;
   }
-
-  const choice = doorChoiceFromWord(parsed.doorPolicy);
-  if (choice === undefined) {
-    await replySummary(context, "Sandbox Door", [
-      `未知的 door policy：\`${parsed.doorPolicy}\``,
-      "可用值：`default`、`isolated`、`shared`、`shared-private`、`full`",
+  if (parsed.visibility !== "private" && parsed.visibility !== "default") {
+    await replySummary(context, "Office Visibility", [
+      `未知的值：\`${parsed.visibility}\`。可用值：\`private\`、\`default\``,
     ]);
     return;
   }
-
-  const result = applyConversationWorkspacePolicy(context.services.runtime, office, choice);
+  const result = applyOfficeVisibility(
+    context.services.runtime,
+    office,
+    parsed.visibility === "private" ? "private" : null,
+  );
   if (!result.ok) {
-    await replySummary(context, "Sandbox Door", [
-      "目前有工作正在執行，無法切換 door policy。等執行結束後再試一次。",
+    await replySummary(context, "Office Visibility", [
+      "目前有工作正在執行，無法切換 visibility。等執行結束後再試一次。",
     ]);
     return;
   }
-
   const updated = resolveWorkspaceProjection(office);
-  await replySummary(context, "Sandbox Door", [
-    `Door policy 已更新。Effective: ${updated.doorPolicy} / ${updated.layout} / ${updated.visibility}`,
+  await replySummary(context, "Office Visibility", [
+    `Visibility 已更新。Current: ${describeVisibility(updated)}`,
     "下一則訊息時會以新的掛載重建 sandbox 容器；容器內容會保留。",
   ]);
 }
@@ -159,9 +142,7 @@ async function showSandboxStatus(
     [
       `Current: ${formatLimits(status.limits)}`,
       `Status: ${status.boosted ? "boosted" : "default"}`,
-      `Workspace policy: ${projection.doorPolicy}`,
-      `Workspace layout: ${projection.layout}`,
-      `Workspace visibility: ${projection.visibility}`,
+      `Office visibility: ${describeVisibility(projection)}`,
       "",
       `Default: ${formatLimits(defaultLimits)}`,
       boostLimits ? `Boost: ${formatLimits({ ...defaultLimits, ...boostLimits })}` : undefined,

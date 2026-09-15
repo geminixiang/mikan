@@ -11,7 +11,7 @@ This directory contains chat command parsers, shared command types, and command 
 - `model.ts`: Handles `/model provider/model[:thinking]` to show or switch conversation model settings.
 - `new.ts`: Handles `/new` by resetting the current session in private conversations.
 - `registry.ts`: Runs command handlers in order and stops after the first successful handler; builds the default handler list.
-- `sandbox.ts`: Handles `/sandbox` status, boost, resource-limit queries, and `door <default|isolated|shared|shared-private|full>` — the chat control over the office's workspace door policy, written through `applyConversationWorkspacePolicy` so cached runners and disk stay in step.
+- `sandbox.ts`: Handles `/sandbox` status, boost, resource-limit queries, and `visibility <private|default>` — the admin escape hatch that narrows a public channel to private, written through `applyOfficeVisibility` so cached runners and disk stay in step.
 - `session-view.ts`: Handles `/session` by creating a Session View portal link.
 - `types.ts`: Defines command handler/context/services and token store interfaces.
 - `utils.ts`: Provides command replies, diagnostic formatting, and private-conversation detection.

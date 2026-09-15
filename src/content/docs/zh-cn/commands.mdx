@@ -14,42 +14,39 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
     `session` 打开当前会话查看器；`/new` 重置当前 DM 会话，同时保留旧文件供检查。
   </Card>
   <Card title="管理" icon="setting">
-    `/admin` 打开有效期 30 分钟的管理
-    portal；可以在其中检查模型、沙箱限制、办公室门禁策略、回复策略、技能、事件和对话状态。
+    `/admin` 打开有效期 30 分钟的管理 portal；可以在其中检查模型、沙箱限制、office
+    visibility、回复策略、技能、事件和对话状态。
   </Card>
 </CardGrid>
 
 ## 命令速查
 
-| 命令                                                                 | 用途和范围                                                                                    |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                                               | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                |
-| `session` / `/session` / `/pi-session`                               | 打开当前会话查看器。仅限 DM。                                                                 |
-| `/new` / `/pi-new`                                                   | 重置当前会话。仅限 DM。                                                                       |
-| `/model` / `/pi-model [provider/model[:thinking]]`                   | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `stop` / `/stop`                                                     | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                   |
-| `/pi-auto-reply <on\|off>`                                           | 开启或关闭当前 Slack channel 无需 mention 的回复。                                            |
-| `/admin` / `/pi-admin`                                               | 打开有效期 30 分钟的管理 portal。                                                             |
-| `/sandbox` / `/pi-sandbox`                                           | 显示当前沙箱限制，以及本办公室的门禁策略和工作区布局。                                        |
-| `/pi-sandbox boost`                                                  | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                             |
-| `/pi-sandbox door`                                                   | 报告办公室的生效门禁策略和布局，并列出可用取值。                                              |
-| `/pi-sandbox door <default\|isolated\|shared\|shared-private\|full>` | 设置本办公室的门禁策略。参阅下方[办公室门禁策略](#办公室门禁策略)。                           |
+| 命令                                               | 用途和范围                                                                                         |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                     |
+| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                      |
+| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                            |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。      |
+| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                        |
+| `/pi-auto-reply <on\|off>`                         | 开启或关闭当前 Slack channel 无需 mention 的回复。                                                 |
+| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                                  |
+| `/sandbox` / `/pi-sandbox`                         | 显示当前沙箱限制，以及本办公室的 visibility。                                                      |
+| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                                  |
+| `/pi-sandbox visibility`                           | 报告办公室生效的 visibility 及其来源。                                                             |
+| `/pi-sandbox visibility <private\|default>`        | 将本公开频道收窄为 private office，或清除该覆盖。参阅下方[办公室 visibility](#办公室-visibility)。 |
 
 `/pi-sandbox` 仅适用于受管理的沙箱运行时：在 `host` 或 `container:<name>` 模式下，它会回复该命令需要 `image:*`。
 
-### 办公室门禁策略
+### 办公室 visibility
 
-`/pi-sandbox door` 写入该对话自己的门禁策略覆盖值。同一设置也可以在管理 portal 中按办公室设置，或设为全局默认值。
+Visibility 跟随 Slack 对话类型（ADR 0008）：公开频道是 public office，其他所有办公室都能在 `/workspace/public/` 只读它，且它可写入共享的 `MEMORY.md` 与 `skills/`；私有频道、DM、群组 DM 与外部共享频道是 private office，只有自己可见。`/pi-sandbox visibility` 是管理员的应急入口，只允许模型认可的唯一调整：把公开频道视为 private。管理 portal 中每个办公室也有同一个开关。
 
-| 取值             | 效果                                                                       |
-| ---------------- | -------------------------------------------------------------------------- |
-| `default`        | 清除覆盖值；若没有全局 `sandbox.workspace`，则跟随平台可见性。             |
-| `isolated`       | 仅挂载本办公室自己的目录。                                                 |
-| `shared`         | 受信任门禁：办公室外加可读写的工作区级 `MEMORY.md`、`skills/`、`events/`。 |
-| `shared-private` | 使用相同的 shared-support 布局，但工作区级 `MEMORY.md` 为只读。            |
-| `full`           | 受信任门禁：挂载整个工作区。                                               |
+| 取值      | 效果                                                                           |
+| --------- | ------------------------------------------------------------------------------ |
+| `default` | 清除覆盖值；跟随 Slack 对话类型。                                              |
+| `private` | 把本公开频道视为 private。对 DM 或私有频道没有额外效果，它们本来就是 private。 |
 
-更改在下一条消息时生效，届时沙箱运行时会带着新的挂载重建；已有的容器内容会被保留。对话正忙时切换会被拒绝。底层的 `sandbox.workspace` 字段请参阅[配置](/zh-cn/configuration/)。
+更改在下一条消息时生效，届时沙箱运行时会带着新的挂载重建；已有的容器内容会被保留。对话正忙时切换会被拒绝。底层的 `office.visibility` 字段请参阅[配置](/zh-cn/configuration/)。
 
 <Aside type="note" title="平台注册命令">
   原生 slash commands 也必须在平台中注册。命令清单位于 `src/adapters/commands/manifest.ts`：Discord

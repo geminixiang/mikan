@@ -68,29 +68,27 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 以下是 onboarding 產生的值。解析後的全域設定必須包含 `llm.provider`、`llm.model` 與 `llm.thinkingLevel`；其他欄位可省略。
 
-| 欄位                           | Onboarding 值       | 說明                                                                                 |
-| ------------------------------ | ------------------- | ------------------------------------------------------------------------------------ |
-| `llm.provider`                 | `anthropic`         | 主要 AI 供應商                                                                       |
-| `llm.model`                    | `claude-sonnet-4-6` | 主要模型名稱                                                                         |
-| `llm.thinkingLevel`            | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                          |
-| `sentry.dsn`                   | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                                       |
-| `sandbox.boost.cpus`           | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                              |
-| `sandbox.boost.memory`         | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                             |
-| `sandbox.workspace.doorPolicy` | 未設定              | 明確覆寫：`isolated` 把 office 鎖在自身資料內；`trusted` 允許協作式 workspace layout |
-| `sandbox.workspace.layout`     | 未設定              | 明確的 trusted layout 覆寫：`shared-support` 或 `full`                               |
-| `sandbox.workspace.visibility` | 未設定              | 在 `shared-support` 下，`public` 允許讀寫全域記憶，`private` 則設為唯讀              |
-| `sandbox.defaultSharedVault`   | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault                  |
-| `slack.replyMode`              | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                              |
+| 欄位                         | Onboarding 值       | 說明                                                                     |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------------ |
+| `llm.provider`               | `anthropic`         | 主要 AI 供應商                                                           |
+| `llm.model`                  | `claude-sonnet-4-6` | 主要模型名稱                                                             |
+| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`              |
+| `sentry.dsn`                 | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                           |
+| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                  |
+| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                 |
+| `office.visibility`          | 未設定              | 僅限對話的覆寫：`private` 把 Slack 公開頻道縮為 private office；不能放寬 |
+| `sandbox.defaultSharedVault` | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault      |
+| `slack.replyMode`            | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                  |
 
-`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox door <default|isolated|shared|shared-private|full>` 會寫入該對話的 `sandbox.workspace` 覆寫。Admin portal 則同時能設定各 office 與全域的 door policy。
+`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox visibility <private|default>` 會寫入該對話的 `office.visibility` 覆寫；admin portal 提供同一個開關。
 
 Slack auto-reply 可透過 `/pi-auto-reply on|off` 修改，並以 conversation office 裡的 `auto-reply`（on）或 `auto-reply.disabled`（off）marker 檔保存。Marker 內容會被忽略：啟用後，該 Slack channel 中未明確 address mikan 的 top-level human message 會直接觸發，不使用 rules 或 judge model。Top-level `autoReply` 與 `llm.autoReply` JSON 設定仍維持退役並被忽略。
 
-Onboarding 不會寫入 `sandbox.workspace`。若沒有明確的全域或對話覆寫，mikan 會跟隨已記錄的平台頻道可見性。目前 Slack 公開頻道會解析為 `trusted` + `shared-support` + `public`，因此可讀寫 workspace 全域 `MEMORY.md`；Slack 私密頻道會解析為 `trusted` + `shared-support` + `private`，全域記憶以唯讀方式掛載。Slack DM、外部共享頻道、未知頻道類型，以及未記錄頻道可見性的其他平台都會解析為 `isolated`。這表示新部署的 Slack 公開頻道不需要額外 door-policy 指令，就會把內容寫入共享 workspace 記憶。
+Office visibility 跟隨 Slack 對話類型（ADR 0008）。公開頻道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 唯讀它，且它可以寫入 workspace 全域的 `MEMORY.md` 與 `skills/`。私人頻道、DM、群組 DM、外部共享頻道，以及尚未觀察到類型的對話都是 **private** office：只有自己看得到，可讀共用知識與 public office，但不會寫回。每個 office 的掛載形狀相同；沒有任何佈局會掛載 workspace root。
 
-Door policy 與 layout 是一起解析的。`isolated` 一律代表 `conversation` layout：只掛載該 office 自己的目錄。`trusted` 則代表 `shared-support`——該 office 再加上 workspace 層級的 `MEMORY.md`、`skills/` 與 `events/`——或 `full`，也就是掛載整個 workspace root。door policy 是 `trusted` 但未指定 layout 時，會解析為 `shared-support`。只有 `image:*` 能強制 isolated projection 或唯讀共享記憶；`host`、`container:*` 與 `cloudflare:*` 對這些 projection 會 fail closed，因此必須改用 `image:*`，或明確選擇 trusted 讀寫 policy。
+只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
-舊版的 `sandbox.image.workspaceMount` 為了遷移仍然讀得到：舊的 `workspaceMount: "private"` 為維持原行為，代表 `trusted` + `shared-support` 且 visibility 為 **public/read-write**；它不同於新的 `sandbox.workspace.visibility: "private"`，後者會把共享記憶設為唯讀。舊的 `workspaceMount: "full"` 代表 `trusted` + `full`。
+已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）仍可解析以載入舊檔，但不再影響投影。仍宣告 `full` 的 office 會在每次程序啟動時被回報一次；其他公開頻道仍可透過 `/workspace/public` 讀取，要存取其他 private office 則需要 ADR 0008 描述的成員身分授權，而不是更大的掛載。
 
 ## MCP servers
 
