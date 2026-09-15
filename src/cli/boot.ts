@@ -96,7 +96,7 @@ export function helpText(): string {
     bootCommand().helpInformation() +
     `
 Commands:
-  mikan office <list|claim>    Inspect offices and claim legacy directories.
+  mikan office <list|claim|migrate-openconnector>  Inspect offices, claim legacy directories, migrate OpenConnector tokens.
   mikan sessions migrate     Migrate legacy sessions (stop the daemon first).
   mikan env                  Show environment-variable inventory.
   mikan onboard              Interactive first-run setup.

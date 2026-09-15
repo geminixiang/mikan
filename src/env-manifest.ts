@@ -126,16 +126,16 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     key: "openconnector",
     title: "OpenConnector",
     kind: "feature",
-    doc: "Host-side provisioning of conversation-scoped OpenConnector runtime tokens",
+    doc: "Default open-connector MCP server and the admin token that mints per-conversation runtime tokens",
     vars: [
       {
         name: "OPENCONNECTOR_ENDPOINT",
-        doc: "Deployment-owned full MCP endpoint for the reserved OpenConnector server",
+        doc: "Default MCP endpoint used when a conversation does not declare open-connector",
       },
       {
         name: "OPENCONNECTOR_ADMIN_TOKEN",
         secret: true,
-        doc: "Admin token used only to mint per-conversation runtime tokens",
+        doc: "Host-only admin token used to mint one runtime token per conversation for the default server",
       },
     ],
   },

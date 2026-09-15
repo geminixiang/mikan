@@ -1,24 +1,34 @@
-import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { Type, type Static } from "@sinclair/typebox";
+/**
+ * OpenConnector is an ordinary MCP server with one deployment-provided
+ * default. When a Slack office has not declared `open-connector` in global or
+ * conversation settings, the host mints a runtime token for that office with
+ * the startup admin token and writes a plain conversation `mcpServers` entry.
+ * From then on the entry is loaded, tested, disabled, or removed like any
+ * other MCP server; the admin token itself never leaves this module.
+ */
+import { Type } from "@sinclair/typebox";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { readEnv } from "../env-manifest.js";
 import * as log from "../log.js";
-import type { Office } from "../office/index.js";
+import { loadScopeMcpServers, updateConversationSettings } from "../config.js";
+import { isRecord, readJsonSchemaFileIfExists } from "../file-guards.js";
 import {
-  atomicWritePrivateFile,
-  ensureDirExists,
-  isRecord,
-  readJsonSchemaFileIfExists,
-} from "../file-guards.js";
+  createWorkspace,
+  isOfficeKey,
+  listRegisteredOffices,
+  officeKey,
+  type Office,
+} from "../office/index.js";
+import type { OfficeKey } from "../types.js";
 import type { McpServerConfig } from "./types.js";
 
 const OPEN_CONNECTOR_SERVER = "open-connector";
-const TOKEN_STATE_FILE = "open-connector-runtime-token.json";
+const LEGACY_TOKEN_FILE = "open-connector-runtime-token.json";
 const REQUEST_TIMEOUT_MS = 10_000;
-const pendingTokens = new Map<string, Promise<RuntimeTokenState>>();
-const CONNECTION_AWARE_TOOLS = new Set(["get_action_guide", "execute_action"]);
+const pending = new Map<string, Promise<void>>();
 
-const RuntimeTokenStateSchema = Type.Object(
+const LegacyTokenSchema = Type.Object(
   {
     version: Type.Literal(1),
     origin: Type.String(),
@@ -28,76 +38,6 @@ const RuntimeTokenStateSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-
-type RuntimeTokenState = Static<typeof RuntimeTokenStateSchema>;
-
-function readRuntimeTokenState(path: string) {
-  return readJsonSchemaFileIfExists(
-    path,
-    RuntimeTokenStateSchema,
-    (detail) => `Malformed OpenConnector runtime token state at ${path}: ${detail}`,
-  );
-}
-
-function readUniqueConnectionName(result: unknown, service: string) {
-  if (!isRecord(result) || !Array.isArray(result.content)) return undefined;
-  const text = result.content.find(
-    (part): part is { type: "text"; text: string } =>
-      isRecord(part) && part.type === "text" && typeof part.text === "string",
-  )?.text;
-  if (!text) return undefined;
-  try {
-    const payload: unknown = JSON.parse(text);
-    if (!isRecord(payload)) return undefined;
-    const connections = Array.isArray(payload.data)
-      ? payload.data
-      : Array.isArray(payload.connections)
-        ? payload.connections
-        : undefined;
-    if (!connections) return undefined;
-    const names = new Set(
-      connections.flatMap((connection) =>
-        isRecord(connection) &&
-        connection.service === service &&
-        typeof connection.connectionName === "string"
-          ? [connection.connectionName]
-          : [],
-      ),
-    );
-    return names.size === 1 ? names.values().next().value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/** Fill an omitted connection only when OpenConnector reports exactly one
- * candidate for the action's service. Multiple-account selection remains an
- * explicit agent decision. */
-export async function prepareOpenConnectorToolArguments(
-  client: Pick<Client, "callTool">,
-  serverName: string,
-  toolName: string,
-  params: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<Record<string, unknown>> {
-  if (
-    serverName !== OPEN_CONNECTOR_SERVER ||
-    !CONNECTION_AWARE_TOOLS.has(toolName) ||
-    typeof params.connectionName === "string" ||
-    typeof params.actionId !== "string"
-  ) {
-    return params;
-  }
-  const service = params.actionId.split(".", 1)[0];
-  if (!service) return params;
-  const result = await client.callTool(
-    { name: "list_connections", arguments: { service } },
-    undefined,
-    { timeout: REQUEST_TIMEOUT_MS, ...(signal ? { signal } : {}) },
-  );
-  const connectionName = readUniqueConnectionName(result, service);
-  return connectionName ? { ...params, connectionName } : params;
-}
 
 function stringArray(value: unknown, field: string): string[] {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
@@ -122,18 +62,16 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
+/** Mint a runtime token that copies the deployment's current action policy. */
 async function createRuntimeToken(
   origin: string,
   adminToken: string,
   name: string,
   signal?: AbortSignal,
-): Promise<RuntimeTokenState> {
+): Promise<string> {
   const headers = { Authorization: `Bearer ${adminToken}` };
   const policyValue = await readJson(
-    await fetch(new URL("/api/runtime-policy", origin), {
-      headers,
-      signal: requestSignal(signal),
-    }),
+    await fetch(new URL("/api/runtime-policy", origin), { headers, signal: requestSignal(signal) }),
     "runtime policy request",
   );
   if (!isRecord(policyValue) || !isRecord(policyValue.deployment)) {
@@ -157,130 +95,132 @@ async function createRuntimeToken(
   if (
     !isRecord(responseValue) ||
     typeof responseValue.token !== "string" ||
-    !responseValue.token.startsWith("oct_") ||
     !isRecord(responseValue.record) ||
-    typeof responseValue.record.id !== "string" ||
     responseValue.record.name !== name
   ) {
     throw new Error("OpenConnector returned an invalid runtime token");
   }
-  return {
-    version: 1,
-    origin,
-    name,
-    id: responseValue.record.id,
-    token: responseValue.token,
-  };
+  return responseValue.token;
 }
 
-function withoutReservedServer(
-  servers: Record<string, McpServerConfig> | undefined,
-): Record<string, McpServerConfig> {
-  if (!servers) return {};
-  const { [OPEN_CONNECTOR_SERVER]: _reserved, ...settingsServers } = servers;
-  return settingsServers;
+function defaultEntry(url: string, token: string): McpServerConfig {
+  return { url, headers: { Authorization: `Bearer ${token}` } };
 }
 
-function disabledServer(
-  servers: Record<string, McpServerConfig>,
-  config: McpServerConfig,
-): Record<string, McpServerConfig> {
-  return { ...servers, [OPEN_CONNECTOR_SERVER]: { ...config, disabled: true } };
-}
-
-async function loadOrCreateRuntimeToken(
-  office: Office,
-  origin: string,
-  adminToken: string,
-  name: string,
-  signal?: AbortSignal,
-): Promise<RuntimeTokenState> {
-  const statePath = join(office.stateDir, TOKEN_STATE_FILE);
-  const state = readRuntimeTokenState(statePath);
-  if (state) {
-    if (state.origin !== origin || state.name !== name) {
-      throw new Error(`OpenConnector runtime token state does not match ${name}`);
-    }
-    return state;
-  }
-
-  const key = `${origin}:${office.key}`;
-  const pending = pendingTokens.get(key);
-  if (pending) return pending;
-
-  const creation = (async () => {
-    const current = readRuntimeTokenState(statePath);
-    if (current) return current;
-    const created = await createRuntimeToken(origin, adminToken, name, signal);
-    ensureDirExists(office.stateDir);
-    atomicWritePrivateFile(statePath, `${JSON.stringify(created, null, 2)}\n`);
-    log.logInfo(
-      `[${office.address.conversationId}] Created OpenConnector runtime token ${created.id}`,
-    );
-    return created;
-  })();
-  pendingTokens.set(key, creation);
-  try {
-    return await creation;
-  } finally {
-    pendingTokens.delete(key);
-  }
+function isDeclared(office: Office): boolean {
+  const scopes = loadScopeMcpServers(office);
+  return (
+    Object.hasOwn(scopes.global, OPEN_CONNECTOR_SERVER) ||
+    Object.hasOwn(scopes.conversation, OPEN_CONNECTOR_SERVER)
+  );
 }
 
 /**
- * Replace the deployment-wide OpenConnector bearer token with one scoped to
- * this Slack Conversation office. The privileged admin token is read only at
- * this host boundary and is never written into settings, Vault, or a sandbox.
+ * Fill in the deployment default for a Slack office that has not declared
+ * `open-connector` anywhere. Writes the token as a conversation MCP entry;
+ * throws when provisioning fails so the caller can report it. Any declared
+ * entry (self-hosted, disabled, or global) is respected untouched.
  */
-export async function provisionOfficeOpenConnectorToken(
+export async function ensureDefaultOpenConnector(
   office: Office,
   platformWorkspaceId: string | undefined,
-  servers: Record<string, McpServerConfig> | undefined,
-  openConnector: McpServerConfig | undefined,
+  defaultServer: McpServerConfig | undefined,
   signal?: AbortSignal,
-): Promise<Record<string, McpServerConfig>> {
-  const settingsServers = withoutReservedServer(servers);
+): Promise<void> {
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
-  if (
-    !openConnector ||
-    openConnector.disabled ||
-    !adminToken ||
-    office.address.platform !== "slack"
-  ) {
-    return settingsServers;
-  }
+  if (!defaultServer?.url || !adminToken || office.address.platform !== "slack") return;
   if (!platformWorkspaceId) {
     log.logWarning(
-      `[${office.address.conversationId}] OpenConnector token provisioning skipped`,
+      `[${office.address.conversationId}] OpenConnector default skipped`,
       "Slack workspace ID is unavailable",
     );
-    return disabledServer(settingsServers, openConnector);
+    return;
   }
-  if (!openConnector.url) {
-    log.logWarning(
-      `[${office.address.conversationId}] OpenConnector token provisioning skipped`,
-      "the startup OpenConnector configuration is not configured for HTTP",
-    );
-    return disabledServer(settingsServers, openConnector);
-  }
+  if (isDeclared(office)) return;
 
-  try {
-    const endpoint = new URL(openConnector.url);
-    const origin = endpoint.origin;
+  const inflight = pending.get(office.stateDir);
+  if (inflight) return inflight;
+  const url = defaultServer.url;
+  const task = (async () => {
     const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
-    const state = await loadOrCreateRuntimeToken(office, origin, adminToken, name, signal);
-    return {
-      ...settingsServers,
-      [OPEN_CONNECTOR_SERVER]: {
-        ...openConnector,
-        headers: { ...openConnector.headers, Authorization: `Bearer ${state.token}` },
-      },
-    };
-  } catch (error) {
-    log.logWarning(
-      `[${office.address.conversationId}] OpenConnector token provisioning failed`,
-      error instanceof Error ? error.message : String(error),
-    );
-    return disabledServer(settingsServers, openConnector);
+    const token = await createRuntimeToken(new URL(url).origin, adminToken, name, signal);
+    // Re-read after the await: an operator may have declared the server meanwhile.
+    if (isDeclared(office)) return;
+    const current = loadScopeMcpServers(office).conversation;
+    updateConversationSettings(office, {
+      mcpServers: { ...current, [OPEN_CONNECTOR_SERVER]: defaultEntry(url, token) },
+    });
+    log.logInfo(`[${office.address.conversationId}] Provisioned default OpenConnector token`);
+  })();
+  pending.set(office.stateDir, task);
+  try {
+    await task;
+  } finally {
+    pending.delete(office.stateDir);
   }
+}
+
+export interface LegacyTokenMigrationReport {
+  migrated: OfficeKey[];
+  skipped: { key: OfficeKey; reason: string }[];
+}
+
+/**
+ * One-time conversion of pre-existing `open-connector-runtime-token.json`
+ * files into conversation `mcpServers` entries for `defaultUrl`. Files whose
+ * token was minted for another origin, or whose office already declares the
+ * server, are left in place and reported. Run with the daemon stopped.
+ */
+export function migrateLegacyOpenConnectorTokens(
+  stateDir: string,
+  defaultUrl: string,
+  workspaceRoot = join(stateDir, "workspace"),
+): LegacyTokenMigrationReport {
+  const origin = new URL(defaultUrl).origin;
+  const report: LegacyTokenMigrationReport = { migrated: [], skipped: [] };
+  const conversationsDir = join(stateDir, "conversations");
+  if (!existsSync(conversationsDir)) return report;
+  const workspace = createWorkspace({ root: workspaceRoot, stateDir });
+  const registered = new Map(
+    listRegisteredOffices(stateDir).map((record) => [officeKey(record), record] as const),
+  );
+  for (const entry of readdirSync(conversationsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !isOfficeKey(entry.name)) continue;
+    const key = entry.name;
+    const legacyPath = join(conversationsDir, key, LEGACY_TOKEN_FILE);
+    if (!existsSync(legacyPath)) continue;
+    const record = registered.get(key);
+    if (!record) {
+      report.skipped.push({ key, reason: "office is not registered" });
+      continue;
+    }
+    const office = workspace.office(record);
+    if (isDeclared(office)) {
+      report.skipped.push({ key, reason: `${OPEN_CONNECTOR_SERVER} is already declared` });
+      continue;
+    }
+    let state;
+    try {
+      state = readJsonSchemaFileIfExists(
+        legacyPath,
+        LegacyTokenSchema,
+        (detail) => `Malformed legacy token file: ${detail}`,
+      );
+    } catch (error) {
+      report.skipped.push({ key, reason: error instanceof Error ? error.message : String(error) });
+      continue;
+    }
+    if (!state) continue;
+    if (state.origin !== origin) {
+      report.skipped.push({ key, reason: `token origin ${state.origin} differs` });
+      continue;
+    }
+    const current = loadScopeMcpServers(office).conversation;
+    updateConversationSettings(office, {
+      mcpServers: { ...current, [OPEN_CONNECTOR_SERVER]: defaultEntry(defaultUrl, state.token) },
+    });
+    rmSync(legacyPath);
+    report.migrated.push(key);
+  }
+  return report;
 }

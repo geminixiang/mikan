@@ -81,7 +81,7 @@ export interface ConversationRuntimeOptions extends Omit<
   commandHandlers?: readonly CommandHandler[];
   /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
-  /** Startup-owned OpenConnector MCP endpoint; settings cannot replace it. */
+  /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as

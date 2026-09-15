@@ -39,7 +39,7 @@ import type {
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
 import { resolveConversationSettings } from "../config.js";
-import { provisionOfficeOpenConnectorToken } from "./open-connector.js";
+import { ensureDefaultOpenConnector } from "./open-connector.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
@@ -215,22 +215,33 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   return `[${userLabel}]: ${text}`;
 }
 
-async function resolveRunnerMcpServers(options: {
+/**
+ * Fill in the deployment's default OpenConnector entry before settings are
+ * read, so the runner then sees only ordinary MCP configuration. A failed
+ * default is reported and skipped; the office keeps its other servers.
+ */
+async function ensureDefaultMcpServers(options: {
   office: Office;
   trustModel: CreateRunnerOptions["trustModel"];
   platformWorkspaceId?: string;
-  servers: ReturnType<typeof resolveConversationSettings>["mcpServers"];
   openConnector?: CreateRunnerOptions["openConnector"];
   signal?: AbortSignal;
-}): Promise<Awaited<ReturnType<typeof provisionOfficeOpenConnectorToken>>> {
-  if (options.trustModel === "open-trigger") return {};
-  return provisionOfficeOpenConnectorToken(
-    options.office,
-    options.platformWorkspaceId,
-    options.servers,
-    options.openConnector,
-    options.signal,
-  );
+}): Promise<void> {
+  if (options.trustModel === "open-trigger") return;
+  try {
+    await ensureDefaultOpenConnector(
+      options.office,
+      options.platformWorkspaceId,
+      options.openConnector,
+      options.signal,
+    );
+  } catch (error) {
+    options.signal?.throwIfAborted();
+    log.logWarning(
+      `[${options.office.address.conversationId}] OpenConnector default provisioning failed`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
 }
 
 type PrepareRunParams = {
@@ -827,17 +838,20 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const conversationId = office.address.conversationId;
   const conversationDir = office.dir;
   const workspaceDir = office.workspace.root;
-  const resolvedAgentConfig = resolveConversationSettings(office);
-  const mcpServers = await resolveRunnerMcpServers({
+  await ensureDefaultMcpServers({
     office,
     trustModel,
     platformWorkspaceId: options.platformWorkspaceId,
-    servers: resolvedAgentConfig.mcpServers,
     openConnector: options.openConnector,
     signal: options.signal,
   });
   options.signal?.throwIfAborted();
-  const agentConfig = { ...resolvedAgentConfig, mcpServers };
+  const resolvedAgentConfig = resolveConversationSettings(office);
+  // open-trigger conversations get no MCP tools at all (see ARCHITECTURE.md).
+  const agentConfig = {
+    ...resolvedAgentConfig,
+    mcpServers: trustModel === "open-trigger" ? {} : (resolvedAgentConfig.mcpServers ?? {}),
+  };
 
   const projection = resolveWorkspaceProjection(office);
   // Bootstrap validation fails runner creation early. resolveForRun repeats

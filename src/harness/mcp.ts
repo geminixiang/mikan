@@ -13,7 +13,6 @@ import {
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
-import { prepareOpenConnectorToolArguments } from "./open-connector.js";
 
 import * as log from "../log.js";
 
@@ -268,15 +267,8 @@ async function connectServer(
       // structurally a valid TSchema; the provider sees the same JSON either way.
       parameters: mcpTool.inputSchema as unknown as TSchema,
       execute: async (_toolCallId, params, runSignal) => {
-        const toolArguments = await prepareOpenConnectorToolArguments(
-          client,
-          name,
-          mcpTool.name,
-          params as Record<string, unknown>,
-          runSignal,
-        );
         const result = await client.callTool(
-          { name: mcpTool.name, arguments: toolArguments },
+          { name: mcpTool.name, arguments: params as Record<string, unknown> },
           undefined,
           { timeout: CALL_TIMEOUT_MS, ...(runSignal ? { signal: runSignal } : {}) },
         );

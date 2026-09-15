@@ -3,6 +3,12 @@
  *
  *   mikan office list [--state-dir <dir>] [--workspace <dir>]
  *   mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]
+ *   mikan office migrate-openconnector [--state-dir <dir>] [--workspace <dir>]
+ *
+ * `migrate-openconnector` converts legacy per-office
+ * `open-connector-runtime-token.json` files into ordinary conversation
+ * `mcpServers` entries for the current `OPENCONNECTOR_ENDPOINT`. Run it with
+ * the daemon stopped.
  *
  * `claim` records which platform owns a legacy raw-id conversation directory
  * when several platforms are enabled and boot cannot infer ownership. The
@@ -12,6 +18,8 @@
 import { join, resolve } from "node:path";
 import { assertPlatformName, OfficeRegistry } from "../office/index.js";
 import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
+import { readEnv } from "../env-manifest.js";
+import { migrateLegacyOpenConnectorTokens } from "../harness/open-connector.js";
 
 export function runOfficeCommand(argv: string[]): number {
   const command = cliCommand("mikan office")
@@ -35,6 +43,19 @@ export function runOfficeCommand(argv: string[]): number {
         conversationId,
         platform,
       ]);
+    });
+  command
+    .command("migrate-openconnector")
+    .description(
+      "Convert legacy OpenConnector token files into MCP settings (stop the daemon first)",
+    )
+    .action(() => {
+      const stateDir = resolveStateDir(argv);
+      const { workspace } = command.opts<{ workspace?: string }>();
+      result = migrateOpenConnector(
+        stateDir,
+        workspace ? resolve(workspace) : join(stateDir, "workspace"),
+      );
     });
   try {
     command.parse(argv, { from: "user" });
@@ -60,6 +81,25 @@ function listOffices(stateDir: string): number {
     }
   }
   return 0;
+}
+
+function migrateOpenConnector(stateDir: string, workspaceRoot: string): number {
+  const endpoint = readEnv("OPENCONNECTOR_ENDPOINT");
+  if (!endpoint) {
+    console.error("OPENCONNECTOR_ENDPOINT is not set; nothing to migrate to.");
+    return 1;
+  }
+  try {
+    const report = migrateLegacyOpenConnectorTokens(stateDir, endpoint, workspaceRoot);
+    console.log(`Migrated ${report.migrated.length} office token file(s) into settings.json.`);
+    for (const entry of report.skipped) {
+      console.log(`  skipped ${entry.key}: ${entry.reason}`);
+    }
+    return 0;
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
 }
 
 function claimOffice(stateDir: string, workspaceRoot: string, rest: string[]): number {

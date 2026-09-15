@@ -192,15 +192,12 @@ describe("loadMcpTools", () => {
       const execute = result.tools.find(
         (tool) => tool.name === "mcp__open-connector__execute_action",
       )!;
+      // Arguments pass through untouched: connection selection belongs to
+      // the server (its own default), not to the generic loader.
       const executed = await execute.execute("call-http", {
         actionId: "github.create_issue",
       });
-      expect(executed.content).toEqual([
-        { type: "text", text: "executed:github.create_issue:only-account" },
-      ]);
-
-      const ambiguous = await execute.execute("call-multi", { actionId: "multi.read" });
-      expect(ambiguous.content).toEqual([{ type: "text", text: "executed:multi.read:" }]);
+      expect(executed.content).toEqual([{ type: "text", text: "executed:github.create_issue:" }]);
 
       const explicit = await execute.execute("call-explicit", {
         actionId: "multi.read",

@@ -15,6 +15,7 @@ import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../adapter.js";
 import type { McpServerConfig } from "../harness/types.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
+import { loadScopeMcpServers } from "../config.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/index.js";
@@ -188,18 +189,10 @@ describe("PiAgentWrapper.run", () => {
       trustModel: "open-trigger",
       platformWorkspaceId: "T1",
       openConnector: { url: "http://127.0.0.1:3737/mcp" },
-      mcpServers: {
-        "open-connector": {
-          url: "http://127.0.0.1:3737/mcp",
-          headers: { Authorization: "Bearer deployment-token" },
-        },
-      },
     });
 
     expect(fetch).not.toHaveBeenCalled();
-    expect(existsSync(join(testOffice().stateDir, "open-connector-runtime-token.json"))).toBe(
-      false,
-    );
+    expect(loadScopeMcpServers(testOffice()).conversation).toEqual({});
     await runner.dispose();
   });
 

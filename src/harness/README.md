@@ -20,7 +20,7 @@ this module.
 | `models.ts`             | Model catalog and authentication resolution                                                                                                     |
 | `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
 | `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                           |
-| `open-connector.ts`     | Deployment-owned OpenConnector authority and office runtime-token provisioning                                                                  |
+| `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                 |
 | `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                         |
 | `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                  |
 | `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                       |
@@ -112,14 +112,18 @@ credential redaction and reviewed presets. Installation materializes a preset
 into the existing global/conversation settings map; there is no second catalog
 of installed state. Settings credentials remain host-private.
 
-`open-connector.ts` retains the deployment-owned reserved server policy. Global
-or conversation settings cannot replace or disable that reserved server or
-redirect the admin token. Provisioning sends the admin token only to the pinned
-endpoint origin and stores a persistent office runtime token under host-private
-State-dir, never in settings or the Sandbox Vault. Concurrent creation is
-single-flight per origin/office. Provisioning failure disables only that server.
-Missing `connectionName` is filled only when the action's service has exactly
-one connection; multiple-account selection stays explicit.
+`open-connector.ts` treats OpenConnector as an ordinary MCP server with a
+deployment default. When `OPENCONNECTOR_ENDPOINT` is set and neither global nor
+conversation settings declare `open-connector`, the host mints one runtime token
+for the Slack office with the host-only `OPENCONNECTOR_ADMIN_TOKEN` (sent only to
+the endpoint's origin) and saves `{ url, headers.Authorization }` as a normal
+conversation `mcpServers` entry. Creation is single-flight per office and a
+failure leaves settings untouched and is logged. From then on the entry is
+loaded, tested, disabled, removed, or replaced by a self-hosted declaration
+exactly like any other server; removing it re-provisions on the next runner.
+The loader passes tool arguments through unchanged — connection selection is
+the server's own concern. `mikan office migrate-openconnector` converts legacy
+`open-connector-runtime-token.json` files into such entries.
 
 The agent's creation-time trust gate still precedes provisioning and loading:
 `open-trigger` gets no MCP servers, tools or guidance; `membership` keeps the

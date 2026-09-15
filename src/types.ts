@@ -434,9 +434,8 @@ export interface AgentConfig {
   /**
    * MCP servers available to this scope, keyed by server name. Global and
    * conversation entries merge per key (conversation wins); an entry with
-   * `disabled: true` turns off the inherited server. The reserved
-   * `open-connector` entry is ignored at runner construction; its startup
-   * configuration is authoritative. See `src/mcp`.
+   * `disabled: true` turns off the inherited server. `open-connector` is
+   * filled in from the deployment default when undeclared. See `src/harness`.
    */
   mcpServers?: Record<string, McpServerConfig>;
 }
@@ -611,7 +610,7 @@ export interface CreateRunnerOptions {
   trustModel: PlatformTrustModel;
   /** Platform workspace/team identity used by host-side integration provisioning. */
   platformWorkspaceId?: string;
-  /** Startup-owned OpenConnector MCP endpoint; settings cannot replace it. */
+  /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
   sessionScope: ResolvedSessionScope;
   /** Cancels construction during process shutdown; acquired resources still roll back before rejection. */
