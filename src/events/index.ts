@@ -306,7 +306,7 @@ export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
   }
 }
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
@@ -493,7 +493,9 @@ export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventM
       report.skipped.push({ filename, reason: `already exists in ${key}` });
       continue;
     }
-    renameSync(source, target);
+    // Rewrite instead of rename so the record gets host-private permissions.
+    atomicWritePrivateFile(target, JSON.stringify(payload) + "\n");
+    rmSync(source);
     report.migrated.push({ filename, key });
   }
   return report;

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -286,7 +294,7 @@ describe("migrateLegacyWorkspaceEvents", () => {
       "no-platform.json",
       "unknown.json",
     ]);
-    expect(existsSync(join(own.stateDir, "events", "ok.json"))).toBe(true);
+    expect(statSync(join(own.stateDir, "events", "ok.json")).mode & 0o777).toBe(0o600);
     expect(existsSync(join(legacyDir, "ok.json"))).toBe(false);
     expect(existsSync(join(legacyDir, "unknown.json"))).toBe(true);
   });
