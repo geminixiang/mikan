@@ -486,3 +486,60 @@ model latency. No user configuration or production service was changed.
 Verification: 128 files / 1,775 tests pass; build/lint/format/Knip pass before the
 last prompt-only refinement. Feature daemon and full test outcome tracked in
 `/tmp/mikan-task-feature-current.json` and `/tmp/status-final-tests.log`.
+
+## Draft PR stability investigation: delivery is not settlement
+
+Draft #149 opened from `81b74c9`, branch `feat/dm-task-handoff`. Pre-commit full
+gate passed (1,775 tests). Subsequent local failure injection uncovered a release
+blocker in the implementation, not a failed live Slack experiment.
+
+### Confirmed: rejected final updates still yield completion notification
+
+One executable regression-style investigation uses the real Slack responder,
+progressive renderer, runner, runtime and native Pi persistence, with a scripted
+model and a fake Slack update transport. It rejects EVERY update containing the
+final answer while allowing notification posts. Observed all three together:
+
+1. Final-result updates are rejected.
+2. A fresh requester completion mention is nevertheless posted.
+3. `task_status` reports the native operation as `completed`.
+
+The test passed as an assertion of CURRENT undesirable behavior. It is not evidence
+of successful delivery. Repro copy: `/tmp/mikan-task-investigation/task-stability-investigation.test.ts`
+(copy into `src/test/` to run); result `/tmp/task-stability-results.log`.
+
+Source chain: `ProgressiveRenderer.run()` catches platform errors and resolves
+its promise. `publishFinalResponse()` interprets fulfilled `replaceResponse()` as
+success and returns true; `finalizeRunResponse()` then posts the completion notice.
+Separately, Pi's terminal record correctly says its operation completed, but that
+record does not attest Slack delivery. The boolean recently added to the presenter
+cannot solve a failure swallowed below it.
+
+Before ready-for-review: make final-delivery outcome explicit through the existing
+responder seam, keep best-effort incremental rendering distinct from required final
+delivery, and prevent completion notices from claiming a result location when that
+result is missing. Do not rewrite Pi's terminal state as platform failure or create
+an unrelated second execution state machine. Cover native-stream, buffered,
+subagent-dashboard and Block Kit-owned final paths separately.
+
+### Additional design risks, not yet reproduced in this round
+
+- `deliverTaskUpdate` falls through to normal queueing when steering returns false;
+  runtime running begins before `MikanAgentSession.runActive`, so preparation gaps
+  need admission/stop tests. Don't claim all pre-start controls are handled.
+- Custom input disposition and native steering are separate mutations. A process
+  failure between them could suppress an input in history without delivering it;
+  acceptance/consumption/cancellation semantics need a durable review.
+- Task membership is reconstructed from platform logs while execution is read from
+  v4. Old anchors survive `/pi-new`; newest-ten selection can omit older active
+  tasks. Clarify scope/retention rather than adding ad hoc fallbacks.
+- Task-status snapshots read whole files and queries may inspect ten files. Measure
+  realistic large sessions before deciding whether live-writer snapshots or a
+  narrower stored result projection is needed.
+- The full-message status regexp is only a UX shortcut. Arbitrary phrasing still
+  relies on model tool usage/paraphrase, and work-tool-count completion pings do
+  not represent a complete domain-level delivery policy.
+
+No live daemon changes, external Slack failure injection or production operations
+were performed during this stability investigation. Draft remains intentionally
+not release-ready.
