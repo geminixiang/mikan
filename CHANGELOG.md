@@ -9,10 +9,11 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.61]
+
 ### Added
 
 - Ground Slack DM progress replies in runtime/v4 task observations; common task-thread status queries no longer steer work, and ordinary followups do not repeat completion mentions.
-
 - Slack DM task handoff: independent task threads keep the main conversation free, with text steering in active task threads and continuation after stopping.
 
 ### Fixed
@@ -20,6 +21,9 @@ any release.
 - Keep thread stop acknowledgements in the source thread, including shared-channel unmentioned stop controls.
 - Notify Slack DM task requesters with a fresh in-thread mention after normal completion.
 - Finalize stop acknowledgements that arrive after the cancelled run has already settled.
+- Propagate final response delivery failures so rejected updates do not trigger completion notifications.
+- Honor stop during runner preparation and keep older active tasks visible in status queries.
+- Report task admission, asynchronous startup, and status inspection failures through the existing Sentry/OTLP observability path.
 
 ### Changed
 
