@@ -7,7 +7,7 @@ description: Event formats and processing flow for triggering the agent through 
 
 Event files live in `<workspace>/events/`, at the workspace root rather than inside any office directory. The scheduling bus is deliberately workspace-wide: one directory the watcher polls, shared by every conversation. It is also agent-writable, so ownership by `conversationId` is a cooperative convention, not an authorization boundary — do not put secrets in event text.
 
-The agent's `event` tool lists only the current conversation's events by default: a file matches when its `conversationId` **and** its `platform` match the running office. Files written before payloads carried a `platform` stay visible to whichever conversation shares the raw id. `scope=all` lists everything in the directory.
+The agent's `event` tool only lists, reads, updates, and deletes events whose `conversationId` **and** `platform` exactly match the running office. Records without `platform` require host-side administration; `scope=all` is rejected. This tool restriction does not yet isolate the shared event directory or authorize filesystem-triggered work; see the Office policy before relying on it as a security boundary.
 
 ## Event types
 

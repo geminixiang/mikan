@@ -7,7 +7,7 @@ description: 透過 workspace events 目錄觸發 agent 的事件格式與處理
 
 事件檔案位於 `<workspace>/events/`，也就是 workspace root，而不是任何 office 目錄之內。這個排程匯流排刻意是 workspace 全域的：watcher 只輪詢一個目錄，由所有對話共用。它同時也是 agent 可寫的，因此以 `conversationId` 標示歸屬只是一種協作慣例，不是授權邊界——請不要把祕密放進事件文字中。
 
-agent 的 `event` tool 預設只列出目前對話的事件：一個檔案要同時符合 `conversationId` **與** `platform` 才算相符。在 payload 尚未帶有 `platform` 之前寫下的檔案，對任何共用該 raw id 的對話都仍然可見。`scope=all` 則會列出目錄中的所有內容。
+agent 的 `event` tool 只能列出、讀取、更新與刪除 `conversationId` **與** `platform` 都完全符合目前 Office 的事件。沒有 `platform` 的舊紀錄須由 host 管理；`scope=all` 會被拒絕。這項工具限制尚未隔離共享事件目錄，也未替檔案觸發的工作建立授權，不能視為完整的安全隔離。
 
 ## 事件類型
 

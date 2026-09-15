@@ -24,9 +24,8 @@ const eventSchema = Type.Object({
     }),
   ),
   scope: Type.Optional(
-    Type.Union([Type.Literal("conversation"), Type.Literal("all")], {
-      description:
-        "List scope. Defaults to conversation, which only shows events for the current conversation. Use all only when the user explicitly asks for all events.",
+    Type.Literal("conversation", {
+      description: "Only events owned by the current office are accessible.",
     }),
   ),
   label: Type.Optional(
@@ -96,7 +95,7 @@ export function createEventTool(eventStore: EventStore): {
     name: "event",
     label: "event",
     description:
-      "CRUD tool for scheduled events. Create immediate, one-shot, or periodic events for the current conversation. List defaults to events for the current conversation only; use scope=all only when the user explicitly asks to list all events. Event text must be self-contained because events do not inherit normal conversation history.",
+      "CRUD tool for scheduled events owned by the current office. Other offices' events cannot be listed, read, changed, or deleted. Event text must be self-contained because events do not inherit normal conversation history.",
     parameters: eventSchema,
     execute: async (_toolCallId: string, params: EventToolParams, signal?: AbortSignal) => {
       if (signal?.aborted) {
@@ -124,10 +123,17 @@ async function runEventAction(
   context: EventToolContext,
 ): Promise<EventToolResult> {
   const action = params.action ?? "create";
-
-  if (action === "list") return listEvents(eventStore, params, context);
-  if (action === "read") {
-    return textResult(JSON.stringify(await eventStore.read(requireFilename(params)), null, 2));
+  // Validate at execution too: persisted calls and direct callers can bypass schemas.
+  if (params.scope !== undefined && params.scope !== "conversation") {
+    throw new Error("Cross-office event access is not authorized");
+  }
+  if (action === "list") return listEvents(eventStore, context);
+  if (action === "read" || action === "update" || action === "delete") {
+    const event = await eventStore.read(requireFilename(params));
+    if (!isOwnEvent(event.payload, context)) {
+      throw new Error("Event is not owned by the current office");
+    }
+    if (action === "read") return textResult(JSON.stringify(event, null, 2));
   }
   if (action === "delete") {
     const filename = requireFilename(params);
@@ -139,26 +145,26 @@ async function runEventAction(
 
 async function listEvents(
   eventStore: EventStore,
-  params: EventToolParams,
   context: EventToolContext,
 ): Promise<EventToolResult> {
-  const all = params.scope === "all";
   const listed = await eventStore.list();
-  const events = all ? listed : listed.filter((event) => isOwnEvent(event.payload, context));
-  const conversationId = all ? undefined : context.conversationId;
+  const events = listed.filter((event) => isOwnEvent(event.payload, context));
   return textResult(
-    JSON.stringify({ scope: all ? "all" : "conversation", conversationId, events }, null, 2),
+    JSON.stringify(
+      { scope: "conversation", conversationId: context.conversationId, events },
+      null,
+      2,
+    ),
   );
 }
 
 /**
  * An event belongs to this conversation when the raw id matches on the same
- * platform. The same raw id on another platform is another office; files
- * written before payloads carried a platform stay visible.
+ * platform. Missing platform identity is ambiguous and does not confer ownership.
  */
 function isOwnEvent(payload: EventPayload | null, context: EventToolContext): boolean {
   if (payload?.conversationId !== context.conversationId) return false;
-  return payload.platform === undefined || payload.platform === context.platform;
+  return payload.platform === context.platform;
 }
 
 async function writeEvent(

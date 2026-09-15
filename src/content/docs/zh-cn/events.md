@@ -7,7 +7,7 @@ description: 通过工作区 events 目录触发代理的事件格式和处理�
 
 事件文件位于 `<workspace>/events/`，即工作区根目录下，而不在任何办公室目录内部。调度总线有意保持工作区级：watcher 轮询一个目录，由所有对话共享。它同时也是代理可写的，因此按 `conversationId` 的所有权是一项协作约定，而非授权边界——不要把 secret 放进事件文本。
 
-代理的 `event` 工具默认只列出当前对话的事件：文件的 `conversationId` **和** `platform` 都与运行中的办公室匹配时才算命中。在 payload 尚未携带 `platform` 之前写入的文件，对任何共享该原始 id 的对话都可见。`scope=all` 会列出该目录中的全部内容。
+代理的 `event` 工具只能列出、读取、更新和删除 `conversationId` **和** `platform` 都与当前 Office 完全匹配的事件。没有 `platform` 的旧记录须由 host 管理；`scope=all` 会被拒绝。这项工具限制尚未隔离共享事件目录，也未为文件触发的工作建立授权，不能视为完整的安全隔离。
 
 ## 事件类型
 

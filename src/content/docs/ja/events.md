@@ -7,7 +7,7 @@ description: workspace の events ディレクトリを通じて agent を起動
 
 イベントファイルは `<workspace>/events/` にあります。どの office directory の中でもなく、workspace root に置かれます。この scheduling bus は意図的に workspace 全体で共有されます。watcher が polling する 1 つの directory を、すべての conversation が共有します。また agent が書き込み可能でもあるため、`conversationId` による所有権は協調的な規約であって認可の境界ではありません。イベントのテキストに secrets を入れないでください。
 
-agent の `event` tool は、既定では現在の conversation のイベントだけを列挙します。ファイルが一致するのは、その `conversationId` **と** `platform` の両方が実行中の office と一致する場合です。payload が `platform` を持つ以前に書かれたファイルは、生 id を共有するどの conversation からも見えたままになります。`scope=all` は directory 内のすべてを列挙します。
+agent の `event` tool は、`conversationId` **と** `platform` が現在の Office と完全に一致するイベントだけを一覧表示・読み取り・更新・削除できます。`platform` のない旧レコードは host 側で管理し、`scope=all` は拒否されます。この制限だけでは共有イベントディレクトリやファイル起点の実行は隔離されず、完全な認可境界にはなりません。
 
 ## イベントタイプ
 

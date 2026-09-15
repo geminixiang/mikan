@@ -148,7 +148,7 @@ describe("createEventTool", () => {
     ).rejects.toThrow("control plane unavailable");
   });
 
-  test("lists current conversation by default and all events when requested", async () => {
+  test("lists own events but refuses global enumeration", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000003);
     const workspaceDir = makeWorkspace();
     const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
@@ -187,9 +187,9 @@ describe("createEventTool", () => {
     expect(scopedResult.content[0]?.text).toContain("visible-1700000000003.json");
     expect(scopedResult.content[0]?.text).not.toContain("Visible only globally");
 
-    const allResult = await tool.execute("call-4", { action: "list", scope: "all" });
-    expect(allResult.content[0]?.text).toContain("Visible in this conversation");
-    expect(allResult.content[0]?.text).toContain("Visible only globally");
+    await expect(
+      tool.execute("call-4", JSON.parse('{"action":"list","scope":"all"}')),
+    ).rejects.toThrow("Cross-office event access is not authorized");
   });
 
   test("conversation scope excludes another platform's identically named office", async () => {
@@ -217,9 +217,44 @@ describe("createEventTool", () => {
     const scoped = await tool.execute("call-2", { action: "list" });
     expect(scoped.content[0]?.text).not.toContain("Discord office schedule");
 
-    // The workspace scheduling bus stays fully visible on request.
-    const all = await tool.execute("call-3", { action: "list", scope: "all" });
-    expect(all.content[0]?.text).toContain("Discord office schedule");
+    await expect(
+      tool.execute("call-3", JSON.parse('{"action":"list","scope":"all"}')),
+    ).rejects.toThrow("Cross-office event access is not authorized");
+  });
+
+  test.each([
+    { platform: "slack", conversationId: "C999" },
+    { platform: "discord", conversationId: "C123" },
+    { conversationId: "C123" },
+  ])("denies foreign or ambiguous event ownership: %j", async (owner) => {
+    const workspaceDir = makeWorkspace();
+    const store = HostEventStore.fromWorkspaceDir(workspaceDir);
+    await store.write("foreign.json", {
+      type: "immediate",
+      text: "PRIVATE_FIXTURE",
+      ...owner,
+    });
+    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
+    setEventContext({
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+    });
+
+    for (const action of ["read", "update", "delete"] as const) {
+      await expect(
+        tool.execute("foreign", {
+          action,
+          filename: "foreign.json",
+          type: "immediate",
+          text: "REPLACEMENT_FIXTURE",
+        }),
+      ).rejects.toThrow("Event is not owned by the current office");
+      expect((await store.read("foreign.json")).payload.text).toBe("PRIVATE_FIXTURE");
+    }
+    const listed = await tool.execute("list", { action: "list" });
+    expect(listed.content[0]?.text).not.toContain("foreign.json");
   });
 
   test("supports list, read, update, and delete", async () => {
@@ -367,7 +402,7 @@ describe("createEventTool", () => {
     expect(existsSync(join(workspaceDir, "events", "missing-1.json"))).toBe(false);
   });
 
-  test("list keeps unparseable event files visible with a null payload under scope=all", async () => {
+  test("does not expose unattributable event files through global enumeration", async () => {
     const workspaceDir = makeWorkspace();
     mkdirSync(join(workspaceDir, "events"), { recursive: true });
     writeFileSync(join(workspaceDir, "events", "corrupt-1.json"), "{not json");
@@ -379,14 +414,13 @@ describe("createEventTool", () => {
       userId: "U123",
     });
 
-    // Without a payload the file cannot be attributed to a conversation, so
-    // the default scope hides it; scope=all must surface it for cleanup.
+    // Unattributable records require host administration, not an agent override.
     const scoped = await tool.execute("call-1", { action: "list" });
     expect(scoped.content[0]?.text).not.toContain("corrupt-1.json");
 
-    const all = await tool.execute("call-2", { action: "list", scope: "all" });
-    expect(all.content[0]?.text).toContain("corrupt-1.json");
-    expect(all.content[0]?.text).toContain('"payload": null');
+    await expect(
+      tool.execute("call-2", JSON.parse('{"action":"list","scope":"all"}')),
+    ).rejects.toThrow("Cross-office event access is not authorized");
   });
 
   test("one-shot events require at", async () => {
