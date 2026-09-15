@@ -68,3 +68,34 @@ pm2 start mikan
 ```
 
 重新啟動同樣是外部服務狀態變更，應取得操作者當次明確同意。
+
+## 本地完整 E2E
+
+先完成上面的唯一 consumer 檢查，且取得真實 Slack 測試授權。
+`~/.mikan/mikan.env`（0600）需有 `SLACK_APP_TOKEN`、`SLACK_BOT_TOKEN`、
+`SLACK_QA_USER_TOKEN`；不要將 token 放進 shell history 或 repo。
+本地模型沿用 `~/.mikan/settings.json` 與 mikan 的 models.json。
+
+```bash
+SLACK_QA_CHANNEL_ID=C_YOUR_QA_CHANNEL npm run test:e2e:slack:local
+```
+
+單一案例可傳檔案 filter：
+
+```bash
+SLACK_QA_CHANNEL_ID=C_YOUR_QA_CHANNEL npm run test:e2e:slack:local -- e2e/slack/thread-stop.e2e.ts
+```
+
+指令會 build、驗證 bot/user 同 workspace 且不同身分，在 private temp state
+啟動 daemon，再執行 E2E；結束時停止 daemon，保留私有 `daemon.log` 與
+`tests.log`。Artifacts 路徑會輸出到終端。測試使用 **host sandbox** 與 trusted/full
+的拋棄式 workspace；這不是 OS 隔離，需信任測試與模型，不要與 production
+共用憑證用途。其他平台與 telemetry 在測試程序中停用，不修改原 settings。
+
+`SLACK_QA_CONFIG_DIR` 可指定包含 mikan.env/settings.json 的來源目錄；models.json
+仍依 mikan 的模型載入規則。`SLACK_QA_WORKING_DIR` 指定既有 daemon 時，未明確
+設定 `SLACK_QA_EVENTS_DIR` 則自動使用 workingDir/events，避免事件寫到錯的 workspace。
+
+本地通過不代表 GitHub 上不同模型的間歇失敗已根治。多檔案案例會先確認 Slack
+分享訊息與本機 intake，再等待模型答案；thread-stop 案例檢查 stop 在原 thread
+完成且沒有 top-level 停止訊息。

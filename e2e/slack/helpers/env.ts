@@ -21,6 +21,7 @@ export function readSlackE2eEnv(): SlackE2eEnv {
   const env = process.env;
   const token = env.SLACK_QA_USER_TOKEN ?? "";
   const channel = env.SLACK_QA_CHANNEL_ID ?? "";
+  const workingDir = env.SLACK_QA_WORKING_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace");
   return {
     token,
     channel,
@@ -28,8 +29,8 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     streamingBotToken: env.SLACK_BOT_TOKEN || undefined,
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
-    eventsDir: env.SLACK_QA_EVENTS_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace/events"),
-    workingDir: env.SLACK_QA_WORKING_DIR ?? join(REPO_ROOT, ".workspace/mikan-workspace"),
+    eventsDir: env.SLACK_QA_EVENTS_DIR ?? join(workingDir, "events"),
+    workingDir,
     mikanText: env.SLACK_QA_BOT_TEXT ?? "hello，請簡短回答。",
   };
 }

@@ -58,6 +58,7 @@
     "prepare": "husky",
     "test:e2e": "vitest --run --config .config/vitest.e2e.config.ts",
     "test:e2e:slack": "vitest --run --config .config/vitest.e2e.config.ts e2e/slack",
+    "test:e2e:slack:local": "npm run build && node scripts/run-local-slack-e2e.mjs",
     "test:e2e:slack:coverage": "vitest --run --coverage --coverage.reportsDirectory=.workspace/coverage --config .config/vitest.e2e.config.ts e2e/slack",
     "docs:dev": "astro dev --config .config/astro.config.mjs",
     "docs:build": "astro build --config .config/astro.config.mjs",

@@ -111,7 +111,7 @@ export async function postLocallyDeliveredMessage(
   );
 }
 
-async function waitForLocalLogMessage(options: {
+export async function waitForLocalLogMessage(options: {
   workingDir: string;
   channel: string;
   ts: string;
@@ -175,7 +175,7 @@ export async function uploadFiles(
   channel: string,
   files: FileUploadSpec[],
   initialComment: string,
-): Promise<void> {
+): Promise<string[]> {
   const res = await client.files.uploadV2({
     channel_id: channel,
     initial_comment: initialComment,
@@ -196,6 +196,13 @@ export async function uploadFiles(
       })),
     }),
   );
+  const ids =
+    res.files?.flatMap(
+      (batch) => batch.files?.flatMap((file) => (file.id ? [file.id] : [])) ?? [],
+    ) ?? [];
+  if (ids.length !== files.length)
+    throw new Error(`Upload completed with ${ids.length} file IDs; expected ${files.length}`);
+  return ids;
 }
 
 export async function openDmChannel(client: WebClient, userId: string): Promise<string> {
