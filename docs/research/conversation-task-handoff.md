@@ -609,3 +609,37 @@ not more pass-through helpers. Remaining blockers include delivery-state semanti
 admission durability, control acceptance atomicity, and general natural-language
 status/control routing. Draft stays draft. Local evidence:
 `/tmp/mikan-task-feature-64oBJD/convergence-acceptance.json`.
+
+## Sentry / OTLP actual receipt verification
+
+2026-09-15 06:45:58 UTC. After requester refreshed gcloud auth, read production
+environment key presence only: SENTRY_DSN and OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+HEADERS, PROTOCOL were set. No secret values were printed. Production package
+remains 1.0.0-beta.59; daemon was not restarted.
+
+A separate short-lived Node process on clanker-002 used the installed mikan
+observability functions and production destination settings to send a synthetic
+error/span, labelled telemetry-verification. It contained no conversation text,
+tool arguments, commands from agent work, or credentials. This is a transport
+probe, not an actual task failure or verification that unreleased PR code runs in
+production. Probe source was removed from VM after execution.
+
+Both receiver-side queries succeeded in Sentry project pi-agent:
+
+- Error event: `5c2ad8e27ba747e9892bffb549093293`, issue `7732850192`,
+  title `Error: Synthetic task telemetry verification`.
+- Trace: `35b0002ea4aac53ee491f0ebd46f6128`, span `2cd7c15e0e60133d`.
+  Trace indexing was not immediate; retry after 15 seconds returned the span.
+
+No issue was resolved/deleted. SDK flush=true was observed but not used as sole
+receipt evidence. The JS probe used a synthetic domain tag `tasks`; PR code uses
+the existing typed `mikan` domain plus task-specific surface/operation tags.
+
+Added reports for task-admission tool errors, asynchronous task-start failures,
+and task-status snapshot inspection failures. Existing runtime/final-delivery
+reporting remains. Local admission regression confirms reportUserFacingError is
+called with no task payload. Full suite: 128 files / 1,785 tests passed, build,
+format and Knip pass. Fixed a test ordering assumption: runtime running state can
+precede the second provider call, so concurrent-task test now waits for that call.
+This does not guarantee emission during SIGKILL/network outage or delivery of every
+possible expected/rejected control. Local UX daemon still has Sentry disabled.

@@ -344,6 +344,14 @@ export class SlackMessagingBot implements MessagingBot {
                   this.createContext(child),
                 );
               } catch (error) {
+                reportUserFacingError(error, {
+                  domain: "mikan",
+                  surface: "task_handoff",
+                  operation: "start_task_run",
+                  severity: "error",
+                  platform: "slack",
+                  context: { conversationId: event.channel, sessionKey, threadTs: root },
+                });
                 await this.postInThread(
                   event.channel,
                   root,

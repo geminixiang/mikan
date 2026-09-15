@@ -2,6 +2,7 @@ import { readTextFileIfExists } from "../../file-guards.js";
 import { join } from "node:path";
 import { resolveSlackSessionKey } from "./session.js";
 import { getThreadSessionFile } from "../../sessions/store.js";
+import { reportUserFacingError } from "../../observability/index.js";
 import { SessionStore } from "../../sessions/session-store.js";
 import type { TaskStatus, RunningSession } from "../../types.js";
 
@@ -69,7 +70,15 @@ export async function querySlackTasks(
         observation.status = state.result.status;
         observation.endedAt = new Date(state.result.endedAt).toISOString();
       }
-    } catch {
+    } catch (error) {
+      reportUserFacingError(error, {
+        domain: "mikan",
+        surface: "task_status",
+        operation: "inspect_task_status",
+        severity: "warning",
+        platform: "slack",
+        context: { conversationId: channel, sessionKey: key, threadTs: root },
+      });
       // No runtime or durable outcome: do not invent queued/completed state.
     }
     observations.push(observation);

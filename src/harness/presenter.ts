@@ -712,6 +712,14 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   if (event.toolName === "start_task") {
     runState.pendingTools.delete(event.toolCallId);
     if (!event.isError) runState.finalResponseHandledByTool = true;
+    else
+      reportUserFacingError(new Error("Task admission failed"), {
+        domain: "mikan",
+        surface: "task_handoff",
+        operation: "admit_task",
+        severity: "error",
+        context: { sessionId: logCtx.sessionId, toolCallId: event.toolCallId },
+      });
     return;
   }
   const progress = runState.toolProgress.get(event.toolCallId);

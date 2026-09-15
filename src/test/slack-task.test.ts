@@ -15,6 +15,7 @@ import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../config.js";
 import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
+import * as observability from "../observability/index.js";
 import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 
@@ -522,7 +523,23 @@ test("main DM status does not guess between concurrent tasks", async () => {
       runtime.getRunningSessions().filter((s) => s.sessionKey.startsWith("D123:")),
     ).toHaveLength(2),
   );
+  await vi.waitFor(() => expect(faux.state.callCount).toBe(4));
   await dm("好了嗎？");
   expect(faux.state.callCount).toBe(4);
   expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("多個任務"));
+});
+
+test("task admission failure is reported without tool payload content", async () => {
+  const report = vi.spyOn(observability, "reportUserFacingError");
+  vi.mocked(bot.postMessage).mockRejectedValueOnce(new Error("anchor rejected"));
+  faux.setResponses([handoff(), fauxAssistantMessage("unable to start")]);
+  await dm("investigate this");
+  await vi.waitFor(() =>
+    expect(report).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ operation: "admit_task" }),
+    ),
+  );
+  const admission = report.mock.calls.find((c) => c[1].operation === "admit_task");
+  expect(JSON.stringify(admission)).not.toContain("LONG TASK CONTEXT");
 });
