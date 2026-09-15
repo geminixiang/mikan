@@ -9,6 +9,22 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.63]
+
+### Changed
+
+- Office data policy is now a single **visibility** derived from the Slack conversation type (ADR 0008): public channels are public offices; private channels, DMs, group DMs, externally shared channels, and unknown kinds are private. Every office receives the same projection — its own directory read-write, every other public office read-only under `/workspace/public/<office key>`, and shared `MEMORY.md`/`skills/` read-write for public offices or read-only for private ones. Nothing mounts the workspace root.
+- The five-way door policy (`isolated`, `trusted/shared-support`, `trusted/full`, …) is retired. Legacy settings still parse but no longer change the projection; offices that still declare `full` are reported once per process. The Admin "door policy" control and `/pi-sandbox door` are replaced by one switch that can narrow a public channel to private (`/pi-sandbox visibility <private|default>`); nothing can widen beyond what Slack allows.
+- Backends without a managed projection (`host`, `container:*`, `cloudflare:*`) now serve private offices with a one-time logged warning instead of refusing, since they are trusted deployments by definition.
+
+### Added
+
+- The Slack adapter records channel kinds for every registered office from the channel list loaded at startup, so offices created before kinds were recorded keep their public status without waiting for a new message.
+
+### Fixed
+
+- Recreating a sandbox container after a visibility change removes empty `/workspace/public/<key>` mountpoints that `docker commit` carried over from the previous mount set.
+
 ## [1.0.0-beta.62]
 
 ### Changed
