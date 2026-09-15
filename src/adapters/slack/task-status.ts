@@ -12,12 +12,7 @@ export function isTaskStatusQuestion(text: string): boolean {
   );
 }
 
-export async function querySlackTasks(
-  conversationDir: string,
-  channel: string,
-  running: RunningSession[],
-  sessionKey?: string,
-): Promise<TaskStatus[]> {
+export function readTaskRoots(conversationDir: string): Map<string, string> {
   const raw = readTextFileIfExists(join(conversationDir, "log.jsonl")) ?? "";
   const roots = new Map<string, string>();
   for (const line of raw.split("\n")) {
@@ -29,14 +24,38 @@ export async function querySlackTasks(
       /* unrelated malformed log record */
     }
   }
-  const selected = [...roots]
+  return roots;
+}
+
+export async function querySlackTasks(
+  conversationDir: string,
+  channel: string,
+  running: RunningSession[],
+  sessionKey?: string,
+): Promise<TaskStatus[]> {
+  const roots = readTaskRoots(conversationDir);
+  const matching = [...roots]
     .toReversed()
-    .filter(([root]) => !sessionKey || resolveSlackSessionKey(channel, root) === sessionKey)
-    .slice(0, 10);
+    .filter(([root]) => !sessionKey || resolveSlackSessionKey(channel, root) === sessionKey);
+  const activeKeys = new Set(
+    running
+      .filter((s) => s.address.platform === "slack" && s.address.conversationId === channel)
+      .map((s) => s.sessionKey),
+  );
+  // Never hide active work behind the recent-completed history limit.
+  const selected = matching.filter(
+    ([root], index) => index < 10 || activeKeys.has(resolveSlackSessionKey(channel, root)),
+  );
   return Promise.all(
     selected.map(async ([root, acknowledgement]) => {
       const key = resolveSlackSessionKey(channel, root);
-      const active = running.find((s) => s.sessionKey === key);
+      const active = running.find(
+        (s) =>
+          activeKeys.has(key) &&
+          s.sessionKey === key &&
+          s.address.platform === "slack" &&
+          s.address.conversationId === channel,
+      );
       const observation: TaskStatus = {
         sessionKey: key,
         threadTs: root,

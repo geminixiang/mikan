@@ -297,6 +297,9 @@ class ProgressiveRenderer {
           // A secondary notification must not poison the response queue.
         }
       }
+      // Incremental/status updates are best effort. Replacements and finalization
+      // are delivery boundaries: callers must not mistake a rejected send for success.
+      if (label === "replaceResponse" || label === "finishResponse") throw err;
     });
     this.queueTail = handled.catch(() => undefined);
     return handled;

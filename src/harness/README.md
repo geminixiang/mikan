@@ -179,3 +179,9 @@ means queued for the next tool-batch boundary, not proof of model compliance.
 and excluded from subagent grants. It exposes no cross-office task lookup.
 `SessionStore.inspectExecution` reads the main lane/result from a temporary v4
 snapshot; it does not create a runner or acquire the original file's writer.
+
+Runner cancellation is remembered across prompt preparation. Stop before Pi starts
+prevents a later prompt; preparation/settlement controls are rejected with a retry
+message instead of creating queued work. Final renderer replacements propagate
+transport failure, unlike best-effort incremental updates, so failed result updates
+do not trigger task completion mentions.

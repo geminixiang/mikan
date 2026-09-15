@@ -374,6 +374,7 @@ export async function finalizeRunResponse(
     model?: Model<Api>;
     sessionConversation?: string;
     sessionUuid?: string;
+    initialTask?: boolean;
   },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
@@ -395,7 +396,8 @@ export async function finalizeRunResponse(
   const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
     (name) => !["task_status", "start_task", "react"].includes(name),
   );
-  if (published && runState.stopReason === "stop" && didWork) await responder.notifyCompletion?.();
+  if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
+    await responder.notifyCompletion?.();
 }
 
 /** `[SILENT]` means the run leaves no message behind. */

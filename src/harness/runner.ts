@@ -570,6 +570,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
       : undefined;
 
   await finalizeRunResponse(responder, session, runState, {
+    initialTask: message.id.startsWith("task:"),
     triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
       ? createSessionViewLink?.()
       : undefined,
@@ -619,10 +620,12 @@ async function steerRun(
   activeMessage: ConversationMessage | undefined,
   message: ConversationMessage,
 ): Promise<boolean> {
-  if (!activeMessage || !session.isActiveRun) return false;
+  if (!activeMessage) return false;
   // Claimed by the control path, including rejected/cancelled inputs: history sync
   // must not turn a rejected control into a new instruction on the next run.
   await session.sessionStore.appendCustomEntry("mikan.control_input", { messageId: message.id });
+  if (!session.isActiveRun)
+    throw new Error("Task is preparing or settling. Please retry this update shortly.");
   if (message.userId !== activeMessage.userId)
     throw new Error("Only the task's current actor can guide this run.");
   if (message.attachments?.length)
@@ -653,6 +656,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     toolBindings,
   } = params;
   let activeMessage: ConversationMessage | undefined;
+  let stopped = false;
   return {
     steer: (message) => steerRun(session, activeMessage, message),
     async syncChatHistory(currentMessageId?: string): Promise<void> {
@@ -666,31 +670,34 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
 
     async run(message, responder, platform) {
       activeMessage = message;
-      const prepared = await prepareRunContext({
-        message,
-        responder,
-        platform,
-        office,
-        executor,
-        resolveForRun,
-        session,
-        setEventContext: toolBindings.setEventContext,
-        setSandboxContext: toolBindings.setSandboxContext,
-        setUploadFunction: toolBindings.setUploadFunction,
-        setImageUploadFunction: toolBindings.setImageUploadFunction,
-        setReactFunction: toolBindings.setReactFunction,
-        setTaskFunction: toolBindings.setTaskFunction,
-        setTaskStatusFunction: toolBindings.setTaskStatusFunction,
-        bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
-      });
-      const presentation = activateRunPresentation(runState, {
-        responder,
-        sessionConversation: prepared.sessionConversation,
-        userName: message.userName,
-        sessionUuid,
-        triggerAttribution: prepared.triggerAttribution,
-      });
+      stopped = false;
+      let presentation: RunPresentation | undefined;
       try {
+        const prepared = await prepareRunContext({
+          message,
+          responder,
+          platform,
+          office,
+          executor,
+          resolveForRun,
+          session,
+          setEventContext: toolBindings.setEventContext,
+          setSandboxContext: toolBindings.setSandboxContext,
+          setUploadFunction: toolBindings.setUploadFunction,
+          setImageUploadFunction: toolBindings.setImageUploadFunction,
+          setReactFunction: toolBindings.setReactFunction,
+          setTaskFunction: toolBindings.setTaskFunction,
+          setTaskStatusFunction: toolBindings.setTaskStatusFunction,
+          bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
+        });
+        if (stopped) return { stopReason: "aborted" };
+        presentation = activateRunPresentation(runState, {
+          responder,
+          sessionConversation: prepared.sessionConversation,
+          userName: message.userName,
+          sessionUuid,
+          triggerAttribution: prepared.triggerAttribution,
+        });
         return await runPreparedTurn({
           prepared,
           presentation,
@@ -708,11 +715,12 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
         });
       } finally {
         activeMessage = undefined;
-        presentation.dispose();
+        presentation?.dispose();
       }
     },
 
     abort(): void {
+      stopped = true;
       session.abort();
     },
 

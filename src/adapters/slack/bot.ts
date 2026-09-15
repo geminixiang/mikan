@@ -71,7 +71,12 @@ import {
 import { reportUserFacingError } from "../../observability/index.js";
 import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
-import { querySlackTasks, isTaskStatusQuestion, formatTaskStatus } from "./task-status.js";
+import {
+  querySlackTasks,
+  isTaskStatusQuestion,
+  formatTaskStatus,
+  readTaskRoots,
+} from "./task-status.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
@@ -1047,17 +1052,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private isTaskThread(channel: string, root: string): boolean {
-    const raw = readTextFileIfExists(join(this.conversationDir(channel), "log.jsonl"));
-    return (
-      raw?.split("\n").some((line) => {
-        try {
-          const entry = JSON.parse(line);
-          return entry.ts === root && entry.taskRoot === true && entry.isMessagingBot === true;
-        } catch {
-          return false;
-        }
-      }) ?? false
-    );
+    return readTaskRoots(this.conversationDir(channel)).has(root);
   }
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
@@ -1698,7 +1693,8 @@ export class SlackMessagingBot implements MessagingBot {
     const activeSessionKey =
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
     slackEvent.sessionKey = activeSessionKey;
-    if (isDM && e.thread_ts && this.isTaskThread(e.channel, e.thread_ts)) {
+    const taskThread = isDM && !!e.thread_ts && this.isTaskThread(e.channel, e.thread_ts);
+    if (taskThread) {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
     }
@@ -1712,7 +1708,7 @@ export class SlackMessagingBot implements MessagingBot {
       magicWordAddressed: isDM,
     });
 
-    if (!(isDM && e.thread_ts && this.isTaskThread(e.channel, e.thread_ts))) ack();
+    if (!taskThread) ack();
     await intake;
   }
 

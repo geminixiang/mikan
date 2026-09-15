@@ -54,7 +54,7 @@ intake even though ordinary unmentioned thread messages do not trigger runs.
 
 ### Task status observations
 
-`task_status` is bound to the current DM's recent task anchors (up to ten).
+`task_status` is bound to the current DM's recent task anchors (ten historical entries plus all active tasks).
 Active state comes from the existing runtime; terminal outcomes come from a
 read-only v4 snapshot, without claiming the live writer. An open operation with
 no active runtime is unknown, not claimed to be running. Task acknowledgement
@@ -66,4 +66,4 @@ questions. This reads state without a model call or steering. Mixed requests
 this is not a general natural-language intent classifier. Main-DM free-form
 queries use the model's read-only task_status tool. Status-only tool activity
 is not shown in the progress list. Plain textual followups and status-only
-runs no longer send completion mentions; runs doing other tools still do.
+runs no longer send completion mentions; initial handoffs (including reasoning-only tasks) and runs doing other tools still do.

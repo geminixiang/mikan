@@ -1,5 +1,5 @@
 // Exercises actual Slack intake, runtime, Pi and session persistence with fake transport/model.
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, test, expect, vi } from "vitest";
@@ -13,7 +13,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../config.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
@@ -409,4 +409,98 @@ test("mixed status and instructions are not swallowed by the observation shortcu
   expect(isTaskStatusQuestion("好了嗎？")).toBe(true);
   expect(isTaskStatusQuestion("好了嗎？先不要部署")).toBe(false);
   expect(isTaskStatusQuestion("先給我重點就好")).toBe(false);
+});
+
+test("rejected final delivery never sends a completion mention", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("UNDELIVERED_FINAL")]);
+  const root = await startTask();
+  const rejected = vi.fn();
+  vi.mocked(bot.updateMessage).mockImplementation(async (_channel, _ts, text) => {
+    if (text.includes("UNDELIVERED_FINAL")) {
+      rejected();
+      throw new Error("final rejected");
+    }
+  });
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  expect(rejected).toHaveBeenCalled();
+  expect(
+    vi.mocked(bot.postMessage).mock.calls.filter((c) => c[2] === root && c[1].includes("<@U1>")),
+  ).toHaveLength(0);
+});
+
+test("stop during runner preparation prevents provider and tool execution", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
+  const root = await startTask();
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  const preparing = deferred();
+  const release = deferred();
+  const original = MikanAgentSession.prototype.reloadFromSession;
+  vi.spyOn(MikanAgentSession.prototype, "reloadFromSession").mockImplementationOnce(
+    async function () {
+      preparing.resolve();
+      await release.promise;
+      return original.call(this);
+    },
+  );
+  faux.setResponses([fauxAssistantMessage("SHOULD_NOT_RUN")]);
+  await dm("continue with work", root);
+  await preparing.promise;
+  const stop = runtime.handleStop(createOfficeAddress("slack", "D123"), `D123:${root}`, bot, root);
+  release.resolve();
+  await stop;
+  expect(faux.state.callCount).toBe(3);
+});
+
+test("recent status listing keeps an older active task even with ten newer task roots", async () => {
+  faux.setResponses([handoff(), callHold()]);
+  const root = await startTask();
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  for (let i = 0; i < 11; i++)
+    appendFileSync(
+      office.logPath,
+      JSON.stringify({
+        ts: `9999999999.${i}`,
+        taskRoot: true,
+        isMessagingBot: true,
+        text: `later ${i}`,
+      }) + "\n",
+    );
+  const observations = await querySlackTasks(office.dir, "D123", runtime.getRunningSessions());
+  expect(observations.find((t) => t.threadTs === root)?.status).toBe("running");
+});
+
+test("initial delegated reasoning-only task still notifies its requester", async () => {
+  faux.setResponses([handoff(), fauxAssistantMessage("reasoned answer")]);
+  await dm("think through this task");
+  await vi.waitFor(() => expect(faux.state.callCount).toBe(2));
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  expect(vi.mocked(bot.postMessage).mock.calls.filter((c) => c[1].includes("<@U1>"))).toHaveLength(
+    1,
+  );
+});
+
+test("task membership parser tolerates malformed logs and status isolates platform identity", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
+  const root = await startTask();
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  appendFileSync(office.logPath, "not-json\nnull\n");
+  const observations = await querySlackTasks(
+    office.dir,
+    "D123",
+    [
+      {
+        address: createOfficeAddress("discord", "D123"),
+        sessionKey: `D123:${root}`,
+        startedAt: Date.now(),
+        currentTool: "WRONG_PLATFORM",
+      },
+    ],
+    `D123:${root}`,
+  );
+  expect(observations[0].status).toBe("completed");
+  expect(observations[0].currentTool).toBeUndefined();
 });

@@ -543,3 +543,29 @@ subagent-dashboard and Block Kit-owned final paths separately.
 No live daemon changes, external Slack failure injection or production operations
 were performed during this stability investigation. Draft remains intentionally
 not release-ready.
+
+## Five bounded iteration cycles after draft creation
+
+2026-09-15, baseline `393a41c`. Five distinct hypotheses/changes, followed by
+combined real Slack acceptance. Not five independent deployments or full platform
+matrices; each item below states its actual verification level.
+
+| Cycle                       | Red evidence / question                                                                                      | Change                                                                                                                                                                                                             | Verification                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| 1: Required final delivery  | Three failing tests: buffered/native replacement errors resolved; failed final answer still pinged requester | Renderer replacements/finalization now propagate errors while best-effort progress remains recoverable. Queue is not poisoned by failed replacements.                                                              | Three regressions green, then full 1,778 tests pass. No injected real Slack outage.                                    |
+| 2: Preparation cancellation | Gated runner `reloadFromSession`; stop still allowed another provider call (4 instead of 3)                  | Runner remembers stop across preparation, returns aborted before prompt, clears active identity on preparation failure. Preparation/settlement controls are explicitly rejected rather than queued as another run. | Regression green. Live stop retested during ordinary task execution, not at an externally forced preparation boundary. |
+| 3: Active task visibility   | Older running task disappeared behind eleven newer anchors                                                   | Include all active task roots even beyond recent-ten history limit; filter active identity by office/platform                                                                                                      | Regression green. Unknown state remains unknown; no new execution-status cache.                                        |
+| 4: Completion policy        | Initial reasoning-only delegated task produced no mention                                                    | Initial task handoff qualifies for completion notice even without tools; ordinary non-work followups remain quiet                                                                                                  | Regression green; cancelled/error delivery checks retained.                                                            |
+| 5: Simplification/isolation | Duplicate task-root parsers and repeated scan in acknowledgement path                                        | Share readTaskRoots; compute per-intake task membership once for acknowledgement decision; test malformed records and foreign-platform status                                                                      | Integration test green; no new cache/compatibility layer.                                                              |
+
+Combined live acceptance, isolated local daemon PID 59297:
+
+- Actual `/pi-new` followed by natural prompt 「幫我整理 geminixiang/mikan 最近五個版本的更新，挑三個最影響使用者的重點就好。」
+- Anchor `1789448222.368599`: 「好，我來整理一下。」 Result and exactly one requester mention delivered in its task thread.
+- Main query `1789448238.545269` used task_status, not guessed progress. Its response was posted about 1.9 seconds AFTER task completion notice while reporting the earlier running observation: snapshot-to-LLM-response staleness is a newly observed remaining UX issue, not a duplicate run.
+- Completed-thread 「好了嗎？」 responded directly with no new completion mention.
+- Natural followup requested actual ten-version code-risk investigation. 「有進展嗎？」 reported the live tool label; subsequent stop produced `Stopped.` at `1789448301.728419` in the same thread, no top-level stop and no cancelled-task completion mention.
+
+Private evidence: `/tmp/mikan-task-feature-64oBJD/five-cycles-acceptance.json` and daemon log. Timing/transport experiments are local deterministic tests, not platform outage reproduction. Feature daemon remains running for requester testing.
+
+Remaining draft blockers: execution completed is still distinct from durable delivery outcome; startup queue admission and crash before control submission; status snapshot staleness while model composes reply; completion mention transport failure; same-session repeated concurrent stop ownership; status-query cost for large archives. Required final delivery now propagates failure, but the existing status text can still imply a result is visible after transport failure. Do not move this PR out of draft on the strength of the five cycles alone.
