@@ -9,6 +9,18 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Ground Slack DM progress replies in runtime/v4 task observations; common task-thread status queries no longer steer work, and ordinary followups do not repeat completion mentions.
+
+- Slack DM task handoff: independent task threads keep the main conversation free, with text steering in active task threads and continuation after stopping.
+
+### Fixed
+
+- Keep thread stop acknowledgements in the source thread, including shared-channel unmentioned stop controls.
+- Notify Slack DM task requesters with a fresh in-thread mention after normal completion.
+- Finalize stop acknowledgements that arrive after the cancelled run has already settled.
+
 ### Changed
 
 - Publish the already built and verified npm package without rerunning build and repository setup lifecycle scripts.

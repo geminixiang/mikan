@@ -106,9 +106,17 @@ async function handleStopMagicWord<TEvent extends ConversationEvent>(
   }
 
   if (target) {
-    await handler.handleStop(address, target, bot);
+    if (eventBase.thread_ts) {
+      await handler.handleStop(address, target, bot, eventBase.thread_ts);
+    } else {
+      await handler.handleStop(address, target, bot);
+    }
   } else if (magicWord.addressed) {
-    await bot.postMessage(conversationId, formatNothingRunning(bot));
+    if (eventBase.thread_ts && bot.postInThread) {
+      await bot.postInThread(conversationId, eventBase.thread_ts, formatNothingRunning(bot));
+    } else {
+      await bot.postMessage(conversationId, formatNothingRunning(bot));
+    }
   }
 }
 

@@ -164,9 +164,17 @@ export class MikanAgentSession {
       images?: ImageContent[];
       budget?: BudgetSettings;
       tools?: MikanToolInput[];
+      allowTaskHandoff?: boolean;
+      allowTaskStatus?: boolean;
     },
   ): Promise<void> {
     await this.run(text, options);
+  }
+
+  async steer(text: string): Promise<boolean> {
+    if (!this.runActive || this.runAborted || !this.lane) return false;
+    getOrThrow(await this.lane.steer(text, undefined, TODO_CONTEXT));
+    return true;
   }
 
   /** Resume an operation left open by a previous process using Pi's recovery rules. */
@@ -180,6 +188,8 @@ export class MikanAgentSession {
       images?: ImageContent[];
       budget?: BudgetSettings;
       tools?: MikanToolInput[];
+      allowTaskHandoff?: boolean;
+      allowTaskStatus?: boolean;
     },
   ): Promise<void> {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
@@ -213,7 +223,11 @@ export class MikanAgentSession {
       if (this.runAborted) return;
       const harness = this.harness!;
       const lane = this.lane!;
-      const tools = this.toHarnessTools(options?.tools ?? this.options.tools);
+      const tools = this.toHarnessTools(options?.tools ?? this.options.tools).filter(
+        (tool) =>
+          (tool.name !== "start_task" || options?.allowTaskHandoff === true) &&
+          (tool.name !== "task_status" || options?.allowTaskStatus === true),
+      );
       await harness.setTools(tools, TODO_CONTEXT);
       await lane.setActiveTools(
         tools.map((tool) => tool.name),
@@ -343,6 +357,20 @@ export class MikanAgentSession {
     this.harness.hooks.on("before_request", async () => {
       if (!(await this.checkCallBudget())) return undefined;
       this.tally.llmCalls += 1;
+      return undefined;
+    });
+    // A handoff must never share a batch with effects in the parent session.
+    this.harness.hooks.on("before_tool", () => {
+      const assistant = this.transcript.findLast((message) => message.role === "assistant");
+      const calls =
+        assistant?.role === "assistant"
+          ? assistant.content.filter((part) => part.type === "toolCall")
+          : [];
+      if (calls.length > 1 && calls.some((call) => call.name === "start_task")) {
+        return {
+          block: { reason: "Call start_task alone, without other tools in the same batch." },
+        };
+      }
       return undefined;
     });
     for (const type of FORWARDED_EVENTS) {

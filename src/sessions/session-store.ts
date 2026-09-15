@@ -27,6 +27,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import {
   AgentHarness,
   branchTip,
+  laneState,
+  operationResult,
   createBranchSummaryMessage,
   createCompactionSummaryMessage,
   createCustomMessage,
@@ -484,6 +486,39 @@ export class SessionStore implements SessionInspection {
     } catch (error) {
       releaseWriter(writer.key);
       throw error;
+    }
+  }
+
+  /** Read native execution state without claiming the live file's writer. */
+  static async inspectExecution(path: string): Promise<{
+    open: boolean;
+    result?: { status: "completed" | "aborted" | "failed" | "declined"; endedAt: number };
+  }> {
+    const snapshotDir = mkdtempSync(join(tmpdir(), "mikan-execution-inspect-"));
+    const snapshotPath = join(snapshotDir, "session.jsonl");
+    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
+    try {
+      writeFileSync(snapshotPath, readFileSync(path), { mode: 0o600, flag: "wx" });
+      opened = await openFileSession(
+        snapshotPath,
+        parseCurrentHeader(path, readHeaderLine(snapshotPath)),
+      );
+      const state = (await opened.session.getValue(laneState("main"), TODO_CONTEXT))?.value;
+      const result = state?.lastOperationId
+        ? (await opened.session.getValue(operationResult(state.lastOperationId), TODO_CONTEXT))
+            ?.value
+        : undefined;
+      return {
+        open: state?.currentOperationId != null,
+        ...(result ? { result: { status: result.status, endedAt: result.endedAt } } : {}),
+      };
+    } finally {
+      try {
+        await opened?.session.close(TODO_CONTEXT);
+      } finally {
+        await opened?.repo.close(TODO_CONTEXT);
+        rmSync(snapshotDir, { recursive: true, force: true });
+      }
     }
   }
 

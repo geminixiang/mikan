@@ -321,6 +321,7 @@ describe("DiscordMessagingBot message routing", () => {
       createOfficeAddress("discord", "C1"),
       "C1",
       bot,
+      "M1",
     );
   });
 

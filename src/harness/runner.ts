@@ -116,7 +116,7 @@ async function createConfiguredAgentSession(params: {
         thinkingLevel,
         models,
         workspaceDir,
-        availableTools: tools,
+        availableTools: tools.filter((tool) => !["start_task", "task_status"].includes(tool.name)),
         profiles: runnableProfiles,
         slots: globalSubagentSlots,
         toolContext,
@@ -250,6 +250,8 @@ type PrepareRunParams = {
   setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
+  setTaskStatusFunction: ReturnType<typeof createMikanTools>["setTaskStatusFunction"];
+  setTaskFunction: ReturnType<typeof createMikanTools>["setTaskFunction"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
 };
@@ -314,6 +316,8 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
     setUploadFunction,
     setImageUploadFunction,
     setReactFunction,
+    setTaskFunction,
+    setTaskStatusFunction,
     bindPlatformToolPacks,
   } = params;
   setEventContext({
@@ -334,6 +338,8 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
     await responder.uploadFile(hostPath, title);
   });
   // Unset reaction support when the active responder cannot react.
+  setTaskFunction(responder.startTask?.bind(responder));
+  setTaskStatusFunction(responder.getTaskStatus?.bind(responder));
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
   bindPlatformToolPacks({
     conversationId: office.address.conversationId,
@@ -535,6 +541,8 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 
   const isEventRun = message.id.startsWith("event:");
   await session.prompt(prepared.userMessage, {
+    allowTaskHandoff: responder.startTask !== undefined,
+    allowTaskStatus: responder.getTaskStatus !== undefined,
     ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
     ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
   });
@@ -606,6 +614,25 @@ type RunnerInterfaceParams = {
   toolBindings: MikanToolBindings;
 };
 
+async function steerRun(
+  session: MikanAgentSession,
+  activeMessage: ConversationMessage | undefined,
+  message: ConversationMessage,
+): Promise<boolean> {
+  if (!activeMessage || !session.isActiveRun) return false;
+  // Claimed by the control path, including rejected/cancelled inputs: history sync
+  // must not turn a rejected control into a new instruction on the next run.
+  await session.sessionStore.appendCustomEntry("mikan.control_input", { messageId: message.id });
+  if (message.userId !== activeMessage.userId)
+    throw new Error("Only the task's current actor can guide this run.");
+  if (message.attachments?.length)
+    throw new Error("Stop the task before continuing with new attachments.");
+  if (!(await session.steer(`[${message.userName ?? message.userId}]: ${message.text}`))) {
+    throw new Error("Task settled while receiving this update. Please send it again to continue.");
+  }
+  return true;
+}
+
 function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   const {
     conversationId,
@@ -625,7 +652,9 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     chatSessionManager,
     toolBindings,
   } = params;
+  let activeMessage: ConversationMessage | undefined;
   return {
+    steer: (message) => steerRun(session, activeMessage, message),
     async syncChatHistory(currentMessageId?: string): Promise<void> {
       await chatSessionManager.syncSessionManager({
         conversationDir,
@@ -636,6 +665,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     },
 
     async run(message, responder, platform) {
+      activeMessage = message;
       const prepared = await prepareRunContext({
         message,
         responder,
@@ -649,6 +679,8 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
         setUploadFunction: toolBindings.setUploadFunction,
         setImageUploadFunction: toolBindings.setImageUploadFunction,
         setReactFunction: toolBindings.setReactFunction,
+        setTaskFunction: toolBindings.setTaskFunction,
+        setTaskStatusFunction: toolBindings.setTaskStatusFunction,
         bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
       });
       const presentation = activateRunPresentation(runState, {
@@ -675,6 +707,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
           sessionView,
         });
       } finally {
+        activeMessage = undefined;
         presentation.dispose();
       }
     },
