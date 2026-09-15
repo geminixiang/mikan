@@ -36,7 +36,6 @@ describe("createWorkspace", () => {
     expect(workspace.stateDir).toBe(fixture.stateDir);
     expect(workspace.memoryPath).toBe(join(fixture.workspaceRoot, "MEMORY.md"));
     expect(workspace.skillsDir).toBe(join(fixture.workspaceRoot, "skills"));
-    expect(workspace.eventsDir).toBe(join(fixture.workspaceRoot, "events"));
     expect(workspace.agentsDir).toBe(join(fixture.workspaceRoot, "agents"));
     expect(workspace.reservedNames).toBe(RESERVED_WORKSPACE_NAMES);
   });

@@ -128,12 +128,9 @@ async function runEventAction(
     throw new Error("Cross-office event access is not authorized");
   }
   if (action === "list") return listEvents(eventStore, context);
-  if (action === "read" || action === "update" || action === "delete") {
+  if (action === "read") {
     const event = await eventStore.read(requireFilename(params));
-    if (!isOwnEvent(event.payload, context)) {
-      throw new Error("Event is not owned by the current office");
-    }
-    if (action === "read") return textResult(JSON.stringify(event, null, 2));
+    return textResult(JSON.stringify(event, null, 2));
   }
   if (action === "delete") {
     const filename = requireFilename(params);
@@ -147,8 +144,8 @@ async function listEvents(
   eventStore: EventStore,
   context: EventToolContext,
 ): Promise<EventToolResult> {
-  const listed = await eventStore.list();
-  const events = listed.filter((event) => isOwnEvent(event.payload, context));
+  // The store is confined to the current office; nothing else is reachable.
+  const events = await eventStore.list();
   return textResult(
     JSON.stringify(
       { scope: "conversation", conversationId: context.conversationId, events },
@@ -158,15 +155,6 @@ async function listEvents(
   );
 }
 
-/**
- * An event belongs to this conversation when the raw id matches on the same
- * platform. Missing platform identity is ambiguous and does not confer ownership.
- */
-function isOwnEvent(payload: EventPayload | null, context: EventToolContext): boolean {
-  if (payload?.conversationId !== context.conversationId) return false;
-  return payload.platform === context.platform;
-}
-
 async function writeEvent(
   eventStore: EventStore,
   action: "create" | "update",
@@ -174,6 +162,12 @@ async function writeEvent(
   context: EventToolContext,
 ): Promise<EventToolResult> {
   const payload = buildToolEventPayload(params, context);
+  if (
+    eventStore.address.platform !== context.platform ||
+    eventStore.address.conversationId !== context.conversationId
+  ) {
+    throw new Error("Event context does not match the current office");
+  }
   const filename =
     action === "update"
       ? requireFilename(params)
@@ -188,7 +182,7 @@ async function writeEvent(
     const result =
       action === "update"
         ? await eventStore.update(filename, payload)
-        : await eventStore.write(filename, payload);
+        : await eventStore.create(filename, payload);
     log.logInfo(
       `${verbs.past} event file via control plane store: ${result.path} (${result.size} bytes)`,
     );

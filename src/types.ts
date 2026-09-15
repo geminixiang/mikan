@@ -5,6 +5,7 @@ import type { SubagentRunStatus } from "./harness/types.js";
 import type { SessionViewTokenStoreLike } from "./adapters/commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
+import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
 import type { SandboxConfig } from "./sandbox/types.js";
@@ -612,6 +613,8 @@ export interface CreateRunnerOptions {
   platformWorkspaceId?: string;
   /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
+  /** Scheduler notified by the office event store after each admitted mutation. */
+  eventScheduler?: EventScheduleSink;
   sessionScope: ResolvedSessionScope;
   /** Cancels construction during process shutdown; acquired resources still roll back before rejection. */
   signal?: AbortSignal;

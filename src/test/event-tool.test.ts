@@ -1,44 +1,72 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { HostEventStore } from "../events/index.js";
-import type { EventPayload } from "../events/index.js";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { OfficeEventStore, officeEventsDir } from "../events/index.js";
+import type { EventPayload, EventStore } from "../events/index.js";
 import { createEventTool } from "../harness/tools/event.js";
+import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 
-function createWorkspaceEventTool(workspaceDir: string) {
-  return createEventTool(HostEventStore.fromWorkspaceDir(workspaceDir));
+let dir: string;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "mikan-event-tool-test-"));
+  mkdirSync(join(dir, "workspace"));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function office(platform: "slack" | "discord" = "slack", conversationId = "C123"): Office {
+  const value = createWorkspace({
+    root: join(dir, "workspace"),
+    stateDir: join(dir, "state"),
+  }).office(createOfficeAddress(platform, conversationId));
+  value.ensure();
+  return value;
+}
+
+const context = {
+  platform: "slack",
+  conversationId: "C123",
+  conversationKind: "shared" as const,
+  userId: "U123",
+};
+
+function officeTool(own: Office = office()) {
+  const created = createEventTool(new OfficeEventStore(own));
+  created.setEventContext(context);
+  return { ...created, own };
+}
+
+function fakeStore(overrides: Partial<EventStore>): EventStore {
+  return {
+    address: createOfficeAddress("slack", "C123"),
+    async create() {
+      throw new Error("not implemented");
+    },
+    async list() {
+      return [];
+    },
+    async read() {
+      throw new Error("not implemented");
+    },
+    async update() {
+      throw new Error("not implemented");
+    },
+    async delete() {
+      return { deleted: true };
+    },
+    ...overrides,
+  };
 }
 
 describe("createEventTool", () => {
-  const tempDirs: string[] = [];
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-    for (const dir of tempDirs.splice(0)) {
-      if (existsSync(dir)) {
-        rmSync(dir, { recursive: true, force: true });
-      }
-    }
-  });
-
-  function makeWorkspace(): string {
-    const dir = mkdtempSync(join(tmpdir(), "mikan-event-tool-test-"));
-    tempDirs.push(dir);
-    return dir;
-  }
-
-  test("writes top-level Slack event payload without threadTs", async () => {
+  test("writes a top-level Slack event into the office's host-only events dir", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000000);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
+    const { tool, own } = officeTool();
 
     const result = await tool.execute("call-1", {
       label: "deploy",
@@ -47,10 +75,9 @@ describe("createEventTool", () => {
       filenamePrefix: " Deploy / Prod ",
     });
 
-    const eventsDir = join(workspaceDir, "events");
-    const files = readdirSync(eventsDir);
+    const files = readdirSync(officeEventsDir(own));
     expect(files).toEqual(["deploy-prod-1700000000000.json"]);
-    expect(JSON.parse(readFileSync(join(eventsDir, files[0]), "utf-8"))).toEqual({
+    expect(JSON.parse(readFileSync(join(officeEventsDir(own), files[0]!), "utf-8"))).toEqual({
       type: "immediate",
       platform: "slack",
       conversationId: "C123",
@@ -58,46 +85,26 @@ describe("createEventTool", () => {
       userId: "U123",
       text: "Check deployment status",
     });
-    expect(result.content[0]?.type).toBe("text");
+    expect(existsSync(join(dir, "workspace", "events"))).toBe(false);
     expect(result.content[0]?.text).toContain(
       "Queued immediate event deploy-prod-1700000000000.json",
     );
   });
 
-  test("writes through the injected control-plane event store", async () => {
+  test("creates through the injected store", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000002);
     const writes: Array<{ filename: string; payload: EventPayload }> = [];
-    const { tool, setEventContext } = createEventTool({
-      async write(filename, payload) {
-        writes.push({ filename, payload });
-        return { path: `/control/events/${filename}`, size: 123 };
-      },
-      async list() {
-        return [];
-      },
-      async read() {
-        throw new Error("not implemented");
-      },
-      async update() {
-        throw new Error("not implemented");
-      },
-      async delete() {
-        return { deleted: true };
-      },
-    });
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
+    const { tool, setEventContext } = createEventTool(
+      fakeStore({
+        async create(filename, payload) {
+          writes.push({ filename, payload });
+          return { path: `/state/events/${filename}`, size: 123 };
+        },
+      }),
+    );
+    setEventContext(context);
 
-    await tool.execute("call-1", {
-      label: "deploy",
-      type: "immediate",
-      text: "Check deployment status",
-      filenamePrefix: "deploy",
-    });
+    await tool.execute("call-1", { type: "immediate", text: "Check", filenamePrefix: "deploy" });
 
     expect(writes).toEqual([
       {
@@ -108,139 +115,51 @@ describe("createEventTool", () => {
           conversationId: "C123",
           conversationKind: "shared",
           userId: "U123",
-          text: "Check deployment status",
+          text: "Check",
         },
       },
     ]);
   });
 
-  test("surfaces control-plane event store write failures", async () => {
-    const { tool, setEventContext } = createEventTool({
-      async write() {
-        throw new Error("control plane unavailable");
-      },
-      async list() {
-        return [];
-      },
-      async read() {
-        throw new Error("not implemented");
-      },
-      async update() {
-        throw new Error("not implemented");
-      },
-      async delete() {
-        return { deleted: true };
-      },
-    });
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    await expect(
-      tool.execute("call-1", {
-        label: "deploy",
-        type: "immediate",
-        text: "Check deployment status",
+  test("surfaces store write failures", async () => {
+    const { tool, setEventContext } = createEventTool(
+      fakeStore({
+        async create() {
+          throw new Error("control plane unavailable");
+        },
       }),
-    ).rejects.toThrow("control plane unavailable");
+    );
+    setEventContext(context);
+    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
+      "control plane unavailable",
+    );
   });
 
-  test("lists own events but refuses global enumeration", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000003);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
+  test("refuses a context that does not match the store's office", async () => {
+    const { tool, setEventContext } = createEventTool(new OfficeEventStore(office()));
+    setEventContext({ ...context, conversationId: "C999" });
+    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
+      "Event context does not match the current office",
+    );
+    await expect(tool.execute("call-2", { action: "list" })).resolves.toBeTruthy();
+  });
 
-    await tool.execute("call-1", {
+  test("rejects scope=all even when injected directly", async () => {
+    const { tool } = officeTool();
+    await expect(
+      tool.execute("call-1", JSON.parse('{"action":"list","scope":"all"}')),
+    ).rejects.toThrow("Cross-office event access is not authorized");
+  });
+
+  test("another office's events are unreachable by filename", async () => {
+    const other = office("slack", "C999");
+    await new OfficeEventStore(other).create("foreign.json", {
       type: "immediate",
-      text: "Visible in this conversation",
-      filenamePrefix: "visible",
-    });
-
-    setEventContext({
       platform: "slack",
       conversationId: "C999",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-    await tool.execute("call-2", {
-      type: "immediate",
-      text: "Visible only globally",
-      filenamePrefix: "global",
-    });
-
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-    const scopedResult = await tool.execute("call-3", { action: "list" });
-    expect(scopedResult.content[0]?.text).toContain("visible-1700000000003.json");
-    expect(scopedResult.content[0]?.text).not.toContain("Visible only globally");
-
-    await expect(
-      tool.execute("call-4", JSON.parse('{"action":"list","scope":"all"}')),
-    ).rejects.toThrow("Cross-office event access is not authorized");
-  });
-
-  test("conversation scope excludes another platform's identically named office", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000003);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "discord",
-      conversationId: "900100",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-    await tool.execute("call-1", {
-      type: "immediate",
-      text: "Discord office schedule",
-      filenamePrefix: "discord-office",
-    });
-
-    setEventContext({
-      platform: "telegram",
-      conversationId: "900100",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-    const scoped = await tool.execute("call-2", { action: "list" });
-    expect(scoped.content[0]?.text).not.toContain("Discord office schedule");
-
-    await expect(
-      tool.execute("call-3", JSON.parse('{"action":"list","scope":"all"}')),
-    ).rejects.toThrow("Cross-office event access is not authorized");
-  });
-
-  test.each([
-    { platform: "slack", conversationId: "C999" },
-    { platform: "discord", conversationId: "C123" },
-    { conversationId: "C123" },
-  ])("denies foreign or ambiguous event ownership: %j", async (owner) => {
-    const workspaceDir = makeWorkspace();
-    const store = HostEventStore.fromWorkspaceDir(workspaceDir);
-    await store.write("foreign.json", {
-      type: "immediate",
       text: "PRIVATE_FIXTURE",
-      ...owner,
     });
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
+    const { tool } = officeTool(office("slack", "C123"));
 
     for (const action of ["read", "update", "delete"] as const) {
       await expect(
@@ -250,24 +169,18 @@ describe("createEventTool", () => {
           type: "immediate",
           text: "REPLACEMENT_FIXTURE",
         }),
-      ).rejects.toThrow("Event is not owned by the current office");
-      expect((await store.read("foreign.json")).payload.text).toBe("PRIVATE_FIXTURE");
+      ).rejects.toThrow(/not found in the current office/);
     }
+    expect((await new OfficeEventStore(other).read("foreign.json")).payload.text).toBe(
+      "PRIVATE_FIXTURE",
+    );
     const listed = await tool.execute("list", { action: "list" });
     expect(listed.content[0]?.text).not.toContain("foreign.json");
   });
 
   test("supports list, read, update, and delete", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000003);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
+    const { tool, own } = officeTool();
     await tool.execute("call-1", {
       type: "immediate",
       text: "Check deployment status",
@@ -291,261 +204,127 @@ describe("createEventTool", () => {
       schedule: "0 9 * * *",
       timezone: "Asia/Taipei",
     });
-    const updated = JSON.parse(
-      readFileSync(join(workspaceDir, "events", "deploy-1700000000003.json"), "utf-8"),
-    );
-    expect(updated).toMatchObject({
+    const path = join(officeEventsDir(own), "deploy-1700000000003.json");
+    expect(JSON.parse(readFileSync(path, "utf-8"))).toMatchObject({
       type: "periodic",
       text: "Check deployment status daily",
       schedule: "0 9 * * *",
       timezone: "Asia/Taipei",
     });
 
-    await tool.execute("call-5", {
-      action: "delete",
-      filename: "deploy-1700000000003.json",
-    });
-    expect(existsSync(join(workspaceDir, "events", "deploy-1700000000003.json"))).toBe(false);
+    await tool.execute("call-5", { action: "delete", filename: "deploy-1700000000003.json" });
+    expect(existsSync(path)).toBe(false);
   });
 
   test("requires event context before execution", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool } = createWorkspaceEventTool(workspaceDir);
-
-    await expect(
-      tool.execute("call-1", {
-        label: "deploy",
-        type: "immediate",
-        text: "Check deployment status",
-      }),
-    ).rejects.toThrow("Event context not configured");
-  });
-
-  test("one-shot event strips thread state even when set in context", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000200);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    await tool.execute("call-1", {
-      label: "dentist",
-      type: "one-shot",
-      text: "Dentist tomorrow",
-      at: "2025-12-15T09:00:00+01:00",
-    });
-
-    const eventsDir = join(workspaceDir, "events");
-    const files = readdirSync(eventsDir);
-    expect(JSON.parse(readFileSync(join(eventsDir, files[0]), "utf-8"))).toEqual({
-      type: "one-shot",
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-      text: "Dentist tomorrow",
-      at: "2025-12-15T09:00:00+01:00",
-    });
-  });
-
-  test("rejects traversal and non-json filenames for read, update, and delete", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    await expect(
-      tool.execute("call-1", { action: "read", filename: "../outside.json" }),
-    ).rejects.toThrow("Invalid event filename");
-    await expect(
-      tool.execute("call-2", { action: "delete", filename: "sub/dir.json" }),
-    ).rejects.toThrow("Invalid event filename");
-    await expect(
-      tool.execute("call-3", {
-        action: "update",
-        filename: "note.txt",
-        type: "immediate",
-        text: "x",
-      }),
-    ).rejects.toThrow("Invalid event filename");
-    await expect(tool.execute("call-4", { action: "read" })).rejects.toThrow(
-      "`filename` is required",
+    const { tool } = createEventTool(new OfficeEventStore(office()));
+    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
+      "Event context not configured",
     );
   });
 
-  test("update refuses to create a new event file", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
+  test("one-shot event carries no thread state", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1700000000200);
+    const { tool, own } = officeTool();
+    await tool.execute("call-1", {
+      type: "one-shot",
+      text: "Follow up",
+      at: "2099-01-01T09:00:00+08:00",
+      filenamePrefix: "followup",
+    });
+    const payload = JSON.parse(
+      readFileSync(join(officeEventsDir(own), "followup-1700000000200.json"), "utf-8"),
+    );
+    expect(payload).toEqual({
+      type: "one-shot",
       platform: "slack",
       conversationId: "C123",
       conversationKind: "shared",
       userId: "U123",
+      text: "Follow up",
+      at: "2099-01-01T09:00:00+08:00",
     });
+    expect(payload).not.toHaveProperty("threadTs");
+    expect(payload).not.toHaveProperty("sessionKey");
+  });
 
+  test.each(["../escape.json", "nested/file.json", "plain.txt", "  "])(
+    "rejects unsafe filename %j for read, update, and delete",
+    async (filename) => {
+      const { tool } = officeTool();
+      for (const action of ["read", "update", "delete"] as const) {
+        await expect(
+          tool.execute("call", { action, filename, type: "immediate", text: "x" }),
+        ).rejects.toThrow(/Invalid event filename|`filename` is required/);
+      }
+    },
+  );
+
+  test("update refuses to create a new event file", async () => {
+    const { tool, own } = officeTool();
     await expect(
       tool.execute("call-1", {
         action: "update",
-        filename: "missing-1.json",
+        filename: "missing.json",
         type: "immediate",
-        text: "Check deployment status",
+        text: "x",
       }),
-    ).rejects.toThrow();
-    expect(existsSync(join(workspaceDir, "events", "missing-1.json"))).toBe(false);
-  });
-
-  test("does not expose unattributable event files through global enumeration", async () => {
-    const workspaceDir = makeWorkspace();
-    mkdirSync(join(workspaceDir, "events"), { recursive: true });
-    writeFileSync(join(workspaceDir, "events", "corrupt-1.json"), "{not json");
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    // Unattributable records require host administration, not an agent override.
-    const scoped = await tool.execute("call-1", { action: "list" });
-    expect(scoped.content[0]?.text).not.toContain("corrupt-1.json");
-
-    await expect(
-      tool.execute("call-2", JSON.parse('{"action":"list","scope":"all"}')),
-    ).rejects.toThrow("Cross-office event access is not authorized");
+    ).rejects.toThrow(/not found in the current office/);
+    expect(existsSync(join(officeEventsDir(own), "missing.json"))).toBe(false);
   });
 
   test("one-shot events require at", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "C123",
-      conversationKind: "shared",
-      userId: "U123",
-    });
-
-    await expect(
-      tool.execute("call-1", {
-        label: "dentist",
-        type: "one-shot",
-        text: "Reminder",
-      }),
-    ).rejects.toThrow("`at` is required for one-shot events");
+    const { tool } = officeTool();
+    await expect(tool.execute("call-1", { type: "one-shot", text: "x" })).rejects.toThrow(
+      "`at` is required for one-shot events",
+    );
   });
 
   test("one-shot events reject invalid timestamps", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "D123",
-      conversationKind: "direct",
-      userId: "U123",
-    });
-
+    const { tool } = officeTool();
     await expect(
-      tool.execute("call-1", {
-        label: "reminder",
-        type: "one-shot",
-        text: "Open x.com",
-        at: "not-a-timestamp",
-      }),
+      tool.execute("call-1", { type: "one-shot", text: "x", at: "2099-13-01T00:00:00Z" }),
     ).rejects.toThrow("`at` must be a valid ISO 8601 timestamp with UTC offset");
   });
 
   test("one-shot events reject past timestamps", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-05-14T11:00:50.000Z"));
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "slack",
-      conversationId: "D123",
-      conversationKind: "direct",
-      userId: "U123",
-    });
-
+    const { tool } = officeTool();
     await expect(
-      tool.execute("call-1", {
-        label: "reminder",
-        type: "one-shot",
-        text: "Open x.com",
-        at: "2026-05-14T11:01:10+08:00",
-      }),
-    ).rejects.toThrow(/`at` must be in the future/);
+      tool.execute("call-1", { type: "one-shot", text: "x", at: "2000-01-01T00:00:00Z" }),
+    ).rejects.toThrow("`at` must be in the future");
   });
 
   test("periodic events require schedule and timezone", async () => {
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "discord",
-      conversationId: "D123",
-      conversationKind: "direct",
-      userId: "U456",
-    });
-
+    const { tool } = officeTool();
+    await expect(tool.execute("call-1", { type: "periodic", text: "x" })).rejects.toThrow(
+      "`schedule` is required for periodic events",
+    );
     await expect(
-      tool.execute("call-1", {
-        label: "inbox",
-        type: "periodic",
-        text: "Check inbox",
-        timezone: "Asia/Taipei",
-      }),
-    ).rejects.toThrow("`schedule` is required for periodic events");
-
-    await expect(
-      tool.execute("call-2", {
-        label: "inbox",
-        type: "periodic",
-        text: "Check inbox",
-        schedule: "0 9 * * 1-5",
-      }),
+      tool.execute("call-2", { type: "periodic", text: "x", schedule: "0 9 * * *" }),
     ).rejects.toThrow("`timezone` is required for periodic events");
   });
 
   test("writes periodic event payload with context", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1700000000100);
-    const workspaceDir = makeWorkspace();
-    const { tool, setEventContext } = createWorkspaceEventTool(workspaceDir);
-    setEventContext({
-      platform: "telegram",
-      conversationId: "999",
-      conversationKind: "direct",
-      userId: "U789",
-    });
-
-    const result = await tool.execute("call-1", {
-      label: "inbox",
+    vi.spyOn(Date, "now").mockReturnValue(1700000000300);
+    const { tool, own } = officeTool();
+    await tool.execute("call-1", {
       type: "periodic",
-      text: "Check inbox",
+      text: "Daily standup",
+      schedule: "0 9 * * 1-5",
+      timezone: "Asia/Taipei",
+      filenamePrefix: "standup",
+    });
+    expect(
+      JSON.parse(readFileSync(join(officeEventsDir(own), "standup-1700000000300.json"), "utf-8")),
+    ).toEqual({
+      type: "periodic",
+      platform: "slack",
+      conversationId: "C123",
+      conversationKind: "shared",
+      userId: "U123",
+      text: "Daily standup",
       schedule: "0 9 * * 1-5",
       timezone: "Asia/Taipei",
     });
-
-    const eventsDir = join(workspaceDir, "events");
-    const files = readdirSync(eventsDir);
-    expect(files).toEqual(["periodic-1700000000100.json"]);
-    expect(JSON.parse(readFileSync(join(eventsDir, files[0]), "utf-8"))).toEqual({
-      type: "periodic",
-      platform: "telegram",
-      conversationId: "999",
-      conversationKind: "direct",
-      userId: "U789",
-      text: "Check inbox",
-      schedule: "0 9 * * 1-5",
-      timezone: "Asia/Taipei",
-    });
-    expect(result.content[0]?.text).toContain(
-      "Scheduled periodic event periodic-1700000000100.json",
-    );
   });
 });

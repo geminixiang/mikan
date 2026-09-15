@@ -1,4 +1,5 @@
 import type { McpServerConfig } from "../harness/types.js";
+import type { EventScheduleSink } from "../events/index.js";
 import type { PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,
@@ -83,6 +84,8 @@ export interface ConversationRuntimeOptions extends Omit<
   models?: MikanModels;
   /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
+  /** Scheduler that office event stores notify; resolved lazily because it starts after the bots. */
+  eventScheduler?: () => EventScheduleSink | undefined;
   /**
    * Optional platform capability packs (extra tools + per-run bind), as
    * factories — each runner instantiates its own pack because bind state is

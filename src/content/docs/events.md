@@ -1,19 +1,19 @@
 ---
 title: Events
-description: Event formats and processing flow for triggering the agent through the workspace events directory.
+description: Event formats and processing flow for scheduled agent runs managed through the event tool.
 ---
 
 ## Where events live
 
-Event files live in `<workspace>/events/`, at the workspace root rather than inside any office directory. The scheduling bus is deliberately workspace-wide: one directory the watcher polls, shared by every conversation. It is also agent-writable, so ownership by `conversationId` is a cooperative convention, not an authorization boundary — do not put secrets in event text.
+Event records live host-side under `<state-dir>/conversations/<office-key>/events/`, never inside the workspace or any sandbox mount. Agents manage them only through the `event` tool, and the tool only reaches the current office's records: another office's filename reads as "not found", `scope=all` is rejected, and `create` never overwrites an existing file. Deleting a record cancels its timer or cron immediately. Cross-office scheduling is not available through the tool; it requires explicit grants defined in the Office policy.
 
-The agent's `event` tool only lists, reads, updates, and deletes events whose `conversationId` **and** `platform` exactly match the running office. Records without `platform` require host-side administration; `scope=all` is rejected. This tool restriction does not yet isolate the shared event directory or authorize filesystem-triggered work; see the Office policy before relying on it as a security boundary.
+Deployments upgrading from the workspace `events/` bus should stop the daemon and run `mikan office migrate-events`; records without an explicit `platform` matching a registered office are reported and left in place.
 
 ## Event types
 
 ### Immediate
 
-The harness triggers as soon as it sees the file. This is useful for signals from external scripts or webhooks.
+Runs as soon as the record is created — a hand-off the agent schedules for itself at the end of a turn, for example.
 
 ```json
 {
@@ -110,7 +110,3 @@ The agent's `event` tool fills routing fields automatically. Use it instead of h
 ## Silent responses
 
 For periodic events that have nothing to report, respond exactly with `[SILENT]`. The harness deletes the status message and does not post to the platform, avoiding channel spam.
-
-## Debouncing
-
-When writing scripts that send immediate events, such as email watchers or webhook handlers, debounce them. Collect events inside a time window and send one summary event instead of one event per item.

@@ -1,21 +1,38 @@
+import type { OfficeAddress, OfficeKey } from "../types.js";
+
 export type EventPayload = EventFilePayload;
 
+export interface EventRecord {
+  filename: string;
+  payload: EventFilePayload;
+  size: number;
+  mtimeMs: number;
+}
+
+/**
+ * One office's admitted scheduled work. Every method is confined to that
+ * office: filenames of other offices read as "not found", and payloads must
+ * address the store's own office.
+ */
 export interface EventStore {
-  write(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
+  readonly address: OfficeAddress;
+  /** Create a new record; an existing filename is an error, never overwritten. */
+  create(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
   /**
-   * List all event files. Entries whose JSON cannot be parsed or fail format
-   * validation are kept with a `null` payload so consumers (e.g. the admin
-   * portal) can still surface and delete them; files that disappear
-   * mid-listing are skipped.
+   * List this office's records. Entries whose JSON cannot be parsed or fail
+   * format validation are kept with a `null` payload so operators can still
+   * surface and delete them; files that disappear mid-listing are skipped.
    */
-  list(): Promise<
-    Array<{ filename: string; payload: EventFilePayload | null; size: number; mtimeMs: number }>
-  >;
-  read(
-    filename: string,
-  ): Promise<{ filename: string; payload: EventFilePayload; size: number; mtimeMs: number }>;
+  list(): Promise<Array<Omit<EventRecord, "payload"> & { payload: EventFilePayload | null }>>;
+  read(filename: string): Promise<EventRecord>;
   update(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
   delete(filename: string): Promise<{ deleted: boolean }>;
+}
+
+/** Scheduler hooks the store calls after each admitted mutation. */
+export interface EventScheduleSink {
+  scheduleRecord(address: OfficeAddress, record: EventRecord): void;
+  cancelRecord(address: OfficeAddress, filename: string): void;
 }
 
 export type EventConversationKind = "direct" | "shared";
@@ -72,10 +89,10 @@ interface ResolvedEventFields {
   conversationKind: EventConversationKind;
 }
 
-export type ImmediateEvent = ImmediateEventPayload & ResolvedEventFields;
-export type OneShotEvent = OneShotEventPayload & ResolvedEventFields;
-export type PeriodicEvent = PeriodicEventPayload & ResolvedEventFields;
-export type MikanEvent = ImmediateEvent | OneShotEvent | PeriodicEvent;
+export type MikanEvent =
+  | (ImmediateEventPayload & ResolvedEventFields)
+  | (OneShotEventPayload & ResolvedEventFields)
+  | (PeriodicEventPayload & ResolvedEventFields);
 
 export interface PeriodicEventInfo {
   filename: string;
@@ -289,25 +306,42 @@ export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
   }
 }
 
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
+import type { Office, Workspace } from "../office/index.js";
+import { createOfficeAddress, listRegisteredOffices, officeKey } from "../office/index.js";
 
-export class HostEventStore implements EventStore {
-  constructor(private readonly eventsDir: string) {}
+/** Host-only per-office events directory: `<office state dir>/events`. */
+export function officeEventsDir(office: Office): string {
+  return join(office.stateDir, "events");
+}
 
-  static fromWorkspaceDir(workspaceDir: string): HostEventStore {
-    return new HostEventStore(join(workspaceDir, "events"));
+export class OfficeEventStore implements EventStore {
+  readonly address: OfficeAddress;
+  private readonly eventsDir: string;
+
+  constructor(
+    private readonly office: Office,
+    private readonly scheduler?: EventScheduleSink,
+  ) {
+    this.address = office.address;
+    this.eventsDir = officeEventsDir(office);
   }
 
-  async write(filename: string, payload: EventPayload): Promise<{ path: string; size: number }> {
-    return this.writePayload(filename, payload);
+  async create(filename: string, payload: EventPayload): Promise<{ path: string; size: number }> {
+    const safeFilename = validateEventFilename(filename);
+    this.assertOwnPayload(payload);
+    const filePath = join(this.eventsDir, safeFilename);
+    if (existsSync(filePath)) {
+      throw new Error(`Event ${safeFilename} already exists`);
+    }
+    return this.writeRecord(safeFilename, payload);
   }
 
-  async list(): Promise<
-    Array<{ filename: string; payload: EventPayload | null; size: number; mtimeMs: number }>
-  > {
-    await mkdir(this.eventsDir, { recursive: true });
+  async list(): Promise<Array<Omit<EventRecord, "payload"> & { payload: EventPayload | null }>> {
+    if (!existsSync(this.eventsDir)) return [];
     const entries = await readdir(this.eventsDir, { withFileTypes: true });
     const events = await Promise.all(
       entries
@@ -316,8 +350,6 @@ export class HostEventStore implements EventStore {
           try {
             return await this.read(entry.name);
           } catch {
-            // Keep unparseable files visible (payload: null) so consumers can
-            // surface and delete them; skip files that vanished mid-listing.
             try {
               const fileStat = await stat(join(this.eventsDir, entry.name));
               return {
@@ -337,47 +369,132 @@ export class HostEventStore implements EventStore {
       .toSorted((a, b) => a.filename.localeCompare(b.filename));
   }
 
-  async read(
-    filename: string,
-  ): Promise<{ filename: string; payload: EventPayload; size: number; mtimeMs: number }> {
+  async read(filename: string): Promise<EventRecord> {
     const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
+    if (!existsSync(filePath)) {
+      throw new Error(`Event ${safeFilename} not found in the current office`);
+    }
     const [raw, fileStat] = await Promise.all([readFile(filePath, "utf-8"), stat(filePath)]);
-    // Validation (shape, per-type fields, channelId alias) is owned by the
-    // scheduled-event parser above; files that fail it surface as payload:null in
-    // list() and as errors here.
-    const payload = parseEventPayload(raw, safeFilename);
     return {
       filename: safeFilename,
-      payload,
+      payload: parseEventPayload(raw, safeFilename),
       size: fileStat.size,
       mtimeMs: fileStat.mtimeMs,
     };
   }
 
   async update(filename: string, payload: EventPayload): Promise<{ path: string; size: number }> {
-    return this.writePayload(filename, payload, true);
+    const safeFilename = validateEventFilename(filename);
+    this.assertOwnPayload(payload);
+    if (!existsSync(join(this.eventsDir, safeFilename))) {
+      throw new Error(`Event ${safeFilename} not found in the current office`);
+    }
+    return this.writeRecord(safeFilename, payload);
   }
 
   async delete(filename: string): Promise<{ deleted: boolean }> {
     const safeFilename = validateEventFilename(filename);
-    await rm(join(this.eventsDir, safeFilename), { force: true });
+    const filePath = join(this.eventsDir, safeFilename);
+    if (!existsSync(filePath)) {
+      throw new Error(`Event ${safeFilename} not found in the current office`);
+    }
+    // Cancel before removing so no timer can fire for a record being deleted.
+    this.scheduler?.cancelRecord(this.address, safeFilename);
+    await rm(filePath, { force: true });
     return { deleted: true };
   }
 
-  private async writePayload(
-    filename: string,
+  private assertOwnPayload(payload: EventPayload): void {
+    if (
+      payload.platform !== this.address.platform ||
+      payload.conversationId !== this.address.conversationId
+    ) {
+      throw new Error("Event payload must address the current office");
+    }
+  }
+
+  private async writeRecord(
+    safeFilename: string,
     payload: EventPayload,
-    requireExisting = false,
   ): Promise<{ path: string; size: number }> {
     await mkdir(this.eventsDir, { recursive: true });
-    const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
-    if (requireExisting) {
-      await stat(filePath);
-    }
     atomicWritePrivateFile(filePath, JSON.stringify(payload) + "\n");
     const fileStat = await stat(filePath);
+    this.scheduler?.scheduleRecord(this.address, {
+      filename: safeFilename,
+      payload,
+      size: fileStat.size,
+      mtimeMs: fileStat.mtimeMs,
+    });
     return { path: filePath, size: fileStat.size };
   }
+}
+
+export interface LegacyEventMigrationReport {
+  migrated: { filename: string; key: OfficeKey }[];
+  skipped: { filename: string; reason: string }[];
+}
+
+/**
+ * One-time move of legacy `<workspace>/events/*.json` records into the owning
+ * office's host-only state. Only records with an explicit platform matching a
+ * registered office move; everything else stays for an operator to inspect.
+ * Run with the daemon stopped.
+ */
+export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventMigrationReport {
+  const report: LegacyEventMigrationReport = { migrated: [], skipped: [] };
+  const legacyDir = join(workspace.root, "events");
+  if (!existsSync(legacyDir)) return report;
+  const registered = new Set(
+    listRegisteredOffices(workspace.stateDir).map((record) => officeKey(record)),
+  );
+  for (const filename of readdirSync(legacyDir).filter((name) => name.endsWith(".json"))) {
+    const source = join(legacyDir, filename);
+    if (!statSync(source).isFile()) continue;
+    let payload: EventFilePayload;
+    try {
+      payload = parseEventPayload(readFileSync(source, "utf-8"), filename);
+    } catch (error) {
+      report.skipped.push({
+        filename,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    if (!payload.platform) {
+      report.skipped.push({ filename, reason: "no platform; owner cannot be attributed" });
+      continue;
+    }
+    let address: OfficeAddress;
+    try {
+      address = createOfficeAddress(
+        payload.platform as OfficeAddress["platform"],
+        payload.conversationId,
+      );
+    } catch (error) {
+      report.skipped.push({
+        filename,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
+    const key = officeKey(address);
+    if (!registered.has(key)) {
+      report.skipped.push({ filename, reason: `office ${key} is not registered` });
+      continue;
+    }
+    const office = workspace.office(address);
+    const targetDir = officeEventsDir(office);
+    mkdirSync(targetDir, { recursive: true });
+    const target = join(targetDir, filename);
+    if (existsSync(target)) {
+      report.skipped.push({ filename, reason: `already exists in ${key}` });
+      continue;
+    }
+    renameSync(source, target);
+    report.migrated.push({ filename, key });
+  }
+  return report;
 }

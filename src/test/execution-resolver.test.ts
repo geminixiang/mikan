@@ -168,7 +168,7 @@ describe("ActorExecutionResolver", () => {
         displayName: "key",
         dir: stateDir,
         env: {},
-        mounts: [{ source, target: "/workspace/skills/../events/secret" }],
+        mounts: [{ source, target: "/workspace/MEMORY.md/../skills/secret" }],
       }),
     } as unknown as FileVaultManager;
     const resolver = new ActorExecutionResolver(

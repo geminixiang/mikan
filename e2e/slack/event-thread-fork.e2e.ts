@@ -1,9 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   nowSeconds,
+  postLocallyDeliveredMessage,
   postMessage,
   sleep,
   summarizeMessage,
@@ -21,33 +20,26 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack event thread fork", () =
   it("event creates a top-level anchor whose thread continues the fork session", async () => {
     const eventToken = `QA_EVENT_FORK_${Date.now()}`;
     const followupToken = `QA_EVENT_THREAD_${Date.now()}`;
-    const filename = `slack-e2e-event-thread-fork-${eventToken}.json`;
-    const at = new Date(Date.now() + 5_000).toISOString();
     const startedAt = nowSeconds();
 
-    await mkdir(env.eventsDir, { recursive: true });
-    await writeFile(
-      join(env.eventsDir, filename),
-      JSON.stringify(
-        {
-          type: "one-shot",
-          platform: "slack",
-          conversationId: env.channel,
-          conversationKind: "shared",
-          text: `Event fork E2E. Reply with exactly this token: ${eventToken}`,
-          at,
-        },
-        null,
-        2,
-      ),
-    );
+    // Schedule through the agent's event tool: events are host-only office state.
+    const { ts: requestTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: env.channel,
+      workingDir: env.workingDir,
+      timeoutMs: env.timeoutMs,
+      pollMs: env.pollMs,
+      text: (marker) =>
+        `<@${botUserId}> 請用 event 工具排一個 10 秒後的 one-shot 提醒，提醒文字必須原樣包含 ${eventToken}。排好後只回覆「已排程」。(${marker})`,
+    });
 
     const eventReply = await waitForRecentBotReply({
       client,
       channel: env.channel,
       botUserId,
       startedAt,
-      timeoutMs: Math.max(env.timeoutMs, 60_000),
+      afterTs: requestTs,
+      timeoutMs: Math.max(env.timeoutMs, 90_000),
       pollMs: env.pollMs,
       textIncludes: eventToken,
     });

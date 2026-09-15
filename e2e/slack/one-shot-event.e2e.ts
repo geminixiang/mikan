@@ -1,8 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadContextOrSkip } from "./helpers/client.js";
-import { nowSeconds, summarizeMessage, waitForRecentBotReply } from "./helpers/slack.js";
+import {
+  nowSeconds,
+  postLocallyDeliveredMessage,
+  summarizeMessage,
+  waitForRecentBotReply,
+} from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
@@ -11,35 +14,29 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack one-shot event", () => {
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;
 
-  it("S-011 one-shot event triggers mikan reply with token", async () => {
+  it("S-011 one-shot event scheduled through the event tool triggers a reply with token", async () => {
     const token = `QA_EVENT_${Date.now()}`;
-    const filename = `slack-e2e-one-shot-${token}.json`;
-    const at = new Date(Date.now() + 5_000).toISOString();
     const startedAt = nowSeconds();
 
-    await mkdir(env.eventsDir, { recursive: true });
-    await writeFile(
-      join(env.eventsDir, filename),
-      JSON.stringify(
-        {
-          type: "one-shot",
-          platform: "slack",
-          conversationId: env.channel,
-          conversationKind: "shared",
-          text: `One-shot E2E reminder. 請在回覆中原樣包含 ${token}`,
-          at,
-        },
-        null,
-        2,
-      ),
-    );
+    // Events are host-only office state now; the agent's event tool is the only
+    // way a conversation schedules one, so the test asks for it like a user would.
+    const { ts: requestTs } = await postLocallyDeliveredMessage({
+      client,
+      channel: env.channel,
+      workingDir: env.workingDir,
+      timeoutMs: env.timeoutMs,
+      pollMs: env.pollMs,
+      text: (marker) =>
+        `<@${botUserId}> 請用 event 工具排一個 10 秒後的 one-shot 提醒，提醒文字必須原樣包含 ${token}。排好後只回覆「已排程」。(${marker})`,
+    });
 
     const reply = await waitForRecentBotReply({
       client,
       channel: env.channel,
       botUserId,
       startedAt,
-      timeoutMs: Math.max(env.timeoutMs, 45_000),
+      afterTs: requestTs,
+      timeoutMs: Math.max(env.timeoutMs, 90_000),
       pollMs: env.pollMs,
       textIncludes: token,
     });

@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                      | Detailed documentation                                                                                                                                                               |
-| ----------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake       | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
-| Orchestration           | Composition root, Conversation runtime       | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
-| Agent core              | Harness and generic agent tools              | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
-| Identity and data       | Office, Sessions, Dream, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md)                                     |
-| Execution and authority | Harness execution resolution, Sandbox, Vault | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
-| External/control edges  | Platform/Web adapters and Commands           | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
-| Scheduling              | Scheduled-event protocol, store, and watcher | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
-| Observability           | OpenTelemetry pipeline and Sentry adapter    | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
+| Group                   | Modules                                               | Detailed documentation                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
+| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
+| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
+| Identity and data       | Office, Sessions, Dream, Configuration                | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md)                                     |
+| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
+| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
+| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
+| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
 
 ## Main flows
 
@@ -159,20 +159,24 @@ For every provider call, prompt authorization and filesystem authorization consu
 
 ### Scheduled execution
 
-The workspace `events/` directory is an agent-writable, workspace-wide
-scheduling bus. `src/events/` owns its wire protocol, host store, filename
-validation, and watcher lifecycle. The agent-facing adapter remains with the
-other generic tools at `src/harness/tools/event.ts`; the Admin HTTP surface
-consumes the events-owned store from `src/adapters/web/`. A due file is
-converted into a normal conversation event, submitted through the target
-platform bot, and enters the regular runtime path. It therefore shares session
+Scheduled events are host-only per-office state under
+`<state-dir>/conversations/<office-key>/events/`. No sandbox layout mounts
+them: the agent's `event` tool (`src/harness/tools/event.ts`) and the Admin
+HTTP surface are the only writers, and both go through an office-confined
+`OfficeEventStore` from `src/events/`. The store never overwrites on create,
+answers "not found" for any other office's filename, and notifies the
+in-memory `EventScheduler` on every admitted mutation — so deleting a record
+cancels its timer or cron before the file is removed. There is no filesystem
+watcher; the scheduler loads every registered office's records once at start.
+A due record is converted into a normal conversation event, submitted through
+the target platform bot, and enters the regular runtime path, sharing session
 context, queueing, credentials, tools, stop behavior, and platform settlement
 with normal chat.
 
-An isolated office does not mount shared events and therefore cannot
-self-schedule. Trusted layouts may expose the bus. Cross-conversation
-scheduling is intentional and is not a file-isolation guarantee. Event text
-must never contain secrets.
+Cross-office scheduling is not available through the event tool; it requires
+the explicit actor-to-target grants defined in `docs/office-policy.md`, which
+are not implemented yet. Legacy `<workspace>/events/*.json` records are drained
+by `mikan office migrate-events`. Event text must never contain secrets.
 
 ### Dream maintenance
 
@@ -190,7 +194,6 @@ The Memory anchor is revisable orientation rather than final truth. Newer conver
 <workspace-root>/                         agent data world
 ├── MEMORY.md                             shared workspace memory
 ├── skills/                               shared workspace skills
-├── events/                               agent-writable scheduling bus
 ├── agents/                               shared subagent profiles
 └── <office-key>/                         one Conversation office
     ├── MEMORY.md
@@ -302,7 +305,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 **`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work plus Dream a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter/Dream promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
 
-Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/watcher.ts`, `src/runtime/conversation-runtime.ts`.
+Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/scheduler.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV runner materialization rollback
 

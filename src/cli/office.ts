@@ -4,6 +4,12 @@
  *   mikan office list [--state-dir <dir>] [--workspace <dir>]
  *   mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]
  *   mikan office migrate-openconnector [--state-dir <dir>] [--workspace <dir>]
+ *   mikan office migrate-events [--state-dir <dir>] [--workspace <dir>]
+ *
+ * `migrate-events` moves legacy `<workspace>/events/*.json` records into the
+ * owning office's host-only state (`conversations/<key>/events/`). Records
+ * without an attributable, registered owner stay put and are reported. Run it
+ * with the daemon stopped.
  *
  * `migrate-openconnector` converts legacy per-office
  * `open-connector-runtime-token.json` files into ordinary conversation
@@ -20,6 +26,8 @@ import { assertPlatformName, OfficeRegistry } from "../office/index.js";
 import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
 import { readEnv } from "../env-manifest.js";
 import { migrateLegacyOpenConnectorTokens } from "../harness/open-connector.js";
+import { migrateLegacyWorkspaceEvents } from "../events/index.js";
+import { createWorkspace } from "../office/index.js";
 
 export function runOfficeCommand(argv: string[]): number {
   const command = cliCommand("mikan office")
@@ -57,6 +65,17 @@ export function runOfficeCommand(argv: string[]): number {
         workspace ? resolve(workspace) : join(stateDir, "workspace"),
       );
     });
+  command
+    .command("migrate-events")
+    .description("Move legacy workspace event files into office state (stop the daemon first)")
+    .action(() => {
+      const stateDir = resolveStateDir(argv);
+      const { workspace } = command.opts<{ workspace?: string }>();
+      result = migrateEvents(
+        stateDir,
+        workspace ? resolve(workspace) : join(stateDir, "workspace"),
+      );
+    });
   try {
     command.parse(argv, { from: "user" });
     return result;
@@ -81,6 +100,19 @@ function listOffices(stateDir: string): number {
     }
   }
   return 0;
+}
+
+function migrateEvents(stateDir: string, workspaceRoot: string): number {
+  try {
+    const report = migrateLegacyWorkspaceEvents(createWorkspace({ root: workspaceRoot, stateDir }));
+    console.log(`Migrated ${report.migrated.length} event file(s) into office state.`);
+    for (const entry of report.migrated) console.log(`  ${entry.filename} -> ${entry.key}`);
+    for (const entry of report.skipped) console.log(`  skipped ${entry.filename}: ${entry.reason}`);
+    return 0;
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
 }
 
 function migrateOpenConnector(stateDir: string, workspaceRoot: string): number {

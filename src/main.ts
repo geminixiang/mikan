@@ -17,7 +17,7 @@ import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { DreamScheduler } from "./dream/index.js";
-import { EventsWatcher } from "./events/watcher.js";
+import { EventScheduler } from "./events/scheduler.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./process-lifecycle.js";
 import { startWebServer } from "./adapters/web/server.js";
@@ -359,7 +359,6 @@ const resourceController = sandbox.type === "image" ? provisioner : undefined;
 
 if (sandbox.type === "image") {
   ensureDirExists(workspace.skillsDir);
-  ensureDirExists(workspace.eventsDir);
   ensureDirExists(workspace.agentsDir);
   try {
     writeFileSync(workspace.memoryPath, "", { flag: "wx" });
@@ -464,8 +463,10 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   return factories;
 }
 
+let eventScheduler: EventScheduler | undefined;
 const handler = createConversationRuntime({
   workspace,
+  eventScheduler: () => eventScheduler,
   sandbox,
   vaultManager,
   provisioner,
@@ -603,7 +604,14 @@ const webServer = LINK_PORT
       },
       sessionViewTokenStore,
       sessionViewInteractive: { handler, botsByPlatform },
-      adminOptions: { adminTokenStore, workspace, runtime: handler, sandbox, botsByPlatform },
+      adminOptions: {
+        adminTokenStore,
+        workspace,
+        runtime: handler,
+        sandbox,
+        botsByPlatform,
+        eventScheduler: () => eventScheduler,
+      },
       githubWebhook:
         GITHUB_WEBHOOK_SECRET && githubBotForWebhook
           ? {
@@ -666,13 +674,13 @@ async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
   if (failures.length > 0) throw new AggregateError(failures, "Failed to drain conversation work");
 }
 
-// Start events watcher with explicit platform routing
-const eventsWatcher = new EventsWatcher(workspace.eventsDir, botsByPlatform);
+// Start the event scheduler; office event stores notify it through the runtime.
+eventScheduler = new EventScheduler(workspace, botsByPlatform);
 const slackMessagingBot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
 if (slackMessagingBot) {
-  slackMessagingBot.setEventsWatcher(eventsWatcher);
+  slackMessagingBot.setEventScheduler(eventScheduler);
 }
-eventsWatcher.start();
+eventScheduler.start();
 const dreamScheduler = new DreamScheduler(workspace, handler);
 dreamScheduler.start();
 
@@ -682,9 +690,9 @@ const shutdown = createProcessShutdownHandler({
     const intakeStop = stopConversationIntake();
     return runShutdownSteps([
       {
-        name: "event watcher",
+        name: "event scheduler",
         run: async () => {
-          eventsWatcher.stop();
+          eventScheduler?.stop();
         },
       },
       { name: "conversation work", run: () => drainConversationWork(intakeStop) },

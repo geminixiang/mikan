@@ -62,7 +62,6 @@ Object.assign(env, {
   TELEGRAM_BOT_TOKEN: "",
   SLACK_QA_BOT_USER_ID: botAuth.user_id,
   SLACK_QA_WORKING_DIR: join(base, "workspace"),
-  SLACK_QA_EVENTS_DIR: join(base, "workspace", "events"),
   SLACK_QA_TIMEOUT_MS: env.SLACK_QA_TIMEOUT_MS ?? "60000",
 });
 console.log(

@@ -2,13 +2,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { HostEventStore } from "../events/index.js";
+import { OfficeEventStore, officeEventsDir } from "../events/index.js";
 import {
-  listAllEvents,
+  listOfficeEvents,
   readSkillsFromDir,
   resolveConversationScope,
 } from "../adapters/web/admin/portal.js";
-import { createOfficeAddress } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { AdminToken } from "../adapters/web/admin/portal.js";
 
 const tempDirs: string[] = [];
@@ -27,11 +27,22 @@ function makeWorkspace(): string {
   return dir;
 }
 
+function eventOffice(conversationId: string) {
+  const root = makeWorkspace();
+  const office = createWorkspace({
+    root,
+    stateDir: join(root, "..", `${conversationId}-state`),
+  }).office(createOfficeAddress("slack", conversationId));
+  tempDirs.push(office.workspace.stateDir);
+  office.ensure();
+  return office;
+}
+
 describe("admin portal events listing", () => {
-  test("lists events through HostEventStore, sorted by filename", async () => {
-    const workspaceDir = makeWorkspace();
-    const store = HostEventStore.fromWorkspaceDir(workspaceDir);
-    await store.write("b-reminder.json", {
+  test("lists one office's events through its store, sorted by filename", async () => {
+    const office = eventOffice("C123");
+    const store = new OfficeEventStore(office);
+    await store.create("b-reminder.json", {
       type: "one-shot",
       platform: "slack",
       conversationId: "C123",
@@ -39,73 +50,46 @@ describe("admin portal events listing", () => {
       text: "ship it",
       at: "2099-01-01T00:00:00Z",
     });
-    await store.write("a-standup.json", {
+    await store.create("a-standup.json", {
       type: "periodic",
       platform: "slack",
-      conversationId: "C456",
+      conversationId: "C123",
       conversationKind: "shared",
       text: "standup",
       schedule: "0 9 * * 1-5",
       timezone: "Asia/Taipei",
     });
 
-    const events = await listAllEvents(store);
+    const events = await listOfficeEvents(store);
 
     expect(events.map((e) => e.name)).toEqual(["a-standup.json", "b-reminder.json"]);
     expect(events[1]).toMatchObject({
       name: "b-reminder.json",
+      officePlatform: "slack",
+      officeConversationId: "C123",
       type: "one-shot",
-      platform: "slack",
-      conversationId: "C123",
       text: "ship it",
       at: "2099-01-01T00:00:00Z",
       schedule: null,
-      timezone: null,
     });
-    expect(events[0]).toMatchObject({
-      type: "periodic",
-      conversationId: "C456",
-      schedule: "0 9 * * 1-5",
-      timezone: "Asia/Taipei",
-      at: null,
-    });
+    expect(events[0]).toMatchObject({ type: "periodic", schedule: "0 9 * * 1-5", at: null });
     expect(events[0].size).toBeGreaterThan(0);
     expect(events[0].mtimeMs).toBeGreaterThan(0);
   });
 
-  test("normalizes the legacy channelId alias through the store", async () => {
-    const workspaceDir = makeWorkspace();
-    const eventsDir = join(workspaceDir, "events");
-    mkdirSync(eventsDir, { recursive: true });
-    writeFileSync(
-      join(eventsDir, "legacy.json"),
-      JSON.stringify({
-        type: "immediate",
-        platform: "slack",
-        channelId: "C-LEGACY",
-        text: "old-style event",
-      }),
-    );
-
-    const events = await listAllEvents(HostEventStore.fromWorkspaceDir(workspaceDir));
-
-    expect(events).toHaveLength(1);
-    expect(events[0].conversationId).toBe("C-LEGACY");
-    expect(events[0].type).toBe("immediate");
-    expect(events[0].text).toBe("old-style event");
-  });
-
-  test("keeps unparseable event files visible with null fields", async () => {
-    const workspaceDir = makeWorkspace();
-    const eventsDir = join(workspaceDir, "events");
+  test("keeps unparseable event files visible with null fields and the owning office", async () => {
+    const office = eventOffice("C123");
+    const eventsDir = officeEventsDir(office);
     mkdirSync(eventsDir, { recursive: true });
     writeFileSync(join(eventsDir, "broken.json"), "{not json");
     writeFileSync(join(eventsDir, "notes.txt"), "ignored: not a .json file");
 
-    const events = await listAllEvents(HostEventStore.fromWorkspaceDir(workspaceDir));
+    const events = await listOfficeEvents(new OfficeEventStore(office));
 
     expect(events.map((e) => e.name)).toEqual(["broken.json"]);
     expect(events[0]).toMatchObject({
+      officePlatform: "slack",
+      officeConversationId: "C123",
       type: null,
       platform: null,
       conversationId: null,

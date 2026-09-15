@@ -91,22 +91,22 @@ management requires explicit grants; it is not enabled merely to preserve legacy
 
 This document defines the target, not a release security guarantee.
 
-| Area                                                               | Status                                                                    |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| Event tool ownership and enumeration                               | Exact-owner checks for list/read/update/delete; global enumeration denied |
-| Filesystem event bus and watcher execution authorization           | Not migrated; still a separate bypass                                     |
-| Operator and actor-to-target grants                                | Not implemented                                                           |
-| Public working-data projection / sharing-domain metadata           | Not implemented                                                           |
-| Admin, door, login, MCP operation gates                            | Not implemented                                                           |
-| Viewer capabilities and host reader containment                    | Not implemented                                                           |
-| Credential revocation, event cancellation, running-work revocation | Not implemented                                                           |
-| Production legacy settings and data                                | Unchanged                                                                 |
+| Area                                                     | Status                                                                                                   |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Event tool ownership and enumeration                     | Office-confined store; other offices' records unreachable; `scope=all` denied                            |
+| Event storage and scheduling                             | Host-only per-office state; no sandbox mount; no filesystem watcher; delete cancels not-yet-started work |
+| Operator and actor-to-target grants                      | Not implemented                                                                                          |
+| Public working-data projection / sharing-domain metadata | Not implemented                                                                                          |
+| Admin, door, login, MCP operation gates                  | Not implemented                                                                                          |
+| Viewer capabilities and host reader containment          | Not implemented                                                                                          |
+| Credential revocation, running-work revocation           | Not implemented                                                                                          |
+| Production legacy settings and data                      | Unchanged                                                                                                |
 
-The first event-tool slice is not an atomic authorization store: its ownership
-read and subsequent mutation can race a filesystem writer, and timestamp-based
-creation can overwrite a colliding filename. These remain explicit blockers to
-claiming the event system implements this policy. Read-check-write on a shared
-writable bus is not the final design.
+The event store is now confined per office and no longer shares a writable bus
+with sandboxes, so the earlier read-check-write race and create-overwrite are
+closed. What remains open for events is the actor side: the recorded `userId`
+is still the requester's claim rather than an authenticated principal, and
+cross-Office scheduling awaits explicit grants.
 
 Missing grants deny access in the target model. Migration must first inventory real
 cross-Office use, establish operators and explicit grants, separate working data

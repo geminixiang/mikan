@@ -72,7 +72,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   if (shared) {
     ensureRegularFile(workspace.memoryPath, "Workspace memory");
     ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
-    ensureDirectoryRoot(workspace.eventsDir, "Workspace events");
   }
 
   // Private visibility only changes anything for shared-support: the shared
@@ -97,7 +96,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
               ...(globalMemoryReadOnly ? { readOnly: true as const } : {}),
             },
             { source: workspace.skillsDir, target: "/workspace/skills" },
-            { source: workspace.eventsDir, target: "/workspace/events" },
             { source: office.dir, target: `/workspace/${office.key}` },
           ]
         : [{ source: office.dir, target: `/workspace/${office.key}` }];

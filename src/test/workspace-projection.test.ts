@@ -94,13 +94,13 @@ describe("workspace office projection", () => {
       mounts: [
         { source: join(workspaceDir, "MEMORY.md"), target: "/workspace/MEMORY.md" },
         { source: join(workspaceDir, "skills"), target: "/workspace/skills" },
-        { source: join(workspaceDir, "events"), target: "/workspace/events" },
         { source: join(workspaceDir, officeSegment), target: `/workspace/${officeSegment}` },
       ],
     });
     expect(lstatSync(join(workspaceDir, "MEMORY.md")).isFile()).toBe(true);
     expect(lstatSync(join(workspaceDir, "skills")).isDirectory()).toBe(true);
-    expect(lstatSync(join(workspaceDir, "events")).isDirectory()).toBe(true);
+    // Events are host-only office state and never enter a sandbox projection.
+    expect(existsSync(join(workspaceDir, "events"))).toBe(false);
   });
 
   test("maps legacy full conversation override above canonical global defaults", () => {
@@ -286,12 +286,10 @@ describe("workspace office projection", () => {
     resolveWorkspaceProjection(office);
     rmSync(join(workspaceDir, "MEMORY.md"));
     rmSync(join(workspaceDir, "skills"), { recursive: true });
-    rmSync(join(workspaceDir, "events"), { recursive: true });
     resolveWorkspaceProjection(office);
 
     expect(lstatSync(join(workspaceDir, "MEMORY.md")).isFile()).toBe(true);
     expect(lstatSync(join(workspaceDir, "skills")).isDirectory()).toBe(true);
-    expect(lstatSync(join(workspaceDir, "events")).isDirectory()).toBe(true);
   });
 
   test.each([

@@ -322,8 +322,8 @@ function buildWorkspaceSkillsPrompt(
     projection.layout === "full"
       ? `${workspaceRoot}/ contains the complete trusted workspace.`
       : projection.layout === "shared-support"
-        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, events/, and this conversation's directory.`
-        : `${conversationPath}/ is the only conversation workspace mounted; global memory, skills, and events are not available.`;
+        ? `${workspaceRoot}/ contains shared MEMORY.md, skills/, and this conversation's directory.`
+        : `${conversationPath}/ is the only conversation workspace mounted; global memory and skills are not available.`;
   const skillStorageGuidance =
     projection.doorPolicy === "trusted"
       ? `Store shared skills in \`${workspaceRoot}/skills/<name>/\` or conversation-specific skills in \`${conversationPath}/skills/<name>/\`.`
@@ -395,7 +395,7 @@ function buildOperatingPrompt(input: BuildSystemPromptOptions, paths: RuntimePro
       : `${workspaceRoot}/SYSTEM.md`;
 
   return `## Events
-Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It writes to the host-side mikan control plane and fills routing fields for the current conversation automatically.
+Use the \`event\` tool to schedule immediate, one-shot, or periodic follow-ups. It is the only way to manage this conversation's scheduled events: they live host-side, not in the workspace, and fill routing fields for the current conversation automatically.
 
 Write event \`text\` as a self-contained future task with needed context, tone, and constraints because events do not inherit normal conversation history.
 
@@ -403,7 +403,7 @@ For one-shot reminders, include a timezone offset in \`at\`. For periodic events
 
 When events trigger, messages are prefixed like \`[EVENT:filename:type:time]\`. Immediate and one-shot events auto-delete after triggering; periodic events persist until deleted.
 
-For periodic events where there's nothing to report, respond with exactly \`[SILENT]\`. Debounce external triggers; prefer one summarized event over many.
+For periodic events where there's nothing to report, respond with exactly \`[SILENT]\`.
 
 ## Memory
 ${memoryGuidance}

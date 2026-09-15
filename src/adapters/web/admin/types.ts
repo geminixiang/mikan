@@ -4,7 +4,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../../../adapter.js";
-import type { Workspace } from "../../../office/index.js";
+import type { Office, Workspace } from "../../../office/index.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../../sandbox/index.js";
 import type { EventStore } from "../../../events/index.js";
@@ -27,8 +27,8 @@ export interface AdminServices {
   adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
   workspace?: Workspace;
-  /** Events read/delete go through the owning store, not raw disk parsing. */
-  eventStore?: EventStore;
+  /** Office-confined event store factory; Admin never reads event files directly. */
+  eventStore?: (office: Office) => EventStore;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
   botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
@@ -39,6 +39,9 @@ export interface EventSummary {
   size: number;
   mtimeMs: number;
   type: string | null;
+  /** Owning office, from the store — authoritative even when the payload is unparseable. */
+  officePlatform: string;
+  officeConversationId: string;
   platform: string | null;
   conversationId: string | null;
   text: string | null;

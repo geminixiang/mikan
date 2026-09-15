@@ -3,7 +3,7 @@ import type { ConversationKind } from "../../adapter.js";
 import { createAttachTool } from "./attach.js";
 import type { Executor, SandboxConfig } from "../../sandbox/index.js";
 import type { OfficeAddress, SandboxResourceController } from "../../types.js";
-import { HostEventStore } from "../../events/index.js";
+import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
@@ -16,7 +16,7 @@ export { createSubagentTool } from "./subagent.js";
 
 export function createMikanTools(
   executor: Executor,
-  workspaceDir: string,
+  eventStore: EventStore,
   sandboxController?: {
     sandbox: SandboxConfig;
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
@@ -51,9 +51,7 @@ export function createMikanTools(
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
-  const { tool: eventTool, setEventContext } = createEventTool(
-    HostEventStore.fromWorkspaceDir(workspaceDir),
-  );
+  const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },
   );

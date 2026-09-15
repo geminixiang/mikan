@@ -1,19 +1,19 @@
 ---
 title: 事件
-description: 透過 workspace events 目錄觸發 agent 的事件格式與處理流程。
+description: 透過 event tool 管理的排程 agent 執行之事件格式與處理流程。
 ---
 
 ## 事件檔案放在哪裡
 
-事件檔案位於 `<workspace>/events/`，也就是 workspace root，而不是任何 office 目錄之內。這個排程匯流排刻意是 workspace 全域的：watcher 只輪詢一個目錄，由所有對話共用。它同時也是 agent 可寫的，因此以 `conversationId` 標示歸屬只是一種協作慣例，不是授權邊界——請不要把祕密放進事件文字中。
+事件紀錄存放在 host 端的 `<state-dir>/conversations/<office-key>/events/`，不在 workspace 內，也不會掛載進任何 sandbox。agent 只能透過 `event` tool 管理事件，而且只能接觸目前 Office 自己的紀錄：其他 Office 的檔名會回報「not found」，`scope=all` 會被拒絕，`create` 不會覆蓋既有檔案。刪除紀錄會立即取消對應的 timer 或 cron。跨 Office 排程無法透過此工具完成，需要 Office policy 中定義的明確授權。
 
-agent 的 `event` tool 只能列出、讀取、更新與刪除 `conversationId` **與** `platform` 都完全符合目前 Office 的事件。沒有 `platform` 的舊紀錄須由 host 管理；`scope=all` 會被拒絕。這項工具限制尚未隔離共享事件目錄，也未替檔案觸發的工作建立授權，不能視為完整的安全隔離。
+從舊的 workspace `events/` 匯流排升級時，請先停止 daemon 再執行 `mikan office migrate-events`；沒有明確 `platform`、或對不上已註冊 Office 的紀錄會被列出並保留原地。
 
 ## 事件類型
 
 ### 立即
 
-harness 一看到檔案就會觸發。適合從外部腳本或 webhook 發送訊號。
+紀錄一建立就會執行，例如 agent 在回合結束時替自己排的接續工作。
 
 ```json
 {
@@ -110,7 +110,3 @@ agent 可用的 `event` tool 會自動填入路由欄位。請使用它，不要
 ## 靜默回應
 
 對於沒有內容可回報的週期性事件，請精確回應 `[SILENT]`。harness 會刪除狀態訊息，且不向平台發文，以避免頻道洗版。
-
-## Debouncing
-
-撰寫會送出立即事件的腳本（email watchers、webhook handlers）時，務必做 debounce。在一段時間窗內收集事件，並送出一個摘要事件，而不是每個項目送出一個事件。

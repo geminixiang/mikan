@@ -93,8 +93,8 @@ SLACK_QA_CHANNEL_ID=C_YOUR_QA_CHANNEL npm run test:e2e:slack:local -- e2e/slack/
 共用憑證用途。其他平台與 telemetry 在測試程序中停用，不修改原 settings。
 
 `SLACK_QA_CONFIG_DIR` 可指定包含 mikan.env/settings.json 的來源目錄；models.json
-仍依 mikan 的模型載入規則。`SLACK_QA_WORKING_DIR` 指定既有 daemon 時，未明確
-設定 `SLACK_QA_EVENTS_DIR` 則自動使用 workingDir/events，避免事件寫到錯的 workspace。
+仍依 mikan 的模型載入規則。`SLACK_QA_WORKING_DIR` 指定既有 daemon 的 workspace，
+用於 intake log 佐證；事件測試改由 agent 的 `event` 工具排程，不再直接寫檔。
 
 本地通過不代表 GitHub 上不同模型的間歇失敗已根治。多檔案案例會先確認 Slack
 分享訊息與本機 intake，再等待模型答案；thread-stop 案例檢查 stop 在原 thread

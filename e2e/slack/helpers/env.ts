@@ -12,7 +12,6 @@ export interface SlackE2eEnv {
   streamingBotToken: string | undefined;
   timeoutMs: number;
   pollMs: number;
-  eventsDir: string;
   workingDir: string;
   mikanText: string;
 }
@@ -29,7 +28,6 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     streamingBotToken: env.SLACK_BOT_TOKEN || undefined,
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
-    eventsDir: env.SLACK_QA_EVENTS_DIR ?? join(workingDir, "events"),
     workingDir,
     mikanText: env.SLACK_QA_BOT_TEXT ?? "hello，請簡短回答。",
   };

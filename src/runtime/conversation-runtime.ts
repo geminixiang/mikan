@@ -619,6 +619,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       trustModel: options.trustModel,
       platformWorkspaceId: options.platformWorkspaceId,
       openConnector: this.options.openConnector,
+      eventScheduler: this.options.eventScheduler?.(),
       sessionScope,
       signal,
       vaultManager: this.options.vaultManager,

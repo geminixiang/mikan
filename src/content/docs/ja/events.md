@@ -1,19 +1,19 @@
 ---
 title: イベント
-description: workspace の events ディレクトリを通じて agent を起動するイベント形式と処理フロー。
+description: event tool で管理するスケジュール済み agent 実行のイベント形式と処理フロー。
 ---
 
 ## イベントファイルの置き場所
 
-イベントファイルは `<workspace>/events/` にあります。どの office directory の中でもなく、workspace root に置かれます。この scheduling bus は意図的に workspace 全体で共有されます。watcher が polling する 1 つの directory を、すべての conversation が共有します。また agent が書き込み可能でもあるため、`conversationId` による所有権は協調的な規約であって認可の境界ではありません。イベントのテキストに secrets を入れないでください。
+イベントレコードは host 側の `<state-dir>/conversations/<office-key>/events/` に保存され、workspace 内には置かれず、どの sandbox にもマウントされません。agent は `event` tool だけでイベントを管理でき、到達できるのは現在の Office 自身のレコードのみです。他の Office のファイル名は「not found」になり、`scope=all` は拒否され、`create` は既存ファイルを上書きしません。レコードを削除すると対応する timer や cron が即座に取り消されます。Office をまたぐスケジュールはこの tool では行えず、Office policy で定義される明示的な権限付与が必要です。
 
-agent の `event` tool は、`conversationId` **と** `platform` が現在の Office と完全に一致するイベントだけを一覧表示・読み取り・更新・削除できます。`platform` のない旧レコードは host 側で管理し、`scope=all` は拒否されます。この制限だけでは共有イベントディレクトリやファイル起点の実行は隔離されず、完全な認可境界にはなりません。
+旧来の workspace `events/` バスから移行する場合は、daemon を停止してから `mikan office migrate-events` を実行してください。明示的な `platform` を持たない、または登録済み Office に一致しないレコードは報告され、そのまま残されます。
 
 ## イベントタイプ
 
 ### 即時
 
-harness がファイルを見つけるとすぐに起動します。外部スクリプトや webhook からシグナルを送る用途に適しています。
+レコードが作成されるとすぐに実行されます。たとえば agent がターンの終わりに自分自身へ引き継ぐ作業などです。
 
 ```json
 {
@@ -110,7 +110,3 @@ agent の `event` tool はルーティングフィールドを自動入力しま
 ## サイレント応答
 
 報告する内容がない定期イベントでは、正確に `[SILENT]` と応答してください。harness はステータスメッセージを削除し、チャンネル荒らしを避けるためにプラットフォームへ投稿しません。
-
-## Debouncing
-
-即時イベントを送信するスクリプト（email watchers、webhook handlers）を書くときは、debounce してください。各項目ごとにイベントを送るのではなく、一定の時間枠でイベントを集め、1 つの要約イベントを送信してください。

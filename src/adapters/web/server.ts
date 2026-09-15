@@ -3,7 +3,7 @@ import type { MessagingBot, PlatformName } from "../../adapter.js";
 import { resolveLinkBaseUrl } from "../../config.js";
 import * as log from "../../log.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
-import { HostEventStore } from "../../events/index.js";
+import { OfficeEventStore, type EventScheduleSink } from "../../events/index.js";
 import type { VaultManager } from "../../vault/index.js";
 import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
 import type { InMemoryAdminTokenStore } from "./admin/portal.js";
@@ -16,7 +16,7 @@ import {
   type SessionViewInteractiveOptions,
 } from "./session-view/portal.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/portal.js";
-import type { Workspace } from "../../office/types.js";
+import type { Office, Workspace } from "../../office/types.js";
 import { handleGithubWebhookRequest, type GithubWebhookOptions } from "../github/webhook.js";
 
 interface StartWebServerOptions {
@@ -32,6 +32,8 @@ interface StartWebServerOptions {
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
+    /** Scheduler notified by Admin event deletes; resolved lazily (starts after bots). */
+    eventScheduler?: () => EventScheduleSink | undefined;
   };
   githubWebhook?: GithubWebhookOptions;
 }
@@ -43,11 +45,10 @@ export function startWebServer(options: StartWebServerOptions): Server {
     options.notify,
   );
 
-  // Constructed once at server start; the admin portal consumes the owning
-  // event store's interface instead of re-parsing event files off disk.
-  const adminEventStore = options.adminOptions?.workspace
-    ? HostEventStore.fromWorkspaceDir(options.adminOptions.workspace.root)
-    : undefined;
+  // The admin portal consumes office-confined event stores instead of
+  // re-parsing event files off disk.
+  const adminEventStore = (office: Office) =>
+    new OfficeEventStore(office, options.adminOptions?.eventScheduler?.());
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {

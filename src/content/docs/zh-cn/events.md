@@ -1,19 +1,19 @@
 ---
 title: 事件
-description: 通过工作区 events 目录触发代理的事件格式和处理流程。
+description: 通过 event tool 管理的调度代理运行的事件格式和处理流程。
 ---
 
 ## 事件文件位于何处
 
-事件文件位于 `<workspace>/events/`，即工作区根目录下，而不在任何办公室目录内部。调度总线有意保持工作区级：watcher 轮询一个目录，由所有对话共享。它同时也是代理可写的，因此按 `conversationId` 的所有权是一项协作约定，而非授权边界——不要把 secret 放进事件文本。
+事件记录存放在 host 端的 `<state-dir>/conversations/<office-key>/events/`，不在 workspace 内，也不会挂载进任何 sandbox。agent 只能通过 `event` tool 管理事件，而且只能接触当前 Office 自己的记录：其他 Office 的文件名会返回“not found”，`scope=all` 会被拒绝，`create` 不会覆盖既有文件。删除记录会立即取消对应的 timer 或 cron。跨 Office 调度无法通过此工具完成，需要 Office policy 中定义的明确授权。
 
-代理的 `event` 工具只能列出、读取、更新和删除 `conversationId` **和** `platform` 都与当前 Office 完全匹配的事件。没有 `platform` 的旧记录须由 host 管理；`scope=all` 会被拒绝。这项工具限制尚未隔离共享事件目录，也未为文件触发的工作建立授权，不能视为完整的安全隔离。
+从旧的 workspace `events/` 总线升级时，请先停止 daemon 再运行 `mikan office migrate-events`；没有明确 `platform`、或匹配不到已注册 Office 的记录会被列出并保留原地。
 
 ## 事件类型
 
 ### 立即
 
-框架一看到文件就会触发。适用于来自外部脚本或 webhook 的信号。
+记录一创建就会执行，例如 agent 在回合结束时为自己安排的后续工作。
 
 ```json
 {

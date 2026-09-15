@@ -255,7 +255,7 @@ docs = "src/adapters/commands/README.md"
 id = "event-protocol"
 owner = "events"
 consumers = ["harness", "web-adapter"]
-interface = "EventStore, buildEventPayload, parseEventPayload"
+interface = "EventStore, OfficeEventStore, EventScheduler, buildEventPayload, parseEventPayload"
 docs = "src/events/README.md"
 
 # Resources record global ownership and security classification. Paths are
@@ -348,8 +348,8 @@ docs = "src/runtime/README.md"
 [[resources]]
 id = "events-bus"
 authority = "events"
-scope = "workspace"
-classification = "agent-writable-scheduling"
+scope = "conversation"
+classification = "host-only-scheduling"
 docs = "ARCHITECTURE.md#scheduled-execution"
 
 [[flows]]

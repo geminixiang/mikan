@@ -23,7 +23,7 @@ import {
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import { slackConversationAutoReplyEnabled, resolveConversationSettings } from "../../config.js";
-import type { EventsWatcher } from "../../events/watcher.js";
+import type { EventScheduler } from "../../events/scheduler.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";
 import type {
@@ -259,7 +259,7 @@ export class SlackMessagingBot implements MessagingBot {
   private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
   private intake = new MessagingIntakeTracker("Slack");
-  private eventsWatcher: EventsWatcher | null = null;
+  private eventScheduler: EventScheduler | null = null;
 
   /** Host office dir for a Slack conversation. */
   private conversationDir(channelId: string): string {
@@ -393,8 +393,8 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  setEventsWatcher(watcher: EventsWatcher): void {
-    this.eventsWatcher = watcher;
+  setEventScheduler(scheduler: EventScheduler): void {
+    this.eventScheduler = scheduler;
   }
 
   // ==========================================================================
@@ -1200,8 +1200,15 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private appendScheduledJobs(blocks: object[]): void {
-    const periodicEvents = this.eventsWatcher?.getPeriodicEvents() ?? [];
+  /**
+   * Scheduled jobs of the opener's own DM office only: the App Home is a
+   * personal surface, so other offices' schedules are not listed here.
+   */
+  private appendScheduledJobs(blocks: object[], dmChannelId: string | undefined): void {
+    const periodicEvents =
+      dmChannelId && this.eventScheduler
+        ? this.eventScheduler.periodicEvents(createOfficeAddress("slack", dmChannelId))
+        : [];
     blocks.push(
       { type: "divider" },
       {
@@ -1244,7 +1251,7 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private buildHomeView(): { type: "home"; blocks: KnownBlock[] } {
+  private buildHomeView(dmChannelId: string | undefined): { type: "home"; blocks: KnownBlock[] } {
     const blocks: object[] = [
       {
         type: "section",
@@ -1260,7 +1267,7 @@ export class SlackMessagingBot implements MessagingBot {
       },
     ];
     this.appendRunningTasks(blocks);
-    this.appendScheduledJobs(blocks);
+    this.appendScheduledJobs(blocks, dmChannelId);
     blocks.push(
       { type: "divider" },
       {
@@ -1779,7 +1786,7 @@ export class SlackMessagingBot implements MessagingBot {
     this.webClient.views
       .publish({
         user_id: e.user,
-        view: this.buildHomeView(),
+        view: this.buildHomeView(e.channel),
       })
       .catch((err) => {
         log.logWarning(`Failed to publish App Home view`, String(err));
@@ -1824,11 +1831,13 @@ export class SlackMessagingBot implements MessagingBot {
 
     // Refresh home tab
     if (userId) {
-      this.webClient.views
-        .publish({
-          user_id: userId,
-          view: this.buildHomeView(),
-        })
+      this.openDirectConversation(userId)
+        .then((dmChannelId) =>
+          this.webClient.views.publish({
+            user_id: userId,
+            view: this.buildHomeView(dmChannelId),
+          }),
+        )
         .catch((err) => {
           log.logWarning(`Failed to refresh App Home view`, String(err));
         });

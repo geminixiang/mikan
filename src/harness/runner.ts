@@ -40,6 +40,7 @@ import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../type
 import { createHash } from "node:crypto";
 import { resolveConversationSettings } from "../config.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
+import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
@@ -883,7 +884,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   // Create tools (per-runner, with per-runner upload function setter)
   const toolBindings = createMikanTools(
     executor,
-    workspaceDir,
+    new OfficeEventStore(office, options.eventScheduler),
     { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
     platformToolPackFactories ?? [],
     {

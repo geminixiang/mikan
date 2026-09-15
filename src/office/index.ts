@@ -158,8 +158,9 @@ function readableConversationId(conversationId: string): string {
 // ── Workspace/Office layout ───────────────────────────────────────────────────
 /**
  * Workspace-root entries that are shared infrastructure, never office dirs.
- * The single definition behind boot-time directory setup, the events
- * watcher, the workspace projection, and the migration's legacy-dir scan.
+ * The single definition behind boot-time directory setup, the workspace
+ * projection, and the migration's legacy-dir scan. `events` stays reserved
+ * for the legacy scheduling bus that `mikan office migrate-events` drains.
  */
 export const RESERVED_WORKSPACE_NAMES: ReadonlySet<string> = Object.freeze(
   new Set(["skills", "events", "agents", "MEMORY.md"]),
@@ -197,7 +198,6 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
     stateDir,
     memoryPath: join(root, "MEMORY.md"),
     skillsDir: join(root, "skills"),
-    eventsDir: join(root, "events"),
     agentsDir: join(root, "agents"),
     reservedNames: RESERVED_WORKSPACE_NAMES,
     office(address: OfficeAddress): Office {

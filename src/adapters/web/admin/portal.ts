@@ -75,6 +75,7 @@ import {
   createOfficeAddress,
   listRegisteredOffices,
   sameOffice,
+  type Office,
   type Workspace,
 } from "../../../office/index.js";
 
@@ -1623,12 +1624,14 @@ function serveSkillFile(
  * event-format module (files that fail validation stay visible with a null
  * payload so operators can delete them).
  */
-export async function listAllEvents(store: EventStore): Promise<EventSummary[]> {
+export async function listOfficeEvents(store: EventStore): Promise<EventSummary[]> {
   const entries = await store.list();
   return entries.map((entry) => {
     const payload = entry.payload;
     return {
       name: entry.filename,
+      officePlatform: store.address.platform,
+      officeConversationId: store.address.conversationId,
       size: entry.size,
       mtimeMs: entry.mtimeMs,
       type: payload?.type ?? null,
@@ -1642,21 +1645,34 @@ export async function listAllEvents(store: EventStore): Promise<EventSummary[]> 
   });
 }
 
-function requireAdminEventStore(res: ServerResponse, services: AdminServices): EventStore | null {
+function requireAdminEventStore(
+  res: ServerResponse,
+  services: AdminServices,
+  office: Office,
+): EventStore | null {
   if (!services.eventStore) {
     jsonRes(res, 503, { error: "Working directory not available" });
     return null;
   }
-  return services.eventStore;
+  return services.eventStore(office);
 }
 
+/** Every registered office's events, each read through its own store. */
 async function serveEventsList(res: ServerResponse, services: AdminServices): Promise<void> {
-  const store = requireAdminEventStore(res, services);
-  if (!store) return;
-  jsonRes(res, 200, { events: await listAllEvents(store) });
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  if (!services.eventStore) {
+    jsonRes(res, 503, { error: "Working directory not available" });
+    return;
+  }
+  const events: EventSummary[] = [];
+  for (const record of listRegisteredOffices(workspace.stateDir)) {
+    events.push(...(await listOfficeEvents(services.eventStore(workspace.office(record)))));
+  }
+  jsonRes(res, 200, { events });
 }
 
-/** Per-conversation listing — filter all events by conversationId match. */
+/** Per-conversation listing through that office's confined store. */
 async function serveConversationEventsList(
   res: ServerResponse,
   url: URL,
@@ -1668,12 +1684,14 @@ async function serveConversationEventsList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const store = requireAdminEventStore(res, services);
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const store = requireAdminEventStore(res, services, workspace.office(scope.address));
   if (!store) return;
-  const events = (await listAllEvents(store)).filter(
-    (e) => e.conversationId === scope.conversationId,
-  );
-  jsonRes(res, 200, { conversationId: scope.conversationId, events });
+  jsonRes(res, 200, {
+    conversationId: scope.conversationId,
+    events: await listOfficeEvents(store),
+  });
 }
 
 /** Delete a single event file scoped to the caller's conversation. */
@@ -1695,25 +1713,17 @@ async function serveConversationEventDelete(
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
-  const store = requireAdminEventStore(res, services);
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const store = requireAdminEventStore(res, services, workspace.office(scope.address));
   if (!store) return;
-  let payload: { conversationId?: string } | null;
-  try {
-    payload = (await store.read(name)).payload;
-  } catch {
-    jsonRes(res, 404, { error: "Event not found" });
-    return;
-  }
-  // The store normalizes the legacy `channelId` alias into `conversationId`.
-  if (payload?.conversationId !== scope.conversationId) {
-    jsonRes(res, 403, { error: "Event does not belong to this conversation." });
-    return;
-  }
+  // The store is confined to this office: another office's filename is "not found".
   try {
     await store.delete(name);
     jsonRes(res, 200, { ok: true });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    const message = err instanceof Error ? err.message : String(err);
+    jsonRes(res, /not found/.test(message) ? 404 : 500, { error: message });
   }
 }
 

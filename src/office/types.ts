@@ -45,8 +45,6 @@ export interface Workspace {
   readonly memoryPath: string;
   /** Workspace-global skills directory: `<root>/skills`. */
   readonly skillsDir: string;
-  /** The workspace scheduling bus: `<root>/events` (global by design). */
-  readonly eventsDir: string;
   /** Subagent profile patches: `<root>/agents`. */
   readonly agentsDir: string;
   /** Workspace-root entries that are shared infrastructure, never office dirs. */
