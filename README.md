@@ -18,7 +18,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 [![mikan architecture — runtime ownership, Pi v4 sessions, authorized execution, and response delivery](src/content/docs/assets/architecture.png)](docs/architecture.html)
 
-[Download the interactive HTML diagram](docs/architecture.html) and open it locally to explore the system, DM task flow, and session/lane views.
+[Download the HTML/SVG source](docs/architecture.html) to view the full architecture diagram locally.
 
 - **Conversation office** is the unit everything else hangs off: one conversation's working area plus its own sandbox runtime. An office is identified by its platform and raw conversation id, and its directory is named by an office key (`v1-<platform>-<readable-id>-<hash>`), so two platforms can never collide on the same raw id.
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.

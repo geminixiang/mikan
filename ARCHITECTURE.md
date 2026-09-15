@@ -1,6 +1,6 @@
 # mikan Architecture
 
-Interactive visual overview: [`docs/architecture.html`](docs/architecture.html) — system ownership, Slack DM task flow, and current session topology versus native Pi v4 lanes.
+Architecture diagram: [`docs/architecture.html`](docs/architecture.html) — a single-page HTML/SVG diagram of system ownership, execution flow, and Slack DM task sessions.
 
 This document explains mikan's system-level architecture: the concepts that span modules, the main execution paths, the security and persistence model, and the invariants that must survive implementation changes.
 
