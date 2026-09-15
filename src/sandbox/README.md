@@ -54,13 +54,13 @@ Every office receives the same mount shape (ADR 0008), resolved in one place
 (`resolveWorkspaceProjection`, `src/office/README.md`); only the read-only
 flags depend on the office's visibility:
 
-| Mount                                       | Purpose                                                | Public office    | Private office   |
-| ------------------------------------------- | ------------------------------------------------------ | ---------------- | ---------------- |
-| `<office key>/` → `/workspace/<office key>` | sessions, attachments, scratch, office skills          | rw               | rw               |
-| `MEMORY.md` → `/workspace/MEMORY.md`        | agent-maintained workspace memory                      | rw               | ro               |
-| `skills/` → `/workspace/skills`             | agent-creatable workspace skills                       | rw               | ro               |
-| `<state dir>/public/` → `/workspace/public` | symlink per public office; the only cross-office reach | ro               | ro               |
-| vault mounts                                | per-user credential injection                          | when provisioned | when provisioned |
+| Mount                                            | Purpose                                                | Public office    | Private office   |
+| ------------------------------------------------ | ------------------------------------------------------ | ---------------- | ---------------- |
+| `<office key>/` → `/workspace/<office key>`      | sessions, attachments, scratch, office skills          | rw               | rw               |
+| `MEMORY.md` → `/workspace/MEMORY.md`             | agent-maintained workspace memory                      | rw               | ro               |
+| `skills/` → `/workspace/skills`                  | agent-creatable workspace skills                       | rw               | ro               |
+| `<other key>/` → `/workspace/public/<other key>` | every other public office; the only cross-office reach | ro               | ro               |
+| vault mounts                                     | per-user credential injection                          | when provisioned | when provisioned |
 
 Visibility follows the Slack conversation type: public channels are public;
 private channels, DMs, group DMs, externally shared channels, and unknown kinds

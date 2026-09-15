@@ -52,7 +52,6 @@ describe("workspace office projection", () => {
     expect(lstatSync(join(workspaceDir, officeSegment)).isDirectory()).toBe(true);
     expect(lstatSync(join(workspaceDir, "MEMORY.md")).isFile()).toBe(true);
     expect(lstatSync(join(workspaceDir, "skills")).isDirectory()).toBe(true);
-    expect(lstatSync(join(stateDir, "public")).isDirectory()).toBe(true);
   });
 
   test("a channel kind snapshot updates in place and survives rereads", () => {
@@ -97,12 +96,10 @@ describe("workspace office projection", () => {
     resolveWorkspaceProjection(office);
     rmSync(join(workspaceDir, "MEMORY.md"));
     rmSync(join(workspaceDir, "skills"), { recursive: true });
-    rmSync(join(stateDir, "public"), { recursive: true });
     resolveWorkspaceProjection(office);
 
     expect(lstatSync(join(workspaceDir, "MEMORY.md")).isFile()).toBe(true);
     expect(lstatSync(join(workspaceDir, "skills")).isDirectory()).toBe(true);
-    expect(lstatSync(join(stateDir, "public")).isDirectory()).toBe(true);
   });
 
   test.each([

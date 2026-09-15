@@ -1,19 +1,10 @@
 import { dirname, join } from "node:path";
-import {
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
 import { loadLegacyFullOverride, loadOfficeVisibilityOverride } from "../config.js";
-import { listRegisteredOffices, type Office, type Workspace } from "./index.js";
+import { listRegisteredOffices, type Office } from "./index.js";
 import * as log from "../log.js";
-import type { WorkspaceVisibility } from "../types.js";
+import type { ContainerMount, WorkspaceVisibility } from "../types.js";
 import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
 export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
@@ -84,55 +75,33 @@ export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecisio
   return { visibility: kind === "public_channel" ? "public" : "private", source: "platform" };
 }
 
-/** Host-side read-only view of every public office: `<state dir>/public/<key>` → office dir. */
-function publicOfficesViewDir(workspace: Workspace): string {
-  return join(workspace.stateDir, "public");
-}
-
 /**
- * Rebuild the public view from the registry so it reflects current
- * visibility: a symlink per public office, and nothing for private ones. The
- * view directory itself is what containers mount (read-only), so a channel
- * changing visibility never changes any container's mount signature.
+ * Every public office other than `self`, as read-only mounts under
+ * `/workspace/public/<key>`. Bind mounts rather than a symlink directory:
+ * symlinks would resolve against the container's own filesystem, where host
+ * paths do not exist. A public channel appearing or changing visibility
+ * changes the mount signature, so affected containers rebuild on their next
+ * message with contents preserved.
  */
-function syncPublicOfficesView(workspace: Workspace): string {
-  const view = publicOfficesViewDir(workspace);
-  ensureDirectoryRoot(view, "Public offices view");
-  const wanted = new Map<string, string>();
+function publicOfficeMounts(self: Office): ContainerMount[] {
+  const { workspace } = self;
+  const mounts: ContainerMount[] = [];
   for (const record of listRegisteredOffices(workspace.stateDir)) {
     const other = workspace.office(record);
-    if (resolveOfficeVisibility(other).visibility === "public" && exists(other.dir)) {
-      wanted.set(other.key, other.dir);
-    }
+    if (other.key === self.key || !exists(other.dir)) continue;
+    if (resolveOfficeVisibility(other).visibility !== "public") continue;
+    mounts.push({ source: other.dir, target: `/workspace/public/${other.key}`, readOnly: true });
   }
-  for (const name of readdirSync(view)) {
-    const linkPath = join(view, name);
-    const target = wanted.get(name);
-    if (target !== undefined) {
-      try {
-        if (lstatSync(linkPath).isSymbolicLink() && readlinkSync(linkPath) === target) {
-          wanted.delete(name);
-          continue;
-        }
-      } catch {
-        // Fall through and recreate.
-      }
-    }
-    rmSync(linkPath, { recursive: true, force: true });
-  }
-  for (const [name, target] of wanted) {
-    symlinkSync(target, join(view, name));
-  }
-  return view;
+  return mounts.toSorted((a, b) => a.target.localeCompare(b.target));
 }
 
 /**
  * The single policy seam for a managed office. It both materializes the
  * host-side roots and authorizes the prompt sources that describe them.
  * Every office gets the same shape (ADR 0008): its own directory read-write,
- * the public view read-only, and the workspace-global knowledge read-write
- * for public offices or read-only for private ones. No layout mounts the
- * workspace root.
+ * every other public office read-only under /workspace/public, and the
+ * workspace-global knowledge read-write for public offices or read-only for
+ * private ones. No layout mounts the workspace root.
  */
 export function resolveWorkspaceProjection(office: Office): WorkspaceProjection {
   const { workspace } = office;
@@ -143,7 +112,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   office.ensure();
   ensureRegularFile(workspace.memoryPath, "Workspace memory");
   ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
-  const publicView = syncPublicOfficesView(workspace);
   const ro = { readOnly: true as const };
   const legacyFull = loadLegacyFullOverride(office);
   if (legacyFull && !reportedLegacyFull.has(office.key)) {
@@ -169,7 +137,7 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
         target: "/workspace/skills",
         ...(readOnlyKnowledge ? ro : {}),
       },
-      { source: publicView, target: "/workspace/public", ...ro },
+      ...publicOfficeMounts(office),
     ],
     promptSources: {
       conversationDir: office.dir,
@@ -177,7 +145,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
       conversationSkillsDir: office.skillsDir,
       globalMemoryPath: workspace.memoryPath,
       globalSkillsDir: workspace.skillsDir,
-      publicOfficesDir: publicView,
       ...(readOnlyKnowledge ? { globalKnowledgeReadOnly: true } : {}),
     },
   };

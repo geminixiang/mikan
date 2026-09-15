@@ -504,7 +504,6 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
         { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md", readOnly: true },
         { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
-        { source: join(tmpDir, "public"), target: "/workspace/public", readOnly: true },
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
@@ -546,7 +545,6 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
         { source: join(tmpDir, "MEMORY.md"), target: "/workspace/MEMORY.md", readOnly: true },
         { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
-        { source: join(tmpDir, "public"), target: "/workspace/public", readOnly: true },
       ],
     });
     expect(decision.projection.legacyFull).toBe(true);

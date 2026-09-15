@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -88,9 +88,9 @@ describe("resolveOfficeVisibility", () => {
 });
 
 describe("resolveWorkspaceProjection", () => {
-  test("a public office: own dir rw, public view ro, global knowledge rw", () => {
+  test("a public office: own dir rw, other public offices ro, global knowledge rw", () => {
     const own = office("C1", "public_channel");
-    office("C2", "public_channel");
+    const otherPublic = office("C2", "public_channel");
     office("D1", "im");
 
     const projection = resolveWorkspaceProjection(own);
@@ -100,19 +100,14 @@ describe("resolveWorkspaceProjection", () => {
       { source: own.dir, target: `/workspace/${own.key}` },
       { source: workspace.memoryPath, target: "/workspace/MEMORY.md" },
       { source: workspace.skillsDir, target: "/workspace/skills" },
-      { source: join(workspace.stateDir, "public"), target: "/workspace/public", readOnly: true },
+      { source: otherPublic.dir, target: `/workspace/public/${otherPublic.key}`, readOnly: true },
     ]);
-    // The host public view links every public office, never a private one.
-    const view = join(workspace.stateDir, "public");
-    const entries = readdirSync(view);
-    expect(entries.toSorted()).toEqual([own.key, office("C2").key].toSorted());
-    expect(readlinkSync(join(view, office("C2").key))).toBe(office("C2").dir);
-    expect(existsSync(join(view, office("D1").key))).toBe(false);
   });
 
-  test("a private office: own dir rw, public view ro, global knowledge ro", () => {
+  test("a private office: own dir rw, public offices ro, global knowledge ro", () => {
     const own = office("D1", "im");
-    office("C1", "public_channel");
+    const pub = office("C1", "public_channel");
+    office("D2", "im");
 
     const projection = resolveWorkspaceProjection(own);
 
@@ -121,21 +116,22 @@ describe("resolveWorkspaceProjection", () => {
       { source: own.dir, target: `/workspace/${own.key}` },
       { source: workspace.memoryPath, target: "/workspace/MEMORY.md", readOnly: true },
       { source: workspace.skillsDir, target: "/workspace/skills", readOnly: true },
-      { source: join(workspace.stateDir, "public"), target: "/workspace/public", readOnly: true },
+      { source: pub.dir, target: `/workspace/public/${pub.key}`, readOnly: true },
     ]);
     expect(projection.promptSources.globalKnowledgeReadOnly).toBe(true);
-    expect(projection.promptSources.publicOfficesDir).toBe(join(workspace.stateDir, "public"));
   });
 
-  test("the public view drops an office that becomes private", () => {
+  test("an office that becomes private leaves everyone else's public mounts", () => {
     const own = office("D1", "im");
     const pub = office("C1", "public_channel");
-    resolveWorkspaceProjection(own);
-    expect(existsSync(join(workspace.stateDir, "public", pub.key))).toBe(true);
+    expect(resolveWorkspaceProjection(own).mounts.map((m) => m.target)).toContain(
+      `/workspace/public/${pub.key}`,
+    );
 
     setOfficeVisibilityOverride(pub, "private");
-    resolveWorkspaceProjection(own);
-    expect(existsSync(join(workspace.stateDir, "public", pub.key))).toBe(false);
+    expect(resolveWorkspaceProjection(own).mounts.map((m) => m.target)).not.toContain(
+      `/workspace/public/${pub.key}`,
+    );
   });
 
   test("no layout mounts the workspace root", () => {

@@ -36,7 +36,7 @@ its host-side directory layout, its durable record, and the legacy migration.
     an owner. Also the container bind translator that lets managed
     containers survive the rename with writable layers intact.
 - `types.ts`: The exported `Workspace`/`Office` interfaces and projection contracts.
-- `projection.ts`: The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the recorded platform channel kind and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts, maintains the host public view, and authorizes prompt sources.
+- `projection.ts`: The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the recorded platform channel kind and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro) and authorizes prompt sources.
 
 ## Consumers
 

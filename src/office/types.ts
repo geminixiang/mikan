@@ -104,8 +104,6 @@ interface WorkspacePromptSources {
   conversationSkillsDir: string;
   globalMemoryPath: string;
   globalSkillsDir: string;
-  /** Host read-only view of every public office, mounted at `/workspace/public`. */
-  publicOfficesDir: string;
   /** True for private offices: global MEMORY.md and skills are mounted read-only. */
   globalKnowledgeReadOnly?: boolean;
 }
