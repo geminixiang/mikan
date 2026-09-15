@@ -1,6 +1,7 @@
 import type {
   MessagingBot,
   ConversationContext,
+  ConversationMessage,
   ConversationEvent,
   HandleNewCommandOptions,
   OfficeAddress,
@@ -39,6 +40,7 @@ import {
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
+  threadSuffixOf,
 } from "../sessions/session-key.js";
 import {
   formatNothingRunning,
@@ -110,12 +112,11 @@ async function postAbortNotice(
     return;
   }
   if (!state.stopRequested) return;
-  if (state.stopMessageTs) {
-    await bot.updateMessage(conversationId, state.stopMessageTs, formatStopped(bot));
-    state.stopMessageTs = undefined;
-    return;
-  }
-  await bot.postMessage(conversationId, formatStopped(bot));
+  if (state.stopNoticeOwned) return;
+  const thread = threadSuffixOf(state.sessionKey);
+  if (thread && bot.postInThread)
+    await bot.postInThread(conversationId, thread, formatStopped(bot));
+  else await bot.postMessage(conversationId, formatStopped(bot));
 }
 
 export function createConversationRuntime(
@@ -162,6 +163,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           startedAt: state.startedAt,
           lastActivityAt: state.lastActivityAt,
           currentTool: currentStep?.label || currentStep?.toolName,
+          ...(state.stopRequested ? { stopping: true } : {}),
         });
       }
     }
@@ -180,15 +182,37 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     });
   }
 
-  async handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void> {
+  async steer(message: ConversationMessage): Promise<boolean> {
+    const state = this.sessions.get(message.address, message.sessionKey);
+    if (!state?.running) return false;
+    return state.runner.steer ? state.runner.steer(message) : false;
+  }
+
+  async handleStop(
+    address: OfficeAddress,
+    sessionKey: string,
+    bot: MessagingBot,
+    replyThreadTs?: string,
+  ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const post = (text: string) =>
+      replyThreadTs && bot.postInThread
+        ? bot.postInThread(address.conversationId, replyThreadTs, text)
+        : bot.postMessage(address.conversationId, text);
     const state = this.sessions.get(address, sessionKey);
-    if (state?.running) {
-      requestStop(state);
-      const ts = await bot.postMessage(address.conversationId, formatStopping(bot));
-      state.stopMessageTs = ts;
-    } else {
-      await bot.postMessage(address.conversationId, formatNothingRunning(bot));
+    if (!state?.running) {
+      await post(formatNothingRunning(bot));
+      return;
+    }
+    const settlement = state.runSettlement;
+    state.stopNoticeOwned = true;
+    requestStop(state);
+    try {
+      const ts = await post(formatStopping(bot));
+      await settlement;
+      await bot.updateMessage(address.conversationId, ts, formatStopped(bot));
+    } finally {
+      state.stopNoticeOwned = false;
     }
   }
 
@@ -543,6 +567,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             `[${conversationId}] Run error`,
             err instanceof Error ? err.message : String(err),
           );
+          await context.responder
+            .replaceResponse("Could not complete the request. Please reply to retry or revise it.")
+            .catch(() => {});
           return undefined;
         }
       },

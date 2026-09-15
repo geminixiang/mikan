@@ -374,6 +374,7 @@ export async function finalizeRunResponse(
     model?: Model<Api>;
     sessionConversation?: string;
     sessionUuid?: string;
+    initialTask?: boolean;
   },
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
@@ -391,7 +392,12 @@ export async function finalizeRunResponse(
     return;
   }
   if (!finalText.trim()) return;
-  await publishFinalResponse(responder, runState, finalText, options);
+  const published = await publishFinalResponse(responder, runState, finalText, options);
+  const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
+    (name) => !["task_status", "start_task", "react"].includes(name),
+  );
+  if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
+    await responder.notifyCompletion?.();
 }
 
 /** `[SILENT]` means the run leaves no message behind. */
@@ -417,7 +423,7 @@ async function publishFinalResponse(
     sessionConversation?: string;
     sessionUuid?: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   try {
     const finalResponse = appendTriggerAttribution(
       finalText,
@@ -429,11 +435,12 @@ async function publishFinalResponse(
       await replaceWithSubagentDashboard(responder, finalDashboard, finalResponse, {
         createOverflowLink: options?.createOverflowLink,
       });
-      return;
+      return true;
     }
     await responder.replaceResponse(formatResponseWithToolProgress(finalResponse, runState), {
       createOverflowLink: options?.createOverflowLink,
     });
+    return true;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     log.logWarning("Failed to replace message with final text", errMsg);
@@ -449,6 +456,7 @@ async function publishFinalResponse(
         finalTextLength: finalText.length,
       },
     });
+    return false;
   }
 }
 
@@ -536,7 +544,13 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     contextTokens,
     contextWindow,
   );
-  if (platform.diagnostics?.showUsageSummary === true) {
+  const toolNames = Object.keys(session.getLastRunStats().toolCallCounts);
+  const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === "task_status");
+  if (
+    platform.diagnostics?.showUsageSummary === true &&
+    !runState.finalResponseHandledByTool &&
+    !statusOnly
+  ) {
     runState.queue!.enqueue(
       () => responder.respondDiagnostic(summary, { style: "muted" }),
       "usage summary",
@@ -619,13 +633,16 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
     args: event.args,
     startTime: Date.now(),
   });
-  runState.toolProgress.set(event.toolCallId, {
-    label: extractToolLabel(event.toolName, event.args),
-    status: "running",
-  });
+  if (event.toolName === "start_task") return;
+  if (event.toolName !== "task_status") {
+    runState.toolProgress.set(event.toolCallId, {
+      label: extractToolLabel(event.toolName, event.args),
+      status: "running",
+    });
+  }
   if (event.toolName === "subagent") {
     runState.subagentToolCalls.add(event.toolCallId);
-  } else {
+  } else if (event.toolName !== "task_status") {
     queue.enqueue(
       () => replaceResponseWithToolProgress(responder, runState),
       "tool progress update",
@@ -692,6 +709,19 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   runState.toolOutputCharacters += outputCharacters;
   if (event.isError) runState.toolErrorCount += 1;
   const pending = runState.pendingTools.get(event.toolCallId);
+  if (event.toolName === "start_task") {
+    runState.pendingTools.delete(event.toolCallId);
+    if (!event.isError) runState.finalResponseHandledByTool = true;
+    else
+      reportUserFacingError(new Error("Task admission failed"), {
+        domain: "mikan",
+        surface: "task_handoff",
+        operation: "admit_task",
+        severity: "error",
+        context: { sessionId: logCtx.sessionId, toolCallId: event.toolCallId },
+      });
+    return;
+  }
   const progress = runState.toolProgress.get(event.toolCallId);
   if (progress) progress.status = event.isError ? "error" : "done";
   const subagentProgress = runState.subagentProgress.get(event.toolCallId);
@@ -701,7 +731,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
       settleSubagentProgress(subagentProgress, event.isError),
     );
   }
-  flushToolProgressUpdate(responder, runState);
+  if (event.toolName !== "task_status") flushToolProgressUpdate(responder, runState);
   const completedProgress = runState.subagentProgress.get(event.toolCallId);
   if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
   runState.subagentProgress.delete(event.toolCallId);

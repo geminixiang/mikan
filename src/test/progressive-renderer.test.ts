@@ -434,3 +434,17 @@ describe("overflow messages", () => {
     expect(editedIds).toEqual(firstIds);
   });
 });
+
+describe.each<StreamKind>(["buffered", "native"])("required delivery: %s", (kind) => {
+  test("replacement failure rejects but the next replacement can recover", async () => {
+    let failing = true;
+    const { responder } = makeRenderer(kind, "existing", {
+      update: async () => {
+        if (failing) throw new Error("final rejected");
+      },
+    });
+    await expect(responder.replaceResponse("final")).rejects.toThrow("final rejected");
+    failing = false;
+    await expect(responder.replaceResponse("recovered")).resolves.toBeUndefined();
+  });
+});

@@ -479,9 +479,21 @@ async function syncSessionManagerFromLog(
 
   const existingEntries = await sessionManager.getEntries();
   const resetAt = getLatestChatSyncResetAt(existingEntries);
-  const eligibleRecords = resetAt
-    ? records.filter((record) => isAfterReset(record, resetAt))
-    : records;
+  const controlledIds = new Set(
+    existingEntries.flatMap((entry) => {
+      if (
+        entry.type !== "custom" ||
+        entry.customType !== "mikan.control_input" ||
+        !isRecord(entry.data)
+      )
+        return [];
+      return typeof entry.data.messageId === "string" ? [entry.data.messageId] : [];
+    }),
+  );
+  const eligibleRecords = records.filter(
+    (record) =>
+      !controlledIds.has(record.message.ts ?? "") && (!resetAt || isAfterReset(record, resetAt)),
+  );
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const lastSyncedIndex = lastSyncedMessageId
     ? eligibleRecords.findIndex((record) => record.message.ts === lastSyncedMessageId)

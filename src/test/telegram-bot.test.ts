@@ -253,7 +253,7 @@ describe("TelegramMessagingBot stop handling", () => {
       }),
     });
 
-    expect(handler.handleStop).toHaveBeenCalledWith(officeOf("999"), "999:50", bot);
+    expect(handler.handleStop).toHaveBeenCalledWith(officeOf("999"), "999:50", bot, "60");
     expect(processAttachments).not.toHaveBeenCalled();
   });
 });

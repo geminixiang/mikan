@@ -159,3 +159,29 @@ siblings.
 - Scheduled-event payload schema, parsing and building belong to `src/events/index.ts`.
 - Session file naming, chat synchronization, rotation, and thread lineage stay
   in `src/sessions/`.
+
+## DM task handoff
+
+`start_task` is offered only when the active responder supports task admission.
+It is excluded from subagent grants and unsupported turns. The native
+`before_tool` hook blocks every call in a mixed handoff/effect batch; a successful
+single handoff terminates the parent turn. Slack owns anchor creation and scoped
+queue admission; the task uses the existing independent session runner, not a
+nested subagent or a new execution loop.
+
+`PiAgentWrapper.steer` accepts text controls from the current actor only. It
+records a `mikan.control_input` custom entry before sending to the native lane so
+chat-history sync cannot replay cancelled or rejected controls as ordinary input.
+Attachments require stopping and starting another turn. Native steering acceptance
+means queued for the next tool-batch boundary, not proof of model compliance.
+
+`task_status` is a responder-bound read-only query, advertised only when supported
+and excluded from subagent grants. It exposes no cross-office task lookup.
+`SessionStore.inspectExecution` reads the main lane/result from a temporary v4
+snapshot; it does not create a runner or acquire the original file's writer.
+
+Runner cancellation is remembered across prompt preparation. Stop before Pi starts
+prevents a later prompt; preparation/settlement controls are rejected with a retry
+message instead of creating queued work. Final renderer replacements propagate
+transport failure, unlike best-effort incremental updates, so failed result updates
+do not trigger task completion mentions.

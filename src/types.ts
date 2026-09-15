@@ -139,7 +139,31 @@ export interface SubagentProgressSnapshot {
   nodes: SubagentProgressNode[];
 }
 
+export interface TaskStatus {
+  sessionKey: string;
+  threadTs: string;
+  acknowledgement: string;
+  status:
+    | "running"
+    | "stopping"
+    | "completed"
+    | "aborted"
+    | "failed"
+    | "declined"
+    | "queued"
+    | "unknown";
+  currentTool?: string;
+  observedAt: string;
+  endedAt?: string;
+}
+
 export interface ConversationResponder {
+  /** Admit independent work; returns its platform session reference, never waits for completion. */
+  startTask?(message: string, task: string): Promise<string>;
+  /** Post a fresh delivery notification after the final task response. */
+  notifyCompletion?(): Promise<void>;
+  /** Read-only task observations, scoped to the current conversation. */
+  getTaskStatus?(sessionKey?: string): Promise<TaskStatus[]>;
   respond(text: string): Promise<void>;
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
@@ -311,6 +335,7 @@ export interface RunningSession {
   startedAt: number;
   lastActivityAt?: number;
   currentTool?: string;
+  stopping?: boolean;
 }
 
 export interface HandleNewCommandOptions {
@@ -333,7 +358,14 @@ export interface MessagingEventHandler {
     bot: MessagingBot,
     context: ConversationContext,
   ): Promise<void>;
-  handleStop(address: OfficeAddress, sessionKey: string, bot: MessagingBot): Promise<void>;
+  handleStop(
+    address: OfficeAddress,
+    sessionKey: string,
+    bot: MessagingBot,
+    replyThreadTs?: string,
+  ): Promise<void>;
+  /** Returns false when idle; accepted controls bypass the normal run queue. */
+  steer?(message: ConversationMessage): Promise<boolean>;
   forceStop(address: OfficeAddress, sessionKey: string): void;
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
 }
@@ -341,6 +373,7 @@ export interface MessagingEventHandler {
 // ── agent ─────────────────────────────────────────────────────────────────────
 
 export interface PiAgentWrapper {
+  steer?(message: ConversationMessage): Promise<boolean>;
   syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,

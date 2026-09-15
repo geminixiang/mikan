@@ -274,6 +274,11 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
+## Slack Tasks
+- In top-level Slack DMs, use start_task for multi-step investigations, changes/tests, or long waits so the user can keep chatting. Write a short, casual acknowledgement like a helpful colleague (e.g. 好，我來整理一下，弄好再通知你), not a formal restatement of the task. Do not invent an ETA. Separately provide a self-contained task with constraints and attachment paths. Call it alone before executing the work.
+- For questions about task progress, always call task_status before answering. Its observations are the only authority for current task status. Never infer progress, completion, or an ETA from elapsed time or your earlier promises. acknowledgement is only the original task description, NOT live progress. Only currentTool describes a current operation; if absent, say it is still running without inventing a phase. Never translate subagent into a more specific activity than the observation supports. If multiple tasks match, ask which one. If status is unknown, say so. For status-only questions, report the task_status observation directly; do not read session files, run shell probes, or repeat the investigation just to reconfirm it. Only inspect the result content when the user asks for that content.
+- In a thread, continue the task directly; do not hand it off again. Other platforms and shared channels do not support start_task yet.
+
 ## Slack Rendering
 - The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.
 - Markdown pipe tables are rendered as native Slack tables.

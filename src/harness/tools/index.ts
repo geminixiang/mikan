@@ -7,6 +7,7 @@ import { HostEventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
+import { createTaskTools } from "./task.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
@@ -35,6 +36,7 @@ export function createMikanTools(
    *  writes host-side, so this must not stage through the sandbox like the
    *  attach upload does. No-op when image generation is not configured. */
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
+  bindTasks: ReturnType<typeof createTaskTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   setEventContext: (context: {
@@ -47,6 +49,7 @@ export function createMikanTools(
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
+  const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const { tool: eventTool, setEventContext } = createEventTool(
     HostEventStore.fromWorkspaceDir(workspaceDir),
@@ -65,6 +68,7 @@ export function createMikanTools(
       adaptAgentTool(attachTool),
       ...(imageTool ? [adaptAgentTool(imageTool.tool)] : []),
       adaptAgentTool(reactTool),
+      ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
     ],
     setUploadFunction,
@@ -72,6 +76,7 @@ export function createMikanTools(
       imageTool?.setUploadFunction(fn);
     },
     setReactFunction,
+    bindTasks,
     bindPlatformToolPacks: (ctx) => {
       for (const pack of platformToolPacks) {
         pack.bindRun(ctx);

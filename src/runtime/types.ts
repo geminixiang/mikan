@@ -36,7 +36,8 @@ export interface ConversationRuntimeState {
   stopRequested: boolean;
   /** Set when the shutdown deadline aborted this run; the runtime posts a restart notice. */
   shutdownAborted?: boolean;
-  stopMessageTs?: string;
+  /** An explicit stop caller owns its acknowledgement through settlement. */
+  stopNoticeOwned?: boolean;
   lastAccessedAt: number;
   sessionFile: string;
   /** Epoch ms when the current run started; 0 when idle. */
