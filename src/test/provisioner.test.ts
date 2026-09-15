@@ -414,6 +414,27 @@ describe("DockerContainerManager", () => {
     expect(calls.some((args) => args[0] === "rmi")).toBe(false);
   });
 
+  test("recreation removes stale /workspace/public mountpoints left in the snapshot", async () => {
+    const mounts = [
+      { source: "/ws/a", target: "/workspace/a" },
+      { source: "/ws/b", target: "/workspace/public/b", readOnly: true },
+    ];
+    const { exec, calls } = routerMock({
+      status: "running",
+      // The old container also mounted public/c, which is no longer public.
+      binds: ["/ws/a:/workspace/a", "/ws/b:/workspace/public/b:ro", "/ws/c:/workspace/public/c:ro"],
+    });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+
+    await manager.provision("alice", { mounts, conversationId: "C1" });
+
+    const startIndex = calls.findIndex((args) => args[0] === "start");
+    const cleanup = calls.slice(startIndex).find((args) => args[0] === "exec");
+    expect(cleanup).toBeDefined();
+    expect(cleanup).toContain("KEEP=b");
+    expect(cleanup?.at(-1)).toContain("rmdir");
+  });
+
   test("creates the network when docker reports '<name> not found'", async () => {
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()

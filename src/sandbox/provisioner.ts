@@ -430,6 +430,46 @@ export class DockerContainerManager {
   }
 
   /**
+   * `docker commit` captures the empty directories Docker created as bind
+   * targets, so a public office that stopped being mounted would linger in
+   * the snapshot as an empty `/workspace/public/<key>`. Remove any entry
+   * there that no current bind targets; only empty directories are removed,
+   * so a real file could never be deleted by this pass.
+   */
+  private async removeStaleMountpoints(
+    containerName: string,
+    bindSpecs: readonly string[],
+  ): Promise<void> {
+    const keep = new Set(
+      bindSpecs
+        .map((bind) => bindSpecToMount(bind).target)
+        .filter((target) => target.startsWith("/workspace/public/"))
+        .map((target) => target.slice("/workspace/public/".length)),
+    );
+    const script = [
+      "[ -d /workspace/public ] || exit 0",
+      "for d in /workspace/public/*; do",
+      '  [ -e "$d" ] || continue',
+      '  case " $KEEP " in *" ${d##*/} "*) continue;; esac',
+      '  rmdir "$d" 2>/dev/null || true',
+      "done",
+    ].join("\n");
+    try {
+      await this.execFileImpl("docker", [
+        "exec",
+        "-e",
+        `KEEP=${[...keep].join(" ")}`,
+        containerName,
+        "sh",
+        "-c",
+        script,
+      ]);
+    } catch (err) {
+      log.logWarning(`Could not clean stale mountpoints in ${containerName}`, String(err));
+    }
+  }
+
+  /**
    * Recreate a drifted container with the desired mounts while keeping its
    * writable layer: commit — the new binds ride the snapshot label, so a
    * crash at any point resumes through the layout-migration path — then
@@ -455,6 +495,7 @@ export class DockerContainerManager {
     await this.execFileImpl("docker", ["rm", "-f", containerName]);
     await this.createContainerFromSnapshot(containerName, bindSpecs, containerKey);
     await this.execFileImpl("docker", ["start", containerName]);
+    await this.removeStaleMountpoints(containerName, bindSpecs);
     const currentImageId = await this.readImageId(snapshotImage);
     if (previousImageId && previousImageId !== currentImageId) {
       try {
