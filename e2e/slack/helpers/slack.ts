@@ -42,6 +42,15 @@ export async function postMessage(
 ): Promise<string> {
   const res = await client.chat.postMessage({ channel, text, thread_ts: threadTs });
   if (!res.ok || !res.ts) throw new Error(`chat.postMessage failed: ${res.error ?? "missing ts"}`);
+  console.log(
+    JSON.stringify({
+      kind: "qa_post",
+      ts: res.ts,
+      channel,
+      threadTs,
+      markers: text.match(/QA_[A-Z0-9_]+/g) ?? [],
+    }),
+  );
   return String(res.ts);
 }
 
@@ -177,6 +186,16 @@ export async function uploadFiles(
     })),
   });
   if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
+  console.log(
+    JSON.stringify({
+      kind: "qa_multi_upload",
+      channel,
+      completion: res.files?.map((batch) => ({
+        ok: batch.ok,
+        files: batch.files?.map((file) => ({ id: file.id, name: file.name })),
+      })),
+    }),
+  );
 }
 
 export async function openDmChannel(client: WebClient, userId: string): Promise<string> {

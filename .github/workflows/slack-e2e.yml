@@ -116,8 +116,8 @@ jobs:
             # delivered" (no dir) from "delivered but not triggered" (dir, no run).
             echo "----- workspace conversations -----"
             find "$WORKING_DIR" -maxdepth 2 2>/dev/null | head -80 || true
-            echo "----- dm history -----"
-            head -c 4000 "$WORKING_DIR"/D*/log.jsonl 2>/dev/null || true
+            echo "----- scoped intake and persisted QA markers -----"
+            node scripts/diagnose-slack-e2e.mjs "$WORKING_DIR" || true
             [ "$exit_code" -eq 0 ] && rm -rf "$WORKSPACE_TMP" || true
           }
           trap cleanup EXIT
