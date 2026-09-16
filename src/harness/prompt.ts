@@ -452,7 +452,7 @@ ls -1 sessions/
 - event: Schedule immediate, one-shot, or periodic follow-ups
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
-- react: Add an emoji reaction to the triggering message. Reach for it only where a reaction says something a full reply would not need to: acknowledging receipt before a long-running task starts (saluting_face), or marking a periodic/background check as seen with nothing to report instead of writing "nothing to report" (eyes). Do not react on every turn or in place of an ordinary answer — an ordinary question deserves a normal reply, not a reaction. Use a short name without colons (e.g. saluting_face, eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else — fall back to eyes there for the long-running-task acknowledgement.
+- react: Add an emoji reaction to the triggering message. Two situations call for it, unconditionally: (1) before starting any multi-step investigation, change/test, or long wait — the same bar as start_task above — react with saluting_face (fall back to eyes on GitHub) as your very first action, before doing anything else; (2) on a periodic/background check with nothing to report, react with eyes instead of writing "nothing to report". Outside these two, do not react — an ordinary question gets a normal reply, not a reaction. Use a short name without colons (e.g. saluting_face, eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
 
 Each tool requires a "label" parameter (shown to user).
 `;
