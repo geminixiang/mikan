@@ -2141,18 +2141,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
             '<p class="muted-note">Global default: ' + escHtml(globalModelLabel) + '</p>',
           ].join(''), 'saveModel', 'Save model', 'model-save-result'),
 
-          renderConfigCard('Office visibility', [
-            '<div class="config-row"><label>Visibility</label><select id="m-visibility">' +
-              renderOptions([
-                ['default', 'Follow the Slack conversation type (default)'],
-                ['private', 'Private — treat this public channel as private'],
-              ], data.officeVisibilityOverride === 'private' ? 'private' : 'default') + '</select></div>',
-            '<p class="muted-note">Effective: <strong>' + escHtml(data.officeVisibility) + '</strong> · ' + escHtml(
-              data.officeVisibilitySource === 'override' ? 'set here'
-              : data.officeVisibilitySource === 'platform' ? 'from the Slack conversation type'
-              : 'conversation type unknown; private until observed') + '</p>',
-            '<p class="muted-note">Public offices can be read by every other office and may write shared MEMORY.md and skills. Private offices (private channels, DMs) are visible only to themselves and read shared knowledge without writing it. Nothing can be made more visible than Slack allows.</p>',
-          ].join(''), 'saveVisibility', 'Save visibility', 'mount-save-result'),
+          renderVisibilityCard(data),
           renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="m-slack-reply-mode">' + replyModeOpts + '</select></div>',
             '<p class="muted-note">Global default: ' + escHtml(globalReplyMode) + '</p>',
@@ -2181,8 +2170,29 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       await saveConversationSetting(btn, result, 'slack', { replyMode }, 'Save Slack');
     }
 
+    // Only a public Slack channel has a choice to make; private channels and
+    // DMs are always hidden, so the card just states that without a control.
+    function renderVisibilityCard(data) {
+      const hidden = data.officeVisibilityOverride === 'private';
+      const canChoose = data.officeVisibilitySource === 'platform' ? data.officeVisibility === 'public' : hidden;
+      if (!canChoose) {
+        const why = data.officeVisibilitySource === 'platform'
+          ? 'This is a DM or private channel, so its files are hidden from every other office. Slack decides this; it cannot be opened up here.'
+          : 'Slack has not reported what kind of conversation this is yet, so it is treated as hidden until it does.';
+        return '<div class="config-block"><h3 class="card-subtitle">Who can see the files in this office</h3>' +
+          '<p><strong>Hidden</strong> — only this office.</p><p class="muted-note">' + why + '</p></div>';
+      }
+      return renderConfigCard('Who can see the files in this office', [
+        '<div class="config-row"><label><input type="checkbox" id="m-visibility"' + (hidden ? ' checked' : '') + '> Hide the files in this channel from other offices</label></div>',
+        '<p>' + (hidden
+          ? '<strong>Hidden</strong> — other offices cannot read the files in this channel, and it can read shared MEMORY.md and skills but not change them.'
+          : '<strong>Shared</strong> — every other office can read the files in this channel (read-only), and this channel may update shared MEMORY.md and skills.') + '</p>',
+        '<p class="muted-note">Slack says this is a public channel, which is why sharing is the default. Hiding is the only change allowed; nothing can be made more visible than Slack allows.</p>',
+      ].join(''), 'saveVisibility', 'Save', 'mount-save-result');
+    }
+
     async function saveVisibility(btn) {
-      const visibility = document.getElementById('m-visibility').value;
+      const visibility = document.getElementById('m-visibility').checked ? 'private' : 'default';
       const result = document.getElementById('mount-save-result');
       await saveConversationSetting(btn, result, 'visibility', { visibility }, 'Save visibility', loadSettings);
     }

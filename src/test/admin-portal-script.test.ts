@@ -73,8 +73,8 @@ describe("admin embedded UI shared flows", () => {
       expect(html).toContain('<option value="high" selected>high</option>');
       expect(html).toContain('<option value="thread" selected>thread</option>');
       if (!global) {
-        expect(html).toContain('<option value="private" selected>');
-        expect(html).toContain("<strong>private</strong>");
+        expect(html).toContain('id="m-visibility" checked');
+        expect(html).toContain("<strong>Hidden</strong>");
       }
       const ids = global
         ? [
@@ -99,10 +99,46 @@ describe("admin embedded UI shared flows", () => {
             "slack-save-result",
           ];
       for (const id of ids) expect(html).toContain(`id="${id}"`);
-      if (!global) expect(html).toContain("Follow the Slack conversation type");
       expect(html).not.toContain("auto-save-result");
     },
   );
+
+  test("visibility card offers the hide switch only to public Slack channels", () => {
+    const p = page();
+    const render = (fields: string) =>
+      p.run(
+        `renderSettings({ thinkingLevel: 'high', slack: { replyMode: 'thread' }, autoReplyRules: [], ${fields} })`,
+      ) as string;
+
+    const publicChannel = render(
+      "officeVisibility: 'public', officeVisibilitySource: 'platform', officeVisibilityOverride: undefined",
+    );
+    expect(publicChannel).toContain('<input type="checkbox" id="m-visibility">');
+    expect(publicChannel).toContain("<strong>Shared</strong>");
+    expect(publicChannel).toContain("saveVisibility(this)");
+
+    const dm = render(
+      "officeVisibility: 'private', officeVisibilitySource: 'platform', officeVisibilityOverride: undefined",
+    );
+    expect(dm).not.toContain('id="m-visibility"');
+    expect(dm).toContain("DM or private channel");
+    expect(dm).not.toContain("saveVisibility(this)");
+
+    const unknown = render(
+      "officeVisibility: 'private', officeVisibilitySource: 'unknown', officeVisibilityOverride: undefined",
+    );
+    expect(unknown).not.toContain('id="m-visibility"');
+    expect(unknown).toContain("treated as hidden");
+  });
+
+  test("saveVisibility maps the hide switch onto the visibility setting", async () => {
+    const p = page();
+    (p.get("m-visibility") as { checked?: boolean }).checked = true;
+    await p.run("saveVisibility(document.getElementById('button'))");
+    expect(p.fetch.mock.calls[0]?.[0]).toBe("/admin/api/conversations/visibility");
+    const body = JSON.parse(p.fetch.mock.calls[0]?.[1]?.body as string);
+    expect(body.visibility).toBe("private");
+  });
 
   test("settings resolve conversation scope after model loading", async () => {
     const p = page();
