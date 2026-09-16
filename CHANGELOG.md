@@ -9,6 +9,28 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.65]
+
+### Added
+
+- Slack: when a run resolves to exactly one completed subagent profile with a known persona, the final answer posts as a fresh message under that profile's own username/icon (`Data Scientist`, `Software Engineer`, `DevOps Engineer`, `Account Manager`, `Business Development`, `Creative Producer`, `Ad Operations Specialist`) instead of mikan's own identity. Mixed-profile or partially-failed runs keep mikan's identity, since `chat.update`/`chat.appendStream` cannot carry a Slack identity and there is no single "who answered this" to attribute.
+- The `react` tool (add an emoji reaction to the triggering message) is now documented in the system prompt with two unconditional triggers tied to `start_task`'s existing bar: react before starting any multi-step investigation, change/test, or long wait, and react instead of writing "nothing to report" on a periodic/background check with nothing to report.
+- Discord and Telegram now wire the `react` tool into their responders (previously Slack/GitHub-only despite the tool being granted everywhere); a shared short-name-to-Unicode translation covers what the prompt recommends for platforms whose reaction API takes a Unicode character rather than a name.
+- `creative-producer` subagent profile gains the `generate_image` tool grant, matching its image-deliverable description.
+
+### Changed
+
+- Built-in subagent profile `maxTokens` raised from 100,000 to 1,000,000: the old cap was a common budget-exceeded trip for ordinary investigative tasks (e.g. a repo-wide architecture review), not just runaway loops.
+- The `analysis-only` subagent profile is renamed `summarizer`: it is a DAG synthesis node over upstream dependency output, not a mid-task advisor.
+- Office data policy for non-Slack platforms is now an explicit rule (ADR 0008): only Slack conversations can be public, and Telegram/Discord/GitHub offices always resolve to private rather than falling through an "unknown" branch by omission.
+- The Admin office visibility card now states the effective outcome in plain words instead of the internal policy model; public Slack channels get one "Hide the files in this channel from other offices" checkbox, other conversation kinds show the fixed Hidden state with no control.
+- `settings.json` ownership (schema, scope merge, readers, writers, one-time migrations) is gathered under `src/settings/`.
+
+### Docs and maintenance
+
+- Describe mikan as an organization-wide, per-conversation-isolated agent.
+- Move the three remaining top-level source files into their owning modules (`adapters/messages.ts`, `adapters/index.ts`, `cli/process-lifecycle.ts`); pure move, no behavior change.
+
 ## [1.0.0-beta.64]
 
 ### Changed
