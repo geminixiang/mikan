@@ -7,7 +7,7 @@
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.
+Self-hosted AI coding agent for organizations: every Slack channel and DM gets its own sandboxed workspace, credentials, and memory. Also speaks Telegram, Discord, and GitHub.
 
 > [!WARNING]
 > **Pre-1.0 status** — the overall framework stabilizes at 1.0.0. Until then, releases may change settings and on-disk data formats without migrations: upgrading between pre-1.0 versions can require resetting or manually adjusting existing state and workspace data.
