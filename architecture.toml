@@ -60,8 +60,8 @@ sources = ["src/office/"]
 id = "configuration"
 name = "Configuration and live settings"
 kind = "authority"
-docs = "ARCHITECTURE.md#configuration-authority"
-sources = ["src/config.ts", "src/settings-mutation.ts"]
+docs = "src/settings/README.md"
+sources = ["src/settings/"]
 
 [[modules]]
 id = "sandbox"

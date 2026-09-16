@@ -10,6 +10,8 @@ import {
   unlinkSync,
   writeSync,
 } from "node:fs";
+import { resolve } from "node:path";
+import * as log from "./log.js";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 
@@ -135,4 +137,39 @@ export function atomicWritePrivateFile(targetPath: string, content: string): voi
     }
     throw err;
   }
+}
+
+/**
+ * True when `child` is `parent` or a path inside it. Purely lexical (no
+ * symlink resolution) — used for configuration sanity checks, not as the
+ * final security boundary.
+ */
+function isPathInside(child: string, parent: string): boolean {
+  const parentPath = resolve(parent);
+  const childPath = resolve(child);
+  return childPath === parentPath || childPath.startsWith(parentPath + "/");
+}
+
+/**
+ * The state dir (settings, office records, vaults) must never live inside
+ * the working dir: conversation opt-in "full" mode mounts the entire working
+ * dir read-write into sandbox containers, which would expose host-authoritative
+ * state and credentials. Fatal under sandboxed modes; host mode has no mounts,
+ * so only warn about the bad hygiene.
+ */
+export function assertStateDirOutsideWorkspace(
+  stateDir: string,
+  workingDir: string,
+  sandboxType: string,
+): void {
+  if (!isPathInside(stateDir, workingDir)) return;
+  const message =
+    `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
+    `sandbox containers mount the working directory, and a mounted state dir ` +
+    `would expose settings, office records, vaults, and credentials to sandboxed code.`;
+  if (sandboxType === "host") {
+    log.logWarning("Insecure state dir location", message);
+    return;
+  }
+  throw new Error(message);
 }

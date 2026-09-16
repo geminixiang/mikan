@@ -34,7 +34,7 @@ import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./a
 import { readEnv, setEnvAliases } from "../env-manifest.js";
 import { migrateLegacyOpenConnectorTokens } from "../harness/open-connector.js";
 import { migrateLegacyWorkspaceEvents } from "../events/index.js";
-import { migrateLegacyDoorPolicy } from "../config.js";
+import { migrateLegacyDoorPolicy } from "../settings/migrate.js";
 import { createWorkspace } from "../office/index.js";
 
 export function runOfficeCommand(argv: string[]): number {

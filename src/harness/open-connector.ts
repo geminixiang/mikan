@@ -11,7 +11,7 @@ import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { readEnv } from "../env-manifest.js";
 import * as log from "../log.js";
-import { loadScopeMcpServers, updateConversationSettings } from "../config.js";
+import { loadScopeMcpServers, updateConversationSettings } from "../settings/index.js";
 import { isRecord, readJsonSchemaFileIfExists } from "../file-guards.js";
 import {
   createWorkspace,

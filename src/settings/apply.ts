@@ -20,17 +20,21 @@ import {
   setOfficeVisibilityOverride,
   updateConversationSettings,
   updateGlobalSettings,
-} from "./config.js";
-import type { Office } from "./office/index.js";
+} from "./index.js";
+import type { Office } from "../office/index.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
   OfficeAddress,
   RunnerCacheControl,
   SettingsApplyResult,
-} from "./types.js";
+} from "../types.js";
 
-export type { GlobalRunnerCacheControl, RunnerCacheControl, SettingsApplyResult } from "./types.js";
+export type {
+  GlobalRunnerCacheControl,
+  RunnerCacheControl,
+  SettingsApplyResult,
+} from "../types.js";
 
 /** True when a patch touches keys a cached session runner bakes in. */
 function affectsCachedRunner(patch: Partial<AgentConfig>): boolean {

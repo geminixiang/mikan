@@ -6,7 +6,7 @@ import {
   ensureDefaultOpenConnector,
   migrateLegacyOpenConnectorTokens,
 } from "../harness/open-connector.js";
-import { loadScopeMcpServers, resolveConversationSettings } from "../config.js";
+import { loadScopeMcpServers, resolveConversationSettings } from "../settings/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
 let dir: string;

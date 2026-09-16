@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { MessagingBot, PlatformName } from "../../adapter.js";
-import { resolveLinkBaseUrl } from "../../config.js";
+import { resolveLinkBaseUrl } from "../../env-manifest.js";
 import * as log from "../../log.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import { OfficeEventStore, type EventScheduleSink } from "../../events/index.js";

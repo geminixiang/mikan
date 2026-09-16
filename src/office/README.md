@@ -50,12 +50,12 @@ objects that used to carry a workspace root plus a conversation id plus a
 state dir now carry one `office` field, and callers read `office.dir`,
 `office.key`, `office.stateDir` from it. The main crossings:
 
-| Consumer               | Entry point                                                                                    |
-| ---------------------- | ---------------------------------------------------------------------------------------------- |
-| conversation settings  | `conversationSettingsPath(office)`, `resolveConversationSettings(office)` (`src/config.ts`)    |
-| workspace projection   | `resolveWorkspaceProjection(office)` (`src/office/projection.ts`)                              |
-| conversation vault     | vault key = `officeKey(address)` (`src/vault/`)                                                |
-| chat log + attachments | `appendChannelLog(office, …)`, `saveIncomingAttachments(office, …)` (`src/adapters/shared.ts`) |
+| Consumer               | Entry point                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------- |
+| conversation settings  | `conversationSettingsPath(office)`, `resolveConversationSettings(office)` (`src/settings/index.ts`) |
+| workspace projection   | `resolveWorkspaceProjection(office)` (`src/office/projection.ts`)                                   |
+| conversation vault     | vault key = `officeKey(address)` (`src/vault/`)                                                     |
+| chat log + attachments | `appendChannelLog(office, …)`, `saveIncomingAttachments(office, …)` (`src/adapters/shared.ts`)      |
 
 `officeStateDir(stateDir, address)` covers migration and settings surfaces
 that genuinely hold no Office.

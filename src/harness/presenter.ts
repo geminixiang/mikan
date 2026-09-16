@@ -13,7 +13,7 @@ import {
   settleSubagentProgress,
 } from "./tools/subagent.js";
 import type { ConversationResponder, SubagentProgressSnapshot } from "../adapter.js";
-import type { resolveConversationSettings } from "../config.js";
+import type { resolveConversationSettings } from "../settings/index.js";
 import {
   addLifecycleEvent,
   metricAttributes,

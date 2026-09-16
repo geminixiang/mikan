@@ -12,7 +12,7 @@ import { translateAttachPathToHost } from "../harness/prompt.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 
 const PLATFORM = {
   name: "slack",

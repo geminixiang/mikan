@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { loadOfficeVisibilityOverride } from "../config.js";
+import { loadOfficeVisibilityOverride } from "../settings/index.js";
 import {
   createOfficeAddress,
   createWorkspace,
@@ -13,7 +13,7 @@ import {
   applyConversationSettings,
   applyOfficeVisibility,
   applyGlobalSettings,
-} from "../settings-mutation.js";
+} from "../settings/apply.js";
 
 const C1 = createOfficeAddress("slack", "C1");
 

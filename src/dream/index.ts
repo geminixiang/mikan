@@ -2,7 +2,7 @@ import { Cron } from "croner";
 import { contentText } from "@earendil-works/pi-ai";
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { resolveConversationSettings } from "../config.js";
+import { resolveConversationSettings } from "../settings/index.js";
 import type { MikanModels } from "../harness/index.js";
 import { MikanAgentSession } from "../harness/index.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";

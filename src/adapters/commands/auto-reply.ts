@@ -1,4 +1,7 @@
-import { setSlackConversationAutoReply, slackConversationAutoReplyEnabled } from "../../config.js";
+import {
+  setSlackConversationAutoReply,
+  slackConversationAutoReplyEnabled,
+} from "../../settings/index.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replySummary } from "./utils.js";

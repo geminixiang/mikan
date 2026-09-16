@@ -1,6 +1,6 @@
 import { resolveWorkspaceProjection } from "../../office/projection.js";
 import { runtimeResourceKey } from "../../sandbox/identity.js";
-import { applyOfficeVisibility } from "../../settings-mutation.js";
+import { applyOfficeVisibility } from "../../settings/apply.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { replySummary } from "./utils.js";

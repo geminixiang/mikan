@@ -38,7 +38,7 @@ import {
   resolveConversationSettings,
   type AgentConfig,
   type SandboxSettings,
-} from "../../../config.js";
+} from "../../../settings/index.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../../harness/mcp.js";
 import { loadMcpTools } from "../../../harness/mcp.js";
 import {
@@ -51,7 +51,7 @@ import {
   applyConversationSettings,
   applyOfficeVisibility,
   applyGlobalSettings,
-} from "../../../settings-mutation.js";
+} from "../../../settings/apply.js";
 import {
   escapeHtml,
   jsonResponse as jsonRes,

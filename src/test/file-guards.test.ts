@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { Type } from "@sinclair/typebox";
 import {
+  assertStateDirOutsideWorkspace,
   ensureDirExists,
   isRecord,
   parseJsonSchemaValue,
@@ -229,5 +230,24 @@ describe("isRecord", () => {
     expect(isRecord(42)).toBe(false);
     expect(isRecord(true)).toBe(false);
     expect(isRecord(undefined)).toBe(false);
+  });
+});
+
+describe("assertStateDirOutsideWorkspace", () => {
+  test("throws under sandboxed modes when state dir is inside the working dir", () => {
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "image")).toThrow(
+      /must not be inside the working directory/,
+    );
+    expect(() => assertStateDirOutsideWorkspace("/work", "/work", "image")).toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "container")).toThrow();
+  });
+
+  test("containment is lexical and slash-aware", () => {
+    expect(() => assertStateDirOutsideWorkspace("/work-state", "/work", "image")).not.toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/elsewhere", "/work", "image")).not.toThrow();
+  });
+
+  test("host mode only warns", () => {
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "host")).not.toThrow();
   });
 });

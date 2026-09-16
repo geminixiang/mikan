@@ -25,12 +25,9 @@ import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
 import { DockerContainerManager } from "./sandbox/provisioner.js";
-import {
-  assertStateDirOutsideWorkspace,
-  loadGlobalSettings,
-  MissingGlobalSettingsError,
-  resolveLinkBaseUrl,
-} from "./config.js";
+import { loadGlobalSettings, MissingGlobalSettingsError } from "./settings/index.js";
+import { assertStateDirOutsideWorkspace } from "./file-guards.js";
+import { resolveLinkBaseUrl } from "./env-manifest.js";
 import {
   configureHttpDispatcher,
   defaultModelsJsonPath,

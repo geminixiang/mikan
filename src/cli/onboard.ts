@@ -4,7 +4,7 @@
  * Three questions cover the minimum viable deployment: one chat adapter,
  * one LLM provider, and an optional sandbox mode. Everything asked is
  * derived from existing authorities (ENV_MANIFEST for platform vars,
- * settings/models.json shapes from config.ts / harness/models.ts) — this
+ * settings/models.json shapes from settings/index.ts / harness/models.ts) — this
  * file adds no second inventory of anything.
  *
  * Products:
@@ -21,7 +21,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as prompts from "@clack/prompts";
 import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 import type { OnboardLlmChoice } from "../types.js";
 import { defaultModelsJsonPath } from "../harness/models.js";
 import { atomicWritePrivateFile } from "../file-guards.js";

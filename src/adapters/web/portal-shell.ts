@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { resolveLinkBaseUrl } from "../../config.js";
+import { resolveLinkBaseUrl } from "../../env-manifest.js";
 import { PRODUCT_NAME } from "../../platform-messages.js";
 
 export function escapeHtml(value: string): string {

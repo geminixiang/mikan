@@ -1,7 +1,7 @@
 import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
-import { loadOfficeVisibilityOverride } from "../config.js";
+import { loadOfficeVisibilityOverride } from "../settings/index.js";
 import { listRegisteredOffices, type Office } from "./index.js";
 import * as log from "../log.js";
 import type { ContainerMount, WorkspaceVisibility } from "../types.js";

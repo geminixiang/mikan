@@ -12,7 +12,7 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import * as observability from "../observability/index.js";

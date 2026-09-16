@@ -11,7 +11,7 @@ import {
   conversationSettingsPath,
   createGlobalSettingsFile,
   loadOfficeVisibilityOverride,
-} from "../config.js";
+} from "../settings/index.js";
 import { dispatchCommand } from "../adapters/commands/registry.js";
 import { COMMAND_MANIFEST } from "../adapters/commands/manifest.js";
 import { LoginCommandHandler, parseLoginCommand } from "../adapters/commands/login.js";

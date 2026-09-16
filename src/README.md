@@ -5,16 +5,14 @@ This directory is the TypeScript source root for mikan; the entries below descri
 ## Files
 
 - `adapter.ts`: Defines platform-neutral chat messages, bots, response contexts, events, and running-session interfaces.
-- `config.ts`: Loads, normalizes, and saves global and conversation settings for models, sandbox, and portal URLs. Conversation-scoped functions take an `Office` and read/write the host-only office state dir; a legacy `<office dir>/settings.json` is migrated once and never read again.
 - `content.config.ts`: Declares the Starlight `docs` content collection for the documentation site.
 - `env-manifest.ts`: Declares the daemon's environment-variable interface as data; startup validation, `mikan env`, `--help`, and the pm2 deploy-template check derive from it. Also owns the read/write convention itself: `readEnv` (accepts `MIKAN_`-prefixed aliases) and `setEnvAliases`.
-- `file-guards.ts`: Provides guarded optional text/JSON reads, JSON value parsing, record checks, directory creation, and atomic/private file replacement primitives.
+- `file-guards.ts`: Provides guarded optional text/JSON reads, JSON value parsing, record checks, directory creation, atomic/private file replacement primitives, and the state-dir-outside-workspace placement guard.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
 - `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, scheduled Dream maintenance, and platform bots.
 - `platform-messages.ts`: Centralizes product name and cross-platform bot status messages for stopping, stopped, already-working, and idle states.
-- `settings-mutation.ts`: The one writer seam for settings mutations that affect live conversations; chat commands and the Admin portal write through it so cached runners and disk never disagree.
-- `types.ts`: Cross-module domain types that no single module owns — office identity aliases, sandbox settings, workspace door policy/layout, event payload re-exports, and portal shell options.
+- `types.ts`: Cross-module domain types that no single module owns — office identity aliases, sandbox settings, event payload re-exports, and portal shell options.
 
 ## Subdirectories
 
@@ -28,6 +26,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `office/`: The Conversation office module — canonical identity (`OfficeAddress`/office keys), the Workspace/Office layout values, workspace projection policy, the durable office registry journal, and the boot-time legacy migration.
 - `runtime/`: Conversation and session runtime orchestration.
 - `sandbox/`: Host/container/image/cloudflare sandbox abstractions and executors, including managed Docker container provisioning and lifecycle.
+- `settings/`: Owner of `settings.json` at global and office scope — schema, scope merge, the writer seam that keeps cached runners and disk coherent, and one-time settings migrations. See `settings/README.md`.
 - `sessions/`: Chat-history synchronization, single-writer session-tree storage, session file management, and session policy.
 - `test/`: The whole test suite (unit, integration, and e2e specs) for every module above.
 - `vault/`: File-backed credential vault implementation, vault-key routing, and credential injection.

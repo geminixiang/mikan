@@ -274,3 +274,14 @@ export function envReport(env: EnvLookup = readEnv): string {
   lines.push("Each var also accepts a MIKAN_-prefixed alias (e.g. MIKAN_LINK_URL).");
   return lines.join("\n");
 }
+
+/**
+ * Externally-visible base URL of the link/OAuth server, e.g.
+ * `https://mikan.example.com` (no trailing slash). Read from `LINK_URL` or
+ * `MIKAN_LINK_URL`, the same env var the bot uses to build credential onboarding links.
+ */
+export function resolveLinkBaseUrl(): string | undefined {
+  const raw = readEnv("LINK_URL");
+  if (!raw) return undefined;
+  return raw.replace(/\/+$/, "");
+}

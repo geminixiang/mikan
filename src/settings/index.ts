@@ -1,12 +1,15 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { effectiveStateDir } from "./cli/arg-grammar.js";
-import { readEnv } from "./env-manifest.js";
-import { ensureDirExists, readJsonSchemaFileIfExists } from "./file-guards.js";
-import { atomicWritePrivateFile } from "./file-guards.js";
-import * as log from "./log.js";
+import { dirname, join } from "node:path";
+import { effectiveStateDir } from "../cli/arg-grammar.js";
+import { readEnv } from "../env-manifest.js";
+import {
+  atomicWritePrivateFile,
+  ensureDirExists,
+  readJsonSchemaFileIfExists,
+} from "../file-guards.js";
+import * as log from "../log.js";
 
 export class MissingGlobalSettingsError extends Error {
   constructor(public readonly settingsPath: string) {
@@ -15,11 +18,11 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, SandboxSettings } from "./types.js";
-import type { AgentConfig, OfficeKey, SandboxSettings } from "./types.js";
-import type { McpServerConfig } from "./harness/types.js";
-import type { OnboardLlmChoice } from "./types.js";
-import { listRegisteredOffices, type Office, type Workspace } from "./office/index.js";
+export type { AgentConfig, SandboxSettings } from "../types.js";
+import type { AgentConfig, SandboxSettings } from "../types.js";
+import type { McpServerConfig } from "../harness/types.js";
+import type { OnboardLlmChoice } from "../types.js";
+import type { Office } from "../office/index.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -143,10 +146,10 @@ const SettingsFileSchema = Type.Object({
   ),
 });
 
-type SettingsFileConfig = Static<typeof SettingsFileSchema>;
-type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
+export type SettingsFileConfig = Static<typeof SettingsFileSchema>;
+export type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
 
-function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
+export function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
     detail === "unexpected JSON shape"
       ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
@@ -357,41 +360,6 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   });
 }
 
-/**
- * True when `child` is `parent` or a path inside it. Purely lexical (no
- * symlink resolution) — used for configuration sanity checks, not as the
- * final security boundary.
- */
-export function isPathInside(child: string, parent: string): boolean {
-  const parentPath = resolve(parent);
-  const childPath = resolve(child);
-  return childPath === parentPath || childPath.startsWith(parentPath + "/");
-}
-
-/**
- * The state dir (settings, office records, vaults) must never live inside
- * the working dir: conversation opt-in "full" mode mounts the entire working
- * dir read-write into sandbox containers, which would expose host-authoritative
- * state and credentials. Fatal under sandboxed modes; host mode has no mounts,
- * so only warn about the bad hygiene.
- */
-export function assertStateDirOutsideWorkspace(
-  stateDir: string,
-  workingDir: string,
-  sandboxType: string,
-): void {
-  if (!isPathInside(stateDir, workingDir)) return;
-  const message =
-    `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
-    `sandbox containers mount the working directory, and a mounted state dir ` +
-    `would expose settings, office records, vaults, and credentials to sandboxed code.`;
-  if (sandboxType === "host") {
-    log.logWarning("Insecure state dir location", message);
-    return;
-  }
-  throw new Error(message);
-}
-
 /** Settings-file DSN wins over SENTRY_DSN env — the rule lives only here. */
 function sentryDsnFrom(fromFile: string | undefined): string | undefined {
   return fromFile || readEnv("SENTRY_DSN");
@@ -422,22 +390,11 @@ export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoic
   return settingsPath;
 }
 
-/**
- * Externally-visible base URL of the link/OAuth server, e.g.
- * `https://mikan.example.com` (no trailing slash). Read from `LINK_URL` or
- * `MIKAN_LINK_URL`, the same env var the bot uses to build credential onboarding links.
- */
-export function resolveLinkBaseUrl(): string | undefined {
-  const raw = readEnv("LINK_URL");
-  if (!raw) return undefined;
-  return raw.replace(/\/+$/, "");
-}
-
-function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
+export function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
   return values !== undefined && Object.values(values).some((value) => value !== undefined);
 }
 
-function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
+export function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
     ...(hasDefinedValue(config.llm) ? { llm: config.llm } : {}),
     ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
@@ -557,89 +514,4 @@ export function setOfficeVisibilityOverride(office: Office, visibility: "private
       2,
     ),
   );
-}
-
-export interface DoorPolicyMigrationReport {
-  /** Retired keys removed from the global settings file. */
-  global: string[];
-  conversations: { key: OfficeKey; removed: string[]; visibility?: "private" }[];
-  skipped: { key: OfficeKey | "global"; reason: string }[];
-}
-
-const RETIRED_KEYS = {
-  image: "sandbox.image.workspaceMount",
-  workspace: "sandbox.workspace",
-} as const;
-
-/**
- * Strip the retired door-policy keys from one settings file. Returns the
- * removed key paths, or an empty list when nothing had to change (the file is
- * then left byte-for-byte alone, which also preserves `{}` migration markers).
- * The only value carried forward is an explicit shared-support `private`
- * visibility, which maps onto `office.visibility` (ADR 0008). Every other
- * retired combination — `full`, `isolated`, legacy `private` — is dropped
- * without deriving a grant.
- */
-function stripRetiredDoorPolicy(
-  settingsPath: string,
-  allowVisibilityCarry: boolean,
-): { removed: string[]; visibility?: "private" } {
-  const existing = loadSettingsFile(settingsPath);
-  if (!existing?.sandbox) return { removed: [] };
-  const { image, workspace, ...sandboxRest } = existing.sandbox;
-  const removed: string[] = [];
-  if (image?.workspaceMount !== undefined) removed.push(RETIRED_KEYS.image);
-  if (workspace !== undefined) removed.push(RETIRED_KEYS.workspace);
-  if (removed.length === 0) return { removed };
-  const carry =
-    allowVisibilityCarry &&
-    workspace?.doorPolicy === "trusted" &&
-    workspace.layout !== "full" &&
-    workspace.visibility === "private";
-  const { workspaceMount: _mount, ...imageRest } = image ?? {};
-  const sandbox: SandboxFileSettings = {
-    ...sandboxRest,
-    ...(hasDefinedValue(imageRest) ? { image: imageRest } : {}),
-  };
-  const next: SettingsFileConfig = {
-    ...existing,
-    sandbox,
-    ...(carry ? { office: { ...existing.office, visibility: "private" as const } } : {}),
-  };
-  atomicWritePrivateFile(settingsPath, JSON.stringify(compactSettingsConfig(next), null, 2));
-  return { removed, ...(carry ? { visibility: "private" as const } : {}) };
-}
-
-/**
- * One-time removal of the retired door-policy settings from the global file
- * and every registered office (ADR 0008). Run with the daemon stopped.
- */
-export function migrateLegacyDoorPolicy(workspace: Workspace): DoorPolicyMigrationReport {
-  const report: DoorPolicyMigrationReport = { global: [], conversations: [], skipped: [] };
-  try {
-    report.global = stripRetiredDoorPolicy(
-      join(workspace.stateDir, "settings.json"),
-      false,
-    ).removed;
-  } catch (error) {
-    report.skipped.push({
-      key: "global",
-      reason: error instanceof Error ? error.message : String(error),
-    });
-  }
-  for (const record of listRegisteredOffices(workspace.stateDir)) {
-    const office = workspace.office(record);
-    const settingsPath = join(office.stateDir, "settings.json");
-    if (!existsSync(settingsPath)) continue;
-    try {
-      const result = stripRetiredDoorPolicy(settingsPath, true);
-      if (result.removed.length > 0) report.conversations.push({ key: office.key, ...result });
-    } catch (error) {
-      report.skipped.push({
-        key: office.key,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-  return report;
 }

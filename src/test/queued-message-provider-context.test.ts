@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { Context, MutableModels } from "@earendil-works/pi-ai";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 import type {
   ConversationContext,
   ConversationEvent,

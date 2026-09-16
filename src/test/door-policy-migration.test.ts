@@ -5,9 +5,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   loadGlobalSettings,
   loadOfficeVisibilityOverride,
-  migrateLegacyDoorPolicy,
   resolveConversationSettings,
-} from "../config.js";
+} from "../settings/index.js";
+import { migrateLegacyDoorPolicy } from "../settings/migrate.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 
 let stateDir: string;

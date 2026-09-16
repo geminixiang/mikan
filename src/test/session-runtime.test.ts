@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { createOfficeAddress, createWorkspace, officeSessionsDir } from "../office/index.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 import type {
   MessagingBot,
   ConversationContext,

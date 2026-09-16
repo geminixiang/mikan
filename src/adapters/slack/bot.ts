@@ -22,7 +22,10 @@ import {
 } from "../../adapter.js";
 import { createOfficeAddress, listRegisteredOffices, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
-import { slackConversationAutoReplyEnabled, resolveConversationSettings } from "../../config.js";
+import {
+  slackConversationAutoReplyEnabled,
+  resolveConversationSettings,
+} from "../../settings/index.js";
 import type { EventScheduler } from "../../events/scheduler.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";

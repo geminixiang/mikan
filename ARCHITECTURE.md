@@ -217,7 +217,7 @@ The State dir is never part of a Workspace projection.
 
 ## Configuration authority
 
-`src/config.ts` owns settings format, defaults, normalization, validation, and legacy migration. `src/settings-mutation.ts` is the one write seam for settings that affect live conversations.
+`src/settings/index.ts` owns settings format, defaults, normalization, validation, and scope merge; `src/settings/apply.ts` is the one write seam for settings that affect live conversations; `src/settings/migrate.ts` holds one-time settings migrations run only from the CLI.
 
 Settings baked into a cached runner—such as model selection or prompt-affecting workspace policy—require cache coordination:
 
@@ -337,7 +337,7 @@ Evidence: `src/office/projection.ts`.
 
 **`state-dir-host-only`** — The State dir is host-private, outside the Workspace root, and never projected into a Sandbox. Important state writes are private and atomic where readers must not observe partial content.
 
-Evidence: `src/config.ts`, `src/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
+Evidence: `src/settings/index.ts`, `src/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
 
 ### INV Dream commit order
 
@@ -377,7 +377,7 @@ Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/runner.ts`, `src/h
 
 **`settings-runner-coherence`** — Runner-baked conversation settings are changed only after lifecycle invalidation succeeds; otherwise the mutation is refused. Global changes mark leased or settling runners for deferred invalidation, which disposes them immediately after their last active lease settles.
 
-Evidence: `src/settings-mutation.ts`.
+Evidence: `src/settings/apply.ts`.
 
 ### INV session format compatibility
 

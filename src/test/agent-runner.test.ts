@@ -15,7 +15,7 @@ import type { MutableModels } from "@earendil-works/pi-ai";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../adapter.js";
 import type { McpServerConfig } from "../harness/types.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
-import { loadScopeMcpServers } from "../config.js";
+import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/index.js";

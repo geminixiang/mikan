@@ -38,7 +38,7 @@ import type {
 } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
-import { resolveConversationSettings } from "../config.js";
+import { resolveConversationSettings } from "../settings/index.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
 import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";

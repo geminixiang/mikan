@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as log from "../log.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
-import { createGlobalSettingsFile } from "../config.js";
+import { createGlobalSettingsFile } from "../settings/index.js";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { FileVaultManager } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";

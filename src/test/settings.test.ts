@@ -4,16 +4,14 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 import {
-  assertStateDirOutsideWorkspace,
   conversationSettingsPath,
   createGlobalSettingsFile,
-  isPathInside,
   loadGlobalSettings,
   resolveConversationSettings,
   resolveSentryDsn,
   updateConversationSettings,
   updateGlobalSettings,
-} from "../config.js";
+} from "../settings/index.js";
 
 describe("loadGlobalSettings", () => {
   let stateDir: string;
@@ -330,27 +328,6 @@ describe("loadGlobalSettings", () => {
     expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
     // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
-  });
-});
-
-describe("state dir placement guard", () => {
-  test("isPathInside is lexical and slash-aware", () => {
-    expect(isPathInside("/work/state", "/work")).toBe(true);
-    expect(isPathInside("/work", "/work")).toBe(true);
-    expect(isPathInside("/work-state", "/work")).toBe(false);
-    expect(isPathInside("/elsewhere", "/work")).toBe(false);
-  });
-
-  test("throws under sandboxed modes when state dir is inside the working dir", () => {
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "image")).toThrow(
-      /must not be inside the working directory/,
-    );
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "container")).toThrow();
-  });
-
-  test("host mode only warns; disjoint paths always pass", () => {
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "host")).not.toThrow();
-    expect(() => assertStateDirOutsideWorkspace("/home/u/.mikan", "/work", "image")).not.toThrow();
   });
 });
 

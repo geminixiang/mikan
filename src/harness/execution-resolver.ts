@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 import type { Workspace } from "../office/index.js";
-import { loadGlobalSettings } from "../config.js";
+import { loadGlobalSettings } from "../settings/index.js";
 import { DockerContainerManager, type ContainerMount } from "../sandbox/provisioner.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
