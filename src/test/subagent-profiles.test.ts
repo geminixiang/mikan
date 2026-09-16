@@ -56,16 +56,16 @@ describe("loadSubagentProfiles", () => {
       maxTurns: 30,
     });
     expect(profiles.get("creative-producer")).toMatchObject({
-      tools: ["read", "bash", "write"],
+      tools: ["read", "bash", "write", "generate_image"],
       maxTurns: 40,
     });
     expect(profiles.get("ad-operations-specialist")).toMatchObject({
       tools: ["read", "bash", "write"],
       maxTurns: 35,
     });
-    expect(profiles.get("analysis-only")).toMatchObject({ tools: [] });
+    expect(profiles.get("summarizer")).toMatchObject({ tools: [] });
     for (const profile of profiles.values()) {
-      expect(profile.maxTokens).toBe(100_000);
+      expect(profile.maxTokens).toBe(1_000_000);
     }
   });
 
@@ -148,7 +148,7 @@ describe("loadSubagentProfiles", () => {
     expect(diagnostics[0].message).toContain("model must be provider/id");
     expect(profiles.has("broken")).toBe(false);
     expect(profiles.get("fine")).toMatchObject({ tools: ["read"] });
-    expect(profiles.get("analysis-only")).toBeDefined();
+    expect(profiles.get("summarizer")).toBeDefined();
   });
 
   test("reports a new profile that supplies no tools", () => {

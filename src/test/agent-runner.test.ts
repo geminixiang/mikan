@@ -231,8 +231,8 @@ describe("PiAgentWrapper.run", () => {
       fauxAssistantMessage(
         fauxToolCall("subagent", {
           tasks: [
-            { label: "first", task: "first task", profile: "analysis-only" },
-            { label: "second", task: "second task", profile: "analysis-only" },
+            { label: "first", task: "first task", profile: "summarizer" },
+            { label: "second", task: "second task", profile: "summarizer" },
           ],
         }),
       ),
@@ -275,8 +275,8 @@ describe("PiAgentWrapper.run", () => {
       fauxAssistantMessage(
         fauxToolCall("subagent", {
           tasks: [
-            { label: "first", task: "first task", profile: "analysis-only" },
-            { label: "second", task: "second task", profile: "analysis-only" },
+            { label: "first", task: "first task", profile: "summarizer" },
+            { label: "second", task: "second task", profile: "summarizer" },
           ],
         }),
       ),

@@ -207,7 +207,7 @@ Owns the current Pi 0.85 v4 append-only session JSONL tree. Persisted headers us
 
 ### Subagent profiles
 
-A subagent is always launched with a named profile — free-form per-run configuration is not a supported surface. `loadSubagentProfiles` resolves them: the built-in profiles in `src/harness/subagent-profiles.ts` are the definition of record (`worker`, `software-engineer`, `devops-engineer`, `data-scientist`, `account-manager`, `business-development`, `creative-producer`, `ad-operations-specialist`, `analysis-only`), and a `<workspace>/agents/<name>.md` file **patches** the built-in of the same name rather than replacing it, so an operator can override `model:` without restating tools and prompt. A file whose name matches no built-in defines a new profile and must supply its own `tools`. A malformed file becomes a diagnostic and is skipped, never thrown.
+A subagent is always launched with a named profile — free-form per-run configuration is not a supported surface. `loadSubagentProfiles` resolves them: the built-in profiles in `src/harness/subagent-profiles.ts` are the definition of record (`worker`, `software-engineer`, `devops-engineer`, `data-scientist`, `account-manager`, `business-development`, `creative-producer`, `ad-operations-specialist`, `summarizer`), and a `<workspace>/agents/<name>.md` file **patches** the built-in of the same name rather than replacing it, so an operator can override `model:` without restating tools and prompt. A file whose name matches no built-in defines a new profile and must supply its own `tools`. A malformed file becomes a diagnostic and is skipped, never thrown.
 
 ### Harness events and budgets
 

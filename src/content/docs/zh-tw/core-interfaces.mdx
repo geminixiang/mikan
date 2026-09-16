@@ -168,7 +168,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### Subagent profile
 
-Subagent 一律以具名的 profile 啟動——不支援自由格式的 per-run 設定。`loadSubagentProfiles` 負責解析：`src/harness/subagent-profiles.ts` 中的內建 profile 就是定義本身（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`analysis-only`），而 `<workspace>/agents/<name>.md` 檔案是**修補**同名的內建 profile，而不是取代它，因此操作者可以只覆寫 `model:`，不必重寫 tools 與 prompt。名稱與任何內建都不相符的檔案則定義一個新的 profile，並且必須自行提供 `tools`。格式錯誤的檔案會變成一則診斷訊息並被略過，絕不會拋出例外。
+Subagent 一律以具名的 profile 啟動——不支援自由格式的 per-run 設定。`loadSubagentProfiles` 負責解析：`src/harness/subagent-profiles.ts` 中的內建 profile 就是定義本身（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`summarizer`），而 `<workspace>/agents/<name>.md` 檔案是**修補**同名的內建 profile，而不是取代它，因此操作者可以只覆寫 `model:`，不必重寫 tools 與 prompt。名稱與任何內建都不相符的檔案則定義一個新的 profile，並且必須自行提供 `tools`。格式錯誤的檔案會變成一則診斷訊息並被略過，絕不會拋出例外。
 
 ### Harness event 與預算
 

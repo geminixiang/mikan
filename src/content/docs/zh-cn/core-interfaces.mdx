@@ -207,7 +207,7 @@ interface ConversationContext {
 
 ### Subagent profile
 
-subagent 始终以一个具名 profile 启动——按运行自由配置不是受支持的界面。`loadSubagentProfiles` 负责解析：`src/harness/subagent-profiles.ts` 中的内置 profile 是权威定义（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`analysis-only`），而 `<workspace>/agents/<name>.md` 文件是对同名内置 profile 的**补丁**而非替换，因此运维人员可以只覆盖 `model:`，无需重述 tools 和提示词。名称与任何内置都不匹配的文件定义一个新 profile，且必须自带 `tools`。格式错误的文件会变成诊断信息并被跳过，绝不抛出异常。
+subagent 始终以一个具名 profile 启动——按运行自由配置不是受支持的界面。`loadSubagentProfiles` 负责解析：`src/harness/subagent-profiles.ts` 中的内置 profile 是权威定义（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`summarizer`），而 `<workspace>/agents/<name>.md` 文件是对同名内置 profile 的**补丁**而非替换，因此运维人员可以只覆盖 `model:`，无需重述 tools 和提示词。名称与任何内置都不匹配的文件定义一个新 profile，且必须自带 `tools`。格式错误的文件会变成诊断信息并被跳过，绝不抛出异常。
 
 ### 框架事件与预算
 

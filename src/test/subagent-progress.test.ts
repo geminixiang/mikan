@@ -173,13 +173,13 @@ describe("renderSubagentDashboard", () => {
           id: "0",
           label: "Forensics",
           status: "running",
-          profile: "analysis-only",
+          profile: "summarizer",
           activity: "bash: count the samples",
         },
       ],
     });
     expect(rendered).toContain("● Forensics");
-    expect(rendered).toContain("└ Running · analysis-only · bash: count the samples");
+    expect(rendered).toContain("└ Running · summarizer · bash: count the samples");
   });
 
   test("activity is dropped once the node settles", () => {

@@ -44,7 +44,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "edit", "write"],
     thinkingLevel: "high",
     maxTurns: 30,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "software-engineer",
@@ -60,7 +60,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "edit", "write"],
     thinkingLevel: "high",
     maxTurns: 35,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "devops-engineer",
@@ -76,7 +76,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "edit", "write", "event", "sandbox"],
     thinkingLevel: "high",
     maxTurns: 40,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "data-scientist",
@@ -92,7 +92,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "write"],
     thinkingLevel: "high",
     maxTurns: 35,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "account-manager",
@@ -108,7 +108,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "write", "event"],
     thinkingLevel: "high",
     maxTurns: 30,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "business-development",
@@ -124,7 +124,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "write"],
     thinkingLevel: "high",
     maxTurns: 30,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "creative-producer",
@@ -132,14 +132,14 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     systemPrompt: [
       "You are the creative producer responsible for one delegated media deliverable.",
       "",
-      "Apply the relevant source acquisition, storyboard, video, image, speech, lipsync, and generation-provider skill instructions. Use `bash` to run the prescribed production tools. Confirm the brief, audience, format, dimensions, duration, language, and source inputs; use discovery commands rather than guessing provider or model identifiers. Preserve provenance and generation parameters, and verify that claimed outputs exist and match the requested technical properties.",
+      "Apply the relevant source acquisition, storyboard, video, image, speech, lipsync, and generation-provider skill instructions. Use `bash` to run the prescribed production tools, and `generate_image` for image deliverables. Confirm the brief, audience, format, dimensions, duration, language, and source inputs; use discovery commands rather than guessing provider or model identifiers. Preserve provenance and generation parameters, and verify that claimed outputs exist and match the requested technical properties.",
       "",
       "Keep generation logs, intermediate assets, and provider polling in this isolated run. Return deliverable paths or external identifiers, a concise production summary, verification results, and unresolved creative, quality, or rights constraints.",
     ].join("\n"),
-    tools: ["read", "bash", "write"],
+    tools: ["read", "bash", "write", "generate_image"],
     thinkingLevel: "high",
     maxTurns: 40,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
     name: "ad-operations-specialist",
@@ -155,20 +155,21 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     tools: ["read", "bash", "write"],
     thinkingLevel: "high",
     maxTurns: 35,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
   {
-    name: "analysis-only",
-    description: "Analyzes supplied task input without claiming external verification",
+    name: "summarizer",
+    description:
+      "Synthesizes supplied task input and upstream DAG dependency output without claiming external verification",
     systemPrompt: [
-      "You analyze only the task text and structured dependency input supplied to this run.",
+      "You synthesize only the task text and structured dependency input supplied to this run — typically the combined output of upstream DAG nodes that did their own investigation.",
       "",
       "Do not claim to have inspected files, executed commands, accessed URLs, or verified external state. Clearly distinguish dependency-provided facts from your own analysis. If the supplied evidence is insufficient, state the limitation instead of inventing details.",
     ].join("\n"),
     tools: [],
     thinkingLevel: "high",
     maxTurns: 20,
-    maxTokens: 100_000,
+    maxTokens: 1_000_000,
   },
 ];
 

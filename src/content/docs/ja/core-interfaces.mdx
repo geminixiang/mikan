@@ -168,7 +168,7 @@ Pi 0.85 の current v4 append-only session JSONL tree を所有します。永�
 
 ### Subagent profiles
 
-subagent は必ず名前付きの profile で起動されます。実行ごとの自由形式の設定はサポートされる面ではありません。`loadSubagentProfiles` がそれらを解決します。`src/harness/subagent-profiles.ts` の組み込み profile が正式な定義であり（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`analysis-only`）、`<workspace>/agents/<name>.md` ファイルは同名の組み込みを置き換えるのではなく**パッチ**します。そのため operator は tools と prompt を書き直すことなく `model:` だけを上書きできます。どの組み込みとも名前が一致しないファイルは新しい profile を定義し、自前の `tools` を指定する必要があります。不正なファイルは診断として記録されスキップされ、throw されることはありません。
+subagent は必ず名前付きの profile で起動されます。実行ごとの自由形式の設定はサポートされる面ではありません。`loadSubagentProfiles` がそれらを解決します。`src/harness/subagent-profiles.ts` の組み込み profile が正式な定義であり（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`summarizer`）、`<workspace>/agents/<name>.md` ファイルは同名の組み込みを置き換えるのではなく**パッチ**します。そのため operator は tools と prompt を書き直すことなく `model:` だけを上書きできます。どの組み込みとも名前が一致しないファイルは新しい profile を定義し、自前の `tools` を指定する必要があります。不正なファイルは診断として記録されスキップされ、throw されることはありません。
 
 ### Harness events と budgets
 
