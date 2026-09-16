@@ -2,8 +2,8 @@ import {
   assertSessionKeyBelongsToConversation,
   assertConversationId,
 } from "../sessions/session-key.js";
-import type { ConversationEvent } from "../adapter.js";
-import { formatAlreadyWorking, formatNothingRunning } from "../platform-messages.js";
+import type { ConversationEvent } from "./index.js";
+import { formatAlreadyWorking, formatNothingRunning } from "./messages.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
 import type { MessageIntakeOptions, MessageIntakeOutcome } from "./types.js";
 

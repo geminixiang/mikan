@@ -4,7 +4,7 @@ import { existsSync, lstatSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
-import type { ConversationMessage } from "../adapter.js";
+import type { ConversationMessage } from "../types.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
 import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection } from "../office/types.js";

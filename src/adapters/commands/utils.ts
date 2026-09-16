@@ -1,4 +1,4 @@
-import type { ConversationEvent } from "../../adapter.js";
+import type { ConversationEvent } from "../index.js";
 import type { CommandContext } from "./types.js";
 
 async function replyDiagnosticWithContext(

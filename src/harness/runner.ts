@@ -17,7 +17,7 @@ import type {
   ConversationResponder,
   MessagingInfo,
   PlatformName,
-} from "../adapter.js";
+} from "../types.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import type { DockerContainerManager } from "../sandbox/provisioner.js";
 import {

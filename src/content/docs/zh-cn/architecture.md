@@ -17,7 +17,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapter.ts`
+- `src/adapters/index.ts`
 
 职责：
 

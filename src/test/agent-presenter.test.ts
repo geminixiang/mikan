@@ -1,6 +1,6 @@
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { ConversationResponder } from "../adapter.js";
+import type { ConversationResponder } from "../types.js";
 import {
   activateRunPresentation,
   attachSessionEventHandlers,

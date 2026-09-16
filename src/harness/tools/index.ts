@@ -1,5 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ConversationKind } from "../../adapter.js";
+import type { ConversationKind } from "../../types.js";
 import { createAttachTool } from "./attach.js";
 import type { Executor, SandboxConfig } from "../../sandbox/index.js";
 import type { OfficeAddress, SandboxResourceController } from "../../types.js";

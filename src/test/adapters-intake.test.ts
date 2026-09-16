@@ -5,7 +5,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   OfficeAddress,
-} from "../adapter.js";
+} from "../types.js";
 import { matchMagicWord, processMessageIntake } from "../adapters/intake.js";
 import type { MagicWordIntakeOptions, MessageIntakeOptions } from "../adapters/types.js";
 import { createOfficeAddress } from "../office/index.js";

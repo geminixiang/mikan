@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { createProcessShutdownHandler, runShutdownSteps } from "../process-lifecycle.js";
+import { createProcessShutdownHandler, runShutdownSteps } from "../cli/process-lifecycle.js";
 
 function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;

@@ -23,19 +23,19 @@ import type {
   MessagingEventHandler,
   ConversationResponder,
   ChatToolResult,
-} from "../../adapter.js";
+} from "../index.js";
 import { discordTextPayload } from "./components.js";
 import {
   createConversationEvent,
   createConversationMessage,
   type MessagingBot,
   type MessagingInfo,
-} from "../../adapter.js";
+} from "../index.js";
 import type { DiscordEvent } from "./types.js";
 import * as log from "../../log.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import { formatNothingRunning } from "../../platform-messages.js";
+import { formatNothingRunning } from "../messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

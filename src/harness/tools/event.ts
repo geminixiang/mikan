@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
-import type { ConversationKind } from "../../adapter.js";
+import type { ConversationKind } from "../../types.js";
 import { buildEventPayload, EventTypeSchema, validateEventFilename } from "../../events/index.js";
 import type { EventPayload, EventStore } from "../../events/index.js";
 import * as log from "../../log.js";

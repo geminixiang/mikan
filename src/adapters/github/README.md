@@ -35,7 +35,7 @@ full rationale and decisions).
   never parsed into events.
 - `types.ts`: adapter config, REST payloads, and host tool contracts
   (`GithubPrRequest`, `PlatformGithubOps`, …) — not re-exported from root
-  `adapter.ts` / `types.ts`.
+  `adapters/index.ts` / `types.ts`.
 
 ## Configuration (env)
 

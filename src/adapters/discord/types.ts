@@ -1,4 +1,4 @@
-import type { ConversationEvent } from "../../adapter.js";
+import type { ConversationEvent } from "../index.js";
 
 export interface DiscordEvent extends ConversationEvent {
   type: "mention" | "dm";

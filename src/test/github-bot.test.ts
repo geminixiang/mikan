@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
+import type { MessagingEventHandler, OfficeAddress } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";

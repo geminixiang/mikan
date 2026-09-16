@@ -1,4 +1,4 @@
-import { createConversationMessage, type ConversationContext } from "../../adapter.js";
+import { createConversationMessage, type ConversationContext } from "../index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";

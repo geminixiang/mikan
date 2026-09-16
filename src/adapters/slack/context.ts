@@ -1,4 +1,4 @@
-import { createConversationMessage, type ConversationContext } from "../../adapter.js";
+import { createConversationMessage, type ConversationContext } from "../index.js";
 import { type SlackMessagingBot, type SlackEvent } from "./bot.js";
 import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";

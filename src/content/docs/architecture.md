@@ -17,7 +17,7 @@ For the shared adapter contract, see [Platform adapters](platform-adapters.mdx).
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapter.ts`
+- `src/adapters/index.ts`
 
 Responsibilities:
 

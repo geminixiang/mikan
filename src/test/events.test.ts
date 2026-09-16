@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { ConversationEvent, MessagingBot } from "../adapter.js";
+import type { ConversationEvent, MessagingBot } from "../types.js";
 import { OfficeEventStore, officeEventsDir, parseEventPayload } from "../events/index.js";
 import { EventScheduler, buildEventPrompt } from "../events/scheduler.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";

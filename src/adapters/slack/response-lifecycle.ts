@@ -1,4 +1,4 @@
-import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../adapter.js";
+import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../index.js";
 import * as log from "../../log.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs, splitText } from "../shared.js";

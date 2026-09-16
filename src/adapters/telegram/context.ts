@@ -1,5 +1,5 @@
-import { createConversationMessage } from "../../adapter.js";
-import type { ChatToolResult, ConversationContext } from "../../adapter.js";
+import { createConversationMessage } from "../index.js";
+import type { ChatToolResult, ConversationContext } from "../index.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs } from "../shared.js";

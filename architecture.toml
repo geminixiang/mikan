@@ -12,7 +12,7 @@ id = "composition-root"
 name = "Process composition root"
 kind = "entrypoint"
 docs = "ARCHITECTURE.md#boot-and-process-lifecycle"
-sources = ["src/main.ts", "src/process-lifecycle.ts", "src/cli/boot.ts"]
+sources = ["src/main.ts", "src/cli/process-lifecycle.ts", "src/cli/boot.ts"]
 
 [[modules]]
 id = "observability"

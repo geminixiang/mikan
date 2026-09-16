@@ -25,12 +25,12 @@ export type { SessionViewModel, SessionViewToken, SessionViewTokenCreateOptions 
 import { basename } from "node:path";
 import { InMemoryTokenStore } from "../token-store.js";
 import MarkdownIt from "markdown-it";
-import type { ConversationResponder } from "../../../adapter.js";
+import type { ConversationResponder } from "../../index.js";
 import {
   createConversationEvent,
   createConversationMessage,
   type ConversationContext,
-} from "../../../adapter.js";
+} from "../../index.js";
 import { createOfficeAddress } from "../../../office/index.js";
 import * as log from "../../../log.js";
 import {

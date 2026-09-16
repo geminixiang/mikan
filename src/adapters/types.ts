@@ -6,7 +6,7 @@ import type {
   MessagingEventHandler,
   OfficeAddress,
   SubagentProgressSnapshot,
-} from "../adapter.js";
+} from "./index.js";
 import type { Attachment } from "../types.js";
 
 export type ChatResponseErrorOperation =

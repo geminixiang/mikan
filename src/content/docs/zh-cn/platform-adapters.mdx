@@ -33,7 +33,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 </Steps>
 
-通用类型由 `src/adapter.ts` 导出，实现类型放在 `src/types.ts` 与 `src/adapters/types.ts`。
+通用类型由 `src/adapters/index.ts` 导出，实现类型放在 `src/types.ts` 与 `src/adapters/types.ts`。
 
 ## 对话身份
 
@@ -69,7 +69,7 @@ sequenceDiagram
 
 | 文件                                   | 用途                                                                                                      |
 | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`                       | 对外导出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等通用接口。 |
+| `src/adapters/index.ts`                | 对外导出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等通用接口。 |
 | `src/adapters/intake.ts`               | 共享消息入口流程：魔法词、trigger policy、附件、log、busy policy、queue，然后分发。                       |
 | `src/adapters/shared.ts`               | 共享 retry、queue、长消息切分、stop target resolution，以及两条办公室写入路径（`log.jsonl`、附件）。      |
 | `src/adapters/progressive-renderer.ts` | 统一负责渐进式响应缓冲、工具进度、最终输出与平台写入串行化。                                              |

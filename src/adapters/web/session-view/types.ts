@@ -1,6 +1,6 @@
-import type { MessagingEventHandler } from "../../../adapter.js";
-import type { MessagingBot } from "../../../adapter.js";
-import type { PlatformName } from "../../../adapter.js";
+import type { MessagingEventHandler } from "../../index.js";
+import type { MessagingBot } from "../../index.js";
+import type { PlatformName } from "../../index.js";
 import type { TokenRecord } from "../types.js";
 
 // ── command ──────────────────────────────────────────────────────────────────

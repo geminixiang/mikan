@@ -1,4 +1,4 @@
-import type { ConversationKind, OfficeAddress } from "../../adapter.js";
+import type { ConversationKind, OfficeAddress } from "../index.js";
 import type { Attachment } from "../../types.js";
 
 export interface SlackEvent {

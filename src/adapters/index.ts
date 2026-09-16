@@ -1,10 +1,10 @@
-import { createOfficeAddress, sameOffice } from "./office/index.js";
+import { createOfficeAddress, sameOffice } from "../office/index.js";
 import type {
   ConversationEvent,
   ConversationMessage,
   OfficeAddress,
   PlatformName,
-} from "./types.js";
+} from "../types.js";
 
 export type {
   MessagingBot,
@@ -25,7 +25,7 @@ export type {
   PlatformUserInfo,
   RunningSession,
   SubagentProgressSnapshot,
-} from "./types.js";
+} from "../types.js";
 
 interface ConversationIdentityInput {
   platform: PlatformName;

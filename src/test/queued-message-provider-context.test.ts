@@ -20,7 +20,7 @@ import type {
   ConversationResponder,
   MessagingBot,
   MessagingInfo,
-} from "../adapter.js";
+} from "../types.js";
 import { MikanModels } from "../harness/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";

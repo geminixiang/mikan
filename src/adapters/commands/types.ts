@@ -6,7 +6,7 @@ import type {
   MessagingBot,
   OfficeAddress,
   PlatformName,
-} from "../../adapter.js";
+} from "../index.js";
 import type { Workspace } from "../../office/index.js";
 import type { DockerContainerManager } from "../../sandbox/provisioner.js";
 import type { SandboxConfig } from "../../sandbox/index.js";

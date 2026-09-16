@@ -12,7 +12,7 @@ import type {
   ConversationEvent,
   ConversationResponder,
   MessagingInfo,
-} from "../adapter.js";
+} from "../types.js";
 import { MikanModels } from "../harness/index.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";

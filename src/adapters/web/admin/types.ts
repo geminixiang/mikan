@@ -1,9 +1,4 @@
-import type {
-  MessagingBot,
-  OfficeAddress,
-  PlatformName,
-  RunningSession,
-} from "../../../adapter.js";
+import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../index.js";
 import type { Office, Workspace } from "../../../office/index.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../../sandbox/index.js";

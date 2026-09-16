@@ -1,4 +1,4 @@
-import type { OfficeAddress } from "../adapter.js";
+import type { OfficeAddress } from "../types.js";
 import type { SessionEntry } from "../sessions/types.js";
 
 interface DreamSessionCheckpoint {

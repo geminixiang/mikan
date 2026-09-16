@@ -10,7 +10,7 @@
 import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { MessagingEventHandler, OfficeAddress } from "../adapter.js";
+import type { MessagingEventHandler, OfficeAddress } from "./index.js";
 import { sameOffice, type Office } from "../office/index.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";

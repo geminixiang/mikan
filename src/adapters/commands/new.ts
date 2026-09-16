@@ -1,4 +1,4 @@
-import { createConversationMessage } from "../../adapter.js";
+import { createConversationMessage } from "../index.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replySummary } from "./utils.js";

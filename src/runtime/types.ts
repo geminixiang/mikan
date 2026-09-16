@@ -7,7 +7,7 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   OfficeAddress,
-} from "../adapter.js";
+} from "../types.js";
 import type {
   AdminTokenStoreLike,
   CommandHandler,

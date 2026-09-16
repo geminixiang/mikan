@@ -1,7 +1,7 @@
 import type { OfficeAddress, PlatformTrustModel } from "../types.js";
 import type { MikanAgentSession } from "./session.js";
 import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
-import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../adapter.js";
+import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
 import type { WorkspaceProjection } from "../office/types.js";

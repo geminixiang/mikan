@@ -17,7 +17,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapter.ts`
+- `src/adapters/index.ts`
 
 職責：
 

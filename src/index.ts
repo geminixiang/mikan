@@ -112,7 +112,7 @@ export {
   type ConversationRuntimeOptions,
   type RunSessionOptions,
 } from "./runtime/conversation-runtime.js";
-export { createConversationEvent, createConversationMessage } from "./adapter.js";
+export { createConversationEvent, createConversationMessage } from "./adapters/index.js";
 export {
   createOfficeAddress,
   createWorkspace,
@@ -135,7 +135,7 @@ export type {
   MessagingInfo,
   PlatformName,
   RunningSession,
-} from "./adapter.js";
+} from "./adapters/index.js";
 export {
   SandboxError,
   createExecutor,

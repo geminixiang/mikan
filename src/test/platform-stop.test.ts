@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { ConversationEvent } from "../adapter.js";
+import type { ConversationEvent } from "../types.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";

@@ -1,4 +1,4 @@
-import type { OfficeAddress } from "../adapter.js";
+import type { OfficeAddress } from "../types.js";
 import * as log from "../log.js";
 import { officeKey } from "../office/index.js";
 import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.js";

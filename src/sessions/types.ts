@@ -1,4 +1,4 @@
-import type { ConversationKind } from "../adapter.js";
+import type { ConversationKind } from "../types.js";
 import type { AgentMessage, Entry, MessageEntry } from "@earendil-works/pi-agent-core";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";

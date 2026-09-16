@@ -5,7 +5,7 @@ import { basename, join, resolve as pathResolve, sep as pathSep } from "node:pat
 import { MikanModels, parseFrontmatter } from "../../../harness/index.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { EventStore } from "../../../events/index.js";
-import type { PlatformName } from "../../../adapter.js";
+import type { PlatformName } from "../../index.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { AdminToken } from "./types.js";
 export type { AdminToken } from "./types.js";
@@ -59,7 +59,7 @@ import {
   renderPortalShell,
 } from "../portal-shell.js";
 import { resolveExistingSessionFile } from "../session-view/portal.js";
-import { PRODUCT_NAME } from "../../../platform-messages.js";
+import { PRODUCT_NAME } from "../../messages.js";
 import { credentialAuthorizationKey } from "../../../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../../../office/projection.js";
 import { sharedVaultKey } from "../../../vault/index.js";
@@ -67,7 +67,7 @@ import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js"
 
 export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
-import type { OfficeAddress } from "../../../adapter.js";
+import type { OfficeAddress } from "../../index.js";
 import {
   assertPlatformName,
   createOfficeAddress,

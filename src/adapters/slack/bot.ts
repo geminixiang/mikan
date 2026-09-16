@@ -19,7 +19,7 @@ import {
   type PlatformHistoryMessage,
   type PlatformHistoryOptions,
   type PlatformUserInfo,
-} from "../../adapter.js";
+} from "../index.js";
 import { createOfficeAddress, listRegisteredOffices, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import {
@@ -37,7 +37,7 @@ import type {
   SlackUser,
 } from "./types.js";
 import { isRecord, readTextFileIfExists } from "../../file-guards.js";
-import { PRODUCT_NAME, formatForceStopped } from "../../platform-messages.js";
+import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
 import {
   appendBotResponseLog,
   appendChannelLog,

@@ -305,7 +305,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 **`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work plus Dream a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter/Dream promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
 
-Evidence: `src/main.ts`, `src/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/scheduler.ts`, `src/runtime/conversation-runtime.ts`.
+Evidence: `src/main.ts`, `src/cli/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/scheduler.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV runner materialization rollback
 

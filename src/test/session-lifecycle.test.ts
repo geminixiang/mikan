@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { OfficeAddress } from "../adapter.js";
+import type { OfficeAddress } from "../types.js";
 import { createOfficeAddress } from "../office/index.js";
 import { SessionLifecycle } from "../runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../runtime/types.js";

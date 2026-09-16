@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../adapter.js";
+import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../types.js";
 import {
   formatToolArgs,
   MessagingEventQueue,

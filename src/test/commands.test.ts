@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingBot, ConversationResponder } from "../adapter.js";
+import type { MessagingBot, ConversationResponder } from "../types.js";
 import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";

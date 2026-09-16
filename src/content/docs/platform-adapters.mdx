@@ -35,7 +35,7 @@ Their goal is to keep `src/runtime/*` and `src/harness/` from knowing each platf
 
 </Steps>
 
-Shared types are exported from `src/adapter.ts`; implementation types live in `src/types.ts` and `src/adapters/types.ts`.
+Shared types are exported from `src/adapters/index.ts`; implementation types live in `src/types.ts` and `src/adapters/types.ts`.
 
 ## Conversation identity
 
@@ -74,7 +74,7 @@ sequenceDiagram
 
 | File                                   | Purpose                                                                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapter.ts`                       | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`.      |
+| `src/adapters/index.ts`                | Exports shared interfaces such as `MessagingBot`, `ConversationEvent`, `ConversationMessage`, and `ConversationResponder`.      |
 | `src/adapters/intake.ts`               | Shared message intake flow: magic word, trigger policy, attachments, log, busy policy, queue, then dispatch.                    |
 | `src/adapters/shared.ts`               | Shared retry, queue, long message splitting, stop target resolution, and the two office write paths (`log.jsonl`, attachments). |
 | `src/adapters/progressive-renderer.ts` | Owns progressive response buffering, tool progress, finalization, platform write serialization, and response-error reporting.   |

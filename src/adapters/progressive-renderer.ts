@@ -1,8 +1,4 @@
-import type {
-  ChatToolResult,
-  ConversationResponder,
-  SubagentProgressSnapshot,
-} from "../adapter.js";
+import type { ChatToolResult, ConversationResponder, SubagentProgressSnapshot } from "./index.js";
 import * as log from "../log.js";
 import {
   createChatResponseErrorReporter,

@@ -9,7 +9,7 @@ import {
 } from "../adapters/github/webhook.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
 import type { GithubClient } from "../adapters/github/client.js";
-import type { MessagingEventHandler } from "../adapter.js";
+import type { MessagingEventHandler } from "../types.js";
 import type { Workspace } from "../office/types.js";
 
 const SECRET = "hush";

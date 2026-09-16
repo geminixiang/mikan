@@ -33,7 +33,7 @@ import { Aside, Card, CardGrid, LinkCard, Steps } from "@astrojs/starlight/compo
 
 </Steps>
 
-共同型別由 `src/adapter.ts` 匯出，實作型別放在 `src/types.ts` 與 `src/adapters/types.ts`。
+共同型別由 `src/adapters/index.ts` 匯出，實作型別放在 `src/types.ts` 與 `src/adapters/types.ts`。
 
 ## 對話身分
 
@@ -65,7 +65,7 @@ sequenceDiagram
 
 | 檔案                                   | 用途                                                                                                         |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `src/adapter.ts`                       | 對外匯出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等共同介面。    |
+| `src/adapters/index.ts`                | 對外匯出 `MessagingBot`、`ConversationEvent`、`ConversationMessage`、`ConversationResponder` 等共同介面。    |
 | `src/adapters/intake.ts`               | 共用訊息入口流程：magic word、trigger policy、attachment、log、busy policy、queue，最後才 dispatch。         |
 | `src/adapters/shared.ts`               | 共用 retry、queue、長訊息切割、stop target resolution，以及兩條 office 寫入路徑（`log.jsonl`、attachment）。 |
 | `src/adapters/progressive-renderer.ts` | 統一負責漸進式回應緩衝、工具進度、最終輸出與平台寫入序列化。                                                 |

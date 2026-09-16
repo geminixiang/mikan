@@ -1,8 +1,8 @@
 import { Cron } from "croner";
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { createConversationEvent } from "../adapter.js";
-import type { ConversationKind, MessagingBot, PlatformName } from "../adapter.js";
+import { createConversationEvent } from "../adapters/index.js";
+import type { ConversationKind, MessagingBot, PlatformName } from "../types.js";
 import * as log from "../log.js";
 import { listRegisteredOffices, officeKey, type Workspace } from "../office/index.js";
 import { reportUserFacingError } from "../observability/index.js";

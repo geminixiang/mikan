@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { createConversationEvent, createConversationMessage } from "../adapter.js";
+import { createConversationEvent, createConversationMessage } from "../adapters/index.js";
 // `officeDir` is module-internal (not on the barrel); imported directly so the
 // tests still pin the path the registry and migration record.
 import { officeDir } from "../office/index.js";

@@ -17,7 +17,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapter.ts`
+- `src/adapters/index.ts`
 
 責務:
 

@@ -7,8 +7,8 @@ import type {
   MessagingEventHandler,
   ConversationKind,
   MessagingInfo,
-} from "../../adapter.js";
-import { createConversationEvent, type MessagingBot } from "../../adapter.js";
+} from "../index.js";
+import { createConversationEvent, type MessagingBot } from "../index.js";
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";

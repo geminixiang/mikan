@@ -7,7 +7,7 @@ import type {
   OfficeAddress,
   PlatformName,
   RunningSession,
-} from "../adapter.js";
+} from "../types.js";
 import type { Workspace } from "../office/index.js";
 import { createRunner } from "../harness/runner.js";
 import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
@@ -47,7 +47,7 @@ import {
   formatRestarting,
   formatStopped,
   formatStopping,
-} from "../platform-messages.js";
+} from "../adapters/messages.js";
 import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
 import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
