@@ -68,6 +68,7 @@ import {
   hasMaterializedChatSession,
   registerThreadSession,
 } from "../../sessions/chat-history-sync.js";
+import type { SlackPersonaIdentity } from "./persona.js";
 import { conversationIdOf } from "../../sessions/session-key.js";
 import {
   isSlackThreadSessionKey,
@@ -479,11 +480,17 @@ export class SlackMessagingBot implements MessagingBot {
     return resolveSlackMentions(text, this.users.values());
   }
 
-  async postMessage(channel: string, text: string, threadTs?: string): Promise<string> {
+  async postMessage(
+    channel: string,
+    text: string,
+    threadTs?: string,
+    identity?: SlackPersonaIdentity,
+  ): Promise<string> {
     return slackRetry(async () => {
       const payload = {
         channel,
         ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
+        ...(identity ? { username: identity.username, icon_emoji: identity.iconEmoji } : {}),
         ...renderSlackBlocks(this.resolveMentions(text)),
       };
       const result = await this.webClient.chat.postMessage(payload);
@@ -865,8 +872,15 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  async postInThread(channel: string, threadTs: string, text: string): Promise<string> {
-    return this.postMessage(channel, text, threadTs);
+  async postInThread(
+    channel: string,
+    threadTs: string,
+    text: string,
+    identity?: SlackPersonaIdentity,
+  ): Promise<string> {
+    return identity
+      ? this.postMessage(channel, text, threadTs, identity)
+      : this.postMessage(channel, text, threadTs);
   }
 
   async postInThreadBlocks(

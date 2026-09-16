@@ -411,6 +411,22 @@ async function deleteForSilentResponse(responder: ConversationResponder): Promis
   }
 }
 
+/**
+ * The profile every completed subagent node ran under, when the run resolved
+ * to exactly one. A fan-out across different profiles (or any node that did
+ * not complete) has no single "who answered this" identity, so callers keep
+ * the manager's own identity rather than guessing.
+ */
+function resolveSingleCompletedProfile(runState: RunnerSessionState): string | undefined {
+  const nodes = runState.completedSubagentProgress.flatMap((snapshot) => snapshot.nodes);
+  if (nodes.length === 0) return undefined;
+  const profiles = new Set(nodes.map((node) => node.profile));
+  if (profiles.size !== 1) return undefined;
+  const [profile] = profiles;
+  if (!profile) return undefined;
+  return nodes.every((node) => node.status === "completed") ? profile : undefined;
+}
+
 /** Replace the in-progress message with the run's answer, or a subagent dashboard plus it. */
 async function publishFinalResponse(
   responder: ConversationResponder,
@@ -432,6 +448,14 @@ async function publishFinalResponse(
     );
     const finalDashboard = mergeSubagentProgress(runState.completedSubagentProgress);
     if (finalDashboard) {
+      const resolvedProfile = resolveSingleCompletedProfile(runState);
+      if (resolvedProfile && responder.respondAsRole) {
+        await replaceWithSubagentDashboard(responder, finalDashboard, undefined, {
+          createOverflowLink: options?.createOverflowLink,
+        });
+        await responder.respondAsRole(resolvedProfile, finalResponse);
+        return true;
+      }
       await replaceWithSubagentDashboard(responder, finalDashboard, finalResponse, {
         createOverflowLink: options?.createOverflowLink,
       });

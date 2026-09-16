@@ -7,6 +7,7 @@ import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
+import { slackPersonaForProfile } from "./persona.js";
 
 const MAX_MAIN_LENGTH = 35000;
 /**
@@ -368,6 +369,26 @@ export function createSlackResponseContext({
     deleteResponse: async () => {
       lifecycle.endStatus();
       await responder.deleteResponse();
+    },
+    /**
+     * Spike: post the specialist's answer as a fresh Slack message under that
+     * profile's own username/icon. `chat.update`/`chat.appendStream` cannot
+     * carry an identity, so the in-progress message (already posted under
+     * mikan's own identity) is left as-is and this always sends a new message
+     * rather than editing it.
+     */
+    respondAsRole: async (profile, text) => {
+      const identity = slackPersonaForProfile(profile);
+      if (!identity) {
+        await (replyInThread && rootTs
+          ? slack.postInThread(event.channel, rootTs, text)
+          : slack.postMessage(event.channel, text));
+        return;
+      }
+      const ts = await (replyInThread && rootTs
+        ? slack.postInThread(event.channel, rootTs, text, identity)
+        : slack.postMessage(event.channel, text, undefined, identity));
+      slack.logBotResponse(event.channel, text, ts, replyInThread ? rootTs : undefined);
     },
   };
 }

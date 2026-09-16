@@ -176,6 +176,13 @@ export interface ConversationResponder {
    * `replaceResponse`.
    */
   replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
+  /**
+   * Spike: post the final answer as a fresh message under the identity of the
+   * subagent profile that produced it, instead of appending it to the
+   * in-progress message. Absent, or when the run does not resolve to exactly
+   * one completed subagent profile, the harness keeps the single-message path.
+   */
+  respondAsRole?(profile: string, text: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
