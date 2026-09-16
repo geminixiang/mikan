@@ -58,16 +58,25 @@ export interface OfficeVisibilityDecision {
   source: "platform" | "override" | "unknown";
 }
 
+/** Platforms whose public conversations become public offices (ADR 0008). */
+const PUBLIC_CAPABLE_PLATFORMS: ReadonlySet<string> = new Set(["slack"]);
+
 /**
- * One dimension, derived from the platform (ADR 0008): public channels are
- * public; private channels, DMs, group DMs, and externally shared
- * conversations are private; an unknown kind fails closed to private. An
- * operator may narrow a public conversation to private, never the reverse.
- * Legacy door-policy settings are not consulted.
+ * One dimension, derived from the platform (ADR 0008): Slack public channels
+ * are public; private channels, DMs, group DMs, and externally shared
+ * conversations are private; a Slack conversation whose kind has not been
+ * recorded yet fails closed to private. Every other platform is private by
+ * decision, not by omission — Telegram groups, Discord channels, and GitHub
+ * threads have no "visible to the whole workspace" notion that maps cleanly
+ * onto a shared office. An operator may narrow a public conversation to
+ * private, never the reverse.
  */
 export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecision {
   if (loadOfficeVisibilityOverride(office) === "private") {
     return { visibility: "private", source: "override" };
+  }
+  if (!PUBLIC_CAPABLE_PLATFORMS.has(office.address.platform)) {
+    return { visibility: "private", source: "platform" };
   }
   const kind = readPlatformChannelKind(office);
   if (kind === undefined) return { visibility: "private", source: "unknown" };

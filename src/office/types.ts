@@ -110,7 +110,10 @@ interface WorkspacePromptSources {
 
 export interface WorkspaceProjection {
   visibility: WorkspaceVisibility;
-  /** Where the visibility came from, for operator display. */
+  /**
+   * Where the visibility came from, for operator display. `unknown` only
+   * occurs for a Slack conversation whose kind has not been recorded yet.
+   */
   source: "platform" | "override" | "unknown";
   mounts: ContainerMount[];
   promptSources: WorkspacePromptSources;

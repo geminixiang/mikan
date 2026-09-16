@@ -2177,7 +2177,7 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       const canChoose = data.officeVisibilitySource === 'platform' ? data.officeVisibility === 'public' : hidden;
       if (!canChoose) {
         const why = data.officeVisibilitySource === 'platform'
-          ? 'This is a DM or private channel, so its files are hidden from every other office. Slack decides this; it cannot be opened up here.'
+          ? 'This is a DM, a private channel, or a conversation on a platform other than Slack, so its files are hidden from every other office. The platform decides this; it cannot be opened up here.'
           : 'Slack has not reported what kind of conversation this is yet, so it is treated as hidden until it does.';
         return '<div class="config-block"><h3 class="card-subtitle">Who can see the files in this office</h3>' +
           '<p><strong>Hidden</strong> — only this office.</p><p class="muted-note">' + why + '</p></div>';

@@ -84,7 +84,7 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 Slack auto-reply 可透過 `/pi-auto-reply on|off` 修改，並以 conversation office 裡的 `auto-reply`（on）或 `auto-reply.disabled`（off）marker 檔保存。Marker 內容會被忽略：啟用後，該 Slack channel 中未明確 address mikan 的 top-level human message 會直接觸發，不使用 rules 或 judge model。Top-level `autoReply` 與 `llm.autoReply` JSON 設定仍維持退役並被忽略。
 
-Office visibility 跟隨 Slack 對話類型（ADR 0008）。公開頻道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 唯讀它，且它可以寫入 workspace 全域的 `MEMORY.md` 與 `skills/`。私人頻道、DM、群組 DM、外部共享頻道，以及尚未觀察到類型的對話都是 **private** office：只有自己看得到，可讀共用知識與 public office，但不會寫回。每個 office 的掛載形狀相同；沒有任何佈局會掛載 workspace root。
+Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord、GitHub 的對話一律是 private。公開頻道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 唯讀它，且它可以寫入 workspace 全域的 `MEMORY.md` 與 `skills/`。私人頻道、DM、群組 DM、外部共享頻道，以及尚未觀察到類型的對話都是 **private** office：只有自己看得到，可讀共用知識與 public office，但不會寫回。每個 office 的掛載形狀相同；沒有任何佈局會掛載 workspace root。
 
 只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 

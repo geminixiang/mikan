@@ -55,7 +55,18 @@ describe("resolveOfficeVisibility", () => {
     }
   });
 
-  test("an unknown kind fails closed to private", () => {
+  test("non-Slack platforms are private by decision, not unknown", () => {
+    for (const platform of ["telegram", "discord", "github"]) {
+      const value = workspace.office(createOfficeAddress(platform, `X-${platform}`));
+      value.ensure();
+      expect(resolveOfficeVisibility(value)).toEqual({
+        visibility: "private",
+        source: "platform",
+      });
+    }
+  });
+
+  test("a Slack conversation with no recorded kind fails closed to private", () => {
     expect(resolveOfficeVisibility(office("C9"))).toEqual({
       visibility: "private",
       source: "unknown",

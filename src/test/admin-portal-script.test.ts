@@ -121,7 +121,9 @@ describe("admin embedded UI shared flows", () => {
       "officeVisibility: 'private', officeVisibilitySource: 'platform', officeVisibilityOverride: undefined",
     );
     expect(dm).not.toContain('id="m-visibility"');
-    expect(dm).toContain("DM or private channel");
+    expect(dm).toContain(
+      "a DM, a private channel, or a conversation on a platform other than Slack",
+    );
     expect(dm).not.toContain("saveVisibility(this)");
 
     const unknown = render(

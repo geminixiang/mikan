@@ -82,7 +82,7 @@ function describeVisibility(projection: ReturnType<typeof resolveWorkspaceProjec
       ? "admin 覆寫"
       : projection.source === "platform"
         ? "依平台頻道類型"
-        : "頻道類型未知，預設 private";
+        : "Slack 尚未回報頻道類型，預設 private";
   return `${projection.visibility}（${source}）`;
 }
 

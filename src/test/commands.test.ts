@@ -650,7 +650,7 @@ describe("SandboxCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.responder.responses[0]).toContain(
-      "Office visibility: private（頻道類型未知，預設 private）",
+      "Office visibility: private（Slack 尚未回報頻道類型，預設 private）",
     );
   });
 
