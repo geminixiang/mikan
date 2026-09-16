@@ -81,6 +81,7 @@ export function createTelegramAdapters(
     delete: (id) => bot.deleteMessageRaw(chatId, Number(id)),
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),
+    react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
   });
 
   return { address: message.address, message, responder, platform };

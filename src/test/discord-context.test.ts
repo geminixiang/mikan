@@ -18,6 +18,7 @@ function makeDiscordMessagingBot(
     deleteMessageRaw: vi.fn().mockResolvedValue(undefined),
     sendTyping: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
+    addReaction: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
     getAllChannels: vi.fn().mockReturnValue([]),
     getAllUsers: vi.fn().mockReturnValue([]),
@@ -55,6 +56,29 @@ describe("subagent dashboard", () => {
     // replaceResponse like any response; only a non-Markdown pipeline
     // (Telegram HTML) overrides.
     expect(responder.replaceSubagentProgress).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// react
+// ============================================================================
+
+describe("react", () => {
+  test("targets the triggering message", async () => {
+    const bot = makeDiscordMessagingBot();
+    const event = makeEvent({ ts: "MSG001" });
+    const { responder } = createDiscordAdapters(event, bot);
+
+    await responder.react!("eyes");
+    expect(bot.addReaction).toHaveBeenCalledWith("CH001", "MSG001", "eyes");
+  });
+
+  test("is unavailable for a synthetic (event-triggered) message reference", () => {
+    const bot = makeDiscordMessagingBot();
+    const event = makeEvent({ ts: "event:reminder.json" });
+    const { responder } = createDiscordAdapters(event, bot);
+
+    expect(responder.react).toBeUndefined();
   });
 });
 

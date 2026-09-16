@@ -5,6 +5,7 @@ import {
   MessagingEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
+  shortNameToUnicodeEmoji,
   splitText,
   withRetry,
 } from "../adapters/shared.js";
@@ -221,5 +222,24 @@ describe("formatToolArgs", () => {
 
   test("missing args render as empty", () => {
     expect(formatToolArgs(undefined)).toBe("");
+  });
+});
+
+describe("shortNameToUnicodeEmoji", () => {
+  test("translates the short names the prompt recommends", () => {
+    expect(shortNameToUnicodeEmoji("saluting_face")).toBe("\u{1FAE1}");
+    expect(shortNameToUnicodeEmoji("eyes")).toBe("\u{1F440}");
+  });
+
+  test("strips wrapping colons before lookup", () => {
+    expect(shortNameToUnicodeEmoji(":eyes:")).toBe("\u{1F440}");
+  });
+
+  test("passes through an unmapped name unchanged", () => {
+    expect(shortNameToUnicodeEmoji("not_a_real_emoji")).toBe("not_a_real_emoji");
+  });
+
+  test("passes through an already-Unicode emoji unchanged", () => {
+    expect(shortNameToUnicodeEmoji("\u{1F440}")).toBe("\u{1F440}");
   });
 });

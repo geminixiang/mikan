@@ -18,6 +18,7 @@ function makeTelegramMessagingBot(
     deleteMessageRaw: vi.fn().mockResolvedValue(undefined),
     sendTyping: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
+    addReaction: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
     // MessagingBot interface stubs
     start: vi.fn(),
@@ -51,6 +52,21 @@ describe("replaceSubagentProgress()", () => {
     const bot = makeTelegramMessagingBot();
     const { responder } = createTelegramAdapters(makeEvent(), bot);
     expect(responder.replaceSubagentProgress).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// react
+// ============================================================================
+
+describe("react", () => {
+  test("targets the triggering message", async () => {
+    const bot = makeTelegramMessagingBot();
+    const event = makeEvent({ ts: "1001" });
+    const { responder } = createTelegramAdapters(event, bot);
+
+    await responder.react!("eyes");
+    expect(bot.addReaction).toHaveBeenCalledWith("123456", "1001", "eyes");
   });
 });
 

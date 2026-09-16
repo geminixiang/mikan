@@ -98,6 +98,7 @@ export function createDiscordAdapters(
     delete: (id) => bot.deleteMessageRaw(channelId, id),
     logBotResponse: (text, id) => bot.logBotResponse(channelId, text, id),
     uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
+    react: replyTargetId ? (emoji) => bot.addReaction(channelId, replyTargetId, emoji) : undefined,
   });
 
   return { address: message.address, message, responder, platform };

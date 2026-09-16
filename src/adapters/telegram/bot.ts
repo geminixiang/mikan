@@ -20,6 +20,7 @@ import {
   downloadUrlToFile,
   withRetry,
   saveIncomingAttachments,
+  shortNameToUnicodeEmoji,
   type IncomingAttachment,
 } from "../shared.js";
 import { COMMAND_MANIFEST, telegramCommandMenu } from "../commands/manifest.js";
@@ -141,12 +142,12 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
-    // Telegram reactions are set via setMessageReaction with a Unicode emoji.
-    // Short names (Slack style) won't resolve; callers should pass an emoji.
-    const name = emoji.replace(/^:|:$/g, "");
+    // Telegram reactions are set via setMessageReaction with a Unicode emoji;
+    // the `react` tool and prompt speak Slack-style short names, so translate
+    // here rather than push that mapping onto every caller.
     await telegramRetry(async () => {
       await this.client.api.setMessageReaction(parseInt(channel), parseInt(messageTs), [
-        { type: "emoji", emoji: name as never },
+        { type: "emoji", emoji: shortNameToUnicodeEmoji(emoji) as never },
       ]);
     });
   }

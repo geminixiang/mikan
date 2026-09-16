@@ -349,3 +349,30 @@ export async function downloadUrlToFile(url: string, destPath: string): Promise<
   await mkdir(dirname(destPath), { recursive: true });
   await writeFile(destPath, Buffer.from(buffer));
 }
+
+/**
+ * Slack-style short names (as the `react` tool and prompt use) to Unicode
+ * emoji, for platforms whose reaction API takes a Unicode character rather
+ * than a name (Discord, Telegram). Covers what the system prompt actually
+ * recommends plus a few other common names; an unmapped name passes through
+ * unchanged so an unsupported reaction fails visibly at the platform call
+ * instead of silently.
+ */
+const SHORT_NAME_TO_UNICODE_EMOJI: Record<string, string> = {
+  saluting_face: "\u{1FAE1}",
+  eyes: "\u{1F440}",
+  white_check_mark: "\u{2705}",
+  "+1": "\u{1F44D}",
+  thumbsup: "\u{1F44D}",
+  "-1": "\u{1F44E}",
+  thumbsdown: "\u{1F44E}",
+  heart: "\u{2764}",
+  tada: "\u{1F389}",
+  rocket: "\u{1F680}",
+};
+
+/** Translate a Slack-style short name (colons optional) to Unicode; passes through anything else. */
+export function shortNameToUnicodeEmoji(emoji: string): string {
+  const name = emoji.replace(/^:|:$/g, "");
+  return SHORT_NAME_TO_UNICODE_EMOJI[name] ?? emoji;
+}
