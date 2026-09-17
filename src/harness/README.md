@@ -18,6 +18,7 @@ this module.
 | `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                  |
 | `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                     |
 | `models.ts`             | Model catalog and authentication resolution                                                                                                     |
+| `openai/pi-model.ts`    | Experimental OpenAI Agents SDK `Model` adapter backed by the existing `pi-ai` catalog                                                           |
 | `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
 | `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                           |
 | `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                 |
@@ -90,6 +91,22 @@ helper is limited to unattached stores; live compaction belongs to Pi.
 
 Runner reuse, conversation identity, rotation, eviction, and Sandbox topology
 remain in `src/runtime/` and `src/sessions/`.
+
+### OpenAI Agents SDK bridge
+
+`openai/pi-model.ts` is the first alternate-loop integration point. It implements
+the OpenAI Agents SDK `Model` contract by translating explicit Agents SDK history,
+function tools, text/reasoning output, and usage to and from `pi-ai`. Consequently,
+the SDK loop can use any model protocol already supported by mikan's `MikanModels`
+catalog; provider selection, credentials, and compatibility stay with `pi-ai`.
+
+This bridge deliberately does not replace the production conversation runner yet.
+It rejects provider-managed conversation IDs, hosted tools, prompt templates,
+structured output, and non-text user content rather than silently changing their
+semantics. It currently buffers each `pi-ai` completion before emitting SDK stream
+events. Production runtime selection requires a concrete session/persistence and
+event-presentation adapter; Pi remains the only configured runtime until that
+adapter exists.
 
 ## Host MCP capabilities
 
