@@ -96,6 +96,11 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     vars: [
       { name: "ANTHROPIC_API_KEY", secret: true, doc: "Anthropic API key" },
       { name: "OPENAI_API_KEY", secret: true, doc: "OpenAI API key" },
+      {
+        name: "AI_GATEWAY_API_KEY",
+        secret: true,
+        doc: "Vercel AI Gateway API key (chat models routed through the gateway, and harness/jev.ts's Jev client)",
+      },
     ],
   },
   {
