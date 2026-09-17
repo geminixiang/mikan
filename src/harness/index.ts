@@ -12,6 +12,15 @@ export {
 } from "./http.js";
 export { MikanModels, defaultModelsJsonPath } from "./models.js";
 export type { CreateMikanModelsOptions } from "./types.js";
+export {
+  JEV_MODEL_ID,
+  JevNotConfiguredError,
+  evaluateWithJev,
+  type EvaluateWithJevOptions,
+  type JevQuestions,
+  type JevResult,
+  type JevState,
+} from "./jev.js";
 export { SessionStore } from "../sessions/session-store.js";
 export type {
   SessionContext,
