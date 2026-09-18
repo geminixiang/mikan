@@ -46,7 +46,7 @@
       },
       {
         "command": "/pi-auto-reply",
-        "description": "on | off | status",
+        "description": "on | off | jev",
         "should_escape": false
       },
       {
