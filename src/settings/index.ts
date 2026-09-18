@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
-import { existsSync, lstatSync, readFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { readEnv } from "../env-manifest.js";
@@ -318,26 +318,37 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
-const AUTO_REPLY_FILE = "auto-reply";
-const AUTO_REPLY_DISABLED_FILE = "auto-reply.disabled";
+/**
+ * Auto-reply is tri-state: `off` (default, must mention mikan), `on`
+ * (every message in the channel is addressed), `jev` (Jev decides per
+ * message whether it addresses mikan). Exactly one marker file exists at a
+ * time; its absence means `off`. Markers are mutually exclusive so callers
+ * cannot read a self-contradictory state.
+ */
+export type SlackAutoReplyMode = "off" | "on" | "jev";
 
-export function slackConversationAutoReplyEnabled(office: Office): boolean {
-  return existsSync(join(office.dir, AUTO_REPLY_FILE));
+const AUTO_REPLY_FILE = "auto-reply";
+const AUTO_REPLY_JEV_FILE = "auto-reply.jev";
+const AUTO_REPLY_MARKERS: Record<Exclude<SlackAutoReplyMode, "off">, string> = {
+  on: AUTO_REPLY_FILE,
+  jev: AUTO_REPLY_JEV_FILE,
+};
+
+export function slackConversationAutoReplyMode(office: Office): SlackAutoReplyMode {
+  if (existsSync(join(office.dir, AUTO_REPLY_JEV_FILE))) return "jev";
+  if (existsSync(join(office.dir, AUTO_REPLY_FILE))) return "on";
+  return "off";
 }
 
-export function setSlackConversationAutoReply(office: Office, enabled: boolean): void {
+export function setSlackConversationAutoReply(office: Office, mode: SlackAutoReplyMode): void {
   ensureDirExists(office.dir);
-  const enabledPath = join(office.dir, AUTO_REPLY_FILE);
-  const disabledPath = join(office.dir, AUTO_REPLY_DISABLED_FILE);
-  const targetPath = enabled ? enabledPath : disabledPath;
-  const otherPath = enabled ? disabledPath : enabledPath;
-
-  if (existsSync(otherPath)) {
-    renameSync(otherPath, targetPath);
-    return;
-  }
-  if (enabled && !existsSync(targetPath)) {
-    atomicWritePrivateFile(targetPath, "");
+  for (const [markerMode, fileName] of Object.entries(AUTO_REPLY_MARKERS)) {
+    const path = join(office.dir, fileName);
+    if (markerMode === mode) {
+      if (!existsSync(path)) atomicWritePrivateFile(path, "");
+    } else if (existsSync(path)) {
+      rmSync(path);
+    }
   }
 }
 

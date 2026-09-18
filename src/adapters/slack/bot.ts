@@ -23,9 +23,10 @@ import {
 import { createOfficeAddress, listRegisteredOffices, type Workspace } from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import {
-  slackConversationAutoReplyEnabled,
+  slackConversationAutoReplyMode,
   resolveConversationSettings,
 } from "../../settings/index.js";
+import { evaluateWithJev, JevNotConfiguredError } from "../../harness/index.js";
 import type { EventScheduler } from "../../events/scheduler.js";
 import * as log from "../../log.js";
 import type { Attachment } from "../../types.js";
@@ -1673,6 +1674,46 @@ export class SlackMessagingBot implements MessagingBot {
     return false;
   }
 
+  /**
+   * Ask Jev a single typed yes/no question about whether this unaddressed
+   * shared-channel message addresses mikan. Only called in `jev` auto-reply
+   * mode, and only awaited by the caller in that mode, so `on`/`off` stay
+   * synchronous (magic-word `stop` handling depends on that). Any failure
+   * (including a missing `AI_GATEWAY_API_KEY`) fails closed to "not
+   * addressed" so a misconfiguration cannot make the bot noisy in a shared
+   * channel.
+   */
+  private async evaluateJevAddressed(event: SlackEvent): Promise<boolean> {
+    if (!event.text.trim() || matchMagicWord(event.text) === "stop") return false;
+
+    try {
+      const result = await evaluateWithJev(event.text, {
+        addressed: {
+          type: "boolean",
+          instructions:
+            "Does this Slack channel message address, ask, or request the mikan AI assistant to do something, rather than being casual conversation between humans that needs no reply?",
+        },
+      });
+      return result.answers.addressed.probability > 0.5;
+    } catch (err) {
+      if (err instanceof JevNotConfiguredError) {
+        log.logWarning(
+          "Slack auto-reply jev mode requires AI_GATEWAY_API_KEY; treating message as unaddressed",
+          String(err),
+        );
+        return false;
+      }
+      reportUserFacingError(err, {
+        domain: "chat_platform",
+        surface: "slack_auto_reply_jev",
+        operation: "evaluate",
+        severity: "warning",
+        context: { conversationId: event.conversationId },
+      });
+      return false;
+    }
+  }
+
   private async handleMessageEvent({
     event,
     ack,
@@ -1759,8 +1800,15 @@ export class SlackMessagingBot implements MessagingBot {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
     }
+    const autoReplyMode = isDM
+      ? "off"
+      : slackConversationAutoReplyMode(this.workspace.office(slackEvent.address));
     const autoReply =
-      !isDM && slackConversationAutoReplyEnabled(this.workspace.office(slackEvent.address));
+      autoReplyMode === "on"
+        ? true
+        : autoReplyMode === "jev"
+          ? await this.evaluateJevAddressed(slackEvent)
+          : false;
     const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,

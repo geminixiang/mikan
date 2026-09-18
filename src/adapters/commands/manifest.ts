@@ -73,10 +73,10 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
   {
     name: "autoreply",
     aliases: ["auto-reply"],
-    description: "Enable or disable replies without mentions",
+    description: "Enable, disable, or Jev-assist replies without mentions",
     arg: {
       name: "state",
-      description: "on or off",
+      description: "on, off, or jev",
       required: true,
     },
     slackCommand: "/pi-auto-reply",

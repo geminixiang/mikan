@@ -2,6 +2,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const evaluateWithJevMock = vi.fn();
+vi.mock("../harness/index.js", async () => {
+  const actual = await vi.importActual<typeof import("../harness/index.js")>("../harness/index.js");
+  return { ...actual, evaluateWithJev: (...args: unknown[]) => evaluateWithJevMock(...args) };
+});
 import type { MessagingEventHandler } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import type { Workspace } from "../office/index.js";
@@ -638,6 +644,82 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       sessionKey: "C123",
       text: "try the deployment again",
     });
+  });
+
+  test("jev auto-reply mode asks Jev per message and fails closed on error", async () => {
+    evaluateWithJevMock.mockReset();
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply.jev"), "");
+
+    const handler = makeHandler();
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workspace,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+
+    (bot as any).setupEventHandlers();
+
+    evaluateWithJevMock.mockRejectedValueOnce(new Error("gateway down"));
+    messageHandler?.({
+      event: {
+        text: "anyone around?",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0001",
+        channel_type: "channel",
+      },
+      ack: vi.fn(),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+
+    evaluateWithJevMock.mockResolvedValueOnce({
+      answers: { addressed: { type: "boolean", probability: 0.92 } },
+    });
+    messageHandler?.({
+      event: {
+        text: "mikan can you redeploy the service",
+        channel: "C123",
+        user: "U123",
+        ts: "1002.0001",
+        channel_type: "channel",
+      },
+      ack: vi.fn(),
+    });
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "C123",
+      text: "mikan can you redeploy the service",
+    });
+    expect(evaluateWithJevMock).toHaveBeenCalledWith(
+      "mikan can you redeploy the service",
+      expect.objectContaining({ addressed: expect.objectContaining({ type: "boolean" }) }),
+    );
   });
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {

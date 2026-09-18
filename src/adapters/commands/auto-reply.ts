@@ -1,12 +1,28 @@
 import {
   setSlackConversationAutoReply,
-  slackConversationAutoReplyEnabled,
+  slackConversationAutoReplyMode,
+  type SlackAutoReplyMode,
 } from "../../settings/index.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { replySummary } from "./utils.js";
 
 const AUTO_REPLY_COMMANDS = slashForms("autoreply");
+
+function isAutoReplyMode(value: string | undefined): value is SlackAutoReplyMode {
+  return value === "on" || value === "off" || value === "jev";
+}
+
+function describeAutoReplyMode(mode: SlackAutoReplyMode): string {
+  switch (mode) {
+    case "on":
+      return "Enabled. New messages in this channel will trigger mikan without a mention.";
+    case "jev":
+      return "Jev-assisted. Jev decides per message whether it addresses mikan.";
+    case "off":
+      return "Disabled. New messages in this channel must address mikan explicitly.";
+  }
+}
 
 export class AutoReplyCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
@@ -28,19 +44,15 @@ export class AutoReplyCommandHandler implements CommandHandler {
     }
 
     const value = matched.args[0]?.toLowerCase();
-    if ((value !== "on" && value !== "off") || matched.args.length !== 1) {
-      await replySummary(context, "Auto-reply", ["Usage: `/pi-auto-reply <on|off>`"]);
+    if (!isAutoReplyMode(value) || matched.args.length !== 1) {
+      await replySummary(context, "Auto-reply", ["Usage: `/pi-auto-reply <on|off|jev>`"]);
       return true;
     }
 
     const office = context.services.workspace.office(context.address);
-    setSlackConversationAutoReply(office, value === "on");
-    const enabled = slackConversationAutoReplyEnabled(office);
-    await replySummary(context, "Auto-reply", [
-      enabled
-        ? "Enabled. New messages in this channel will trigger mikan without a mention."
-        : "Disabled. New messages in this channel must address mikan explicitly.",
-    ]);
+    setSlackConversationAutoReply(office, value);
+    const mode = slackConversationAutoReplyMode(office);
+    await replySummary(context, "Auto-reply", [describeAutoReplyMode(mode)]);
     return true;
   }
 }

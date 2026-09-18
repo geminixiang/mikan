@@ -7,7 +7,7 @@ import { MikanModels } from "../harness/index.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";
 import {
-  slackConversationAutoReplyEnabled,
+  slackConversationAutoReplyMode,
   conversationSettingsPath,
   createGlobalSettingsFile,
   loadOfficeVisibilityOverride,
@@ -318,7 +318,7 @@ describe("ModelCommandHandler", () => {
 // ── AdminCommandHandler ─────────────────────────────────────────────────────
 
 describe("AutoReplyCommandHandler", () => {
-  test("enables and disables unaddressed replies for the current conversation", async () => {
+  test("cycles through on, jev, and off for the current conversation", async () => {
     const root = mkdtempSync(join(tmpdir(), "mikan-auto-reply-command-"));
     try {
       const workspace = testWorkspace(root);
@@ -327,25 +327,31 @@ describe("AutoReplyCommandHandler", () => {
       const office = workspace.office(on.address);
 
       expect(await handler.tryHandle(on)).toBe(true);
-      expect(slackConversationAutoReplyEnabled(office)).toBe(true);
+      expect(slackConversationAutoReplyMode(office)).toBe("on");
       expect(existsSync(join(office.dir, "auto-reply"))).toBe(true);
+
+      const jev = buildContext({ commandText: "/pi-auto-reply jev", services: { workspace } });
+      expect(await handler.tryHandle(jev)).toBe(true);
+      expect(slackConversationAutoReplyMode(office)).toBe("jev");
+      expect(existsSync(join(office.dir, "auto-reply"))).toBe(false);
+      expect(existsSync(join(office.dir, "auto-reply.jev"))).toBe(true);
 
       const off = buildContext({ commandText: "/pi-auto-reply off", services: { workspace } });
       expect(await handler.tryHandle(off)).toBe(true);
-      expect(slackConversationAutoReplyEnabled(office)).toBe(false);
+      expect(slackConversationAutoReplyMode(office)).toBe("off");
       expect(existsSync(join(office.dir, "auto-reply"))).toBe(false);
-      expect(existsSync(join(office.dir, "auto-reply.disabled"))).toBe(true);
+      expect(existsSync(join(office.dir, "auto-reply.jev"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("accepts only on or off", async () => {
+  test("accepts only on, off, or jev", async () => {
     const handler = new AutoReplyCommandHandler();
     const ctx = buildContext({ commandText: "/pi-auto-reply status" });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses.join("\n")).toContain("<on|off>");
+    expect(ctx.responder.responses.join("\n")).toContain("<on|off|jev>");
   });
 });
 
