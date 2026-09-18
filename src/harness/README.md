@@ -9,25 +9,25 @@ this module.
 
 ## Files
 
-| File                    | Authority                                                                                                                                            |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal              |
-| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness       |
-| `execution-env.ts`      | `createSandboxExecutionEnv`: bridges a sandbox `Executor` to pi's `ExecutionEnv` (FileSystem + Shell) for the native read/write/edit/bash tools      |
-| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                          |
-| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                       |
-| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                          |
-| `models.ts`             | Model catalog and authentication resolution                                                                                                          |
-| `jev.ts`                | Standalone client for Jev (typesafe-ai/jev), a typed-decision evaluation model reached through Vercel AI Gateway; not part of the chat model catalog |
-| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                                 |
-| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                                |
-| `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                      |
-| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                              |
-| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                       |
-| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                            |
-| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                                 |
-| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                        |
-| `index.ts`              | Harness module exports                                                                                                                               |
+| File                    | Authority                                                                                                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal                    |
+| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness             |
+| `execution-env.ts`      | `createSandboxExecutionEnv`: bridges a sandbox `Executor` to pi's `ExecutionEnv` (FileSystem + Shell) for the native read/write/edit/bash tools            |
+| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                                |
+| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                             |
+| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                                |
+| `models.ts`             | Model catalog and authentication resolution                                                                                                                |
+| `jev.ts`                | Standalone client for Jev (typesafe/jev), a typed-decision evaluation model reached through OpenRouter's decisions API; not part of the chat model catalog |
+| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                                       |
+| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                                      |
+| `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                            |
+| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                                    |
+| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                             |
+| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                                  |
+| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                                       |
+| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                              |
+| `index.ts`              | Harness module exports                                                                                                                                     |
 
 ## Run lifecycle
 
@@ -155,16 +155,18 @@ siblings.
 
 ## Jev
 
-`jev.ts` wraps the AI SDK's experimental `evaluate()` for Jev (`typesafe-ai/jev`
-on Vercel AI Gateway), a typed-decision model that scores a shared `state`
+`jev.ts` calls OpenRouter's `/api/alpha/decisions` REST endpoint directly for
+Jev (`typesafe/jev`), a typed-decision model that scores a shared `state`
 against typed questions instead of generating text. It has no place in
 `models.ts`'s catalog: `Provider`/`Model`/`stream()` are chat/completion
 shaped, and Jev's boolean-probability/choice/score answers do not fit that
-contract. `evaluateWithJev` is a plain function callers use directly —
-classification, routing, or guardrail call sites each own their own
-questions and interpret the returned probabilities; there is no shared
-call site or `/model`-style selection for it. It requires
-`AI_GATEWAY_API_KEY` (see `env-manifest.ts`) and otherwise throws
+contract; it is a plain typed-decision REST API, not chat/completion, so it
+also does not go through pi-ai's provider machinery. `evaluateWithJev` is a
+plain function callers use directly — classification, routing, or guardrail
+call sites each own their own questions and interpret the returned
+probabilities; there is no shared call site or `/model`-style selection for
+it. It requires `OPENROUTER_API_KEY` (see `env-manifest.ts` — the same key
+pi-ai's `openrouter` chat provider reads) and otherwise throws
 `JevNotConfiguredError` before making a request.
 
 ## Boundaries

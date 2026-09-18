@@ -15,11 +15,13 @@ export type { CreateMikanModelsOptions } from "./types.js";
 export {
   JEV_MODEL_ID,
   JevNotConfiguredError,
+  JevRequestError,
   evaluateWithJev,
   type EvaluateWithJevOptions,
+  type JevAnswer,
+  type JevQuestion,
   type JevQuestions,
   type JevResult,
-  type JevState,
 } from "./jev.js";
 export { SessionStore } from "../sessions/session-store.js";
 export type {

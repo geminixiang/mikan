@@ -1679,7 +1679,7 @@ export class SlackMessagingBot implements MessagingBot {
    * shared-channel message addresses mikan. Only called in `jev` auto-reply
    * mode, and only awaited by the caller in that mode, so `on`/`off` stay
    * synchronous (magic-word `stop` handling depends on that). Any failure
-   * (including a missing `AI_GATEWAY_API_KEY`) fails closed to "not
+   * (including a missing `OPENROUTER_API_KEY`) fails closed to "not
    * addressed" so a misconfiguration cannot make the bot noisy in a shared
    * channel.
    */
@@ -1698,7 +1698,7 @@ export class SlackMessagingBot implements MessagingBot {
     } catch (err) {
       if (err instanceof JevNotConfiguredError) {
         log.logWarning(
-          "Slack auto-reply jev mode requires AI_GATEWAY_API_KEY; treating message as unaddressed",
+          "Slack auto-reply jev mode requires OPENROUTER_API_KEY; treating message as unaddressed",
           String(err),
         );
         return false;
