@@ -1694,7 +1694,11 @@ export class SlackMessagingBot implements MessagingBot {
             "Does this Slack channel message address, ask, or request the mikan AI assistant to do something, rather than being casual conversation between humans that needs no reply?",
         },
       });
-      return result.answers.addressed.probability > 0.5;
+      const probability = result.answers.addressed.probability;
+      log.logInfo(
+        `[${event.channel}] jev auto-reply: probability=${probability.toFixed(2)} addressed=${probability > 0.5} text="${event.text.slice(0, 80)}"`,
+      );
+      return probability > 0.5;
     } catch (err) {
       if (err instanceof JevNotConfiguredError) {
         log.logWarning(
