@@ -717,9 +717,100 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       text: "mikan can you redeploy the service",
     });
     expect(evaluateWithJevMock).toHaveBeenCalledWith(
-      "mikan can you redeploy the service",
+      expect.stringContaining("NEW message from U123:\nmikan can you redeploy the service"),
       expect.objectContaining({ addressed: expect.objectContaining({ type: "boolean" }) }),
     );
+  });
+
+  test("jev auto-reply mode judges bare thread replies with the thread as context", async () => {
+    evaluateWithJevMock.mockReset();
+    mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
+    writeFileSync(join(workingDir, C123_OFFICE, "auto-reply.jev"), "");
+    writeFileSync(
+      join(workingDir, C123_OFFICE, "log.jsonl"),
+      [
+        { ts: "1000.0001", user: "U123", displayName: "Ann", text: "mikan, check the deploy" },
+        {
+          ts: "1000.0002",
+          threadTs: "1000.0001",
+          user: "bot",
+          isMessagingBot: true,
+          text: "Looks ",
+        },
+        {
+          ts: "1000.0002",
+          threadTs: "1000.0001",
+          user: "bot",
+          isMessagingBot: true,
+          text: "green.",
+        },
+        { ts: "1000.0003", user: "U999", displayName: "Bob", text: "unrelated top-level chatter" },
+      ]
+        .map((e) => JSON.stringify(e))
+        .join("\n") + "\n",
+    );
+
+    const handler = makeHandler();
+    const bot = new SlackMessagingBot(handler, {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      workspace,
+      store: {} as any,
+    });
+
+    let messageHandler:
+      | ((payload: {
+          event: {
+            text: string;
+            channel: string;
+            user: string;
+            ts: string;
+            thread_ts?: string;
+            channel_type?: string;
+          };
+          ack: () => void;
+        }) => void)
+      | undefined;
+
+    (bot as any).startupTs = "0";
+    (bot as any).botUserId = "B123";
+    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
+    (bot as any).socketClient = {
+      on: vi.fn((event: string, fn: unknown) => {
+        if (event === "message") messageHandler = fn as typeof messageHandler;
+      }),
+    };
+    (bot as any).setupEventHandlers();
+
+    evaluateWithJevMock.mockResolvedValueOnce({
+      answers: { addressed: { type: "boolean", probability: 0.8 } },
+    });
+    const ack = vi.fn();
+    messageHandler?.({
+      event: {
+        text: "then roll it back please",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0001",
+        thread_ts: "1000.0001",
+        channel_type: "channel",
+      },
+      ack,
+    });
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(ack).toHaveBeenCalled();
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      conversationId: "C123",
+      sessionKey: "C123:1000.0001",
+      text: "then roll it back please",
+    });
+    const state = evaluateWithJevMock.mock.calls[0]?.[0] as string;
+    expect(state).toContain("mikan has already replied in this thread");
+    expect(state).toContain("- Ann: mikan, check the deploy");
+    expect(state).toContain("- mikan: Looks green.");
+    expect(state).not.toContain("unrelated top-level chatter");
+    expect(state).toContain("NEW message from U123:\nthen roll it back please");
   });
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {

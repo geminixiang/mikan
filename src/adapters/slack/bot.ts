@@ -86,6 +86,7 @@ import {
   formatTaskStatus,
   readTaskRoots,
 } from "./task-status.js";
+import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
@@ -1676,23 +1677,25 @@ export class SlackMessagingBot implements MessagingBot {
 
   /**
    * Ask Jev a single typed yes/no question about whether this unaddressed
-   * shared-channel message addresses mikan. Only called in `jev` auto-reply
-   * mode, and only awaited by the caller in that mode, so `on`/`off` stay
-   * synchronous (magic-word `stop` handling depends on that). Any failure
-   * (including a missing `OPENROUTER_API_KEY`) fails closed to "not
-   * addressed" so a misconfiguration cannot make the bot noisy in a shared
-   * channel.
+   * shared-channel message (top-level or thread reply) addresses mikan. The
+   * scored state carries the surrounding scope from log.jsonl, since a bare
+   * thread reply cannot be judged from its own text. Only called in `jev`
+   * auto-reply mode, and only awaited by the caller in that mode, so
+   * `on`/`off` stay synchronous (magic-word `stop` handling depends on that).
+   * Any failure (including a missing `OPENROUTER_API_KEY`) fails closed to
+   * "not addressed" so a misconfiguration cannot make the bot noisy in a
+   * shared channel.
    */
   private async evaluateJevAddressed(event: SlackEvent): Promise<boolean> {
     if (!event.text.trim() || matchMagicWord(event.text) === "stop") return false;
 
     try {
-      const result = await evaluateWithJev(event.text, {
-        addressed: {
-          type: "boolean",
-          instructions:
-            "Does this Slack channel message address, ask, or request the mikan AI assistant to do something, rather than being casual conversation between humans that needs no reply?",
-        },
+      const user = this.users.get(event.user);
+      const state = buildAutoReplyState(this.conversationDir(event.channel), event, {
+        speaker: user?.displayName ?? user?.userName,
+      });
+      const result = await evaluateWithJev(state, {
+        addressed: { type: "boolean", instructions: JEV_ADDRESSED_INSTRUCTIONS },
       });
       const probability = result.answers.addressed.probability;
       log.logInfo(
@@ -1742,7 +1745,6 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const isThreadReply = !!e.thread_ts;
     const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
 
     // Name the conversation from the first thing the person said. Guarded on
@@ -1786,14 +1788,6 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    if (!isDM && isThreadReply && matchMagicWord(slackEvent.text) !== "stop") {
-      void attachmentsPromise.catch((err) => {
-        log.logWarning("Failed to log Slack message", String(err));
-      });
-      ack();
-      return;
-    }
-
     const activeSessionKey =
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
     slackEvent.sessionKey = activeSessionKey;
@@ -1804,6 +1798,9 @@ export class SlackMessagingBot implements MessagingBot {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
     }
+    // Shared-channel messages without a mention, top-level or in a thread,
+    // all go through the same auto-reply gate; jev mode sees the surrounding
+    // scope so thread follow-ups are judged in context rather than dropped.
     const autoReplyMode = isDM
       ? "off"
       : slackConversationAutoReplyMode(this.workspace.office(slackEvent.address));
