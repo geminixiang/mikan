@@ -9,6 +9,13 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.67]
+
+### Changed
+
+- Slack: unaddressed thread replies in shared channels now pass through the same `/pi-auto-reply` gate as top-level messages instead of being dropped unconditionally. In `jev` mode, Jev scores the message together with its surrounding scope (the channel's recent top-level messages, or the thread's messages plus whether mikan has already replied there), so bare follow-ups like "then roll it back" are judged in context. `off` still requires a mention; `on` now admits thread replies too.
+- Deploy docs: `/pi-auto-reply` slash command description lists `on | off | jev`.
+
 ## [1.0.0-beta.66]
 
 ### Added
