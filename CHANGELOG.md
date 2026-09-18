@@ -9,6 +9,14 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.66]
+
+### Added
+
+- `/pi-auto-reply` gains a third state, `jev`: alongside manual `on`/`off`, a Slack channel can now delegate the "does this unaddressed message address mikan" decision to Jev (`typesafe/jev`), a fast typed-decision model, on a per-message basis. Any evaluation failure (including a missing `OPENROUTER_API_KEY`) fails closed to "not addressed" so a misconfiguration cannot make the bot noisy in a shared channel.
+- `harness/jev.ts`: a standalone `evaluateWithJev` client for Jev, reached through OpenRouter's `/api/alpha/decisions` REST API using the same `OPENROUTER_API_KEY` pi-ai's `openrouter` chat provider reads. Jev returns typed decisions (boolean probability, choice, score) instead of generated text, so it is a plain function call sites use directly rather than a selectable chat provider in `models.ts`'s catalog.
+- Jev-mode auto-reply decisions (channel, probability, addressed, truncated message text) are logged at info level for observability.
+
 ## [1.0.0-beta.65]
 
 ### Added
