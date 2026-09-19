@@ -133,12 +133,10 @@ export class DockerContainerManager {
         log.logInfo(`Container ${containerName} configuration changed; recreating container`);
         await this.recreateContainerPreservingContents(containerKey, containerName, mounts);
         log.logInfo(`Container ${containerName} recreated`);
-      } else if (status === "running") {
-        log.logInfo(`Container ${containerName} already running`);
       } else if (status === "stopped") {
         await this.execFileImpl("docker", ["start", containerName]);
         log.logInfo(`Container ${containerName} started`);
-      } else {
+      } else if (status === "missing") {
         await this.runContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} created`);
       }

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import * as log from "../log.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import { legacyConversationResourceKey } from "../sandbox/identity.js";
 
@@ -612,8 +613,11 @@ describe("DockerContainerManager", () => {
       const stableManager = new DockerContainerManager("ubuntu:24.04", {
         execFileImpl: stable.exec as any,
       });
+      const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
       await stableManager.provision("alice", { mounts });
       expect(stable.calls.some((args) => args[0] === "commit" || args[0] === "rm")).toBe(false);
+      expect(logInfo).not.toHaveBeenCalledWith("Container mikan-sandbox-alice already running");
+      logInfo.mockRestore();
 
       // Replacing the directory itself leaves the container mounting a dead
       // inode — that is real drift and must recreate (preserving contents).

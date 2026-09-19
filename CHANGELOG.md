@@ -9,6 +9,14 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Built-in subagents now use the full 100-turn / $10 allowance, and the model-facing `subagent` tool can only request a larger token allowance instead of accidentally shrinking turn, cost, or duration budgets (for example, to $0.30).
+
+### Fixed
+
+- Sandbox provisioning no longer logs `Container … already running` on every readiness check; creation, restart, drift, and failure messages remain visible.
+
 ## [1.0.0-beta.70]
 
 ### Fixed

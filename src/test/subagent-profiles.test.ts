@@ -33,39 +33,35 @@ describe("loadSubagentProfiles", () => {
     expect(diagnostics).toEqual([]);
     expect(profiles.get("worker")).toMatchObject({
       tools: ["read", "bash", "edit", "write", "jev"],
-      maxTurns: 30,
     });
     expect(profiles.get("software-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write", "jev"],
-      maxTurns: 35,
     });
     expect(profiles.get("devops-engineer")).toMatchObject({
       tools: ["read", "bash", "edit", "write", "event", "sandbox"],
-      maxTurns: 40,
     });
     expect(profiles.get("data-scientist")).toMatchObject({
       tools: ["read", "bash", "write", "jev"],
-      maxTurns: 35,
     });
     expect(profiles.get("account-manager")).toMatchObject({
       tools: ["read", "bash", "write", "event"],
-      maxTurns: 30,
     });
     expect(profiles.get("business-development")).toMatchObject({
       tools: ["read", "bash", "write"],
-      maxTurns: 30,
     });
     expect(profiles.get("creative-producer")).toMatchObject({
       tools: ["read", "bash", "write", "generate_image"],
-      maxTurns: 40,
     });
     expect(profiles.get("ad-operations-specialist")).toMatchObject({
       tools: ["read", "bash", "write"],
-      maxTurns: 35,
     });
     expect(profiles.get("summarizer")).toMatchObject({ tools: ["jev"] });
     for (const profile of profiles.values()) {
-      expect(profile.maxTokens).toBe(1_000_000);
+      expect(profile).toMatchObject({
+        maxTurns: 100,
+        maxTokens: 1_000_000,
+        maxCostUsd: 10,
+      });
     }
   });
 

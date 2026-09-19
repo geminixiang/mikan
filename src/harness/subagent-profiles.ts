@@ -43,8 +43,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "edit", "write", "jev"],
     thinkingLevel: "high",
-    maxTurns: 30,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "software-engineer",
@@ -59,8 +60,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "edit", "write", "jev"],
     thinkingLevel: "high",
-    maxTurns: 35,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "devops-engineer",
@@ -75,8 +77,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "edit", "write", "event", "sandbox"],
     thinkingLevel: "high",
-    maxTurns: 40,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "data-scientist",
@@ -91,8 +94,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "write", "jev"],
     thinkingLevel: "high",
-    maxTurns: 35,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "account-manager",
@@ -107,8 +111,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "write", "event"],
     thinkingLevel: "high",
-    maxTurns: 30,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "business-development",
@@ -123,8 +128,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "write"],
     thinkingLevel: "high",
-    maxTurns: 30,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "creative-producer",
@@ -138,8 +144,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "write", "generate_image"],
     thinkingLevel: "high",
-    maxTurns: 40,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "ad-operations-specialist",
@@ -154,8 +161,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["read", "bash", "write"],
     thinkingLevel: "high",
-    maxTurns: 35,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
   {
     name: "summarizer",
@@ -168,8 +176,9 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     ].join("\n"),
     tools: ["jev"],
     thinkingLevel: "high",
-    maxTurns: 20,
+    maxTurns: 100,
     maxTokens: 1_000_000,
+    maxCostUsd: 10,
   },
 ];
 

@@ -201,7 +201,9 @@ describe("subagent tool", () => {
     expect(properties.tools).toBeUndefined();
     expect(properties.model).toBeUndefined();
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
-    expect(properties.budget.properties?.maxTokens?.minimum).toBe(1);
+    expect(properties.budget.properties).toEqual({
+      maxTokens: expect.objectContaining({ minimum: 1 }),
+    });
   });
 
   test("states each profile's tool grant on the menu", () => {
@@ -541,7 +543,7 @@ describe("subagent tool", () => {
           { label: "first", task: "first" },
           { label: "second", task: "second" },
         ],
-        budget: { maxTurns: 2 },
+        budget: { maxTokens: 200_000 },
       },
       undefined,
       (update) => updates.push(update),
@@ -647,14 +649,14 @@ describe("subagent tool", () => {
     const result = await tool.execute("call-1", {
       profile: "explorer",
       task: "Investigate one question",
-      budget: { maxTurns: 2 },
+      budget: { maxTokens: 200_000 },
     });
 
     expect(runSubagent).toHaveBeenCalledWith(
       expect.objectContaining({
         task: "Investigate one question",
         profile: "explorer",
-        budget: { maxTurns: 2 },
+        budget: { maxTokens: 200_000 },
       }),
       expect.objectContaining({ onActivity: expect.any(Function) }),
     );

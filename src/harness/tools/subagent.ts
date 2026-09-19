@@ -22,9 +22,8 @@ const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
  * tool grant, model and budget defaults. Letting the model assemble those
  * per call proved unstable, so the schema deliberately exposes no
  * `systemPrompt`, `tools` or `model` escape hatch — narrowing what the model
- * can get wrong is the point. `budget` survives so the model can propose
- * limits. Token requests may raise the profile allowance; the other fields can
- * only tighten profile defaults.
+ * can get wrong is the point. The model may request a larger token allowance,
+ * but cannot accidentally shrink the profile's turn, cost, or duration limits.
  *
  * `profileNames` is baked into the schema as an enum to steer the model's
  * choice. TypeBox does not check `enum` on a string, so an unknown name still
@@ -65,14 +64,10 @@ const sharedProperties = {
   budget: Type.Optional(
     Type.Object(
       {
-        maxTurns: Type.Optional(Type.Integer({ minimum: 1 })),
         maxTokens: Type.Optional(Type.Integer({ minimum: 1 })),
-        maxCostUsd: Type.Optional(Type.Number({ minimum: 0 })),
-        maxDurationMs: Type.Optional(Type.Integer({ minimum: 1 })),
       },
       {
-        description:
-          "Sets run budget preferences. maxTokens may raise the profile allowance; other fields can only tighten profile defaults.",
+        description: "Optionally requests a larger token allowance than the profile default.",
       },
     ),
   ),
