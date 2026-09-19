@@ -99,7 +99,7 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
       {
         name: "OPENROUTER_API_KEY",
         secret: true,
-        doc: "OpenRouter API key (chat models routed through OpenRouter, and harness/jev.ts's Jev client)",
+        doc: "OpenRouter API key (chat models routed through OpenRouter, and harness/jev.ts's Jev client via @geminixiang/jev)",
       },
     ],
   },

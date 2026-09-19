@@ -1,5 +1,5 @@
 /**
- * Jev (typesafe/jev) client, reached through OpenRouter's decisions API.
+ * Jev (typesafe/jev) client, backed by `@geminixiang/jev`.
  *
  * Jev is a "System One" evaluation model: it scores a shared `state`
  * against typed questions (a yes/no probability, a multiple choice, or a
@@ -14,18 +14,31 @@
  * classification, routing, guardrails), and interpret the returned
  * probabilities themselves.
  *
- * Requires `OPENROUTER_API_KEY` (see env-manifest.ts) — the same key
- * pi-ai's `openrouter` chat provider reads. `evaluateWithJev` calls
- * OpenRouter's `/api/alpha/decisions` REST endpoint directly; this is a
- * plain typed-decision API, not chat/completion, so it does not go
- * through pi-ai's provider machinery.
+ * `@geminixiang/jev` owns the wire protocol, provider catalog, and auth
+ * resolution for four backends (TypeSafe, OpenRouter, Vercel AI Gateway,
+ * Cloudflare Workers AI); this module picks OpenRouter (the same key
+ * pi-ai's `openrouter` chat provider reads) and adapts its typed
+ * request/answer shapes to the caller-facing contract mikan's call sites
+ * already depend on, so this file is the only one that needs to know a
+ * dependency swap happened.
  */
+import {
+  createBuiltinJevModels,
+  JevAPIError,
+  JevAuthError,
+  JevConfigError,
+  JevConnectionError,
+  JevResponseError,
+  JevTimeoutError,
+  type AnswerFor as GeminixiangAnswerFor,
+  type Entry as GeminixiangEntry,
+  type Question as GeminixiangQuestion,
+} from "@geminixiang/jev";
+import type { AuthContext } from "@earendil-works/pi-ai";
 import { readEnv } from "../env-manifest.js";
 
 /** The current public Jev model id on OpenRouter. */
 export const JEV_MODEL_ID = "~typesafe/jev-latest";
-
-const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 
 /**
  * Any value Jev accepts as text-bearing structure: a string, a JSON object,
@@ -35,7 +48,7 @@ const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
  */
 export type JevEntry = string | number | boolean | null | JevEntry[] | { [key: string]: JevEntry };
 
-/** A shared caller-facing question shape; translated to OpenRouter's wire format below. */
+/** A shared caller-facing question shape; translated to `@geminixiang/jev`'s shape below. */
 export type JevQuestion =
   | {
       type: "boolean";
@@ -78,6 +91,7 @@ export interface JevResult<QUESTIONS extends JevQuestions> {
   readonly model: string;
 }
 
+/** Thrown when no Jev backend has a usable credential. Callers fail closed on this. */
 export class JevNotConfiguredError extends Error {
   constructor() {
     super(
@@ -104,126 +118,146 @@ export interface EvaluateWithJevOptions {
   headers?: Record<string, string>;
 }
 
-// ── wire format (OpenRouter decisions API) ──────────────────────────────────
+// ── @geminixiang/jev wiring ──────────────────────────────────────────────
 
-type OpenRouterQuestion =
-  | {
-      type: "noul";
-      instructions: JevEntry;
-      criteria: { true: JevEntry; false: JevEntry };
-    }
-  | { type: "choice"; instructions: JevEntry; criteria: Record<string, JevEntry> }
-  | { type: "score"; instructions: JevEntry; criteria: readonly JevEntry[] };
+/**
+ * Routes env reads through `readEnv` so `MIKAN_OPENROUTER_API_KEY` resolves
+ * the same as every other mikan-aliased credential, instead of the
+ * package's default `process.env`-only context.
+ */
+const mikanAuthContext: AuthContext = {
+  async env(name) {
+    return readEnv(name);
+  },
+  async fileExists() {
+    return false;
+  },
+};
 
-interface OpenRouterAnswer {
-  type: "noul" | "choice" | "score";
-  noul?: number;
-  choice?: string;
-  score?: number;
-  probabilities?: Record<string, number>;
-  confidence?: number;
-  legend?: Record<string, string>;
+let cachedModels: ReturnType<typeof createBuiltinJevModels> | undefined;
+
+function models() {
+  cachedModels ??= createBuiltinJevModels({ authContext: mikanAuthContext });
+  return cachedModels;
 }
 
-interface OpenRouterDecisionsResponse {
-  model: string;
-  answers: Record<string, OpenRouterAnswer>;
-  usage?: { input_tokens?: number; output_tokens?: number; cost?: number };
-  error?: { message: string; code?: number };
-}
-
-function toOpenRouterQuestion(question: JevQuestion): OpenRouterQuestion {
+function toGeminixiangQuestion(question: JevQuestion): GeminixiangQuestion {
+  const instructions = question.instructions as GeminixiangEntry;
   if (question.type === "boolean") {
+    // `@geminixiang/jev` leaves noul criteria optional; mikan has always sent
+    // an explicit Yes/No default so the wire payload (and anything tuned
+    // against it, e.g. the auto-reply gate) does not change under this swap.
     return {
       type: "noul",
-      instructions: question.instructions,
+      instructions,
       criteria: {
-        true: question.criteria?.true ?? "Yes",
-        false: question.criteria?.false ?? "No",
+        true: (question.criteria?.true as GeminixiangEntry) ?? "Yes",
+        false: (question.criteria?.false as GeminixiangEntry) ?? "No",
       },
     };
   }
-  return question;
+  if (question.type === "choice") {
+    return {
+      type: "choice",
+      instructions,
+      criteria: question.criteria as Record<string, GeminixiangEntry>,
+    };
+  }
+  const [first, second, ...rest] = question.criteria as GeminixiangEntry[];
+  if (first === undefined || second === undefined) {
+    throw new Error("score questions need at least two levels");
+  }
+  return { type: "score", instructions, criteria: [first, second, ...rest] };
 }
 
-function fromOpenRouterAnswer(answer: OpenRouterAnswer): JevAnswer<JevQuestion> {
+function fromGeminixiangAnswer(
+  answer: GeminixiangAnswerFor<GeminixiangQuestion>,
+): JevAnswer<JevQuestion> {
   if (answer.type === "noul") {
-    return { type: "boolean", probability: answer.noul ?? 0 };
+    return { type: "boolean", probability: answer.noul };
   }
   if (answer.type === "choice") {
     return {
       type: "choice",
-      choice: answer.choice ?? "",
-      probabilities: answer.probabilities,
+      choice: answer.choice,
+      probabilities: answer.probabilities as Record<string, number>,
       confidence: answer.confidence,
     };
   }
   return {
     type: "score",
-    score: answer.score ?? 0,
+    score: answer.score,
     probabilities: answer.probabilities,
-    legend: answer.legend,
+    legend: answer.legend as Record<string, string> | undefined,
     confidence: answer.confidence,
   };
 }
 
 /**
  * Evaluate one or more typed questions against a shared `state` using Jev,
- * reached through OpenRouter's decisions API. Every question is scored
- * independently against the same state in a single request; batching
- * questions here is cheap (they share the input) and is preferred over
- * separate calls per question.
+ * reached through OpenRouter's decisions API by way of `@geminixiang/jev`.
+ * Every question is scored independently against the same state in a
+ * single request; batching questions here is cheap (they share the input)
+ * and is preferred over separate calls per question.
  */
 export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
   state: JevEntry,
   questions: QUESTIONS,
   options: EvaluateWithJevOptions = {},
 ): Promise<JevResult<QUESTIONS>> {
-  const apiKey = readEnv("OPENROUTER_API_KEY");
-  if (!apiKey) throw new JevNotConfiguredError();
+  const catalogModel = models().getModel("openrouter", "jev-latest");
+  if (!catalogModel) throw new JevNotConfiguredError();
+  // `options.model` is the wire model id callers already pass (e.g. from
+  // JEV_MODEL_ID); override the catalog slug directly rather than adding a
+  // second catalog entry per possible override.
+  const model = options.model ? { ...catalogModel, slug: options.model } : catalogModel;
 
-  const wireQuestions: Record<string, OpenRouterQuestion> = {};
+  const wireQuestions: Record<string, GeminixiangQuestion> = {};
   for (const [id, question] of Object.entries(questions)) {
-    wireQuestions[id] = toOpenRouterQuestion(question);
+    wireQuestions[id] = toGeminixiangQuestion(question);
   }
 
-  const response = await fetch(OPENROUTER_DECISIONS_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-    body: JSON.stringify({
-      model: options.model ?? JEV_MODEL_ID,
-      state,
-      questions: wireQuestions,
-    }),
-    signal: options.abortSignal,
-  });
-
-  const body = (await response.json()) as OpenRouterDecisionsResponse;
-  if (!response.ok || body.error) {
-    throw new JevRequestError(
-      body.error?.message ?? `Jev request failed with status ${response.status}`,
-      body.error?.code ?? response.status,
+  let result;
+  try {
+    result = await models().evaluate(
+      model,
+      { state: state as GeminixiangEntry, questions: wireQuestions },
+      {
+        ...(options.headers ? { headers: options.headers } : {}),
+        ...(options.abortSignal ? { signal: options.abortSignal } : {}),
+      },
     );
+  } catch (error) {
+    if (error instanceof JevAuthError || error instanceof JevConfigError) {
+      throw new JevNotConfiguredError();
+    }
+    if (error instanceof JevAPIError) {
+      throw new JevRequestError(error.message, error.status);
+    }
+    if (
+      error instanceof JevResponseError ||
+      error instanceof JevConnectionError ||
+      error instanceof JevTimeoutError
+    ) {
+      throw new JevRequestError(error.message, 502);
+    }
+    throw error;
   }
 
   const answers = {} as { [ID in keyof QUESTIONS]: JevAnswer<QUESTIONS[ID]> };
   for (const id of Object.keys(questions)) {
-    const answer = body.answers[id];
+    const answer = result.answers[id];
     if (!answer) throw new JevRequestError(`Jev response missing answer for "${id}"`, 502);
-    (answers as Record<string, JevAnswer<JevQuestion>>)[id] = fromOpenRouterAnswer(answer);
+    (answers as Record<string, JevAnswer<JevQuestion>>)[id] = fromGeminixiangAnswer(answer);
   }
 
   return {
     answers,
     usage: {
-      inputTokens: body.usage?.input_tokens,
-      outputTokens: body.usage?.output_tokens,
-      cost: body.usage?.cost,
+      inputTokens: result.usage.input,
+      outputTokens: result.usage.output,
+      cost: result.usage.cost.total,
     },
-    model: body.model,
+    model: result.model,
   };
 }
