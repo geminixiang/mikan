@@ -3265,6 +3265,11 @@ function renderAdminErrorPage(message: string): string {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const adminViewStyles = `
+  /* The shared shell caps at 960px for the narrower session/login portals;
+     the sidebar + single-pane layout here reads cramped at that width, so
+     admin alone widens it. */
+  .shell { max-width: 1180px; }
+
   /* ── Settings shell: persistent rail + single active pane ───────────── */
 
   .settings-shell {
