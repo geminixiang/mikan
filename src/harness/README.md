@@ -172,10 +172,10 @@ pi-ai's `openrouter` chat provider reads) and otherwise throws
 Jev is reached two ways. Harness-internal decision points (Slack auto-reply
 `addressed`, DM task intent) call `evaluateWithJev` from code, never show the
 model the result, and fail closed to the pre-Jev rule when the key is missing.
-The `jev` tool (`tools/jev.ts`) hands the same judgments to the model as an
-ordinary tool call, so it can classify, filter, rank, or verify inputs — via
-`statePath`, without reading them into its context. There a missing key is a
-tool error the model sees, since it must then judge for itself.
+The `jev` tool (`tools/jev.ts`) hands the same API to the model as an
+ordinary tool call: it composes the state and questions itself, the way any
+Jev client would. There a missing key is a tool error the model sees, since
+it must then judge for itself.
 
 ## Boundaries
 
