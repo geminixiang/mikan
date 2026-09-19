@@ -82,11 +82,12 @@ import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
 import {
   querySlackTasks,
-  isTaskStatusQuestion,
   formatTaskStatus,
   readTaskRoots,
+  isTaskStatusQuestion,
 } from "./task-status.js";
 import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
+import { buildTaskIntentState, classifyTaskIntent, type TaskIntent } from "./task-intent.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
@@ -1087,6 +1088,19 @@ export class SlackMessagingBot implements MessagingBot {
     return readTaskRoots(this.conversationDir(channel)).has(root);
   }
 
+  private hasRunningTaskThread(channel: string): boolean {
+    const roots = readTaskRoots(this.conversationDir(channel));
+    if (!roots.size) return false;
+    return this.handler
+      .getRunningSessions()
+      .some(
+        (s) =>
+          s.address.platform === "slack" &&
+          s.address.conversationId === channel &&
+          [...roots.keys()].some((root) => resolveSlackSessionKey(channel, root) === s.sessionKey),
+      );
+  }
+
   private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
     return hasMaterializedChatSession({
       conversationDir: this.conversationDir(conversationId),
@@ -1637,6 +1651,13 @@ export class SlackMessagingBot implements MessagingBot {
     return false;
   }
 
+  /**
+   * Handle a DM message that may be about a background task without spending
+   * a model turn: a pure status question is answered from observation, and a
+   * supplement is steered into the running task. Jev decides which (falling
+   * back to the regex status shortcut); anything else returns false so the
+   * message becomes an ordinary conversation turn.
+   */
   private async deliverTaskUpdate(
     event: SlackEvent,
     attachmentsPromise: Promise<Attachment[]>,
@@ -1649,12 +1670,27 @@ export class SlackMessagingBot implements MessagingBot {
         ? this.postInThread(event.channel, event.thread_ts, text)
         : this.postMessage(event.channel, text);
     try {
-      if (!event.attachments?.length && isTaskStatusQuestion(event.text)) {
-        const tasks = await context.responder.getTaskStatus!(
-          event.thread_ts ? event.sessionKey : undefined,
-        );
-        if (!tasks.length) return false;
-        const active = tasks.filter((t) => t.status === "running" || t.status === "stopping");
+      const tasks = await context.responder.getTaskStatus!(
+        event.thread_ts ? event.sessionKey : undefined,
+      );
+      if (!tasks.length) return false;
+      const active = tasks.filter((t) => t.status === "running" || t.status === "stopping");
+      const user = this.users.get(event.user);
+      // A message carrying files is never a pure status question; in a task
+      // thread it is a supplement, at top level an ordinary turn.
+      const intent: TaskIntent = event.attachments?.length
+        ? event.thread_ts
+          ? "steer"
+          : "request"
+        : await classifyTaskIntent(
+            buildTaskIntentState(this.conversationDir(event.channel), event, {
+              speaker: user?.displayName ?? user?.userName,
+              tasks,
+            }),
+            event.text,
+            { conversationId: event.channel, inTaskThread: !!event.thread_ts },
+          );
+      if (intent === "status") {
         const selection = event.thread_ts ? tasks : active.length ? active : tasks.slice(0, 1);
         const text =
           selection.length > 1
@@ -1664,9 +1700,24 @@ export class SlackMessagingBot implements MessagingBot {
         this.logBotResponse(event.channel, text, ts, event.thread_ts);
         return true;
       }
-      if (event.thread_ts && (await this.handler.steer?.(context.message))) {
-        await post("收到補充，會在下一個處理步驟納入；目前的操作不會立即中斷。");
-        return true;
+      if (intent === "steer") {
+        // In a thread the message already targets that task; at top level it
+        // can only be steered when exactly one task is running.
+        const target = event.thread_ts
+          ? context.message
+          : active.length === 1
+            ? {
+                ...context.message,
+                sessionKey: active[0]!.sessionKey,
+                threadTs: active[0]!.threadTs,
+              }
+            : undefined;
+        if (target && (await this.handler.steer?.(target))) {
+          const text = "收到補充，會在下一個處理步驟納入；目前的操作不會立即中斷。";
+          const ts = await post(text);
+          this.logBotResponse(event.channel, text, ts, event.thread_ts);
+          return true;
+        }
       }
     } catch (error) {
       await post(error instanceof Error ? error.message : "Could not deliver task update.");
@@ -1791,9 +1842,15 @@ export class SlackMessagingBot implements MessagingBot {
     const activeSessionKey =
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
     slackEvent.sessionKey = activeSessionKey;
-    const taskThread = isDM && !!e.thread_ts && this.isTaskThread(e.channel, e.thread_ts);
+    // Task threads always go through the task gate. Top-level DMs do only
+    // while a task is running (so supplements can be steered) or when the
+    // regex already recognises a status question about a finished one, so
+    // idle DMs never pay a Jev round-trip.
     const taskControl =
-      taskThread || (isDM && !e.thread_ts && isTaskStatusQuestion(slackEvent.text));
+      isDM &&
+      (e.thread_ts
+        ? this.isTaskThread(e.channel, e.thread_ts)
+        : this.hasRunningTaskThread(e.channel) || isTaskStatusQuestion(slackEvent.text));
     if (taskControl) {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;

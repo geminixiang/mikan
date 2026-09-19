@@ -13,11 +13,21 @@ import {
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
-import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { MikanAgentSession, MikanModels, JevNotConfiguredError } from "../harness/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import * as observability from "../observability/index.js";
 import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
+
+// Jev is unavailable by default so every path below exercises the regex
+// fallback; individual tests hand it a decision to cover the Jev-only paths.
+const jev = vi.fn();
+vi.mock("../harness/jev.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../harness/jev.js")>();
+  return { ...actual, evaluateWithJev: (...args: unknown[]) => jev(...args) };
+});
+const jevChoice = (choice: string) =>
+  jev.mockResolvedValueOnce({ answers: { intent: { type: "choice", choice } } });
 
 function deferred() {
   let resolve!: () => void;
@@ -61,6 +71,8 @@ beforeEach(() => {
   models = MikanModels.create({ modelsJsonPath: join(stateDir, "models.json") });
   faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
+  jev.mockReset();
+  jev.mockRejectedValue(new JevNotConfiguredError());
   hold = deferred();
   started = deferred();
   aborted = false;
@@ -410,6 +422,72 @@ test("mixed status and instructions are not swallowed by the observation shortcu
   expect(isTaskStatusQuestion("好了嗎？")).toBe(true);
   expect(isTaskStatusQuestion("好了嗎？先不要部署")).toBe(false);
   expect(isTaskStatusQuestion("先給我重點就好")).toBe(false);
+});
+
+test("jev answers a status question the regex misses from observation, with task context", async () => {
+  faux.setResponses([handoff(), callHold()]);
+  const root = await startTask();
+  jevChoice("status");
+  await dm("弄好了沒", root);
+  expect(faux.state.callCount).toBe(2);
+  expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("還在處理"), root);
+  const state = jev.mock.calls[0]?.[0] as string;
+  expect(state).toContain("- running (currently: hold): On it, continuing here.");
+  expect(state).toContain("NEW message from U1:\n弄好了沒");
+  expect(jev.mock.calls[0]?.[1]).toMatchObject({ intent: { type: "choice" } });
+});
+
+test("jev routes a mixed status-plus-instruction thread message to steering, not observation", async () => {
+  faux.setResponses([
+    handoff(),
+    callHold(),
+    (context) => {
+      expect(JSON.stringify(context.messages)).toContain("先不要部署");
+      return fauxAssistantMessage("adjusted");
+    },
+  ]);
+  const root = await startTask();
+  jevChoice("steer");
+  await dm("好了嗎？先不要部署", root);
+  expect(faux.state.callCount).toBe(2);
+  expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("收到補充"), root);
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  expect(faux.state.callCount).toBe(3);
+});
+
+test("jev steers a top-level DM supplement into the single running task", async () => {
+  faux.setResponses([
+    handoff(),
+    callHold(),
+    (context) => {
+      expect(JSON.stringify(context.messages)).toContain("TOP_LEVEL_SUPPLEMENT");
+      return fauxAssistantMessage("adjusted");
+    },
+  ]);
+  await startTask();
+  jevChoice("steer");
+  await dm("TOP_LEVEL_SUPPLEMENT");
+  expect(faux.state.callCount).toBe(2);
+  expect(bot.postMessage).toHaveBeenCalledWith("D123", expect.stringContaining("收到補充"));
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  expect(faux.state.callCount).toBe(3);
+});
+
+test("top-level DM falls through to a normal turn when jev says request, and skips jev when idle", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("quick answer")]);
+  await startTask();
+  jevChoice("request");
+  await dm("unrelated question");
+  await vi.waitFor(() => expect(faux.state.callCount).toBe(3));
+  expect(jev).toHaveBeenCalledTimes(1);
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  faux.setResponses([fauxAssistantMessage("another answer")]);
+  await dm("and one more");
+  await vi.waitFor(() => expect(faux.state.callCount).toBe(4));
+  expect(jev).toHaveBeenCalledTimes(1);
 });
 
 test("rejected final delivery never sends a completion mention", async () => {
