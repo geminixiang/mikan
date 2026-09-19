@@ -39,7 +39,12 @@ export type {
   HarnessEventListener,
   MikanAgentSessionOptions,
 } from "./types.js";
-export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./skills.js";
+export {
+  formatSkillsForPrompt,
+  loadSkillsFromDir,
+  parseFrontmatter,
+  validateSkill,
+} from "./skills.js";
 export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./types.js";
 export { loadSubagentProfiles } from "./subagent-profiles.js";
 export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";

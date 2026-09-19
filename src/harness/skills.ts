@@ -103,7 +103,8 @@ export function parseFrontmatter(content: string): Frontmatter {
   return { values, body: content.slice(match[0].length) };
 }
 
-function validateSkill(name: string, description: string): string[] {
+/** Exposed so the admin portal can validate a skill draft before writing it. */
+export function validateSkill(name: string, description: string): string[] {
   const errors: string[] = [];
   if (name.length > MAX_NAME_LENGTH) {
     errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);

@@ -1,8 +1,17 @@
 import { validateEventFilename } from "../../../events/index.js";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
-import { MikanModels, parseFrontmatter } from "../../../harness/index.js";
+import { atomicWritePrivateFile } from "../../../file-guards.js";
+import { MikanModels, parseFrontmatter, validateSkill } from "../../../harness/index.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { EventStore } from "../../../events/index.js";
 import type { PlatformName } from "../../index.js";
@@ -182,7 +191,8 @@ async function routePostApiRequest(
   url: URL,
   services: AdminServices,
 ): Promise<void> {
-  const body = await readJsonBody(req, res, 32 * 1024);
+  const bodyLimit = url.pathname === "/admin/api/skills/mutate" ? 256 * 1024 : 32 * 1024;
+  const body = await readJsonBody(req, res, bodyLimit);
   if (!body) return;
   const token = services.adminTokenStore.peek(typeof body.token === "string" ? body.token : "");
   if (!token) {
@@ -204,6 +214,8 @@ async function routePostApiRequest(
       return serveConversationEventDelete(res, body, services, token);
     case "/admin/api/mcp-servers/mutate":
       return serveMcpServerMutation(res, body, services, token);
+    case "/admin/api/skills/mutate":
+      return serveSkillMutation(res, body, services, token);
     case "/admin/api/settings/model":
       return serveGlobalModelUpdate(res, body, services);
     case "/admin/api/settings/sandbox":
@@ -1545,6 +1557,111 @@ function serveSkillFile(
   servePreviewFile(res, safe.absolute, { source, directory }, "Skill file not found");
 }
 
+const SKILL_DIRECTORY_PATTERN = /^[a-z0-9-]+$/;
+
+function resolveSkillsRoot(
+  workspace: Workspace,
+  scope: AdminConversationScope,
+  source: unknown,
+): { root: string; source: "global" | "conversation" } | { error: string } {
+  if (source !== "global" && source !== "conversation") {
+    return { error: "Invalid skill source" };
+  }
+  return {
+    root: source === "global" ? workspace.skillsDir : workspace.office(scope.address).skillsDir,
+    source,
+  };
+}
+
+/**
+ * Create, overwrite, or delete one skill directory. The directory name is
+ * fixed at creation (renaming would leave the old directory as an orphan);
+ * editing an existing skill always targets its current directory. Writes go
+ * straight to the workspace skills tree — the same location the harness
+ * loader reads — so a saved skill is available on the conversation's next
+ * turn without a restart.
+ */
+async function serveSkillMutation(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): Promise<void> {
+  const action = body.action;
+  if (action !== "save" && action !== "delete") {
+    jsonRes(res, 400, { error: "action must be 'save' or 'delete'" });
+    return;
+  }
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const resolved = resolveSkillsRoot(workspace, scope, body.source);
+  if ("error" in resolved) {
+    jsonRes(res, 400, { error: resolved.error });
+    return;
+  }
+
+  const directory = typeof body.directory === "string" ? body.directory.trim() : "";
+  if (!directory || !SKILL_DIRECTORY_PATTERN.test(directory)) {
+    jsonRes(res, 400, {
+      error: "directory must be lowercase a-z, 0-9 and hyphens",
+    });
+    return;
+  }
+  const safe = safeJoinUnderRoot(resolved.root, directory);
+  if (safe.error) {
+    jsonRes(res, 400, { error: safe.error });
+    return;
+  }
+
+  if (action === "delete") {
+    if (!existsSync(join(safe.absolute, "SKILL.md"))) {
+      jsonRes(res, 404, { error: "Skill not found" });
+      return;
+    }
+    try {
+      rmSync(safe.absolute, { recursive: true, force: true });
+    } catch (err) {
+      jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
+    jsonRes(res, 200, { ok: true });
+    return;
+  }
+
+  const name = typeof body.name === "string" ? body.name.trim() : directory;
+  const description = typeof body.description === "string" ? body.description.trim() : "";
+  const content = typeof body.content === "string" ? body.content : "";
+  if (!description) {
+    jsonRes(res, 400, { error: "description is required" });
+    return;
+  }
+  const errors = validateSkill(name, description);
+  if (errors.length > 0) {
+    jsonRes(res, 400, { error: errors.join("; ") });
+    return;
+  }
+
+  try {
+    if (existsSync(safe.absolute) && lstatSync(safe.absolute).isSymbolicLink()) {
+      throw new Error("Refusing to write through a symlinked skill directory");
+    }
+    mkdirSync(safe.absolute, { recursive: true });
+    const frontmatter = ["---", `name: ${name}`, `description: ${description}`, "---", ""].join(
+      "\n",
+    );
+    atomicWritePrivateFile(join(safe.absolute, "SKILL.md"), frontmatter + content.trim() + "\n");
+  } catch (err) {
+    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    return;
+  }
+  jsonRes(res, 200, { ok: true, name, directory, source: resolved.source });
+}
+
 // ── Events ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -1702,7 +1819,10 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
             <p class="eyebrow">Skills</p>
             <h2 class="card-title">可用的 skills</h2>
           </div></div>
-          <button class="refresh-btn" onclick="event.stopPropagation(); loadSkills()">↻</button>
+          <div class="sect-head-actions">
+            <button class="primary-action-btn" onclick="event.stopPropagation(); openSkillDialog('conversation')">+ New skill</button>
+            <button class="refresh-btn" onclick="event.stopPropagation(); loadSkills()">↻</button>
+          </div>
         </summary>
         <div class="sect-body">
           <div class="workspace-split">
@@ -1827,9 +1947,15 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
             <p class="eyebrow">Global Skills</p>
             <h2 class="card-title">全域 skills</h2>
           </div>
-          <button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>
+          <div class="sect-head-actions">
+            <button class="primary-action-btn" onclick="openSkillDialog('global')">+ New global skill</button>
+            <button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>
+          </div>
         </header>
-        <div id="global-skills-content"><div class="loading-msg">Loading…</div></div>
+        <div class="workspace-split">
+          <div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
+          <div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
+        </div>
       </section>
 
       <section class="card sect">
@@ -1873,6 +1999,38 @@ const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sec
       <div class="mcp-dialog-actions">
         <button class="mcp-btn" type="button" onclick="closeMcpCustomDialog()">Cancel</button>
         <button id="mcp-custom-dialog-submit" class="primary-action-btn" type="button" onclick="submitMcpCustomDialog(this)">新增並測試連線</button>
+      </div>
+    </dialog>
+
+    <dialog id="skill-dialog" class="mcp-dialog" aria-labelledby="skill-dialog-title">
+      <div class="mcp-dialog-head">
+        <div>
+          <p class="eyebrow" id="skill-dialog-eyebrow">Skill</p>
+          <h2 id="skill-dialog-title" class="card-title">New skill</h2>
+        </div>
+        <button class="mcp-dialog-close" type="button" aria-label="Close" onclick="closeSkillDialog()">×</button>
+      </div>
+      <div class="mcp-field">
+        <span>Directory</span>
+        <input id="skill-dialog-directory" class="form-input mcp-json" placeholder="my-skill" autocomplete="off" />
+        <small class="mcp-secret-note">Lowercase letters, digits, hyphens. Cannot be changed after creation.</small>
+      </div>
+      <div class="mcp-field">
+        <span>Name</span>
+        <input id="skill-dialog-name" class="form-input mcp-json" placeholder="my-skill" autocomplete="off" />
+      </div>
+      <div class="mcp-field">
+        <span>Description</span>
+        <input id="skill-dialog-description" class="form-input mcp-json" placeholder="Use when …" autocomplete="off" />
+      </div>
+      <div class="mcp-field">
+        <span>Instructions (SKILL.md body)</span>
+        <textarea id="skill-dialog-content" class="form-input mcp-json" spellcheck="false" rows="12" placeholder="# My skill&#10;&#10;Instructions here."></textarea>
+      </div>
+      <div id="skill-dialog-error" class="inline-result err" style="display:none"></div>
+      <div class="mcp-dialog-actions">
+        <button class="mcp-btn" type="button" onclick="closeSkillDialog()">Cancel</button>
+        <button id="skill-dialog-submit" class="primary-action-btn" type="button" onclick="submitSkillDialog(this)">Save</button>
       </div>
     </dialog>`;
 
@@ -2628,6 +2786,31 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       void mutateMcpServer(btn.dataset.mcpScope, btn.dataset.mcpAction, btn.dataset.mcpName);
     });
 
+    let skillsCache = [];
+
+    function renderSkillsInto(containerId, skills, allowedSource) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const filtered = allowedSource ? skills.filter((s) => s.source === allowedSource) : skills;
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="empty-state">No skills available</div>';
+        return;
+      }
+      container.innerHTML = '<div class="skills-list">' +
+        filtered.map((s) =>
+          '<div class="skill-row">' +
+            '<button class="skill-row-btn" data-skill-source="' + escAttr(s.source) + '" data-skill-directory="' + escAttr(s.directory) + '" data-skill-name="' + escAttr(s.name) + '">' +
+              '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span></div>' +
+              (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
+            '</button>' +
+            '<div class="skill-row-actions">' +
+              '<button class="mcp-btn" data-skill-edit-source="' + escAttr(s.source) + '" data-skill-edit-directory="' + escAttr(s.directory) + '">Edit</button>' +
+              '<button class="mcp-btn mcp-btn-danger" data-skill-delete-source="' + escAttr(s.source) + '" data-skill-delete-directory="' + escAttr(s.directory) + '" data-skill-delete-name="' + escAttr(s.name) + '">Delete</button>' +
+            '</div>' +
+          '</div>'
+        ).join('') + '</div>';
+    }
+
     async function loadSkills() {
       const container = document.getElementById('skills-content');
       const previewEl = document.getElementById('skills-preview');
@@ -2635,25 +2818,19 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       if (previewEl) previewEl.innerHTML = '<div class="placeholder-msg">Click a skill to preview SKILL.md</div>';
       try {
         const data = await apiGet('/admin/api/skills?' + scopeQuery());
-        if (data.skills.length === 0) {
-          container.innerHTML = '<div class="empty-state">No skills available</div>';
-          return;
-        }
-        container.innerHTML = '<div class="skills-list">' +
-          data.skills.map((s) =>
-            '<button class="skill-row skill-row-btn" data-skill-source="' + escAttr(s.source) + '" data-skill-directory="' + escAttr(s.directory) + '" data-skill-name="' + escAttr(s.name) + '">' +
-              '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span></div>' +
-              (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
-            '</button>'
-          ).join('') + '</div>';
-
+        skillsCache = Array.isArray(data.skills) ? data.skills : [];
+        renderSkillsInto('skills-content', skillsCache);
+        renderSkillsInto('global-skills-content', skillsCache, 'global');
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
       }
     }
 
-    async function previewSkill(source, directory, name) {
-      const previewEl = document.getElementById('skills-preview');
+    const loadGlobalSkills = loadSkills;
+
+    async function previewSkillInto(previewId, source, directory, name) {
+      const previewEl = document.getElementById(previewId);
+      if (!previewEl) return;
       if (!source || !directory) {
         previewEl.innerHTML = '<div class="err-msg">Missing skill source or directory</div>';
         return;
@@ -2667,11 +2844,105 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    document.getElementById('skills-content').addEventListener('click', (event) => {
-      const btn = event.target.closest('[data-skill-source]');
-      if (!btn) return;
-      previewSkill(btn.dataset.skillSource, btn.dataset.skillDirectory, btn.dataset.skillName);
-    });
+    async function deleteSkill(source, directory, name) {
+      if (!confirm('Delete skill "' + (name || directory) + '" (' + source + ')?')) return;
+      try {
+        await apiPost('/admin/api/skills/mutate', { action: 'delete', source: source, directory: directory, ...scopeBody() });
+        await loadSkills();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function bindSkillListEvents(containerId, previewId) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      el.addEventListener('click', (event) => {
+        const previewBtn = event.target.closest('[data-skill-source]');
+        if (previewBtn) {
+          previewSkillInto(previewId, previewBtn.dataset.skillSource, previewBtn.dataset.skillDirectory, previewBtn.dataset.skillName);
+          return;
+        }
+        const editBtn = event.target.closest('[data-skill-edit-source]');
+        if (editBtn) {
+          const skill = skillsCache.find((s) => s.source === editBtn.dataset.skillEditSource && s.directory === editBtn.dataset.skillEditDirectory);
+          if (skill) void openSkillDialog(skill.source, skill);
+          return;
+        }
+        const deleteBtn = event.target.closest('[data-skill-delete-source]');
+        if (deleteBtn) {
+          void deleteSkill(deleteBtn.dataset.skillDeleteSource, deleteBtn.dataset.skillDeleteDirectory, deleteBtn.dataset.skillDeleteName);
+        }
+      });
+    }
+    bindSkillListEvents('skills-content', 'skills-preview');
+    bindSkillListEvents('global-skills-content', 'global-skills-preview');
+
+    let editingSkill = null;
+    let pendingSkillScope = null;
+
+    async function openSkillDialog(scope, existing) {
+      editingSkill = existing ? { source: existing.source, directory: existing.directory } : null;
+      document.getElementById('skill-dialog-eyebrow').textContent = scope === 'global' ? 'Global skill' : 'Conversation skill';
+      document.getElementById('skill-dialog-title').textContent = existing ? 'Edit skill' : 'New skill';
+      const dirInput = document.getElementById('skill-dialog-directory');
+      dirInput.value = existing ? existing.directory : '';
+      dirInput.disabled = Boolean(existing);
+      document.getElementById('skill-dialog-name').value = existing ? existing.name : '';
+      document.getElementById('skill-dialog-description').value = existing ? existing.description : '';
+      const contentEl = document.getElementById('skill-dialog-content');
+      contentEl.value = '';
+      const dialogError = document.getElementById('skill-dialog-error');
+      dialogError.style.display = 'none';
+      dialogError.textContent = '';
+      pendingSkillScope = scope;
+      if (existing) {
+        contentEl.value = 'Loading…';
+        try {
+          const data = await apiGet('/admin/api/skills/file?' + scopeQuery() + '&source=' + encodeURIComponent(existing.source) + '&directory=' + encodeURIComponent(existing.directory));
+          contentEl.value = data.binary ? '' : (data.content || '').replace(/^---[\\s\\S]*?---\\n?/, '').trim();
+        } catch (err) {
+          contentEl.value = '';
+          dialogError.textContent = 'Failed to load current content: ' + err.message;
+          dialogError.style.display = 'block';
+        }
+      }
+      document.getElementById('skill-dialog').showModal();
+    }
+
+    function closeSkillDialog() {
+      editingSkill = null;
+      pendingSkillScope = null;
+      document.getElementById('skill-dialog').close();
+    }
+
+    async function submitSkillDialog(btn) {
+      const dialogError = document.getElementById('skill-dialog-error');
+      dialogError.style.display = 'none';
+      dialogError.textContent = '';
+      const directory = document.getElementById('skill-dialog-directory').value.trim();
+      const name = document.getElementById('skill-dialog-name').value.trim() || directory;
+      const description = document.getElementById('skill-dialog-description').value.trim();
+      const content = document.getElementById('skill-dialog-content').value;
+      if (!directory) { dialogError.textContent = 'Directory is required'; dialogError.style.display = 'block'; return; }
+      if (!description) { dialogError.textContent = 'Description is required'; dialogError.style.display = 'block'; return; }
+      const source = editingSkill ? editingSkill.source : pendingSkillScope;
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      try {
+        await apiPost('/admin/api/skills/mutate', {
+          action: 'save', source: source, directory: directory, name: name, description: description, content: content, ...scopeBody(),
+        });
+        closeSkillDialog();
+        await loadSkills();
+      } catch (err) {
+        dialogError.textContent = err.message;
+        dialogError.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Save';
+      }
+    }
 
     // ── Vault (Login link) ───────────────────────────────────────────────────────
 
@@ -3014,26 +3285,6 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       await saveSetting(btn, result, 'settings/slack', { replyMode }, 'Save Slack');
     }
 
-    async function loadGlobalSkills() {
-      const container = document.getElementById('global-skills-content');
-      container.innerHTML = '<div class="loading-msg">Loading…</div>';
-      try {
-        // Reuse skills endpoint scoped to a conversation that doesn't have any of its own; the global half is what we want.
-        const data = await apiGet('/admin/api/skills?' + scopeQuery());
-        const globals = data.skills.filter((s) => s.source === 'global');
-        if (globals.length === 0) {
-          container.innerHTML = '<div class="empty-state">No global skills</div>';
-          return;
-        }
-        container.innerHTML = '<div class="skills-list">' + globals.map((s) =>
-          '<div class="skill-row"><div class="skill-name">' + escHtml(s.name) + '</div>' +
-          (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') + '</div>'
-        ).join('') + '</div>';
-      } catch (err) {
-        container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
-      }
-    }
-
     // ── Init ─────────────────────────────────────────────────────────────────────
 
     // Sections load on demand (see initSections); loadSettingsPanel already
@@ -3177,6 +3428,7 @@ const adminViewStyles = `
     font: 500 0.84rem/1.2 'DM Sans', sans-serif; cursor: pointer;
   }
   .refresh-btn:hover { background: rgba(0,0,0,0.06); color: var(--text); }
+  .sect-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
   /* ── Workspace ──────────────────────────────────────────────────────── */
 
@@ -3227,11 +3479,14 @@ const adminViewStyles = `
   .skill-row {
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     background: rgba(0,0,0,0.02);
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
   }
   .skill-row-btn {
-    width: 100%; text-align: left; cursor: pointer; font-family: inherit;
+    flex: 1 1 auto; min-width: 0; text-align: left; cursor: pointer; font-family: inherit;
+    background: transparent; border: none; padding: 0;
   }
-  .skill-row-btn:hover { background: rgba(0,0,0,0.05); }
+  .skill-row-btn:hover .skill-name { color: var(--accent); }
+  .skill-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .skill-name {
     font-weight: 650; font-size: 0.9rem; color: var(--text);
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
