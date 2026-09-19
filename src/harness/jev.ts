@@ -27,11 +27,24 @@ export const JEV_MODEL_ID = "~typesafe/jev-latest";
 
 const OPENROUTER_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions";
 
+/**
+ * Any value Jev accepts as text-bearing structure: a string, a JSON object,
+ * an array, or `null`. State, instructions, and criteria descriptions all
+ * take this shape; Jev is trained to read the structure, so objects with
+ * labelled keys are preferred over string templates.
+ */
+export type JevEntry = string | number | boolean | null | JevEntry[] | { [key: string]: JevEntry };
+
 /** A shared caller-facing question shape; translated to OpenRouter's wire format below. */
 export type JevQuestion =
-  | { type: "boolean"; instructions: string }
-  | { type: "choice"; instructions: string; criteria: Record<string, string> }
-  | { type: "score"; instructions: string; criteria: readonly string[] };
+  | {
+      type: "boolean";
+      instructions: JevEntry;
+      /** Optional descriptions of the yes / no outcomes. */
+      criteria?: { true?: JevEntry; false?: JevEntry };
+    }
+  | { type: "choice"; instructions: JevEntry; criteria: Record<string, JevEntry> }
+  | { type: "score"; instructions: JevEntry; criteria: readonly JevEntry[] };
 
 export type JevQuestions = Record<string, JevQuestion>;
 
@@ -40,9 +53,19 @@ export type JevAnswer<QUESTION extends JevQuestion> = QUESTION extends { type: "
       type: "choice";
       choice: string;
       probabilities?: Record<string, number>;
+      /** 0-1 statistic over `probabilities`; low means no option clearly fits. */
+      confidence?: number;
     }
   : QUESTION extends { type: "score" }
-    ? { type: "score"; score: number; probabilities?: Record<string, number> }
+    ? {
+        type: "score";
+        /** Expected level index; fractional between levels. */
+        score: number;
+        probabilities?: Record<string, number>;
+        /** Level index -> criterion text, as echoed by Jev. */
+        legend?: Record<string, string>;
+        confidence?: number;
+      }
     : { type: "boolean"; probability: number };
 
 export interface JevResult<QUESTIONS extends JevQuestions> {
@@ -84,9 +107,13 @@ export interface EvaluateWithJevOptions {
 // ── wire format (OpenRouter decisions API) ──────────────────────────────────
 
 type OpenRouterQuestion =
-  | { type: "noul"; instructions: string; criteria: { true: string; false: string } }
-  | { type: "choice"; instructions: string; criteria: Record<string, string> }
-  | { type: "score"; instructions: string; criteria: readonly string[] };
+  | {
+      type: "noul";
+      instructions: JevEntry;
+      criteria: { true: JevEntry; false: JevEntry };
+    }
+  | { type: "choice"; instructions: JevEntry; criteria: Record<string, JevEntry> }
+  | { type: "score"; instructions: JevEntry; criteria: readonly JevEntry[] };
 
 interface OpenRouterAnswer {
   type: "noul" | "choice" | "score";
@@ -94,6 +121,8 @@ interface OpenRouterAnswer {
   choice?: string;
   score?: number;
   probabilities?: Record<string, number>;
+  confidence?: number;
+  legend?: Record<string, string>;
 }
 
 interface OpenRouterDecisionsResponse {
@@ -108,7 +137,10 @@ function toOpenRouterQuestion(question: JevQuestion): OpenRouterQuestion {
     return {
       type: "noul",
       instructions: question.instructions,
-      criteria: { true: "Yes", false: "No" },
+      criteria: {
+        true: question.criteria?.true ?? "Yes",
+        false: question.criteria?.false ?? "No",
+      },
     };
   }
   return question;
@@ -119,9 +151,20 @@ function fromOpenRouterAnswer(answer: OpenRouterAnswer): JevAnswer<JevQuestion> 
     return { type: "boolean", probability: answer.noul ?? 0 };
   }
   if (answer.type === "choice") {
-    return { type: "choice", choice: answer.choice ?? "", probabilities: answer.probabilities };
+    return {
+      type: "choice",
+      choice: answer.choice ?? "",
+      probabilities: answer.probabilities,
+      confidence: answer.confidence,
+    };
   }
-  return { type: "score", score: answer.score ?? 0, probabilities: answer.probabilities };
+  return {
+    type: "score",
+    score: answer.score ?? 0,
+    probabilities: answer.probabilities,
+    legend: answer.legend,
+    confidence: answer.confidence,
+  };
 }
 
 /**
@@ -132,7 +175,7 @@ function fromOpenRouterAnswer(answer: OpenRouterAnswer): JevAnswer<JevQuestion> 
  * separate calls per question.
  */
 export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
-  state: string,
+  state: JevEntry,
   questions: QUESTIONS,
   options: EvaluateWithJevOptions = {},
 ): Promise<JevResult<QUESTIONS>> {

@@ -32,11 +32,11 @@ describe("loadSubagentProfiles", () => {
 
     expect(diagnostics).toEqual([]);
     expect(profiles.get("worker")).toMatchObject({
-      tools: ["read", "bash", "edit", "write"],
+      tools: ["read", "bash", "edit", "write", "jev"],
       maxTurns: 30,
     });
     expect(profiles.get("software-engineer")).toMatchObject({
-      tools: ["read", "bash", "edit", "write"],
+      tools: ["read", "bash", "edit", "write", "jev"],
       maxTurns: 35,
     });
     expect(profiles.get("devops-engineer")).toMatchObject({
@@ -44,7 +44,7 @@ describe("loadSubagentProfiles", () => {
       maxTurns: 40,
     });
     expect(profiles.get("data-scientist")).toMatchObject({
-      tools: ["read", "bash", "write"],
+      tools: ["read", "bash", "write", "jev"],
       maxTurns: 35,
     });
     expect(profiles.get("account-manager")).toMatchObject({
@@ -63,7 +63,7 @@ describe("loadSubagentProfiles", () => {
       tools: ["read", "bash", "write"],
       maxTurns: 35,
     });
-    expect(profiles.get("summarizer")).toMatchObject({ tools: [] });
+    expect(profiles.get("summarizer")).toMatchObject({ tools: ["jev"] });
     for (const profile of profiles.values()) {
       expect(profile.maxTokens).toBe(1_000_000);
     }
@@ -91,7 +91,7 @@ describe("loadSubagentProfiles", () => {
 
     expect(profile).toMatchObject({
       model: { provider: "openai-codex", id: "gpt-5.6-luna" },
-      tools: ["read", "bash", "edit", "write"],
+      tools: ["read", "bash", "edit", "write", "jev"],
       thinkingLevel: "high",
     });
     expect(profile?.systemPrompt).toContain("software engineer");

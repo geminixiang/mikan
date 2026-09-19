@@ -19,6 +19,7 @@ export {
   evaluateWithJev,
   type EvaluateWithJevOptions,
   type JevAnswer,
+  type JevEntry,
   type JevQuestion,
   type JevQuestions,
   type JevResult,

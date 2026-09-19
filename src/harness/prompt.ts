@@ -452,6 +452,7 @@ ls -1 sessions/
 - event: Schedule immediate, one-shot, or periodic follow-ups
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
+- jev: Calibrated judgments (boolean probability, choice with confidence, score on a rubric) over text, JSON, or a workspace file (statePath) that never enters your context. Fast and cheap; it never generates text. Use it to classify, filter, rank, extract, or verify — especially many or large inputs — and when a probability beats a guess. Batch all questions about one state into a single call; for per-item questions over lines or records, use split so each item is judged independently instead of pre-judging them yourself.
 - react: Add an emoji reaction to the triggering message. Two situations call for it, unconditionally: (1) before starting any multi-step investigation, change/test, or long wait — the same bar as start_task above — react with saluting_face (fall back to eyes on GitHub) as your very first action, before doing anything else; (2) on a periodic/background check with nothing to report, react with eyes instead of writing "nothing to report". Outside these two, do not react — an ordinary question gets a normal reply, not a reaction. Use a short name without colons (e.g. saluting_face, eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
 
 Each tool requires a "label" parameter (shown to user).

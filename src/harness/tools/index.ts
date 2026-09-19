@@ -8,6 +8,7 @@ import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
 import { createTaskTools } from "./task.js";
+import { createJevTool, type JevStateReader } from "./jev.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
@@ -38,6 +39,7 @@ export function createMikanTools(
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   bindTasks: ReturnType<typeof createTaskTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
+  setJevStateReader: (fn: JevStateReader | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
   setEventContext: (context: {
     platform: string;
@@ -51,6 +53,7 @@ export function createMikanTools(
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
+  const { tool: jevTool, setStateReader: setJevStateReader } = createJevTool();
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },
@@ -66,6 +69,7 @@ export function createMikanTools(
       adaptAgentTool(attachTool),
       ...(imageTool ? [adaptAgentTool(imageTool.tool)] : []),
       adaptAgentTool(reactTool),
+      adaptAgentTool(jevTool),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
     ],
@@ -74,6 +78,7 @@ export function createMikanTools(
       imageTool?.setUploadFunction(fn);
     },
     setReactFunction,
+    setJevStateReader,
     bindTasks,
     bindPlatformToolPacks: (ctx) => {
       for (const pack of platformToolPacks) {

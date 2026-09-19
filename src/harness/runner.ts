@@ -260,6 +260,7 @@ type PrepareRunParams = {
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   bindTasks: ReturnType<typeof createMikanTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
+  setJevStateReader: ReturnType<typeof createMikanTools>["setJevStateReader"];
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
 };
 
@@ -323,6 +324,7 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
     setUploadFunction,
     setImageUploadFunction,
     setReactFunction,
+    setJevStateReader,
     bindTasks,
     bindPlatformToolPacks,
   } = params;
@@ -346,6 +348,16 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
   // Unset reaction support when the active responder cannot react.
   bindTasks(responder);
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
+  // jev statePath reads go through the executor so sandbox paths resolve like attach.
+  setJevStateReader((filePath: string) => {
+    let runtimePath: string;
+    try {
+      runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);
+    } catch (error) {
+      throw new Error("statePath must be a file within the workspace", { cause: error });
+    }
+    return executor.readFile(runtimePath);
+  });
   bindPlatformToolPacks({
     conversationId: office.address.conversationId,
     platformName: platform.name,
@@ -691,6 +703,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
           setUploadFunction: toolBindings.setUploadFunction,
           setImageUploadFunction: toolBindings.setImageUploadFunction,
           setReactFunction: toolBindings.setReactFunction,
+          setJevStateReader: toolBindings.setJevStateReader,
           bindTasks: toolBindings.bindTasks,
           bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
         });
