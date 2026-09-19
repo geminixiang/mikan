@@ -202,9 +202,12 @@ export function logUsageSummary(
   const summary = lines.join("\n");
 
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} 💰 Usage`));
+  // Show cache hits alongside fresh input; otherwise a warm-cache turn reads
+  // as if the system prompt had not been sent at all.
+  const cached = usage.cacheRead > 0 ? ` (+${usage.cacheRead.toLocaleString()} cached)` : "";
   console.log(
     chalk.dim(
-      `           in ${usage.input.toLocaleString()} → out ${usage.output.toLocaleString()} = $${usage.cost.total.toFixed(4)}`,
+      `           in ${usage.input.toLocaleString()}${cached} → out ${usage.output.toLocaleString()} = $${usage.cost.total.toFixed(4)}`,
     ),
   );
 

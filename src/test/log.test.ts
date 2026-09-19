@@ -168,6 +168,16 @@ describe("log usage summary", () => {
     expect(summary).not.toContain("Context:");
   });
 
+  test("console line shows cache hits next to fresh input, and omits them when zero", () => {
+    log.logUsageSummary(ctx, usage);
+    expect(cap.output()).toContain("in 1,200 (+800 cached) → out 3,400 = $0.0350");
+
+    cap.lines.length = 0;
+    log.logUsageSummary(ctx, { ...usage, cacheRead: 0 });
+    expect(cap.output()).toContain("in 1,200 → out 3,400");
+    expect(cap.output()).not.toContain("cached");
+  });
+
   test("reports 0.0% cache hit when there is no cacheable input", () => {
     const summary = log.logUsageSummary(ctx, {
       ...usage,
