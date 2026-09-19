@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.68]
+
+### Added
+
+- `jev` agent tool: the model can now call Jev directly with a `state` (text or JSON) and any number of boolean / choice / score `questions`, mirroring the decisions API one-to-one — structured instructions and criteria, per-option probabilities, confidence, and score legends all pass through. Available to the main agent and to the `worker`, `software-engineer`, `data-scientist`, and `summarizer` subagent profiles. A missing `OPENROUTER_API_KEY` is reported as a tool error so the model judges for itself.
+- Slack: DM messages in a task thread (and top-level DMs while a task is running) are classified by Jev as `status`, `steer`, or `request` before spending a model turn. Status questions are answered from recorded task state; steering is delivered into the running task; anything else starts a normal run. The regex status matcher remains as the fallback.
+- `task_status` reports `queued` for tasks that were admitted but have not started executing yet.
+
+### Changed
+
+- `harness/jev.ts` accepts structured JSON for state, instructions, and criteria, and returns `confidence` and `legend` on choice / score answers.
+- Jev auto-reply and task-intent state renders `<@U…>` mentions as `@Name` (the bot as `@mikan`) so Jev can tell a message addressed to someone else from one addressed to mikan.
+- Tool progress lines for `jev` calls are prefixed with `jev ·` so users can see which steps came from a calibrated judgment.
+
 ## [1.0.0-beta.67]
 
 ### Changed
