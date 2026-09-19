@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.69]
+
+### Changed
+
+- `harness/jev.ts` is now backed by [`@geminixiang/jev`](https://github.com/geminixiang/jev), a standalone SDK shaped like pi-ai (providers own auth, a model catalog, and a wire implementation) instead of a hand-rolled OpenRouter fetch client. `evaluateWithJev`'s signature, types, and error classes are unchanged, so the auto-reply gate, DM task-intent classification, and the `jev` tool are unaffected. The swap adds request retries and timeouts, neither of which existed before, and a path to other Jev backends (TypeSafe, Vercel AI Gateway, Cloudflare Workers AI) without touching call sites.
+
 ## [1.0.0-beta.68]
 
 ### Added

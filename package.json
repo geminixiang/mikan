@@ -1,6 +1,6 @@
 {
   "name": "@geminixiang/mikan",
-  "version": "1.0.0-beta.68",
+  "version": "1.0.0-beta.69",
   "description": "Self-hosted AI coding agent for organizations: every Slack channel and DM gets its own sandboxed workspace, credentials, and memory.",
   "keywords": [
     "agent",
