@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.72]
+
 ### Added
 
 - Admin: the Skills panel (conversation and global) can now create, edit, and delete skills directly, not just list and preview them. Saving writes `SKILL.md` straight into the workspace skills tree the harness loader reads, so a new or edited skill is available on the conversation's next turn.
