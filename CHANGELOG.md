@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.70]
+
+### Fixed
+
+- Sandbox: a container migrated to the office-key mount layout (or recreated after its mount configuration drifted) no longer re-migrates on every subsequent restart. The one-time bridging snapshot image is now removed once the new container is confirmed up, instead of being kept forever on the mistaken assumption that the container would eventually run from the base image again. In production this had pinned dozens of containers to increasingly stale snapshots and left their images unreclaimed, consuming disk space on every restart.
+
 ## [1.0.0-beta.69]
 
 ### Changed
