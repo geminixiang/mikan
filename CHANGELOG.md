@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Admin: redesigned the page around a persistent icon sidebar and a single active settings pane (Claude/ChatGPT settings-app style), replacing the pill-tab-plus-accordion layout. Conversation and workspace scope each get their own rail; every pane shares one quiet header (title, one-line description, actions) instead of a stack of bordered cards.
+
 ## [1.0.0-beta.72]
 
 ### Added

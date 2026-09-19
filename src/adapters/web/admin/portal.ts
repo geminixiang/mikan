@@ -1778,196 +1778,121 @@ const esc = escapeHtml;
 
 // ── HTML ───────────────────────────────────────────────────────────────────────
 
-const adminViewBody = `<nav class="tab-nav" role="tablist" aria-label="Admin sections">
-      <button class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">Conversation</button>
-      <button class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Global</button>
-    </nav>
+/**
+ * Settings-app rail icons: a fixed inline-SVG set instead of an icon font, so
+ * the admin page has no extra network request and every icon shares one
+ * visual language (1.6px stroke, 18x18, currentColor). Keys match the
+ * `railLink`/`settingsPane` id namespace, not the API endpoints they load.
+ */
+type RailIconKey =
+  | "settings"
+  | "workspace"
+  | "skills"
+  | "mcp"
+  | "vault"
+  | "events"
+  | "session"
+  | "overview"
+  | "usage";
 
-    <div class="tab-panel active" id="panel-conversation">
-      <details class="card sect" id="sect-settings" data-section="settings" open>
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Settings</p>
-            <h2 class="card-title">模型 / Thinking / Auto-reply / Workspace mount</h2>
-          </div></div>
-          <button class="refresh-btn" onclick="event.stopPropagation(); loadSettings()">↻</button>
-        </summary>
-        <div class="sect-body">
-          <div id="settings-content"><div class="loading-msg">Loading…</div></div>
+const ICONS: Record<RailIconKey, string> = {
+  settings: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
+  workspace: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>`,
+  skills: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h11a1 1 0 0 1 1 1v14"/><path d="M6 17h13v4H6.5A2.5 2.5 0 0 1 4 18.5v0A2.5 2.5 0 0 1 6.5 16H20"/></svg>`,
+  mcp: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><circle cx="7" cy="7.5" r="1" fill="currentColor" stroke="none"/><circle cx="7" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg>`,
+  vault: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+  events: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`,
+  session: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>`,
+  overview: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="14" width="8" height="7" rx="1.5"/></svg>`,
+  usage: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V3"/><path d="M3 21h18"/><path d="M7 17V11M12 17V7M17 17v-4"/></svg>`,
+};
+
+/** One entry in the settings rail: an icon, a label, and the pane id it activates. */
+function railLink(id: string, label: string, icon: RailIconKey, active = false): string {
+  const svg = ICONS[icon];
+  return `<button class="rail-link${active ? " active" : ""}" type="button" data-pane="${id}" aria-current="${active ? "page" : "false"}">${svg}<span>${esc(label)}</span></button>`;
+}
+
+/**
+ * One settings pane: an eyebrow-free header (icon lives in the rail, not
+ * repeated here) with a title, a one-line description, and header actions,
+ * followed by body content. Every pane shares this shape so scanning the
+ * page feels like one continuous settings surface instead of assembled
+ * cards — the visual language `frontend-design` calls for here is a
+ * quiet, editorial settings app, not a dashboard of boxes.
+ */
+function settingsPane(
+  id: string,
+  title: string,
+  description: string,
+  actions: string,
+  body: string,
+): string {
+  return `<section class="pane" id="pane-${id}" data-pane="${id}">
+    <header class="pane-head">
+      <div><h2 class="pane-title">${esc(title)}</h2><p class="pane-desc">${esc(description)}</p></div>
+      <div class="pane-actions">${actions}</div>
+    </header>
+    <div class="pane-body">${body}</div>
+  </section>`;
+}
+
+const adminViewBody = `<div class="settings-shell">
+      <aside class="settings-rail" aria-label="Admin sections">
+        <div class="rail-scope" role="tablist" aria-label="Scope">
+          <button class="rail-scope-btn active" role="tab" aria-selected="true" aria-controls="panel-conversation" data-tab="conversation">This conversation</button>
+          <button class="rail-scope-btn" role="tab" aria-selected="false" aria-controls="panel-global" data-tab="global">Workspace</button>
         </div>
-      </details>
+        <nav class="rail-nav" id="rail-nav-conversation" data-scope="conversation">
+          ${railLink("settings", "Settings", "settings", true)}
+          ${railLink("workspace", "Workspace", "workspace")}
+          ${railLink("skills", "Skills", "skills")}
+          ${railLink("mcp", "MCP servers", "mcp")}
+          ${railLink("vault", "Vault", "vault")}
+          ${railLink("events", "Events", "events")}
+          ${railLink("session", "Session view", "session")}
+        </nav>
+        <nav class="rail-nav" id="rail-nav-global" data-scope="global" hidden>
+          ${railLink("g-overview", "All conversations", "overview", true)}
+          ${railLink("g-usage", "Token usage", "usage")}
+          ${railLink("g-settings", "Defaults", "settings")}
+          ${railLink("g-mcp", "MCP servers", "mcp")}
+          ${railLink("g-skills", "Skills", "skills")}
+          ${railLink("g-events", "Events", "events")}
+        </nav>
+      </aside>
 
-      <details class="card sect" id="sect-workspace" data-section="workspace">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Workspace</p>
-            <h2 class="card-title">檔案瀏覽 (只讀)</h2>
-          </div></div>
-          <button class="refresh-btn" onclick="event.stopPropagation(); loadWorkspace()">↻</button>
-        </summary>
-        <div class="sect-body">
-          <div class="workspace-split">
-            <div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
-            <div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div>
-          </div>
+      <div class="settings-panels">
+        <div class="tab-panel active" id="panel-conversation">
+          ${settingsPane("settings", "Settings", "Model, thinking level, auto-reply, and workspace visibility for this conversation.", '<button class="refresh-btn" onclick="loadSettings()">↻</button>', '<div id="settings-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("workspace", "Workspace", "Read-only browser for this conversation's files on disk.", '<button class="refresh-btn" onclick="loadWorkspace()">↻</button>', '<div class="workspace-split"><div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div></div>')}
+
+          ${settingsPane("skills", "Skills", "Instructions the agent can load for specific tasks in this conversation.", '<button class="primary-action-btn" onclick="openSkillDialog(\'conversation\')">+ New skill</button><button class="refresh-btn" onclick="loadSkills()">↻</button>', '<div class="workspace-split"><div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+
+          ${settingsPane("mcp", "MCP servers", "External tools this conversation can call during a run.", '<button class="refresh-btn" onclick="loadMcpServers()">↻</button>', '<div id="mcp-conv-msg" class="status-msg" style="display:none"></div><div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("vault", "Vault", "Credentials scoped to this conversation.", '<button class="primary-action-btn" onclick="openLogin()">Open in new tab ↗</button>', '<div id="vault-link-result" class="link-result" style="display:none"></div><p class="card-desc">Opens the one-time credential form for this conversation\'s vault in a new tab.</p>')}
+
+          ${settingsPane("events", "Events", "Scheduled and one-shot events tied to this conversation.", '<button class="refresh-btn" onclick="loadConversationEvents()">↻</button>', '<div id="events-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("session", "Session view", "The full message and tool-call timeline for this conversation.", '<button class="primary-action-btn" onclick="openSessionView()">Open in new tab ↗</button>', '<div id="session-link-result" class="link-result" style="display:none"></div><p class="card-desc">Opens the session timeline for this conversation in a new tab.</p>')}
         </div>
-      </details>
 
-      <details class="card sect" id="sect-skills" data-section="skills">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Skills</p>
-            <h2 class="card-title">可用的 skills</h2>
-          </div></div>
-          <div class="sect-head-actions">
-            <button class="primary-action-btn" onclick="event.stopPropagation(); openSkillDialog('conversation')">+ New skill</button>
-            <button class="refresh-btn" onclick="event.stopPropagation(); loadSkills()">↻</button>
-          </div>
-        </summary>
-        <div class="sect-body">
-          <div class="workspace-split">
-            <div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
-            <div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
-          </div>
+        <div class="tab-panel" id="panel-global">
+          ${settingsPane("g-overview", "All conversations", "Every registered conversation across every platform.", '<button class="refresh-btn" onclick="loadAllConversations()">↻</button>', '<div id="all-conv-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("g-usage", "Token usage", "Spend and volume across every conversation.", '<button class="refresh-btn" onclick="loadTokenUsage()">↻</button>', '<h3 class="card-subtitle">Top 20 sessions</h3><div id="session-usage-content"><div class="loading-msg">Loading…</div></div><h3 class="card-subtitle" style="margin-top:24px">Usage timeline</h3><div class="timeline-controls"><label>Conversation<select id="timeline-conv" onchange="loadUsageTimeline()"></select></label></div><div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("g-settings", "Workspace defaults", "The fallback model, sandbox limits, and Slack behavior every conversation inherits.", '<button class="refresh-btn" onclick="loadGlobalSettings()">↻</button>', '<div id="global-settings-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("g-mcp", "MCP servers", "External tools available to every conversation in this workspace.", '<button class="refresh-btn" onclick="loadMcpServers()">↻</button>', '<div id="mcp-global-msg" class="status-msg" style="display:none"></div><div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>')}
+
+          ${settingsPane("g-skills", "Skills", "Shared instructions available to every conversation in this workspace.", '<button class="primary-action-btn" onclick="openSkillDialog(\'global\')">+ New global skill</button><button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>', '<div class="workspace-split"><div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+
+          ${settingsPane("g-events", "Global events", "Every scheduled event across the whole workspace.", '<button class="refresh-btn" onclick="loadEvents()">↻</button>', '<div id="global-events-content"><div class="loading-msg">Loading…</div></div>')}
         </div>
-      </details>
-
-      <details class="card sect" id="sect-mcp" data-section="mcp">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">MCP Servers</p>
-            <h2 class="card-title">此對話的 MCP servers</h2>
-          </div></div>
-          <button class="refresh-btn" onclick="event.stopPropagation(); loadMcpServers()">↻</button>
-        </summary>
-        <div class="sect-body">
-          <div id="mcp-conv-msg" class="status-msg" style="display:none"></div>
-          <div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>
-        </div>
-      </details>
-
-      <details class="card sect" id="sect-vault" data-section="vault">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Vault</p>
-            <h2 class="card-title">該對話的憑證</h2>
-          </div></div>
-          <button class="primary-action-btn" onclick="event.stopPropagation(); openLogin()">Open in new tab ↗</button>
-        </summary>
-        <div class="sect-body">
-          <div id="vault-link-result" class="link-result" style="display:none"></div>
-          <p class="card-desc">Opens the one-time credential form for this conversation's vault in a new tab.</p>
-        </div>
-      </details>
-
-      <details class="card sect" id="sect-events" data-section="events">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Events</p>
-            <h2 class="card-title">關聯此對話的 events</h2>
-          </div></div>
-          <button class="refresh-btn" onclick="event.stopPropagation(); loadConversationEvents()">↻</button>
-        </summary>
-        <div class="sect-body">
-          <div id="events-content"><div class="loading-msg">Loading…</div></div>
-        </div>
-      </details>
-
-      <details class="card sect" id="sect-session" data-section="session">
-        <summary class="sect-head">
-          <div class="sect-title"><span class="sect-caret" aria-hidden="true">▸</span><div>
-            <p class="eyebrow">Session View</p>
-            <h2 class="card-title">對話歷史檢視</h2>
-          </div></div>
-          <button class="primary-action-btn" onclick="event.stopPropagation(); openSessionView()">Open in new tab ↗</button>
-        </summary>
-        <div class="sect-body">
-          <div id="session-link-result" class="link-result" style="display:none"></div>
-          <p class="card-desc">Opens the session timeline for this conversation in a new tab.</p>
-        </div>
-      </details>
-    </div>
-
-    <div class="tab-panel" id="panel-global">
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">All Conversations</p>
-            <h2 class="card-title">所有對話</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadAllConversations()">↻</button>
-        </header>
-        <div id="all-conv-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Token Usage</p>
-          </div>
-          <button class="refresh-btn" onclick="loadTokenUsage()">↻</button>
-        </header>
-        <h2 class="card-subtitle" style="margin-bottom:10px">Top 20 sessions</h3>
-        <div id="session-usage-content"><div class="loading-msg">Loading…</div></div>
-        <h2 class="card-subtitle" style="margin:24px 0 10px">Usage timeline</h3>
-        <div class="timeline-controls">
-          <label>Conversation
-            <select id="timeline-conv" onchange="loadUsageTimeline()"></select>
-          </label>
-        </div>
-        <div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Global Settings</p>
-            <h2 class="card-title">全域預設</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadGlobalSettings()">↻</button>
-        </header>
-        <div id="global-settings-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Global MCP Servers</p>
-            <h2 class="card-title">所有對話都可用的 MCP servers</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadMcpServers()">↻</button>
-        </header>
-        <div id="mcp-global-msg" class="status-msg" style="display:none"></div>
-        <div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Global Skills</p>
-            <h2 class="card-title">全域 skills</h2>
-          </div>
-          <div class="sect-head-actions">
-            <button class="primary-action-btn" onclick="openSkillDialog('global')">+ New global skill</button>
-            <button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>
-          </div>
-        </header>
-        <div class="workspace-split">
-          <div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div>
-          <div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div>
-        </div>
-      </section>
-
-      <section class="card sect">
-        <header class="sect-head">
-          <div>
-            <p class="eyebrow">Global Events</p>
-            <h2 class="card-title">全域 events.json</h2>
-          </div>
-          <button class="refresh-btn" onclick="loadEvents()">↻</button>
-        </header>
-        <div id="global-events-content"><div class="loading-msg">Loading…</div></div>
-      </section>
+      </div>
     </div>
 
     <dialog id="mcp-install-dialog" class="mcp-dialog" aria-labelledby="mcp-dialog-title">
@@ -2155,21 +2080,88 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       return sections.join('');
     }
 
-    // ── Tab switching ────────────────────────────────────────────────────────────
+    // ── Scope tabs (rail top switch) ────────────────────────────────────────────
 
-    const tabBtns = document.querySelectorAll('.tab-btn');
+    const scopeBtns = document.querySelectorAll('.rail-scope-btn');
     const tabPanels = document.querySelectorAll('.tab-panel');
+    const railNavConversation = document.getElementById('rail-nav-conversation');
+    const railNavGlobal = document.getElementById('rail-nav-global');
 
     function switchTab(tabId) {
-      tabBtns.forEach((btn) => {
+      scopeBtns.forEach((btn) => {
         const active = btn.dataset.tab === tabId;
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
       });
       tabPanels.forEach((panel) => panel.classList.toggle('active', panel.id === 'panel-' + tabId));
+      railNavConversation.hidden = tabId !== 'conversation';
+      railNavGlobal.hidden = tabId !== 'global';
       if (tabId === 'global') initGlobal();
+      const firstPane = (tabId === 'global' ? railNavGlobal : railNavConversation).querySelector('.rail-link');
+      if (firstPane) selectPane(tabId, firstPane.dataset.pane);
     }
-    tabBtns.forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+    scopeBtns.forEach((btn) => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+
+    // ── Rail navigation (single active pane per scope) ──────────────────────────
+
+    // Looked up by name (not collected into an object up front) because the
+    // loaders below are const declarations further down this same script;
+    // referencing them before their own line runs would hit the temporal
+    // dead zone. By the time this function is actually called (after a rail
+    // click, always after the whole script has executed), they're all
+    // initialized.
+    function paneLoader(key) {
+      switch (key) {
+        case 'settings': return loadSettings;
+        case 'workspace': return loadWorkspace;
+        case 'skills': return loadSkills;
+        case 'mcp': return loadMcpServers;
+        case 'events': return loadConversationEvents;
+        case 'g-overview': return loadAllConversations;
+        case 'g-usage': return loadTokenUsage;
+        case 'g-settings': return loadGlobalSettings;
+        case 'g-mcp': return loadMcpServers;
+        case 'g-skills': return loadGlobalSkills;
+        case 'g-events': return loadEvents;
+        default: return undefined;
+      }
+    }
+    const paneLoaded = new Set();
+
+    function ensurePaneLoaded(key) {
+      if (paneLoaded.has(key)) return;
+      const loader = paneLoader(key);
+      if (!loader) return;
+      paneLoaded.add(key);
+      loader();
+    }
+
+    function selectPane(scope, key) {
+      const nav = scope === 'global' ? railNavGlobal : railNavConversation;
+      const panel = document.getElementById(scope === 'global' ? 'panel-global' : 'panel-conversation');
+      nav.querySelectorAll('.rail-link').forEach((btn) => {
+        const active = btn.dataset.pane === key;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-current', active ? 'page' : 'false');
+      });
+      panel.querySelectorAll('.pane').forEach((pane) => {
+        pane.classList.toggle('active', pane.dataset.pane === key);
+      });
+      ensurePaneLoaded(key);
+    }
+
+    function initRailNav() {
+      document.querySelectorAll('.rail-link').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const nav = btn.closest('.rail-nav');
+          const scope = nav.dataset.scope;
+          selectPane(scope, btn.dataset.pane);
+        });
+      });
+      // The first rail link in each scope starts active in the markup, so its
+      // pane needs the matching 'active' class and its data loaded up front.
+      selectPane('conversation', 'settings');
+    }
 
     // ── Conversation switcher ───────────────────────────────────────────────────
 
@@ -2189,64 +2181,16 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
       }
     }
 
-    // Sections load lazily: only when their <details> is (or becomes) open,
-    // so switching conversations or opening the admin page doesn't fire every
-    // API at once. sectionLoaded is cleared on conversation switch so an
-    // already-open section refetches for the new scope.
-    //
-    // Looked up by name (not collected into an object up front) because the
-    // loaders below are const declarations further down this same script;
-    // referencing them before their own line runs would hit the temporal
-    // dead zone. By the time this function is actually called (after a
-    // <details> toggle, always after the whole script has executed), they're
-    // all initialized.
-    function sectionLoader(key) {
-      switch (key) {
-        case 'settings': return loadSettings;
-        case 'workspace': return loadWorkspace;
-        case 'skills': return loadSkills;
-        case 'mcp': return loadMcpServers;
-        case 'events': return loadConversationEvents;
-        default: return undefined;
-      }
-    }
-    const sectionLoaded = new Set();
-
-    function conversationSectionEls() {
-      return document.querySelectorAll('#panel-conversation > details[data-section]');
-    }
-
-    function ensureSectionLoaded(key) {
-      if (sectionLoaded.has(key)) return;
-      const loader = sectionLoader(key);
-      if (!loader) return;
-      sectionLoaded.add(key);
-      loader();
-    }
-
-    function initSections() {
-      conversationSectionEls().forEach((el) => {
-        const key = el.dataset.section;
-        const stored = localStorage.getItem('admin-sect-' + key);
-        if (stored !== null) el.open = stored === '1';
-        if (el.open) ensureSectionLoaded(key);
-        el.addEventListener('toggle', () => {
-          localStorage.setItem('admin-sect-' + key, el.open ? '1' : '0');
-          if (el.open) ensureSectionLoaded(key);
-        });
-      });
-    }
-
     function setActiveConversation(key) {
       activeConversationKey = key;
       const sel = document.getElementById('conv-switcher');
       if (sel && sel.value !== key) sel.value = key;
-      // Data is scoped to the previous conversation; drop it so any open
-      // section refetches, and closed sections load fresh on next expand.
-      sectionLoaded.clear();
-      conversationSectionEls().forEach((el) => {
-        if (el.open) ensureSectionLoaded(el.dataset.section);
-      });
+      // Data is scoped to the previous conversation; drop the conversation
+      // panes (not the global ones — those aren't conversation-scoped) so
+      // the active pane refetches for the new scope.
+      const activeLink = railNavConversation.querySelector('.rail-link.active');
+      ['settings', 'workspace', 'skills', 'mcp', 'events'].forEach((key) => paneLoaded.delete(key));
+      if (activeLink) ensurePaneLoaded(activeLink.dataset.pane);
       openLogin(true);
       openSessionView(true);
     }
@@ -3025,17 +2969,10 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Global section ──────────────────────────────────────────────────────────
 
-    let globalLoaded = false;
-    function initGlobal() {
-      if (globalLoaded) return;
-      globalLoaded = true;
-      loadAllConversations();
-      loadTokenUsage();
-      loadGlobalSettings();
-      loadGlobalSkills();
-      loadEvents();
-      loadMcpServers();
-    }
+    // Switching to the Workspace scope only needs to (re)select its first
+    // pane; every pane still loads lazily through paneLoader/ensurePaneLoaded
+    // the first time it becomes active, same as the conversation scope.
+    function initGlobal() {}
 
     async function loadAllConversations() {
       const container = document.getElementById('all-conv-content');
@@ -3287,10 +3224,10 @@ const adminViewScript = `    let activeConversationKey = defaultConversationKey;
 
     // ── Init ─────────────────────────────────────────────────────────────────────
 
-    // Sections load on demand (see initSections); loadSettingsPanel already
+    // Panes load on demand (see ensurePaneLoaded); loadSettingsPanel already
     // calls loadModels() itself the first time it's needed.
     initConvSwitcher();
-    initSections();
+    initRailNav();
   `;
 
 function renderAdminPage(token: AdminToken): string {
@@ -3328,27 +3265,87 @@ function renderAdminErrorPage(message: string): string {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const adminViewStyles = `
-  .tab-nav {
-    display: flex; gap: 6px; padding: 6px;
-    border: 1px solid var(--border); border-radius: 16px;
-    background: rgba(255,255,255,0.72); backdrop-filter: blur(8px);
-    overflow-x: auto; scrollbar-width: none;
+  /* ── Settings shell: persistent rail + single active pane ───────────── */
+
+  .settings-shell {
+    display: grid;
+    grid-template-columns: 216px 1fr;
+    align-items: start;
+    gap: 22px;
   }
-  .tab-nav::-webkit-scrollbar { display: none; }
-  .tab-btn {
-    flex: 1; min-width: 80px; padding: 10px 16px;
-    border: none; border-radius: 10px; background: transparent;
+
+  .settings-rail {
+    position: sticky;
+    top: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .rail-scope {
+    display: flex;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: rgba(0,0,0,0.03);
+    gap: 2px;
+  }
+  .rail-scope-btn {
+    flex: 1;
+    padding: 7px 8px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
     color: var(--muted);
-    font: 500 0.88rem/1.2 'DM Sans', sans-serif;
-    cursor: pointer; white-space: nowrap;
+    font: 600 0.72rem/1.2 'DM Sans', sans-serif;
+    letter-spacing: 0.01em;
+    cursor: pointer;
     transition: background 140ms, color 140ms;
   }
-  .tab-btn:hover { background: rgba(0,0,0,0.04); color: var(--text); }
-  .tab-btn.active { background: var(--text); color: #fafafa; font-weight: 600; }
-  .tab-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .rail-scope-btn:hover { color: var(--text); }
+  .rail-scope-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .rail-scope-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 
-  .tab-panel { display: none; flex-direction: column; gap: 14px; }
+  .rail-nav { display: flex; flex-direction: column; gap: 1px; }
+  .rail-nav[hidden] { display: none; }
+  .rail-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border: none; border-radius: 9px;
+    background: transparent; color: var(--muted); text-align: left;
+    font: 500 0.86rem/1.2 'DM Sans', sans-serif; cursor: pointer;
+    transition: background 120ms, color 120ms;
+  }
+  .rail-link svg { flex-shrink: 0; opacity: 0.75; }
+  .rail-link:hover { background: rgba(0,0,0,0.045); color: var(--text); }
+  .rail-link:hover svg { opacity: 1; }
+  .rail-link.active {
+    background: var(--text); color: #fafafa; font-weight: 600;
+  }
+  .rail-link.active svg { opacity: 1; }
+  .rail-link:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+
+  .settings-panels { min-width: 0; }
+  .tab-panel { display: none; flex-direction: column; gap: 0; }
   .tab-panel.active { display: flex; }
+
+  /* ── Panes: one continuous surface, not stacked cards ────────────────── */
+
+  .pane { display: none; padding: 30px 0; border-bottom: 1px solid var(--border); }
+  .pane:last-child { border-bottom: none; }
+  .pane.active { display: block; animation: pane-in 180ms ease; }
+  @keyframes pane-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  .pane-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px; margin-bottom: 22px; flex-wrap: wrap;
+  }
+  .pane-title {
+    font-family: 'Lora', Georgia, serif; font-size: 1.32rem; font-weight: 600;
+    letter-spacing: -0.01em; line-height: 1.25; margin-bottom: 5px;
+  }
+  .pane-desc { color: var(--muted); font-size: 0.88rem; line-height: 1.55; max-width: 52ch; }
+  .pane-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .pane-body { display: flex; flex-direction: column; gap: 14px; }
 
   .card-desc { color: var(--muted); font-size: 0.9rem; line-height: 1.55; margin-bottom: 12px; }
 
@@ -3396,39 +3393,14 @@ const adminViewStyles = `
   .inline-result.ok { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
   .inline-result.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
 
-  /* ── Sections (Conversation page stack) ─────────────────────────────── */
-
-  /* Each section is a <details>; the card's own padding sits on the
-     <summary>/<div class="sect-body"> instead of the <details> element so a
-     collapsed section is just its header row. */
-  details.sect { padding: 0; overflow: hidden; }
-  details.sect > summary.sect-head {
-    padding: 24px 28px; margin-bottom: 0; cursor: pointer; list-style: none;
-  }
-  details.sect > summary.sect-head::-webkit-details-marker { display: none; }
-  details.sect > .sect-body { padding: 0 28px 24px; }
-
-  .sect-head {
-    display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 12px; flex-wrap: wrap;
-  }
-  .sect-head .card-title { margin-bottom: 0; }
-  .sect-title { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-  .sect-caret {
-    flex-shrink: 0; margin-top: 3px; color: var(--subtle);
-    transition: transform 140ms; display: inline-block;
-  }
-  details.sect[open] > summary.sect-head .sect-caret { transform: rotate(90deg); }
-  .sect-disabled { opacity: 0.7; }
-
   .refresh-btn {
     flex-shrink: 0; padding: 6px 12px;
     border: 1px solid var(--border); border-radius: 10px;
     background: rgba(0,0,0,0.025); color: var(--muted);
-    font: 500 0.84rem/1.2 'DM Sans', sans-serif; cursor: pointer;
+    font: 500 0.8rem/1.2 'DM Sans', sans-serif; cursor: pointer;
+    transition: background 120ms, color 120ms;
   }
   .refresh-btn:hover { background: rgba(0,0,0,0.06); color: var(--text); }
-  .sect-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
   /* ── Workspace ──────────────────────────────────────────────────────── */
 
@@ -3795,8 +3767,15 @@ const adminViewStyles = `
   }
   .status-pill.running { background: var(--ok-bg); color: var(--ok-text); border: 1px solid var(--ok-border); }
 
+  @media (max-width: 860px) {
+    .settings-shell { grid-template-columns: 1fr; }
+    .settings-rail { position: static; }
+    .rail-nav { flex-direction: row; flex-wrap: wrap; }
+    .rail-link span { display: none; }
+    .rail-link { padding: 9px; }
+  }
+
   @media (max-width: 640px) {
-    .tab-btn { padding: 9px 12px; font-size: 0.82rem; min-width: 60px; }
     .config-grid { grid-template-columns: 1fr; }
     .config-row { grid-template-columns: 1fr; gap: 4px; }
     .workspace-split { grid-template-columns: 1fr; }
