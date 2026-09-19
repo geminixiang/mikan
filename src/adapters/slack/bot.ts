@@ -1686,6 +1686,8 @@ export class SlackMessagingBot implements MessagingBot {
             buildTaskIntentState(this.conversationDir(event.channel), event, {
               speaker: user?.displayName ?? user?.userName,
               tasks,
+              resolveName: (id) => this.users.get(id)?.displayName ?? this.users.get(id)?.userName,
+              botUserId: this.botUserId,
             }),
             event.text,
             { conversationId: event.channel, inTaskThread: !!event.thread_ts },
@@ -1744,6 +1746,8 @@ export class SlackMessagingBot implements MessagingBot {
       const user = this.users.get(event.user);
       const state = buildAutoReplyState(this.conversationDir(event.channel), event, {
         speaker: user?.displayName ?? user?.userName,
+        resolveName: (id) => this.users.get(id)?.displayName ?? this.users.get(id)?.userName,
+        botUserId: this.botUserId,
       });
       const result = await evaluateWithJev(state, {
         addressed: { type: "boolean", instructions: JEV_ADDRESSED_INSTRUCTIONS },

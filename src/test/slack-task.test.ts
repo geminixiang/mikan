@@ -16,7 +16,11 @@ import { createGlobalSettingsFile } from "../settings/index.js";
 import { MikanAgentSession, MikanModels, JevNotConfiguredError } from "../harness/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import * as observability from "../observability/index.js";
-import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
+import {
+  querySlackTasks,
+  isTaskStatusQuestion,
+  readTaskRoots,
+} from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 
 // Jev is unavailable by default so every path below exercises the regex
@@ -530,6 +534,36 @@ test("stop during runner preparation prevents provider and tool execution", asyn
   release.resolve();
   await stop;
   expect(faux.state.callCount).toBe(3);
+});
+
+test("status between admission and run start reports queued, not unknown", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  // Stall the task thread's run between admission and its first operation.
+  const preparing = deferred();
+  const release = deferred();
+  const original = MikanAgentSession.prototype.reloadFromSession;
+  const spy = vi
+    .spyOn(MikanAgentSession.prototype, "reloadFromSession")
+    .mockImplementation(async function (this: MikanAgentSession) {
+      if (readTaskRoots(office.dir).size) {
+        preparing.resolve();
+        await release.promise;
+      }
+      return original.call(this);
+    });
+  await dm("investigate this");
+  await preparing.promise;
+  const root = [...readTaskRoots(office.dir).keys()][0]!;
+  const before = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
+  expect(before[0]?.status).toBe("queued");
+  spy.mockRestore();
+  release.resolve();
+  await vi.waitFor(() => expect(trace).toContain("tool:start"));
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  const after = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
+  expect(after[0]?.status).toBe("completed");
 });
 
 test("recent status listing keeps an older active task even with ten newer task roots", async () => {

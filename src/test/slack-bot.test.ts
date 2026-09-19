@@ -729,7 +729,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     writeFileSync(
       join(workingDir, C123_OFFICE, "log.jsonl"),
       [
-        { ts: "1000.0001", user: "U123", displayName: "Ann", text: "mikan, check the deploy" },
+        { ts: "1000.0001", user: "U123", displayName: "Ann", text: "<@B123> check the deploy" },
         {
           ts: "1000.0002",
           threadTs: "1000.0001",
@@ -774,6 +774,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     (bot as any).startupTs = "0";
     (bot as any).botUserId = "B123";
+    (bot as any).users.set("U999", { id: "U999", userName: "bob", displayName: "Bob" });
     (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
     (bot as any).socketClient = {
       on: vi.fn((event: string, fn: unknown) => {
@@ -788,7 +789,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const ack = vi.fn();
     messageHandler?.({
       event: {
-        text: "then roll it back please",
+        text: "<@U999> then roll it back please <@UNKNOWN>",
         channel: "C123",
         user: "U123",
         ts: "1001.0001",
@@ -803,14 +804,14 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       conversationId: "C123",
       sessionKey: "C123:1000.0001",
-      text: "then roll it back please",
+      text: "<@U999> then roll it back please <@UNKNOWN>",
     });
     const state = evaluateWithJevMock.mock.calls[0]?.[0] as string;
     expect(state).toContain("mikan has already replied in this thread");
-    expect(state).toContain("- Ann: mikan, check the deploy");
+    expect(state).toContain("- Ann: @mikan check the deploy");
     expect(state).toContain("- mikan: Looks green.");
     expect(state).not.toContain("unrelated top-level chatter");
-    expect(state).toContain("NEW message from U123:\nthen roll it back please");
+    expect(state).toContain("NEW message from U123:\n@Bob then roll it back please @UNKNOWN");
   });
 
   test("DM stop is handled immediately and bypasses the intake queue", async () => {

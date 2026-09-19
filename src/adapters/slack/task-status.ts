@@ -69,6 +69,11 @@ export async function querySlackTasks(
       if (!state.open && state.result) {
         observation.status = state.result.status;
         observation.endedAt = new Date(state.result.endedAt).toISOString();
+      } else if (!state.started) {
+        // Admitted (the root exists) but no operation has been recorded yet:
+        // the run is still waiting in the queue. An open operation with no
+        // runtime stays unknown, since that is a crash, not a queue.
+        observation.status = "queued";
       }
     } catch (error) {
       reportUserFacingError(error, {

@@ -8,6 +8,26 @@ export interface RecentLine {
   isMikan: boolean;
 }
 
+/** Maps a Slack user id to a display name; undefined when unknown. */
+export type SlackNameResolver = (userId: string) => string | undefined;
+
+/**
+ * Rewrite native `<@U…>` mentions as `@Name` so Jev can tell "@someone else"
+ * from "@mikan" — the raw id carries no such signal. mikan's own id renders
+ * as `@mikan` regardless of its Slack profile name.
+ */
+export function humanizeMentions(
+  text: string,
+  resolve: SlackNameResolver,
+  botUserId: string | null,
+): string {
+  return text.replace(/<@([A-Z0-9]+)(?:\|[^>]*)?>/g, (_match, id: string) => {
+    if (botUserId && id === botUserId) return "@mikan";
+    const name = resolve(id);
+    return name ? `@${name}` : `@${id}`;
+  });
+}
+
 /**
  * Recent messages from log.jsonl in the same scope as `event` — the channel's
  * top level, or one thread (root included) — oldest first. Streamed bot
@@ -18,8 +38,10 @@ export interface RecentLine {
 export function readRecentScope(
   conversationDir: string,
   event: { ts: string; thread_ts?: string },
-  limit = 12,
+  options: { limit?: number; humanize?: (text: string) => string } = {},
 ): RecentLine[] {
+  const limit = options.limit ?? 12;
+  const humanize = options.humanize ?? ((text: string) => text);
   const raw = readTextFileIfExists(join(conversationDir, "log.jsonl"));
   if (raw === undefined) return [];
   const lines: RecentLine[] = [];
@@ -50,6 +72,7 @@ export function readRecentScope(
     }
     lines.push({ ts: entry.ts, speaker, text: entry.text, isMikan });
   }
+  for (const line of lines) line.text = humanize(line.text);
   return lines.slice(-limit);
 }
 

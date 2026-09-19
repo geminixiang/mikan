@@ -2,7 +2,12 @@ import { evaluateWithJev, JevNotConfiguredError } from "../../harness/index.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import * as log from "../../log.js";
 import type { TaskStatus } from "../../types.js";
-import { formatRecentScope, readRecentScope } from "./jev-context.js";
+import {
+  formatRecentScope,
+  humanizeMentions,
+  readRecentScope,
+  type SlackNameResolver,
+} from "./jev-context.js";
 import { isTaskStatusQuestion } from "./task-status.js";
 
 /**
@@ -26,9 +31,16 @@ const TASK_INTENT_CRITERIA = {
 export function buildTaskIntentState(
   conversationDir: string,
   event: { ts: string; thread_ts?: string; user: string; text: string },
-  options: { speaker?: string; tasks: TaskStatus[] },
+  options: {
+    speaker?: string;
+    tasks: TaskStatus[];
+    resolveName?: SlackNameResolver;
+    botUserId?: string | null;
+  },
 ): string {
-  const recent = readRecentScope(conversationDir, event);
+  const resolve = options.resolveName ?? (() => undefined);
+  const humanize = (text: string) => humanizeMentions(text, resolve, options.botUserId ?? null);
+  const recent = readRecentScope(conversationDir, event, { humanize });
   const tasks = options.tasks.length
     ? options.tasks
         .map(
@@ -49,7 +61,7 @@ export function buildTaskIntentState(
     formatRecentScope(recent),
     "",
     `NEW message from ${options.speaker ?? event.user}:`,
-    event.text,
+    humanize(event.text),
   ].join("\n");
 }
 

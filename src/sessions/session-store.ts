@@ -519,6 +519,8 @@ export class SessionStore implements SessionInspection {
   /** Read native execution state without claiming the live file's writer. */
   static async inspectExecution(path: string): Promise<{
     open: boolean;
+    /** False until the first operation is recorded: admitted, never run. */
+    started: boolean;
     result?: { status: "completed" | "aborted" | "failed" | "declined"; endedAt: number };
   }> {
     return withSessionSnapshot(path, async (session) => {
@@ -528,6 +530,7 @@ export class SessionStore implements SessionInspection {
         : undefined;
       return {
         open: state?.currentOperationId != null,
+        started: state?.currentOperationId != null || state?.lastOperationId != null,
         ...(result ? { result: { status: result.status, endedAt: result.endedAt } } : {}),
       };
     });
