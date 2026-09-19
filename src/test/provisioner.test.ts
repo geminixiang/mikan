@@ -127,6 +127,31 @@ describe("DockerContainerManager", () => {
       for (const bind of NEW_BINDS) expect(create).toContain(bind);
     });
 
+    test("a container migrated once does not migrate again on a later sweep (regression: stayed pinned to its snapshot across every restart)", async () => {
+      // Simulates the production incident: the mock's `created` flag makes
+      // subsequent `docker inspect` calls report the container as existing
+      // (matching real Docker) once `create` has run, so a correct fix must
+      // leave nothing behind that a second sweep would still act on.
+      const { exec, calls } = routerMock({
+        status: "missing",
+        names: [],
+        images: ["mikan-migrate:mikan-sandbox-c123-k"],
+        imageBinds: LEGACY_BINDS,
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      manager.armContainerLayoutMigration(translator);
+
+      await manager.sweepContainerLayoutMigration(0);
+      expect(calls.find((args) => args[0] === "create")).toBeDefined();
+      expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
+
+      calls.length = 0;
+      await manager.sweepContainerLayoutMigration(0);
+
+      expect(calls.find((args) => args[0] === "create")).toBeUndefined();
+      expect(calls.find((args) => args[0] === "commit")).toBeUndefined();
+    });
+
     test("a missing container without a snapshot is left alone", async () => {
       const { exec, calls } = routerMock({ status: "missing" });
       const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
@@ -163,7 +188,9 @@ describe("DockerContainerManager", () => {
       const create = calls.find((args) => args[0] === "create");
       expect(create).toBeDefined();
       for (const bind of NEW_BINDS) expect(create).toContain(bind);
-      expect(calls).not.toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
+      // The resumed container now owns the content in its own writable
+      // layer, so the bridging snapshot is removed once created.
+      expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
     });
 
     test("sweep walks managed containers and reclaims orphaned snapshots", async () => {
@@ -411,7 +438,9 @@ describe("DockerContainerManager", () => {
     expect(createArgs).toContain("mikan-migrate:mikan-sandbox-alice");
     expect(calls.some((args) => args[0] === "start")).toBe(true);
     expect(calls.some((args) => args[0] === "run")).toBe(false);
-    expect(calls.some((args) => args[0] === "rmi")).toBe(false);
+    // The recreated container owns the content in its own writable layer, so
+    // the bridging snapshot is untagged once it is up.
+    expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-alice"]);
   });
 
   test("recreation removes stale /workspace/public mountpoints left in the snapshot", async () => {

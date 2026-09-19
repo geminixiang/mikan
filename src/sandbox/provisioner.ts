@@ -364,6 +364,13 @@ export class DockerContainerManager {
     }
 
     await this.createContainerFromSnapshot(containerName, originalBinds.map(translator));
+    // The snapshot's only job was bridging commit → create; the new container
+    // already owns that content in its own writable layer; untagging it now
+    // (rather than waiting for a "natural recreation from the base image"
+    // that never happens — every recreation path here targets this same
+    // snapshot family) is what makes migration actually one-time instead of
+    // repeating on every future sweep that still finds the tag.
+    await this.removeMigrateSnapshot(containerName);
     log.logInfo(`Container ${containerName} migrated to the office layout`);
   }
 
@@ -473,9 +480,10 @@ export class DockerContainerManager {
    * Recreate a drifted container with the desired mounts while keeping its
    * writable layer: commit — the new binds ride the snapshot label, so a
    * crash at any point resumes through the layout-migration path — then
-   * remove, create from the snapshot, and start. Committing replaces any
-   * older snapshot tag for this container; the untagged predecessor is
-   * removed once the new container is up.
+   * remove, create from the snapshot, and start. The snapshot is untagged
+   * once the new container is confirmed up: its only job was bridging
+   * commit → create, and the container now owns that content in its own
+   * writable layer, so nothing still needs the tag.
    */
   private async recreateContainerPreservingContents(
     containerKey: string,
@@ -484,7 +492,6 @@ export class DockerContainerManager {
   ): Promise<void> {
     const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
     const bindSpecs = mounts.map((mount) => this.toBindSpec(mount));
-    const previousImageId = await this.readImageId(snapshotImage);
     await this.execFileImpl("docker", [
       "commit",
       "-c",
@@ -496,28 +503,7 @@ export class DockerContainerManager {
     await this.createContainerFromSnapshot(containerName, bindSpecs, containerKey);
     await this.execFileImpl("docker", ["start", containerName]);
     await this.removeStaleMountpoints(containerName, bindSpecs);
-    const currentImageId = await this.readImageId(snapshotImage);
-    if (previousImageId && previousImageId !== currentImageId) {
-      try {
-        await this.execFileImpl("docker", ["rmi", previousImageId]);
-      } catch (err) {
-        log.logWarning(
-          `Could not remove superseded snapshot image ${previousImageId}`,
-          String(err),
-        );
-      }
-    }
-  }
-
-  /** Resolved image id for a reference, or undefined when it does not exist. */
-  private async readImageId(image: string): Promise<string | undefined> {
-    try {
-      const { stdout } = await this.execFileImpl("docker", ["inspect", "-f", "{{.Id}}", image]);
-      const id = stdout.trim();
-      return id.length > 0 ? id : undefined;
-    } catch {
-      return undefined;
-    }
+    await this.removeMigrateSnapshot(containerName);
   }
 
   /** Binds recorded on a snapshot image, or undefined when no snapshot exists. */
@@ -578,6 +564,17 @@ export class DockerContainerManager {
     }
   }
 
+  /**
+   * Catch-up pass for snapshots the success path in
+   * `migrateContainerLayoutInner` did not get to remove itself — e.g. a
+   * crash between `createContainerFromSnapshot` and its own cleanup. A
+   * snapshot is only still needed while its container remains "missing"
+   * (the resume path in `migrateContainerLayoutInner` reads pre-removal
+   * binds off it); once the container exists again in any state, the
+   * snapshot has done its job regardless of whether that container's
+   * `Config.Image` still points at it — removing a tag never deletes
+   * layers a live container still uses.
+   */
   private async removeDanglingMigrateImages(): Promise<void> {
     let stdout: string;
     try {
@@ -593,17 +590,7 @@ export class DockerContainerManager {
     for (const image of this.parseNameLines(stdout)) {
       const containerName = image.slice(DockerContainerManager.MIGRATE_IMAGE_PREFIX.length + 1);
       const status = await this.inspectStatus(containerName);
-      if (status !== "missing") {
-        // Still referenced (until the container's next natural recreation
-        // from the base image); keep the snapshot.
-        const { stdout: imageRef } = await this.execFileImpl("docker", [
-          "inspect",
-          "-f",
-          "{{.Config.Image}}",
-          containerName,
-        ]);
-        if (imageRef.trim() === image) continue;
-      }
+      if (status === "missing") continue; // still needed for a future resume
       try {
         await this.execFileImpl("docker", ["rmi", image]);
         log.logInfo(`Removed layout-migration snapshot image ${image}`);
