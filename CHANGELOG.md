@@ -9,6 +9,16 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.74]
+
+### Security
+
+- Host sandbox tool output (bash, read, and every other agent tool) is now scrubbed of any configured secret env var's value before it reaches the model or the durable session transcript. Host sandbox mode does not isolate environment variables, so a command like `echo $OPENROUTER_API_KEY` previously returned the key in plain text with no defense beyond the model choosing not to repeat it; it is now replaced with a `[SECRET:VAR_NAME]` placeholder using mikan's existing secret env var inventory.
+
+### Fixed
+
+- Stop and shutdown-restart notices ("Stopping…", "Stopped.", the restart notice) are now recorded in the conversation's `log.jsonl`, matching every other agent reply. Previously these control messages reached the platform but left no trace in the human-readable history the agent (and operators) grep, so a stopped run looked, on later review, like it had never been interrupted.
+
 ## [1.0.0-beta.73]
 
 ### Changed
