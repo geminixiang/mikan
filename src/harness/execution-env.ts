@@ -55,6 +55,16 @@ export function createSandboxExecutionEnv(
   return new ShellExecutionEnv(executor, runtimeWorkspaceRoot);
 }
 
+/** `ExecutionEnv` does not export {@link TextLineReader}/{@link TextLine} directly; derive them structurally. */
+type TextLineReader =
+  Awaited<ReturnType<ExecutionEnv["openTextLineReader"]>> extends Result<infer T, FileError>
+    ? T
+    : never;
+type TextLine =
+  Awaited<ReturnType<TextLineReader["readLine"]>> extends Result<infer T, FileError>
+    ? Exclude<T, undefined>
+    : never;
+
 class ShellExecutionEnv implements ExecutionEnv {
   readonly cwd: string;
 
@@ -75,6 +85,13 @@ class ShellExecutionEnv implements ExecutionEnv {
 
   readTextFile(path: string, context: Context): Promise<Result<string, FileError>> {
     return this.fileOp(() => this.executor.readFile(path, this.execOptions(context)));
+  }
+
+  openTextLineReader(path: string, context: Context): Promise<Result<TextLineReader, FileError>> {
+    return this.fileOp(async () => {
+      const content = await this.executor.readFile(path, this.execOptions(context));
+      return new ShellTextLineReader(content);
+    });
   }
 
   async readBinaryFile(path: string, context: Context): Promise<Result<Uint8Array, FileError>> {
@@ -338,6 +355,34 @@ class ShellExecutionEnv implements ExecutionEnv {
     } catch (error) {
       return err(toFileError(error));
     }
+  }
+}
+
+/**
+ * Line reader over content already fetched in full through the executor's `readFile` transport.
+ * container/cloudflare have no incremental file-descriptor primitive, so this buffers the whole
+ * file once and serves lines from memory, matching {@link TextLineReader}'s pull-based contract.
+ */
+class ShellTextLineReader implements TextLineReader {
+  private offset = 0;
+
+  constructor(private readonly content: string) {}
+
+  async readLine(_context: Context): Promise<Result<TextLine | undefined, FileError>> {
+    if (this.offset >= this.content.length) return ok(undefined);
+    const newline = this.content.indexOf("\n", this.offset);
+    if (newline === -1) {
+      const text = this.content.slice(this.offset);
+      this.offset = this.content.length;
+      return ok({ text, terminated: false });
+    }
+    const text = this.content.slice(this.offset, newline);
+    this.offset = newline + 1;
+    return ok({ text, terminated: true });
+  }
+
+  async close(_context: Context): Promise<void> {
+    this.offset = this.content.length;
   }
 }
 
