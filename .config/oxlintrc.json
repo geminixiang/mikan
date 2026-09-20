@@ -43,6 +43,7 @@
         "**/e2e/**",
         "**/deploy/examples/**",
         "**/scripts/**",
+        "**/tools/**",
         "**/.pi/**"
       ],
       "rules": {
