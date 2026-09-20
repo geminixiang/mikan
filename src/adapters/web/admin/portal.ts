@@ -1810,7 +1810,9 @@ const ICONS: Record<RailIconKey, string> = {
 /** One entry in the settings rail: an icon, a label, and the pane id it activates. */
 function railLink(id: string, label: string, icon: RailIconKey, active = false): string {
   const svg = ICONS[icon];
-  return `<button class="rail-link${active ? " active" : ""}" type="button" data-pane="${id}" aria-current="${active ? "page" : "false"}">${svg}<span>${esc(label)}</span></button>`;
+  // The label span is hidden below 860px, so mirror it into aria-label/title to
+  // keep an accessible name and a hover hint once the text disappears.
+  return `<button class="rail-link${active ? " active" : ""}" type="button" data-pane="${id}" aria-current="${active ? "page" : "false"}" aria-label="${esc(label)}" title="${esc(label)}">${svg}<span>${esc(label)}</span></button>`;
 }
 
 /**
@@ -1864,33 +1866,33 @@ const adminViewBody = `<div class="settings-shell">
 
       <div class="settings-panels">
         <div class="tab-panel active" id="panel-conversation">
-          ${settingsPane("settings", "Settings", "Model, thinking level, auto-reply, and workspace visibility for this conversation.", '<button class="refresh-btn" onclick="loadSettings()">↻</button>', '<div id="settings-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("settings", "Settings", "Model, thinking level, auto-reply, and workspace visibility for this conversation.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadSettings()">↻</button>', '<div id="settings-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("workspace", "Workspace", "Read-only browser for this conversation's files on disk.", '<button class="refresh-btn" onclick="loadWorkspace()">↻</button>', '<div class="workspace-split"><div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div></div>')}
+          ${settingsPane("workspace", "Workspace", "Read-only browser for this conversation's files on disk.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadWorkspace()">↻</button>', '<div class="workspace-split"><div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div></div>')}
 
-          ${settingsPane("skills", "Skills", "Instructions the agent can load for specific tasks in this conversation.", '<button class="primary-action-btn" onclick="openSkillDialog(\'conversation\')">+ New skill</button><button class="refresh-btn" onclick="loadSkills()">↻</button>', '<div class="workspace-split"><div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+          ${settingsPane("skills", "Skills", "Instructions the agent can load for specific tasks in this conversation.", '<button class="primary-action-btn" onclick="openSkillDialog(\'conversation\')">+ New skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadSkills()">↻</button>', '<div class="workspace-split"><div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
 
-          ${settingsPane("mcp", "MCP servers", "External tools this conversation can call during a run.", '<button class="refresh-btn" onclick="loadMcpServers()">↻</button>', '<div id="mcp-conv-msg" class="status-msg" style="display:none"></div><div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("mcp", "MCP servers", "External tools this conversation can call during a run.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadMcpServers()">↻</button>', '<div id="mcp-conv-msg" class="status-msg" style="display:none"></div><div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>')}
 
           ${settingsPane("vault", "Vault", "Credentials scoped to this conversation.", '<button class="primary-action-btn" onclick="openLogin()">Open in new tab ↗</button>', '<div id="vault-link-result" class="link-result" style="display:none"></div><p class="card-desc">Opens the one-time credential form for this conversation\'s vault in a new tab.</p>')}
 
-          ${settingsPane("events", "Events", "Scheduled and one-shot events tied to this conversation.", '<button class="refresh-btn" onclick="loadConversationEvents()">↻</button>', '<div id="events-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("events", "Events", "Scheduled and one-shot events tied to this conversation.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadConversationEvents()">↻</button>', '<div id="events-content"><div class="loading-msg">Loading…</div></div>')}
 
           ${settingsPane("session", "Session view", "The full message and tool-call timeline for this conversation.", '<button class="primary-action-btn" onclick="openSessionView()">Open in new tab ↗</button>', '<div id="session-link-result" class="link-result" style="display:none"></div><p class="card-desc">Opens the session timeline for this conversation in a new tab.</p>')}
         </div>
 
         <div class="tab-panel" id="panel-global">
-          ${settingsPane("g-overview", "All conversations", "Every registered conversation across every platform.", '<button class="refresh-btn" onclick="loadAllConversations()">↻</button>', '<div id="all-conv-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("g-overview", "All conversations", "Every registered conversation across every platform.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadAllConversations()">↻</button>', '<div id="all-conv-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("g-usage", "Token usage", "Spend and volume across every conversation.", '<button class="refresh-btn" onclick="loadTokenUsage()">↻</button>', '<h3 class="card-subtitle">Top 20 sessions</h3><div id="session-usage-content"><div class="loading-msg">Loading…</div></div><h3 class="card-subtitle" style="margin-top:24px">Usage timeline</h3><div class="timeline-controls"><label>Conversation<select id="timeline-conv" onchange="loadUsageTimeline()"></select></label></div><div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("g-usage", "Token usage", "Spend and volume across every conversation.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadTokenUsage()">↻</button>', '<h3 class="card-subtitle">Top 20 sessions</h3><div id="session-usage-content"><div class="loading-msg">Loading…</div></div><h3 class="card-subtitle" style="margin-top:24px">Usage timeline</h3><div class="timeline-controls"><label>Conversation<select id="timeline-conv" onchange="loadUsageTimeline()"></select></label></div><div id="usage-timeline-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("g-settings", "Workspace defaults", "The fallback model, sandbox limits, and Slack behavior every conversation inherits.", '<button class="refresh-btn" onclick="loadGlobalSettings()">↻</button>', '<div id="global-settings-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("g-settings", "Workspace defaults", "The fallback model, sandbox limits, and Slack behavior every conversation inherits.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadGlobalSettings()">↻</button>', '<div id="global-settings-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("g-mcp", "MCP servers", "External tools available to every conversation in this workspace.", '<button class="refresh-btn" onclick="loadMcpServers()">↻</button>', '<div id="mcp-global-msg" class="status-msg" style="display:none"></div><div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("g-mcp", "MCP servers", "External tools available to every conversation in this workspace.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadMcpServers()">↻</button>', '<div id="mcp-global-msg" class="status-msg" style="display:none"></div><div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("g-skills", "Skills", "Shared instructions available to every conversation in this workspace.", '<button class="primary-action-btn" onclick="openSkillDialog(\'global\')">+ New global skill</button><button class="refresh-btn" onclick="loadGlobalSkills()">↻</button>', '<div class="workspace-split"><div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+          ${settingsPane("g-skills", "Skills", "Shared instructions available to every conversation in this workspace.", '<button class="primary-action-btn" onclick="openSkillDialog(\'global\')">+ New global skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadGlobalSkills()">↻</button>', '<div class="workspace-split"><div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
 
-          ${settingsPane("g-events", "Global events", "Every scheduled event across the whole workspace.", '<button class="refresh-btn" onclick="loadEvents()">↻</button>', '<div id="global-events-content"><div class="loading-msg">Loading…</div></div>')}
+          ${settingsPane("g-events", "Global events", "Every scheduled event across the whole workspace.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadEvents()">↻</button>', '<div id="global-events-content"><div class="loading-msg">Loading…</div></div>')}
         </div>
       </div>
     </div>
@@ -3379,6 +3381,9 @@ const adminViewStyles = `
     display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
   }
   .config-block { display: flex; flex-direction: column; gap: 10px; }
+  /* Config blocks are flex columns, so a plain child button stretches to the
+     full column width. Keep the save action a normal-sized button instead. */
+  .config-block .primary-action-btn { align-self: flex-start; min-width: 132px; justify-content: center; }
   .config-row { display: grid; grid-template-columns: 110px 1fr; gap: 10px; align-items: center; }
   .config-row.config-row-stack { grid-template-columns: 1fr; }
   .config-row label { font-size: 0.82rem; color: var(--muted); }
@@ -3456,14 +3461,14 @@ const adminViewStyles = `
   .skill-row {
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     background: rgba(0,0,0,0.02);
-    display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   }
   .skill-row-btn {
     flex: 1 1 auto; min-width: 0; text-align: left; cursor: pointer; font-family: inherit;
     background: transparent; border: none; padding: 0;
   }
   .skill-row-btn:hover .skill-name { color: var(--accent); }
-  .skill-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .skill-row-actions { display: flex; gap: 6px; flex-shrink: 0; justify-content: flex-end; }
   .skill-name {
     font-weight: 650; font-size: 0.9rem; color: var(--text);
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -3775,9 +3780,20 @@ const adminViewStyles = `
   @media (max-width: 860px) {
     .settings-shell { grid-template-columns: 1fr; }
     .settings-rail { position: static; }
-    .rail-nav { flex-direction: row; flex-wrap: wrap; }
-    .rail-link span { display: none; }
-    .rail-link { padding: 9px; }
+    /* Keep labels on narrow screens: a scrollable chip row is far easier to
+       scan than a row of bare icons with no text. */
+    .rail-nav {
+      flex-direction: row; flex-wrap: nowrap; gap: 6px;
+      overflow-x: auto; padding-bottom: 6px;
+      /* Without min-width:0 a nowrap flex row refuses to shrink and blows the
+         page width out instead of scrolling. */
+      min-width: 0; max-width: 100%;
+      scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+    }
+    .settings-rail { min-width: 0; }
+    .rail-nav[hidden] { display: none; }
+    .rail-link { flex: 0 0 auto; padding: 7px 11px; }
+    .rail-link span { white-space: nowrap; }
   }
 
   @media (max-width: 640px) {

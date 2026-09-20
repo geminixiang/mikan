@@ -259,7 +259,10 @@ const portalShellStyles = `
   }
 
   .shell {
-    width: 100%;
+    /* body is a centered flex column, so width 100% plus margin-left
+       makes the margin box wider than the container and shifts the shell
+       off-centre. Subtract the gutter instead. */
+    width: calc(100% - 72px);
     max-width: 960px;
     margin-left: 72px;
     display: flex;
@@ -451,7 +454,7 @@ const portalShellStyles = `
   .inline-result.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
 
   @media (max-width: 900px) {
-    .shell { margin-left: 0; }
+    .shell { width: 100%; margin-left: 0; }
     .floating-view-nav {
       left: 50%; right: auto; top: auto; bottom: 18px;
       transform: translateX(-50%); flex-direction: row;
