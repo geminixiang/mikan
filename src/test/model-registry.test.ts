@@ -124,6 +124,42 @@ describe("MikanModels.getApiKeyForProvider", () => {
   });
 });
 
+describe("MikanModels built-in catalog", () => {
+  test("resolves the onboarding default model and its lazy provider adapter", async () => {
+    // Mirrors src/settings/index.ts's ONBOARD_SETTINGS default. A Pi upgrade
+    // that removes this model or renames its lazy api subpath export must
+    // fail here instead of silently breaking `/model` and onboarding.
+    const registry = MikanModels.create({
+      modelsJsonPath: join(mkdtempSync(join(tmpdir(), "mikan-catalog-gate-")), "models.json"),
+    });
+    const model = registry.resolve("anthropic", "claude-sonnet-4-6");
+    expect(model.provider).toBe("anthropic");
+    expect(model.id).toBe("claude-sonnet-4-6");
+
+    const { anthropicMessagesApi } =
+      await import("@earendil-works/pi-ai/api/anthropic-messages.lazy");
+    expect(typeof anthropicMessagesApi).toBe("function");
+  });
+
+  test("exposes every lazy provider api subpath the harness imports", async () => {
+    // src/harness/models.ts wires these subpaths into CUSTOM_API_STREAMS for
+    // custom models.json providers; a renamed/removed export breaks that
+    // wiring at import time rather than at a call site, so gate all of them.
+    const modules = await Promise.all([
+      import("@earendil-works/pi-ai/api/anthropic-messages.lazy"),
+      import("@earendil-works/pi-ai/api/azure-openai-responses.lazy"),
+      import("@earendil-works/pi-ai/api/google-generative-ai.lazy"),
+      import("@earendil-works/pi-ai/api/mistral-conversations.lazy"),
+      import("@earendil-works/pi-ai/api/openai-completions.lazy"),
+      import("@earendil-works/pi-ai/api/openai-responses.lazy"),
+    ]);
+    for (const module of modules) {
+      const factory = Object.values(module)[0];
+      expect(typeof factory).toBe("function");
+    }
+  });
+});
+
 describe("MikanModels.getAvailable", () => {
   test("delegates provider filtering and isolates one provider failure", async () => {
     const registry = withTempRegistry({

@@ -209,6 +209,31 @@ test("tool progress retains arguments and each committed message is presented on
   expect(persisted).toHaveLength(4);
 });
 
+test("persisted provider thinking level survives close/reopen", async () => {
+  // Pi 0.85.0 fixed proxied assistant responses dropping the persisted
+  // provider-native thinking level (packages/agent/CHANGELOG.md). Guard
+  // that mikan's own session-store round trip preserves it too.
+  const { faux, file, wrap } = setup();
+  const store = await SessionStore.create(file, dir);
+  const session = wrap(store);
+  faux.setResponses([{ ...fauxAssistantMessage("deep answer"), providerThinkingLevel: "high" }]);
+  await session.prompt("think hard");
+  await store.close();
+
+  const reopened = await SessionStore.open(file);
+  stores.push(reopened);
+  const persisted = (await reopened.getEntries()).filter((entry) => entry.type === "message");
+  const assistantEntry = persisted.find(
+    (entry) => entry.type === "message" && entry.message.role === "assistant",
+  );
+  expect(assistantEntry).toBeDefined();
+  expect(
+    assistantEntry?.type === "message" && assistantEntry.message.role === "assistant"
+      ? assistantEntry.message.providerThinkingLevel
+      : undefined,
+  ).toBe("high");
+});
+
 test("a successful native retry preserves reasoning and charges both requests once", async () => {
   const { faux, file, wrap } = setup();
   const session = wrap(await SessionStore.create(file, dir));
