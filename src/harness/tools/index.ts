@@ -7,6 +7,7 @@ import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
+import { withSecretRedaction } from "./secret-redaction.js";
 import { createTaskTools } from "./task.js";
 import { createJevTool } from "./jev.js";
 import { createReactTool } from "./react.js";
@@ -71,7 +72,11 @@ export function createMikanTools(
       adaptAgentTool(jevTool),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
-    ],
+      // Every tool above can return a configured secret's plain-text value —
+      // most directly bash/read in host sandbox mode, which is not OS-isolated
+      // from the mikan process's own env. Redact uniformly rather than only
+      // guarding bash.
+    ].map(withSecretRedaction),
     setUploadFunction,
     setImageUploadFunction: (fn) => {
       imageTool?.setUploadFunction(fn);
