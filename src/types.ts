@@ -284,6 +284,14 @@ export interface MessagingBot {
   ): Promise<PlatformHistoryMessage[]>;
   /** List the platform workspace's active users. Optional capability. */
   listUsers?(): Promise<PlatformUserInfo[]>;
+  /**
+   * Record the bot's own outbound message in the conversation's human-readable
+   * `log.jsonl`, mirroring the entry `logToFile` would write for an agent
+   * reply. Optional so adapters adopt it incrementally; callers that skip it
+   * leave that message invisible to `log.jsonl` history (and to the agent's
+   * own greps over it) even though the platform delivered it.
+   */
+  logBotResponse?(channel: string, text: string, ts: string, threadTs?: string): void;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;

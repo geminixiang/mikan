@@ -108,15 +108,20 @@ async function postAbortNotice(
 ): Promise<void> {
   if (state.shutdownAborted) {
     recordCounter("agent.run.shutdown_aborted", 1, { platform: platformName });
-    await bot.postMessage(conversationId, formatRestarting(bot));
+    const text = formatRestarting(bot);
+    const ts = await bot.postMessage(conversationId, text);
+    bot.logBotResponse?.(conversationId, text, ts);
     return;
   }
   if (!state.stopRequested) return;
   if (state.stopNoticeOwned) return;
-  const thread = threadSuffixOf(state.sessionKey);
-  if (thread && bot.postInThread)
-    await bot.postInThread(conversationId, thread, formatStopped(bot));
-  else await bot.postMessage(conversationId, formatStopped(bot));
+  const thread = threadSuffixOf(state.sessionKey) ?? undefined;
+  const text = formatStopped(bot);
+  const ts =
+    thread && bot.postInThread
+      ? await bot.postInThread(conversationId, thread, text)
+      : await bot.postMessage(conversationId, text);
+  bot.logBotResponse?.(conversationId, text, ts, thread);
 }
 
 export function createConversationRuntime(
@@ -195,10 +200,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     replyThreadTs?: string,
   ): Promise<void> {
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
-    const post = (text: string) =>
-      replyThreadTs && bot.postInThread
-        ? bot.postInThread(address.conversationId, replyThreadTs, text)
-        : bot.postMessage(address.conversationId, text);
+    const post = async (text: string) => {
+      const ts =
+        replyThreadTs && bot.postInThread
+          ? await bot.postInThread(address.conversationId, replyThreadTs, text)
+          : await bot.postMessage(address.conversationId, text);
+      bot.logBotResponse?.(address.conversationId, text, ts, replyThreadTs);
+      return ts;
+    };
     const state = this.sessions.get(address, sessionKey);
     if (!state?.running) {
       await post(formatNothingRunning(bot));
@@ -210,7 +219,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     try {
       const ts = await post(formatStopping(bot));
       await settlement;
-      await bot.updateMessage(address.conversationId, ts, formatStopped(bot));
+      const stoppedText = formatStopped(bot);
+      await bot.updateMessage(address.conversationId, ts, stoppedText);
+      bot.logBotResponse?.(address.conversationId, stoppedText, ts, replyThreadTs);
     } finally {
       state.stopNoticeOwned = false;
     }

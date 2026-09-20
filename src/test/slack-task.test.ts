@@ -1,5 +1,12 @@
 // Exercises actual Slack intake, runtime, Pi and session persistence with fake transport/model.
-import { mkdtempSync, mkdirSync, writeFileSync, appendFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  appendFileSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, test, expect, vi } from "vitest";
@@ -228,6 +235,24 @@ test("slow stop acknowledgement is finalized even when task settles before its i
     "STOP_ACK",
     expect.stringContaining("Stopped"),
   );
+});
+
+test("stop notice lands in log.jsonl so history search finds why a run ended", async () => {
+  faux.setResponses([handoff(), callHold()]);
+  const root = await startTask();
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  const stop = runtime.handleStop(createOfficeAddress("slack", "D123"), `D123:${root}`, bot, root);
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  await stop;
+  const entries = readFileSync(office.logPath, "utf-8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  const stopped = entries.filter(
+    (e) => e.user === "bot" && typeof e.text === "string" && e.text.includes("Stopped"),
+  );
+  expect(stopped).toHaveLength(1);
+  expect(stopped[0]?.threadTs).toBe(root);
 });
 
 test("stop during final presentation settles its acknowledgement even after Pi completed", async () => {
