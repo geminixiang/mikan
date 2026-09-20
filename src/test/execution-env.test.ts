@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -27,6 +27,49 @@ function onlyShellEnv(dir: string) {
   };
   return createSandboxExecutionEnv(executor, "container", dir);
 }
+
+describe("host sandbox execution env", () => {
+  let dir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    dir = join(tmpdir(), `mikan-host-exec-env-${Date.now()}-${Math.random()}`);
+    mkdirSync(dir, { recursive: true });
+    originalCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("resolves relative paths against the runtime workspace root, not process.cwd()", async () => {
+    writeFileSync(join(dir, "note.txt"), "hello from workspace root");
+    const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+    expect(await env.absolutePath("note.txt", TODO_CONTEXT)).toEqual({
+      ok: true,
+      value: join(dir, "note.txt"),
+    });
+  });
+
+  test("reads and writes relative paths against the runtime workspace root regardless of process cwd", async () => {
+    const outsideCwd = mkdtempSync(join(tmpdir(), "mikan-host-exec-env-outside-"));
+    try {
+      process.chdir(outsideCwd);
+      const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+
+      const written = await env.writeFile("relative.txt", "workspace-scoped content", TODO_CONTEXT);
+      expect(written.ok).toBe(true);
+      expect(existsSync(join(dir, "relative.txt"))).toBe(true);
+      expect(existsSync(join(outsideCwd, "relative.txt"))).toBe(false);
+
+      const read = await env.readTextFile("relative.txt", TODO_CONTEXT);
+      expect(read).toEqual({ ok: true, value: "workspace-scoped content" });
+    } finally {
+      rmSync(outsideCwd, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("sandbox execution env", () => {
   let dir: string;

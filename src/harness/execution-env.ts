@@ -50,7 +50,7 @@ export function createSandboxExecutionEnv(
   runtimeWorkspaceRoot: string,
 ): ExecutionEnv {
   if (sandboxType === "host") {
-    return new NodeExecutionEnv({ cwd: process.cwd() });
+    return new NodeExecutionEnv({ cwd: runtimeWorkspaceRoot });
   }
   return new ShellExecutionEnv(executor, runtimeWorkspaceRoot);
 }

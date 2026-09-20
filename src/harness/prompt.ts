@@ -236,7 +236,7 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
     default:
       return `You are running directly on the host machine.
 - Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${process.cwd()}
+- Bash commands start in: ${workspaceRoot}
 - Be careful with system modifications`;
   }
 }

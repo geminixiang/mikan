@@ -177,6 +177,42 @@ describe("runtime path context", () => {
   });
 });
 
+describe("host sandbox environment description", () => {
+  let stateDir: string;
+  let workspaceDir: string;
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), "mikan-prompt-host-env-"));
+    workspaceDir = join(stateDir, "workspace");
+    mkdirSync(workspaceDir, { recursive: true });
+    process.env.MIKAN_STATE_DIR = stateDir;
+    createGlobalSettingsFile(stateDir);
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test("tells the agent bash starts in the runtime workspace root, not mikan's own cwd", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const projection = resolveWorkspaceProjection(office);
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "host" },
+      platform: PLATFORM,
+      skills: [],
+      projection,
+    });
+
+    expect(prompt).toContain(`Bash commands start in: ${workspaceDir}`);
+    expect(prompt).not.toContain(`Bash commands start in: ${process.cwd()}`);
+  });
+});
+
 describe("system prompt memory guidance", () => {
   let stateDir: string;
   let workspaceDir: string;
