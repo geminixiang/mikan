@@ -30,6 +30,7 @@ Token は `xapp-` で始まります。
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `chat:write.customize`（サブエージェントのペルソナ用：この scope がないと、Slack はサブエージェントの最終回答に設定したカスタムユーザー名・アイコンを黙って無視し、bot 自身のアイデンティティで投稿します — エラーも警告もなく、名前が違うだけです）
 - `commands`（以下の任意の slash commands を使う場合のみ必要）
 - `files:read`
 - `files:write`

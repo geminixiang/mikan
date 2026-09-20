@@ -30,6 +30,7 @@ Token 會以 `xapp-` 開頭。
 - `channels:history`
 - `channels:read`
 - `chat:write`
+- `chat:write.customize`（子代理人格：沒有這個 scope，Slack 會靜默丟棄子代理最終回覆的自訂使用者名稱／圖示，改用 bot 自己的身分發送——不會報錯也不會警告，只是名字不對）
 - `commands`（只有使用下方選用的 slash commands 時才需要）
 - `files:read`
 - `files:write`
