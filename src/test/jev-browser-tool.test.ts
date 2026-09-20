@@ -1,10 +1,29 @@
-import { describe, expect, test } from "vitest";
-import {
-  buildQuestionPlan,
-  categorizeRefs,
-  resolveTarget,
-  truncate,
-} from "../harness/tools/jev-browser.js";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const execFileMock = vi.fn();
+vi.mock("node:child_process", () => ({ execFile: (...args: unknown[]) => execFileMock(...args) }));
+
+const { buildQuestionPlan, categorizeRefs, createJevBrowserTool, resolveTarget, truncate } =
+  await import("../harness/tools/jev-browser.js");
+
+/** Adapts `execFileMock`'s node-style callback to `promisify(execFile)`'s call shape. */
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function mockAgentBrowser(responses: Array<{ success: boolean; data?: unknown; error?: string }>) {
+  let call = 0;
+  execFileMock.mockImplementation(
+    (_bin: string, _args: string[], _opts: unknown, callback: (...cbArgs: unknown[]) => void) => {
+      const response = responses[Math.min(call, responses.length - 1)];
+      call++;
+      callback(null, { stdout: JSON.stringify(response), stderr: "" });
+    },
+  );
+}
 
 describe("categorizeRefs", () => {
   test("buckets refs by role: click accepts everything, type/select are role-filtered", () => {
@@ -33,7 +52,7 @@ describe("buildQuestionPlan", () => {
     const { questions } = buildQuestionPlan({}, false, false);
     const operation = questions.operation;
     expect(operation?.type).toBe("choice");
-    expect(operation && "criteria" in operation ? Object.keys(operation.criteria) : []).toEqual([
+    expect(operation?.type === "choice" ? Object.keys(operation.criteria) : []).toEqual([
       "WAIT",
       "DONE",
       "BLOCKED",
@@ -43,7 +62,7 @@ describe("buildQuestionPlan", () => {
   test("adds a scroll option only when the caller reports it is possible", () => {
     const { questions } = buildQuestionPlan({}, true, true);
     const operation = questions.operation;
-    const keys = operation && "criteria" in operation ? Object.keys(operation.criteria) : [];
+    const keys = operation?.type === "choice" ? Object.keys(operation.criteria) : [];
     expect(keys).toContain("SCROLL_DOWN");
     expect(keys).toContain("SCROLL_UP");
   });
@@ -54,9 +73,7 @@ describe("buildQuestionPlan", () => {
     expect(singles.CLICK).toBe("e1");
     expect(questions.click_target).toBeUndefined();
     expect(
-      questions.operation && "criteria" in questions.operation
-        ? questions.operation.criteria.CLICK
-        : undefined,
+      questions.operation?.type === "choice" ? questions.operation.criteria.CLICK : undefined,
     ).toBeDefined();
   });
 
@@ -69,16 +86,13 @@ describe("buildQuestionPlan", () => {
     expect(singles.CLICK).toBeUndefined();
     expect(questions.click_target?.type).toBe("choice");
     const criteria =
-      questions.click_target && "criteria" in questions.click_target
-        ? questions.click_target.criteria
-        : {};
+      questions.click_target?.type === "choice" ? questions.click_target.criteria : {};
     expect(Object.keys(criteria)).toEqual(["e1", "e2"]);
   });
 
   test("no click/type/select candidates omit those operations from the criteria", () => {
     const { questions } = buildQuestionPlan({}, false, false);
-    const criteria =
-      questions.operation && "criteria" in questions.operation ? questions.operation.criteria : {};
+    const criteria = questions.operation?.type === "choice" ? questions.operation.criteria : {};
     expect(criteria.CLICK).toBeUndefined();
     expect(criteria.TYPE_TEXT).toBeUndefined();
     expect(criteria.SELECT).toBeUndefined();
@@ -109,5 +123,87 @@ describe("truncate", () => {
   test("cuts long text and marks the cut with an ellipsis", () => {
     const result = truncate("x".repeat(20), 5);
     expect(result).toBe("xxxxx…");
+  });
+});
+
+describe("jev_browser tool", () => {
+  const originalKey = process.env.OPENROUTER_API_KEY;
+  const originalFetch = global.fetch;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    execFileMock.mockReset();
+    fetchMock.mockReset();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    process.env.OPENROUTER_API_KEY = "test-key";
+  });
+
+  afterEach(() => {
+    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = originalKey;
+    global.fetch = originalFetch;
+  });
+
+  test("reports the last page snapshot even when DONE is reached on the first observation", async () => {
+    // Regression: a run that reaches DONE before any action has an empty
+    // history, so without lastPageSnapshot the caller gets no page content
+    // at all — reproduced live against https://example.com, where the model
+    // fell back to an unrelated `bash curl` call to answer the same goal
+    // this tool had already seen.
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } }, // open
+      {
+        success: true,
+        data: {
+          origin: "https://example.com/",
+          refs: {},
+          snapshot: '- heading "Example Domain" [ref=e1]\n- link "More information..." [ref=e2]',
+        },
+      }, // snapshot
+      { success: true, data: { closed: true } }, // close
+    ]);
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        model: "typesafe/jev-1.0",
+        answers: { operation: { type: "choice", choice: "DONE", probabilities: { DONE: 0.9 } } },
+      }),
+    );
+
+    const tool = createJevBrowserTool();
+    const result = await tool.execute(
+      "call-1",
+      { url: "https://example.com", goal: "Find the page's main heading text." },
+      undefined,
+    );
+
+    const text = (result.content[0] as { text: string }).text;
+    const parsed = JSON.parse(text) as { status: string; steps: number; lastPageSnapshot: string };
+    expect(parsed.status).toBe("done");
+    expect(parsed.steps).toBe(0);
+    expect(parsed.lastPageSnapshot).toContain("Example Domain");
+  });
+
+  test("always closes the agent-browser session, even after a mid-loop failure", async () => {
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } }, // open
+      { success: false, error: "boom" }, // snapshot fails
+      { success: true, data: { closed: true } }, // close
+    ]);
+
+    const tool = createJevBrowserTool();
+    const result = await tool.execute(
+      "call-1",
+      { url: "https://example.com", goal: "anything" },
+      undefined,
+    );
+
+    const text = (result.content[0] as { text: string }).text;
+    const parsed = JSON.parse(text) as { status: string; message: string };
+    expect(parsed.status).toBe("blocked");
+    expect(parsed.message).toContain("Snapshot failed");
+    const closeCall = execFileMock.mock.calls.find((call) =>
+      (call[1] as string[]).includes("close"),
+    );
+    expect(closeCall).toBeDefined();
   });
 });
