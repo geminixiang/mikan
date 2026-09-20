@@ -135,6 +135,7 @@
     "ignore": [
       ".pi/**",
       "scripts/**",
+      "tools/**",
       "deploy/**"
     ],
     "astro": {
