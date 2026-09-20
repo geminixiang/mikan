@@ -152,3 +152,46 @@ Return:
 - Do not include raw commit hashes in release notes unless requested.
 - If hooks fail during commit, fix or report before retrying.
 - Never publish a release without a corresponding CHANGELOG entry — the version bump commit must include the new CHANGELOG section.
+
+## PM2 pitfalls when redeploying a local/production mikan
+
+These apply to any PM2-supervised mikan (deploy/pm2/ecosystem.config.cjs or a
+personal ecosystem file) after editing secrets, not to the GitHub release flow
+itself — relevant whenever a release or hotfix requires restarting a running
+instance.
+
+- **`pm2 restart <app> --update-env` does not reliably pick up new values
+  from an env file loaded via a custom `loadEnvFile()` in the ecosystem
+  file.** The `env` object PM2 has cached in its own daemon memory from the
+  original `pm2 start` is what gets reapplied; `--update-env` refreshes PM2's
+  own process env, not a fresh `require()` of the ecosystem config. After
+  rotating a secret (API key, bot token) in the env file, `pm2 restart
+--update-env` can silently keep serving the old value — confirm with
+  `pm2 env <id>` (or diff a hash of the file value vs the env value) before
+  trusting it, or skip the ambiguity entirely:
+
+  ```bash
+  pm2 delete <app> && pm2 start <ecosystem-file> --only <app>
+  ```
+
+  This forces PM2 to `require()` the ecosystem file again and recompute
+  `loadEnvFile()` from disk.
+
+- **Verify a secret rotation actually took effect** before declaring it done:
+  compare a short hash (not the raw value) of the env-file value against what
+  the running process reports via `pm2 env <id>`, or watch the log for the
+  provider's own auth confirmation (e.g. a successful connect banner) rather
+  than assuming the restart alone was sufficient.
+- **A stale-env crash loop can look unrelated to the secret you just
+  rotated.** `pm2 restart --update-env` reusing a cached env silently for one
+  variable can surface as an `invalid_auth` failure on a _different_
+  variable that was never touched, because the whole cached `env` object —
+  not just the one key you changed — may be stale. Don't assume the error is
+  about the most recently edited secret; check every credential the process
+  loads before chasing the wrong one. `pm2 delete && pm2 start
+<ecosystem-file>` resolves both at once by reloading the full env from
+  disk.
+- **`pm2 stop`/`pm2 start` by bare app name does not reload the ecosystem
+  file**, so it cannot pick up ecosystem-file changes (env loading, args,
+  `cwd`) either — only `pm2 start <ecosystem-file> ...` does. Keep the
+  ecosystem file path handy when redeploying, not just the app name.

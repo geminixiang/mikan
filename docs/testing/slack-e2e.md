@@ -19,6 +19,8 @@ pm2 stop mikan
 
 不要假設另一個 client 只會造成一半失敗。Socket Mode routing 可能具有黏著性：同一個 client 可以連續取得所有 retry events。
 
+這個風險不限於 CI：任何手動、互動式的真實 Slack 測試（例如透過瀏覽器操作）都一樣受影響。實際發生過的案例：本機 `pm2` 啟動的 `mikan` 與操作者另一台個人機器（例如 Mac mini）上長駐的 `mikan` 同時用同一組 `SLACK_APP_TOKEN`/`SLACK_BOT_TOKEN` 監聽同一個 workspace。事件被另一台機器吃掉、用它自己的（不同）session 記憶回覆，產生看似合理但實際上下文對不上的回覆（例如「找不到上一輪結果」）。診斷方式：本機 `log.jsonl`／session 檔案完全沒有該輪的紀錄，即使 Slack 上看得到一則格式與內容都像 mikan 的回覆；用 `conversations.history` 的 `bot_id`/`app_id` 只能確認是同一個 Slack App 送出的，不能確認是本機這個進程處理的——唯一可信的證據是本機 workspace 目錄底下有沒有寫入。手動測試前，除了 `pm2 jlist`／`pgrep`，也要主動詢問操作者是否有其他長駐環境（個人電腦、伺服器、Mac mini 等）連著同一個 Slack App。
+
 ## 為什麼綠燈也可能不可信
 
 另一個 daemon 不只會讓 GitHub runner timeout，也可能替 GitHub 測試回覆訊息，使沒有 local-delivery assertion 的測試錯誤通過。因此：
