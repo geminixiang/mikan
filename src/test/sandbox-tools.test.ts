@@ -175,6 +175,14 @@ describe("sandbox tools", () => {
     ).rejects.toThrow(/occurrences/);
   });
 
+  test("bash's working directory is the runtime workspace root, not mikan's own process cwd", async () => {
+    const result = await run("bash", { command: "pwd", label: "where am I" });
+    // dir is a real path under the OS temp dir; realpath it the same way pwd would
+    // report a symlink-resolved cwd (relevant on macOS where /tmp is a symlink).
+    const { realpathSync } = await import("node:fs");
+    expect(textOf(result as never).trim()).toBe(realpathSync(dir));
+  });
+
   test("bash runs a command and returns its output", async () => {
     const result = await run("bash", { command: "echo hello-from-bash", label: "say hi" });
     expect(textOf(result as never)).toContain("hello-from-bash");

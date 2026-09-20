@@ -89,6 +89,26 @@ npm run lint && npm run fmt:check && npm run build && npm run knip && npm test
 
 結果：lint / format / build / knip 全部通過；`npm test` **135 files / 1840 tests passed**。
 
+## 再後續：0.86.0 breaking change 審查與端到端 bash cwd 回歸測試
+
+深入比對 mikan 目前实際使用的 `0.85.1 → 0.86.0`（`packages/ai/CHANGELOG.md`）發現一個原報告未列出的 **breaking change**：`ProviderStreams`/`StreamFunction` 的 `context` 參數從 `Context` 改為 `TranscriptContext`，system prompt 與 tools 改為儲存在開頭 `SystemMessage` 而不是 `context.systemPrompt`/`context.tools`。[U15]
+
+審查結論：**对 mikan 无影響**。mikan 未定義任何自訂 `Provider`/`ProviderStreams`（只用 `createProvider()` 包装內建 `CUSTOM_API_STREAMS` lazy adapters，不自己实作 stream 函數），也不直接呼叫 `.stream()`/`.streamSimple()`。mikan 對 system prompt/tools 的 mid-run 變更（`setSystemPrompt`、per-prompt `tools`）早已透過 `getCurrentSystemPrompt`/`getCurrentTools` 新 transcript API 測試（`src/test/harness-native.test.ts`），證明此転換對 mikan 既有行為透明。[M10]
+
+另外比對了 `RetryPolicy.maxAgentDelayMs`（新 optional field，mikan 的 `DEFAULT_RETRY_SETTINGS` 未設定此值，依賴 pi-ai 預設 60 秒上限，不是 breaking）、`FileSystem.openTextLineReader`（新 required method，mikan 的 `ShellExecutionEnv` 已實作；`NodeExecutionEnv` 由 Pi 自己提供，兩者 host/container/cloudflare 全數覆蓋）與 container/cloudflare 的 `cwd`/shell 轉譯（皆在各自 executor 內把 `cwd` 正確映射到 guest 端命名空間，從一開始就不受 mikan process cwd 影響，與已修正的 host 分支問題不同）。[M7][M8]
+
+### 新增：端到端 bash cwd 回歸測試
+
+除了之前的 `ExecutionEnv.absolutePath`/`readTextFile`/`writeFile` 直接測試，新增 `src/test/sandbox-tools.test.ts` 一個透過真實 native `bash` tool（`createSandboxTools()` 產出的完整工具，不是低層 env）執行 `pwd` 的測試，驗證 model 實際呼叫 bash 時看到的工作目錄就是該對話的 workspace root。用同樣的 mutation-testing 方式（暫時恢原舌斷的 `process.cwd()`）確認此測試會在回歸時失敗，並回報 mikan repo 自己的目錄而非 workspace。
+
+### 驗證
+
+```text
+npm run lint && npm run fmt:check && npm test -- src/test/sandbox-tools.test.ts src/test/execution-env.test.ts
+```
+
+結果：全部通過。
+
 ## 第一手來源
 
 ### 上游官方與發布套件
@@ -110,6 +130,7 @@ npm run lint && npm run fmt:check && npm run build && npm run knip && npm test
 - **[N1]** [`@earendil-works/pi-agent-core@0.85.0` registry metadata](https://registry.npmjs.org/@earendil-works%2fpi-agent-core/0.85.0) / [tarball](https://registry.npmjs.org/@earendil-works/pi-agent-core/-/pi-agent-core-0.85.0.tgz)
 - **[N2]** [`@earendil-works/pi-ai@0.85.0` registry metadata](https://registry.npmjs.org/@earendil-works%2fpi-ai/0.85.0) / [tarball](https://registry.npmjs.org/@earendil-works/pi-ai/-/pi-ai-0.85.0.tgz)
 - **[N3]** [`@earendil-works/pi-coding-agent@0.85.0` registry metadata](https://registry.npmjs.org/@earendil-works%2fpi-coding-agent/0.85.0) / [tarball](https://registry.npmjs.org/@earendil-works/pi-coding-agent/-/pi-coding-agent-0.85.0.tgz)
+- **[U15]** [`packages/ai/CHANGELOG.md` at v0.86.0](https://github.com/earendil-works/pi/blob/v0.86.0/packages/ai/CHANGELOG.md) and [`packages/ai/src/types.ts` diff v0.85.1→v0.86.0](https://github.com/earendil-works/pi/compare/v0.85.1...v0.86.0#diff-fe318fe4)
 
 ### mikan repo 證據
 
@@ -122,3 +143,4 @@ npm run lint && npm run fmt:check && npm run build && npm run knip && npm test
 - **[M7]** [`src/harness/tools/pi-tools.ts`](../../src/harness/tools/pi-tools.ts) — sandbox-backed Pi tools and pinned bash cwd
 - **[M8]** [`src/harness/execution-env.ts`](../../src/harness/execution-env.ts) — host/container/cloudflare cwd/path resolution
 - **[M9]** [`src/harness/http.ts`](../../src/harness/http.ts) and [`src/main.ts`](../../src/main.ts) — global undici dispatcher/proxy setup
+- **[M10]** [`src/harness/session.ts`](../../src/harness/session.ts) `setSystemPrompt`/per-prompt `tools`, and [`src/harness/models.ts`](../../src/harness/models.ts) `createProvider`/`CUSTOM_API_STREAMS` — mikan's only touch points on `Provider`/`ProviderStreams` and mid-run prompt/tool changes
