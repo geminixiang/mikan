@@ -10,6 +10,7 @@ import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-
 import { withSecretRedaction } from "./secret-redaction.js";
 import { createTaskTools } from "./task.js";
 import { createJevTool } from "./jev.js";
+import { createJevBrowserTool } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
@@ -54,6 +55,11 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
+  // Shells out to the operator-installed `agent-browser` CLI, which drives a
+  // real Chrome process on the host — not meaningful (and not safely
+  // reachable) from a container/image sandbox, so only host mode gets it.
+  const jevBrowserTool =
+    executor.getSandboxConfig().type === "host" ? createJevBrowserTool() : undefined;
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },
@@ -70,6 +76,7 @@ export function createMikanTools(
       ...(imageTool ? [adaptAgentTool(imageTool.tool)] : []),
       adaptAgentTool(reactTool),
       adaptAgentTool(jevTool),
+      ...(jevBrowserTool ? [adaptAgentTool(jevBrowserTool)] : []),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
       // Every tool above can return a configured secret's plain-text value —
