@@ -10,6 +10,7 @@ import {
   type Model,
   type MutableModels,
 } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 import { Type, type TSchema } from "@sinclair/typebox";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -747,7 +748,7 @@ describe("runSubagent", () => {
     let systemPrompt = "";
     faux.setResponses([
       (context) => {
-        systemPrompt = context.systemPrompt ?? "";
+        systemPrompt = getCurrentSystemPrompt(context.messages);
         return fauxAssistantMessage("analysed");
       },
     ]);
@@ -775,7 +776,7 @@ describe("runSubagent", () => {
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("echo", { text: "hi" })),
       (context) => {
-        systemPrompt = context.systemPrompt ?? "";
+        systemPrompt = getCurrentSystemPrompt(context.messages);
         return fauxAssistantMessage("done");
       },
     ]);

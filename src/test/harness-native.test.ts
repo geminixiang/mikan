@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, expectTypeOf, test, vi } from "vitest";
 import { TODO_CONTEXT, getOrThrow, type AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession, MikanModels, type HarnessEvent } from "../harness/index.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { MikanAgentSessionOptions } from "../harness/types.js";
@@ -130,14 +131,14 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
   const session = wrap(await SessionStore.create(file, dir));
   faux.setResponses([
     (context) => {
-      expect(context.systemPrompt).toContain("first prompt");
-      expect(context.tools?.map((item) => item.name)).toEqual(["temporary"]);
+      expect(getCurrentSystemPrompt(context.messages)).toContain("first prompt");
+      expect(getCurrentTools(context.messages).map((item) => item.name)).toEqual(["temporary"]);
       return fauxAssistantMessage(fauxToolCall("temporary", {}));
     },
     fauxAssistantMessage("first done"),
     (context) => {
-      expect(context.systemPrompt).toContain("updated prompt");
-      expect(context.tools ?? []).toHaveLength(0);
+      expect(getCurrentSystemPrompt(context.messages)).toContain("updated prompt");
+      expect(getCurrentTools(context.messages)).toHaveLength(0);
       return fauxAssistantMessage("second done");
     },
   ]);

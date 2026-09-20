@@ -8,6 +8,7 @@ import {
   fauxToolCall,
   type MutableModels,
 } from "@earendil-works/pi-ai";
+import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { createTaskTool } from "../harness/tools/task.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -74,7 +75,9 @@ test("handoff is not advertised on unsupported turns", async () => {
   const { session, faux } = setup();
   faux.setResponses([
     (context) => {
-      expect(context.tools?.map((t) => t.name)).not.toContain("start_task");
+      expect(getCurrentTools(context.messages).map((tool) => tool.name)).not.toContain(
+        "start_task",
+      );
       return fauxAssistantMessage("answer");
     },
   ]);
