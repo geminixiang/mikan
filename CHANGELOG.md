@@ -9,6 +9,17 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.75]
+
+### Added
+
+- `jev_browser` agent tool: drives a real Chrome browser toward a natural-language goal, deciding each step (click, type, select, scroll, wait) itself using a Jev decision per step against ref-indexed accessibility snapshots — the same architecture as [`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast). A `commands` mode forwards raw [`agent-browser`](https://github.com/vercel-labs/agent-browser) CLI argument arrays directly, covering screenshot, video recording, HAR capture, cookies, and any other agent-browser capability beyond the click/type/select loop. A named `session` spans multiple calls against the same browser (start a recording, run a goal, stop the recording, screenshot the result) and stays open by default; every result reports `browserContinuity` in plain language so a caller can tell whether the browser it just used was actually the same one a prior call left open. Tool progress lines are prefixed `jev_browser ·`, matching the existing `jev ·` treatment. Requires the `agent-browser` CLI installed on the host (not a mikan dependency); host sandbox only.
+- Jev decision cost (from the `jev` tool, `jev_browser`'s decision loop, Slack auto-reply gating, and task-intent classification) is now reported to Sentry/OpenTelemetry as `agent.jev.cost`, `agent.jev.duration`, and `agent.jev.calls`, tagged by which feature made the call. Previously this spend was invisible next to the primary chat model's per-run cost — it only ever appeared inside a tool call's raw JSON text.
+
+### Changed
+
+- Every agent tool now requires the `label` parameter the system prompt already promises for every tool call, so its progress line always shows a real description instead of silently falling back to the raw tool name.
+
 ## [1.0.0-beta.74]
 
 ### Security
