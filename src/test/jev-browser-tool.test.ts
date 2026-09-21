@@ -3,8 +3,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const execFileMock = vi.fn();
 vi.mock("node:child_process", () => ({ execFile: (...args: unknown[]) => execFileMock(...args) }));
 
-const { buildQuestionPlan, categorizeRefs, createJevBrowserTool, resolveTarget, truncate } =
-  await import("../harness/tools/jev-browser.js");
+const {
+  buildQuestionPlan,
+  categorizeRefs,
+  createJevBrowserTool,
+  describeContinuity,
+  resolveTarget,
+  truncate,
+} = await import("../harness/tools/jev-browser.js");
 
 /** Adapts `execFileMock`'s node-style callback to `promisify(execFile)`'s call shape. */
 function jsonResponse(body: unknown): Response {
@@ -293,7 +299,12 @@ describe("jev_browser tool", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  test("keepOpen skips closing the session, and a later call can reuse it via session", async () => {
+  test("a named session stays open by default — no close flag needed on the calls in between", async () => {
+    // Regression: an earlier version required the caller to remember
+    // `keepOpen: true` on every single call reusing a session, or the
+    // browser silently closed and reopened, discarding any in-progress
+    // recording/HAR capture while every individual call still reported
+    // success. Naming a session must be enough on its own.
     mockAgentBrowser([
       { success: true, data: { targetId: "t1" } }, // open
       { success: true, data: { started: true } }, // record start
@@ -305,7 +316,6 @@ describe("jev_browser tool", () => {
       {
         url: "https://example.com",
         session: "my-recording",
-        keepOpen: true,
         commands: [["record", "start", "/tmp/demo.webm"]],
       },
       undefined,
@@ -326,7 +336,7 @@ describe("jev_browser tool", () => {
     ]);
     const result2 = await tool.execute(
       "call-2",
-      { session: "my-recording", commands: [["record", "stop"]] },
+      { session: "my-recording", commands: [["record", "stop"]], close: true },
       undefined,
     );
     const openCall = execFileMock.mock.calls.find((call) => (call[1] as string[]).includes("open"));
@@ -335,6 +345,96 @@ describe("jev_browser tool", () => {
       commandResults: Array<{ data: unknown }>;
     };
     expect(parsed2.commandResults[0]?.data).toEqual({ path: "/tmp/demo.webm", frames: 12 });
+    // close: true on the final call does close it.
+    const finalCloseCall = execFileMock.mock.calls.find((call) =>
+      (call[1] as string[]).includes("close"),
+    );
+    expect(finalCloseCall).toBeDefined();
+  });
+
+  test("a one-off call (no session) still closes automatically, matching the original single-call ergonomics", async () => {
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } }, // open
+      { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
+    ]);
+
+    const tool = createJevBrowserTool();
+    await tool.execute(
+      "call-1",
+      { url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
+      undefined,
+    );
+
+    const closeCall = execFileMock.mock.calls.find((call) =>
+      (call[1] as string[]).includes("close"),
+    );
+    expect(closeCall).toBeDefined();
+  });
+
+  test("an explicit close: false keeps even a one-off session open", async () => {
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } }, // open
+      { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
+    ]);
+
+    const tool = createJevBrowserTool();
+    await tool.execute(
+      "call-1",
+      { url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]], close: false },
+      undefined,
+    );
+
+    const closeCall = execFileMock.mock.calls.find((call) =>
+      (call[1] as string[]).includes("close"),
+    );
+    expect(closeCall).toBeUndefined();
+  });
+
+  test("reports browserContinuity so a caller can tell the browser was NOT reused, without digging through raw lifecycle fields", async () => {
+    mockAgentBrowser([
+      {
+        success: true,
+        data: {
+          targetId: "t1",
+          lifecycle: { reused: false, relaunchedBrowser: true, launched: true },
+        },
+      }, // open — a fresh/relaunched browser, not a continuation
+      { success: true, data: { started: true, lifecycle: { reused: true } } }, // record start
+    ]);
+
+    const tool = createJevBrowserTool();
+    const result = await tool.execute(
+      "call-1",
+      {
+        url: "https://example.com",
+        session: "my-recording",
+        commands: [["record", "start", "/tmp/demo.webm"]],
+      },
+      undefined,
+    );
+
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
+      browserContinuity: string;
+    };
+    expect(parsed.browserContinuity).toMatch(/NOT continuous/);
+  });
+
+  test("reports browserContinuity as continuous when the session actually was reused", async () => {
+    mockAgentBrowser([
+      { success: true, data: { path: "/tmp/demo.webm", lifecycle: { reused: true } } }, // record stop
+    ]);
+
+    const tool = createJevBrowserTool();
+    const result = await tool.execute(
+      "call-2",
+      { session: "my-recording", commands: [["record", "stop"]] },
+      undefined,
+    );
+
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
+      browserContinuity: string;
+    };
+    expect(parsed.browserContinuity).toMatch(/^continuous:/);
   });
 
   test("rejects a call with neither url nor session", async () => {
@@ -351,5 +451,23 @@ describe("jev_browser tool", () => {
       /Provide goal, commands, or both/,
     );
     expect(execFileMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("describeContinuity", () => {
+  test("reports unknown when no agent-browser command completed", () => {
+    expect(describeContinuity(true, undefined)).toMatch(/^unknown:/);
+  });
+
+  test("reports one-off for a call with no session name, regardless of lifecycle", () => {
+    expect(describeContinuity(false, { reused: false })).toMatch(/^one-off session:/);
+  });
+
+  test("reports continuous when a named session's browser was reused", () => {
+    expect(describeContinuity(true, { reused: true })).toMatch(/^continuous:/);
+  });
+
+  test("reports NOT continuous when a named session's browser was not reused", () => {
+    expect(describeContinuity(true, { reused: false })).toMatch(/^NOT continuous:/);
   });
 });
