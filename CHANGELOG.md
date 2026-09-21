@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.76]
+
+### Changed
+
+- Update `@earendil-works/pi-agent-core` and `@earendil-works/pi-ai` to 0.87.0, including their aligned telemetry and harness dependencies.
+
 ## [1.0.0-beta.75]
 
 ### Added
