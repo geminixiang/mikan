@@ -4,12 +4,22 @@ This directory contains the platform-neutral tools mikan exposes to the agent.
 Platform-specific tools live with their adapter (`adapters/slack/tools/`,
 `adapters/github/tools/`) and reach the agent as a `PlatformToolPack`.
 
+**Every tool schema needs a required `label` parameter.** The system prompt
+tells the model every tool takes one, and `harness/presenter.ts` renders it
+as the run's current progress-line step; a missing one silently falls back
+to the bare tool name (or doubles it, for a tool whose name is also
+prefixed onto its progress line). Use `defineHostFnTool` (below), which
+injects it automatically, or add it to the schema by hand as `jev.ts` and
+`attach.ts` do. `src/test/tool-label-contract.test.ts` enforces this across
+every assembled tool, with a small, documented exemption list — extend that
+list with a reason rather than silently joining the unenforced set.
+
 ## Files
 
 - `attach.ts`: Defines the platform-neutral `attach` tool and binds uploads through the active responder.
 - `event.ts`: Defines the agent-facing `event` tool. The scheduled-event protocol, store, and watcher belong to `src/events/`.
 - `generate-image.ts`: Defines the `generate_image` tool. It writes host-side into the office directory — the only host location the guest can also reach — and uploads from that host path directly, because the file may not be mounted in the sandbox the way `attach` assumes.
-- `host-fn-tool.ts`: `defineHostFnTool` — the shared choreography for a tool whose implementation is injected per run (holder + setter pair, disabled-tool error, abort guard), so a host-backed tool module only states its schema and run body.
+- `host-fn-tool.ts`: `defineHostFnTool` — the shared choreography for a tool whose implementation is injected per run (holder + setter pair, disabled-tool error, abort guard, and injecting the required `label` parameter every model-facing tool needs), so a host-backed tool module only states its schema and run body.
 - `index.ts`: Assembles core tools — pi-native `read`/`write`/`edit`/`bash` plus mikan's event, sandbox, attach, react, jev, jev_browser (host sandbox only), and optional generate_image — exports the separately wired subagent tool factory, merges optional `PlatformToolPack`s, and wraps the whole list with `withSecretRedaction`.
 - `pi-tools.ts`: The mikan adaptation layer over pi-agent-core's native `read`/`write`/`edit`/`bash`: adds the `label` parameter, pins the bash cwd to the sandbox env, and adapts mikan's own `AgentTool`s into harness tools. The sandbox-backed `ExecutionEnv` they run against is `harness/execution-env.ts`.
 - `jev.ts`: Defines the `jev` tool, a direct pass-through of the Jev decisions API (`harness/jev.ts`): the model supplies `state` and typed `questions` and gets calibrated answers back. A missing `OPENROUTER_API_KEY` is a tool error, not a silent fallback.

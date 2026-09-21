@@ -8,6 +8,7 @@ const MAX_BLOCKS = 50;
 const MAX_ARGUMENT_BYTES = 64 * 1024;
 
 const blockkitSchema = Type.Object({
+  label: Type.String({ description: "Brief description of this action (shown to user)" }),
   blocks: Type.Array(Type.Unknown(), {
     maxItems: MAX_BLOCKS,
     description: `Slack Block Kit blocks (max ${MAX_BLOCKS}). Use {type:'markdown', text} for prose, {type:'table'} for tables, and actions/section blocks for buttons and select menus.`,
@@ -88,7 +89,13 @@ export function createSlackBlockKitTool(): {
         text,
         thread_ts,
         update_ts,
-      }: { blocks: unknown[]; text: string; thread_ts?: string; update_ts?: string },
+      }: {
+        blocks: unknown[];
+        text: string;
+        thread_ts?: string;
+        update_ts?: string;
+        label?: string;
+      },
       signal?: AbortSignal,
     ) => {
       const ops = boundOps;

@@ -5,6 +5,7 @@ import type { OfficeAddress, ResourceLimits, SandboxResourceController } from ".
 import { runtimeResourceKey } from "../../sandbox/identity.js";
 
 const sandboxSchema = Type.Object({
+  label: Type.String({ description: "Brief description of this action (shown to user)" }),
   action: Type.Union([Type.Literal("status"), Type.Literal("set")], {
     description: "Use status to inspect current limits, or set to apply temporary limits.",
   }),
@@ -21,6 +22,7 @@ const sandboxSchema = Type.Object({
 });
 
 type SandboxToolParams = {
+  label: string;
   action: "status" | "set";
   cpus?: string;
   memory?: string;

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const schema = Type.Object({
+  label: Type.String({ description: "Brief description of this action (shown to user)" }),
   prompt: Type.String({ description: "Description of the image to generate" }),
   size: Type.Optional(Type.String({ description: "Requested image size, for example 1024x1024" })),
   quality: Type.Optional(

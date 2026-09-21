@@ -26,6 +26,7 @@ describe("createSandboxTool", () => {
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     const result = await tool.execute("tool-call", {
+      label: "test",
       action: "set",
       cpus: "2",
       memory: "4g",
@@ -55,7 +56,7 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    const result = await tool.execute("tool-call", { action: "status" });
+    const result = await tool.execute("tool-call", { label: "test", action: "status" });
 
     expect(getLimitStatus).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(result.content[0]).toMatchObject({
@@ -78,7 +79,7 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await tool.execute("tool-call", { action: "set", cpus: "2", memory: "4g" });
+    await tool.execute("tool-call", { label: "test", action: "set", cpus: "2", memory: "4g" });
 
     expect(setLimits).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")), {
       cpus: "2",
@@ -96,7 +97,7 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await expect(tool.execute("tool-call", { action: "status" })).rejects.toThrow(
+    await expect(tool.execute("tool-call", { label: "test", action: "status" })).rejects.toThrow(
       /only supports image:\*/,
     );
   });
@@ -110,7 +111,7 @@ describe("createSandboxTool", () => {
       },
     });
 
-    await expect(tool.execute("tool-call", { action: "status" })).rejects.toThrow(
+    await expect(tool.execute("tool-call", { label: "test", action: "status" })).rejects.toThrow(
       "Sandbox context not configured",
     );
   });
@@ -127,7 +128,7 @@ describe("createSandboxTool", () => {
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await expect(
-      tool.execute("tool-call", { action: "set", memory: "1g; rm -rf /" }),
+      tool.execute("tool-call", { label: "test", action: "set", memory: "1g; rm -rf /" }),
     ).rejects.toThrow(/must not contain whitespace or shell metacharacters/);
     expect(setLimits).not.toHaveBeenCalled();
   });
@@ -142,7 +143,7 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await expect(tool.execute("tool-call", { action: "set" })).rejects.toThrow(
+    await expect(tool.execute("tool-call", { label: "test", action: "set" })).rejects.toThrow(
       "action=set requires cpus and/or memory",
     );
   });

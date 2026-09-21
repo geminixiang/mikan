@@ -419,6 +419,7 @@ describe("PiAgentWrapper.run", () => {
     faux.setResponses([
       fauxAssistantMessage(
         fauxToolCall("slack_blockkit", {
+          label: "Ask the user to choose",
           blocks: [{ type: "section", text: { type: "mrkdwn", text: "Choose" } }],
           text: "Choose",
         }),
