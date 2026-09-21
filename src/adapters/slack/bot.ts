@@ -1749,9 +1749,11 @@ export class SlackMessagingBot implements MessagingBot {
         resolveName: (id) => this.users.get(id)?.displayName ?? this.users.get(id)?.userName,
         botUserId: this.botUserId,
       });
-      const result = await evaluateWithJev(state, {
-        addressed: { type: "boolean", instructions: JEV_ADDRESSED_INSTRUCTIONS },
-      });
+      const result = await evaluateWithJev(
+        state,
+        { addressed: { type: "boolean", instructions: JEV_ADDRESSED_INSTRUCTIONS } },
+        { caller: "slack_auto_reply" },
+      );
       const probability = result.answers.addressed.probability;
       log.logInfo(
         `[${event.channel}] jev auto-reply: probability=${probability.toFixed(2)} addressed=${probability > 0.5} text="${event.text.slice(0, 80)}"`,

@@ -39,7 +39,7 @@ describe("jev tool", () => {
     expect(evaluateWithJevMock).toHaveBeenCalledWith(
       "BUY NOW",
       { q: { type: "boolean", instructions: "Is this spam?" } },
-      expect.objectContaining({}),
+      expect.objectContaining({ caller: "jev_tool" }),
     );
     expect(parse(result)).toMatchObject({
       answers: { q: { probability: 0.92 } },

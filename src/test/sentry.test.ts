@@ -40,6 +40,7 @@ import {
   createRunAttributionAttributes,
   createSentryInitOptions,
   metricAttributes,
+  recordJevOutcome,
   recordSubagentOutcome,
   registerTraceAttribution,
   reportSubagentLaunchError,
@@ -502,6 +503,90 @@ describe("recordSubagentOutcome", () => {
     expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "subagent");
     expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "launch");
     expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "nope");
+  });
+});
+
+describe("recordJevOutcome", () => {
+  beforeEach(() => {
+    sentryMock.captureException.mockClear();
+    sentryMock.addBreadcrumb.mockClear();
+    sentryMock.metrics.count.mockClear();
+    sentryMock.metrics.distribution.mockClear();
+  });
+
+  test("records a counter, cost/duration distributions, and a lifecycle breadcrumb on success", () => {
+    recordJevOutcome({
+      caller: "jev_browser",
+      status: "ok",
+      inputTokens: 120,
+      outputTokens: 8,
+      costUsd: 0.0006,
+      durationMs: 850,
+    });
+
+    expect(sentryMock.metrics.count).toHaveBeenCalledWith("agent.jev.calls", 1, {
+      attributes: { caller: "jev_browser", status: "ok" },
+    });
+    expect(sentryMock.metrics.distribution).toHaveBeenCalledWith(
+      "agent.jev.cost",
+      0.0006,
+      expect.objectContaining({ attributes: { caller: "jev_browser", status: "ok" } }),
+    );
+    expect(sentryMock.metrics.distribution).toHaveBeenCalledWith(
+      "agent.jev.duration",
+      850,
+      expect.objectContaining({ unit: "millisecond" }),
+    );
+    expect(sentryMock.addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "agent.lifecycle",
+        message: "agent.jev.completed",
+        data: expect.objectContaining({
+          caller: "jev_browser",
+          status: "ok",
+          input_tokens: 120,
+          output_tokens: 8,
+          cost_usd: 0.0006,
+          duration_ms: 850,
+        }),
+      }),
+    );
+  });
+
+  test("tags an error outcome by caller and error type without a cost distribution", () => {
+    recordJevOutcome({
+      caller: "slack_auto_reply",
+      status: "error",
+      errorType: "JevRequestError",
+      durationMs: 200,
+    });
+
+    expect(sentryMock.metrics.count).toHaveBeenCalledWith("agent.jev.calls", 1, {
+      attributes: { caller: "slack_auto_reply", status: "error" },
+    });
+    expect(sentryMock.metrics.distribution).not.toHaveBeenCalledWith(
+      "agent.jev.cost",
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(sentryMock.addBreadcrumb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          caller: "slack_auto_reply",
+          error_type: "JevRequestError",
+        }),
+      }),
+    );
+  });
+
+  test("never captures a Sentry error/exception — a Jev failure is not treated as a bug", () => {
+    recordJevOutcome({
+      caller: "task_intent",
+      status: "error",
+      errorType: "JevNotConfiguredError",
+    });
+
+    expect(sentryMock.captureException).not.toHaveBeenCalled();
   });
 });
 

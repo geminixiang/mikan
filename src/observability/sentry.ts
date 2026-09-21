@@ -65,6 +65,7 @@ const TOKEN_PATTERNS = [
 ];
 
 export type {
+  JevOutcomeReport,
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
   SubagentOutcomeReport,
@@ -73,6 +74,7 @@ export type {
   SentryTransactionPayload,
 } from "./types.js";
 import type {
+  JevOutcomeReport,
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
   SubagentOutcomeReport,
@@ -581,5 +583,34 @@ export function reportSubagentLaunchError(
     toolName: "subagent",
     tags: { subagent_profile: report.profile, subagent_mode: report.mode },
     context: { itemId: report.itemId },
+  });
+}
+
+/**
+ * Record one `evaluateWithJev` call's cost/duration, tagged by which call
+ * site made it (the `jev` tool, `jev_browser`'s decision loop, Slack
+ * auto-reply gating, task intent classification). Never receives the
+ * judged state, questions, or answers — only the numbers.
+ */
+export function recordJevOutcome(report: JevOutcomeReport): void {
+  const attributes = metricAttributes({ caller: report.caller, status: report.status });
+  Sentry.metrics.count("agent.jev.calls", 1, { attributes });
+  if (report.costUsd !== undefined) {
+    Sentry.metrics.distribution("agent.jev.cost", report.costUsd, { attributes });
+  }
+  if (report.durationMs !== undefined) {
+    Sentry.metrics.distribution("agent.jev.duration", report.durationMs, {
+      unit: "millisecond",
+      attributes,
+    });
+  }
+  addLifecycleBreadcrumb("agent.jev.completed", {
+    caller: report.caller,
+    status: report.status,
+    error_type: report.errorType,
+    input_tokens: report.inputTokens,
+    output_tokens: report.outputTokens,
+    cost_usd: report.costUsd,
+    duration_ms: report.durationMs,
   });
 }

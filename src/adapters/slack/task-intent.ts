@@ -79,14 +79,18 @@ export async function classifyTaskIntent(
   const fallback = (): TaskIntent =>
     isTaskStatusQuestion(text) ? "status" : context.inTaskThread ? "steer" : "request";
   try {
-    const result = await evaluateWithJev(state, {
-      intent: {
-        type: "choice",
-        instructions:
-          "Given the tasks in play and the recent conversation, what does the NEW message mean?",
-        criteria: TASK_INTENT_CRITERIA,
+    const result = await evaluateWithJev(
+      state,
+      {
+        intent: {
+          type: "choice",
+          instructions:
+            "Given the tasks in play and the recent conversation, what does the NEW message mean?",
+          criteria: TASK_INTENT_CRITERIA,
+        },
       },
-    });
+      { caller: "task_intent" },
+    );
     const choice = result.answers.intent.choice;
     const probabilities = result.answers.intent.probabilities;
     log.logInfo(

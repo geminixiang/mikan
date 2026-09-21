@@ -719,6 +719,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(evaluateWithJevMock).toHaveBeenCalledWith(
       expect.stringContaining("NEW message from U123:\nmikan can you redeploy the service"),
       expect.objectContaining({ addressed: expect.objectContaining({ type: "boolean" }) }),
+      expect.objectContaining({ caller: "slack_auto_reply" }),
     );
   });
 

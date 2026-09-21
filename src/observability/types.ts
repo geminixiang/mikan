@@ -92,3 +92,20 @@ export interface SubagentOutcomeReport {
   durationMs?: number;
   cleanupPending?: boolean;
 }
+
+/**
+ * Every `evaluateWithJev` call site, so Jev spend is attributable without
+ * carrying any judged content (state/questions/answers are never reported).
+ */
+export type JevCaller = "jev_tool" | "jev_browser" | "slack_auto_reply" | "task_intent";
+
+/** Metrics-only view of one Jev decision call; never carries state, questions, or answers. */
+export interface JevOutcomeReport {
+  caller: JevCaller;
+  status: "ok" | "error";
+  errorType?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+  durationMs?: number;
+}

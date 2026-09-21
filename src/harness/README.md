@@ -172,13 +172,21 @@ file has always exposed, so a future backend or dependency change stays
 isolated to this one file. A missing key or unresolvable auth surfaces as
 `JevNotConfiguredError` before making a request.
 
-Jev is reached two ways. Harness-internal decision points (Slack auto-reply
-`addressed`, DM task intent) call `evaluateWithJev` from code, never show the
-model the result, and fail closed to the pre-Jev rule when the key is missing.
-The `jev` tool (`tools/jev.ts`) hands the same API to the model as an
-ordinary tool call: it composes the state and questions itself, the way any
-Jev client would. There a missing key is a tool error the model sees, since
-it must then judge for itself.
+Jev is reached four ways — harness-internal decision points (Slack auto-reply
+`addressed`, DM task intent), the `jev` tool (`tools/jev.ts`, a direct
+pass-through the model composes state/questions for itself), and
+`jev_browser`'s (`tools/jev-browser.ts`) per-step decision loop — all through
+this one `evaluateWithJev`. Harness-internal call sites never show the model
+the result and fail closed to the pre-Jev rule when the key is missing; the
+two tools surface a missing key as a tool error the model sees, since it must
+then judge or act for itself. `evaluateWithJev` requires a `caller` option
+naming which of the four call sites is asking, and reports every call's
+token usage, cost, and duration to `recordJevOutcome`
+(`../observability/index.js`, tagged `agent.jev.*`) regardless of outcome —
+Jev spend is otherwise invisible in Sentry/OTel next to the primary chat
+model's per-run cost, and instrumenting inside this one function covers all
+four call sites instead of each one remembering to report it. The report
+never carries the judged state, questions, or answers.
 
 ## Boundaries
 

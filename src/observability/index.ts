@@ -12,6 +12,7 @@ import {
 } from "./sentry.js";
 import { isOpenTelemetryMetricsEnabled, shutdownOpenTelemetry } from "./otel.js";
 import type {
+  JevOutcomeReport,
   ObservabilityAttributes,
   ReportUserFacingErrorOptions,
   RunScopeContext,
@@ -23,7 +24,12 @@ export type { ObservabilityAttributes, RunScopeContext } from "./types.js";
 export interface ObservabilitySpan {
   end(options?: { attributes?: ObservabilityAttributes; error?: unknown }): void;
 }
-export type { ReportUserFacingErrorOptions, SubagentOutcomeReport } from "./types.js";
+export type {
+  JevCaller,
+  JevOutcomeReport,
+  ReportUserFacingErrorOptions,
+  SubagentOutcomeReport,
+} from "./types.js";
 export { sanitizeBreadcrumb } from "./sentry.js";
 
 const tracer = trace.getTracer("@geminixiang/mikan");
@@ -329,5 +335,36 @@ export function reportSubagentLaunchError(
     toolName: "subagent",
     tags: { subagent_profile: report.profile, subagent_mode: report.mode },
     context: { itemId: report.itemId },
+  });
+}
+
+/**
+ * Record one `evaluateWithJev` call's cost/duration, tagged by which call
+ * site made it. Called from `evaluateWithJev` itself so every caller (the
+ * `jev` tool, `jev_browser`'s decision loop, Slack auto-reply gating, task
+ * intent classification) is covered by one instrumentation point instead of
+ * each call site remembering to report it. Never receives the judged state,
+ * questions, or answers — only the numbers.
+ */
+export function recordJevOutcome(report: JevOutcomeReport): void {
+  const attributes = metricAttributes({ caller: report.caller, status: report.status });
+  recordCounter("agent.jev.calls", 1, attributes);
+  if (report.costUsd !== undefined) {
+    recordDistribution("agent.jev.cost", report.costUsd, { attributes });
+  }
+  if (report.durationMs !== undefined) {
+    recordDistribution("agent.jev.duration", report.durationMs, {
+      unit: "millisecond",
+      attributes,
+    });
+  }
+  addLifecycleEvent("agent.jev.completed", {
+    caller: report.caller,
+    status: report.status,
+    error_type: report.errorType,
+    input_tokens: report.inputTokens,
+    output_tokens: report.outputTokens,
+    cost_usd: report.costUsd,
+    duration_ms: report.durationMs,
   });
 }

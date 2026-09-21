@@ -109,6 +109,7 @@ export function createJevTool(): AgentTool<typeof jevSchema> {
       try {
         result = await evaluateWithJev(args.state as JevEntry, questions, {
           abortSignal: signal,
+          caller: "jev_tool",
         });
       } catch (error) {
         if (error instanceof JevNotConfiguredError) {

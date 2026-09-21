@@ -525,7 +525,7 @@ export function createJevBrowserTool(): AgentTool<typeof jevBrowserSchema> {
               history: JSON.parse(JSON.stringify(history.slice(-5))) as JevEntry,
             },
             questions,
-            { abortSignal: signal },
+            { abortSignal: signal, caller: "jev_browser" },
           );
           const operationAnswer = result.answers.operation;
           const operation =

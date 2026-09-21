@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+const recordJevOutcomeMock = vi.hoisted(() => vi.fn());
+vi.mock("../observability/index.js", () => ({ recordJevOutcome: recordJevOutcomeMock }));
+
 import {
   JEV_MODEL_ID,
   JevNotConfiguredError,
@@ -20,6 +24,7 @@ describe("evaluateWithJev", () => {
 
   beforeEach(() => {
     fetchMock.mockReset();
+    recordJevOutcomeMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
   });
 
@@ -33,7 +38,11 @@ describe("evaluateWithJev", () => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.MIKAN_OPENROUTER_API_KEY;
     await expect(
-      evaluateWithJev("state", { q: { type: "boolean", instructions: "is it?" } }),
+      evaluateWithJev(
+        "state",
+        { q: { type: "boolean", instructions: "is it?" } },
+        { caller: "jev_tool" },
+      ),
     ).rejects.toThrow(JevNotConfiguredError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -49,7 +58,7 @@ describe("evaluateWithJev", () => {
     );
 
     const questions = { q: { type: "boolean" as const, instructions: "is it urgent?" } };
-    const result = await evaluateWithJev("a support ticket", questions);
+    const result = await evaluateWithJev("a support ticket", questions, { caller: "jev_tool" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://openrouter.ai/api/alpha/decisions",
@@ -68,6 +77,18 @@ describe("evaluateWithJev", () => {
     });
     expect(result.answers.q).toEqual({ type: "boolean", probability: 0.9 });
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 2, cost: 0.0001 });
+    // Regression: Jev spend was invisible to Sentry/OTel until evaluateWithJev
+    // itself reported it — covering every call site (the jev tool, jev_browser,
+    // Slack auto-reply, task intent) from one instrumentation point.
+    expect(recordJevOutcomeMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        caller: "jev_tool",
+        status: "ok",
+        inputTokens: 10,
+        outputTokens: 2,
+        costUsd: 0.0001,
+      }),
+    );
   });
 
   test("passes choice and score questions through and translates answers", async () => {
@@ -82,18 +103,22 @@ describe("evaluateWithJev", () => {
       }),
     );
 
-    const result = await evaluateWithJev("state", {
-      department: {
-        type: "choice",
-        instructions: "which team?",
-        criteria: { billing: "Payments", technical: "Bugs" },
+    const result = await evaluateWithJev(
+      "state",
+      {
+        department: {
+          type: "choice",
+          instructions: "which team?",
+          criteria: { billing: "Payments", technical: "Bugs" },
+        },
+        frustration: {
+          type: "score",
+          instructions: "rate it",
+          criteria: ["Calm", "Frustrated", "Very angry"],
+        },
       },
-      frustration: {
-        type: "score",
-        instructions: "rate it",
-        criteria: ["Calm", "Frustrated", "Very angry"],
-      },
-    });
+      { caller: "jev_tool" },
+    );
 
     expect(result.answers.department).toEqual({
       type: "choice",
@@ -116,7 +141,7 @@ describe("evaluateWithJev", () => {
     await evaluateWithJev(
       "state",
       { q: { type: "boolean", instructions: "is it?" } },
-      { model: "~typesafe/jev-preview" },
+      { model: "~typesafe/jev-preview", caller: "jev_tool" },
     );
 
     const call = fetchMock.mock.calls[0] as [string, { body: string }];
@@ -130,7 +155,29 @@ describe("evaluateWithJev", () => {
     );
 
     await expect(
-      evaluateWithJev("state", { q: { type: "boolean", instructions: "is it?" } }),
+      evaluateWithJev(
+        "state",
+        { q: { type: "boolean", instructions: "is it?" } },
+        { caller: "jev_tool" },
+      ),
     ).rejects.toThrow(JevRequestError);
+    expect(recordJevOutcomeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: "jev_tool", status: "error" }),
+    );
+  });
+
+  test("reports an error outcome when the API key is missing, since a request was still attempted", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.MIKAN_OPENROUTER_API_KEY;
+    await expect(
+      evaluateWithJev(
+        "state",
+        { q: { type: "boolean", instructions: "is it?" } },
+        { caller: "jev_tool" },
+      ),
+    ).rejects.toThrow(JevNotConfiguredError);
+    expect(recordJevOutcomeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: "jev_tool", status: "error" }),
+    );
   });
 });

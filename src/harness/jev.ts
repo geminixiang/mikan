@@ -36,6 +36,7 @@ import {
 } from "@geminixiang/jev";
 import type { AuthContext } from "@earendil-works/pi-ai";
 import { readEnv } from "../env-manifest.js";
+import { recordJevOutcome, type JevCaller } from "../observability/index.js";
 
 /** The current public Jev model id on OpenRouter. */
 export const JEV_MODEL_ID = "~typesafe/jev-latest";
@@ -116,6 +117,14 @@ export interface EvaluateWithJevOptions {
   model?: string;
   abortSignal?: AbortSignal;
   headers?: Record<string, string>;
+  /**
+   * Which call site is asking, so Jev spend is attributable in Sentry/OTel
+   * (`agent.jev.cost`, tagged `caller`) without any judged content leaving
+   * this function. Required rather than defaulted so a new call site must
+   * consciously pick an attribution instead of spend silently landing in a
+   * generic bucket.
+   */
+  caller: JevCaller;
 }
 
 // ── @geminixiang/jev wiring ──────────────────────────────────────────────
@@ -203,7 +212,7 @@ function fromGeminixiangAnswer(
 export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
   state: JevEntry,
   questions: QUESTIONS,
-  options: EvaluateWithJevOptions = {},
+  options: EvaluateWithJevOptions,
 ): Promise<JevResult<QUESTIONS>> {
   const catalogModel = models().getModel("openrouter", "jev-latest");
   if (!catalogModel) throw new JevNotConfiguredError();
@@ -217,6 +226,7 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
     wireQuestions[id] = toGeminixiangQuestion(question);
   }
 
+  const startedAt = Date.now();
   let result;
   try {
     result = await models().evaluate(
@@ -228,6 +238,12 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
       },
     );
   } catch (error) {
+    recordJevOutcome({
+      caller: options.caller,
+      status: "error",
+      errorType: error instanceof Error ? error.name : "Error",
+      durationMs: Date.now() - startedAt,
+    });
     if (error instanceof JevAuthError || error instanceof JevConfigError) {
       throw new JevNotConfiguredError();
     }
@@ -243,6 +259,14 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
     }
     throw error;
   }
+  recordJevOutcome({
+    caller: options.caller,
+    status: "ok",
+    inputTokens: result.usage.input,
+    outputTokens: result.usage.output,
+    costUsd: result.usage.cost.total,
+    durationMs: Date.now() - startedAt,
+  });
 
   const answers = {} as { [ID in keyof QUESTIONS]: JevAnswer<QUESTIONS[ID]> };
   for (const id of Object.keys(questions)) {
