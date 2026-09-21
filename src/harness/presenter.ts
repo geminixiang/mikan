@@ -205,9 +205,14 @@ export function isEventTriggerAttribution(triggerAttribution: string | undefined
 function extractToolLabel(toolName: string, args: unknown): string {
   const label = (args as { label?: unknown } | undefined)?.label;
   const text = typeof label === "string" ? label.trim() || toolName : toolName;
-  // Jev judgments are calibrated probabilities, not the model's own guess;
-  // name the tool so the user can tell which steps came from it.
-  return toolName === "jev" ? `jev · ${text}` : text;
+  // Jev judgments are calibrated probabilities, not the model's own guess,
+  // and jev_browser drives a real external browser; name the tool so the
+  // user can tell which steps came from either. Guard against doubling the
+  // name when no real label was supplied and text fell back to toolName.
+  if ((toolName === "jev" || toolName === "jev_browser") && text !== toolName) {
+    return `${toolName} · ${text}`;
+  }
+  return text;
 }
 
 /** Non-subagent tool activity lines; subagent calls render as the dashboard. */

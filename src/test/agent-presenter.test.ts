@@ -209,6 +209,52 @@ describe("presenter event routing", () => {
     ]);
   });
 
+  test("prefixes jev and jev_browser progress labels so users can tell which steps came from them", async () => {
+    const { emit, runState } = attachPresenter();
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-jev",
+      toolName: "jev",
+      args: { label: "Classify urgency" },
+    });
+    expect(runState.toolProgress.get("tool-jev")).toEqual({
+      label: "jev · Classify urgency",
+      status: "running",
+    });
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-jev-browser",
+      toolName: "jev_browser",
+      args: { label: "Detect GliaStudios player" },
+    });
+    expect(runState.toolProgress.get("tool-jev-browser")).toEqual({
+      label: "jev_browser · Detect GliaStudios player",
+      status: "running",
+    });
+  });
+
+  test("does not double the tool name when jev_browser is called without a label", async () => {
+    // Regression: jev_browser's schema originally had no label parameter,
+    // so a call without one fell back to the raw tool name for both the
+    // prefix and the text, rendering the doubled "jev_browser · jev_browser"
+    // live on Slack. label is now required in the schema, but the presenter
+    // must not double the name even if args ever arrive without one.
+    const { emit, runState } = attachPresenter();
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-jev-browser-nolabel",
+      toolName: "jev_browser",
+      args: {},
+    });
+    expect(runState.toolProgress.get("tool-jev-browser-nolabel")).toEqual({
+      label: "jev_browser",
+      status: "running",
+    });
+  });
+
   test("retains completed progress in start order while parallel tools settle out of order", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
     try {

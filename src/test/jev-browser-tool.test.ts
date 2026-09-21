@@ -180,7 +180,7 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     const result = await tool.execute(
       "call-1",
-      { url: "https://example.com", goal: "Find the page's main heading text." },
+      { label: "test", url: "https://example.com", goal: "Find the page's main heading text." },
       undefined,
     );
 
@@ -201,7 +201,7 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     const result = await tool.execute(
       "call-1",
-      { url: "https://example.com", goal: "anything" },
+      { label: "test", url: "https://example.com", goal: "anything" },
       undefined,
     );
 
@@ -241,6 +241,7 @@ describe("jev_browser tool", () => {
     const result = await tool.execute(
       "call-1",
       {
+        label: "test",
         url: "https://example.com",
         commands: [["network", "har", "start"]],
         goal: "Find the page's main heading text.",
@@ -278,7 +279,7 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     const result = await tool.execute(
       "call-1",
-      { url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
+      { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
       undefined,
     );
 
@@ -314,6 +315,7 @@ describe("jev_browser tool", () => {
     const result = await tool.execute(
       "call-1",
       {
+        label: "test",
         url: "https://example.com",
         session: "my-recording",
         commands: [["record", "start", "/tmp/demo.webm"]],
@@ -336,7 +338,7 @@ describe("jev_browser tool", () => {
     ]);
     const result2 = await tool.execute(
       "call-2",
-      { session: "my-recording", commands: [["record", "stop"]], close: true },
+      { label: "test", session: "my-recording", commands: [["record", "stop"]], close: true },
       undefined,
     );
     const openCall = execFileMock.mock.calls.find((call) => (call[1] as string[]).includes("open"));
@@ -361,7 +363,7 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     await tool.execute(
       "call-1",
-      { url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
+      { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
       undefined,
     );
 
@@ -380,7 +382,12 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     await tool.execute(
       "call-1",
-      { url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]], close: false },
+      {
+        label: "test",
+        url: "https://example.com",
+        commands: [["screenshot", "/tmp/shot.png"]],
+        close: false,
+      },
       undefined,
     );
 
@@ -406,6 +413,7 @@ describe("jev_browser tool", () => {
     const result = await tool.execute(
       "call-1",
       {
+        label: "test",
         url: "https://example.com",
         session: "my-recording",
         commands: [["record", "start", "/tmp/demo.webm"]],
@@ -427,7 +435,7 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool();
     const result = await tool.execute(
       "call-2",
-      { session: "my-recording", commands: [["record", "stop"]] },
+      { label: "test", session: "my-recording", commands: [["record", "stop"]] },
       undefined,
     );
 
@@ -439,17 +447,17 @@ describe("jev_browser tool", () => {
 
   test("rejects a call with neither url nor session", async () => {
     const tool = createJevBrowserTool();
-    await expect(tool.execute("call-1", { goal: "anything" }, undefined)).rejects.toThrow(
-      /Provide url .* or session/,
-    );
+    await expect(
+      tool.execute("call-1", { label: "test", goal: "anything" }, undefined),
+    ).rejects.toThrow(/Provide url .* or session/);
     expect(execFileMock).not.toHaveBeenCalled();
   });
 
   test("rejects a call with neither goal nor commands", async () => {
     const tool = createJevBrowserTool();
-    await expect(tool.execute("call-1", { url: "https://example.com" }, undefined)).rejects.toThrow(
-      /Provide goal, commands, or both/,
-    );
+    await expect(
+      tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
+    ).rejects.toThrow(/Provide goal, commands, or both/);
     expect(execFileMock).not.toHaveBeenCalled();
   });
 });

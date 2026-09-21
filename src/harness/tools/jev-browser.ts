@@ -94,6 +94,7 @@ const MAX_REFS = 200;
 const TEXT_MODEL = "openai/gpt-4o-mini";
 
 const jevBrowserSchema = Type.Object({
+  label: Type.String({ description: "Brief description of this action (shown to user)" }),
   goal: Type.Optional(
     Type.String({
       description:
