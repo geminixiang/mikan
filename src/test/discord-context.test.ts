@@ -3,6 +3,7 @@ import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 import type { DiscordEvent } from "../adapters/discord/bot.js";
 import { createDiscordAdapters } from "../adapters/discord/context.js";
 import { DISCORD_V2_TEXT_LIMIT } from "../adapters/discord/components.js";
+import { createOfficeAddress } from "../office/index.js";
 
 function makeDiscordMessagingBot(
   overrides: Partial<DiscordMessagingBot> = {},
@@ -30,7 +31,7 @@ function makeDiscordMessagingBot(
 function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
   return {
     type: "mention",
-    conversationId: "CH001",
+    address: createOfficeAddress("discord", "CH001"),
     conversationKind: "shared",
     ts: "MSG001",
     user: "U001",

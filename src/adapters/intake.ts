@@ -1,7 +1,4 @@
-import {
-  assertSessionKeyBelongsToConversation,
-  assertConversationId,
-} from "../sessions/session-key.js";
+import { assertSessionKeyBelongsToConversation } from "../sessions/session-key.js";
 import type { ConversationEvent } from "./index.js";
 import { formatAlreadyWorking, formatNothingRunning } from "./messages.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
@@ -14,12 +11,9 @@ export function matchMagicWord(text: string): "stop" | null {
 export async function processMessageIntake<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<MessageIntakeOutcome> {
-  assertConversationId(options.eventBase.conversationId);
+  const conversationId = options.eventBase.address.conversationId;
   if (options.eventBase.sessionKey !== undefined) {
-    assertSessionKeyBelongsToConversation(
-      options.eventBase.sessionKey,
-      options.eventBase.conversationId,
-    );
+    assertSessionKeyBelongsToConversation(options.eventBase.sessionKey, conversationId);
   }
   if (matchMagicWord(options.magicWord.text ?? options.eventBase.text) === "stop") {
     options.log?.({ ...options.logEntryBase, attachments: [] });
@@ -39,12 +33,9 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
   }
 
   async function rejectedWhileBusy(): Promise<boolean> {
-    const sessionKey = options.eventBase.sessionKey ?? options.eventBase.conversationId;
+    const sessionKey = options.eventBase.sessionKey ?? conversationId;
     if (!options.handler.isRunning(options.eventBase.address, sessionKey)) return false;
-    await options.bot.postMessage(
-      options.eventBase.conversationId,
-      formatAlreadyWorking(options.bot, "/stop"),
-    );
+    await options.bot.postMessage(conversationId, formatAlreadyWorking(options.bot, "/stop"));
     return true;
   }
 
@@ -73,7 +64,7 @@ async function handleStopMagicWord<TEvent extends ConversationEvent>(
 ): Promise<void> {
   const { handler, bot, eventBase, magicWord } = options;
   const address = eventBase.address;
-  const conversationId = eventBase.conversationId;
+  const conversationId = address.conversationId;
   const sessionKey = eventBase.sessionKey;
 
   let target = resolveStopTarget({ handler, address, sessionKey });

@@ -17,7 +17,7 @@ export function createDiscordAdapters(
   event: DiscordEvent,
   bot: DiscordMessagingBot,
 ): ConversationContext {
-  const conversationId = event.conversationId;
+  const conversationId = event.address.conversationId;
   const channelId = conversationId;
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
   const replyTargetId = isDiscordMessageReference(event.ts) ? event.ts : undefined;

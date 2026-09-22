@@ -10,7 +10,7 @@ export function createGithubAdapters(
   event: GithubEvent,
   bot: GithubMessagingBot,
 ): ConversationContext {
-  const conversationId = event.conversationId;
+  const conversationId = event.address.conversationId;
   const ref = parseGithubConversationId(conversationId);
 
   const message = createConversationMessage({

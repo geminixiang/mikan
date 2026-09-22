@@ -224,7 +224,7 @@ describe("SlackMessagingBot slash commands", () => {
     const [event, calledMessagingBot, context] = vi.mocked(handler.handleEvent).mock.calls[0];
     expect(event).toMatchObject({
       type: "private_command",
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       conversationKind: "shared",
       user: "U123",
       text: "/pi-login github",
@@ -266,7 +266,7 @@ describe("SlackMessagingBot slash commands", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "D123",
+      address: { conversationId: "D123" },
       conversationKind: "direct",
       sessionKey: "D123",
       text: "/pi-new",
@@ -313,7 +313,7 @@ describe("SlackMessagingBot slash commands", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       type: "mention",
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       conversationKind: "shared",
       sessionKey: "C123",
       text: "/pi-sandbox boost",
@@ -361,7 +361,7 @@ describe("SlackMessagingBot slash commands", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       type: "mention",
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       conversationKind: "shared",
       sessionKey: "C123",
       text: "/pi-session",
@@ -406,7 +406,7 @@ describe("SlackMessagingBot slash commands", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       conversationKind: "shared",
       sessionKey: "C123:1000.0001",
       thread_ts: "1000.0001",
@@ -502,7 +502,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       sessionKey: "C123",
       text: "second request",
     });
@@ -634,7 +634,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       sessionKey: "C123",
       text: "try the deployment again",
     });
@@ -707,7 +707,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       text: "mikan can you redeploy the service",
     });
     expect(evaluateWithJevMock).toHaveBeenCalledWith(
@@ -797,7 +797,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(ack).toHaveBeenCalled();
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C123",
+      address: { conversationId: "C123" },
       sessionKey: "C123:1000.0001",
       text: "<@U999> then roll it back please <@UNKNOWN>",
     });
@@ -1159,7 +1159,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       handler.handleEvent = vi.fn(async (event, _calledMessagingBot, context) => {
         try {
           expect(event).toMatchObject({
-            conversationId: "C123",
+            address: { conversationId: "C123" },
             sessionKey: "C123:2000.0001",
             ts: "event:deploy-reminder",
           });
@@ -1186,7 +1186,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       bot.enqueueEvent({
         type: "mention",
         address: createOfficeAddress("slack", "C123"),
-        conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
         user: "EVENT",
@@ -1250,7 +1249,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       bot.enqueueEvent({
         type: "mention",
         address: createOfficeAddress("slack", "C123"),
-        conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
         user: "EVENT",
@@ -1283,7 +1281,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     handler.handleEvent = vi.fn(async (event, _calledMessagingBot, context) => {
       try {
         expect(event).toMatchObject({
-          conversationId: "C123",
+          address: { conversationId: "C123" },
           sessionKey: "C123:2000.0001",
         });
         expect(context.message.sessionKey).toBe("C123:2000.0001");
@@ -1308,7 +1306,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       bot.enqueueEvent({
         type: "mention",
         address: createOfficeAddress("slack", "C123"),
-        conversationId: "C123",
         conversationKind: "shared",
         ts: "event:deploy-reminder",
         user: "EVENT",
@@ -1612,7 +1609,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "D123",
+      address: { conversationId: "D123" },
       sessionKey: "D123",
       text: "second request",
     });
@@ -1732,7 +1729,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "D999",
+      address: { conversationId: "D999" },
       conversationKind: "direct",
       sessionKey: "D999",
       text: "dm without channel_type",
@@ -1807,7 +1804,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "D999",
+      address: { conversationId: "D999" },
       user: "UHUMAN",
       text: "dm posted with a user token",
     });
@@ -1944,7 +1941,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "D123",
+      address: { conversationId: "D123" },
       sessionKey: "D123:2000.0001",
       text: "thread request",
       thread_ts: "2000.0001",

@@ -65,7 +65,6 @@ export type PlatformTrustModel = "membership" | "open-trigger";
 export interface ConversationMessage {
   id: string;
   address: OfficeAddress;
-  conversationId?: string;
   sessionKey: string;
   conversationKind: ConversationKind;
   userId: string;
@@ -159,7 +158,6 @@ export interface MessagingInfo {
 export interface ConversationEvent {
   type: string;
   address: OfficeAddress;
-  conversationId: string;
   vaultConversationId?: string;
   conversationKind: ConversationKind;
   ts: string;

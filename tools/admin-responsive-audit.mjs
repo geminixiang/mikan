@@ -115,7 +115,6 @@ for (const vp of WIDTHS) {
           });
         }
       });
-      // de-dup nested offenders: keep the outermost few
       const uniq = [];
       for (const o of offenders) {
         if (!uniq.some(u => u.tag === o.tag && u.cls === o.cls && Math.abs(u.right - o.right) < 3)) uniq.push(o);

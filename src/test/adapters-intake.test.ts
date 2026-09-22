@@ -16,7 +16,6 @@ function makeEvent(overrides: Partial<ConversationEvent> = {}): ConversationEven
   return {
     type: "message",
     address,
-    conversationId: "C1",
     conversationKind: "shared",
     ts: "M1",
     user: "U1",
@@ -74,24 +73,11 @@ describe("processMessageIntake identity", () => {
     await expect(
       processMessageIntake(
         makeOptions({
-          eventBase: makeEvent({ conversationId: "C1", sessionKey: "C2:thread-1" }),
+          eventBase: makeEvent({ sessionKey: "C2:thread-1" }),
           enqueue,
         }),
       ),
     ).rejects.toThrow(/does not belong/);
-    expect(enqueue).not.toHaveBeenCalled();
-  });
-
-  test("rejects a path-dangerous conversation identity before queueing", async () => {
-    const enqueue = vi.fn();
-    await expect(
-      processMessageIntake(
-        makeOptions({
-          eventBase: makeEvent({ conversationId: "../other" }),
-          enqueue,
-        }),
-      ),
-    ).rejects.toThrow(/path separators/);
     expect(enqueue).not.toHaveBeenCalled();
   });
 });

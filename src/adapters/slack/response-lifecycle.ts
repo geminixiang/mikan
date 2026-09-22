@@ -296,7 +296,7 @@ export function createSlackResponseContext({
     formatToolResult: formatSlackToolResult,
     responseErrorContext: (responseId) => ({
       platform: "slack",
-      conversationId: event.conversationId,
+      conversationId: event.address.conversationId,
       channelId: event.channel,
       messageId: message.id,
       sessionKey: message.sessionKey,

@@ -278,7 +278,7 @@ describe("GithubMessagingBot", () => {
       expect.any(String),
     );
     const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
-    expect(event.conversationId).toBe(CONVERSATION_ID);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
   });
 
   test("mentioned comment triggers a run with the mention stripped", async () => {
@@ -293,7 +293,7 @@ describe("GithubMessagingBot", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
-    expect(event.conversationId).toBe(CONVERSATION_ID);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
     expect(event.sessionKey).toBe(CONVERSATION_ID);
     expect(event.conversationKind).toBe("shared");
     expect(event.ts).toBe("9001");
@@ -848,7 +848,7 @@ describe("GithubMessagingBot", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
-    expect(event.conversationId).toBe(CONVERSATION_ID);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
     expect(event.ts).toBe("rc-8001");
     expect(event.text).toContain("[PR review comment rc-8001 on src/widget.ts:42]");
     expect(event.text).toContain("```diff");

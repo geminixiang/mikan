@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
 import type { TelegramEvent } from "../adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
+import { createOfficeAddress } from "../office/index.js";
 
 function makeTelegramMessagingBot(
   overrides: Partial<TelegramMessagingBot> = {},
@@ -27,7 +28,7 @@ function makeTelegramMessagingBot(
 function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
   return {
     type: "message",
-    conversationId: "123456",
+    address: createOfficeAddress("telegram", "123456"),
     conversationKind: "direct",
     ts: "1001",
     user: "U001",

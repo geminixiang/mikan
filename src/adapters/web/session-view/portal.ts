@@ -1002,12 +1002,12 @@ const sessionViewStyles = `
   }
 
   body {
-    /* Extra bottom padding for the fixed composer */
+
     padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
     overflow-x: hidden;
   }
 
-  /* ── Session-specific page-head extras ─────────────────────────────── */
+
 
   .session-side {
     display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
@@ -1051,7 +1051,7 @@ const sessionViewStyles = `
     color: var(--text); padding: 0;
   }
 
-  /* ── Timeline shell ───────────────────────────────────────────────────── */
+
 
   .thread-links {
     display: flex;
@@ -1265,7 +1265,7 @@ const sessionViewStyles = `
     color: #b91c1c;
   }
 
-  /* ── Message rows ─────────────────────────────────────────────────────── */
+
 
   .msg-row {
     display: flex;
@@ -1275,7 +1275,7 @@ const sessionViewStyles = `
     min-width: 0;
   }
 
-  /* ── User messages ────────────────────────────────────────────────────── */
+
 
   .msg-user {
     justify-content: flex-end;
@@ -1347,7 +1347,7 @@ const sessionViewStyles = `
     text-align: right;
   }
 
-  /* ── Avatars ──────────────────────────────────────────────────────────── */
+
 
   .msg-avatar {
     flex: 0 0 28px;
@@ -1376,7 +1376,7 @@ const sessionViewStyles = `
     margin-bottom: 2px;
   }
 
-  /* ── Assistant messages ───────────────────────────────────────────────── */
+
 
   .msg-assistant {
     align-items: flex-end;
@@ -1413,7 +1413,7 @@ const sessionViewStyles = `
     color: var(--subtle);
   }
 
-  /* ── Tool blocks ──────────────────────────────────────────────────────── */
+
 
   .tool-block {
     max-width: 92%;
@@ -1478,7 +1478,7 @@ const sessionViewStyles = `
   .tool-output.tone-ok { color: var(--tool-ok); }
   .tool-output.tone-err { color: var(--tool-err); }
 
-  /* ── Markdown blocks ──────────────────────────────────────────────────── */
+
 
   .markdown-body {
     font-family: 'DM Sans', system-ui, sans-serif;
@@ -1615,7 +1615,7 @@ const sessionViewStyles = `
     border-color: rgba(0, 0, 0, 0.08);
   }
 
-  /* ── System events ────────────────────────────────────────────────────── */
+
 
   .system-event {
     display: flex;
@@ -1649,7 +1649,7 @@ const sessionViewStyles = `
     font-style: normal;
   }
 
-  /* ── Status page ──────────────────────────────────────────────────────── */
+
 
   .stack > * + * { margin-top: 14px; }
 
@@ -1667,7 +1667,7 @@ const sessionViewStyles = `
     border: 1px solid rgba(185, 28, 28, 0.12);
   }
 
-  /* ── Composer ─────────────────────────────────────────────────────────── */
+
 
   .composer-card {
     position: fixed;
@@ -1799,7 +1799,7 @@ const sessionViewStyles = `
     opacity: 1;
   }
 
-  /* ── Responsive ───────────────────────────────────────────────────────── */
+
 
   @media (max-width: 900px) {
     .composer-card {

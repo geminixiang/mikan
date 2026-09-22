@@ -6,12 +6,13 @@ import {
   planSlackEventAnchorRun,
   resolveSlackResponseRootTs,
 } from "../adapters/slack/session.js";
+import { createOfficeAddress } from "../office/index.js";
 
 describe("Slack session planning", () => {
   test("top-level user turns use the persistent channel session", () => {
     expect(
       planSlackAdapterSession({
-        conversationId: "C123",
+        address: createOfficeAddress("slack", "C123"),
         ts: "1000.0001",
       }),
     ).toMatchObject({
@@ -24,7 +25,7 @@ describe("Slack session planning", () => {
   test("thread turns use the thread root as the thread session key", () => {
     expect(
       planSlackAdapterSession({
-        conversationId: "C123",
+        address: createOfficeAddress("slack", "C123"),
         ts: "1000.0002",
         thread_ts: "1000.0001",
       }),
@@ -39,7 +40,7 @@ describe("Slack session planning", () => {
     expect(
       planSlackAdapterSession(
         {
-          conversationId: "C123",
+          address: createOfficeAddress("slack", "C123"),
           ts: "event:deploy-reminder",
           sessionKey: "C123:2000.0001",
         },
@@ -67,7 +68,7 @@ describe("Slack session planning", () => {
   test("event anchor planning binds top-level events to the Slack anchor", () => {
     const planned = planSlackEventAnchorRun(
       {
-        conversationId: "C123",
+        address: createOfficeAddress("slack", "C123"),
         ts: "event:deploy-reminder",
       },
       "2000.0001",
@@ -79,7 +80,7 @@ describe("Slack session planning", () => {
 
   test("event anchor planning leaves explicit thread events alone", () => {
     const event = {
-      conversationId: "C123",
+      address: createOfficeAddress("slack", "C123"),
       ts: "event:deploy-reminder",
       thread_ts: "1000.0001",
     };

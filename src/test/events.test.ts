@@ -92,7 +92,10 @@ describe("EventScheduler", () => {
       text: "Check inbox",
     });
     expect(enqueueEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationKind: "direct", conversationId: "DM123" }),
+      expect.objectContaining({
+        address: expect.objectContaining({ conversationId: "DM123" }),
+        conversationKind: "direct",
+      }),
     );
     scheduler.stop();
   });

@@ -220,7 +220,7 @@ const portalShellStyles = `
 
   body {
     min-height: 100vh;
-    padding: 28px 24px 60px;
+    padding: 28px 24px 60px 96px;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -234,18 +234,14 @@ const portalShellStyles = `
   }
 
   .shell {
-    /* body is a centered flex column, so width 100% plus margin-left
-       makes the margin box wider than the container and shifts the shell
-       off-centre. Subtract the gutter instead. */
-    width: calc(100% - 72px);
+    width: 100%;
     max-width: 960px;
-    margin-left: 72px;
     display: flex;
     flex-direction: column;
     gap: 18px;
   }
 
-  /* ── Topbar ─────────────────────────────────────────────────────────── */
+
 
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -279,7 +275,7 @@ const portalShellStyles = `
   .conv-inline-select:hover { border-color: rgba(0,0,0,0.18); }
   .conv-inline-select:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
 
-  /* ── Floating icon nav ──────────────────────────────────────────────── */
+
 
   .floating-view-nav {
     position: fixed;
@@ -319,7 +315,7 @@ const portalShellStyles = `
   .view-nav-btn.disabled:hover { background: transparent; color: var(--muted); }
   .view-nav-btn svg { display: block; }
 
-  /* Tooltip */
+
   .view-nav-btn::after {
     content: attr(data-tooltip);
     position: absolute;
@@ -359,7 +355,7 @@ const portalShellStyles = `
     opacity: 1;
   }
 
-  /* ── Generic page-head ───────────────────────────────────────────────── */
+
 
   .page-head {
     display: flex; justify-content: space-between; align-items: flex-start; gap: 14px;
@@ -376,7 +372,7 @@ const portalShellStyles = `
     letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px;
   }
 
-  /* ── Cards ──────────────────────────────────────────────────────────── */
+
 
   .card {
     padding: 24px 28px;
@@ -429,7 +425,7 @@ const portalShellStyles = `
   .inline-result.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border); }
 
   @media (max-width: 900px) {
-    .shell { width: 100%; margin-left: 0; }
+    body { padding-left: 24px; }
     .floating-view-nav {
       left: 50%; right: auto; top: auto; bottom: 18px;
       transform: translateX(-50%); flex-direction: row;

@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import type { SlackEvent } from "../adapters/slack/bot.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
+import { createOfficeAddress } from "../office/index.js";
 
 function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): SlackMessagingBot {
   return {
@@ -29,12 +30,12 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
 }
 
 function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {
-  const { channel: overrideChannel, conversationId: overrideConversationId, ...rest } = overrides;
+  const { channel: overrideChannel, ...rest } = overrides;
   const channel = overrideChannel ?? "C001";
   return {
     type: "mention",
+    address: createOfficeAddress("slack", channel),
     channel,
-    conversationId: overrideConversationId ?? channel,
     conversationKind: channel.startsWith("D") ? "direct" : "shared",
     ts: "1000.0001",
     user: "U001",

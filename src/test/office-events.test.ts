@@ -166,7 +166,7 @@ describe("EventScheduler", () => {
 
     expect(enqueueEvent).toHaveBeenCalledTimes(2);
     const targets = enqueueEvent.mock.calls
-      .map(([event]) => (event as ConversationEvent).conversationId)
+      .map(([event]) => (event as ConversationEvent).address.conversationId)
       .toSorted();
     expect(targets).toEqual(["C1", "C2"]);
     expect(readdirSync(join(c1.stateDir, "events"))).toEqual([]);

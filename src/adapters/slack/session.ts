@@ -5,10 +5,11 @@ import {
   threadSuffixOf,
 } from "../../sessions/session-key.js";
 export type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
+import type { OfficeAddress } from "../../types.js";
 import type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 
 interface SlackSessionEventLike {
-  conversationId: string;
+  address: OfficeAddress;
   ts: string;
   thread_ts?: string;
   sessionKey?: string;
@@ -57,7 +58,7 @@ export function planSlackAdapterSession(
   options: { initialMessageTs?: string } = {},
 ): SlackAdapterSessionPlan {
   const sessionKey =
-    event.sessionKey ?? resolveSlackSessionKey(event.conversationId, event.thread_ts);
+    event.sessionKey ?? resolveSlackSessionKey(event.address.conversationId, event.thread_ts);
 
   return {
     sessionKey,
@@ -78,7 +79,7 @@ export function planSlackEventAnchorRun<T extends SlackSessionEventLike>(
   return {
     event: {
       ...event,
-      sessionKey: resolveSlackSessionKey(event.conversationId, anchorTs),
+      sessionKey: resolveSlackSessionKey(event.address.conversationId, anchorTs),
     },
     initialMessageTs: anchorTs,
   };

@@ -37,7 +37,11 @@ describe("office address", () => {
     });
 
     expect(event.address).toEqual(slack);
+    expect(event).not.toHaveProperty("conversationId");
+    expect(event).not.toHaveProperty("platform");
     expect(message.address).toEqual(slack);
+    expect(message).not.toHaveProperty("conversationId");
+    expect(message).not.toHaveProperty("platform");
     expect(() =>
       createConversationEvent({
         platform: "slack",

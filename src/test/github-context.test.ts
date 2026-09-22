@@ -3,11 +3,12 @@ import { GithubMessagingBot } from "../adapters/github/bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "../adapters/github/client.js";
 import { createGithubAdapters } from "../adapters/github/context.js";
 import type { GithubEvent } from "../adapters/github/types.js";
+import { createOfficeAddress } from "../office/index.js";
 
 function makeEvent(overrides: Partial<GithubEvent> = {}): GithubEvent {
   return {
     type: "message",
-    conversationId: "GH_octo_widgets_5",
+    address: createOfficeAddress("github", "GH_octo_widgets_5"),
     conversationKind: "shared",
     ts: "9001",
     user: "alice",

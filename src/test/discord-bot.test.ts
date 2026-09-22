@@ -214,7 +214,7 @@ describe("DiscordMessagingBot message routing", () => {
       expect(handler.handleEvent).toHaveBeenCalled();
     });
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C1",
+      address: { conversationId: "C1" },
       sessionKey: "C1:THREAD1",
       thread_ts: "THREAD1",
       text: "thread message",
@@ -240,7 +240,7 @@ describe("DiscordMessagingBot message routing", () => {
       expect(handler.handleEvent).toHaveBeenCalled();
     });
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C1",
+      address: { conversationId: "C1" },
       sessionKey: "C1:M1",
       text: "reply without mention",
       thread_ts: "M1",
@@ -292,7 +292,7 @@ describe("DiscordMessagingBot message routing", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C1",
+      address: { conversationId: "C1" },
       sessionKey: "C1",
       text: "second request",
     });
@@ -380,7 +380,7 @@ describe("DiscordMessagingBot message routing", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       type: "dm",
-      conversationId: "C1",
+      address: { conversationId: "C1" },
       conversationKind: "shared",
       sessionKey: "C1",
       text: "/session",
@@ -418,7 +418,7 @@ describe("DiscordMessagingBot message routing", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "C1",
+      address: { conversationId: "C1" },
       sessionKey: "C1:THREAD1",
       thread_ts: "THREAD1",
       text: "/session",
@@ -449,7 +449,7 @@ describe("DiscordMessagingBot message routing", () => {
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      conversationId: "DM1",
+      address: { conversationId: "DM1" },
       conversationKind: "direct",
       sessionKey: "DM1",
       text: "/new",

@@ -1,16 +1,6 @@
-import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, test, vi } from "vitest";
-
-const source = readFileSync(new URL("../adapters/web/admin/portal.ts", import.meta.url), "utf8");
-const literal = source
-  .slice(
-    source.indexOf("const adminViewScript = `") + "const adminViewScript = ".length,
-    source.indexOf("function renderAdminPage"),
-  )
-  .trim()
-  .replace(/;$/, "");
-const script = runInNewContext(literal) as string;
+import { adminViewFunctionsScript } from "../adapters/web/admin/client-assets.js";
 
 function page() {
   const nodes = new Map<
@@ -50,7 +40,7 @@ function page() {
     fetch,
     window: { open: windowOpen },
   };
-  runInNewContext(script.slice(0, script.indexOf("    // ── Init")), context);
+  runInNewContext(adminViewFunctionsScript, context);
   return {
     get,
     fetch,

@@ -43,16 +43,30 @@ function resolveConversationAddress(input: ConversationIdentityInput): OfficeAdd
   return address;
 }
 
-export function createConversationEvent<
-  T extends Omit<ConversationEvent, "address" | "conversationId">,
->(input: T & ConversationIdentityInput): T & ConversationEvent {
+type CanonicalConversation<T, Shape> = Omit<T, keyof ConversationIdentityInput> & Shape;
+
+export function createConversationEvent<T extends Omit<ConversationEvent, "address">>(
+  input: T & ConversationIdentityInput,
+): CanonicalConversation<T, ConversationEvent> {
   const address = resolveConversationAddress(input);
-  return { ...input, address, conversationId: address.conversationId };
+  const {
+    platform: _platform,
+    conversationId: _conversationId,
+    address: _suppliedAddress,
+    ...event
+  } = input;
+  return { ...event, address } as CanonicalConversation<T, ConversationEvent>;
 }
 
-export function createConversationMessage<
-  T extends Omit<ConversationMessage, "address" | "conversationId">,
->(input: T & ConversationIdentityInput): T & ConversationMessage {
+export function createConversationMessage<T extends Omit<ConversationMessage, "address">>(
+  input: T & ConversationIdentityInput,
+): CanonicalConversation<T, ConversationMessage> {
   const address = resolveConversationAddress(input);
-  return { ...input, address, conversationId: address.conversationId };
+  const {
+    platform: _platform,
+    conversationId: _conversationId,
+    address: _suppliedAddress,
+    ...message
+  } = input;
+  return { ...message, address } as CanonicalConversation<T, ConversationMessage>;
 }

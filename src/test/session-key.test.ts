@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
-  assertConversationId,
+  assertSessionConversationId,
   assertSessionKeyBelongsToConversation,
   assertSessionSuffix,
   conversationIdOf,
@@ -9,6 +9,7 @@ import {
   makeThreadSessionKey,
   threadSuffixOf,
 } from "../sessions/session-key.js";
+import { createOfficeAddress } from "../office/index.js";
 
 describe("session-key grammar", () => {
   test("bare conversation keys round-trip", () => {
@@ -37,17 +38,21 @@ describe("session-key grammar", () => {
   });
 
   test("conversation ids containing ':' are rejected at derivation", () => {
-    expect(() => assertConversationId("bad:id")).toThrow(/must not contain/);
+    expect(() => assertSessionConversationId("bad:id")).toThrow(/must not contain/);
     expect(() => makeThreadSessionKey("bad:id", "1")).toThrow(/must not contain/);
     expect(() =>
-      deriveSessionKey({ conversationId: "bad:id", ts: "1", thread_ts: undefined }),
+      deriveSessionKey({
+        address: createOfficeAddress("slack", "bad:id"),
+        ts: "1",
+        thread_ts: undefined,
+      }),
     ).toThrow(/must not contain/);
   });
 
   test.each(["", ".", "..", "../other", "foo/bar", String.raw`foo\bar`, "bad\u0000id"])(
     "rejects path-dangerous conversation id %j",
     (conversationId) => {
-      expect(() => assertConversationId(conversationId)).toThrow();
+      expect(() => assertSessionConversationId(conversationId)).toThrow();
     },
   );
 
@@ -96,7 +101,12 @@ describe("session-key grammar", () => {
   describe("deriveSessionKey", () => {
     test("honors a matching platform-computed session key", () => {
       expect(
-        deriveSessionKey({ sessionKey: "C1", conversationId: "C1", ts: "9", thread_ts: "5" }),
+        deriveSessionKey({
+          address: createOfficeAddress("slack", "C1"),
+          sessionKey: "C1",
+          ts: "9",
+          thread_ts: "5",
+        }),
       ).toBe("C1");
     });
 
@@ -104,7 +114,7 @@ describe("session-key grammar", () => {
       expect(() =>
         deriveSessionKey({
           sessionKey: "C2:thread-1",
-          conversationId: "C1",
+          address: createOfficeAddress("slack", "C1"),
           ts: "9",
           thread_ts: "5",
         }),
@@ -112,11 +122,19 @@ describe("session-key grammar", () => {
     });
 
     test("falls back to the thread scope", () => {
-      expect(deriveSessionKey({ conversationId: "C1", ts: "9", thread_ts: "5" })).toBe("C1:5");
+      expect(
+        deriveSessionKey({
+          address: createOfficeAddress("slack", "C1"),
+          ts: "9",
+          thread_ts: "5",
+        }),
+      ).toBe("C1:5");
     });
 
     test("thread-starting messages scope to their own ts", () => {
-      expect(deriveSessionKey({ conversationId: "C1", ts: "9" })).toBe("C1:9");
+      expect(deriveSessionKey({ address: createOfficeAddress("slack", "C1"), ts: "9" })).toBe(
+        "C1:9",
+      );
     });
   });
 });

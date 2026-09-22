@@ -257,7 +257,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     { event, bot, context }: RunSessionOptions,
     sessionKey: string,
   ): boolean {
-    const { address, conversationId } = event;
+    const { address } = event;
+    const conversationId = address.conversationId;
     if (context.message.conversationKind !== "shared" || sessionKey !== conversationId)
       return false;
 
@@ -326,7 +327,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
   async runSession(options: RunSessionOptions, skipRotation = false): Promise<void> {
     const { event } = options;
-    const conversationId = event.conversationId;
+    const conversationId = event.address.conversationId;
     if (this.isShuttingDown) {
       log.logInfo(
         `[${conversationId}] Rejected event during shutdown: ${event.text.substring(0, 50)}`,
@@ -372,7 +373,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     return (
       !skipRotation &&
-      sessionKey === event.conversationId &&
+      sessionKey === event.address.conversationId &&
       this.scheduleSharedSessionRotation(options, sessionKey)
     );
   }
@@ -401,7 +402,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         severity: "error",
         platform: context.platform.name,
         context: {
-          conversationId: event.conversationId,
+          conversationId: event.address.conversationId,
           sessionKey,
           messageId: context.message.id,
           threadTs: context.message.threadTs,
@@ -417,7 +418,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionKey: string,
     state: ConversationState,
   ): Promise<void> {
-    const conversationId = event.conversationId;
+    const conversationId = event.address.conversationId;
     try {
       const result = await this.runWithInstrumentation(
         context,
@@ -471,7 +472,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       address: event.address,
       platformUserId: event.user,
       platformUserName: context.message.userName,
-      conversationId: event.conversationId,
+      conversationId: event.address.conversationId,
       vaultConversationId: event.vaultConversationId,
       sessionKey,
       commandText: event.text,

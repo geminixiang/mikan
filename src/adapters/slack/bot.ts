@@ -874,7 +874,7 @@ export class SlackMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
-    const conversationId = event.conversationId;
+    const conversationId = event.address.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
       log.logWarning(
@@ -1028,7 +1028,7 @@ export class SlackMessagingBot implements MessagingBot {
     addressed: boolean;
     magicWordAddressed?: boolean;
   }): Promise<void> {
-    const kind = this.channelKindFor(options.event.conversationId);
+    const kind = this.channelKindFor(options.event.address.conversationId);
     if (kind) {
       try {
         recordPlatformChannelKind(this.workspace.office(options.event.address), kind);
@@ -1591,7 +1591,7 @@ export class SlackMessagingBot implements MessagingBot {
         surface: "slack_auto_reply_jev",
         operation: "evaluate",
         severity: "warning",
-        context: { conversationId: event.conversationId },
+        context: { conversationId: event.address.conversationId },
       });
       return false;
     }

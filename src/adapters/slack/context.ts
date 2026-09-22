@@ -17,7 +17,7 @@ export function createSlackAdapters(
 
   const message = createConversationMessage({
     platform: "slack",
-    conversationId: event.conversationId,
+    conversationId: event.address.conversationId,
     address: event.address,
     id: event.ts,
     sessionKey: sessionPlan.sessionKey,

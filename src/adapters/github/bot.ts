@@ -300,7 +300,7 @@ export class GithubMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
-    const conversationId = event.conversationId;
+    const conversationId = event.address.conversationId;
     const queue = this.getQueue(conversationId);
     if (queue.size() >= 5) {
       log.logWarning(

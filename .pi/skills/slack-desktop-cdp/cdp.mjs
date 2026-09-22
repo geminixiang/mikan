@@ -93,10 +93,6 @@ async function sendMessage(session, text) {
     const editors = [...document.querySelectorAll(".ql-editor[contenteditable=true]")]
       .filter((el) => el.offsetParent !== null);
     if (!editors.length) return "no composer";
-    // An open thread pane brings its own composer, and it is often the only
-    // visible one. Typing there sends into the thread rather than the channel,
-    // which conversations.history does not return — so the message looks lost
-    // and the reply looks missing.
     const channel = editors.find((el) => !el.closest("[data-qa=reply_container]"));
     if (!channel) return "thread-only";
     channel.focus();

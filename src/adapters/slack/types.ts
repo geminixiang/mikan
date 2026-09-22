@@ -4,7 +4,6 @@ import type { Attachment } from "../../types.js";
 export interface SlackEvent {
   address: OfficeAddress;
   type: "mention" | "dm";
-  conversationId: string;
   conversationKind: ConversationKind;
   channel: string;
   ts: string;

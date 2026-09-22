@@ -414,9 +414,7 @@ function requestOrigin(req: IncomingMessage): string | undefined {
 const esc = escapeHtml;
 
 const loginViewStyles = `
-  /* Login portal inherits all base chrome from the shared shell.
-     This module only adds preset cards, service logos, help popovers,
-     and the mode toggle. */
+
 
   p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
 

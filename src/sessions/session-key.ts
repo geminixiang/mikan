@@ -1,4 +1,4 @@
-import type { ConversationKind } from "../types.js";
+import type { ConversationKind, OfficeAddress } from "../types.js";
 export type { ResolveSessionKeyOptions } from "./types.js";
 import type { ResolveSessionKeyOptions } from "./types.js";
 
@@ -25,7 +25,7 @@ function assertSafeIdentityPart(value: string, label: string): string {
   return value;
 }
 
-export function assertConversationId(conversationId: string): string {
+export function assertSessionConversationId(conversationId: string): string {
   assertSafeIdentityPart(conversationId, "Conversation id");
   if (conversationId.includes(":")) {
     throw new Error(
@@ -41,14 +41,14 @@ export function assertSessionSuffix(suffix: string): string {
 }
 
 export function makeThreadSessionKey(conversationId: string, suffix: string): string {
-  return `${assertConversationId(conversationId)}:${assertSessionSuffix(suffix)}`;
+  return `${assertSessionConversationId(conversationId)}:${assertSessionSuffix(suffix)}`;
 }
 
 export function assertSessionKeyBelongsToConversation(
   sessionKey: string,
   conversationId: string,
 ): string {
-  const expectedConversationId = assertConversationId(conversationId);
+  const expectedConversationId = assertSessionConversationId(conversationId);
   const actualConversationId = conversationIdOf(sessionKey);
   if (actualConversationId !== expectedConversationId) {
     throw new Error(
@@ -62,15 +62,16 @@ export function assertSessionKeyBelongsToConversation(
 }
 
 export function deriveSessionKey(event: {
+  address: OfficeAddress;
   sessionKey?: string;
-  conversationId: string;
   thread_ts?: string;
   ts: string;
 }): string {
+  const conversationId = event.address.conversationId;
   if (event.sessionKey !== undefined) {
-    return assertSessionKeyBelongsToConversation(event.sessionKey, event.conversationId);
+    return assertSessionKeyBelongsToConversation(event.sessionKey, conversationId);
   }
-  return makeThreadSessionKey(event.conversationId, event.thread_ts ?? event.ts);
+  return makeThreadSessionKey(conversationId, event.thread_ts ?? event.ts);
 }
 
 export function isThreadSessionKey(sessionKey: string): boolean {
@@ -97,10 +98,10 @@ export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string
     threadTs,
   } = options;
   if (conversationKind === "direct" && (!threadTs || !scopeDirectThreads)) {
-    return assertConversationId(conversationId);
+    return assertSessionConversationId(conversationId);
   }
   if (!threadTs && persistentTopLevel) {
-    return assertConversationId(conversationId);
+    return assertSessionConversationId(conversationId);
   }
   return makeThreadSessionKey(conversationId, threadTs || messageId);
 }

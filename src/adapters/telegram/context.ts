@@ -18,7 +18,7 @@ export function createTelegramAdapters(
   event: TelegramEvent,
   bot: TelegramMessagingBot,
 ): ConversationContext {
-  const conversationId = event.conversationId;
+  const conversationId = event.address.conversationId;
   const chatId = parseInt(conversationId);
   const replyToId = event.thread_ts ? parseInt(event.thread_ts) : null;
 
