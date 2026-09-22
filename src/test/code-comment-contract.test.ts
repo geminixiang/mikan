@@ -40,11 +40,17 @@ function comments(path: string, source: string): string[] {
   const visit = (node: ts.Node) => {
     collect(ts.getLeadingCommentRanges(source, node.getFullStart()));
     collect(ts.getTrailingCommentRanges(source, node.getEnd()));
-    for (const child of node.getChildren(parsed)) visit(child);
+    node.forEachChild(visit);
   };
   visit(parsed);
   return [...ranges.values()].map((range) => source.slice(range.pos, range.end));
 }
+
+test("comment detection ignores comment-shaped string content", () => {
+  expect(comments("fixture.ts", 'const url = "https://example.com"; // invalid')).toEqual([
+    "// invalid",
+  ]);
+});
 
 test("code contains no comments", () => {
   const violations = codeFiles.flatMap((path) => {
