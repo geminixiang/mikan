@@ -413,6 +413,23 @@ describe("top-level session rotation", () => {
     );
   });
 
+  test("rotates on the calendar boundary across daylight-saving changes", () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = "America/Los_Angeles";
+    try {
+      const sessionDir = officeSessionsDir(channelDir);
+      const staleFile = createManagedSessionFile(sessionDir, channelDir);
+      rewriteSessionTimestamp(staleFile, "2026-03-08T12:00:00.000Z");
+
+      expect(shouldRotateTopLevelSession(staleFile, new Date("2026-03-15T12:00:00.000Z"))).toBe(
+        true,
+      );
+    } finally {
+      if (previousTz === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTz;
+    }
+  });
+
   test("scope resolution reuses a stale top-level session; rotation is the runtime's call", async () => {
     const sessionDir = officeSessionsDir(channelDir);
     const currentFile = createManagedSessionFile(sessionDir, channelDir);

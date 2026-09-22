@@ -268,6 +268,32 @@ describe("migrateLegacyOffices", () => {
     expect(existsSync(legacyVault)).toBe(false);
   });
 
+  test("fails closed when the same legacy vault id has multiple platform offices", () => {
+    const { stateDir, workspaceRoot } = makeFixture();
+    const registry = new OfficeRegistry(stateDir);
+    registry.recordOffice(createOfficeAddress("discord", "C123"));
+    registry.recordOffice(createOfficeAddress("slack", "C123"));
+    const legacyVault = join(stateDir, "vaults", legacyConversationCredentialKey("C123"));
+    mkdirSync(legacyVault, { recursive: true });
+    writeFileSync(join(legacyVault, "env"), "TOKEN=secret\n");
+
+    const summary = migrateLegacyOffices({
+      workspaceRoot,
+      stateDir,
+      enabledPlatforms: ["slack", "discord"],
+    });
+
+    expect(summary.vaultKeysMigrated).toEqual([]);
+    expect(summary.vaultConflicts).toEqual(["C123"]);
+    expect(existsSync(legacyVault)).toBe(true);
+    expect(
+      existsSync(join(stateDir, "vaults", officeKey(createOfficeAddress("slack", "C123")))),
+    ).toBe(false);
+    expect(
+      existsSync(join(stateDir, "vaults", officeKey(createOfficeAddress("discord", "C123")))),
+    ).toBe(false);
+  });
+
   test("reports a vault-key conflict instead of clobbering either side", () => {
     const { stateDir, workspaceRoot } = makeFixture();
     makeLegacyOffice(workspaceRoot, "C123");

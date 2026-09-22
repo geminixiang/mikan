@@ -227,19 +227,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  async handleNewCommand({
-    sessionKey,
-    conversationId,
-    bot,
-    message,
-  }: HandleNewCommandOptions): Promise<void> {
-    const address = message.address;
-    if (conversationId !== address.conversationId) {
-      throw new Error(
-        `Conversation id ${JSON.stringify(conversationId)} does not match office ` +
-          JSON.stringify(address.conversationId),
-      );
-    }
+  async handleNewCommand({ bot, message }: HandleNewCommandOptions): Promise<void> {
+    const { address, sessionKey } = message;
     assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
 
     const activeState = this.sessions.get(address, sessionKey);

@@ -25,8 +25,6 @@ export class NewCommandHandler implements CommandHandler {
     }
 
     await context.services.runtime.handleNewCommand({
-      sessionKey: context.sessionKey,
-      conversationId: context.conversationId,
       bot: context.bot,
       message: createConversationMessage({
         platform: context.address.platform,

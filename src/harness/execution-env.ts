@@ -21,11 +21,9 @@ import {
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
-import { shellEscape } from "../sandbox/utils.js";
+import { execAppendFile, execWriteFile, shellEscape } from "../sandbox/utils.js";
 
 const SPILL_DIR = ".mikan/bash-output";
-
-const WRITE_CHUNK_CHARS = 65536;
 
 export function createSandboxExecutionEnv(
   executor: Executor,
@@ -105,13 +103,9 @@ class ShellExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     context: Context,
   ): Promise<Result<void, FileError>> {
-    return this.fileOp(async () => {
-      if (typeof content === "string") {
-        await this.executor.writeFile(path, content, this.execOptions(context));
-        return;
-      }
-      await this.writeBase64(path, Buffer.from(content).toString("base64"), context);
-    });
+    return this.fileOp(() =>
+      execWriteFile(this.executor, path, content, this.execOptions(context)),
+    );
   }
 
   appendFile(
@@ -119,19 +113,9 @@ class ShellExecutionEnv implements ExecutionEnv {
     content: string | Uint8Array,
     context: Context,
   ): Promise<Result<void, FileError>> {
-    return this.fileOp(async () => {
-      const base64 = Buffer.from(content).toString("base64");
-      const stage = `${path}.mikan-append.b64`;
-      await this.run(
-        `mkdir -p ${shellEscape(posix.dirname(path))} && : > ${shellEscape(stage)}`,
-        context,
-      );
-      await this.appendBase64Chunks(stage, base64, context);
-      await this.run(
-        `base64 -d < ${shellEscape(stage)} >> ${shellEscape(path)} && rm -f ${shellEscape(stage)}`,
-        context,
-      );
-    });
+    return this.fileOp(() =>
+      execAppendFile(this.executor, path, content, this.execOptions(context)),
+    );
   }
 
   renameFile(
@@ -301,32 +285,6 @@ class ShellExecutionEnv implements ExecutionEnv {
       throw new Error(result.stderr.trim() || `Command failed (${result.code}): ${command}`);
     }
     return result;
-  }
-
-  private async writeBase64(path: string, base64: string, context: Context): Promise<void> {
-    const stage = `${path}.mikan-stage`;
-    const stageB64 = `${path}.mikan-stage.b64`;
-    await this.run(
-      `mkdir -p ${shellEscape(posix.dirname(path))} && : > ${shellEscape(stageB64)}`,
-      context,
-    );
-    await this.appendBase64Chunks(stageB64, base64, context);
-    await this.run(
-      `base64 -d < ${shellEscape(stageB64)} > ${shellEscape(stage)} && mv ${shellEscape(stage)} ` +
-        `${shellEscape(path)} && rm -f ${shellEscape(stageB64)}`,
-      context,
-    );
-  }
-
-  private async appendBase64Chunks(
-    targetB64: string,
-    base64: string,
-    context: Context,
-  ): Promise<void> {
-    for (let offset = 0; offset === 0 || offset < base64.length; offset += WRITE_CHUNK_CHARS) {
-      const chunk = base64.slice(offset, offset + WRITE_CHUNK_CHARS);
-      await this.run(`printf '%s' ${shellEscape(chunk)} >> ${shellEscape(targetB64)}`, context);
-    }
   }
 
   private async fileOp<T>(op: () => Promise<T>): Promise<Result<T, FileError>> {

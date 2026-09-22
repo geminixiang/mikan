@@ -214,31 +214,50 @@ describe("FileVaultManager", () => {
     );
   });
 
+  test("copySharedVaultTo preserves explicit mount targets", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("shared/gliaclaw", "custom.json", "secret", "/opt/provider/credentials.json");
+
+    mgr.copySharedVaultTo("gliaclaw", "U123");
+
+    expect(mgr.resolve("U123")?.mounts).toEqual([
+      {
+        source: join(vaultsDir, "U123", "custom.json"),
+        target: "/opt/provider/credentials.json",
+      },
+    ]);
+  });
+
   test("lists and deletes shared vaults", () => {
     mkdirSync(join(vaultsDir, "shared", "gliaclaw"), { recursive: true });
     mkdirSync(join(vaultsDir, "shared", "another"), { recursive: true });
     mkdirSync(join(vaultsDir, "shared", ".hidden"), { recursive: true });
     const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("shared/gliaclaw", "custom.json", "secret", "/opt/custom.json");
 
     expect(mgr.listSharedVaults()).toEqual(["another", "gliaclaw"]);
     expect(mgr.deleteSharedVault("gliaclaw")).toBe(true);
     expect(existsSync(join(vaultsDir, "shared", "gliaclaw"))).toBe(false);
+    expect(existsSync(join(tmpDir, "vault-mount-targets", "shared", "gliaclaw.json"))).toBe(false);
   });
 
   test("upsertFile writes private credential files and persists mount metadata", () => {
     const mgr = new FileVaultManager(tmpDir);
     mgr.upsertFile(
       "U123",
-      "gws.json",
+      "custom.json",
       '{\n  "type": "authorized_user"\n}\n',
-      "/root/.config/gws/credentials.json",
+      "/opt/provider/credentials.json",
     );
 
-    const credentialPath = join(vaultsDir, "U123", "gws.json");
+    const credentialPath = join(vaultsDir, "U123", "custom.json");
+    const metadataPath = join(tmpDir, "vault-mount-targets", "U123.json");
     expect(readFileSync(credentialPath, "utf-8")).toBe('{\n  "type": "authorized_user"\n}\n');
     expect(mode(credentialPath) & 0o077).toBe(0);
-    expect(mgr.resolve("U123")?.mounts).toEqual([
-      { source: credentialPath, target: "/root/.config/gws/credentials.json" },
+    expect(mode(metadataPath) & 0o077).toBe(0);
+    expect(existsSync(join(vaultsDir, "U123", ".mount-targets.json"))).toBe(false);
+    expect(new FileVaultManager(tmpDir).resolve("U123")?.mounts).toEqual([
+      { source: credentialPath, target: "/opt/provider/credentials.json" },
     ]);
   });
 
@@ -254,11 +273,57 @@ describe("FileVaultManager", () => {
     ]);
   });
 
+  test("uses a nested explicit target without mounting its parent directory", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", "nested/custom.json", "custom", "/opt/provider/custom.json");
+    mgr.upsertFile("U123", "nested/sibling.json", "sibling");
+
+    const mounts = mgr.resolve("U123")?.mounts;
+    expect(mounts).toEqual(
+      expect.arrayContaining([
+        {
+          source: join(vaultsDir, "U123", "nested", "custom.json"),
+          target: "/opt/provider/custom.json",
+        },
+        {
+          source: join(vaultsDir, "U123", "nested", "sibling.json"),
+          target: "/root/nested/sibling.json",
+        },
+      ]),
+    );
+    expect(mounts).not.toContainEqual({
+      source: join(vaultsDir, "U123", "nested"),
+      target: "/root/nested",
+    });
+  });
+
+  test.each(["legacy secret", '{"custom.json":"/opt/provider/custom.json"}'])(
+    "fails closed on a legacy root mount metadata filename collision",
+    (content) => {
+      const dir = join(vaultsDir, "U123");
+      const collisionPath = join(dir, ".mount-targets.json");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(collisionPath, content);
+      const mgr = new FileVaultManager(tmpDir);
+
+      expect(() => mgr.resolve("U123")).toThrow(/reserved mount metadata filename collision/);
+      expect(readFileSync(collisionPath, "utf-8")).toBe(content);
+      expect(existsSync(join(tmpDir, "vault-mount-targets", "U123.json"))).toBe(false);
+    },
+  );
+
   test("upsertFile rejects traversal and absolute relative paths", () => {
     const mgr = new FileVaultManager(tmpDir);
     const outsidePath = join(tmpDir, "escape.json");
 
-    for (const relativePath of ["../escape.json", "..", ".", "/etc/passwd", "   "]) {
+    for (const relativePath of [
+      "../escape.json",
+      "..",
+      ".",
+      "/etc/passwd",
+      ".mount-targets.json",
+      "   ",
+    ]) {
       expect(() => mgr.upsertFile("U123", relativePath, "secret")).toThrow(
         "vault: invalid relative secret file path",
       );
@@ -278,13 +343,31 @@ describe("FileVaultManager", () => {
 
   test("upsertFile atomically replaces existing mounted credential files", () => {
     const mgr = new FileVaultManager(tmpDir);
-    mgr.upsertFile("U123", "gws.json", "old", "/root/.config/gws/credentials.json");
+    mgr.upsertFile("U123", "gws.json", "old", "/opt/provider/old.json");
     const credentialPath = join(vaultsDir, "U123", "gws.json");
 
-    mgr.upsertFile("U123", "gws.json", "new", "/root/.config/gws/credentials.json");
+    mgr.upsertFile("U123", "gws.json", "new", "/opt/provider/new.json");
 
     expect(readFileSync(credentialPath, "utf-8")).toBe("new");
     expect(mode(credentialPath) & 0o077).toBe(0);
+    expect(mgr.resolve("U123")?.mounts).toEqual([
+      { source: credentialPath, target: "/opt/provider/new.json" },
+    ]);
+  });
+
+  test("upsertFile without a target removes an earlier explicit mount target", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", "gws.json", "old", "/opt/provider/credentials.json");
+
+    mgr.upsertFile("U123", "gws.json", "new");
+
+    expect(mgr.resolve("U123")?.mounts).toEqual([
+      {
+        source: join(vaultsDir, "U123", "gws.json"),
+        target: "/root/.config/gws/credentials.json",
+      },
+    ]);
+    expect(existsSync(join(tmpDir, "vault-mount-targets", "U123.json"))).toBe(false);
   });
 });
 

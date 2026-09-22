@@ -53,7 +53,7 @@ export function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-const WRITE_CHUNK_CHARS = 65536;
+const FILE_TRANSPORT_CHUNK_CHARS = 65_536;
 
 interface ExecLikeResult {
   stdout: string;
@@ -88,31 +88,68 @@ export async function execReadFile<TOptions>(
 export async function execWriteFile<TOptions>(
   executor: ExecLike<TOptions>,
   path: string,
-  content: string,
+  content: string | Uint8Array,
   options?: TOptions,
 ): Promise<void> {
-  const encoded = Buffer.from(content, "utf-8").toString("base64");
+  const encoded = Buffer.from(content).toString("base64");
   const escapedPath = shellEscape(path);
   const stage = shellEscape(`${path}.mikan-stage`);
-  const stageB64 = shellEscape(`${path}.mikan-stage.b64`);
+  const stageB64Path = `${path}.mikan-stage.b64`;
+  const stageB64 = shellEscape(stageB64Path);
+  const run = createFileTransportRunner(executor, path, [stage, stageB64], options);
 
-  const run = async (command: string) => {
-    const result = await executor.exec(command, options);
-    if (result.code !== 0) {
-      await executor.exec(`rm -f ${stage} ${stageB64}`, options).catch(() => {});
-      throw new Error(result.stderr.trim() || `Failed to write file: ${path}`);
-    }
-  };
-
-  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || "/" : ".";
-  await run(`mkdir -p ${shellEscape(dir)} && : > ${stageB64}`);
-  for (let offset = 0; offset === 0 || offset < encoded.length; offset += WRITE_CHUNK_CHARS) {
-    const chunk = encoded.slice(offset, offset + WRITE_CHUNK_CHARS);
-    await run(`printf '%s' ${shellEscape(chunk)} >> ${stageB64}`);
-  }
+  await prepareBase64Stage(run, path, stageB64Path, encoded);
   await run(
     `base64 -d < ${stageB64} > ${stage} && mv ${stage} ${escapedPath} && rm -f ${stageB64}`,
   );
+}
+
+export async function execAppendFile<TOptions>(
+  executor: ExecLike<TOptions>,
+  path: string,
+  content: string | Uint8Array,
+  options?: TOptions,
+): Promise<void> {
+  const encoded = Buffer.from(content).toString("base64");
+  const stagePath = `${path}.mikan-append.b64`;
+  const stage = shellEscape(stagePath);
+  const run = createFileTransportRunner(executor, path, [stage], options);
+
+  await prepareBase64Stage(run, path, stagePath, encoded);
+  await run(`base64 -d < ${stage} >> ${shellEscape(path)} && rm -f ${stage}`);
+}
+
+function createFileTransportRunner<TOptions>(
+  executor: ExecLike<TOptions>,
+  path: string,
+  cleanupPaths: string[],
+  options: TOptions | undefined,
+): (command: string) => Promise<void> {
+  return async (command) => {
+    const result = await executor.exec(command, options);
+    if (result.code === 0) return;
+    await executor.exec(`rm -f ${cleanupPaths.join(" ")}`, options).catch(() => {});
+    throw new Error(result.stderr.trim() || `Failed to write file: ${path}`);
+  };
+}
+
+async function prepareBase64Stage(
+  run: (command: string) => Promise<void>,
+  path: string,
+  stagePath: string,
+  encoded: string,
+): Promise<void> {
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) || "/" : ".";
+  const stage = shellEscape(stagePath);
+  await run(`mkdir -p ${shellEscape(dir)} && : > ${stage}`);
+  for (
+    let offset = 0;
+    offset === 0 || offset < encoded.length;
+    offset += FILE_TRANSPORT_CHUNK_CHARS
+  ) {
+    const chunk = encoded.slice(offset, offset + FILE_TRANSPORT_CHUNK_CHARS);
+    await run(`printf '%s' ${shellEscape(chunk)} >> ${stage}`);
+  }
 }
 
 export function createMountedRuntimePathContext(

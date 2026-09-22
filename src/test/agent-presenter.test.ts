@@ -29,6 +29,17 @@ function makeResponder(): ConversationResponder & {
   };
 }
 
+function resettableRunState(state = createRunState()) {
+  const {
+    responder: _responder,
+    logCtx: _logCtx,
+    queue: _queue,
+    triggerAttribution: _triggerAttribution,
+    ...resettable
+  } = state;
+  return resettable;
+}
+
 function attachPresenter() {
   let listener: HarnessEventListener | undefined;
   const session = {
@@ -451,8 +462,8 @@ describe("presenter event routing", () => {
       triggerAttribution: undefined,
     });
     try {
-      expect(runState.toolProgress.size).toBe(0);
-      expect(runState.completedSubagentProgress).toEqual([]);
+      expect(resettableRunState(runState)).toEqual(resettableRunState());
+      expect(runState.triggerAttribution).toBeUndefined();
       await emit({ type: "message_end", message: fauxAssistantMessage("second answer") });
       await next.wait();
       expect(nextResponder.finishResponse).toHaveBeenCalledTimes(1);

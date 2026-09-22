@@ -897,8 +897,6 @@ describe("NewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith({
-      sessionKey: "D123",
-      conversationId: "D123",
       bot: ctx.bot,
       message: expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
     });

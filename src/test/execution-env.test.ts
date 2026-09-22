@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -106,6 +114,20 @@ describe("sandbox execution env", () => {
     const result = await env.readBinaryFile(path, TODO_CONTEXT);
     expect(result.ok).toBe(true);
     if (result.ok) expect([...result.value]).toEqual([0, 1, 2, 253, 254, 255]);
+  });
+
+  test("writes and appends large binary files through the shared transport", async () => {
+    const env = onlyShellEnv(dir);
+    const path = join(dir, "large.bin");
+    const initial = Uint8Array.from({ length: 70_000 }, (_, index) => index % 251);
+    const appended = Uint8Array.from({ length: 70_000 }, (_, index) => 255 - (index % 251));
+
+    expect((await env.writeFile(path, initial, TODO_CONTEXT)).ok).toBe(true);
+    expect((await env.appendFile(path, appended, TODO_CONTEXT)).ok).toBe(true);
+    expect(readFileSync(path)).toEqual(
+      Buffer.concat([Buffer.from(initial), Buffer.from(appended)]),
+    );
+    expect(readdirSync(dir)).toEqual(["large.bin"]);
   });
 
   test("fileInfo reports kind and size; missing paths return not_found", async () => {

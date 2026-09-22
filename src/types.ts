@@ -233,8 +233,6 @@ export interface RunningSession {
 }
 
 export interface HandleNewCommandOptions {
-  sessionKey: string;
-  conversationId: string;
   bot: MessagingBot;
   message: ConversationMessage;
 }

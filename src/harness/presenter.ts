@@ -76,7 +76,7 @@ function createEmptyUsageTotals() {
   };
 }
 
-export function createRunState(): RunnerSessionState {
+function createRunStateDefaults(): RunnerSessionState {
   return {
     responder: null,
     logCtx: null,
@@ -112,6 +112,10 @@ export function createRunState(): RunnerSessionState {
   };
 }
 
+export function createRunState(): RunnerSessionState {
+  return createRunStateDefaults();
+}
+
 export function activateRunPresentation(
   runState: RunnerSessionState,
   context: {
@@ -123,42 +127,17 @@ export function activateRunPresentation(
   },
 ): RunPresentation {
   endOutstandingOperationSpans(runState);
-  runState.responder = context.responder;
-  runState.logCtx = {
-    conversationId: context.sessionConversation,
-    userName: context.userName,
-    conversationName: undefined,
-    sessionId: context.sessionUuid,
-  };
-  runState.pendingTools.clear();
-  runState.toolProgress.clear();
-  runState.subagentProgress.clear();
-  runState.completedSubagentProgress = [];
-  runState.subagentToolCalls.clear();
-  runState.subagentProgressShown = false;
-  runState.suppressResponseDeltas = false;
-  runState.lastSubagentProgressAt = 0;
   if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
-  runState.toolProgressTimer = undefined;
-  runState.totalUsage = createEmptyUsageTotals();
-  runState.llmCallCount = 0;
-  runState.toolCallCount = 0;
-  runState.toolErrorCount = 0;
-  runState.toolInputCharacters = 0;
-  runState.toolOutputCharacters = 0;
-  runState.assistantMessageCount = 0;
-  runState.outputCharacters = 0;
-  runState.reasoningTokens = 0;
-  runState.retryCount = 0;
-  runState.compactionCount = 0;
-  runState.budgetExceeded = false;
-  runState.firstTokenLatencyMs = undefined;
-  runState.responseModel = undefined;
-  runState.stopReason = "stop";
-  runState.errorMessage = undefined;
-  runState.reportedLlmError = false;
-  runState.finalResponseHandledByTool = false;
-  runState.triggerAttribution = context.triggerAttribution;
+  Object.assign(runState, createRunStateDefaults(), {
+    responder: context.responder,
+    logCtx: {
+      conversationId: context.sessionConversation,
+      userName: context.userName,
+      conversationName: undefined,
+      sessionId: context.sessionUuid,
+    },
+    triggerAttribution: context.triggerAttribution,
+  });
 
   const { responder } = context;
   let queueChain = Promise.resolve();

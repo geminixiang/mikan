@@ -171,10 +171,8 @@ function seedRunnerState(runtime: ConversationRuntime): PiAgentWrapper {
   return runner;
 }
 
-function newCommandOptions(responder = makeResponder()) {
+function newCommandOptions() {
   return {
-    sessionKey: "C123",
-    conversationId: "C123",
     bot,
     message: {
       address: testAddress,
@@ -185,8 +183,6 @@ function newCommandOptions(responder = makeResponder()) {
       userName: "alice",
       text: "/new",
     },
-    responder,
-    platform: testPlatform,
   };
 }
 

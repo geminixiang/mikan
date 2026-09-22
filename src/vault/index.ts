@@ -12,13 +12,15 @@ import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import type { OfficeAddress } from "../types.js";
-import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
+import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/index.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
 import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
+const LEGACY_MOUNT_TARGETS_FILE = ".mount-targets.json";
+const MOUNT_TARGETS_DIR = "vault-mount-targets";
 const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
 export function normalizeSharedVaultName(name: string): string | undefined {
@@ -64,9 +66,11 @@ function unquoteEnvValue(value: string): string {
 
 export class FileVaultManager implements VaultManager {
   private readonly vaultsDir: string;
+  private readonly mountTargetsDir: string;
 
   constructor(stateDir: string) {
     this.vaultsDir = join(stateDir, "vaults");
+    this.mountTargetsDir = join(stateDir, MOUNT_TARGETS_DIR);
   }
 
   isEnabled(): boolean {
@@ -93,6 +97,7 @@ export class FileVaultManager implements VaultManager {
     const dir = join(this.vaultsDir, key);
     const existed = existsSync(dir);
     rmSync(dir, { recursive: true, force: true });
+    rmSync(this.mountTargetsPath(key), { force: true });
     return existed;
   }
 
@@ -107,9 +112,18 @@ export class FileVaultManager implements VaultManager {
     if (!existsSync(sourceDir)) throw new Error(`vault: shared login "${name}" does not exist`);
 
     const targetDir = join(this.vaultsDir, targetKey);
+    assertNoLegacyMountTargetsCollision(sourceDir);
+    assertNoLegacyMountTargetsCollision(targetDir);
+    const sourceTargets = readMountTargets(this.mountTargetsPath(sourceKey));
+    const targetTargets = readMountTargets(this.mountTargetsPath(targetKey));
     ensurePrivateDir(this.vaultsDir);
     ensurePrivateDir(targetDir);
-    return copyVaultDir(sourceDir, targetDir);
+    const result = copyVaultDir(sourceDir, targetDir);
+    writeMountTargets(this.mountTargetsPath(targetKey), {
+      ...targetTargets,
+      ...sourceTargets,
+    });
+    return result;
   }
 
   resolve(userId: string): ResolvedVault | undefined {
@@ -171,23 +185,31 @@ export class FileVaultManager implements VaultManager {
   upsertFile(key: string, relativePath: string, content: string, targetPath?: string): void {
     if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
     const normalizedPath = normalizeVaultRelativePath(relativePath);
-    if (!normalizedPath || (targetPath !== undefined && !normalizeVaultTargetPath(targetPath))) {
+    const normalizedTarget = normalizeVaultTargetPath(targetPath);
+    if (
+      !normalizedPath ||
+      normalizedPath === LEGACY_MOUNT_TARGETS_FILE ||
+      (targetPath !== undefined && !normalizedTarget)
+    ) {
       throw new Error(`vault: invalid relative secret file path for "${key}": ${relativePath}`);
     }
 
     const dir = join(this.vaultsDir, key);
     const filePath = join(dir, normalizedPath);
+    assertNoLegacyMountTargetsCollision(dir);
 
     ensurePrivateDir(this.vaultsDir);
     ensurePrivateDir(dir);
     const parentDir = dirname(filePath);
     if (parentDir !== dir) ensurePrivateDir(parentDir);
     atomicWritePrivateFile(filePath, content);
+    updateMountTarget(this.mountTargetsPath(key), normalizedPath, normalizedTarget);
   }
 
   private buildResolved(key: string): ResolvedVault {
     const dir = join(this.vaultsDir, key);
-    const mounts = inferMountsFromDir(dir);
+    assertNoLegacyMountTargetsCollision(dir);
+    const mounts = resolveMountsFromDir(dir, readMountTargets(this.mountTargetsPath(key)));
 
     const envContent = readTextFileIfExists(join(dir, "env"));
     const env = envContent === undefined ? {} : parseEnvFile(envContent);
@@ -200,20 +222,124 @@ export class FileVaultManager implements VaultManager {
       env,
     };
   }
+
+  private mountTargetsPath(key: string): string {
+    return join(this.mountTargetsDir, `${key}.json`);
+  }
 }
 
-function inferMountsFromDir(dir: string): ResolvedVaultMount[] {
+function resolveMountsFromDir(
+  dir: string,
+  explicitTargets: Record<string, string>,
+): ResolvedVaultMount[] {
   if (!existsSync(dir)) return [];
 
   const mounts: ResolvedVaultMount[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "env") continue;
     const source = join(dir, entry.name);
-    const target = inferredVaultTargetPath(entry.name);
-    if (!target) continue;
-    mounts.push({ source, target });
+    const inferredTarget = inferredVaultTargetPath(entry.name);
+    if (!inferredTarget) continue;
+
+    const explicitTarget = Object.hasOwn(explicitTargets, entry.name)
+      ? explicitTargets[entry.name]
+      : undefined;
+    if (explicitTarget) {
+      mounts.push({ source, target: explicitTarget });
+      continue;
+    }
+
+    const nestedPrefix = `${entry.name}/`;
+    const hasExplicitDescendant = Object.keys(explicitTargets).some((relativePath) =>
+      relativePath.startsWith(nestedPrefix),
+    );
+    if (!entry.isDirectory() || !hasExplicitDescendant) {
+      mounts.push({ source, target: inferredTarget });
+      continue;
+    }
+    mounts.push(...resolveNestedMounts(dir, entry.name, inferredTarget, explicitTargets));
   }
   return mounts;
+}
+
+function resolveNestedMounts(
+  rootDir: string,
+  relativeDir: string,
+  targetDir: string,
+  explicitTargets: Record<string, string>,
+): ResolvedVaultMount[] {
+  const mounts: ResolvedVaultMount[] = [];
+  for (const entry of readdirSync(join(rootDir, relativeDir), { withFileTypes: true })) {
+    const relativePath = `${relativeDir}/${entry.name}`;
+    const source = join(rootDir, relativePath);
+    const inferredTarget = `${targetDir}/${entry.name}`;
+    const explicitTarget = Object.hasOwn(explicitTargets, relativePath)
+      ? explicitTargets[relativePath]
+      : undefined;
+    if (explicitTarget) {
+      mounts.push({ source, target: explicitTarget });
+      continue;
+    }
+
+    const nestedPrefix = `${relativePath}/`;
+    const hasExplicitDescendant = Object.keys(explicitTargets).some((candidate) =>
+      candidate.startsWith(nestedPrefix),
+    );
+    if (!entry.isDirectory() || !hasExplicitDescendant) {
+      mounts.push({ source, target: inferredTarget });
+      continue;
+    }
+    mounts.push(...resolveNestedMounts(rootDir, relativePath, inferredTarget, explicitTargets));
+  }
+  return mounts;
+}
+
+function assertNoLegacyMountTargetsCollision(dir: string): void {
+  const path = join(dir, LEGACY_MOUNT_TARGETS_FILE);
+  if (existsSync(path)) {
+    throw new Error(`vault: reserved mount metadata filename collision: ${path}`);
+  }
+}
+
+function readMountTargets(path: string): Record<string, string> {
+  const raw = readTextFileIfExists(path);
+  if (raw === undefined) return Object.create(null) as Record<string, string>;
+
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`vault: invalid mount target metadata: ${path}`, { cause: error });
+  }
+  if (!isRecord(value)) throw new Error(`vault: invalid mount target metadata: ${path}`);
+
+  const targets = Object.create(null) as Record<string, string>;
+  for (const [relativePath, targetPath] of Object.entries(value)) {
+    const normalizedPath = normalizeVaultRelativePath(relativePath);
+    const normalizedTarget =
+      typeof targetPath === "string" ? normalizeVaultTargetPath(targetPath) : undefined;
+    if (normalizedPath !== relativePath || !normalizedTarget || normalizedTarget !== targetPath) {
+      throw new Error(`vault: invalid mount target metadata: ${path}`);
+    }
+    targets[relativePath] = targetPath;
+  }
+  return targets;
+}
+
+function updateMountTarget(path: string, relativePath: string, targetPath?: string): void {
+  const targets = readMountTargets(path);
+  if (targetPath === undefined) delete targets[relativePath];
+  else targets[relativePath] = targetPath;
+  writeMountTargets(path, targets);
+}
+
+function writeMountTargets(path: string, targets: Record<string, string>): void {
+  if (Object.keys(targets).length === 0) {
+    rmSync(path, { force: true });
+    return;
+  }
+  ensurePrivateDir(dirname(path));
+  atomicWritePrivateFile(path, `${JSON.stringify(targets, null, 2)}\n`);
 }
 
 function ensurePrivateDir(path: string): void {
@@ -343,16 +469,29 @@ export function migrateConversationVaultKeys(options: {
   const conflicts: string[] = [];
   if (!existsSync(vaultsDir)) return { migrated, conflicts };
 
+  const officesByConversationId = new Map<string, OfficeAddress[]>();
   for (const office of options.offices) {
-    const legacyDir = join(vaultsDir, legacyConversationCredentialKey(office.conversationId));
+    const offices = officesByConversationId.get(office.conversationId) ?? [];
+    offices.push(office);
+    officesByConversationId.set(office.conversationId, offices);
+  }
+  for (const [conversationId, offices] of officesByConversationId) {
+    const legacyDir = join(vaultsDir, legacyConversationCredentialKey(conversationId));
     if (!existsSync(legacyDir)) continue;
+    if (offices.length !== 1) {
+      conflicts.push(conversationId);
+      continue;
+    }
+
+    const office = offices[0];
+    if (!office) throw new Error(`vault: missing office owner for ${conversationId}`);
     const targetDir = join(vaultsDir, officeKey(office));
     if (existsSync(targetDir)) {
-      conflicts.push(office.conversationId);
+      conflicts.push(conversationId);
       continue;
     }
     renameSync(legacyDir, targetDir);
-    migrated.push(office.conversationId);
+    migrated.push(conversationId);
   }
   return { migrated, conflicts };
 }

@@ -261,8 +261,9 @@ function readSessionHeaderSummary(filePath: string): { id: string; timestampMs: 
   }
 }
 
-const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4);
-const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
+const CALENDAR_DAY_MS = 24 * 60 * 60 * 1000;
+const BIWEEKLY_ROTATION_ANCHOR_DAY = Date.UTC(2026, 0, 4);
+const BIWEEKLY_DAYS = 14;
 
 export function shouldRotateTopLevelSession(sessionFile: string, now: Date): boolean {
   const timestamp = readSessionTimestamp(sessionFile);
@@ -290,11 +291,9 @@ function readSessionTimestamp(sessionFile: string): Date | null {
 }
 
 function biweeklyBucket(date: Date): number {
-  const weekStart = sundayStart(date).getTime();
-  const anchor = sundayStart(BIWEEKLY_ROTATION_ANCHOR).getTime();
-  return Math.floor((weekStart - anchor) / BIWEEKLY_MS);
-}
-
-function sundayStart(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
+  const localCalendarDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const sundayCalendarDay = localCalendarDay - date.getDay() * CALENDAR_DAY_MS;
+  return Math.floor(
+    (sundayCalendarDay - BIWEEKLY_ROTATION_ANCHOR_DAY) / (BIWEEKLY_DAYS * CALENDAR_DAY_MS),
+  );
 }
