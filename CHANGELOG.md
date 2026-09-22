@@ -9,6 +9,26 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.77]
+
+### Added
+
+- Provision the standard sandbox image with Node.js 24, Chromium, ffmpeg, pinned `agent-browser` 0.38.1, and a checksummed Google Workspace CLI so `jev_browser` and capture workflows work without runtime installation and current-page recording preserves hydrated browser state.
+
+### Changed
+
+- Run every `jev_browser` command through the conversation-authorized sandbox executor, preserve native snapshots, refs, frames, tabs, screenshots, HAR, and recording, serialize calls per runner, and make named-session continuity and close-only operations explicit.
+- Bound autonomous browser failures and repeated action cycles, refresh current page evidence before reporting completion, and refuse to silently resurrect an explicitly closed named session as `about:blank`.
+- Delegate persisted session behavior to public Pi session and harness APIs instead of maintaining duplicate storage semantics.
+
+### Fixed
+
+- Log LLM cancellation reasons and Pi run ids only while provider transport is active, avoiding false abort logs during authentication, payload hooks, retry waits, tool execution, or after structural requests finish.
+
+### Security
+
+- Harden state and credential ownership by preserving explicit vault mount targets outside secret directories, rejecting migration collisions, keeping private file writes atomic, and deriving session operations from authorized conversation identities.
+
 ## [1.0.0-beta.76]
 
 ### Changed
