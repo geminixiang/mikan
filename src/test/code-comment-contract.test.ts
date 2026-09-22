@@ -31,57 +31,46 @@ function sourceFile(path: string, source: string): ts.SourceFile {
   return ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, scriptKind(path));
 }
 
-function comments(path: string, source: string): string[] {
+function codeCommentViolations(path: string, source: string): string[] {
   const parsed = sourceFile(path, source);
   const ranges = new Map<string, ts.CommentRange>();
+  const embedded: string[] = [];
   const collect = (items: ts.CommentRange[] | undefined) => {
     for (const item of items ?? []) ranges.set(`${item.pos}:${item.end}`, item);
   };
   const visit = (node: ts.Node) => {
     collect(ts.getLeadingCommentRanges(source, node.getFullStart()));
     collect(ts.getTrailingCommentRanges(source, node.getEnd()));
+    if (
+      (ts.isTemplateHead(node) ||
+        ts.isTemplateMiddle(node) ||
+        ts.isTemplateTail(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)) &&
+      /^\s*(?:\/\/|\/\*|<!--)/m.test(node.text)
+    ) {
+      embedded.push(node.text.match(/^\s*(?:\/\/|\/\*|<!--).*$/m)?.[0].trim() ?? "");
+    }
     node.forEachChild(visit);
   };
   visit(parsed);
-  return [...ranges.values()].map((range) => source.slice(range.pos, range.end));
+  return [
+    ...[...ranges.values()].map((range) => source.slice(range.pos, range.end)),
+    ...embedded,
+  ].map((comment) => `${path}: ${comment.slice(0, 80)}`);
 }
 
 test("comment detection ignores comment-shaped string content", () => {
-  expect(comments("fixture.ts", 'const url = "https://example.com"; // invalid')).toEqual([
-    "// invalid",
-  ]);
+  expect(
+    codeCommentViolations("fixture.ts", 'const url = "https://example.com"; // invalid'),
+  ).toEqual(["fixture.ts: // invalid"]);
 });
 
-test("code contains no comments", () => {
-  const violations = codeFiles.flatMap((path) => {
-    const source = readFileSync(path, "utf8");
-    return comments(path, source).map((comment) => `${path}: ${comment.slice(0, 80)}`);
-  });
+test("code and embedded code contain no comments", () => {
+  const violations = codeFiles.flatMap((path) =>
+    codeCommentViolations(path, readFileSync(path, "utf8")),
+  );
   expect(violations).toEqual([]);
-});
-
-test("embedded code contains no comments", () => {
-  const violations = codeFiles.flatMap((path) => {
-    const source = readFileSync(path, "utf8");
-    const parsed = sourceFile(path, source);
-    const found: string[] = [];
-    const visit = (node: ts.Node) => {
-      if (
-        (ts.isTemplateHead(node) ||
-          ts.isTemplateMiddle(node) ||
-          ts.isTemplateTail(node) ||
-          ts.isNoSubstitutionTemplateLiteral(node)) &&
-        /^\s*(?:\/\/|\/\*|<!--)/m.test(node.text)
-      ) {
-        found.push(`${path}: ${node.text.match(/^\s*(?:\/\/|\/\*|<!--).*$/m)?.[0].trim()}`);
-      }
-      node.forEachChild(visit);
-    };
-    visit(parsed);
-    return found;
-  });
-  expect(violations).toEqual([]);
-});
+}, 15_000);
 
 test("Python scripts contain no comments beyond their interpreter directive", () => {
   const files = execFileSync("git", ["ls-files", "*.py"], { encoding: "utf8" })
