@@ -635,6 +635,54 @@ describe("jev_browser tool", () => {
     expect(otherExec.mock.calls).toEqual(calls);
   });
 
+  test.each([undefined, []])(
+    "close-only sends exactly one close command (commands=%j)",
+    async (commands) => {
+      mockAgentBrowser([{ success: true, data: { closed: true } }]);
+      const signal = new AbortController().signal;
+      const tool = createJevBrowserTool(executor);
+      const result = await tool.execute(
+        "close-only",
+        { label: "Close", session: "named", close: true, commands },
+        signal,
+      );
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual({
+        status: "closed",
+        session: "named",
+      });
+      expect(execMock).toHaveBeenCalledExactlyOnceWith(
+        "'agent-browser' '--session' 'named' 'close' '--json'",
+        { timeout: 90, signal },
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("close-only surfaces CLI failure without reporting closed or retrying cleanup", async () => {
+    mockAgentBrowser([{ success: false, error: "close failed" }]);
+    await expect(
+      createJevBrowserTool(executor).execute(
+        "close",
+        { label: "Close", session: "named", close: true },
+        undefined,
+      ),
+    ).rejects.toThrow("Failed to close browser session: close failed");
+    expect(execMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("successful commands without lifecycle metadata report unknown, not execution failure", async () => {
+    mockAgentBrowser([{ success: true, data: { title: "Page" } }]);
+    const result = await createJevBrowserTool(executor).execute(
+      "read",
+      { label: "Title", session: "named", commands: [["get", "title"]] },
+      undefined,
+    );
+    const data = JSON.parse((result.content[0] as { text: string }).text);
+    expect(data.commandResults[0].success).toBe(true);
+    expect(data.browserContinuity).toContain("did not provide sufficient lifecycle information");
+    expect(data.browserContinuity).not.toContain("no agent-browser command completed");
+  });
+
   test("rejects a call with neither url nor session", async () => {
     const tool = createJevBrowserTool(executor);
     await expect(
@@ -647,13 +695,13 @@ describe("jev_browser tool", () => {
     const tool = createJevBrowserTool(executor);
     await expect(
       tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
-    ).rejects.toThrow(/Provide goal, commands, or both/);
+    ).rejects.toThrow(/Provide goal or commands/);
     expect(execMock).not.toHaveBeenCalled();
   });
 });
 
 describe("describeContinuity", () => {
-  test("reports unknown when no agent-browser command completed", () => {
+  test("reports unknown when the CLI omits lifecycle metadata", () => {
     expect(describeContinuity(true, undefined)).toMatch(/^unknown:/);
   });
 
@@ -665,7 +713,17 @@ describe("describeContinuity", () => {
     expect(describeContinuity(true, { reused: true })).toMatch(/^continuous:/);
   });
 
-  test("reports NOT continuous when a named session's browser was not reused", () => {
-    expect(describeContinuity(true, { reused: false })).toMatch(/^NOT continuous:/);
-  });
+  test.each([{}, { reused: false }, { launched: false }])(
+    "does not infer a restart without launch evidence: %j",
+    (metadata) => {
+      expect(describeContinuity(true, metadata)).toMatch(/^unknown:/);
+    },
+  );
+
+  test.each([{ launched: true }, { relaunchedBrowser: true }])(
+    "reports NOT continuous with explicit launch evidence: %j",
+    (metadata) => {
+      expect(describeContinuity(true, metadata)).toMatch(/^NOT continuous:/);
+    },
+  );
 });
