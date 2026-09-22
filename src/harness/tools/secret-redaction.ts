@@ -46,7 +46,9 @@ export function withSecretRedaction(tool: MikanHarnessTool): MikanHarnessTool {
     return {
       ...result,
       content: result.content.map((part): TextContent | ImageContent =>
-        part.type === "text" ? { ...part, text: redactSecrets(part.text, secrets) } : part,
+        part.type === "text"
+          ? Object.assign({}, part, { text: redactSecrets(part.text, secrets) })
+          : part,
       ),
     };
   };

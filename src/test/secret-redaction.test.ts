@@ -28,6 +28,12 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
     .join("\n");
 }
 
+function createSandboxBashTool() {
+  const tool = createSandboxTools().find((candidate) => candidate.name === "bash");
+  if (!tool) throw new Error("Sandbox bash tool is unavailable");
+  return tool;
+}
+
 describe("redactSecrets", () => {
   const secrets: SecretEntry[] = [
     { label: "OPENROUTER_API_KEY", value: "sk-or-v1-abcdefgh12345678" },
@@ -70,9 +76,9 @@ describe("redactSecrets", () => {
 
 describe("withSecretRedaction identity preservation", () => {
   test("keeps the isHarnessTool marker intact after wrapping", () => {
-    const [bash] = createSandboxTools().filter((tool) => tool.name === "bash");
+    const bash = createSandboxBashTool();
     expect(isHarnessTool(bash)).toBe(true);
-    const wrapped = withSecretRedaction(bash!);
+    const wrapped = withSecretRedaction(bash);
     expect(isHarnessTool(wrapped)).toBe(true);
   });
 
@@ -130,17 +136,15 @@ describe("withSecretRedaction", () => {
 
   test("redacts a configured secret that a real bash command echoes verbatim", async () => {
     const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
-    const [bash] = createSandboxTools()
-      .filter((tool) => tool.name === "bash")
-      .map(withSecretRedaction);
-    const validated = validateToolArguments(bash!, {
+    const bash = withSecretRedaction(createSandboxBashTool());
+    const validated = validateToolArguments(bash, {
       type: "toolCall",
       id: "call-1",
       name: "bash",
       arguments: { command: "echo $OPENROUTER_API_KEY", label: "print secret" },
     });
 
-    const result = await bash!.execute(
+    const result = await bash.execute(
       "call-1",
       validated,
       () => {},
@@ -156,17 +160,15 @@ describe("withSecretRedaction", () => {
 
   test("leaves output untouched when it contains no configured secret", async () => {
     const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
-    const [bash] = createSandboxTools()
-      .filter((tool) => tool.name === "bash")
-      .map(withSecretRedaction);
-    const validated = validateToolArguments(bash!, {
+    const bash = withSecretRedaction(createSandboxBashTool());
+    const validated = validateToolArguments(bash, {
       type: "toolCall",
       id: "call-2",
       name: "bash",
       arguments: { command: "echo hello-from-bash", label: "say hi" },
     });
 
-    const result = await bash!.execute(
+    const result = await bash.execute(
       "call-2",
       validated,
       () => {},
@@ -180,10 +182,8 @@ describe("withSecretRedaction", () => {
 
   test("propagates a tool error unchanged instead of swallowing it", async () => {
     const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
-    const [bash] = createSandboxTools()
-      .filter((tool) => tool.name === "bash")
-      .map(withSecretRedaction);
-    const validated = validateToolArguments(bash!, {
+    const bash = withSecretRedaction(createSandboxBashTool());
+    const validated = validateToolArguments(bash, {
       type: "toolCall",
       id: "call-3",
       name: "bash",
@@ -191,7 +191,7 @@ describe("withSecretRedaction", () => {
     });
 
     await expect(
-      bash!.execute("call-3", validated, () => {}, { env }, invocation, TODO_CONTEXT),
+      bash.execute("call-3", validated, () => {}, { env }, invocation, TODO_CONTEXT),
     ).rejects.toThrow(/exit/i);
   });
 });
