@@ -959,6 +959,160 @@ describe("jev_browser tool", () => {
     expect(finalCloseCall).toBeDefined();
   });
 
+  test("an explicitly closed named session requires url before reuse", async () => {
+    mockAgentBrowser([{ success: true, data: { closed: true } }]);
+    const tool = createJevBrowserTool(executor);
+
+    await tool.execute(
+      "close",
+      { label: "test", session: "closed-session", close: true },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await expect(
+      tool.execute(
+        "reuse",
+        { label: "test", session: "closed-session", commands: [["snapshot"]] },
+        undefined,
+      ),
+    ).rejects.toThrow(/explicitly closed.*Provide url/i);
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  test("url can explicitly restart a named session after close", async () => {
+    const tool = createJevBrowserTool(executor);
+    mockAgentBrowser([{ success: true, data: { closed: true } }]);
+    await tool.execute(
+      "close",
+      { label: "test", session: "restart-session", close: true },
+      undefined,
+    );
+
+    execMock.mockReset();
+    mockAgentBrowser([
+      { success: true, data: { targetId: "new" } },
+      { success: true, data: { snapshot: "Restarted", refs: {} } },
+    ]);
+    const result = await tool.execute(
+      "restart",
+      {
+        label: "test",
+        session: "restart-session",
+        url: "https://example.com",
+        commands: [["snapshot"]],
+      },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "no-goal",
+      session: "restart-session",
+    });
+  });
+
+  test("a failed explicit restart keeps the closed-session guard", async () => {
+    const tool = createJevBrowserTool(executor);
+    mockAgentBrowser([{ success: true, data: { closed: true } }]);
+    await tool.execute(
+      "close",
+      { label: "test", session: "failed-restart", close: true },
+      undefined,
+    );
+
+    execMock.mockReset();
+    mockAgentBrowser([{ success: false, error: "navigation failed" }]);
+    await expect(
+      tool.execute(
+        "restart",
+        {
+          label: "test",
+          session: "failed-restart",
+          url: "https://example.com",
+          commands: [["snapshot"]],
+        },
+        undefined,
+      ),
+    ).rejects.toThrow(/Failed to open/);
+
+    execMock.mockClear();
+    await expect(
+      tool.execute(
+        "reuse",
+        { label: "test", session: "failed-restart", commands: [["snapshot"]] },
+        undefined,
+      ),
+    ).rejects.toThrow(/explicitly closed.*Provide url/i);
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  test("a reported close failure does not mark a named session as closed", async () => {
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } },
+      { success: true, data: { title: "Example" } },
+      { success: false, error: "close failed" },
+    ]);
+    const tool = createJevBrowserTool(executor);
+    await tool.execute(
+      "first",
+      {
+        label: "test",
+        session: "close-failed",
+        url: "https://example.com",
+        commands: [["get", "title"]],
+        close: true,
+      },
+      undefined,
+    );
+
+    execMock.mockReset();
+    mockAgentBrowser([{ success: true, data: { title: "Still open" } }]);
+    await expect(
+      tool.execute(
+        "reuse",
+        { label: "test", session: "close-failed", commands: [["get", "title"]] },
+        undefined,
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  test("serializes concurrent calls from one runner to avoid parallel Chromium bursts", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstStarted = new Promise<void>((resolveStarted) => {
+      execMock.mockImplementation(async (command) => {
+        if (command.includes("'first'")) {
+          resolveStarted();
+          await new Promise<void>((resolve) => {
+            releaseFirst = resolve;
+          });
+        }
+        return { stdout: JSON.stringify({ success: true, data: {} }), stderr: "", code: 0 };
+      });
+    });
+    const tool = createJevBrowserTool(executor);
+    const first = tool.execute(
+      "first-call",
+      { label: "test", session: "first", commands: [["get", "title"]] },
+      undefined,
+    );
+    await firstStarted;
+    const second = tool.execute(
+      "second-call",
+      { label: "test", session: "second", commands: [["get", "title"]] },
+      undefined,
+    );
+    await Promise.resolve();
+    expect(execMock.mock.calls.map(([command]) => command)).toEqual([
+      "'agent-browser' '--session' 'first' 'get' 'title' '--json'",
+    ]);
+
+    releaseFirst?.();
+    await Promise.all([first, second]);
+    expect(execMock.mock.calls.map(([command]) => command)).toEqual([
+      "'agent-browser' '--session' 'first' 'get' 'title' '--json'",
+      "'agent-browser' '--session' 'second' 'get' 'title' '--json'",
+    ]);
+  });
+
   test("a one-off call (no session) still closes automatically, matching the original single-call ergonomics", async () => {
     mockAgentBrowser([
       { success: true, data: { targetId: "t1" } }, // open
@@ -1219,7 +1373,7 @@ describe("jev_browser tool", () => {
     const otherExecutor = { ...executor, exec: otherExec } as Executor;
     const first = createJevBrowserTool(executor);
     const second = createJevBrowserTool(otherExecutor);
-    const args = { label: "test", session: "shared", commands: [["get", "title"]], close: true };
+    const args = { label: "test", session: "shared", commands: [["get", "title"]] };
     for (const [tool, owner] of [
       [first, "first"],
       [second, "second"],
@@ -1230,15 +1384,12 @@ describe("jev_browser tool", () => {
         { command: ["get", "title"], success: true, data: { owner }, error: null },
       ]);
     }
-    const calls = [
-      [
-        "'agent-browser' '--session' 'shared' 'get' 'title' '--json'",
-        { timeout: 90, signal: undefined },
-      ],
-      ["'agent-browser' '--session' 'shared' 'close' '--json'", { timeout: 90, signal: undefined }],
+    const call = [
+      "'agent-browser' '--session' 'shared' 'get' 'title' '--json'",
+      { timeout: 90, signal: undefined },
     ];
-    expect(execMock.mock.calls).toEqual([...calls, ...calls]);
-    expect(otherExec.mock.calls).toEqual(calls);
+    expect(execMock.mock.calls).toEqual([call, call]);
+    expect(otherExec.mock.calls).toEqual([call]);
   });
 
   test.each([undefined, []])(

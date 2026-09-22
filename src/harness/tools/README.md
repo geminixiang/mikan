@@ -22,7 +22,16 @@ browser rules to every agent's system prompt. It can read plain-text native
 `press @ref Enter` mistake is rejected before side effects; this is not a
 second CLI parser. A raw batch stops at its first reported failure and skips
 the goal loop. Separate essential capture exports if later commands must run
-even when an earlier export fails.
+even when an earlier export fails. Reuse a known named session when continuity
+is useful: with the current native CLI, every additional session owns another
+agent-browser daemon and Chromium process tree inside the same conversation
+sandbox. Create one only for real isolation or parallel work, and close it when
+done. After this tool explicitly closes a session, a later no-URL reuse in the
+same runner is rejected instead of letting the CLI silently create about:blank;
+providing a URL explicitly starts it again. Calls from one runner are serialized,
+so a model response containing several one-off calls cannot create a burst of
+parallel Chromium trees. Different conversation threads have different runners
+and may still work in parallel when their separate sessions are intentional.
 
 Goal decisions receive bounded full-page text and local snapshot context for
 same-label targets. History records commands, not verified effects: current

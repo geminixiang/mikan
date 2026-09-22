@@ -443,14 +443,15 @@ function resolveTarget(
   return typeof choice === "string" ? choice : undefined;
 }
 
-export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
+function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
+  const explicitlyClosedSessions = new Set<string>();
   return {
     name: "jev_browser",
     label: "jev browser",
     description: [
       "Control a real Chrome browser inside the current sandbox (not the mikan host): either drive it toward a natural-language goal, deciding each step (click, type, select, scroll, wait) itself using Jev, or run raw agent-browser CLI commands directly (screenshot, record start/stop, network har start/stop, pdf, cookies, eval, and anything else agent-browser supports), or both in one call.",
       "url opens a page first (omit to keep using the current page of an existing session). goal, if given, then runs the Jev-driven loop, including any literal values to type or select directly in the goal. commands, if given, run first as raw agent-browser argv arrays, before goal — use this for capture/export commands the loop itself does not perform.",
-      "To span a workflow across multiple calls against the SAME browser (e.g. start recording, run a goal, stop recording, screenshot the result), pass the same session name on every call and do not pass close: true until the final call. A named session stays open by default — you do not need to repeat anything on the calls in between. To only close it, send session and close: true without url, goal, or commands. Omitting session entirely gets a one-off browser that closes automatically when that single call returns.",
+      "To span a workflow across multiple calls against the SAME browser (e.g. start recording, run a goal, stop recording, screenshot the result), pass the same session name on every call and do not pass close: true until the final call. A named session stays open by default — you do not need to repeat anything on the calls in between. Reuse a known session unless true isolation or parallel browser work is required: each additional named session starts another agent-browser daemon and Chromium process tree inside the conversation sandbox. A session explicitly closed through this tool cannot be reused without url in the same runner; the tool refuses to let the native CLI silently replace that known-missing session with about:blank. To only close it, send session and close: true without url, goal, or commands. Omitting session entirely gets a one-off browser that closes automatically when that single call returns.",
       "The goal loop stops when it reports the goal done, gets blocked, or hits the step limit. Requires agent-browser and its browser dependencies provisioned in the current sandbox runtime/image, and OPENROUTER_API_KEY for typing/selecting text in the goal loop. Sessions and file paths refer to this sandbox. If dependencies are missing, report the provisioning problem; do not install on the host or attempt global npm installation.",
       "Browser operation results include browserContinuity when available from CLI lifecycle metadata; missing metadata is reported as unknown, not as a failed command or proof that the browser restarted. It also includes lastPageSnapshot, the accessibility-tree text of the last page seen during the goal loop — read the goal's answer from there; the tool itself only decides actions and does not extract or summarize content. commandResults carries each raw command's own JSON output (e.g. a screenshot or HAR file path).",
       'Snapshots include page text and iframe boundaries. If embedded contents are absent, do not keep scrolling: reuse the named session with frame set to the iframe CSS selector (or "main" to return). Frame switching and element refs are managed by agent-browser; a failed frame switch is an error, not permission to act on the parent page.',
@@ -484,6 +485,7 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
       ) {
         const result = await runAgentBrowser(executor, args.session, ["close"], signal);
         if (!result.success) throw new Error(`Failed to close browser session: ${result.error}`);
+        explicitlyClosedSessions.add(args.session);
         return {
           content: [
             {
@@ -497,6 +499,11 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
       if (!args.goal && !args.commands?.length) {
         throw new Error(
           "Provide goal or commands, or use session with close: true to only close a browser.",
+        );
+      }
+      if (args.session && !args.url && explicitlyClosedSessions.has(args.session)) {
+        throw new Error(
+          `Browser session "${args.session}" was explicitly closed. Provide url to start it again; refusing to silently replace it with about:blank.`,
         );
       }
       const sessionId = args.session ?? `mikan-jb-${randomUUID()}`;
@@ -536,6 +543,7 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
           if (!openResult.success) {
             throw new Error(`Failed to open ${args.url}: ${openResult.error}`);
           }
+          if (args.session) explicitlyClosedSessions.delete(args.session);
         }
 
         if (args.frame !== undefined) {
@@ -772,7 +780,11 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
         // discarded in-progress recordings/HAR captures in earlier versions.
         const shouldClose = args.close ?? !args.session;
         if (shouldClose) {
-          await runAgentBrowser(executor, sessionId, ["close"]).catch(() => {});
+          await runAgentBrowser(executor, sessionId, ["close"])
+            .then((result) => {
+              if (args.session && result.success) explicitlyClosedSessions.add(sessionId);
+            })
+            .catch(() => {});
         }
       }
 
@@ -799,6 +811,29 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
         ],
         details: undefined,
       };
+    },
+  };
+}
+
+export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
+  const tool = createUnlockedJevBrowserTool(executor);
+  const execute = tool.execute.bind(tool);
+  let executionTail = Promise.resolve();
+
+  return {
+    ...tool,
+    execute: async (...args) => {
+      const previous = executionTail;
+      let release: (() => void) | undefined;
+      executionTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      try {
+        return await execute(...args);
+      } finally {
+        release?.();
+      }
     },
   };
 }
