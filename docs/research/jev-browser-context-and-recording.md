@@ -232,14 +232,17 @@ trees with isolated page state. `close` removed its daemon asynchronously; the
 session disappeared from `session list` within about one second. Mikan should
 therefore keep runner serialization and avoid unnecessary named sessions.
 
-The blocker is now provisioning compatibility, not browser ownership:
-`agent-browser 0.38.1` declares Node `>=24`, while mikan currently supports Node
-`>=22.19.0` and the sandbox Dockerfile installs Node 22. Upgrade approval and
-image/runtime verification are required before adopting it.
+The provisioning compatibility blocker has been addressed in the standard
+sandbox Dockerfile: it now installs Node 24, Debian Chromium, ffmpeg, and pinned
+`agent-browser 0.38.1`. A clean image build and a capability-constrained
+container smoke test verified `agent-browser doctor`, custom-UA current-page
+recording, contact-sheet output, ffprobe-readable video, and session cleanup.
+The host-side mikan package can retain its existing Node `>=22.19.0` contract;
+the Node 24 requirement belongs to the separate sandbox tool image.
 
 ## Recommended sequence
 
-1. Upgrade the managed sandbox runtime to Node 24 and provision agent-browser 0.38.1 or newer.
+1. Publish and deploy the rebuilt managed sandbox image containing Node 24 and agent-browser 0.38.1.
 2. Keep mikan's CLI integration; do not add a CDP compatibility shim or browser-harness dependency for this issue.
 3. Update tool guidance/tests for current-page recording, `--fps`, cursor, and contact-sheet output.
 4. Keep the independent mikan runner-owned cleanup/state work: active recording/HAR tracking, timeout cleanup, and runner disposal.

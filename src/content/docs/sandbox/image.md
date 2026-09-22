@@ -22,6 +22,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 Features:
 
+- the standard tool image includes Node.js 24, Chromium, ffmpeg, and the pinned `agent-browser` 0.38.1 runtime used by `jev_browser`
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`

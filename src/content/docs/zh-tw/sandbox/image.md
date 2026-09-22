@@ -22,6 +22,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 特性：
 
+- 標準工具 image 內建 Node.js 24、Chromium、ffmpeg，以及供 `jev_browser` 使用並鎖定版本的 `agent-browser` 0.38.1 runtime
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 都有自己的 Docker bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
 - 建立 managed container 時會加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 與 `--pids-limit=1024`

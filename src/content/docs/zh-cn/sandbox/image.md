@@ -22,6 +22,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 特性：
 
+- 标准工具镜像内置 Node.js 24、Chromium、ffmpeg，以及供 `jev_browser` 使用并锁定版本的 `agent-browser` 0.38.1 runtime
 - mikan 为每个对话创建隔离的 vault 和容器
 - 每个容器都有自己的 Docker bridge 网络，以隔离容器间的直接网络连接；出站网络访问仍保持启用
 - 管理的容器使用 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 和 `--pids-limit=1024` 创建
