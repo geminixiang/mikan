@@ -10,6 +10,20 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import {
+  branchTip,
+  DEFAULT_COMPACTION_SETTINGS,
+  getOrThrow,
+  insertEntry,
+  JsonlSessionRepo,
+  setValue,
+  TODO_CONTEXT,
+  value,
+  type AgentMessage,
+  type NewEntry,
+} from "@earendil-works/pi-agent-core";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { SessionStore } from "../sessions/session-store.js";
 
 let dir: string;
@@ -97,6 +111,33 @@ describe("SessionStore", () => {
     expect(SessionStore.readHeader(file)?.metadata).toBeUndefined();
   });
 
+  test("synchronous metadata inspection follows native Pi value writes and deletes", async () => {
+    const repo = new JsonlSessionRepo({
+      fileSystem: new NodeExecutionEnv({ cwd: dir }),
+      sessionsRoot: dir,
+    });
+    const session = await repo.create({ cwd: dir }, TODO_CONTEXT);
+    try {
+      const address = value<{ parentSessionPath: string; source: { kind: string } }>(
+        "mikan",
+        "metadata",
+      );
+      const metadata = { parentSessionPath: "/parent.jsonl", source: { kind: "platform-history" } };
+      await session.setValue(address, metadata, TODO_CONTEXT);
+      expect(SessionStore.readHeader(session.metadata.path)).toMatchObject({
+        parentSession: metadata.parentSessionPath,
+        metadata,
+      });
+      const inspection = await SessionStore.inspect(session.metadata.path);
+      expect(inspection.getHeader()).toEqual(SessionStore.readHeader(session.metadata.path));
+      await session.deleteValue(address, TODO_CONTEXT);
+      expect(SessionStore.readHeader(session.metadata.path)?.metadata).toBeUndefined();
+    } finally {
+      await session.close(TODO_CONTEXT);
+      await repo.close(TODO_CONTEXT);
+    }
+  });
+
   test("entries form a parent chain and getBranch returns root-first order", async () => {
     const file = join(dir, "session.jsonl");
     const store = await SessionStore.create(file, "/work");
@@ -165,36 +206,109 @@ describe("SessionStore", () => {
     expect(() => SessionStore.readHeader(v3)).toThrow(/legacy v3/);
   });
 
-  test("buildSessionContext resolves compaction summaries", async () => {
-    const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
-    await store.appendMessage({
-      role: "user",
-      content: [{ type: "text", text: "old" }],
-      timestamp: 1,
-    });
-    const kept = {
-      role: "user" as const,
-      content: [{ type: "text" as const, text: "recent" }],
-      timestamp: 2,
-    };
-    await store.appendMessage(kept);
-    await store.appendCompaction("summary of old", [kept], 1000);
+  test.each([false, true])(
+    "inspection context matches Pi's native execution projection (compacted=%s)",
+    async (compacted) => {
+      // Seed through Pi's public mutation API, not a production mikan writer
+      // maintained solely to construct test fixtures.
+      const repo = new JsonlSessionRepo({
+        fileSystem: new NodeExecutionEnv({ cwd: dir }),
+        sessionsRoot: dir,
+      });
+      const native = await repo.create({ cwd: dir }, TODO_CONTEXT);
+      const entries: NewEntry[] = [];
+      type EntryPayload<T = NewEntry> = T extends NewEntry ? Omit<T, "id" | "parentId"> : never;
+      const append = (entry: EntryPayload) => {
+        const id = native.idGenerator.next();
+        entries.push({ ...entry, id, parentId: entries.at(-1)?.id ?? null });
+      };
+      const kept: AgentMessage = { role: "user", content: "recent", timestamp: 2 };
+      const excluded = ["error", "aborted", "deferred"] as const;
+      const failed = excluded.map((stopReason) =>
+        Object.assign(fauxAssistantMessage(`excluded ${stopReason}`), { stopReason }),
+      );
+      append({ type: "message", message: { role: "user", content: "old", timestamp: 1 } });
+      if (compacted) {
+        append({
+          type: "compaction",
+          summary: "obsolete summary",
+          retainedTail: [],
+          tokensBefore: 10,
+          fromHook: false,
+        });
+        append({
+          type: "compaction",
+          summary: "current summary",
+          retainedTail: [kept, ...failed],
+          tokensBefore: 20,
+          fromHook: false,
+        });
+      } else {
+        append({ type: "message", message: kept });
+      }
+      for (const message of failed) append({ type: "message", message });
+      append({ type: "custom", customType: "mikan.chat_sync", data: { lastMessageId: "123" } });
+      append({
+        type: "branch_summary",
+        fromId: entries[0]!.id,
+        summary: "branch summary",
+        fromHook: false,
+      });
+      append({ type: "message", message: fauxAssistantMessage("settled answer") });
+      await native.mutate(async (mutation, context) => {
+        await mutation.commit(
+          [
+            ...entries.map((entry) => insertEntry(entry)),
+            setValue(branchTip("main"), entries.at(-1)!.id),
+          ],
+          context,
+        );
+      }, TODO_CONTEXT);
+      const file = native.metadata.path;
+      await native.close(TODO_CONTEXT);
+      await repo.close(TODO_CONTEXT);
 
-    const context = await store.buildSessionContext();
-    const rendered = context.messages
-      .map((message) => {
-        if ("summary" in message && typeof message.summary === "string") return message.summary;
-        if ("content" in message && Array.isArray(message.content)) {
-          return message.content.map((part) => ("text" in part ? part.text : "")).join("");
+      const store = await SessionStore.open(file);
+      try {
+        const projected = (await store.buildSessionContext()).messages;
+        const inspection = await SessionStore.inspect(file);
+        expect((await inspection.buildSessionContext()).messages).toEqual(projected);
+        const rendered = JSON.stringify(projected);
+        expect(rendered).toContain("recent");
+        expect(rendered).toContain("branch summary");
+        expect(rendered).not.toContain("excluded");
+        if (compacted) {
+          expect(rendered).toContain("current summary");
+          expect(rendered).not.toContain("obsolete summary");
+          expect(rendered).not.toContain('"old"');
         }
-        return "";
-      })
-      .join("|");
-    expect(rendered).toContain("summary of old");
-    expect(rendered).toContain("recent");
-    expect(rendered).not.toMatch(/(^|\|)old($|\|)/);
-  });
+
+        const models = createModels();
+        const faux = fauxProvider();
+        models.setProvider(faux.provider);
+        faux.setResponses([fauxAssistantMessage("next answer")]);
+        const harness = await store.createHarness({
+          models,
+          model: faux.getModel(),
+          compaction: { ...DEFAULT_COMPACTION_SETTINGS, enabled: false },
+        });
+        let nativeContext: AgentMessage[] | undefined;
+        harness.hooks.on("transform_context", ({ messages }) => {
+          nativeContext = structuredClone(messages);
+          return undefined;
+        });
+        const next: AgentMessage = { role: "user", content: "continue", timestamp: 3 };
+        const lane = await harness.lane("main", TODO_CONTEXT);
+        getOrThrow(await lane.prompt(next, TODO_CONTEXT));
+        expect(nativeContext?.filter((message) => message.role !== "system")).toEqual([
+          ...projected,
+          next,
+        ]);
+      } finally {
+        await store.close();
+      }
+    },
+  );
 
   test("open throws on a file with content but no valid header, instead of silently overwriting", async () => {
     // A file whose header line is corrupted but whose message lines survive
@@ -209,6 +323,15 @@ describe("SessionStore", () => {
     const wrongShape = join(dir, "wrong-shape.jsonl");
     writeFileSync(wrongShape, '{"hello":"world"}\n');
     await expect(SessionStore.open(wrongShape, "/work")).rejects.toThrow(/unrecognized header/i);
+  });
+
+  test.each([null, [], "header", 4])("open rejects a non-object header: %j", async (header) => {
+    const file = join(dir, "invalid-header.jsonl");
+    const original = `${JSON.stringify(header)}\n`;
+    writeFileSync(file, original);
+    await expect(SessionStore.open(file)).rejects.toThrow(/unrecognized header/i);
+    expect(SessionStore.readHeader(file)).toBeNull();
+    expect(readFileSync(file, "utf8")).toBe(original);
   });
 
   test("open treats a whitespace-only file as empty and materializes on append", async () => {

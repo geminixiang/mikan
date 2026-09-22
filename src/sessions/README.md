@@ -13,6 +13,28 @@ namespaced value under `mikan/metadata`, not a header field. Runtime opening
 accepts only this current format; legacy mikan v3 and Pi 0.84-generation v4
 files are handled by the offline `mikan sessions migrate` command.
 
+## Keeping up with Pi
+
+Session integration must stay easy to upgrade: use Pi's public session/harness
+interfaces, not private `dist` imports, copied execution logic, or speculative
+compatibility layers. Pi owns entries, transactions, live compaction, and recovery;
+mikan owns Office paths, platform history, rotation, and resource lifetime.
+
+Two small format-dependent readers remain because Pi 0.86 does not publicly
+export its JSONL header codec or session context projector:
+
+- The synchronous header/metadata reader serves path, lineage, and rotation
+  callers. Storage version and metadata types come from Pi's public exports;
+  the JSONL envelope stays local until Pi exposes it.
+- The read-only context projection serves inspection and mikan's transcript
+  view, never the LLM execution loop. `session-file-store.test.ts` compares it
+  with a real Pi harness's `transform_context` input, including compaction and
+  excluded assistant messages. Replace it with a public upstream projector
+  when one becomes available; do not add a private-import workaround.
+
+Tests seed structural entries through Pi's public mutation interface. There is
+no production `appendCompaction()` helper solely for test fixture construction.
+
 ## Files
 
 - `chat-history-sync.ts`: `ChatHistorySync` — synchronizes platform `log.jsonl` into harness sessions and handles channel/thread bootstrap, rebuild, reset, and scope resolution. Also owns the platform-log reader: skips malformed lines and coalesces consecutive bot chunks sharing a `ts`, since one streamed response is logged in pieces.

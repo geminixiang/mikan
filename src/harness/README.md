@@ -86,8 +86,8 @@ using only plain `AgentTool`s may omit `toolContext`.
 `resume({ budget, tools })` delegates recovery of an open operation to Pi's native
 lane. It can be used after reopening a store that contains an accepted or
 interrupted operation. A normal new `prompt()` preserves Pi's busy-lane rejection
-while an earlier operation is open. The low-level `appendCompaction()` store
-helper is limited to unattached stores; live compaction belongs to Pi.
+while an earlier operation is open. Compaction belongs to Pi; `SessionStore`
+does not expose a second structural compaction writer.
 
 Runner reuse, conversation identity, rotation, eviction, and Sandbox topology
 remain in `src/runtime/` and `src/sessions/`.

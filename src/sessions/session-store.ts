@@ -26,16 +26,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
   AgentHarness,
-  branchTip,
   laneState,
   operationResult,
   createBranchSummaryMessage,
   createCompactionSummaryMessage,
   createCustomMessage,
-  insertEntry,
   JsonlSessionRepo,
+  JSONL_STORAGE_VERSION,
   MemorySessionRepo,
-  setValue,
   TODO_CONTEXT,
   uuidv7,
   value,
@@ -49,6 +47,7 @@ import type {
   JsonlSessionMetadata,
   JsonValue,
   Session,
+  SessionMetadata,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
@@ -64,15 +63,12 @@ import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
 
-interface CurrentSessionHeader {
-  v: 4;
+// Pi does not publicly export its JSONL header type/codec. Keep only the
+// envelope here; metadata follows the public SessionMetadata contract.
+interface CurrentSessionHeader extends SessionMetadata {
+  v: typeof CURRENT_SESSION_VERSION;
   kind: "header";
-  id: string;
-  storageVersion: number;
-  createdAt: number;
   cwd: string;
-  parentSessionId?: string;
-  legacyParentSessionPath?: string;
   nextSeq?: number;
 }
 
@@ -171,7 +167,10 @@ function parseCurrentHeader(filePath: string, firstLine: string): CurrentSession
   } catch {
     throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  const record = parsed as Record<string, unknown>;
+  if (!isMetadataRecord(parsed)) {
+    throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
+  }
+  const record = parsed;
   if (record.type === "session" || (record.kind === "header" && record.version === 4)) {
     const generation = record.type === "session" ? "legacy v3" : "Pi 0.84 v4";
     throw new SessionFormatError(
@@ -180,15 +179,15 @@ function parseCurrentHeader(filePath: string, firstLine: string): CurrentSession
   }
   if (
     record.kind !== "header" ||
-    record.v !== 4 ||
-    record.storageVersion !== 1 ||
+    record.v !== CURRENT_SESSION_VERSION ||
+    record.storageVersion !== JSONL_STORAGE_VERSION ||
     typeof record.id !== "string" ||
     typeof record.createdAt !== "number" ||
     typeof record.cwd !== "string"
   ) {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  return parsed as CurrentSessionHeader;
+  return parsed as unknown as CurrentSessionHeader;
 }
 
 function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSessionMetadata {
@@ -294,10 +293,10 @@ function buildHeader(
       : ({ parentSessionPath: options.parentSession } satisfies MikanSessionMetadata);
   return {
     header: {
-      v: 4,
+      v: CURRENT_SESSION_VERSION,
       kind: "header",
       id: options?.id ?? uuidv7(),
-      storageVersion: 1,
+      storageVersion: JSONL_STORAGE_VERSION,
       createdAt: Date.now(),
       cwd,
       ...(options?.parentSessionId !== undefined
@@ -345,7 +344,10 @@ async function openFileSession(
   }
 }
 
-/** Both inspection surfaces share one snapshot lifetime; neither claims the source writer. */
+/**
+ * Pi has no read-only open: opening can repair a torn tail. Inspect a copy so
+ * queries cannot rewrite the live file or compete with its writer.
+ */
 async function withSessionSnapshot<T>(
   path: string,
   read: (session: Session<JsonlSessionMetadata>, header: CurrentSessionHeader) => Promise<T>,
@@ -387,6 +389,13 @@ function isContextMessage(message: AgentMessage): boolean {
   );
 }
 
+/**
+ * Read-only projection for inspection and mikan's transcript view, not the LLM
+ * execution path. Pi 0.86 does not publicly export its session context builder.
+ * Keep this minimal until it does; native-harness parity tests guard upgrades.
+ * Custom entries are omitted, matching Pi without registered entryProjectors.
+ * Do not deep-import Pi internals or add another execution-context pipeline.
+ */
 function buildContext(entries: Entry[]): SessionContext {
   const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
   const visibleEntries = entries.slice(Math.max(0, compactionIndex));
@@ -748,39 +757,6 @@ export class SessionStore implements SessionInspection {
     await this.mutate(async () =>
       (await this.live()).session.setName(name.trim() || undefined, TODO_CONTEXT),
     );
-  }
-
-  async appendCompaction(
-    summary: string,
-    retainedTail: AgentMessage[],
-    tokensBefore: number,
-    details?: unknown,
-  ): Promise<string> {
-    return this.mutate(async () => {
-      if (this.harness) throw new Error("Compaction is owned by the attached Pi harness");
-      const { session } = await this.live();
-      const id = session.idGenerator.next();
-      await session.mutate(async (mutator, context) => {
-        const currentTip = await mutator.getValue(branchTip("main"), context);
-        await mutator.commit(
-          [
-            insertEntry({
-              type: "compaction",
-              id,
-              parentId: currentTip?.value ?? null,
-              summary,
-              retainedTail: toDurable(retainedTail),
-              tokensBefore,
-              fromHook: false,
-              ...(details !== undefined ? { details: toDurable(details) as JsonValue } : {}),
-            }),
-            setValue(branchTip("main"), id),
-          ],
-          context,
-        );
-      }, TODO_CONTEXT);
-      return id;
-    });
   }
 
   async close(): Promise<void> {
