@@ -70,7 +70,6 @@ describe.skipIf(!ctx?.env.mikanBotUserId)("Slack thread stop routing", () => {
         thread.some((m) => m.ts === stopped!.ts && (m.text ?? "").startsWith("Stopped.")),
       ).toBe(true);
     } finally {
-      // An assertion failure must not leave a 90-second run blocking later cases.
       await postMessage(client, env.channel, "stop", root);
     }
   }, 180000);

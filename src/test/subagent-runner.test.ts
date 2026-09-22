@@ -57,7 +57,6 @@ const echoTool: AgentTool = {
   }),
 };
 
-/** A no-tool profile, so the integration tests exercise the profile path. */
 const THINKER_PROFILES = new Map([
   [
     "thinker",
@@ -164,9 +163,6 @@ describe("runSubagent", () => {
       });
 
       expect(result.status).toBe("completed");
-      // maxDurationMs is enforced solely by the runner's hard-deadline
-      // timer; it is not forwarded into the session budget (dual authority
-      // made the terminal status racy between timeout/budget_exceeded).
       expect(promptSpy.mock.calls[0]?.[1]?.budget).toEqual({
         maxLlmCalls: 2,
         maxTokens: 20_000,
@@ -554,8 +550,6 @@ describe("runSubagent", () => {
   });
 
   test("validates structured output against a plain JSON Schema object", async () => {
-    // Tool-call arguments arrive as plain JSON: TypeBox's Kind symbol never
-    // survives the wire, so outputSchema here has no [Kind] metadata.
     const plainSchema = JSON.parse(
       JSON.stringify(
         Type.Object({
@@ -629,11 +623,6 @@ describe("runSubagent", () => {
     });
   });
 
-  /**
-   * The session's event stream always existed and nothing consumed it, so a
-   * subagent was silent for its entire run — a step that legitimately took
-   * four minutes was indistinguishable from a hang, and was reported as one.
-   */
   test("reports what the run is doing as it happens", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
@@ -652,8 +641,6 @@ describe("runSubagent", () => {
       onActivity: (line) => activity.push(line),
     });
 
-    // The tool call is the part a reader can follow; naming it is the whole
-    // point of the sink.
     expect(activity).toContain("echo");
     expect(activity.length).toBeGreaterThan(1);
   });
@@ -674,7 +661,6 @@ describe("runSubagent", () => {
       },
     });
 
-    // Progress display is a nicety; the answer is not.
     expect(result).toMatchObject({ status: "completed", output: "done" });
   });
 
@@ -763,8 +749,6 @@ describe("runSubagent", () => {
       profiles: THINKER_PROFILES,
     });
 
-    // Told to "use granted tools" while holding none, a model narrates a tool
-    // call as prose and hands that text back as its finding.
     expect(systemPrompt).toContain("You have NO tools in this run");
     expect(systemPrompt).toContain("Do not emit tool calls or tool-call syntax");
     expect(systemPrompt).not.toContain("Use them for any claim");
@@ -883,9 +867,6 @@ describe("runSubagent", () => {
   });
 
   test("a task failing validation cannot orphan batch siblings", async () => {
-    // The second task is whitespace-only, which fails request validation. As a
-    // failed result (not a rejection) it must not tear down the Promise chain
-    // that the first task's live run hangs on.
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("sibling done")]);
     const tool = createSubagentTool(
@@ -971,7 +952,6 @@ describe("runSubagent", () => {
     expect(result.status).toBe("completed");
     expect(usageCalls).toEqual([result.usage]);
 
-    // A run that fails before the session even starts still reports once.
     const failureCalls: SubagentUsage[] = [];
     const failure = await runSubagent({
       request: { task: "Do focused work", tools: ["missing-tool"] },

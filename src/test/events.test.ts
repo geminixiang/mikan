@@ -214,7 +214,6 @@ describe("EventScheduler", () => {
         }),
       }),
     );
-    // Immediate records are removed after enqueue.
     expect(await store.list()).toEqual([]);
     scheduler.stop();
   });

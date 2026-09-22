@@ -137,7 +137,6 @@ describe("migrateSessionFile", () => {
     const context = await store.buildSessionContext();
     expect(context.messages).toHaveLength(2);
     expect(context.messages[1]?.role).toBe("custom");
-    // The custom_message's fact-only parent is skipped in the v4 chain.
     const entries = await store.getEntries();
     expect(entries.map((entry) => entry.id)).toEqual(["a", "cm"]);
   });
@@ -155,10 +154,6 @@ describe("migrateSessionFile", () => {
   });
 
   test("collapses crash-duplicated lines the way the v3 reader did", async () => {
-    // Seen in production: a retried append duplicated the header+entry pair.
-    // The v3 runtime read entries into a Map (last write wins per id), so
-    // duplicates were invisible; v4 rejects duplicate mutation ids, so the
-    // migration must collapse them.
     const file = join(dir, "session.jsonl");
     writeJsonl(file, [
       header,
@@ -177,9 +172,6 @@ describe("migrateSessionFile", () => {
   });
 
   test("a trailing fact-only entry re-aims the lane at its surviving ancestor", async () => {
-    // Seen in production: session_info was the newest entry, so the v3 leaf
-    // pointed at it — but facts do not survive as v4 entries, and the lane
-    // must not reference a missing target.
     const file = join(dir, "session.jsonl");
     writeJsonl(file, [
       header,

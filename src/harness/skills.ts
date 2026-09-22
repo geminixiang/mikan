@@ -6,7 +6,6 @@ import { basename, dirname, join } from "node:path";
 
 import * as log from "../log.js";
 
-/** Register skills under their prompt-side paths; a later source overrides an earlier one. */
 function addSkills(
   skillMap: Map<string, MikanSkill>,
   skills: MikanSkill[],
@@ -19,7 +18,6 @@ function addSkills(
   }
 }
 
-/** Conversation skill entries that are symlinks are refused, and reported to the prompt. */
 function skippedSymlinkPaths(
   diagnostics: SkillDiagnostic[],
   translatePath: (path: string) => string,
@@ -40,8 +38,6 @@ export function loadMikanSkills(
 ): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const skillMap = new Map<string, MikanSkill>();
 
-  // workspacePath is the runtime-side root (e.g. /workspace); host paths under
-  // the workspace root translate onto it for prompt references.
   const hostWorkspacePath = office.workspace.root;
   const translatePath = (hostPath: string): string =>
     hostPath.startsWith(hostWorkspacePath)
@@ -77,10 +73,6 @@ interface Frontmatter {
   body: string;
 }
 
-/**
- * Parse simple `key: value` YAML frontmatter delimited by `---` lines.
- * Quoted values are unquoted; nested structures are not supported.
- */
 export function parseFrontmatter(content: string): Frontmatter {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
   if (!match) return { values: {}, body: content };
@@ -103,7 +95,6 @@ export function parseFrontmatter(content: string): Frontmatter {
   return { values, body: content.slice(match[0].length) };
 }
 
-/** Exposed so the admin portal can validate a skill draft before writing it. */
 export function validateSkill(name: string, description: string): string[] {
   const errors: string[] = [];
   if (name.length > MAX_NAME_LENGTH) {
@@ -164,22 +155,9 @@ function loadSkillFromFile(filePath: string, source: string): LoadSkillsResult {
   }
 }
 
-/**
- * Load skills from a directory tree.
- * - A directory containing `SKILL.md` is a skill root; no further recursion.
- * - Direct `.md` children of the top-level directory load as skills.
- * - Dot-directories and `node_modules` are skipped.
- */
 export function loadSkillsFromDir(options: {
   dir: string;
   source: string;
-  /**
-   * Refuse to follow symlinks on any path this load would read, skipping the
-   * offending entry with a `code: "symlink"` diagnostic instead of loading
-   * it. For untrusted trees (conversation offices) the host must never
-   * follow an agent-created link; entries the loader never reads — dot
-   * directories, vendored node_modules — cannot disqualify anything.
-   */
   rejectSymlinks?: boolean;
 }): LoadSkillsResult {
   const rejectSymlinks = options.rejectSymlinks === true;
@@ -297,10 +275,6 @@ function escapeXml(str: string): string {
     .replace(/'/g, "&apos;");
 }
 
-/**
- * Format skills for a system prompt using the Agent Skills XML block.
- * Skills with `disableModelInvocation` are excluded.
- */
 export function formatSkillsForPrompt(skills: MikanSkill[]): string {
   const visible = skills.filter((skill) => !skill.disableModelInvocation);
   if (visible.length === 0) return "";
@@ -317,7 +291,6 @@ export function formatSkillsForPrompt(skills: MikanSkill[]): string {
     lines.push(`    <name>${escapeXml(skill.name)}</name>`);
     lines.push(`    <description>${escapeXml(skill.description)}</description>`);
     if (skill.inline) {
-      // Inline skills carry their body: the agent cannot read their file.
       lines.push(`    <instructions>${escapeXml(skill.content)}</instructions>`);
     } else {
       lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);

@@ -4,10 +4,6 @@ import type { DiscordEvent } from "../adapters/discord/bot.js";
 import { createDiscordAdapters } from "../adapters/discord/context.js";
 import { DISCORD_V2_TEXT_LIMIT } from "../adapters/discord/components.js";
 
-// ============================================================================
-// Minimal DiscordMessagingBot mock
-// ============================================================================
-
 function makeDiscordMessagingBot(
   overrides: Partial<DiscordMessagingBot> = {},
 ): DiscordMessagingBot {
@@ -22,7 +18,6 @@ function makeDiscordMessagingBot(
     logBotResponse: vi.fn(),
     getAllChannels: vi.fn().mockReturnValue([]),
     getAllUsers: vi.fn().mockReturnValue([]),
-    // MessagingBot interface stubs
     start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("MSG001"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
@@ -44,24 +39,13 @@ function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
   };
 }
 
-// ============================================================================
-// subagent progress
-// ============================================================================
-
 describe("subagent dashboard", () => {
   test("does not override the harness's response-source dashboard", () => {
     const bot = makeDiscordMessagingBot();
     const { responder } = createDiscordAdapters(makeEvent(), bot);
-    // Discord speaks Markdown, so the harness-composed dashboard flows through
-    // replaceResponse like any response; only a non-Markdown pipeline
-    // (Telegram HTML) overrides.
     expect(responder.replaceSubagentProgress).toBeUndefined();
   });
 });
-
-// ============================================================================
-// react
-// ============================================================================
 
 describe("react", () => {
   test("targets the triggering message", async () => {
@@ -81,10 +65,6 @@ describe("react", () => {
     expect(responder.react).toBeUndefined();
   });
 });
-
-// ============================================================================
-// Session key derivation
-// ============================================================================
 
 describe("session key derivation", () => {
   test("non-threaded: sessionKey = channel", () => {
@@ -124,10 +104,6 @@ describe("session key derivation", () => {
     expect(m2.sessionKey).toBe("CH001");
   });
 });
-
-// ============================================================================
-// respond() routing
-// ============================================================================
 
 describe("respond() — non-threaded (replies to trigger message)", () => {
   test("first call posts as reply to the trigger message", async () => {
@@ -171,7 +147,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot, true);
     await responder.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", expect.stringContaining("hello"));
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -209,10 +185,6 @@ describe("respond() — threaded", () => {
     );
   });
 });
-
-// ============================================================================
-// respondDiagnostic()
-// ============================================================================
 
 describe("respondDiagnostic()", () => {
   test("non-threaded: posts as a reply to the trigger message", async () => {
@@ -271,7 +243,7 @@ describe("respondDiagnostic()", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot, true);
     await responder.respond("main");
     vi.clearAllMocks();
     await responder.respondDiagnostic("detail");
@@ -286,7 +258,7 @@ describe("respondDiagnostic()", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot, true);
     await responder.respondDiagnostic("detail");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -294,19 +266,13 @@ describe("respondDiagnostic()", () => {
   });
 });
 
-// ============================================================================
-// setTyping()
-// ============================================================================
-
 describe("setTyping()", () => {
-  // Discord uses persistent typing indicator interval, no initial message
   test("sends typing indicator (persistent)", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ ts: "MSG001", thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");
-    // Does NOT post initial message - that's done on first respond()
     expect(bot.postReply).not.toHaveBeenCalled();
   });
 
@@ -338,12 +304,9 @@ describe("setTyping()", () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
-    // Start typing
     await responder.setTyping(true);
-    // Stop typing (should clear interval internally)
     await responder.setTyping(false);
     vi.clearAllMocks();
-    // Start typing again - should call sendTyping (interval was cleared)
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");
   });
@@ -371,9 +334,9 @@ describe("setTyping()", () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
-    await responder.setTyping(true); // creates message
+    await responder.setTyping(true);
     vi.clearAllMocks();
-    await responder.setTyping(true); // should be no-op
+    await responder.setTyping(true);
     expect(bot.postReply).not.toHaveBeenCalled();
     expect(bot.sendTyping).not.toHaveBeenCalled();
   });
@@ -381,24 +344,18 @@ describe("setTyping()", () => {
   test("event: sends typing indicator", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ text: "run deploy" });
-    const { responder } = createDiscordAdapters(event, bot, /* isEvent= */ true);
+    const { responder } = createDiscordAdapters(event, bot, true);
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");
-    // Does NOT post initial message
     expect(bot.postReply).not.toHaveBeenCalled();
   });
 });
-
-// ============================================================================
-// setWorking()
-// ============================================================================
 
 describe("setWorking()", () => {
   test("respond() while working appends indicator", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
-    // Default isWorking=true
     await responder.respond("content");
     const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
     expect(posted).toContain(" ...");
@@ -416,10 +373,6 @@ describe("setWorking()", () => {
   });
 });
 
-// ============================================================================
-// replaceResponse()
-// ============================================================================
-
 describe("replaceResponse()", () => {
   test("replaces accumulated text entirely", async () => {
     const bot = makeDiscordMessagingBot({ postReply: vi.fn().mockResolvedValue("REPLY001") });
@@ -433,17 +386,7 @@ describe("replaceResponse()", () => {
   });
 });
 
-// ============================================================================
-// Text splitting
-// ============================================================================
-
 describe("text splitting", () => {
-  /**
-   * Components V2 allows 4000 characters across a message's text against 2000
-   * for classic content, which is the reason for using it — an answer that
-   * used to arrive as a string of "(continued N)" posts now fits in half as
-   * many. It is still a ceiling, not its removal.
-   */
   test("text past the Components V2 ceiling is split", async () => {
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
@@ -479,12 +422,7 @@ describe("text splitting", () => {
   });
 });
 
-// ============================================================================
-// deleteResponse()
-// ============================================================================
-
 describe("deleteResponse()", () => {
-  // Discord threads not used here — only deletes main message
   test("deletes main message", async () => {
     const bot = makeDiscordMessagingBot({
       postReply: vi.fn().mockResolvedValue("MAIN_MSG"),
@@ -506,10 +444,6 @@ describe("deleteResponse()", () => {
     expect(bot.deleteMessageRaw).not.toHaveBeenCalled();
   });
 });
-
-// ============================================================================
-// MessagingInfo
-// ============================================================================
 
 describe("platform info", () => {
   test("name is 'discord'", () => {
@@ -540,10 +474,6 @@ describe("platform info", () => {
   });
 });
 
-// ============================================================================
-// uploadFile()
-// ============================================================================
-
 describe("uploadFile()", () => {
   test("calls bot.uploadFile with channel, path, and title", async () => {
     const bot = makeDiscordMessagingBot();
@@ -562,14 +492,8 @@ describe("uploadFile()", () => {
   });
 });
 
-// ============================================================================
-// Streaming lifecycle
-// ============================================================================
-
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
-    // Redraws are paced by wall clock, and the renderer captures `Date.now`
-    // when it is built — so the fake clock has to be in place first.
     vi.useFakeTimers();
     const bot = makeDiscordMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
@@ -590,10 +514,6 @@ describe("streaming lifecycle", () => {
     expect(bot.updateMessageRaw).toHaveBeenLastCalledWith("CH001", "MSG002", "hello final");
   });
 });
-
-// ============================================================================
-// ConversationMessage fields
-// ============================================================================
 
 describe("message fields", () => {
   test("userId and userName are populated from event", () => {

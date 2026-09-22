@@ -3,8 +3,6 @@ import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
 
-// `session` is the only bare command (manifest `bare: true`), so its grammar
-// includes the slash-less spelling alongside the derived slash forms.
 const SESSION_VIEW_COMMANDS = commandForms("session");
 
 export class SessionViewCommandHandler implements CommandHandler {

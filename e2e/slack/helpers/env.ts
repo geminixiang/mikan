@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 2_000;
-// resolve from this file's location (e2e/slack/helpers/) up to repo root
 const REPO_ROOT = join(import.meta.dirname, "../../..");
 
 export interface SlackE2eEnv {

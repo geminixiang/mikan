@@ -83,7 +83,6 @@ describe("derived surfaces", () => {
       "utf-8",
     );
     expect(template).toContain("mikan.env");
-    // No env block enumerating tokens inline — that's the env file's job.
     expect(template).not.toMatch(/SLACK_APP_TOKEN|ANTHROPIC_API_KEY/);
   });
 });

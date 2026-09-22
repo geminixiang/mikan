@@ -43,7 +43,6 @@ function resolveConversationAddress(input: ConversationIdentityInput): OfficeAdd
   return address;
 }
 
-/** Normalize platform intake into one authoritative conversation identity. */
 export function createConversationEvent<
   T extends Omit<ConversationEvent, "address" | "conversationId">,
 >(input: T & ConversationIdentityInput): T & ConversationEvent {
@@ -51,7 +50,6 @@ export function createConversationEvent<
   return { ...input, address, conversationId: address.conversationId };
 }
 
-/** Normalize a platform response context into one authoritative identity. */
 export function createConversationMessage<
   T extends Omit<ConversationMessage, "address" | "conversationId">,
 >(input: T & ConversationIdentityInput): T & ConversationMessage {

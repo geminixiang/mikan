@@ -1,8 +1,3 @@
-/**
- * Minimal mikan embedder: a stdin/stdout agent built from the public npm
- * surface (`@geminixiang/mikan`) only — no portal, no vault, no token stores.
- * Each stdin line becomes a ConversationEvent; agent output prints to stdout.
- */
 import { createInterface } from "node:readline";
 import { pathToFileURL } from "node:url";
 import { join } from "node:path";
@@ -13,9 +8,6 @@ import {
   createWorkspace,
 } from "@geminixiang/mikan";
 const CONVERSATION_ID = "embedder";
-// An office is identified by its platform plus its raw conversation id, so an
-// embedder adopts one of mikan's supported platforms; here a Slack office is
-// driven over stdin/stdout instead of Socket Mode.
 const PLATFORM = "slack";
 const platform = {
   name: PLATFORM,
@@ -25,8 +17,6 @@ const platform = {
 };
 export function createEmbedder(options) {
   const write = options.write ?? ((text) => process.stdout.write(`${text}\n`));
-  // An embedder owns both roots: the workspace the agent works in, and the
-  // host-only state dir mikan keeps its registry and settings under.
   const runtime = createConversationRuntime({
     workspace: createWorkspace({
       root: options.workingDir,
@@ -93,4 +83,3 @@ if (invokedDirectly) {
   });
   rl.on("close", () => void embedder.runtime.shutdown());
 }
-//# sourceMappingURL=index.js.map

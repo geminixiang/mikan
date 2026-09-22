@@ -105,12 +105,6 @@ export async function waitForThreadSessionBootstrap(
   return waited;
 }
 
-/**
- * Syncs the platform chat transcript (log.jsonl) into managed session files:
- * resolves which session file a message belongs to (top-level vs thread,
- * with biweekly rotation), bootstraps new sessions from recent history, and
- * incrementally appends log messages the session does not yet represent.
- */
 export class ChatHistorySync {
   private readonly recentDays: number;
   private readonly maxTopLevelMessages: number;
@@ -192,10 +186,6 @@ export class ChatHistorySync {
     cwd: string;
     currentMessageId?: string;
   }): Promise<string> {
-    // Materialization only: an existing session is returned as-is. The
-    // runtime performs the one incremental log sync per event through the
-    // runner, after the writer is created — syncing here too made every
-    // cache-miss event run the pipeline twice.
     const existing = tryResolveCurrentSession(options.sessionDir);
     if (existing && !isPlatformHistorySession(existing)) return existing;
     const records = readConversationLog(options.conversationDir);
@@ -232,7 +222,6 @@ export class ChatHistorySync {
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
     if (existing) {
-      // Materialization only; the runtime owns the per-event incremental sync.
       return { sessionDir: options.sessionDir, contextFile: existing, threadRootMessage };
     }
 
@@ -261,17 +250,15 @@ export class ChatHistorySync {
   }
 }
 
-/** The recorded parent of an existing thread session, kept across a reset. */
 function existingThreadParent(threadFile: string): ParentSessionRef | undefined {
   let header;
   try {
     header = SessionStore.readHeader(threadFile);
   } catch {
-    return undefined; // File missing or corrupted — the session is recreated.
+    return undefined;
   }
   const path = header?.parentSession;
   if (!header || !path) return undefined;
-  // Prefer the stored UUID; legacy sessions without it need the parent file.
   const id = header.parentSessionId ?? readParentSessionId(path);
   return id ? { path, id } : undefined;
 }
@@ -284,10 +271,6 @@ function readParentSessionId(parentPath: string): string | undefined {
   }
 }
 
-/**
- * Archive a thread session and create its replacement, preserving lineage:
- * the original parent is kept rather than re-bound to the current session.
- */
 function resetThreadSessionFile(conversationDir: string, sessionKey: string, cwd: string): string {
   const threadFile = getThreadSessionFile(conversationDir, sessionKey);
   const parent =
@@ -387,11 +370,6 @@ function selectExistingSessionSyncMessages(
   );
 }
 
-/**
- * Slack logs messages before enqueueing them, so a later queued turn may
- * already be present while the current turn is being prepared. Chat history
- * must stop at the current record rather than merely removing that one id.
- */
 function recordsBeforeCurrentMessage(records: LogRecord[], currentMessageId?: string): LogRecord[] {
   if (!currentMessageId) return records;
   const currentRecord = findLogRecordById(records, currentMessageId);
@@ -498,8 +476,6 @@ async function syncSessionManagerFromLog(
   const lastSyncedIndex = lastSyncedMessageId
     ? eligibleRecords.findIndex((record) => record.message.ts === lastSyncedMessageId)
     : -1;
-  // A truncated or rebuilt log may no longer contain the watermark. Replay the
-  // current bounded history; represented-message matching below prevents duplicates.
   const syncCandidates = selectRecentMessages(
     eligibleRecords.slice(lastSyncedIndex + 1),
     historyWindow,
@@ -539,7 +515,6 @@ function isChatSyncMarker(entry: SessionEntry): entry is Extract<SessionEntry, {
   return entry.type === "custom" && entry.customType === CHAT_SYNC_CUSTOM_TYPE;
 }
 
-/** The reset timestamp a chat-sync marker records, when it carries a usable one. */
 function markerResetAt(entry: SessionEntry): number | undefined {
   if (!isChatSyncMarker(entry)) return undefined;
   if (!isRecord(entry.data) || typeof entry.data.resetAt !== "string") return undefined;
@@ -686,13 +661,6 @@ function zeroUsage(): object {
   };
 }
 
-// ── Conversation platform log (log.jsonl) ─────────────────────────────────────
-
-/**
- * Read a conversation's platform chat log (log.jsonl): skip malformed lines,
- * and coalesce consecutive messaging-bot chunks that share a ts — streamed
- * responses are logged in pieces but represent one message.
- */
 function readConversationLog(conversationDir: string): LogRecord[] {
   const logFile = join(conversationDir, "log.jsonl");
   const raw = readTextFileIfExists(logFile);
@@ -706,7 +674,6 @@ function readConversationLog(conversationDir: string): LogRecord[] {
   return coalesceMessagingBotLogChunks(records);
 }
 
-/** One log line, or `undefined` after warning about a malformed one. */
 function parseLogLine(
   line: string,
   logFile: string,

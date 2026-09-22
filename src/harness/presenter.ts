@@ -173,9 +173,7 @@ export function activateRunPresentation(
           log.logWarning(`API error (${errorContext})`, errMsg);
           try {
             await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
-          } catch {
-            // Ignore
-          }
+          } catch {}
         }
       });
     },
@@ -205,17 +203,12 @@ export function isEventTriggerAttribution(triggerAttribution: string | undefined
 function extractToolLabel(toolName: string, args: unknown): string {
   const label = (args as { label?: unknown } | undefined)?.label;
   const text = typeof label === "string" ? label.trim() || toolName : toolName;
-  // Jev judgments are calibrated probabilities, not the model's own guess,
-  // and jev_browser drives a real external browser; name the tool so the
-  // user can tell which steps came from either. Guard against doubling the
-  // name when no real label was supplied and text fell back to toolName.
   if ((toolName === "jev" || toolName === "jev_browser") && text !== toolName) {
     return `${toolName} · ${text}`;
   }
   return text;
 }
 
-/** Non-subagent tool activity lines; subagent calls render as the dashboard. */
 function formatToolProgress(runState: RunnerSessionState): string {
   const lines = Array.from(runState.toolProgress.entries()).flatMap(([toolCallId, item]) => {
     if (runState.subagentToolCalls.has(toolCallId)) return [];
@@ -230,13 +223,6 @@ function formatResponseWithToolProgress(text: string, runState: RunnerSessionSta
   return [progress, text].filter(Boolean).join("\n\n");
 }
 
-/**
- * The one dashboard render path. A responder that overrides
- * `replaceSubagentProgress` converts the snapshot for a pipeline that is not
- * response-source Markdown (Telegram HTML); every other platform receives the
- * Markdown dashboard — "dashboard, blank line, answer" — through
- * `replaceResponse`, the same conversion as any response.
- */
 async function replaceWithSubagentDashboard(
   responder: ConversationResponder,
   snapshot: SubagentProgressSnapshot,
@@ -273,7 +259,6 @@ function subagentProgressDelay(runState: RunnerSessionState): number {
   return Math.max(0, runState.lastSubagentProgressAt + SUBAGENT_PROGRESS_THROTTLE_MS - Date.now());
 }
 
-/** Record that a subagent dashboard reached the channel, for throttling the next one. */
 function markSubagentProgressShown(runState: RunnerSessionState, snapshot: unknown): void {
   if (!snapshot) return;
   runState.subagentProgressShown = true;
@@ -407,7 +392,6 @@ export async function finalizeRunResponse(
     await responder.notifyCompletion?.();
 }
 
-/** `[SILENT]` means the run leaves no message behind. */
 async function deleteForSilentResponse(responder: ConversationResponder): Promise<void> {
   try {
     await responder.deleteResponse();
@@ -418,12 +402,6 @@ async function deleteForSilentResponse(responder: ConversationResponder): Promis
   }
 }
 
-/**
- * The profile every completed subagent node ran under, when the run resolved
- * to exactly one. A fan-out across different profiles (or any node that did
- * not complete) has no single "who answered this" identity, so callers keep
- * the manager's own identity rather than guessing.
- */
 function resolveSingleCompletedProfile(runState: RunnerSessionState): string | undefined {
   const nodes = runState.completedSubagentProgress.flatMap((snapshot) => snapshot.nodes);
   if (nodes.length === 0) return undefined;
@@ -434,7 +412,6 @@ function resolveSingleCompletedProfile(runState: RunnerSessionState): string | u
   return nodes.every((node) => node.status === "completed") ? profile : undefined;
 }
 
-/** Replace the in-progress message with the run's answer, or a subagent dashboard plus it. */
 async function publishFinalResponse(
   responder: ConversationResponder,
   runState: RunnerSessionState,
@@ -590,7 +567,6 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   }
 }
 
-/** The joined text parts of a structured tool result, when it carries any. */
 function toolResultContentText(result: unknown): string | undefined {
   if (!result || typeof result !== "object" || !("content" in result)) return undefined;
   const content = (result as { content: unknown }).content;
@@ -877,7 +853,6 @@ function recordAssistantUsage(message: AssistantMessage, context: PresenterEvent
   });
 }
 
-/** Stream one thinking block to the channel and the diagnostic surface. */
 function presentThinking(thinking: string, context: PresenterEventContext): void {
   log.logThinking(context.logCtx, thinking);
   context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
@@ -887,14 +862,12 @@ function presentThinking(thinking: string, context: PresenterEventContext): void
   );
 }
 
-/** Emit the assistant's answer as the run's final message. */
 function presentFinalText(text: string, context: PresenterEventContext): void {
   const finalText = appendTriggerAttribution(
     formatResponseWithToolProgress(text, context.runState),
     context.runState.triggerAttribution,
   );
   log.logResponse(context.logCtx, text);
-  // Subagent dashboard finalization must preserve "dashboard, blank line, answer".
   if (context.runState.completedSubagentProgress.length > 0) return;
   if (context.responder.finishResponse) {
     context.queue.enqueue(async () => {
@@ -932,7 +905,6 @@ function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext
   );
   if (message.stopReason) {
     context.runState.stopReason = message.stopReason;
-    // The settling message clears any stale error left by a recovered retry.
     context.runState.errorMessage = message.errorMessage;
   }
   recordAssistantUsage(message, context);

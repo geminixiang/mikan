@@ -1,12 +1,3 @@
-/**
- * mikan-owned facade over Pi's current JSONL v4 SessionRepo.
- *
- * Pi owns entry, branch, value, transaction, and storage validation. mikan
- * owns exact file paths, single-writer leases, lazy materialization, lineage
- * metadata, and the stable inspection API consumed by platform runtimes.
- * Older session generations are rejected and converted only by the offline
- * `mikan sessions migrate` command.
- */
 import {
   closeSync,
   existsSync,
@@ -63,8 +54,6 @@ import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
 
-// Pi does not publicly export its JSONL header type/codec. Keep only the
-// envelope here; metadata follows the public SessionMetadata contract.
 interface CurrentSessionHeader extends SessionMetadata {
   v: typeof CURRENT_SESSION_VERSION;
   kind: "header";
@@ -205,12 +194,6 @@ function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSe
   };
 }
 
-/**
- * Hand-rolled JSONL scan kept only for the synchronous `readHeader` path,
- * which must read metadata without opening a Session. `open`/`inspect`
- * instead read it via `session.getValue(MIKAN_METADATA, ...)` once a
- * Session exists, so pi owns that decoding.
- */
 function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined {
   let current: MikanSessionMetadata | undefined;
   for (const line of readFileSync(filePath, "utf-8").split("\n").slice(1)) {
@@ -344,10 +327,6 @@ async function openFileSession(
   }
 }
 
-/**
- * Pi has no read-only open: opening can repair a torn tail. Inspect a copy so
- * queries cannot rewrite the live file or compete with its writer.
- */
 async function withSessionSnapshot<T>(
   path: string,
   read: (session: Session<JsonlSessionMetadata>, header: CurrentSessionHeader) => Promise<T>,
@@ -389,13 +368,6 @@ function isContextMessage(message: AgentMessage): boolean {
   );
 }
 
-/**
- * Read-only projection for inspection and mikan's transcript view, not the LLM
- * execution path. Pi 0.86 does not publicly export its session context builder.
- * Keep this minimal until it does; native-harness parity tests guard upgrades.
- * Custom entries are omitted, matching Pi without registered entryProjectors.
- * Do not deep-import Pi internals or add another execution-context pipeline.
- */
 function buildContext(entries: Entry[]): SessionContext {
   const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
   const visibleEntries = entries.slice(Math.max(0, compactionIndex));
@@ -525,10 +497,8 @@ export class SessionStore implements SessionInspection {
     }
   }
 
-  /** Read native execution state without claiming the live file's writer. */
   static async inspectExecution(path: string): Promise<{
     open: boolean;
-    /** False until the first operation is recorded: admitted, never run. */
     started: boolean;
     result?: { status: "completed" | "aborted" | "failed" | "declined"; endedAt: number };
   }> {
@@ -687,7 +657,6 @@ export class SessionStore implements SessionInspection {
     return buildContext(await this.getBranch());
   }
 
-  /** Acquire host MCP capabilities under the same lifetime as the session writer. */
   async connectMcp(servers: Record<string, McpServerConfig>, signal?: AbortSignal) {
     return this.mutate(async () => {
       if (this.mcp) throw new Error("SessionStore already has MCP connections");
@@ -700,13 +669,11 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  /** MCP guidance remains attached when the caller refreshes its per-turn prompt. */
   withMcpInstructions(prompt: string): string {
     const instructions = formatMcpServerInstructions(this.mcp?.instructions ?? []);
     return instructions ? `${prompt}\n\n${instructions}` : prompt;
   }
 
-  /** Attach Pi's runtime to this store's sole writable Session. */
   async createHarness(options: Omit<AgentHarnessOptions, "session">): Promise<AgentHarness> {
     return this.mutate(async () => {
       if (this.harness) throw new Error("SessionStore already has an attached harness");

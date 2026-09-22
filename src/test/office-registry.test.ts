@@ -80,7 +80,6 @@ describe("OfficeRegistry", () => {
     registry.enablePlatform("slack");
     registry.enablePlatform("discord");
 
-    // "C123" is Slack's grammar and cannot be a Discord snowflake.
     const record = registry.prepareLegacyMigration(fixture);
 
     expect(record.status).toBe("prepared");

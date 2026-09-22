@@ -26,22 +26,16 @@ export interface SessionLifecycleOptions {
 }
 
 export interface ConversationRuntimeState {
-  /** The office that owns this runtime state. */
   address: OfficeAddress;
-  /** This office's platform session reference (raw session-key grammar). */
   sessionKey: string;
   running: boolean;
-  /** Exact settlement of the current run, including post-run response handling. */
   runSettlement?: Promise<void>;
   runner: PiAgentWrapper;
   stopRequested: boolean;
-  /** Set when the shutdown deadline aborted this run; the runtime posts a restart notice. */
   shutdownAborted?: boolean;
-  /** An explicit stop caller owns its acknowledgement through settlement. */
   stopNoticeOwned?: boolean;
   lastAccessedAt: number;
   sessionFile: string;
-  /** Epoch ms when the current run started; 0 when idle. */
   startedAt: number;
   lastActivityAt?: number;
 }
@@ -52,14 +46,10 @@ export interface RunSessionOptions {
   context: ConversationContext;
 }
 
-/** Conversation/session identity used to resolve per-session runner state. */
 export interface SessionStateOptions {
-  /** Canonical office identity; the runtime keys all state by this. */
   address: OfficeAddress;
   sessionKey: string;
-  /** Fixed trust boundary for this office's built-in platform path. */
   trustModel: PlatformTrustModel;
-  /** Stable platform workspace/team identity when the adapter supplies one. */
   platformWorkspaceId?: string;
 }
 
@@ -67,31 +57,14 @@ export interface ConversationRuntimeOptions extends Omit<
   CommandServices,
   "runtime" | "vaultManager" | "linkTokenStore" | "sessionViewTokenStore" | "adminTokenStore"
 > {
-  /**
-   * Credential vault for sandboxed conversations. Optional for embedders;
-   * when omitted the runtime uses an inert, disabled vault.
-   */
   vaultManager?: VaultManager;
-  /** Login-portal token store; omit when no web portal is hosted. */
   linkTokenStore?: LinkTokenStoreLike;
-  /** Session-viewer token store; omit when no web portal is hosted. */
   sessionViewTokenStore?: SessionViewTokenStoreLike;
-  /** Admin-portal token store; omit when no web portal is hosted. */
   adminTokenStore?: AdminTokenStoreLike;
-  /** Override the default command handlers (e.g., to add /help, /status). */
   commandHandlers?: readonly CommandHandler[];
-  /** Model registry override; defaults to the process-wide models.json load. */
   models?: MikanModels;
-  /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
-  /** Scheduler that office event stores notify; resolved lazily because it starts after the bots. */
   eventScheduler?: () => EventScheduleSink | undefined;
-  /**
-   * Optional platform capability packs (extra tools + per-run bind), as
-   * factories — each runner instantiates its own pack because bind state is
-   * per-runner. Assembled at process start (e.g. GitHub PR/CI pack); core
-   * stays platform-neutral.
-   */
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
 }
 
@@ -100,7 +73,6 @@ export interface ConversationRuntime extends MessagingEventHandler {
   runDream(address: OfficeAddress, now?: Date): Promise<boolean>;
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
   refreshConversationEnvironment(address: OfficeAddress): boolean;
-  /** Clear idle runners; defer busy conversation invalidation until settlement. */
   refreshAllConversations(): { busy: OfficeAddress[] };
   shutdown(timeoutMs?: number): Promise<void>;
 }

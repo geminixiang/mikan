@@ -38,11 +38,6 @@ const githubIssueSchema = Type.Object({
   ),
 });
 
-/**
- * The `github_issue` tool manages labels, assignees, and open/closed state of
- * issues in the conversation's repo (any issue number — triage). Host-side as
- * the App; wired per run and only for GitHub conversations.
- */
 export function createGithubIssueTool(): {
   tool: AgentTool<typeof githubIssueSchema>;
   setGithubIssueFunction: (fn: GithubIssueFn | null) => void;

@@ -1,33 +1,3 @@
-/**
- * `mikan office` — inspect and claim conversation offices from the CLI.
- *
- *   mikan office list [--state-dir <dir>] [--workspace <dir>]
- *   mikan office claim <conversationId> <platform> [--state-dir <dir>] [--workspace <dir>]
- *   mikan office migrate-openconnector [--state-dir <dir>] [--workspace <dir>]
- *   mikan office migrate-events [--state-dir <dir>] [--workspace <dir>]
- *   mikan office migrate-door-policy [--state-dir <dir>] [--workspace <dir>]
- *
- * `migrate-door-policy` removes the retired `sandbox.image.workspaceMount` and
- * `sandbox.workspace` keys from the global and every office settings file
- * (ADR 0008). Only an explicit shared-support `private` visibility is carried
- * into `office.visibility`; nothing else is derived. Run it with the daemon
- * stopped.
- *
- * `migrate-events` moves legacy `<workspace>/events/*.json` records into the
- * owning office's host-only state (`conversations/<key>/events/`). Records
- * without an attributable, registered owner stay put and are reported. Run it
- * with the daemon stopped.
- *
- * `migrate-openconnector` converts legacy per-office
- * `open-connector-runtime-token.json` files into ordinary conversation
- * `mcpServers` entries for the current `OPENCONNECTOR_ENDPOINT`. Run it with
- * the daemon stopped.
- *
- * `claim` records which platform owns a legacy raw-id conversation directory
- * when several platforms are enabled and boot cannot infer ownership. The
- * daemon performs the actual move on its next start. Run it with the daemon
- * stopped so the directory is not moving under a live runtime.
- */
 import { join, resolve } from "node:path";
 import { assertPlatformName, OfficeRegistry } from "../office/index.js";
 import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
@@ -122,7 +92,6 @@ function listOffices(stateDir: string): number {
 }
 
 function migrateDoorPolicy(stateDir: string, workspaceRoot: string): number {
-  // Settings readers resolve the global file from the process state dir.
   setEnvAliases("STATE_DIR", stateDir);
   const report = migrateLegacyDoorPolicy(createWorkspace({ root: workspaceRoot, stateDir }));
   console.log(

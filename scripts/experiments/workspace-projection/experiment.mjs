@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * THROWAWAY RESEARCH HARNESS — not production code.
- *
- * Models three workspace projection strategies without requiring Docker or root:
- * 1. direct: the current fixed bind-mount list, represented by host-backed paths;
- * 2. copy: the same list copied into a staging directory;
- * 3. manifest: a host-backed per-file policy manifest that rejects symlinks.
- */
 import assert from "node:assert/strict";
 import {
   cpSync,
@@ -141,7 +133,6 @@ function walkManifest(sourceRoot, targetRoot, manifest) {
     const target = posix.join(targetRoot, entry.name);
     if (entry.isDirectory()) walkManifest(source, target, manifest);
     else if (entry.isFile()) manifest.set(target, source);
-    // Policy decision: omit every symlink, including internal and broken links.
   }
 }
 

@@ -10,14 +10,12 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-/** Flatten AggregateError trees so the log names every failed step, not just the wrapper. */
 function describeFailure(error: Error): string {
   if (!(error instanceof AggregateError)) return error.message;
   const inner = error.errors.map((entry) => describeFailure(asError(entry)));
   return `${error.message}: ${inner.join("; ")}`;
 }
 
-/** Run every shutdown phase in order without letting one failure skip the rest. */
 export async function runShutdownSteps(
   steps: readonly { name: string; run: () => Promise<void> }[],
 ): Promise<void> {
@@ -33,10 +31,6 @@ export async function runShutdownSteps(
   if (failures.length > 0) throw new AggregateError(failures, "Graceful shutdown failed");
 }
 
-/**
- * Owns process-signal shutdown policy: one graceful attempt, then a forced
- * non-zero exit when another signal says the operator no longer wants to wait.
- */
 export function createProcessShutdownHandler(
   options: ProcessShutdownOptions,
 ): (signal: NodeJS.Signals) => Promise<void> {

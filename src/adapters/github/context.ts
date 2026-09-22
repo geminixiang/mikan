@@ -34,7 +34,6 @@ export function createGithubAdapters(
     attachments: event.attachments,
     threadTs: event.thread_ts,
   });
-  // the conversation-scoped context below is an explicit append, not a fork.
   const baseInfo = bot.getMessagingInfo();
   const platform = {
     ...baseInfo,
@@ -72,10 +71,6 @@ export function createGithubAdapters(
     },
   };
 
-  // streaming: false — GitHub gets the finished response in one comment.
-  // Streaming would edit the comment on every flush: API churn and "edited"
-  // noise for readers who refresh rather than watch typing. There is also no
-  // typing indicator or working suffix; progress shows through comment edits.
   const { responder } = createProgressiveRenderer({
     label: "GitHub",
     maxLength: GITHUB_MAX_COMMENT_LENGTH,
@@ -100,8 +95,6 @@ export function createGithubAdapters(
       await bot.deleteComment(ref, Number(id));
     },
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
-    // The REST API cannot attach files to comments (uploads are a browser
-    // feature); leave a pointer instead of failing the run.
     uploadFallbackNote: (name) =>
       `*(file \`${name}\` was produced, but the GitHub adapter cannot attach files to comments)*`,
     react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),

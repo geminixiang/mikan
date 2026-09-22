@@ -9,11 +9,6 @@ const reactSchema = Type.Object({
   }),
 });
 
-/**
- * The `react` tool adds an emoji reaction to the message that triggered the
- * current run. The channel and message timestamp are captured per run via
- * {@link createReactTool}'s setter; the model only supplies the emoji.
- */
 export function createReactTool(): {
   tool: AgentTool<typeof reactSchema>;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;

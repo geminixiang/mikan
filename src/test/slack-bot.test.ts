@@ -54,7 +54,6 @@ describe("Slack channel kind backfill", () => {
       expect(readPlatformChannelKind(publicOffice)).toBe("public_channel");
       expect(readPlatformChannelKind(privateOffice)).toBe("private_channel");
       expect(readPlatformChannelKind(dm)).toBe("im");
-      // Not in the channel list: left unrecorded, so it stays private by default.
       expect(readPlatformChannelKind(unknown)).toBeUndefined();
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -243,8 +242,6 @@ describe("SlackMessagingBot slash commands", () => {
   });
 
   test("/pi-new routes through the generic dispatch like any other command", async () => {
-    // The DM-only policy and the reset itself live in NewCommandHandler
-    // (commands.test.ts); the adapter's whole job is delivering the event.
     const handler = makeHandler();
     const bot = new SlackMessagingBot(handler, {
       appToken: "xapp-test",
@@ -415,9 +412,6 @@ describe("SlackMessagingBot slash commands", () => {
       thread_ts: "1000.0001",
       text: "/pi-session",
     });
-    // The command context must carry the same thread-resolved session as the
-    // event: /pi-session resolves its session file from the context, and a
-    // top-level key here would open the wrong session.
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[2]?.message).toMatchObject({
       sessionKey: "C123:1000.0001",
     });
@@ -1984,9 +1978,9 @@ describe("SlackMessagingBot backfill", () => {
     (bot as any).botUserId = "U_SELF";
     (bot as any).botId = "B_SELF";
     const messages = [
-      { user: "U_SELF", subtype: "message_changed" }, // Own user always retained.
-      { bot_id: "B_SELF", text: "own bot identity" }, // But own bot-id-only posts are skipped.
-      { user: "U1", blocks: [{}] }, // Historical humans require text/files.
+      { user: "U_SELF", subtype: "message_changed" },
+      { bot_id: "B_SELF", text: "own bot identity" },
+      { user: "U1", blocks: [{}] },
       { user: "U1", text: "human" },
       { bot_id: "B_OTHER", blocks: [{}] },
       { subtype: "bot_message", attachments: [{}] },
@@ -2060,7 +2054,6 @@ describe("SlackMessagingBot backfill", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
     ]);
     const history = vi.fn().mockResolvedValue({
-      // Slack returns newest-first here.
       messages: [
         { user: "U123", text: "second", ts: "1000.0002" },
         { user: "U123", text: "first", ts: "1000.0001" },
@@ -2093,7 +2086,6 @@ describe("SlackMessagingBot backfill", () => {
       ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
     ]);
     const history = vi.fn();
-    // conversations.replies leads with the parent and is already oldest-first.
     const replies = vi.fn().mockResolvedValue({
       messages: [
         { bot_id: "B_MIKAN", text: "follow-up request", ts: "1000.0001" },
@@ -2107,8 +2099,6 @@ describe("SlackMessagingBot backfill", () => {
 
     expect(history).not.toHaveBeenCalled();
     expect(replies).toHaveBeenCalledWith({ channel: "C123", ts: "1000.0001", limit: 200 });
-    // The parent is the bot's own message; re-ingesting it every poll is the
-    // bug this filter exists to prevent.
     expect(result.map((message) => message.text)).toEqual([
       "done, shipped it",
       "and closed the issue",
@@ -2337,7 +2327,6 @@ describe("SlackMessagingBot force-stop block action", () => {
       body: {
         actions: [
           {
-            // action_id carries the (lossy) sanitized copy; value is authoritative.
             action_id: `force_stop_${sessionKey.replace(/:/g, "_")}`,
             value: sessionKey,
           },

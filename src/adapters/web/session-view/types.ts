@@ -3,16 +3,10 @@ import type { MessagingBot } from "../../index.js";
 import type { PlatformName } from "../../index.js";
 import type { TokenRecord } from "../types.js";
 
-// ── command ──────────────────────────────────────────────────────────────────
-
-// ── portal ───────────────────────────────────────────────────────────────────
-
 export interface SessionViewInteractiveOptions {
   handler: MessagingEventHandler;
   botsByPlatform: Partial<Record<string, MessagingBot>>;
 }
-
-// ── service ──────────────────────────────────────────────────────────────────
 
 export interface SessionViewItem {
   kind: "user" | "assistant" | "tool" | "system";
@@ -46,8 +40,6 @@ export interface SessionViewModel {
   parent?: SessionViewRelation;
   threads: SessionViewRelation[];
 }
-
-// ── store ────────────────────────────────────────────────────────────────────
 
 export interface SessionViewTokenCreateOptions {
   platform: PlatformName;

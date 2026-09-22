@@ -1,10 +1,3 @@
-/**
- * mikan agent harness.
- *
- * Application integration of pi-agent-core's native AgentHarness (durable
- * operations, tools, retries, compaction, recovery) and pi-ai (providers,
- * models, auth). See `src/harness/README.md` for the architecture.
- */
 export {
   DEFAULT_HTTP_IDLE_TIMEOUT_MS,
   configureHttpDispatcher,

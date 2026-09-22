@@ -5,7 +5,6 @@ import { readRawBody } from "../adapters/web/portal-shell.js";
 
 function makeReq(chunks: string[]): IncomingMessage {
   const emitter = new EventEmitter() as IncomingMessage;
-  // Simulate async chunk delivery after the caller registers listeners
   setImmediate(() => {
     for (const chunk of chunks) {
       emitter.emit("data", Buffer.from(chunk));

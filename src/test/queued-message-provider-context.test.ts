@@ -1,12 +1,3 @@
-/**
- * Provider-facing regression guard for the Slack busy→queued turn.
- *
- * The `busy-queue` E2E sends a long-running message and then, while it is
- * still working, a second message that must queue behind it. This drives the
- * real `ConversationRuntime` through that exact interleaving and captures the
- * `Context.messages` each LLM call actually receives, so the assertion is on
- * what the provider sees rather than on what the runtime logged.
- */
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,7 +56,6 @@ const bot = {
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
 } as unknown as MessagingBot;
 
-/** Slack logs every message it sees, inbound and outbound, into log.jsonl. */
 function logMessage(entry: {
   ts: string;
   text: string;
@@ -165,8 +155,6 @@ describe("queued message provider context", () => {
     const busyGate = new Promise<void>((resolve) => (releaseBusy = resolve));
 
     faux.setResponses([
-      // Turn 1 stands in for the `sleep 10` tool turn: it stays in flight
-      // until the queued message has arrived and been enqueued behind it.
       async (context) => {
         captured.push(structuredClone(context));
         busyStarted = true;
@@ -179,7 +167,6 @@ describe("queued message provider context", () => {
       },
     ]);
 
-    // Turn 1 arrives and starts running.
     logMessage({
       ts: "1000.0003",
       text: BUSY_TEXT,
@@ -190,7 +177,6 @@ describe("queued message provider context", () => {
       "1000.0003",
       BUSY_TEXT,
       makeResponder(() =>
-        // Slack logs the bot's own reply once the turn finishes.
         logMessage({
           ts: "1000.0005",
           text: "QA_BUSY_TOKEN",
@@ -202,8 +188,6 @@ describe("queued message provider context", () => {
     const busyRun = runtime.handleEvent(busy.event, bot, busy.context);
     await vi.waitFor(() => expect(busyStarted).toBe(true));
 
-    // Turn 2 arrives while turn 1 is still working: Slack logs it on arrival,
-    // then enqueues it behind the running turn.
     logMessage({
       ts: "1000.0004",
       text: QUEUED_TEXT,
@@ -222,7 +206,6 @@ describe("queued message provider context", () => {
     const lastUser = queuedTurnUserTexts.at(-1);
     expect(lastUser).toContain("QA_QUEUED_TOKEN");
     expect(lastUser).not.toContain("QA_BUSY_TOKEN");
-    // The busy instruction must not be replayed into the queued turn's tail.
     expect(queuedTurnUserTexts.filter((text) => text.includes(BUSY_TEXT))).toHaveLength(1);
   });
 });

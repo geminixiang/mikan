@@ -1,14 +1,3 @@
-/**
- * Regression guard for the Slack busy→queued turn (the `busy-queue` E2E).
- *
- * Slack logs a message when it arrives, so a message queued behind a running
- * turn is already in `log.jsonl` while that turn is still working, and the
- * running turn's own reply is logged *after* it. When the queued turn finally
- * runs it must prompt the model with its own text: the provider-facing message
- * list has to end with the queued user message, and the previous (busy)
- * instruction must not be re-injected as history right before it — a model
- * that sees the busy instruction again simply redoes the previous turn.
- */
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,7 +50,6 @@ const BUSY_RECORD = {
   text: BUSY_TEXT,
   isMessagingBot: false,
 };
-/** Logged while the busy turn is still sleeping, so it precedes that turn's reply. */
 const QUEUED_RECORD = {
   date: "2026-05-01T00:00:03.000Z",
   ts: "1000.0004",
@@ -103,7 +91,6 @@ function newManager(): ChatHistorySync {
   });
 }
 
-/** The one incremental log sync the runtime performs per event, before the prompt. */
 async function syncForTurn(
   manager: ChatHistorySync,
   contextFile: string,
@@ -122,7 +109,6 @@ async function syncForTurn(
   }
 }
 
-/** What `session.prompt()` persists for a turn: the history-line-formatted user text. */
 async function appendTurn(
   contextFile: string,
   prompt: string,
@@ -157,7 +143,6 @@ async function appendTurn(
   }
 }
 
-/** The messages the provider actually receives, in order. */
 async function providerMessages(
   contextFile: string,
 ): Promise<Array<{ role: string; text: string }>> {
@@ -171,7 +156,6 @@ async function providerMessages(
   }));
 }
 
-/** Drive the busy turn and then the queued turn exactly as the runtime orders them. */
 async function runBusyThenQueuedTurns(): Promise<string> {
   writeLog([...EARLIER_TURN, BUSY_RECORD]);
   const manager = newManager();
@@ -185,19 +169,12 @@ async function runBusyThenQueuedTurns(): Promise<string> {
   await syncForTurn(manager, scope.contextFile, BUSY_RECORD.ts);
   await appendTurn(scope.contextFile, BUSY_TEXT, "QA_BUSY_TOKEN", 3);
 
-  // The queued message was logged during the busy turn; its reply lands after.
   writeLog([...EARLIER_TURN, BUSY_RECORD, QUEUED_RECORD, BUSY_REPLY_RECORD]);
 
   await syncForTurn(manager, scope.contextFile, QUEUED_RECORD.ts);
   return scope.contextFile;
 }
 
-/**
- * The busy turn in the E2E answers through a tool call, so its session tail is
- * user → assistant(tool_use) → tool result → assistant(text). Only the text
- * messages carry comparable content, so the dedupe must still recognise the
- * busy instruction as already represented.
- */
 async function appendToolCallTurn(contextFile: string): Promise<void> {
   const session = await openManagedSession(contextFile, conversationDir);
   try {
@@ -265,8 +242,6 @@ describe("queued message context", () => {
     expect(lastUser?.text).toContain("QA_QUEUED_TOKEN");
     expect(lastUser?.text).not.toContain("QA_BUSY_TOKEN");
 
-    // The turn before the queued prompt must be the busy turn's answer, not a
-    // replayed copy of the busy instruction.
     expect(messages.at(-1)?.text).toContain("QA_QUEUED_TOKEN");
     expect(messages.at(-2)).toEqual({ role: "assistant", text: "QA_BUSY_TOKEN" });
   });

@@ -15,7 +15,6 @@ describe("defineHostFnTool", () => {
     const schema = tool.parameters as { required?: string[]; properties?: Record<string, unknown> };
     expect(schema.required).toContain("label");
     expect(schema.properties).toHaveProperty("label");
-    // The caller's own required fields survive alongside the injected one.
     expect(schema.required).toContain("foo");
   });
 

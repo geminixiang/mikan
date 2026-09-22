@@ -33,9 +33,6 @@ function makeRenderer(
   const platform: ProgressiveRendererPlatform = {
     label: kind,
     maxLength: 20,
-    // Redraw on every delta by default, so most tests exercise delta handling
-    // rather than the wall-clock pacing that limits redraws in production.
-    // The pacing itself is covered by its own suite.
     flushIntervalMs: overrides.flushIntervalMs ?? 0,
     ...(overrides.prepareSource ? { prepareSource: overrides.prepareSource } : {}),
     initialResponseId,
@@ -197,9 +194,6 @@ test("splits buffered output before sending continuation messages", async () => 
   expect(calls[1].operation).toBe("extra");
 });
 
-// The upstream flush already batches at 80 characters, but it also flushes on
-// a timer, so a slow generation still produces a steady drip of appends. The
-// transport threshold is what keeps that drip off a rate-limited API.
 const chunk = (letter: string) => letter.repeat(100);
 
 describe("native streaming: delta buffering", () => {
@@ -215,12 +209,9 @@ describe("native streaming: delta buffering", () => {
     const started = calls.find((call) => call.operation === "start")?.text ?? "";
     const appends = calls.filter((call) => call.operation === "append").map((call) => call.text);
 
-    // b and c are each under the threshold and wait; d pushes the pending
-    // delta over it, so three chunks travel as one call instead of three.
     expect(appends).toHaveLength(1);
     expect(appends[0]).toBe(chunk("b") + chunk("c") + chunk("d"));
 
-    // Buffering must never drop text.
     expect(started + appends.join("")).toBe(chunk("a") + chunk("b") + chunk("c") + chunk("d"));
     expect(calls.filter((call) => call.operation === "stop")).toHaveLength(1);
   });
@@ -232,8 +223,6 @@ describe("native streaming: delta buffering", () => {
     await responder.appendResponseDelta?.(chunk("b"));
     await responder.finishResponse?.();
 
-    // Nothing ever reached the threshold, so the only append is the final
-    // flush — and it carries everything the stream had not sent yet.
     const started = calls.find((call) => call.operation === "start")?.text ?? "";
     const appends = calls.filter((call) => call.operation === "append").map((call) => call.text);
     expect(started + appends.join("")).toBe(chunk("a") + chunk("b"));
@@ -254,14 +243,6 @@ describe("native streaming: delta buffering", () => {
   });
 });
 
-/**
- * Every platform meters edits per channel, and a redraw sends the whole
- * message — so the binding cost is how many calls a response makes, not how
- * big they are. A volume trigger that could bypass the clock made a fast
- * stream redraw every eighty characters: over a hundred edits for a long
- * answer, which Slack answered with sustained 429s and a reply that never
- * landed.
- */
 describe("redraw pacing", () => {
   test("failed redraws remain paced and later recovery retains all text", async () => {
     vi.useFakeTimers();
@@ -294,12 +275,10 @@ describe("redraw pacing", () => {
     vi.useFakeTimers();
     const { responder, calls } = makeRenderer("buffered", undefined, { flushIntervalMs: 1000 });
 
-    // Far more than any character threshold, all inside one interval.
     for (let index = 0; index < 20; index++) {
       await responder.appendResponseDelta?.("0123456789".repeat(10));
     }
 
-    // The first delta draws the message; nothing after it earns a redraw.
     expect(calls.filter((call) => call.operation === "update")).toHaveLength(0);
     expect(calls.filter((call) => call.operation === "post")).toHaveLength(1);
     vi.useRealTimers();
@@ -319,9 +298,6 @@ describe("redraw pacing", () => {
 
   test("the interval is measured from when a redraw finished, not when it began", async () => {
     vi.useFakeTimers();
-    // A send that takes longer than the interval must not leave the next one
-    // instantly due — that is how a slow platform accumulates a backlog it
-    // cannot drain.
     const { responder, calls } = makeRenderer("buffered", undefined, {
       flushIntervalMs: 1000,
       update: async () => {
@@ -331,21 +307,14 @@ describe("redraw pacing", () => {
 
     await responder.appendResponseDelta?.("first");
     vi.advanceTimersByTime(1500);
-    await responder.appendResponseDelta?.("second"); // redraws, and takes 5s
-    await responder.appendResponseDelta?.("third"); // must not redraw again
+    await responder.appendResponseDelta?.("second");
+    await responder.appendResponseDelta?.("third");
 
     expect(calls.filter((call) => call.operation === "update")).toHaveLength(1);
     vi.useRealTimers();
   });
 });
 
-/**
- * `prepareSource` is where a platform converts what it cannot render — Discord
- * turns markdown tables into aligned code fences there. Applying it only on the
- * delta path meant the canonical replace overwrote prepared text with the raw
- * source: a table converted during streaming reverted to literal pipes the
- * moment the run finished, visible as an "(edited)" marker on the message.
- */
 describe("source preparation", () => {
   test("the final replace renders prepared text, not the raw source", async () => {
     const { responder, calls } = makeRenderer("buffered", undefined, {
@@ -367,25 +336,17 @@ describe("source preparation", () => {
     await responder.appendResponseDelta?.("this is RAW");
     await responder.replaceResponse("this is RAW");
 
-    // The last thing on screen is what the reader keeps.
     const last = calls.at(-1)?.text ?? "";
     expect(last).toContain("PREPARED");
     expect(last).not.toContain("RAW");
   });
 });
 
-/**
- * A streaming response redraws roughly once a second. Re-posting the overflow
- * each time meant a single long answer arrived as one correct message followed
- * by several partial duplicates of itself — seen live as six extra messages
- * growing 101, 327, 500, 751, 751, 751 characters.
- */
 describe("overflow messages", () => {
   test("a redraw edits the overflow instead of posting more", async () => {
     const { responder, calls } = makeRenderer("buffered");
     await responder.setWorking(false);
 
-    // maxLength is 20 here, so this response needs overflow messages.
     await responder.replaceResponse("z".repeat(50));
     const afterFirst = calls.filter((call) => call.operation === "extra").length;
     expect(afterFirst).toBeGreaterThan(0);
@@ -393,7 +354,6 @@ describe("overflow messages", () => {
     calls.length = 0;
     await responder.replaceResponse("y".repeat(50));
 
-    // The second render reuses every overflow message the first one created.
     expect(calls.filter((call) => call.operation === "extra")).toHaveLength(0);
     const edits = calls.filter(
       (call) => call.operation === "update" && call.id?.startsWith("extra"),
@@ -411,13 +371,10 @@ describe("overflow messages", () => {
       await responder.replaceResponse("z".repeat(50));
     }
 
-    // Five more redraws of the same shape must leave nothing new behind.
     expect(calls.filter((call) => call.operation === "extra")).toHaveLength(created);
   });
 
   test("each overflow message keeps its own position", async () => {
-    // Positional reuse is what stops text a reader has scrolled past from
-    // jumping to a different message on the next redraw.
     const { responder, calls } = makeRenderer("buffered");
     await responder.setWorking(false);
     await responder.replaceResponse("z".repeat(50));

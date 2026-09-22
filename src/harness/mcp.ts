@@ -16,9 +16,6 @@ import type { TSchema } from "@sinclair/typebox";
 
 import * as log from "../log.js";
 
-/** Server names become tool-name segments (`mcp__<server>__<tool>`); keep them
- *  to a safe charset so a settings typo cannot produce an unparseable or
- *  provider-rejected tool name. Shared by the loader and the portal. */
 const SERVER_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 export function isValidMcpServerName(name: string): boolean {
@@ -33,13 +30,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Accept the `mcpServers` JSON every MCP server's setup page hands out
- * (`{ "mcpServers": { name: entry } }`, or the bare `{ name: entry }` map).
- * Entries are stored as pasted — `command`/`args`/`env` or `url`/`headers`,
- * values untouched — and the official SDK client does the rest at connect
- * time. mikan only keeps the config and its enabled state per scope.
- */
 export function parseStandardMcpServers(text: string): StandardMcpParseResult {
   let parsed: unknown;
   try {
@@ -61,12 +51,9 @@ export function parseStandardMcpServers(text: string): StandardMcpParseResult {
     if (!isRecord(entry)) return { error: `"${name}" must be an object` };
     const hasCommand = typeof entry.command === "string" && entry.command.trim() !== "";
     const hasUrl = typeof entry.url === "string";
-    // A broken url is named before the transport count, so a paste carrying
-    // both keys and a bad URL reports the URL rather than the ambiguity.
     if (hasUrl && !URL.canParse(entry.url as string)) {
       return { error: `"${name}": url is not a valid URL` };
     }
-    // Exactly one transport: equal flags mean both were set, or neither was.
     if (hasCommand === hasUrl) {
       const detail = hasCommand
         ? "set only one of command / url"
@@ -89,11 +76,6 @@ function stringValues(map: Record<string, unknown>): Record<string, string> {
   return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, String(v)]));
 }
 
-/**
- * Hide query-string values: `?token=…` is a legitimate MCP auth channel
- * (browserless, Claude.ai connectors), so a URL is a credential carrier and
- * must never be echoed to a browser or a log line verbatim.
- */
 export function redactMcpUrl(url: string): string {
   if (!URL.canParse(url)) return url.replace(/([?&][^=&]+=)[^&]*/g, "$1<redacted>");
   const parsed = new URL(url);
@@ -190,9 +172,6 @@ function buildTransport(name: string, config: McpServerConfig) {
     return new StdioClientTransport({
       command: config.command,
       args: config.args ?? [],
-      // The SDK's default env is a minimal safe allowlist (PATH, HOME…);
-      // entries from settings are merged over it. Credentials for the MCP
-      // server belong here — on the host, out of the model's reach.
       env: { ...getDefaultEnvironment(), ...config.env },
       stderr: "ignore",
     });
@@ -226,7 +205,6 @@ function toAgentToolResult(result: {
         content.push({ type: "image", data: image.data, mimeType: image.mimeType });
         continue;
       }
-      // resource/audio/other parts: surface as JSON text rather than dropping.
       content.push({ type: "text", text: JSON.stringify(part) });
     }
   }
@@ -235,7 +213,6 @@ function toAgentToolResult(result: {
   }
   const text = content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
   if (result.isError) {
-    // AgentTool contract: throw on failure instead of encoding errors in content.
     throw new Error(text || "MCP tool call failed");
   }
   return { content, details: undefined };
@@ -258,13 +235,9 @@ async function connectServer(
       ...(signal ? { signal } : {}),
     });
     const tools: AgentTool<TSchema>[] = listed.tools.map((mcpTool) => ({
-      // Server prefix keeps names collision-free and visibly foreign next to
-      // mikan's own tools: `mcp__github__create_issue`.
       name: `mcp__${name}__${mcpTool.name}`,
       label: `${name}: ${mcpTool.name}`,
       description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-      // MCP inputSchema is JSON Schema with `"type": "object"` at the root —
-      // structurally a valid TSchema; the provider sees the same JSON either way.
       parameters: mcpTool.inputSchema as unknown as TSchema,
       execute: async (_toolCallId, params, runSignal) => {
         const result = await client.callTool(
@@ -296,13 +269,6 @@ The following admin-approved host-side servers supplied operating guidance. Appl
 ${sections.join("\n\n")}`;
 }
 
-/**
- * Connect to every enabled MCP server and wrap their tools as mikan
- * {@link AgentTool}s. Failures are per-server: one unreachable server
- * reports an error and the rest still load. Callers own the returned
- * `dispose` and must call it when the runner is disposed, or stdio child
- * processes leak.
- */
 export async function loadMcpTools(
   servers: Record<string, McpServerConfig>,
   signal?: AbortSignal,

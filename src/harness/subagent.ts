@@ -35,7 +35,6 @@ export const DEFAULT_SUBAGENT_BUDGET = {
   maxDurationMs: 10 * 60 * 1000,
 } as const;
 
-/** Time allowed for an aborted subagent to settle before detached cleanup. */
 export const SUBAGENT_ABORT_GRACE_MS = 100;
 
 const SCHEMA_STRUCTURAL_KEYS = new Set([
@@ -80,18 +79,6 @@ function hydrateObject(schema: Record<string, unknown>, options: Record<string, 
   return Type.Object(props, options);
 }
 
-/**
- * outputSchema arrives over the subagent tool as plain JSON (tool-call
- * arguments never carry TypeBox's Kind symbol), but Value.Check dispatches
- * purely on schema[Kind] and throws ValueCheckUnknownTypeError for anything
- * without it. Hydrate plain JSON Schema into real TypeBox schema nodes so
- * validation runs instead of throwing; schemas built with TypeBox already
- * carry Kind and pass through untouched.
- *
- * Unsupported keywords ($ref, not, patternProperties, if/then/else) degrade to
- * a permissive Unknown — fail-open by design: outputSchema is advisory output
- * validation, not a security boundary.
- */
 function hydrateSchema(schema: unknown): TSchema {
   if (isRecord(schema) && Kind in schema) return schema as TSchema;
   if (!isRecord(schema)) return Type.Unknown();
@@ -145,32 +132,13 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   workspaceDir: string;
   availableTools: MikanHarnessTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
-  /** Sandbox-backed execution env; may be omitted when no native execution tools are granted. */
   toolContext?: ExecutionToolContext;
-  /** Process-wide launch pool shared by all parent runs. */
   slots?: SubagentSlotPool;
-  /** Host-snapshotted parent transcript; never sourced from the public request. */
   parentMessages?: AgentMessage[];
-  /** Usage attribution sink snapshotted when this invocation begins. */
   onUsage?: SubagentUsageSink;
-  /**
-   * Called as the run's visible activity changes, so a caller can show what
-   * this subagent is doing rather than only that it started. Best-effort: a
-   * throwing sink is logged and the run continues.
-   */
   onActivity?: (activity: string) => void;
 }
 
-/**
- * Translate a subagent session's event stream into short activity lines.
- *
- * The stream was always there — nothing subscribed to it, so every subagent
- * was silent for its whole run and a slow step looked identical to a hung one.
- *
- * Text is reported as a growing character count rather than its content: it
- * proves liveness during a long single-turn generation, which is the case with
- * nothing else to show, without putting a half-written answer on screen.
- */
 function reportSubagentActivity(
   session: MikanAgentSession,
   onActivity: (activity: string) => void,
@@ -207,22 +175,17 @@ function reportSubagentActivity(
         .assistantMessageEvent;
       if (delta?.type !== "text_delta" || !delta.delta) return;
       characters += delta.delta.length;
-      // Coarse steps: deltas arrive per token, and one report each would churn
-      // the dashboard for no added information.
       if (characters - reportedAt < ACTIVITY_CHARS_STEP) return;
       reportedAt = characters;
       report(`writing · ${characters} chars`);
       return;
     }
     if (event.type === "auto_retry_start") {
-      // The most valuable line here: a retry is the usual reason a run goes
-      // quiet for minutes, and it was completely invisible.
       report("retrying after an error");
     }
   });
 }
 
-/** How much new text earns a fresh activity line during a long generation. */
 const ACTIVITY_CHARS_STEP = 250;
 
 function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
@@ -325,12 +288,6 @@ function normalizedParentContext(
   ].join("\n");
 }
 
-/**
- * The evidence policy has to name the actual grant. Told to "use granted
- * tools" while holding none, a model will write a tool call as prose and
- * hand that text back as its answer — which then flows to dependent DAG
- * nodes as if it were a finding.
- */
 function groundingPolicy(toolNames: string[]): string {
   if (toolNames.length === 0) {
     return [
@@ -367,12 +324,6 @@ function buildSystemPrompt(
 
 type SubagentRunStats = ReturnType<MikanAgentSession["getLastRunStats"]>;
 
-/**
- * Every SubagentRunResult's metric fields are born here — one derivation from
- * the session's run stats, so adding a metric is one edit and no terminal
- * site can drift (the abort branch once shipped without toolCallCounts). The
- * terminal sites state only what differs: status, error, text.
- */
 function baseRunResult(
   runId: string,
   model: SubagentModelSpec,
@@ -397,13 +348,6 @@ function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined 
   return messages.findLast((message): message is AssistantMessage => message.role === "assistant");
 }
 
-/**
- * Execute one non-recursive, fresh subagent run. Never rejects: every
- * failure — including request validation — is a result with a terminal
- * status, so batch callers (`tasks` / `dag`) can never orphan in-flight
- * sibling runs on one bad request. Usage is reported once, after the
- * underlying run settles; an aborted run may report it from detached cleanup.
- */
 export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
 ): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
@@ -435,7 +379,6 @@ async function reportSubagentUsage(
 
 type BoundedSubagentExecution<TOutput> = {
   result: SubagentRunResult<TOutput>;
-  /** Resolves after an aborted prompt settles and returns its final result. */
   cleanup?: Promise<SubagentRunResult<TOutput>>;
 };
 
@@ -493,12 +436,6 @@ async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefin
 
 function noop(): void {}
 
-/**
- * Expand `request.profile` into the concrete capability set it names. Most
- * profile budgets are caps that callers may only tighten. Token budgets are
- * different: the effective allowance is the larger of the profile default and
- * the caller's request.
- */
 function resolveProfile<TOutputSchema extends TSchema | undefined>(
   request: SubagentRunRequest<TOutputSchema>,
   options: RunSubagentOptions<TOutputSchema>,
@@ -760,23 +697,13 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     request.signal?.removeEventListener("abort", onAbort);
   }
 }
-/**
- * Process-wide subagent fan-out account. The per-conversation queues
- * serialize agent runs, and each run's subagent tool bounds its own fan-out
- * — but without a shared ceiling, N busy conversations hold N × per-run-cap
- * live subagent sessions. Every subagent launch draws a slot from one shared
- * pool; the per-run cap and this global ceiling are the two bounds, enforced
- * where each concrete subagent session is launched.
- */
 
 function abortError(): Error {
   return new DOMException("The operation was aborted", "AbortError");
 }
 
-/** Default process-wide ceiling on concurrently live subagent sessions. */
 export const DEFAULT_GLOBAL_SUBAGENT_SLOTS = 8;
 
-/** Async slot pool: at most `capacity` concurrent holders, FIFO waiters. */
 export class SubagentSlotPool {
   private held = 0;
   private waiters: Array<{
@@ -791,15 +718,10 @@ export class SubagentSlotPool {
     }
   }
 
-  /** Currently held slots (for tests and capacity reporting). */
   get inFlight(): number {
     return this.held;
   }
 
-  /**
-   * Resolve with a release function once a slot frees up. Call the release
-   * exactly once; releasing hands the slot to the oldest waiter.
-   */
   async acquire(signal?: AbortSignal): Promise<() => void> {
     if (signal?.aborted) throw abortError();
     if (this.held < this.capacity) {
@@ -835,7 +757,6 @@ export class SubagentSlotPool {
   }
 }
 
-/** A pool that never blocks — the default when no shared ceiling is wired. */
 export function unboundedSlotPool(): SubagentSlotPool {
   return new SubagentSlotPool(Number.MAX_SAFE_INTEGER);
 }

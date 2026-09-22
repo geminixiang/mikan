@@ -16,12 +16,6 @@ import { HostExecutor } from "../sandbox/host.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
 
-/**
- * The pi-native read/write/edit/bash tools, exercised the way the harness runs
- * them: through the sandbox-backed env supplied as `toolContext`, with mikan's
- * `label` parameter accepted alongside pi's own schema.
- */
-
 const invocation: AgentHarnessToolInvocation = {
   invocationId: "inv-1",
   operationId: "op-1",
@@ -177,8 +171,6 @@ describe("sandbox tools", () => {
 
   test("bash's working directory is the runtime workspace root, not mikan's own process cwd", async () => {
     const result = await run("bash", { command: "pwd", label: "where am I" });
-    // dir is a real path under the OS temp dir; realpath it the same way pwd would
-    // report a symlink-resolved cwd (relevant on macOS where /tmp is a symlink).
     const { realpathSync } = await import("node:fs");
     expect(textOf(result as never).trim()).toBe(realpathSync(dir));
   });

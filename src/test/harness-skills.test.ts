@@ -81,9 +81,6 @@ function writeSkill(base: string, name: string): string {
 
 describe("loadSkillsFromDir with rejectSymlinks", () => {
   test("npm .bin symlinks inside vendored node_modules never disqualify a skill", () => {
-    // The production regression: a skill vendoring node_modules carries npm's
-    // .bin symlinks, but the loader never reads node_modules — the skill and
-    // its siblings must load.
     const skillDir = writeSkill(dir, "playwright-check");
     const binDir = join(skillDir, "node_modules", ".bin");
     mkdirSync(join(skillDir, "node_modules", "playwright"), { recursive: true });

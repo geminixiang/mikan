@@ -32,8 +32,6 @@ export function createSlackAdapters(
     threadTs: event.thread_ts,
   });
 
-  // The bot's getMessagingInfo() is the single authority for platform info;
-  // context factories compose from it instead of maintaining a second copy.
   const platform = slack.getMessagingInfo();
 
   const responder = createSlackResponseContext({

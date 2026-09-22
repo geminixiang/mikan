@@ -67,11 +67,6 @@ import type {
   SessionStateOptions,
 } from "./types.js";
 
-/**
- * Placeholder token store for embedders that run without the web portal.
- * Command handlers guard on `portalBaseUrl` before minting tokens, so this
- * only fires when a portal URL is configured without its backing store.
- */
 function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
   return {
     create: () => {
@@ -89,17 +84,14 @@ function runtimeCwdForSandbox(
     sandbox,
     workspace.root,
   ).runtimeWorkspaceRoot;
-  // The office key names the same segment on the host and in the runtime.
   return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${workspace.office(address).key}`;
 }
 
-/** Ask a running session to stop; the run settles through its own abort path. */
 function requestStop(state: ConversationRuntimeState): void {
   state.stopRequested = true;
   state.runner.abort();
 }
 
-/** Tell the conversation why its reply stopped: an operator stop, or a shutdown deadline. */
 async function postAbortNotice(
   state: ConversationRuntimeState,
   bot: MessagingBot,
@@ -367,11 +359,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  /**
-   * Guards that can settle an event before any runner work: a session command,
-   * an in-flight run for the same session, or a shared-session rotation.
-   * Returns true when the event needs no run of its own.
-   */
   private async handledBeforeRun(
     options: RunSessionOptions,
     sessionKey: string,
@@ -390,7 +377,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  /** Lease the runner for a run, reporting session-setup failures before rethrowing. */
   private async acquireRunLease(
     { event, context }: RunSessionOptions,
     sessionKey: string,
@@ -426,7 +412,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  /** The instrumented agent run, with typing/working indicators and abort notice. */
   private async executeRun(
     { event, bot, context }: RunSessionOptions,
     sessionKey: string,

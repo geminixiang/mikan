@@ -16,19 +16,15 @@ import type { VaultManager } from "./vault/types.js";
 const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
 
-// ── adapter ───────────────────────────────────────────────────────────────────
-
 export type ConversationKind = "direct" | "shared";
 
 export type PlatformName = "slack" | "discord" | "telegram" | "github";
 
-/** Canonical platform-plus-raw identifier for one conversation office. */
 export interface OfficeAddress {
   readonly platform: PlatformName;
   readonly conversationId: string;
 }
 
-/** Stable, filesystem-safe identity derived from an OfficeAddress. */
 export type OfficeKey = string & { readonly __brand: "OfficeKey" };
 
 export type OfficeMigrationStatus = "needs-owner" | "prepared" | "moving" | "committed" | "failed";
@@ -44,11 +40,6 @@ export interface OfficeMigrationRecord {
   readonly updatedAt: string;
 }
 
-/**
- * Directory entry for one conversation office. The workspace dir name stops
- * carrying the raw platform id once the ADR 0005 layout migration lands, so
- * the registry is the durable raw-id ↔ office mapping used for enumeration.
- */
 export interface OfficeRecord {
   readonly platform: PlatformName;
   readonly conversationId: string;
@@ -69,22 +60,11 @@ export interface OfficeMigrationPreparation {
   readonly ownerPlatform?: PlatformName;
 }
 
-/**
- * Who can drive conversations on a platform — gates ambient credential policy.
- *
- * - `membership`: only invited workspace/server members (Slack/Discord/Telegram).
- *   Safe to copy `sandbox.defaultSharedVault` into new conversation vaults.
- * - `open-trigger`: broader trigger surface (e.g. GitHub repo writers on public
- *   issues/PRs). Ambient shared vault must not apply; use host-side platform
- *   identity or an explicitly provisioned vault.
- */
 export type PlatformTrustModel = "membership" | "open-trigger";
 
 export interface ConversationMessage {
   id: string;
-  /** Canonical identity of the conversation office. */
   address: OfficeAddress;
-  /** @deprecated Use address.conversationId except at platform I/O seams. */
   conversationId?: string;
   sessionKey: string;
   conversationKind: ConversationKind;
@@ -104,18 +84,12 @@ export interface ChatToolResult {
   durationMs: number;
 }
 
-/**
- * Derived from the run status rather than restated, so a new terminal status
- * in the harness reaches the dashboard instead of silently rendering as a
- * status the marker tables never learned about.
- */
 export type SubagentProgressStatus = SubagentRunStatus | "pending" | "running" | "skipped";
 
 export interface SubagentProgressNode {
   id: string;
   label: string;
   status: SubagentProgressStatus;
-  /** Profile the node ran under; the first thing to check when a run is ungrounded. */
   profile?: string;
   turns?: number;
   toolCalls?: number;
@@ -123,13 +97,6 @@ export interface SubagentProgressNode {
   tokens?: number;
   costUsd?: number;
   durationMs?: number;
-  /**
-   * What the node is doing right now, for running nodes only.
-   *
-   * Without it a node reports nothing between "started" and "finished", so a
-   * step that legitimately takes minutes is indistinguishable from a hang —
-   * and when it does finish, there is no record of how it got there.
-   */
   activity?: string;
   reason?: string;
   cleanupPending?: boolean;
@@ -159,138 +126,64 @@ export interface TaskStatus {
 }
 
 export interface ConversationResponder {
-  /** Admit independent work; returns its platform session reference, never waits for completion. */
   startTask?(message: string, task: string): Promise<string>;
-  /** Post a fresh delivery notification after the final task response. */
   notifyCompletion?(): Promise<void>;
-  /** Read-only task observations, scoped to the current conversation. */
   getTaskStatus?(sessionKey?: string): Promise<TaskStatus[]>;
   respond(text: string): Promise<void>;
   appendResponseDelta?(delta: string): Promise<void>;
   finishResponse?(finalText?: string): Promise<void>;
   replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
-  /**
-   * Override only to convert the subagent dashboard for a pipeline that is
-   * not response-source Markdown (Telegram HTML). Absent, the harness composes
-   * the Markdown dashboard — optionally followed by the final answer — through
-   * `replaceResponse`.
-   */
   replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
-  /**
-   * Spike: post the final answer as a fresh message under the identity of the
-   * subagent profile that produced it, instead of appending it to the
-   * in-progress message. Absent, or when the run does not resolve to exactly
-   * one completed subagent profile, the harness keeps the single-message path.
-   */
   respondAsRole?(profile: string, text: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
   uploadFile(filePath: string, title?: string): Promise<void>;
-  /**
-   * React to the message that triggered this run with an emoji short name
-   * (no colons). Optional: platforms/contexts without reaction support omit
-   * it, and callers must handle its absence.
-   */
   react?(emoji: string): Promise<void>;
   deleteResponse(): Promise<void>;
 }
 
 export interface MessagingInfo {
   name: string;
-  /** Stable platform workspace/team identity when the adapter has one. */
   workspaceId?: string;
   formattingGuide: string;
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
-  /**
-   * Trust boundary for ambient credentials and host-side MCP capabilities.
-   * Built-in product paths normalize omission to `membership`; open-trigger
-   * platforms set this explicitly so policy does not key off platform names.
-   */
   trustModel?: PlatformTrustModel;
   diagnostics?: {
     showUsageSummary?: boolean;
   };
 }
 
-/**
- * A platform-agnostic event (message/mention) that triggers the agent.
- */
 export interface ConversationEvent {
   type: string;
-  /** Canonical identity created by the platform adapter at intake. */
   address: OfficeAddress;
-  /** @deprecated Raw platform identifier; valid only at adapter I/O seams. */
   conversationId: string;
-  /** Optional alternate conversation identity used for vault routing. */
   vaultConversationId?: string;
-  /** Cross-platform conversation shape: direct message vs shared space */
   conversationKind: ConversationKind;
-  /** Message timestamp or ID as string */
   ts: string;
-  /** Parent message ID for threaded replies (optional) */
   thread_ts?: string;
-  /** User ID */
   user: string;
-  /** Message text (already stripped of bot mentions) */
   text: string;
-  /** Downloaded attachments */
   attachments?: { name: string; localPath: string }[];
-  /** Platform-computed session key; overrides default conversationId:thread_ts computation */
   sessionKey?: string;
 }
 
-/**
- * Minimum interface that every platform bot must implement,
- * used by the central handler in main.ts and by EventsWatcher.
- */
 export interface MessagingBot {
   start(): Promise<void>;
-  /** Stop accepting new platform events and wait for intake already in flight. */
   stop(): Promise<void>;
   postMessage(channel: string, text: string): Promise<string>;
   updateMessage(channel: string, ts: string, text: string): Promise<void>;
-  /**
-   * Add an emoji reaction to a message. `emoji` is a platform-agnostic short
-   * name without colons (e.g. "eyes", "white_check_mark"). Optional so
-   * adapters adopt it incrementally; callers must handle its absence.
-   */
   addReaction?(channel: string, messageTs: string, emoji: string): Promise<void>;
-  /**
-   * Upload a host-side file into a conversation. Optional so adapters adopt
-   * it incrementally; callers must handle its absence. Existing adapter
-   * implementations (Slack/Discord/Telegram) already match this shape.
-   */
   uploadFile?(channel: string, filePath: string, title?: string): Promise<void>;
-  /**
-   * Post into a platform thread. Optional so adapters adopt it incrementally;
-   * callers must handle its absence.
-   */
   postInThread?(channel: string, threadTs: string, text: string): Promise<string>;
-  /**
-   * Open (or resolve) the direct-message conversation with a user, returning
-   * its conversation id — usable with `postMessage`. Optional capability.
-   */
   openDirectConversation?(userId: string): Promise<string>;
-  /**
-   * Fetch recent messages from a conversation, oldest first. Optional
-   * capability; adapters may cap `limit` below what the caller asks for.
-   */
   fetchHistory?(
     channel: string,
     options?: PlatformHistoryOptions,
   ): Promise<PlatformHistoryMessage[]>;
-  /** List the platform workspace's active users. Optional capability. */
   listUsers?(): Promise<PlatformUserInfo[]>;
-  /**
-   * Record the bot's own outbound message in the conversation's human-readable
-   * `log.jsonl`, mirroring the entry `logToFile` would write for an agent
-   * reply. Optional so adapters adopt it incrementally; callers that skip it
-   * leave that message invisible to `log.jsonl` history (and to the agent's
-   * own greps over it) even though the platform delivered it.
-   */
   logBotResponse?(channel: string, text: string, ts: string, threadTs?: string): void;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
@@ -303,21 +196,12 @@ export interface MessagingBot {
   ): Promise<void>;
 }
 
-/** Filters for a platform conversation-history fetch. */
 export interface PlatformHistoryOptions {
-  /** Only messages strictly newer than this platform message id/timestamp. */
   oldest?: string;
-  /** Maximum number of messages to return (adapters may cap this lower). */
   limit?: number;
-  /**
-   * Read the replies inside this thread instead of the conversation's
-   * top-level messages. The thread parent itself is not returned — the result
-   * is the replies to it. Adapters without threads ignore this.
-   */
   threadTs?: string;
 }
 
-/** One platform message returned by a history fetch. */
 export interface PlatformHistoryMessage {
   ts: string;
   threadTs?: string;
@@ -327,7 +211,6 @@ export interface PlatformHistoryMessage {
   isBot: boolean;
 }
 
-/** One platform user returned by a workspace user listing. */
 export interface PlatformUserInfo {
   id: string;
   userName: string;
@@ -335,9 +218,7 @@ export interface PlatformUserInfo {
   isBot: boolean;
 }
 
-/** Normalized platform data and reply hook for one event. */
 export interface ConversationContext {
-  /** Canonical identity for the office handling this turn. */
   address: OfficeAddress;
   message: ConversationMessage;
   responder: ConversationResponder;
@@ -345,7 +226,6 @@ export interface ConversationContext {
 }
 
 export interface RunningSession {
-  /** The office this run belongs to; two platforms may share a raw id. */
   address: OfficeAddress;
   sessionKey: string;
   startedAt: number;
@@ -361,11 +241,6 @@ export interface HandleNewCommandOptions {
   message: ConversationMessage;
 }
 
-/**
- * Runtime state is addressed by an office plus that office's platform session
- * reference. The session key alone is a platform value and is not unique
- * across platforms, so every session-scoped call carries its `OfficeAddress`.
- */
 export interface MessagingEventHandler {
   isRunning(address: OfficeAddress, sessionKey: string): boolean;
   getRunningSessions(): RunningSession[];
@@ -380,13 +255,10 @@ export interface MessagingEventHandler {
     bot: MessagingBot,
     replyThreadTs?: string,
   ): Promise<void>;
-  /** Returns false when idle; accepted controls bypass the normal run queue. */
   steer?(message: ConversationMessage): Promise<boolean>;
   forceStop(address: OfficeAddress, sessionKey: string): void;
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
 }
-
-// ── agent ─────────────────────────────────────────────────────────────────────
 
 export interface PiAgentWrapper {
   steer?(message: ConversationMessage): Promise<boolean>;
@@ -401,12 +273,6 @@ export interface PiAgentWrapper {
   dispose(): Promise<void>;
 }
 
-// ── config ────────────────────────────────────────────────────────────────────
-
-/**
- * Office visibility (ADR 0008): public offices may be read by every office and
- * write shared knowledge; private ones are visible only to themselves.
- */
 export type WorkspaceVisibility = "public" | "private";
 
 export interface SandboxSettings {
@@ -425,20 +291,9 @@ export interface AgentConfig {
   slack?: {
     replyMode?: "top-level" | "thread";
   };
-  /**
-   * MCP servers available to this scope, keyed by server name. Global and
-   * conversation entries merge per key (conversation wins); an entry with
-   * `disabled: true` turns off the inherited server. `open-connector` is
-   * filled in from the deployment default when undeclared. See `src/harness`.
-   */
   mcpServers?: Record<string, McpServerConfig>;
 }
 
-// ── context ───────────────────────────────────────────────────────────────────
-
-/**
- * Platform conversation history entry from log.jsonl.
- */
 export interface ConversationLogMessage {
   date?: string;
   ts?: string;
@@ -449,17 +304,11 @@ export interface ConversationLogMessage {
   isMessagingBot?: boolean;
 }
 
-// ── execution-resolver ────────────────────────────────────────────────────────
-
 export interface ActorContext {
-  /** Canonical office identity used by vault and execution policy. */
   address: OfficeAddress;
   userId: string;
-  /** From MessagingInfo.trustModel; vault policy uses this, not platform name. */
   trustModel?: PlatformTrustModel;
 }
-
-// ── log ───────────────────────────────────────────────────────────────────────
 
 export interface LogContext {
   conversationId: string;
@@ -467,8 +316,6 @@ export interface LogContext {
   conversationName?: string;
   sessionId?: string;
 }
-
-// ── portal shell (src/adapters/web/portal-shell.ts) ────────────────────────────────────
 
 type PortalView = "admin" | "session" | "vault";
 
@@ -491,18 +338,11 @@ export interface PortalShellOptions {
   bodyAttributes?: Record<string, string>;
 }
 
-// ── provisioner ───────────────────────────────────────────────────────────────
-
-/** Rewrites one Docker bind spec (`src:dst[:ro]`) during layout migration. */
 export type ContainerBindTranslator = (bindSpec: string) => string;
 
 export interface ContainerMount {
   source: string;
   target: string;
-  /**
-   * Mount without write access. Used for shared content an isolated runtime
-   * may read but must not modify. Absent means read-write.
-   */
   readOnly?: boolean;
 }
 
@@ -544,14 +384,10 @@ export interface ExecutionPlan {
   mounts: ContainerMount[];
 }
 
-// ── store ─────────────────────────────────────────────────────────────────────
-
 export interface Attachment {
   original: string;
   localPath: string;
 }
-
-// ── shared implementation contracts ─────────────────────────────────────────
 
 interface EnvVarSpec {
   name: string;
@@ -561,7 +397,6 @@ interface EnvVarSpec {
   doc: string;
 }
 
-/** The onboarding wizard's LLM answer, applied to the settings template. */
 export interface OnboardLlmChoice {
   provider: string;
   model: string;
@@ -578,7 +413,6 @@ export interface EnvGroup {
 
 export interface RunnerCacheControl {
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
-  /** Clear the office's cached runner for a non-model settings change; false while busy. */
   refreshConversationEnvironment(address: OfficeAddress): boolean;
 }
 
@@ -593,21 +427,12 @@ export type SettingsApplyResult =
 export interface CreateRunnerOptions {
   sandboxConfig: SandboxConfig;
   sessionKey: string;
-  /** The Conversation office this runner serves; identity and layout derive from it. */
   office: Office;
-  /**
-   * Fixed trust boundary for this office. It is not part of runner cache
-   * identity; changing it requires runner replacement, not another cache entry.
-   */
   trustModel: PlatformTrustModel;
-  /** Platform workspace/team identity used by host-side integration provisioning. */
   platformWorkspaceId?: string;
-  /** Deployment default for the `open-connector` MCP entry; settings may override it. */
   openConnector?: McpServerConfig;
-  /** Scheduler notified by the office event store after each admitted mutation. */
   eventScheduler?: EventScheduleSink;
   sessionScope: ResolvedSessionScope;
-  /** Cancels construction during process shutdown; acquired resources still roll back before rejection. */
   signal?: AbortSignal;
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;

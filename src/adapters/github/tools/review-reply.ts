@@ -15,11 +15,6 @@ import type { GithubReviewReplyFn } from "../types.js";
 
 export type { GithubReviewReplyFn } from "../types.js";
 
-/**
- * The `github_review_reply` tool answers inside one inline PR review thread
- * (the responder's normal replies post as plain PR comments instead). Runs
- * host-side as the App; wired per run and only for GitHub conversations.
- */
 export function createGithubReviewReplyTool(): {
   tool: AgentTool<typeof githubReviewReplySchema>;
   setGithubReviewReplyFunction: (fn: GithubReviewReplyFn | null) => void;

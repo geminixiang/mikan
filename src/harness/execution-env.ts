@@ -23,27 +23,10 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { shellEscape } from "../sandbox/utils.js";
 
-/** Bash output spill directory, relative to the runtime workspace root. */
 const SPILL_DIR = ".mikan/bash-output";
 
-/** Matches the sandbox executor's own write chunking. */
 const WRITE_CHUNK_CHARS = 65536;
 
-/**
- * pi's harness tools address files through an {@link ExecutionEnv}. mikan's
- * `Executor` is the sandbox transport, so this bridges the two:
- *
- * - `host` uses pi's own `NodeExecutionEnv` — the host executor is plain node
- *   fs + spawn, so there is nothing to adapt.
- * - container / cloudflare are reached only through `exec`, so every file op
- *   is a shell round-trip over the executor. The methods pi's four tools
- *   actually call (`absolutePath`, `exists`, `readTextFile`, `readBinaryFile`,
- *   `writeFile`, `fileInfo`, `exec`) delegate to the executor's existing
- *   correct transports; the rest are shell fallbacks.
- *
- * The executor passed here is mikan's stable wrapper, which delegates to the
- * actor-resolved executor at call time, so one env serves every run.
- */
 export function createSandboxExecutionEnv(
   executor: Executor,
   sandboxType: SandboxConfig["type"],
@@ -55,7 +38,6 @@ export function createSandboxExecutionEnv(
   return new ShellExecutionEnv(executor, runtimeWorkspaceRoot);
 }
 
-/** `ExecutionEnv` does not export {@link TextLineReader}/{@link TextLine} directly; derive them structurally. */
 type TextLineReader =
   Awaited<ReturnType<ExecutionEnv["openTextLineReader"]>> extends Result<infer T, FileError>
     ? T
@@ -261,9 +243,7 @@ class ShellExecutionEnv implements ExecutionEnv {
     });
   }
 
-  async cleanup(_context: Context): Promise<void> {
-    // The sandbox executor owns process lifetime; nothing to release here.
-  }
+  async cleanup(_context: Context): Promise<void> {}
 
   async exec(
     command: string,
@@ -358,11 +338,6 @@ class ShellExecutionEnv implements ExecutionEnv {
   }
 }
 
-/**
- * Line reader over content already fetched in full through the executor's `readFile` transport.
- * container/cloudflare have no incremental file-descriptor primitive, so this buffers the whole
- * file once and serves lines from memory, matching {@link TextLineReader}'s pull-based contract.
- */
 class ShellTextLineReader implements TextLineReader {
   private offset = 0;
 

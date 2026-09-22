@@ -23,7 +23,6 @@ interface Pi084Header {
   metadata?: Record<string, JsonValue>;
 }
 
-/** The mutation state a Pi 0.84 file folds into as its lines are replayed. */
 interface Pi084Mutations {
   entries: Entry[];
   branchTips: Map<string, string | null>;
@@ -126,7 +125,6 @@ function convertEntry(record: Record<string, unknown>): Entry {
   }
 }
 
-/** Apply a `fact` mutation; `false` means the fact is not one we understand. */
 function applyFact(state: Pi084Mutations, value: Record<string, unknown>): boolean {
   if (value.fact === "name") {
     state.name = typeof value.name === "string" ? value.name : undefined;
@@ -138,7 +136,6 @@ function applyFact(state: Pi084Mutations, value: Record<string, unknown>): boole
   return true;
 }
 
-/** Apply one non-header line; `false` means the mutation is unrecognized. */
 function applyMutation(state: Pi084Mutations, value: Record<string, unknown>): boolean {
   switch (value.kind) {
     case "entry": {
@@ -162,7 +159,6 @@ function applyMutation(state: Pi084Mutations, value: Record<string, unknown>): b
   }
 }
 
-/** mikan metadata, with the legacy parent path folded in when it is missing. */
 function sessionMetadata(header: Pi084Header): Record<string, JsonValue> | undefined {
   const metadata = header.metadata ? structuredClone(header.metadata) : undefined;
   if (!header.legacyParentSessionPath || metadata?.parentSessionPath !== undefined) return metadata;
@@ -173,7 +169,6 @@ function sessionMetadata(header: Pi084Header): Record<string, JsonValue> | undef
 
 interface Pi084Lines {
   lines: string[];
-  /** A file without a trailing newline may end in a torn line (a crash tail). */
   torn: boolean;
   filePath: string;
 }
@@ -185,7 +180,6 @@ function readLines(filePath: string): Pi084Lines {
   return { lines, torn: !source.endsWith("\n"), filePath };
 }
 
-/** One JSONL line; `undefined` marks a torn final line — a crash tail, not corruption. */
 function parseLine({ lines, torn, filePath }: Pi084Lines, index: number): unknown {
   try {
     return JSON.parse(lines[index] ?? "");
@@ -195,7 +189,6 @@ function parseLine({ lines, torn, filePath }: Pi084Lines, index: number): unknow
   }
 }
 
-/** Replay every non-header line into `state`, stopping at a torn tail. */
 function replayMutations(state: Pi084Mutations, file: Pi084Lines): void {
   for (let index = 1; index < file.lines.length; index++) {
     const value = parseLine(file, index);
@@ -269,7 +262,6 @@ function valueWritten(
   )?.value;
 }
 
-/** Entries must survive the rewrite unchanged apart from their renumbered seq. */
 function verifyEntries(entries: Entry[], source: Entry[]): void {
   if (entries.length !== source.length) throw new Error("entry count changed");
   for (const [index, entry] of entries.entries()) {
@@ -294,7 +286,6 @@ function verifyValues(
   }
 }
 
-/** Branch tips, labels, metadata and audit records must round-trip as written. */
 function verifyValueWrites(path: string, source: ParsedPi084Session): void {
   const writes = currentWrites(path);
   verifyValues(writes, "pi.branch.tip", source.branchTips, (key) => `branch ${key} tip changed`);

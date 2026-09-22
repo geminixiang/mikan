@@ -9,27 +9,15 @@ export interface EventRecord {
   mtimeMs: number;
 }
 
-/**
- * One office's admitted scheduled work. Every method is confined to that
- * office: filenames of other offices read as "not found", and payloads must
- * address the store's own office.
- */
 export interface EventStore {
   readonly address: OfficeAddress;
-  /** Create a new record; an existing filename is an error, never overwritten. */
   create(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
-  /**
-   * List this office's records. Entries whose JSON cannot be parsed or fail
-   * format validation are kept with a `null` payload so operators can still
-   * surface and delete them; files that disappear mid-listing are skipped.
-   */
   list(): Promise<Array<Omit<EventRecord, "payload"> & { payload: EventFilePayload | null }>>;
   read(filename: string): Promise<EventRecord>;
   update(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
   delete(filename: string): Promise<{ deleted: boolean }>;
 }
 
-/** Scheduler hooks the store calls after each admitted mutation. */
 export interface EventScheduleSink {
   scheduleRecord(address: OfficeAddress, record: EventRecord): void;
   cancelRecord(address: OfficeAddress, filename: string): void;
@@ -40,12 +28,10 @@ export type EventConversationKind = "direct" | "shared";
 export type EventType = "immediate" | "one-shot" | "periodic";
 
 interface EventPayloadBase {
-  /** Target platform; may be omitted when only one platform is running. */
   platform?: string;
   conversationId: string;
   conversationKind?: EventConversationKind;
   userId?: string;
-  /** Self-contained task text; event runs do not inherit conversation history. */
   text: string;
 }
 
@@ -55,19 +41,15 @@ export interface ImmediateEventPayload extends EventPayloadBase {
 
 export interface OneShotEventPayload extends EventPayloadBase {
   type: "one-shot";
-  /** ISO 8601 timestamp with offset. */
   at: string;
 }
 
 export interface PeriodicEventPayload extends EventPayloadBase {
   type: "periodic";
-  /** Cron expression (croner syntax). */
   schedule: string;
-  /** IANA timezone, e.g. "Asia/Taipei". */
   timezone: string;
 }
 
-/** Wire shape of one event file. */
 export type EventFilePayload = ImmediateEventPayload | OneShotEventPayload | PeriodicEventPayload;
 
 export interface EventPayloadInput {
@@ -82,8 +64,6 @@ export interface EventPayloadInput {
   timezone?: string;
 }
 
-// Resolved runtime shapes: the watcher fills in the platform default and
-// infers the conversation kind before an event reaches a bot.
 interface ResolvedEventFields {
   platform: string;
   conversationKind: EventConversationKind;
@@ -108,27 +88,12 @@ export interface PeriodicEventInfo {
 import { type Static, Type } from "@sinclair/typebox";
 import { parseJsonSchemaValue } from "../file-guards.js";
 
-/**
- * Single home for the scheduled-event file format (`events/*.json`, the
- * workspace scheduling bus). Every reader and writer — the EventsWatcher
- * scheduler and the agent `event` tool — must go
- * through this module: one schema, one payload union, one parser, one
- * builder. Per-type field rules (`at` for one-shot, `schedule` + `timezone`
- * for periodic) live here and nowhere else.
- */
-
-/** Typebox union for the `type` field, shared by the file schema and the event tool's parameters. */
 export const EventTypeSchema = Type.Union([
   Type.Literal("immediate"),
   Type.Literal("one-shot"),
   Type.Literal("periodic"),
 ]);
 
-/**
- * Lenient file-reading schema: every field optional so shape problems surface
- * as the specific missing-field messages below rather than typebox noise.
- * `channelId` is the legacy alias for `conversationId`.
- */
 const EventFileSchema = Type.Object({
   type: Type.Optional(EventTypeSchema),
   platform: Type.Optional(Type.String()),
@@ -155,13 +120,6 @@ function daysInMonth(year: number, month: number): number {
   return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
 }
 
-/** True for a complete ISO 8601 timestamp that carries an explicit UTC offset. */
-/**
- * Validate an untrusted event filename: a bare `*.json` basename with no
- * path traversal. Every surface that touches the events bus by filename
- * (the event tool's store, the admin portal's file endpoints) validates
- * through this single rule.
- */
 export function validateEventFilename(filename: string): string {
   const trimmed = filename.trim();
   if (
@@ -208,19 +166,12 @@ function isValidIsoTimestampWithOffset(value: string): boolean {
   );
 }
 
-/**
- * Parse and validate one event file's content into the canonical payload.
- * `filename` appears in error messages. Throws on malformed JSON, wrong
- * field types, and missing required fields (common and per-type).
- */
 export function parseEventPayload(content: string, filename: string): EventFilePayload {
   const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
     detail === "unexpected JSON shape"
       ? `Expected top-level JSON object in ${filename}`
       : `Malformed event file ${filename}: ${detail}`,
   );
-  // `channelId` is the legacy alias; parsed payloads expose only the
-  // canonical `conversationId` field.
   const conversationId =
     typeof data.conversationId === "string"
       ? data.conversationId
@@ -267,11 +218,6 @@ export function parseEventPayload(content: string, filename: string): EventFileP
   }
 }
 
-/**
- * Validate and assemble a new event payload for writing. Owns the per-type
- * field rules; write-side *policy* beyond the format (e.g. the event tool's
- * requirement that `at` lies in the future) stays with the writer.
- */
 export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
   const base = {
     ...(input.platform !== undefined ? { platform: input.platform } : {}),
@@ -313,7 +259,6 @@ import { atomicWritePrivateFile } from "../file-guards.js";
 import type { Office, Workspace } from "../office/index.js";
 import { createOfficeAddress, listRegisteredOffices, officeKey } from "../office/index.js";
 
-/** Host-only per-office events directory: `<office state dir>/events`. */
 export function officeEventsDir(office: Office): string {
   return join(office.stateDir, "events");
 }
@@ -399,7 +344,6 @@ export class OfficeEventStore implements EventStore {
     if (!existsSync(filePath)) {
       throw new Error(`Event ${safeFilename} not found in the current office`);
     }
-    // Cancel before removing so no timer can fire for a record being deleted.
     this.scheduler?.cancelRecord(this.address, safeFilename);
     await rm(filePath, { force: true });
     return { deleted: true };
@@ -437,12 +381,6 @@ export interface LegacyEventMigrationReport {
   skipped: { filename: string; reason: string }[];
 }
 
-/**
- * One-time move of legacy `<workspace>/events/*.json` records into the owning
- * office's host-only state. Only records with an explicit platform matching a
- * registered office move; everything else stays for an operator to inspect.
- * Run with the daemon stopped.
- */
 export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventMigrationReport {
   const report: LegacyEventMigrationReport = { migrated: [], skipped: [] };
   const legacyDir = join(workspace.root, "events");
@@ -493,7 +431,6 @@ export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventM
       report.skipped.push({ filename, reason: `already exists in ${key}` });
       continue;
     }
-    // Rewrite instead of rename so the record gets host-private permissions.
     atomicWritePrivateFile(target, JSON.stringify(payload) + "\n");
     rmSync(source);
     report.migrated.push({ filename, key });

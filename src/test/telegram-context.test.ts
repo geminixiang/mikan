@@ -3,10 +3,6 @@ import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
 import type { TelegramEvent } from "../adapters/telegram/bot.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
 
-// ============================================================================
-// Minimal TelegramMessagingBot mock
-// ============================================================================
-
 function makeTelegramMessagingBot(
   overrides: Partial<TelegramMessagingBot> = {},
 ): TelegramMessagingBot {
@@ -20,7 +16,6 @@ function makeTelegramMessagingBot(
     uploadFile: vi.fn().mockResolvedValue(undefined),
     addReaction: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
-    // MessagingBot interface stubs
     start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("1001"),
     enqueueEvent: vi.fn().mockReturnValue(true),
@@ -41,23 +36,13 @@ function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
   };
 }
 
-// ============================================================================
-// subagent progress
-// ============================================================================
-
 describe("replaceSubagentProgress()", () => {
   test("uses the harness dashboard rather than a Telegram-specific one", () => {
-    // The override existed only because this adapter's pipeline was HTML.
-    // On markdown it is the same dashboard Slack and Discord render.
     const bot = makeTelegramMessagingBot();
     const { responder } = createTelegramAdapters(makeEvent(), bot);
     expect(responder.replaceSubagentProgress).toBeUndefined();
   });
 });
-
-// ============================================================================
-// react
-// ============================================================================
 
 describe("react", () => {
   test("targets the triggering message", async () => {
@@ -69,10 +54,6 @@ describe("react", () => {
     expect(bot.addReaction).toHaveBeenCalledWith("123456", "1001", "eyes");
   });
 });
-
-// ============================================================================
-// Session key derivation
-// ============================================================================
 
 describe("session key derivation", () => {
   test("non-threaded: sessionKey = channel:ts", () => {
@@ -103,10 +84,6 @@ describe("session key derivation", () => {
     expect(m1.sessionKey).not.toBe(m2.sessionKey);
   });
 });
-
-// ============================================================================
-// respond() routing
-// ============================================================================
 
 describe("respond() — non-threaded", () => {
   test("first call posts to channel", async () => {
@@ -157,9 +134,6 @@ describe("respond() — non-threaded", () => {
   });
 
   test("passes the model's text through untouched", async () => {
-    // Nothing is escaped or rewritten any more: Telegram parses the markdown,
-    // so angle brackets are just characters rather than markup to defend
-    // against.
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
@@ -192,11 +166,8 @@ describe("respond() — non-threaded", () => {
         123456,
         expect.stringContaining("can't parse entities"),
       );
-      // The notice goes through the plain sender only, never back into the rich pipeline.
       expect(bot.postMessageRaw).toHaveBeenCalledTimes(1);
 
-      // The failed text stays in the accumulated source, so the next send
-      // re-posts it together with the new line rather than dropping it.
       await responder.respond("second");
       expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
       expect(bot.postMessageRaw).toHaveBeenLastCalledWith(123456, "first\nsecond");
@@ -229,10 +200,6 @@ describe("respond() — threaded (reply to parent message)", () => {
     );
   });
 });
-
-// ============================================================================
-// respondDiagnostic()
-// ============================================================================
 
 describe("respondDiagnostic()", () => {
   test("non-threaded: posts a regular diagnostic message", async () => {
@@ -285,10 +252,6 @@ describe("respondDiagnostic()", () => {
   });
 });
 
-// ============================================================================
-// setTyping()
-// ============================================================================
-
 describe("setTyping()", () => {
   test("sends typing action immediately", async () => {
     const bot = makeTelegramMessagingBot();
@@ -323,7 +286,7 @@ describe("setTyping()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setTyping(true);
-    await responder.setTyping(true); // should be no-op
+    await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledTimes(1);
   });
 
@@ -339,10 +302,6 @@ describe("setTyping()", () => {
   });
 });
 
-// ============================================================================
-// setWorking()
-// ============================================================================
-
 describe("setWorking()", () => {
   test("setWorking(false) allows typing to be re-triggered", async () => {
     const bot = makeTelegramMessagingBot();
@@ -351,7 +310,6 @@ describe("setWorking()", () => {
     await responder.setTyping(true);
     await responder.setWorking(false);
     vi.clearAllMocks();
-    // After setWorking(false), typing can be started again
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledTimes(1);
   });
@@ -365,10 +323,6 @@ describe("setWorking()", () => {
     expect(posted).toBe("content");
   });
 });
-
-// ============================================================================
-// replaceResponse()
-// ============================================================================
 
 describe("replaceResponse()", () => {
   test("replaces accumulated text entirely", async () => {
@@ -395,8 +349,6 @@ describe("replaceResponse()", () => {
   });
 
   test("a markdown table is sent as written, for Telegram to render", async () => {
-    // Verified against the live API: Telegram parses a GFM table into a native
-    // table block, so converting it here would only take that away.
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
@@ -405,10 +357,6 @@ describe("replaceResponse()", () => {
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, table);
   });
 });
-
-// ============================================================================
-// Text truncation
-// ============================================================================
 
 describe("text splitting", () => {
   test("text past the message ceiling is split", async () => {
@@ -446,12 +394,7 @@ describe("text splitting", () => {
   });
 });
 
-// ============================================================================
-// deleteResponse()
-// ============================================================================
-
 describe("deleteResponse()", () => {
-  // Telegram has no threads — only deletes main message
   test("deletes main message", async () => {
     const bot = makeTelegramMessagingBot({
       postMessageRaw: vi.fn().mockResolvedValue(2001),
@@ -474,10 +417,6 @@ describe("deleteResponse()", () => {
   });
 });
 
-// ============================================================================
-// MessagingInfo
-// ============================================================================
-
 describe("platform info", () => {
   test("name is 'telegram'", () => {
     const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
@@ -486,7 +425,6 @@ describe("platform info", () => {
 
   test("formattingGuide asks for ordinary Markdown", () => {
     const { platform } = createTelegramAdapters(makeEvent(), makeTelegramMessagingBot());
-    // The guide used to forbid Markdown and ask for hand-drawn ASCII tables.
     expect(platform.formattingGuide).toContain("Markdown");
     expect(platform.formattingGuide).not.toContain("<b>");
   });
@@ -502,10 +440,6 @@ describe("platform info", () => {
     expect(platform.users).toEqual([]);
   });
 });
-
-// ============================================================================
-// uploadFile()
-// ============================================================================
 
 describe("uploadFile()", () => {
   test("calls bot.uploadFile with channel, path, and title", async () => {
@@ -525,14 +459,8 @@ describe("uploadFile()", () => {
   });
 });
 
-// ============================================================================
-// Streaming lifecycle
-// ============================================================================
-
 describe("streaming lifecycle", () => {
   test("delta streaming posts then updates the same message", async () => {
-    // Redraws are paced by wall clock, and the renderer captures `Date.now`
-    // when it is built — so the fake clock has to be in place first.
     vi.useFakeTimers();
     const bot = makeTelegramMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
@@ -553,10 +481,6 @@ describe("streaming lifecycle", () => {
     expect(bot.updateMessage).toHaveBeenLastCalledWith("123456", "1001", "hello final");
   });
 });
-
-// ============================================================================
-// ConversationMessage fields
-// ============================================================================
 
 describe("message fields", () => {
   test("userId and userName are populated from event", () => {

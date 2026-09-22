@@ -3,7 +3,6 @@ import { Type } from "@sinclair/typebox";
 export type { SlackBlockKitOps } from "../types.js";
 import type { SlackBlockKitOps } from "../types.js";
 
-/** Slack's own ceilings: 50 blocks per message, and a payload well under 64KB. */
 const MAX_BLOCKS = 50;
 const MAX_ARGUMENT_BYTES = 64 * 1024;
 
@@ -30,16 +29,6 @@ const blockkitSchema = Type.Object({
   ),
 });
 
-/**
- * Reject a runaway payload before schema validation sees it.
- *
- * `prepareArguments` runs ahead of validation, which reports a failure by
- * embedding the entire argument object in its message. A malformed multi-
- * hundred-KB `blocks` array therefore lands in the session twice — once as the
- * call, once echoed back as the result — and every later reader pays for it.
- * Only a bounded result belongs there, so the size complaint stays short and
- * never quotes what it rejected.
- */
 function guardBlockKitArguments(args: unknown): unknown {
   if (!args || typeof args !== "object") return args;
   const bytes = Buffer.byteLength(JSON.stringify(args) ?? "", "utf-8");

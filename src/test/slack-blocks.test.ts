@@ -182,21 +182,19 @@ _Triggered by @requester_`;
     expect(renderedText).toContain(expectedLink);
     expect(renderedText).not.toContain("%7C");
     expect(renderedText).not.toContain("<https://example.com/issues/456#comment-789|");
-    // non-http pseudo-links inside the fence are not link syntax and stay verbatim
     expect(renderedText).toContain("<issue URL|#number>");
     expect(renderedText).toContain("_Triggered by @requester_");
     expect(rendered.text).toContain("Existing Portfolio");
   });
 
   test("splits prose over the 12k markdown block limit at paragraph boundaries", () => {
-    const paragraph = "word ".repeat(500).trim(); // ~2.5k chars
-    const source = Array.from({ length: 6 }, (_, i) => `P${i} ${paragraph}`).join("\n\n"); // ~15k
+    const paragraph = "word ".repeat(500).trim();
+    const source = Array.from({ length: 6 }, (_, i) => `P${i} ${paragraph}`).join("\n\n");
     const rendered = renderSlackBlocks(source);
 
     expect(rendered.blocks.length).toBeGreaterThan(1);
     for (const text of markdownTexts(rendered.blocks)) {
       expect(text.length).toBeLessThanOrEqual(12000);
-      // paragraph-boundary split: chunks start at a paragraph head, not mid-word
       expect(text.startsWith("P")).toBe(true);
     }
     expect(markdownTexts(rendered.blocks).join("\n\n")).toBe(source);
@@ -237,8 +235,6 @@ describe("resolveSlackMentions", () => {
   });
 
   test("a display name never shadows another user's userName", () => {
-    // Someone can set their display name to a teammate's handle; the handle's
-    // owner must still be the one who gets pinged.
     const conflicted = [
       { id: "U0AAAAAA1", userName: "alice", displayName: "Alice Example" },
       { id: "U0CCCCCC3", userName: "impostor", displayName: "alice" },
@@ -247,7 +243,6 @@ describe("resolveSlackMentions", () => {
   });
 
   test("unknown handles stay verbatim instead of guessing", () => {
-    // e.g. a GitHub handle from channel memory — neither a userName nor an id.
     expect(resolveSlackMentions("ask <@alicehub>", users)).toBe("ask <@alicehub>");
   });
 

@@ -57,8 +57,6 @@ describe("resolveChatSessionKey", () => {
   });
 
   test("an empty-string threadTs is treated as absent", () => {
-    // Platforms sometimes send "" instead of omitting the field; it must not
-    // produce an empty (invalid) thread suffix.
     expect(
       resolveChatSessionKey({
         conversationId: "DM1",

@@ -1,76 +1,3 @@
-/**
- * `jev_browser`: a browser-automation tool that drives a real Chrome
- * instance toward a natural-language goal, deciding each step itself.
- *
- * Combines two existing pieces rather than reimplementing either:
- *  - `agent-browser` (Vercel Labs' CLI, https://github.com/vercel-labs/agent-browser)
- *    launches and controls Chrome over CDP and produces ref-indexed
- *    accessibility snapshots (`@e1`, `@e2`, ...) — the hard part of
- *    "what's on this page and how do I click it" is already solved there.
- *  - Jev (`evaluateWithJev`, `harness/jev.ts`) picks the next operation
- *    (CLICK/TYPE_TEXT/SELECT/scroll/WAIT/DONE/BLOCKED) and its target
- *    element from that snapshot with one calibrated-choice request per
- *    step, the way github.com/browser-use/jev-ultrafast drives a browser
- *    without a full chat model in the loop.
- *
- * Every browser command runs through the current Office's authorized sandbox
- * Executor, just like other sandbox commands. The CLI and browser must be
- * provisioned in that runtime; this tool never installs them or falls back
- * to the mikan host. Named sessions and output paths belong to that runtime.
- *
- * The Jev-driven loop only exercises the handful of agent-browser commands
- * it needs to act on a page (open/snapshot/click/fill/select/scroll/wait).
- * Everything else agent-browser can do — screenshot, `record start/stop`,
- * `network har start/stop`, pdf, cookies, eval, `set viewport`, `find`,
- * `mouse`, and any future command — is reachable through `commands`, which
- * forwards raw argument arrays to the CLI verbatim rather than wrapping
- * each one, so the surface stays complete as agent-browser adds commands.
- * `session` lets a caller span such commands and a goal-driven run across
- * multiple tool calls against the same browser (e.g. start a recording,
- * run a goal, stop the recording, screenshot the result).
- *
- * No separate domain allowlist or browser transport is introduced here:
- * runtime access follows the existing sandbox Executor's authorization.
- *
- * Session lifetime default was learned the hard way: an earlier version
- * closed every session unless the caller passed `keepOpen: true` on *every*
- * call, including calls that only ran `commands`. A caller reusing the same
- * `session` id across a `record start` / goal / `record stop` sequence
- * forgot that flag on most calls, so each call silently closed and
- * reopened a brand-new browser under the same session name — `record
- * start` ran, the browser closed before any frame was captured, the next
- * call's `record stop` had nothing to stop, and `network har
- * start`/`stop` bracketed zero continuous browsing time. The failure was
- * silent: every individual call still reported success. Now the default
- * follows the caller's stated intent instead of a flag that is easy to
- * forget under focus on harder problems (what to click, how long to wait
- * for an intermittent element): naming an existing `session` means "keep
- * this browser around," so the tool does not close it unless `close: true`
- * is explicit. Only a call with no `session` (a one-off, auto-generated
- * session) closes by default, preserving the original single-call
- * ergonomics. The downside — a one-off call that happens to pass an
- * explicit `session` name without ever reusing it leaves that session
- * lingering — is bounded by agent-browser's own 1-hour idle-daemon
- * timeout and is strictly safer than silently destroying in-progress
- * capture state.
- *
- * Every result also reports `browserContinuity`, a one-line readable
- * summary of whether the browser that just ran was actually the same one
- * as the prior call in this session (agent-browser's own `reused` /
- * `relaunchedBrowser` / `launched` lifecycle fields, otherwise buried a
- * few levels deep inside each raw `commandResults` entry) — so a caller
- * debugging a capture that came back empty sees "the browser was
- * relaunched, not continuous" directly, instead of only suspecting it
- * after reading raw JSON for several turns.
- *
- * The Jev-driven loop only decides actions; it does not summarize or
- * extract page content itself. Its result always carries
- * `lastPageSnapshot`, the accessibility-tree text of the last page
- * observed — including a run that reaches DONE on the very first
- * snapshot, whose `history` is empty. Without this, the caller has no way
- * to read what the browser actually saw, and reaches for an unrelated
- * tool (e.g. `curl`) to get an answer this tool already had.
- */
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
@@ -80,9 +7,6 @@ import { readEnv } from "../../env-manifest.js";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
 
 const AGENT_BROWSER_BIN = "agent-browser";
-// Generous enough for a caller's eval to poll inside the browser for an
-// intermittently-visible element (tens of seconds) without agent-browser's
-// own CLI timeout cutting the command off before the poll finishes.
 const COMMAND_TIMEOUT_SECONDS = 90;
 const DEFAULT_MAX_STEPS = 20;
 const HARD_MAX_STEPS = 40;
@@ -157,7 +81,6 @@ interface AgentBrowserResult<T = unknown> {
   error: string | null;
 }
 
-/** Optional CLI metadata; some versions (including 0.27.0) omit it. */
 interface BrowserLifecycle {
   reused?: boolean;
   relaunchedBrowser?: boolean;
@@ -168,13 +91,6 @@ function lifecycleOf(result: AgentBrowserResult<unknown>): BrowserLifecycle | un
   return (result.data as { lifecycle?: BrowserLifecycle } | null)?.lifecycle;
 }
 
-/**
- * One-line, non-buried answer to "was this call's browser actually the
- * same one a prior call in this session left running?" — built from the
- * first agent-browser response in this invocation. Answers the question a
- * caller debugging an empty recording/HAR needs first, before it occurs to
- * them to go digging through commandResults' raw lifecycle fields.
- */
 function describeContinuity(hadSession: boolean, first: BrowserLifecycle | undefined): string {
   if (!hadSession) {
     return "one-off session: no session name was given, so this browser is not intended to persist for a later call";
@@ -256,11 +172,9 @@ async function runAgentBrowser<T = unknown>(
         "they are on its PATH. Installing on the mikan host will not fix a container sandbox.",
     );
   }
-  // Native help/skills output is plain text, not the browser JSON protocol.
   if (code === 0 && (args.includes("--help") || args[0] === "skills")) {
     return { success: true, data: { help: truncate(stdout, 16_000) } as T, error: null };
   }
-  // The CLI reports structured failures on stdout even with a nonzero exit.
   if (stdout.trim()) {
     try {
       return JSON.parse(stdout) as AgentBrowserResult<T>;
@@ -274,7 +188,6 @@ async function runAgentBrowser<T = unknown>(
   );
 }
 
-/** Split refs into candidate buckets per operation. CLICK accepts any ref. */
 function categorizeRefs(refs: Record<string, RefInfo>): {
   click: [string, RefInfo][];
   type: [string, RefInfo][];
@@ -288,7 +201,6 @@ function categorizeRefs(refs: Record<string, RefInfo>): {
   };
 }
 
-/** One choice question's criteria: ref id -> short human-readable description. */
 function refCriteria(entries: [string, RefInfo][], snapshot: string): Record<string, string> {
   const lines = snapshot.split("\n");
   return Object.fromEntries(
@@ -308,17 +220,9 @@ function refCriteria(entries: [string, RefInfo][], snapshot: string): Record<str
 
 interface QuestionPlan {
   questions: JevQuestions;
-  /** Operations whose only candidate is resolved directly, with no target question. */
   singles: Record<string, string>;
 }
 
-/**
- * Build the per-step Jev request: one `operation` choice (always present)
- * plus a `*_target` choice for every operation with 2+ candidate refs.
- * An operation with exactly one candidate skips the target question —
- * Jev's `choice` questions require at least two options — and resolves to
- * that ref directly once selected.
- */
 function buildQuestionPlan(
   refs: Record<string, RefInfo>,
   canScrollUp: boolean,
@@ -522,15 +426,7 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
       let status: "done" | "blocked" | "step-limit" | "no-goal" = "no-goal";
       let message = "No goal was given; ran commands only.";
       let finalUrl = args.url;
-      // The caller's real interest is usually what the browser saw, not just
-      // that a run finished — without this, a DONE reached on the very
-      // first snapshot (goal already satisfied on page load) returns an
-      // empty history and no page content at all.
       let lastSnapshotText = "";
-      // The first agent-browser response's lifecycle answers "did this call
-      // actually get the browser a prior call in this session left open?" —
-      // captured once, from whichever command runs first (open, or the
-      // first raw command when url is omitted).
       let firstLifecycle: BrowserLifecycle | undefined;
       const captureLifecycle = (result: AgentBrowserResult<unknown>) => {
         firstLifecycle ??= lifecycleOf(result);
@@ -727,7 +623,6 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
             continue;
           }
 
-          // TYPE_TEXT or SELECT: both need a generated text value.
           if (!openrouterApiKey) {
             status = "blocked";
             message = "OPENROUTER_API_KEY is not configured; cannot generate text for this field.";
@@ -758,8 +653,6 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
           }
           history.push({ step, operation, target: targetRef, label: targetInfo?.name, text });
         }
-        // The last action may have changed the page before the step budget ran
-        // out. Never present the pre-action observation as the final state.
         if (status === "step-limit") {
           const finalSnapshot = await runAgentBrowser<SnapshotData>(
             executor,
@@ -774,10 +667,6 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
           finalUrl = finalSnapshot.data.origin ?? finalUrl;
         }
       } finally {
-        // A named session defaults to staying open across calls — only a
-        // one-off (no session given) or an explicit close: true tears the
-        // browser down here. Getting this backwards is exactly what silently
-        // discarded in-progress recordings/HAR captures in earlier versions.
         const shouldClose = args.close ?? !args.session;
         if (shouldClose) {
           await runAgentBrowser(executor, sessionId, ["close"])
@@ -838,5 +727,4 @@ export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBr
   };
 }
 
-// Exported for unit tests only.
 export { buildQuestionPlan, resolveTarget, categorizeRefs, truncate, describeContinuity };

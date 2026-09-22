@@ -1,13 +1,3 @@
-/**
- * `mikan sessions` — session-file maintenance from the CLI.
- *
- *   mikan sessions migrate [--state-dir <dir>] [--workspace <dir>] [--dry-run]
- *
- * `migrate` rewrites legacy mikan v3 and Pi 0.84-generation v4 sessions to
- * Pi's current JSONL v4 storage schema. Run it with the daemon stopped. Each
- * candidate is verified before atomic replacement, and the original remains
- * beside it as `<file>.v3.bak` or `<file>.pi-084.bak`.
- */
 import { join, resolve } from "node:path";
 import { findPi084SessionFiles, migratePi084SessionFile } from "../sessions/migrate-pi-084.js";
 import { findV3SessionFiles, migrateSessionFile } from "../sessions/migrate-v3.js";
@@ -81,7 +71,6 @@ async function migrateCandidates(
   return { migrated, failed };
 }
 
-/** Migrate one session file. Read/convert failures are reported, never thrown. */
 async function migrateCandidate(
   { file, format }: Candidate,
   dryRun: boolean,

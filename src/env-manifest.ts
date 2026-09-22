@@ -1,14 +1,3 @@
-/**
- * The daemon's environment interface, declared as data — the one inventory
- * that startup validation, `mikan env`, `--help`, and the pm2 deploy
- * template check all derive from. Add a var here and every derived surface
- * picks it up; a var read anywhere else but not listed here is a bug.
- *
- * Names are the un-prefixed spelling; `readEnv` accepts a `MIKAN_`-prefixed
- * alias for each. Not covered: dynamic OAuth service keys from
- * OAUTH_SERVICES_JSON (data-driven by design) and standard proxy vars
- * (HTTPS_PROXY/HTTP_PROXY/NO_PROXY).
- */
 import type { EnvGroup } from "./types.js";
 
 export function readEnv(name: string): string | undefined {
@@ -19,7 +8,6 @@ export function readEnv(name: string): string | undefined {
   return prefixed || undefined;
 }
 
-/** Read a standards-owned environment variable without mikan aliasing. */
 export function readStandardEnv(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
 }
@@ -208,7 +196,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
 
 type EnvLookup = (name: string) => string | undefined;
 
-/** A platform group activates when all required vars (and one anyOf) are set. */
 export function platformIsActive(key: string, env: EnvLookup = readEnv): boolean {
   const group = ENV_MANIFEST.find((candidate) => candidate.key === key);
   if (!group) throw new Error(`Unknown env-manifest group: ${key}`);
@@ -224,7 +211,6 @@ export function activePlatformKeys(env: EnvLookup = readEnv): string[] {
   ).map((group) => group.key);
 }
 
-/** One line per platform group: the vars an operator must set to activate it. */
 function platformRecipe(group: EnvGroup): string {
   const required = group.vars.filter((spec) => spec.required).map((spec) => spec.name);
   const alternative = group.anyOf ? ` + ${group.anyOf.join(" | ")}` : "";
@@ -238,14 +224,12 @@ export function noPlatformsMessage(): string {
   return `No platform tokens found. Set one of:\n${recipes}`;
 }
 
-/** The `--help` environment section, derived from the platform groups. */
 export function envSummaryLines(): string[] {
   return ENV_MANIFEST.filter((group) => group.kind === "platform").map(
     (group) => `  ${platformRecipe(group)}`,
   );
 }
 
-/** Every var an operator may set; `deployOnly` filters to template-listed ones. */
 export function manifestVarNames(options?: { deployOnly?: boolean }): string[] {
   return ENV_MANIFEST.flatMap((group) =>
     group.vars
@@ -254,7 +238,6 @@ export function manifestVarNames(options?: { deployOnly?: boolean }): string[] {
   );
 }
 
-/** `mikan env` output: every group and var with set/unset status. No values. */
 export function envReport(env: EnvLookup = readEnv): string {
   const lines: string[] = [];
   for (const group of ENV_MANIFEST) {
@@ -280,11 +263,6 @@ export function envReport(env: EnvLookup = readEnv): string {
   return lines.join("\n");
 }
 
-/**
- * Externally-visible base URL of the link/OAuth server, e.g.
- * `https://mikan.example.com` (no trailing slash). Read from `LINK_URL` or
- * `MIKAN_LINK_URL`, the same env var the bot uses to build credential onboarding links.
- */
 export function resolveLinkBaseUrl(): string | undefined {
   const raw = readEnv("LINK_URL");
   if (!raw) return undefined;

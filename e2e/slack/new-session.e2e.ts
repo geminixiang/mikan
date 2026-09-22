@@ -97,8 +97,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(originalSession, "no active session before /new").not.toBeNull();
     expect(readFileSync(originalSession!, "utf-8")).toContain(scratchNonce);
 
-    // Slack does not let this QA Web API client invoke another app's slash command.
-    // A literal /pi-new DM reaches the same command and reset path.
     const { ts: resetTs } = await postLocallyDeliveredMessage({
       client,
       channel: dmChannel,
@@ -124,6 +122,5 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(existsSync(originalSession!)).toBe(true);
     expect(readFileSync(cleanSession!, "utf-8")).not.toContain(scratchNonce);
     expect(readFileSync(memoryPath, "utf-8")).toBe(memoryAnchor);
-    // Worst case: two local-delivery cycles (4 x 15s each) + setup reply + reset result.
   }, 300_000);
 });

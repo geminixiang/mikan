@@ -39,18 +39,14 @@ export type ChatResponseErrorReporter = (
 ) => void;
 
 export interface RetryOptions {
-  /** Predicate that returns true when an error is worth retrying (rate limit, transient 5xx, etc.). */
   isRateLimited: (err: Error) => boolean;
-  /** Total attempts including the first call. */
   maxAttempts?: number;
   baseDelayMs?: number;
 }
 
 export interface ResolveStopTargetInput {
   handler: MessagingEventHandler;
-  /** The office whose runtime state may be stopped. */
   address: OfficeAddress;
-  /** Session key derived from the current message; checked first when present. */
   sessionKey?: string;
 }
 
@@ -67,25 +63,12 @@ interface ProgressiveStreamTransport {
   start(text: string): Promise<string>;
   append(messageId: string, delta: string): Promise<void>;
   stop(messageId: string): Promise<void>;
-  /**
-   * Withhold an append until this many characters have accumulated. A
-   * streaming transport is usually rate-limited per call rather than per byte,
-   * so forwarding every token spends the budget on latency nobody perceives.
-   * The final render flushes whatever is left before stopping, so buffering
-   * can never drop text. Omit for no buffering.
-   */
   minDeltaChars?: number;
 }
 
 export interface ProgressiveRendererPlatform {
   label: string;
   maxLength: number;
-  /**
-   * Shortest gap between redraws of a streaming response, measured from the
-   * end of the previous one. Platforms meter edits per channel at different
-   * rates; the default suits the tightest of them. Zero redraws on every
-   * delta, which only a platform with no such limit can afford.
-   */
   flushIntervalMs?: number;
   initialResponseId?: string | null;
   formatContinuation: (partNum: number) => string;
@@ -96,15 +79,10 @@ export interface ProgressiveRendererPlatform {
   prepareSource?: (text: string, working: boolean) => string;
   onWorkingChanged?: (working: boolean, responseId: string | null) => Promise<void>;
   setTyping?: (isTyping: boolean, responseId: string | null) => Promise<void>;
-  /** Terminal hook. Awaited, so it may finish sending before the run ends. */
   onFinish?: (text: string, responseId: string | null) => void | Promise<void>;
-  /** Whether `respond` calls are complete messages that should be logged immediately. */
   logIntermediateResponses?: boolean;
-  /** Whether the platform accepts incremental response deltas. */
   supportsDeltas?: boolean;
-  /** Native stream operations, when this reply target supports them. */
   stream?: ProgressiveStreamTransport;
-  /** Re-render a finished response when the provisional stream lacked structure. */
   needsCanonicalRender?: (text: string) => boolean;
   formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;
   typing?: {
@@ -113,7 +91,6 @@ export interface ProgressiveRendererPlatform {
     stopOnSend?: boolean;
   };
   formatToolResult: (result: ChatToolResult) => string;
-  /** Stable platform context plus the current response identity for error reporting. */
   responseErrorContext?: (
     responseId: string | null,
   ) => Omit<ChatResponseErrorContext, "operation" | "extra">;
@@ -132,52 +109,24 @@ export interface ProgressiveRendererPlatform {
   uploadFile?: (filePath: string, title?: string) => Promise<void>;
   uploadFallbackNote?: (name: string) => string;
   react?: (emoji: string) => Promise<void>;
-  /**
-   * Whether a send failure is a length rejection, as opposed to a rate limit
-   * or an outage. Without this the fallback swallows every error, so a
-   * transient 429 gets reported to the reader as "message too long" and the
-   * response is truncated for no reason.
-   */
   isTooLongError?: (err: unknown) => boolean;
-  /** Handle a Slack-style length rejection and return the canonical fallback text. */
   handleTooLong?: (input: HandleTooLongInput) => Promise<{ text: string; prefixLength?: number }>;
 }
 
-/** How intake resolved a message. Callers branch on this instead of passing callbacks. */
 export type MessageIntakeOutcome = "magic-word" | "not-triggered" | "rejected-busy" | "enqueued";
 
-/** Platform policy for the magic-word step, stated as data. */
 export interface MagicWordIntakeOptions {
-  /**
-   * Raw user-typed text to match when `eventBase.text` is decorated for the
-   * agent (e.g. GitHub review-comment framing). Defaults to `eventBase.text`.
-   */
   text?: string;
-  /**
-   * Whether the message addressed the bot (mention, DM, slash form). The idle
-   * "Nothing running." reply is suppressed for unaddressed messages.
-   */
   addressed: boolean;
-  /**
-   * How far a stop may widen when the direct session key is not running:
-   * "top-level" widens to the single running scoped session only from the
-   * persistent conversation session, "always" widens unconditionally,
-   * "never" stops only exact matches.
-   */
   scopeFallback: "top-level" | "always" | "never";
 }
 
-/** One platform file to save into an office's attachments directory. */
 export interface IncomingAttachment {
-  /** Original file name as the platform reports it. */
   name: string;
-  /** Epoch ms used in the stored filename; defaults to the time of saving. */
   timestampMs?: number;
-  /** Fetch the file and write it to destPath (the parent directory exists). */
   download(destPath: string): Promise<void>;
 }
 
-/** Outcome of saving incoming attachments; error policy stays with the adapter. */
 export interface SavedAttachments {
   saved: Attachment[];
   failed: { name: string; error: unknown }[];
@@ -185,13 +134,8 @@ export interface SavedAttachments {
 
 export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   eventBase: TEvent;
-  /** Explicit DM, mention, command or supported thread continuation. */
   addressed: boolean;
   magicWord: MagicWordIntakeOptions;
-  /**
-   * "reject" bounces a new message while its session is already running
-   * (with an "Already working" reply); "queue" lines it up behind the run.
-   */
   busyPolicy: "queue" | "reject";
   logEntryBase: Record<string, unknown>;
   log?: (entry: Record<string, unknown>) => void;
@@ -207,7 +151,6 @@ export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
 export interface MarkdownTable {
   headers: string[];
   rows: string[][];
-  /** Source line span, so a caller can slice the prose around it. */
   startLine: number;
   endLine: number;
 }

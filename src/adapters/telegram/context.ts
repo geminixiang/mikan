@@ -5,9 +5,6 @@ import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatToolArgs } from "../shared.js";
 import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
 
-// A rich message allows far more than the 4096 a plain message did; this stays
-// well inside it, and the headroom is now for the continuation marker alone
-// rather than for HTML escapes that no longer happen.
 const MAX_LENGTH = 30000;
 
 function formatToolResult(result: ChatToolResult): string {
@@ -39,7 +36,6 @@ export function createTelegramAdapters(
     threadTs: event.thread_ts,
   });
 
-  // The bot's getMessagingInfo() is the single authority for platform info.
   const platform = bot.getMessagingInfo();
 
   const { responder } = createProgressiveRenderer({
@@ -49,7 +45,6 @@ export function createTelegramAdapters(
     errorPrefix: "Error: ",
     supportsDeltas: true,
     typing: {
-      // Send immediately and repeat every 4s (Telegram clears indicator after ~5s)
       send: () => bot.sendTyping(chatId),
       intervalMs: 4000,
     },
@@ -75,8 +70,6 @@ export function createTelegramAdapters(
       return String(id);
     },
     update: (id, text) => bot.updateMessage(conversationId, id, text),
-    // Returns the id so the renderer can edit this overflow message on the
-    // next redraw instead of posting another copy of the tail.
     postExtra: (text) => bot.postMessageRaw(chatId, text),
     delete: (id) => bot.deleteMessageRaw(chatId, Number(id)),
     logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),

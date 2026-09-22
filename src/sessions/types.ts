@@ -3,8 +3,6 @@ import type { AgentMessage, Entry, MessageEntry } from "@earendil-works/pi-agent
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
 
-// ── session metadata ─────────────────────────────────────────────────────────
-
 export interface MikanSessionHeader {
   type?: string;
   version?: number;
@@ -12,15 +10,12 @@ export interface MikanSessionHeader {
   timestamp?: string;
   cwd?: string;
   parentSession?: string;
-  /** Legacy platform-history marker; preserved in mikan's durable session metadata. */
   source?: {
     kind?: string;
     file?: string;
     recentDays?: number;
   };
 }
-
-// ── session policy ───────────────────────────────────────────────────────────
 
 export interface ResolveSessionKeyOptions {
   conversationId: string;
@@ -31,17 +26,12 @@ export interface ResolveSessionKeyOptions {
   scopeDirectThreads?: boolean;
 }
 
-// ── session store ────────────────────────────────────────────────────────────
-
-/** Model-visible messages reconstructed from the active session branch. */
 export interface SessionContext {
   messages: AgentMessage[];
 }
 
-/** Message entry as stored in mikan session files (Pi v4). */
 export type SessionMessageEntry = MessageEntry;
 
-/** Union of entry types mikan reads and writes. Alias of Pi's v4 entry. */
 export type SessionEntry = Entry;
 
 export const CURRENT_SESSION_VERSION = 4;
@@ -52,7 +42,6 @@ export interface SessionCreateInfo {
   parentSessionId?: string;
 }
 
-/** Immutable session queries available to portals, admin, and migration code. */
 export interface SessionInspection {
   getHeader(): SessionHeader;
   getEntries(): Promise<Entry[]>;
@@ -61,12 +50,6 @@ export interface SessionInspection {
   buildSessionContext(): Promise<SessionContext>;
 }
 
-/**
- * Compatibility header view synthesized from the v4 file header for callers
- * that read mikan session lineage. `metadata` carries mikan header extras (for
- * example `parentSessionPath` and the legacy `source` marker preserved by
- * the v3 migration).
- */
 export interface SessionHeader {
   type: "session";
   version?: number;
@@ -97,19 +80,13 @@ export interface ResolvedSessionScope {
   threadRootMessage: ThreadRootMessage | null;
 }
 
-/** One parsed log.jsonl entry with its original line index. */
 export interface LogRecord {
   message: ConversationLogMessage;
   index: number;
 }
 
-// ── chat history sync ────────────────────────────────────────────────────────
-
-/** What one sync pass actually did — the inspectable result of a sync. */
 export interface ChatSyncReport {
-  /** Log messages appended to the session in this pass. */
   appended: number;
-  /** The log message id recorded as the new sync watermark. */
   lastMessageId?: string;
 }
 
@@ -123,7 +100,6 @@ export interface ResolveChatSessionScopeOptions {
   conversationDir: string;
   sessionKey: string;
   cwd?: string;
-  /** The triggering platform message ID. History is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
 }
 
@@ -131,7 +107,6 @@ export interface SyncChatSessionOptions {
   conversationDir: string;
   sessionKey: string;
   sessionManager: SessionStore;
-  /** The triggering platform message ID. Sync is capped before this turn to avoid future queued turns. */
   currentMessageId?: string;
 }
 
@@ -160,8 +135,6 @@ export interface ThreadBootstrapWaitOptions {
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;
 }
-
-// ── v3 migration ─────────────────────────────────────────────────────────────
 
 export interface MigrateResult {
   file: string;

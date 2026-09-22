@@ -54,7 +54,6 @@ import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
 
 function getVersion(): string {
-  // Try to find package.json in the dist directory or parent
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const possiblePaths = [
     join(moduleDir, "package.json"),
@@ -84,8 +83,6 @@ const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
-// Externally-visible base URL of the link/OAuth server; the env read and
-// trailing-slash normalization live in config.resolveLinkBaseUrl.
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
@@ -95,10 +92,6 @@ const openConnector: McpServerConfig | undefined = OPENCONNECTOR_ENDPOINT
   : undefined;
 
 const WORLD_WRITABLE_MODE = 0o002;
-// How long in-flight runs (and messages already queued behind them) may keep
-// running after a shutdown signal before they are aborted. pm2 fork-mode reload
-// is sequential, so this is also the window where no process is connected to
-// the platforms; Slack's documented redelivery schedule ends at five minutes.
 const SHUTDOWN_DRAIN_TIMEOUT_MS = 5 * 60_000;
 
 function ensureSecureStateDir(path: string): void {
@@ -170,18 +163,14 @@ try {
   handleStartupError(error);
 }
 
-// `mikan office …` inspects/claims conversation offices and exits.
 if (plan.mode === "office") {
   process.exit(runOfficeCommand(plan.officeArgs ?? []));
 }
 
-// `mikan sessions …` migrates/maintains session files and exits.
 if (plan.mode === "sessions") {
   process.exit(await runSessionsCommand(plan.sessionsArgs ?? []));
 }
 
-// Global fetch: proxy support (HTTP_PROXY/HTTPS_PROXY/NO_PROXY) and idle
-// timeouts so a stalled LLM stream errors out instead of hanging a session.
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
 configureHttpDispatcher(httpIdleTimeoutMs);
 
@@ -200,7 +189,6 @@ if (plan.mode === "version") {
   process.exit(0);
 }
 
-// Handle onboard mode
 if (plan.mode === "onboard") {
   const stateDir = plan.stateDir;
   setEnvAliases("STATE_DIR", stateDir);
@@ -213,7 +201,6 @@ if (plan.mode === "onboard") {
   }
 }
 
-// Handle --download mode (Slack only)
 if (plan.mode === "download" && plan.downloadChannel) {
   if (!SLACK_BOT_TOKEN) {
     console.error("Missing env: SLACK_BOT_TOKEN");
@@ -223,7 +210,6 @@ if (plan.mode === "download" && plan.downloadChannel) {
   process.exit(0);
 }
 
-// Normal bot mode - working dir is optional and defaults under the state dir
 const sandbox = plan.sandbox;
 const stateDir = plan.stateDir;
 const workingDir = plan.workingDir;
@@ -238,7 +224,6 @@ try {
   handleStartupError(error);
 }
 
-// Validate platform tokens — activation rules live in the env manifest.
 const hasSlack = platformIsActive("slack");
 const hasTelegram = platformIsActive("telegram");
 const hasDiscord = platformIsActive("discord");
@@ -249,11 +234,6 @@ if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   process.exit(1);
 }
 
-// Move legacy raw-id conversation directories to the office-key layout before
-// anything touches the workspace. Runs every boot; a completed migration is a
-// no-op. Unowned or failed offices are fatal: after the layout flip a legacy
-// directory is invisible to the runtime, and booting anyway would present
-// those conversations as silently empty.
 const enabledPlatforms: PlatformName[] = [
   ...(hasSlack ? (["slack"] as const) : []),
   ...(hasTelegram ? (["telegram"] as const) : []),
@@ -297,9 +277,6 @@ try {
   handleStartupError(error);
 }
 
-// The one Workspace value for this process: workspace-global paths plus the
-// per-conversation Office factory. Constructed after the office migration so
-// every office it materializes lands in the office-key layout.
 const workspace = createWorkspace({ root: workingDir, stateDir });
 
 const vaultManager = new FileVaultManager(stateDir);
@@ -337,11 +314,6 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
-// Containers provisioned before the office migration mount the renamed
-// legacy paths. Their writable layers (everything installed inside) are
-// preserved: each container is committed and recreated with translated
-// mounts — on demand before its next message, and via a background sweep
-// after the bots start.
 const registryOffices = new OfficeRegistry(stateDir).getOffices();
 if (provisioner && registryOffices.length > 0) {
   provisioner.armContainerLayoutMigration(
@@ -376,7 +348,6 @@ function portalBaseUrl(): string | undefined {
   if (LINK_PORT) return `http://localhost:${LINK_PORT}`;
   return undefined;
 }
-/** Idle timeout for managed sandboxes (10 minutes) */
 const MANAGED_SANDBOX_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 if (provisioner) {
@@ -390,7 +361,6 @@ if (provisioner) {
 
 const botsByPlatform: Record<string, MessagingBot> = {};
 
-/** github_* tool backends: PR push/create and CI checks, host-side. */
 function requireGithubBot(op: string): GithubMessagingBot {
   const bot = botsByPlatform.github as GithubMessagingBot | undefined;
   if (!bot) {
@@ -399,7 +369,6 @@ function requireGithubBot(op: string): GithubMessagingBot {
   return bot;
 }
 
-/** slack_* tool backends: Block Kit posting/updating, host-side. */
 function requireSlackBot(op: string): SlackMessagingBotClass {
   const bot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
   if (!bot) {
@@ -408,11 +377,6 @@ function requireSlackBot(op: string): SlackMessagingBotClass {
   return bot;
 }
 
-/**
- * Platform capability pack factories — only when the corresponding bot is
- * configured. Factories, not instances: each runner materializes its own
- * pack so per-run bind state never crosses conversations.
- */
 function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   const factories: PlatformToolPackFactory[] = [];
   if (hasSlack) {
@@ -487,11 +451,6 @@ const sandboxDesc =
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 
-/**
- * One-look confirmation of the harness runtime surface, aimed at upgrade
- * verification: config moved from ~/.pi to ~/.mikan with no fallback, so a
- * missing auth.json here is the first thing to check when runs fail.
- */
 function logHarnessStartupSummary(): void {
   const proxy =
     process.env.HTTPS_PROXY ??
@@ -552,7 +511,6 @@ if (hasGithub) {
   if (!GITHUB_APP_ID || !GITHUB_INSTALLATION_ID) {
     throw new Error("GitHub startup requires GITHUB_APP_ID and GITHUB_INSTALLATION_ID");
   }
-  // Env vars flatten PEM newlines to literal `\n`; a key file avoids that.
   const githubPrivateKey = GITHUB_APP_PRIVATE_KEY_PATH
     ? readFileSync(GITHUB_APP_PRIVATE_KEY_PATH, "utf-8")
     : GITHUB_APP_PRIVATE_KEY?.replace(/\\n/g, "\n");
@@ -671,7 +629,6 @@ async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
   if (failures.length > 0) throw new AggregateError(failures, "Failed to drain conversation work");
 }
 
-// Start the event scheduler; office event stores notify it through the runtime.
 eventScheduler = new EventScheduler(workspace, botsByPlatform);
 const slackMessagingBot = botsByPlatform.slack as SlackMessagingBotClass | undefined;
 if (slackMessagingBot) {
@@ -681,7 +638,6 @@ eventScheduler.start();
 const dreamScheduler = new DreamScheduler(workspace, handler);
 dreamScheduler.start();
 
-// Handle shutdown. A second signal is an explicit request to stop waiting.
 const shutdown = createProcessShutdownHandler({
   stop: () => {
     const intakeStop = stopConversationIntake();
@@ -704,7 +660,6 @@ const shutdown = createProcessShutdownHandler({
 process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
-// Start all bots
 await Promise.all(
   Object.values(botsByPlatform).map((bot) =>
     bot.start().catch((err) => {
@@ -714,8 +669,6 @@ await Promise.all(
   ),
 );
 
-// Drain the container layout migration off the hot path; every unit is
-// idempotent, so an interrupted sweep simply resumes on the next boot.
 if (provisioner) {
   void provisioner.sweepContainerLayoutMigration().catch((err) => {
     log.logWarning(

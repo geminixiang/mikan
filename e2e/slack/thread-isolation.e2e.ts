@@ -86,8 +86,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       channel: env.channel,
       workingDir: env.workingDir,
       threadTs: rootA,
-      // Name the token's prefix explicitly: the store message also carried a
-      // QA_DELIVERY_ marker, and a weak judge model can echo that one instead.
       text: () =>
         `<@${botUserId}> 請只回覆我在這個 thread 要你記住、以 QA_ISOLATE_ 開頭的 token，不要加其他文字。`,
       timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
@@ -102,13 +100,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       excludeTs: new Set([rootA, tellATs, String(tellAReply!.ts), askATs]),
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
-      // Native streaming briefly exposes provisional text through Slack's API.
-      // Wait for the final answer rather than accepting a reasoning snapshot
-      // that merely mentions token A before chat.stopStream: the final message
-      // starts with the bare token, followed by the attribution mikan always
-      // appends (streaming may strip the italic underscores) and possibly the
-      // thinking block Slack exports after it. A reasoning snapshot starts
-      // with prose, so anchoring the token at the start rejects it.
       textMatches: new RegExp(`^\\s*${tokenA}\\s*(?:_?Triggered by|$)`),
     });
     expect(askAReply, `no thread A reply containing ${tokenA}`).not.toBeNull();
@@ -117,6 +108,5 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       "thread A reply leaked thread B's token — sessions are not isolated",
     ).not.toContain(tokenB);
     console.log(`thread A recall ts=${askAReply!.ts}: ${summarizeMessage(askAReply!)}`);
-    // Worst case: three local-delivery cycles (4 x 15s each) + three 60s reply waits.
   }, 420_000);
 });

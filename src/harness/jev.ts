@@ -1,27 +1,3 @@
-/**
- * Jev (typesafe/jev) client, backed by `@geminixiang/jev`.
- *
- * Jev is a "System One" evaluation model: it scores a shared `state`
- * against typed questions (a yes/no probability, a multiple choice, or a
- * position on an ordered scale) and returns calibrated probabilities. It
- * does not generate text or tool calls, so it cannot be driven through
- * pi-ai's `Provider`/`Model`/`stream()` contract the way every model
- * `models.ts` catalogs is — that contract is chat/completion shaped
- * (system prompt + messages in, streamed text/tool-call events out), and
- * Jev's typed-decision shape does not fit it. Jev is therefore not a
- * selectable chat provider: callers import `evaluateWithJev` directly at
- * whatever call site wants a fast, cheap, type-safe decision (e.g.
- * classification, routing, guardrails), and interpret the returned
- * probabilities themselves.
- *
- * `@geminixiang/jev` owns the wire protocol, provider catalog, and auth
- * resolution for four backends (TypeSafe, OpenRouter, Vercel AI Gateway,
- * Cloudflare Workers AI); this module picks OpenRouter (the same key
- * pi-ai's `openrouter` chat provider reads) and adapts its typed
- * request/answer shapes to the caller-facing contract mikan's call sites
- * already depend on, so this file is the only one that needs to know a
- * dependency swap happened.
- */
 import {
   createBuiltinJevModels,
   JevAPIError,
@@ -38,23 +14,14 @@ import type { AuthContext } from "@earendil-works/pi-ai";
 import { readEnv } from "../env-manifest.js";
 import { recordJevOutcome, type JevCaller } from "../observability/index.js";
 
-/** The current public Jev model id on OpenRouter. */
 export const JEV_MODEL_ID = "~typesafe/jev-latest";
 
-/**
- * Any value Jev accepts as text-bearing structure: a string, a JSON object,
- * an array, or `null`. State, instructions, and criteria descriptions all
- * take this shape; Jev is trained to read the structure, so objects with
- * labelled keys are preferred over string templates.
- */
 export type JevEntry = string | number | boolean | null | JevEntry[] | { [key: string]: JevEntry };
 
-/** A shared caller-facing question shape; translated to `@geminixiang/jev`'s shape below. */
 export type JevQuestion =
   | {
       type: "boolean";
       instructions: JevEntry;
-      /** Optional descriptions of the yes / no outcomes. */
       criteria?: { true?: JevEntry; false?: JevEntry };
     }
   | { type: "choice"; instructions: JevEntry; criteria: Record<string, JevEntry> }
@@ -67,16 +34,13 @@ export type JevAnswer<QUESTION extends JevQuestion> = QUESTION extends { type: "
       type: "choice";
       choice: string;
       probabilities?: Record<string, number>;
-      /** 0-1 statistic over `probabilities`; low means no option clearly fits. */
       confidence?: number;
     }
   : QUESTION extends { type: "score" }
     ? {
         type: "score";
-        /** Expected level index; fractional between levels. */
         score: number;
         probabilities?: Record<string, number>;
-        /** Level index -> criterion text, as echoed by Jev. */
         legend?: Record<string, string>;
         confidence?: number;
       }
@@ -92,7 +56,6 @@ export interface JevResult<QUESTIONS extends JevQuestions> {
   readonly model: string;
 }
 
-/** Thrown when no Jev backend has a usable credential. Callers fail closed on this. */
 export class JevNotConfiguredError extends Error {
   constructor() {
     super(
@@ -113,27 +76,12 @@ export class JevRequestError extends Error {
 }
 
 export interface EvaluateWithJevOptions {
-  /** Evaluation model id; defaults to the current public Jev model. */
   model?: string;
   abortSignal?: AbortSignal;
   headers?: Record<string, string>;
-  /**
-   * Which call site is asking, so Jev spend is attributable in Sentry/OTel
-   * (`agent.jev.cost`, tagged `caller`) without any judged content leaving
-   * this function. Required rather than defaulted so a new call site must
-   * consciously pick an attribution instead of spend silently landing in a
-   * generic bucket.
-   */
   caller: JevCaller;
 }
 
-// ── @geminixiang/jev wiring ──────────────────────────────────────────────
-
-/**
- * Routes env reads through `readEnv` so `MIKAN_OPENROUTER_API_KEY` resolves
- * the same as every other mikan-aliased credential, instead of the
- * package's default `process.env`-only context.
- */
 const mikanAuthContext: AuthContext = {
   async env(name) {
     return readEnv(name);
@@ -153,9 +101,6 @@ function models() {
 function toGeminixiangQuestion(question: JevQuestion): GeminixiangQuestion {
   const instructions = question.instructions as GeminixiangEntry;
   if (question.type === "boolean") {
-    // `@geminixiang/jev` leaves noul criteria optional; mikan has always sent
-    // an explicit Yes/No default so the wire payload (and anything tuned
-    // against it, e.g. the auto-reply gate) does not change under this swap.
     return {
       type: "noul",
       instructions,
@@ -202,13 +147,6 @@ function fromGeminixiangAnswer(
   };
 }
 
-/**
- * Evaluate one or more typed questions against a shared `state` using Jev,
- * reached through OpenRouter's decisions API by way of `@geminixiang/jev`.
- * Every question is scored independently against the same state in a
- * single request; batching questions here is cheap (they share the input)
- * and is preferred over separate calls per question.
- */
 export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
   state: JevEntry,
   questions: QUESTIONS,
@@ -216,9 +154,6 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
 ): Promise<JevResult<QUESTIONS>> {
   const catalogModel = models().getModel("openrouter", "jev-latest");
   if (!catalogModel) throw new JevNotConfiguredError();
-  // `options.model` is the wire model id callers already pass (e.g. from
-  // JEV_MODEL_ID); override the catalog slug directly rather than adding a
-  // second catalog entry per possible override.
   const model = options.model ? { ...catalogModel, slug: options.model } : catalogModel;
 
   const wireQuestions: Record<string, GeminixiangQuestion> = {};

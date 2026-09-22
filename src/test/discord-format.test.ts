@@ -2,12 +2,6 @@ import { describe, expect, test } from "vitest";
 import { formatDiscordMarkdown } from "../adapters/discord/format.js";
 import { displayWidth, renderMonospaceTable } from "../adapters/markdown-tables.js";
 
-/**
- * Discord renders every construct mikan emits except tables, which arrive as a
- * wall of literal pipes and dashes. The model keeps writing standard markdown
- * for every platform; this is the last step before sending, where the parts
- * Discord cannot render become something it can.
- */
 describe("formatDiscordMarkdown", () => {
   test("fences a table as aligned columns", () => {
     const source = [
@@ -24,13 +18,10 @@ describe("formatDiscordMarkdown", () => {
     expect(out).toContain("Findings:");
     expect(out).toContain("```");
     expect(out).not.toContain("| --- |");
-    // Columns padded to a common width, so the fence lays them out.
     expect(out).toContain("Name  Verdict");
   });
 
   test("leaves prose around a table exactly as written", () => {
-    // Prose is sliced verbatim rather than re-serialized, so everything
-    // Discord already renders correctly survives untouched.
     const source = [
       "## Result",
       "",
@@ -56,8 +47,6 @@ describe("formatDiscordMarkdown", () => {
   });
 
   test("a table too wide to align is left alone", () => {
-    // Discord soft-wraps inside a fence, and a wrapped table scatters its
-    // columns — worse than the pipes it was meant to replace.
     const wide = "x".repeat(80);
     const source = ["| A | B |", "| - | - |", `| ${wide} | ${wide} |`].join("\n");
 
@@ -83,7 +72,6 @@ const firstColumnWidth = (line: string): number =>
 
 describe("constructs Discord cannot render", () => {
   test("a horizontal rule becomes a drawn line", () => {
-    // Discord has no rule syntax, so `---` arrives as its own literal dashes.
     const out = formatDiscordMarkdown("above\n\n---\n\nbelow");
     expect(out).not.toMatch(/^-{3,}$/m);
     expect(out).toContain("─");
@@ -96,13 +84,9 @@ describe("constructs Discord cannot render", () => {
   });
 
   test("an image becomes a bare URL, which Discord embeds", () => {
-    // `![alt](url)` renders as a stray "!" plus a link and the image never
-    // appears; a bare URL auto-embeds.
     const out = formatDiscordMarkdown("![範例圖片](https://example.com/a.png)");
     expect(out).not.toContain("![");
     expect(out).toContain("https://example.com/a.png");
-    // Alt text is kept rather than dropped — it is the only description when
-    // the embed fails.
     expect(out).toContain("範例圖片");
   });
 
@@ -118,25 +102,17 @@ describe("constructs Discord cannot render", () => {
   });
 
   test("code samples keep whatever they contain", () => {
-    // A rule or an image inside a fence is content, not markup.
     const source = ["```md", "---", "![x](y.png)", "```"].join("\n");
     expect(formatDiscordMarkdown(source)).toBe(source);
   });
 
   test("a pipe inside code is not mistaken for a table", () => {
-    // Verified live: `const a = b | c;` survived a round trip intact.
     const source = ["```js", "const a = b | c;", "```"].join("\n");
     expect(formatDiscordMarkdown(source)).toBe(source);
   });
 });
 
 describe("monospace alignment", () => {
-  /**
-   * Padding by code-point count misaligns a Chinese table badly enough that
-   * the result reads worse than the raw pipes. These assertions are about the
-   * text mikan produces; Discord's own CJK fallback font is not exactly twice
-   * the Latin advance, so the rendered columns end up close rather than exact.
-   */
   test("preserves fixed wide-range boundaries and supplementary code points", () => {
     const ranges = [
       [0x1100, 0x115f],
@@ -172,8 +148,6 @@ describe("monospace alignment", () => {
   });
 
   test("counts the verdict symbols a model actually writes as wide", () => {
-    // ✅ and ❌ carry most verdict columns; treating them as one cell drifts
-    // the alignment of exactly the tables this exists for.
     expect(displayWidth("✅")).toBe(2);
     expect(displayWidth("❌")).toBe(2);
   });
@@ -190,8 +164,6 @@ describe("monospace alignment", () => {
     });
 
     const [header, , first, second] = rendered.split("\n");
-    // Every row's first column occupies the same number of cells, which is
-    // what makes the fence render as columns rather than a ragged list.
     expect(firstColumnWidth(first ?? "")).toBe(firstColumnWidth(header ?? ""));
     expect(firstColumnWidth(second ?? "")).toBe(firstColumnWidth(header ?? ""));
   });

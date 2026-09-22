@@ -5,17 +5,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HostExecutor } from "../sandbox/host.js";
 import { execReadFile, execWriteFile } from "../sandbox/utils.js";
 
-/**
- * Contract test for the Executor file transport: the same matrix runs against
- * the host executor's native fs implementation and against the shared
- * exec-backed implementation (base64 over a real `sh`), which is what the
- * container/cloudflare executors delegate to. Content that would
- * corrupt under shell parsing is the point of the matrix.
- */
-
 const host = new HostExecutor();
 
-/** The exec-backed transport, using the host shell as the exec channel. */
 const execBacked = {
   readFile: (path: string) => execReadFile(host, path),
   writeFile: (path: string, content: string) => execWriteFile(host, path, content),
@@ -67,7 +58,6 @@ describe.each([
   });
 
   test("round-trips content larger than one write chunk", async () => {
-    // > 2 base64 chunks (65536 chars each): ~150KB of raw content.
     const content = "x".repeat(120_000) + "\n" + "y'\"$`".repeat(8_000);
     const path = join(dir, "large.txt");
     await transport.writeFile(path, content);

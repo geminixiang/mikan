@@ -22,8 +22,6 @@ function formatContext(ctx: LogContext): string {
   return `[${conversation.startsWith("#") ? conversation : `#${conversation}`}:${user}${session}]`;
 }
 
-// Keep stdout/stderr lines manageable when echoing tool/agent output. Long bodies
-// flow through Sentry and session storage; the console stream just needs a preview.
 const LOG_PREVIEW_MAX = 1000;
 
 function truncate(text: string, maxLen: number): string {
@@ -31,12 +29,10 @@ function truncate(text: string, maxLen: number): string {
   return `${text.substring(0, maxLen)}\n(truncated at ${maxLen} chars)`;
 }
 
-// User messages
 export function logUserMessage(ctx: LogContext, text: string): void {
   console.log(chalk.green(`${timestamp()} ${formatContext(ctx)} ${text}`));
 }
 
-// Tool execution
 export function logToolStart(
   ctx: LogContext,
   toolName: string,
@@ -46,7 +42,6 @@ export function logToolStart(
   const formattedArgs = formatToolArgs(args);
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} ↳ ${toolName}: ${label}`));
   if (formattedArgs) {
-    // Indent the args
     const indented = formattedArgs
       .split("\n")
       .map((line) => `           ${line}`)
@@ -91,7 +86,6 @@ export function logToolError(
   console.log(chalk.dim(indented));
 }
 
-// Agent run
 export function logAgentRunStart(
   ctx: LogContext,
   provider: string,
@@ -106,7 +100,6 @@ export function logAgentRunStart(
   );
 }
 
-// Response streaming
 export function logResponseStart(ctx: LogContext): void {
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} → Streaming response...`));
 }
@@ -131,7 +124,6 @@ export function logResponse(ctx: LogContext, text: string): void {
   console.log(chalk.dim(indented));
 }
 
-// System
 export function logInfo(message: string): void {
   console.log(chalk.blue(`${timestamp()} [system] ${message}`));
 }
@@ -164,7 +156,6 @@ function formatTokenCount(count: number): string {
   return `${(count / 1000000).toFixed(1)}M`;
 }
 
-// Usage summary
 export function logUsageSummary(
   ctx: LogContext,
   usage: {
@@ -202,8 +193,6 @@ export function logUsageSummary(
   const summary = lines.join("\n");
 
   console.log(chalk.yellow(`${timestamp()} ${formatContext(ctx)} 💰 Usage`));
-  // Show cache hits alongside fresh input; otherwise a warm-cache turn reads
-  // as if the system prompt had not been sent at all.
   const cached = usage.cacheRead > 0 ? ` (+${usage.cacheRead.toLocaleString()} cached)` : "";
   console.log(
     chalk.dim(
@@ -214,7 +203,6 @@ export function logUsageSummary(
   return summary;
 }
 
-// Startup (no context needed)
 export function logStartup(workingDir: string, sandbox: string): void {
   console.log("Starting mikan...");
   console.log(`  Working directory: ${workingDir}`);
@@ -230,7 +218,6 @@ export function logDisconnected(): void {
   console.log("Mikan disconnected.");
 }
 
-// Backfill
 export function logBackfillStart(channelCount: number): void {
   console.log(chalk.blue(`${timestamp()} [system] Backfilling ${channelCount} channels...`));
 }

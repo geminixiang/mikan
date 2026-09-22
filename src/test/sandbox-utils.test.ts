@@ -78,7 +78,6 @@ describe("linkAbortSignal", () => {
     const unlink = linkAbortSignal(controller.signal, () => fired++);
 
     expect(fired).toBe(1);
-    // Nothing was subscribed, so unlinking must neither throw nor re-run it.
     expect(() => unlink()).not.toThrow();
     expect(fired).toBe(1);
   });
@@ -158,8 +157,6 @@ describe("execWriteFile staging cleanup", () => {
     const executor = {
       async exec(command: string) {
         commands.push(command);
-        // The cleanup channel is gone too — its rejection must stay swallowed
-        // so the caller sees why the write failed, not why the cleanup did.
         if (command.startsWith("rm -f ")) throw new Error("cleanup channel is gone");
         if (command.startsWith("printf ")) return { stdout: "", stderr: "disk full", code: 1 };
         return { stdout: "", stderr: "", code: 0 };
@@ -201,7 +198,6 @@ describe("execReadFile / execWriteFile", () => {
 
   test("chunks large content and leaves no staging files behind", async () => {
     const path = join(dir, "large.bin");
-    // ~150KB of content encodes to >196K base64 chars: several 64K chunks
     const content = "abcdefghij".repeat(15_000);
     await execWriteFile(executor, path, content);
     await expect(execReadFile(executor, path)).resolves.toBe(content);

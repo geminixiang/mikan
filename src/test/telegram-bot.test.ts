@@ -40,7 +40,6 @@ function makeHandlerWithRunningKeys(runningKeys: string[]): MessagingEventHandle
   };
 }
 
-// Helper: build a fake Telegram message object
 function makeMessage(overrides: Record<string, any> = {}) {
   return {
     message_id: 100,
@@ -94,7 +93,6 @@ describe("TelegramMessagingBot /new routing", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-new-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -130,7 +128,6 @@ describe("TelegramMessagingBot extractMessageContext", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-ctx-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -170,7 +167,6 @@ describe("TelegramMessagingBot extractMessageContext", () => {
     const msg2 = makeMessage({ message_id: 200 });
     expect(extract(msg1).sessionKey).toBe("123");
     expect(extract(msg2).sessionKey).toBe("123");
-    // MessagingBoth produce the same sessionKey — same session!
     expect(extract(msg1).sessionKey).toBe(extract(msg2).sessionKey);
   });
 
@@ -203,7 +199,6 @@ describe("TelegramMessagingBot extractMessageContext", () => {
 
     const msg = makeMessage({ reply_to_message: { message_id: 50 } });
     expect(extract(msg).sessionKey).toBe("123");
-    // threadTs is still set for reply targeting
     expect(extract(msg).threadTs).toBe("50");
   });
 });
@@ -215,7 +210,6 @@ describe("TelegramMessagingBot stop handling", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-stop-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -265,7 +259,6 @@ describe("TelegramMessagingBot message logging", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-log-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -321,7 +314,6 @@ describe("TelegramMessagingBot startup", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-start-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -366,7 +358,6 @@ describe("TelegramMessagingBot attachments", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-telegram-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -391,7 +382,6 @@ describe("TelegramMessagingBot attachments", () => {
       document: { file_id: "doc-1", file_name: "report.pdf" },
     });
 
-    // The largest photo is chosen; the smaller size is never fetched.
     expect(getFile).toHaveBeenCalledWith("large-photo");
     expect(getFile).toHaveBeenCalledWith("doc-1");
     expect(getFile).not.toHaveBeenCalledWith("small-photo");

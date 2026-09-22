@@ -236,11 +236,6 @@ describe("presenter event routing", () => {
   });
 
   test("does not double the tool name when jev_browser is called without a label", async () => {
-    // Regression: jev_browser's schema originally had no label parameter,
-    // so a call without one fell back to the raw tool name for both the
-    // prefix and the text, rendering the doubled "jev_browser · jev_browser"
-    // live on Slack. label is now required in the schema, but the presenter
-    // must not double the name even if args ever arrive without one.
     const { emit, runState } = attachPresenter();
 
     await emit({

@@ -24,8 +24,6 @@ export function createMikanTools(
     sandbox: SandboxConfig;
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
   },
-  /** Platform capability pack factories (e.g. GitHub PR/CI); instantiated
-   *  here so each runner owns its packs' bind state. Not core tools. */
   platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
   imageGeneration?: {
     model: Model<Api>;
@@ -35,9 +33,6 @@ export function createMikanTools(
 ): {
   tools: MikanHarnessTool[];
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  /** Upload for generate_image. Receives the file's HOST path — the tool
-   *  writes host-side, so this must not stage through the sandbox like the
-   *  attach upload does. No-op when image generation is not configured. */
   setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
   bindTasks: ReturnType<typeof createTaskTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
@@ -55,7 +50,6 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
-  // Use the same actor-resolved sandbox executor as the rest of this runner.
   const jevBrowserTool = createJevBrowserTool(executor);
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
@@ -65,7 +59,6 @@ export function createMikanTools(
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
   return {
     tools: [
-      // pi-native read/write/edit/bash, addressed through the sandbox env.
       ...createSandboxTools(),
       adaptAgentTool(eventTool),
       adaptAgentTool(sandboxTool),
@@ -76,10 +69,6 @@ export function createMikanTools(
       adaptAgentTool(jevBrowserTool),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
-      // Every tool above can return a configured secret's plain-text value —
-      // most directly bash/read in host sandbox mode, which is not OS-isolated
-      // from the mikan process's own env. Redact uniformly rather than only
-      // guarding bash.
     ].map(withSecretRedaction),
     setUploadFunction,
     setImageUploadFunction: (fn) => {

@@ -22,7 +22,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack event thread fork", () =
     const followupToken = `QA_EVENT_THREAD_${Date.now()}`;
     const startedAt = nowSeconds();
 
-    // Schedule through the agent's event tool: events are host-only office state.
     const { ts: requestTs } = await postLocallyDeliveredMessage({
       client,
       channel: env.channel,
@@ -55,9 +54,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack event thread fork", () =
     await sleep(Math.max(env.pollMs, 3_000));
 
     const threadStartedAt = nowSeconds();
-    // CI may post QA messages from a bot token. Use an explicit mention so this
-    // exercises the "mikan needs to reply" thread-fork path without weakening
-    // bot-to-bot loop protection for bare bot messages.
     const userThreadTs = await postMessage(
       client,
       env.channel,

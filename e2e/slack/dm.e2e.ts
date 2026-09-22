@@ -20,10 +20,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
   const { client, env } = ctx;
   const botUserId = ctx.env.mikanBotUserId;
 
-  // mikan ignores DMs from bots by design (loop protection), so these
-  // scenarios only make sense when the QA token belongs to a human user.
-  // Fail fast with the misconfiguration instead of timing out on a reply
-  // that can never come.
   beforeAll(async () => {
     const auth = await client.auth.test();
     if (typeof auth.bot_id === "string" && auth.bot_id.length > 0) {
@@ -51,8 +47,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
       textIncludes: token,
     });
     if (!reply) {
-      // Budget models occasionally reply without the token; one
-      // conversational repair keeps the assertion strict without flaking.
       const retryTs = await postMessage(
         client,
         dmChannel,
@@ -76,8 +70,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
   it("S-018 DM session retains multi-turn context", async () => {
     const dmChannel = await openDmChannel(client, botUserId);
 
-    // DM history persists across CI runs. Reset through the locally connected
-    // daemon so this test measures its own two turns instead of accumulated QA history.
     const resetStartedAt = nowSeconds();
     const { ts: resetTs } = await postLocallyDeliveredMessage({
       client,

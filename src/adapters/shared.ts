@@ -1,12 +1,3 @@
-/**
- * Helpers shared across platform adapters.
- *
- * The agent runner is platform-agnostic: it hands strings and structured tool
- * results to each adapter, which decides how to split, format, and route them.
- * The split/normalize logic itself doesn't differ across platforms — only the
- * markup wrappers — so it lives here once.
- */
-
 import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -140,13 +131,6 @@ export class MessagingEventQueue {
   }
 }
 
-// RetryOptions is defined in ./types.ts and re-exported from the top of this file.
-
-/**
- * Run `fn` and retry with exponential backoff when its error matches
- * `isRateLimited`. Other errors propagate immediately. Each platform supplies
- * its own predicate so we don't have to know every SDK's error shape here.
- */
 export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Promise<T> {
   const maxAttempts = opts.maxAttempts ?? 3;
   const baseDelayMs = opts.baseDelayMs ?? 1000;
@@ -173,13 +157,6 @@ export async function withRetry<T>(fn: () => Promise<T>, opts: RetryOptions): Pr
   throw lastError;
 }
 
-/**
- * Split `text` into chunks no larger than `limit`, appending a continuation
- * marker (e.g. `_(continued 1)_`) at the end of every part except the last.
- *
- * Each adapter passes its own `formatContinuation` so the marker uses the
- * platform's italic / emphasis convention.
- */
 export function splitText(
   text: string,
   limit: number,
@@ -201,38 +178,19 @@ export function splitText(
   return parts;
 }
 
-/**
- * Append a JSON-serializable entry to the office's `log.jsonl`,
- * materializing the office on first use. This is the single write path every
- * adapter uses for human-readable message history.
- */
 export function appendChannelLog(office: Office, entry: object): void {
   office.ensure();
   appendFileSync(office.logPath, `${JSON.stringify(entry)}\n`);
 }
 
-/**
- * Save incoming platform files under the office's attachments directory.
- *
- * The one owner of the attachment convention: sanitized
- * `<timestamp>_<name>` filenames, the `<office key>/attachments/<file>`
- * workspace-relative localPath the agent reads, and office materialization
- * before the first write. Download mechanics and failure policy stay with
- * the adapter — failures come back in `failed` for the caller to throw or
- * warn about, matching its platform's behavior.
- */
 export async function saveIncomingAttachments(
   office: Office,
   items: readonly IncomingAttachment[],
 ): Promise<SavedAttachments> {
   if (items.length === 0) return { saved: [], failed: [] };
-  // Attachment downloads can be the office's first write; materialize (and
-  // register) it before composing office-relative attachment paths.
   office.ensure();
   await mkdir(office.attachmentsDir, { recursive: true });
 
-  // Results keep the caller's item order regardless of download completion
-  // order — platform message logs list attachments as the platform sent them.
   const results = await Promise.all(
     items.map(async (item) => {
       const sanitized = item.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -253,7 +211,6 @@ export async function saveIncomingAttachments(
   };
 }
 
-/** Convenience for appending the bot's own outbound message. */
 export function appendBotResponseLog(
   office: Office,
   text: string,
@@ -273,14 +230,6 @@ export function appendBotResponseLog(
   });
 }
 
-// ResolveStopTargetInput is defined in ./types.ts and re-exported from the top of this file.
-
-/**
- * Pick which session key a `/stop` should target without applying any
- * platform-specific fallback policy. Order:
- *   1. The provided sessionKey, if running.
- *   2. The bare conversationId, if running.
- */
 export function resolveStopTarget(input: ResolveStopTargetInput): string | null {
   const { handler, address, sessionKey } = input;
 
@@ -289,11 +238,6 @@ export function resolveStopTarget(input: ResolveStopTargetInput): string | null 
   return null;
 }
 
-/**
- * Return the single running scoped session for this office, or null when there
- * are zero or multiple matches. Another platform's identically named
- * conversation is a different office and is never a stop target.
- */
 export function resolveOnlyScopedStopTarget(
   handler: MessagingEventHandler,
   address: OfficeAddress,
@@ -307,11 +251,6 @@ export function resolveOnlyScopedStopTarget(
   return runningScopes.length === 1 ? (runningScopes[0] ?? null) : null;
 }
 
-/**
- * Render tool-call args for human display. Drops `label` (already in the
- * heading) and folds `path` + `offset`/`limit` into a single `path:start-end`
- * line. Pure data normalization with no platform-specific markup.
- */
 export function formatToolArgs(args: Record<string, unknown> | undefined): string {
   if (!args) return "";
   const lines: string[] = [];
@@ -336,10 +275,6 @@ export function formatToolArgs(args: Record<string, unknown> | undefined): strin
   return lines.join("\n");
 }
 
-/**
- * Fetch `url` and write the response body to `destPath`, creating parent
- * directories as needed. Throws on non-2xx responses or write failures.
- */
 export async function downloadUrlToFile(url: string, destPath: string): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -350,14 +285,6 @@ export async function downloadUrlToFile(url: string, destPath: string): Promise<
   await writeFile(destPath, Buffer.from(buffer));
 }
 
-/**
- * Slack-style short names (as the `react` tool and prompt use) to Unicode
- * emoji, for platforms whose reaction API takes a Unicode character rather
- * than a name (Discord, Telegram). Covers what the system prompt actually
- * recommends plus a few other common names; an unmapped name passes through
- * unchanged so an unsupported reaction fails visibly at the platform call
- * instead of silently.
- */
 const SHORT_NAME_TO_UNICODE_EMOJI: Record<string, string> = {
   saluting_face: "\u{1FAE1}",
   eyes: "\u{1F440}",
@@ -371,7 +298,6 @@ const SHORT_NAME_TO_UNICODE_EMOJI: Record<string, string> = {
   rocket: "\u{1F680}",
 };
 
-/** Translate a Slack-style short name (colons optional) to Unicode; passes through anything else. */
 export function shortNameToUnicodeEmoji(emoji: string): string {
   const name = emoji.replace(/^:|:$/g, "");
   return SHORT_NAME_TO_UNICODE_EMOJI[name] ?? emoji;

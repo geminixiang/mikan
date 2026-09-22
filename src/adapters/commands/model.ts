@@ -145,11 +145,6 @@ export class ModelCommandHandler implements CommandHandler {
     return true;
   }
 
-  /**
-   * Resolve the spec against the registry. A `:suffix` is first tried as part
-   * of the model id, then as a thinking level on the bare id — so a model
-   * whose real name contains a colon still wins over the suffix reading.
-   */
   private selectModel(provider: string, model: string, parsed: ParsedModelCommand): ModelSelection {
     const exactModelId = parsed.modelCandidate ?? model;
     if (this.modelRegistry.find(provider, exactModelId)) return { modelId: exactModelId };

@@ -6,11 +6,6 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
 
-// A minimal MCP server as a standalone script, spawned over stdio like a real
-// deployment would. It exposes one echo tool and reads a secret from its env
-// to prove credentials flow through server config, not the model context.
-// Imports are absolute file URLs because the script lives in a tmpdir with no
-// node_modules of its own.
 const sdkUrl = (subpath: string) =>
   new URL(`../../node_modules/@modelcontextprotocol/sdk/dist/esm/${subpath}`, import.meta.url).href;
 const zodUrl = new URL("../../node_modules/zod/index.js", import.meta.url).href;
@@ -162,7 +157,6 @@ describe("loadMcpTools", () => {
       const echoed = await echo.execute("call-1", { message: "hi" });
       expect(echoed.content).toEqual([{ type: "text", text: "echo:hi:s3cret" }]);
 
-      // isError results become throws — the AgentTool failure contract.
       const boom = result.tools.find((tool) => tool.name === "mcp__test__boom")!;
       await expect(boom.execute("call-2", {})).rejects.toThrow("kaboom");
     } finally {
@@ -192,8 +186,6 @@ describe("loadMcpTools", () => {
       const execute = result.tools.find(
         (tool) => tool.name === "mcp__open-connector__execute_action",
       )!;
-      // Arguments pass through untouched: connection selection belongs to
-      // the server (its own default), not to the generic loader.
       const executed = await execute.execute("call-http", {
         actionId: "github.create_issue",
       });

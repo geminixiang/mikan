@@ -53,8 +53,6 @@ import { COMMAND_MANIFEST } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
 
-// discord.js: DiscordAPIError exposes `.status` (HTTP status) and a `.code`.
-// RateLimitError fires when the internal queue gives up. MessagingBoth should retry.
 function discordIsRateLimited(err: Error): boolean {
   if ((err as { status?: number }).status === 429) return true;
   if ((err as { httpStatus?: number }).httpStatus === 429) return true;
@@ -65,15 +63,7 @@ function discordIsRateLimited(err: Error): boolean {
 const discordRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: discordIsRateLimited });
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export type { DiscordEvent } from "./types.js";
-
-// ============================================================================
-// DiscordMessagingBot
-// ============================================================================
 
 export class DiscordMessagingBot implements MessagingBot {
   private client: Client;
@@ -103,10 +93,6 @@ export class DiscordMessagingBot implements MessagingBot {
     });
   }
 
-  // ==========================================================================
-  // Public API (implements MessagingBot)
-  // ==========================================================================
-
   async start(): Promise<void> {
     this.stopped = false;
     await new Promise<void>((resolve, reject) => {
@@ -122,8 +108,6 @@ export class DiscordMessagingBot implements MessagingBot {
         this.loadCachedGuildData();
         this.setupEventHandlers();
         try {
-          // Registration derives from the command manifest; routing below
-          // handles new/stop natively and the rest through one generic path.
           await readyClient.application.commands.set(
             COMMAND_MANIFEST.filter((entry) => entry.discord).map((entry) =>
               Object.assign(
@@ -182,9 +166,6 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
-    // Discord's reaction API takes a Unicode character (or a custom emoji
-    // id); the `react` tool and prompt speak Slack-style short names, so
-    // translate here rather than push that mapping onto every caller.
     await discordRetry(async () => {
       const ch = await this.fetchTextChannel(channel);
       const msg = await ch.messages.fetch(messageTs);
@@ -223,10 +204,6 @@ export class DiscordMessagingBot implements MessagingBot {
     };
   }
 
-  // ==========================================================================
-  // Internal helpers (used by context.ts)
-  // ==========================================================================
-
   async updateMessageRaw(channelId: string, messageId: string, text: string): Promise<void> {
     return discordRetry(async () => {
       const ch = await this.fetchTextChannel(channelId);
@@ -245,7 +222,6 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   async postInThread(channelId: string, threadOrMessageId: string, text: string): Promise<string> {
-    // Try as a thread channel first, then fall back to posting in the channel
     try {
       const thread = await this.client.channels.fetch(threadOrMessageId);
       if (thread && (thread.isThread() || thread.isTextBased())) {
@@ -254,9 +230,7 @@ export class DiscordMessagingBot implements MessagingBot {
           return msg.id;
         });
       }
-    } catch {
-      // Not a thread channel, treat as message ID for reply
-    }
+    } catch {}
     return this.postReply(channelId, threadOrMessageId, text);
   }
 
@@ -265,18 +239,14 @@ export class DiscordMessagingBot implements MessagingBot {
       const ch = await this.fetchTextChannel(channelId);
       const msg = await ch.messages.fetch(messageId);
       await msg.delete();
-    } catch {
-      // Ignore if already deleted
-    }
+    } catch {}
   }
 
   async sendTyping(channelId: string): Promise<void> {
     try {
       const ch = await this.fetchTextChannel(channelId);
       await ch.sendTyping();
-    } catch {
-      // Non-fatal
-    }
+    } catch {}
   }
 
   async uploadFile(channelId: string, filePath: string, title?: string): Promise<void> {
@@ -320,10 +290,6 @@ export class DiscordMessagingBot implements MessagingBot {
     );
   }
 
-  /**
-   * Process attachments from a Discord message.
-   * Downloads files before returning so the agent can read them immediately.
-   */
   async processAttachments(
     channelId: string,
     attachments: Collection<string, Attachment>,
@@ -347,10 +313,6 @@ export class DiscordMessagingBot implements MessagingBot {
     }
     return saved.map((item) => ({ name: item.original, localPath: item.localPath }));
   }
-
-  // ==========================================================================
-  // Private - Event Handlers
-  // ==========================================================================
 
   private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
@@ -543,8 +505,6 @@ export class DiscordMessagingBot implements MessagingBot {
       conversationId,
     );
     try {
-      // Magic words are conversation-intake controls, not command handlers;
-      // the manifest's metadata routes them (today only `stop`).
       if (manifestEntry.magicWord) {
         const stopTarget = this.resolveStopTarget(conversationId, sessionKey);
         if (stopTarget) {
@@ -589,11 +549,9 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private async handleMessageCreate(msg: Message): Promise<void> {
-    // Skip messages from before startup
     if (msg.createdTimestamp < this.startupTime) return;
-    // Skip bot messages
     if (msg.author.bot) return;
-    const isDM = msg.channel.type === 1; // ChannelType.DM = 1
+    const isDM = msg.channel.type === 1;
     const isInThread = msg.channel.isThread();
     const referencedMsgId = msg.reference?.messageId;
     const isThreadReply = isInThread || !!referencedMsgId;
@@ -611,14 +569,12 @@ export class DiscordMessagingBot implements MessagingBot {
     const userName = msg.author.username;
     const msgId = msg.id;
 
-    // Track user
     this.users.set(userId, {
       id: userId,
       userName,
       displayName: msg.member?.displayName ?? userName,
     });
 
-    // Track channel
     if (!this.channels.has(conversationId) && "name" in msg.channel) {
       const ch = msg.channel as TextChannel | NewsChannel;
       this.channels.set(conversationId, { id: conversationId, name: ch.name });

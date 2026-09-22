@@ -196,8 +196,6 @@ async function promptDreamWithHardTimeout(
     `Dream generation timed out after ${DREAM_GENERATION_TIMEOUT_MS}ms for ${office.key}`,
   );
   const generation = session.prompt(prompt, { budget: DREAM_BUDGET });
-  // The caller may return at the deadline while a provider ignores its abort
-  // signal; keep that late rejection from becoming unhandled.
   void generation.catch(() => {});
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {

@@ -41,9 +41,6 @@ describe("sandbox identity", () => {
 
   test("credential authorization and resource derivation share the office key", () => {
     const scope = { userId: "U1", address: createOfficeAddress("slack", "C1") };
-    // Conversation-scoped credentials and runtime resources both key by
-    // office: the same string that names the office in the workspace and
-    // the registry.
     expect(credentialAuthorizationKey(image, scope)).toBe(officeKey(scope.address));
     expect(runtimeResourceKey(image, { userId: "U1", address: scope.address })).toBe(
       officeKey(scope.address),

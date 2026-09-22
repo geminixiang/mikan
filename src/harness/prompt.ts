@@ -57,10 +57,6 @@ export function translateAttachPathToHost(
   return hostPath;
 }
 
-/**
- * Normalize an attachment path using runtime lexical semantics only. The
- * executor remains the authority for reading the resulting runtime path.
- */
 export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
   if (hasParentTraversal(filePath)) {
     throw new Error("Cannot attach files: parent-directory traversal is not allowed");
@@ -178,7 +174,6 @@ export async function buildPromptPayload(
   return { userMessage, imageAttachments };
 }
 
-/** A memory file under its prompt heading; absent, empty and unreadable all yield nothing. */
 async function memorySection(
   path: string | undefined,
   heading: string,
@@ -254,7 +249,6 @@ export function resolveTriggerAttribution(
 
 type RuntimePromptPaths = ReturnType<typeof buildRuntimePaths>;
 
-/** A tab-separated directory table, or a placeholder when the directory has not loaded. */
 function mappingTable(rows: string[], empty: string): string {
   return rows.length > 0 ? rows.join("\n") : empty;
 }
@@ -451,18 +445,9 @@ Each tool requires a "label" parameter (shown to user).
 
 export function buildSystemPrompt(input: BuildSystemPromptOptions): string {
   const paths = buildRuntimePaths(input.workspacePath, input.office);
-  // Per-turn instructions stay in buildTurnInstructions(), keeping this prompt
-  // byte-stable across a conversation so the provider cache remains warm.
   return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}`;
 }
 
-/**
- * Instructions that vary per turn (event-trigger mode, response attribution).
- * These are delivered with the user message rather than baked into the system
- * prompt, so the system prompt stays cache-stable across a conversation's turns
- * (in a multi-user channel the attribution line alone changes every turn).
- * Returns an empty string when the turn needs no special framing.
- */
 export function buildTurnInstructions(
   isEventTrigger: boolean,
   triggerAttribution: string | undefined,
@@ -495,8 +480,6 @@ export function appendTriggerAttribution(
   if (!triggerAttribution) return text;
   const trimmed = text.trimEnd();
   const legacySuffix = `_Triggered by ${triggerAttribution}_`;
-  // Slack mrkdwn italics cannot span a URL — a `_..._` wrapping a link renders
-  // the underscores literally. Keep the session link outside the italic span.
   const suffix = sessionLink ? `${legacySuffix} · session: ${sessionLink}` : legacySuffix;
   if (trimmed.endsWith(suffix)) return text;
   const body = trimmed.endsWith(legacySuffix)

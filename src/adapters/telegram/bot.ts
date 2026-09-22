@@ -28,19 +28,12 @@ import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
 
-// grammY surfaces Telegram errors as `GrammyError` with `error_code` mirroring
-// the Bot API. 429 is the rate-limit status; the response also includes
-// `parameters.retry_after` but exponential backoff is good enough here.
 function telegramIsRateLimited(err: Error): boolean {
   return (err as { error_code?: number }).error_code === 429;
 }
 
 const telegramRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: telegramIsRateLimited });
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export type { TelegramEvent } from "./types.js";
 
@@ -57,22 +50,6 @@ interface MessageContext {
   sessionKey: string;
 }
 
-// ============================================================================
-// TelegramMessagingBot
-// ============================================================================
-
-/**
- * A response as a Telegram rich message.
- *
- * Telegram parses the markdown into native blocks itself — a GFM table becomes
- * a real table, `##` a heading, a fence a code block. That is why this adapter
- * has no converter of its own: unlike Slack and Discord, nothing here has to be
- * translated before sending.
- *
- * It replaces the HTML pipeline, and with it the escape-and-retry dance that
- * existed only because a model writing HTML by hand regularly produced markup
- * Telegram rejected.
- */
 function richMessage(markdown: string): { markdown: string } {
   return { markdown };
 }
@@ -99,10 +76,6 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
-  // ==========================================================================
-  // Public API (implements MessagingBot)
-  // ==========================================================================
-
   async start(): Promise<void> {
     this.stopped = false;
     const me = await this.client.api.getMe();
@@ -110,14 +83,11 @@ export class TelegramMessagingBot implements MessagingBot {
     this.botUsername = me.username ?? null;
     this.startupTime = Date.now();
 
-    // Menu registration derives from the command manifest; routing is
-    // separate (native handlers below + intake/dispatch for the rest).
     await this.client.api.setMyCommands(telegramCommandMenu());
     if (this.stopped) return;
 
     this.setupEventHandlers();
 
-    // Start polling in background (bot.start() runs indefinitely)
     this.client.start().catch((err) => {
       log.logWarning("Telegram polling error", err instanceof Error ? err.message : String(err));
     });
@@ -142,9 +112,6 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
-    // Telegram reactions are set via setMessageReaction with a Unicode emoji;
-    // the `react` tool and prompt speak Slack-style short names, so translate
-    // here rather than push that mapping onto every caller.
     await telegramRetry(async () => {
       await this.client.api.setMessageReaction(parseInt(channel), parseInt(messageTs), [
         { type: "emoji", emoji: shortNameToUnicodeEmoji(emoji) as never },
@@ -158,8 +125,6 @@ export class TelegramMessagingBot implements MessagingBot {
         await this.client.api.editMessageText(parseInt(channel), parseInt(ts), richMessage(text));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // Editing to identical content is something streaming asks for
-        // constantly; it is a no-op, not a failure.
         if (msg.includes("message is not modified")) return;
         throw err;
       }
@@ -193,10 +158,6 @@ export class TelegramMessagingBot implements MessagingBot {
       users: [],
     };
   }
-
-  // ==========================================================================
-  // Internal helpers (used by context.ts)
-  // ==========================================================================
 
   async postMessageRaw(chatId: number, text: string): Promise<number> {
     return telegramRetry(async () => {
@@ -244,18 +205,12 @@ export class TelegramMessagingBot implements MessagingBot {
     appendBotResponseLog(this.workspace.office(createOfficeAddress("telegram", channel)), text, ts);
   }
 
-  /**
-   * Process attachments from a Telegram message
-   * Downloads files before returning metadata so the agent can read them immediately
-   * Returns format compatible with ConversationMessage: { name: string, localPath: string }[]
-   */
   async processAttachments(
     chatId: string,
     message: Message,
   ): Promise<{ name: string; localPath: string }[]> {
     const items: IncomingAttachment[] = [];
 
-    // Photos: take the largest size for best quality.
     const photo = message.photo?.[message.photo.length - 1];
     if (photo) {
       items.push(this.telegramFileItem(photo.file_id, `photo_${message.message_id}.jpg`));
@@ -275,7 +230,6 @@ export class TelegramMessagingBot implements MessagingBot {
     return saved.map((item) => ({ name: item.original, localPath: item.localPath }));
   }
 
-  /** One Telegram file as a saveIncomingAttachments item; failures skip, never throw. */
   private telegramFileItem(fileId: string, name: string): IncomingAttachment {
     return {
       name,
@@ -289,10 +243,6 @@ export class TelegramMessagingBot implements MessagingBot {
       },
     };
   }
-
-  // ==========================================================================
-  // Private - Event Handlers
-  // ==========================================================================
 
   private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
@@ -353,18 +303,12 @@ export class TelegramMessagingBot implements MessagingBot {
   }
 
   private setupEventHandlers(): void {
-    // --- Slash commands (registered before catch-all so grammY intercepts them) ---
-    // The manifest's telegramCommand flag is the inventory; magic words (e.g.
-    // `stop`) are deliberately never native handlers — they belong to
-    // conversation intake, so the catch-all below must receive them.
     for (const entry of COMMAND_MANIFEST) {
       if (!entry.telegramCommand || entry.magicWord) continue;
       this.client.command(entry.name, (ctx) =>
         this.intake.run(async () => {
           const mc = ctx.message ? this.extractMessageContext(ctx.message) : null;
           if (!mc) return;
-          // Handler grammars accept the user's spelling directly (manifest
-          // slash forms), so it is logged and dispatched as-is.
           const commandText = this.cleanText(mc.text);
           const event = createConversationEvent({
             platform: "telegram",
@@ -393,8 +337,6 @@ export class TelegramMessagingBot implements MessagingBot {
         }),
       );
     }
-
-    // --- Catch-all for regular (non-command) messages ---
 
     this.client.on("message", (ctx) =>
       this.intake.run(async () => {

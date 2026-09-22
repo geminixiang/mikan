@@ -18,8 +18,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack one-shot event", () => {
     const token = `QA_EVENT_${Date.now()}`;
     const startedAt = nowSeconds();
 
-    // Events are host-only office state now; the agent's event tool is the only
-    // way a conversation schedules one, so the test asks for it like a user would.
     const { ts: requestTs } = await postLocallyDeliveredMessage({
       client,
       channel: env.channel,

@@ -8,9 +8,6 @@ import {
   type JevQuestions,
 } from "../jev.js";
 
-// State, instructions, and criteria descriptions all accept text or JSON
-// structure per the Jev API; `Type.Any` keeps that open while the object root
-// stays provider-safe.
 const entrySchema = Type.Any({
   description: "Text, or a JSON object or array. Jev reads structure, so labelled keys help.",
 });
@@ -78,14 +75,6 @@ function toJevQuestion(id: string, question: QuestionArg): JevQuestion {
   return { type: "score", instructions, criteria: question.criteria as JevEntry[] };
 }
 
-/**
- * The `jev` tool is a direct pass-through of the Jev decisions API
- * (`state` + typed `questions` → calibrated answers) so the model can use
- * Jev the way any client would: it composes the state and questions itself.
- * Unlike the harness-internal decision points, a missing OPENROUTER_API_KEY
- * surfaces as a tool error so the model knows to judge for itself instead of
- * silently falling back.
- */
 export function createJevTool(): AgentTool<typeof jevSchema> {
   return {
     name: "jev",

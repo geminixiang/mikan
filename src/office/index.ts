@@ -1,9 +1,3 @@
-/**
- * The Conversation office module: canonical identity, the Workspace/Office
- * layout values, the durable registry journal, and the boot-time legacy
- * migration. Everything outside `src/office/` imports from this module;
- * exported types live in `types.ts` per module convention.
- */
 import { createHash, randomBytes } from "node:crypto";
 import type { Dirent, Stats } from "node:fs";
 import {
@@ -36,8 +30,6 @@ import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
 import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 
-// ── Office identity (address & keys) ──────────────────────────────────────────
-
 const OFFICE_KEY_VERSION = "v1";
 const OFFICE_KEY_DOMAIN = "office-address-v1";
 const OFFICE_KEY_DIGEST_LENGTH = 16;
@@ -46,14 +38,12 @@ const PLATFORM_NAMES = new Set<PlatformName>(["slack", "discord", "telegram", "g
 const OFFICE_KEY_PATTERN =
   /^v1-(slack|discord|telegram|github)-[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}$/;
 
-/** Construct the canonical identity used by future office consumers. */
 export function createOfficeAddress(platform: PlatformName, conversationId: string): OfficeAddress {
   assertPlatformName(platform);
   assertConversationId(conversationId);
   return Object.freeze({ platform, conversationId });
 }
 
-/** Validate an untrusted runtime value as a canonical office address. */
 export function validateOfficeAddress(value: unknown): OfficeAddress {
   if (!isRecord(value)) throw new Error("Office address must be an object");
   if (typeof value.platform !== "string") {
@@ -65,24 +55,20 @@ export function validateOfficeAddress(value: unknown): OfficeAddress {
   return createOfficeAddress(assertPlatformName(value.platform), value.conversationId);
 }
 
-/** Return true only for a supported platform name. */
 function isPlatformName(value: unknown): value is PlatformName {
   return typeof value === "string" && PLATFORM_NAMES.has(value as PlatformName);
 }
 
-/** Validate a platform name and return it for typed callers. */
 export function assertPlatformName(value: string): PlatformName {
   if (!isPlatformName(value)) throw new Error(`Unsupported platform: ${JSON.stringify(value)}`);
   return value;
 }
 
-/** Path separators and the C0/C1 control ranges are never allowed in an id. */
 function isUnsafeConversationIdChar(character: string): boolean {
   const code = character.codePointAt(0) ?? 0;
   return character === "/" || character === "\\" || code <= 0x1f || (code >= 0x7f && code <= 0x9f);
 }
 
-/** Validate a raw platform conversation identifier before it enters storage. */
 export function assertConversationId(value: string): string {
   if (value.length === 0 || value === "." || value === "..") {
     throw new Error("Conversation id must be non-empty and not a path marker");
@@ -93,7 +79,6 @@ export function assertConversationId(value: string): string {
   return value;
 }
 
-/** Derive a readable diagnostic key whose digest remains the identity authority. */
 export function officeKey(address: OfficeAddress): OfficeKey {
   const normalized = validateOfficeAddress(address);
   const readable = readableConversationId(normalized.conversationId);
@@ -104,26 +89,14 @@ export function officeKey(address: OfficeAddress): OfficeKey {
   return `${OFFICE_KEY_VERSION}-${normalized.platform}-${readable}-${digest}` as OfficeKey;
 }
 
-/**
- * Resolve the persistent workspace directory for an office.
- * Module-internal: registry/migration record target paths with it. Callers
- * outside `src/office/` use the `Office` value's `dir` field instead.
- */
 export function officeDir(workspaceRoot: string, address: OfficeAddress): string {
   return join(workspaceRoot, officeKey(address));
 }
 
-/**
- * Resolve the host-only state directory for an office.
- *
- * Settings and migration callers that only hold a `stateDir` string use this
- * when no materialized `Office` value is available.
- */
 export function officeStateDir(stateDir: string, address: OfficeAddress): string {
   return join(stateDir, "conversations", officeKey(address));
 }
 
-/** Compare canonical office identities without relying on their readable key. */
 export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
   const leftAddress = validateOfficeAddress(left);
   const rightAddress = validateOfficeAddress(right);
@@ -133,7 +106,6 @@ export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
   );
 }
 
-/** Validate a persisted or externally supplied office key. */
 export function assertOfficeKey(value: string): OfficeKey {
   if (!OFFICE_KEY_PATTERN.test(value)) {
     throw new Error(`Invalid office key: ${JSON.stringify(value)}`);
@@ -155,40 +127,16 @@ function readableConversationId(conversationId: string): string {
   return readable || "conversation";
 }
 
-// ── Workspace/Office layout ───────────────────────────────────────────────────
-/**
- * Workspace-root entries that are shared infrastructure, never office dirs.
- * The single definition behind boot-time directory setup, the workspace
- * projection, and the migration's legacy-dir scan. `events` stays reserved
- * for the legacy scheduling bus that `mikan office migrate-events` drains.
- */
 export const RESERVED_WORKSPACE_NAMES: ReadonlySet<string> = Object.freeze(
   new Set(["skills", "events", "agents", "MEMORY.md"]),
 );
 
-/**
- * Construct the Workspace value for a deployment. One construction site per
- * process (main.ts for the daemon; CLI subcommands and tests build their
- * own). The value owns the registry instance and the recorded-office cache
- * that office materialization uses on hot paths, so there is no process-wide
- * registry state.
- */
-/**
- * An office's session files live in `<office dir>/sessions` — the one home of
- * that rule. String-based for surfaces that hold a conversation dir rather
- * than an `Office` value (mirrors `officeStateDir`); `Office.sessionsDir` is
- * derived from it. Pointer/thread-file semantics live in `sessions/store`.
- */
 export function officeSessionsDir(dir: string): string {
   return join(dir, "sessions");
 }
 
 export function createWorkspace(options: { root: string; stateDir: string }): Workspace {
-  // Paths are joined as given (no resolve) so values match what callers
-  // passing the same root/stateDir strings computed before this module.
   const { root, stateDir } = options;
-  // Lazy: CLI surfaces construct a Workspace for path math without paying
-  // for (or being allowed to create) the registry journal.
   let registry: OfficeRegistry | undefined;
   const recorded = new Set<string>();
   const offices = new Map<string, Office>();
@@ -219,9 +167,6 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
         stateDir: join(stateDir, "conversations", key),
         workspace,
         ensure(): string {
-          // Record-first ordering: a crash can leave a record without a
-          // directory (harmless; recreated on the next message) but never an
-          // anonymous office directory the registry cannot enumerate.
           if (!recorded.has(key)) {
             registry ??= new OfficeRegistry(stateDir);
             registry.recordOffice(normalized);
@@ -238,7 +183,6 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
   return workspace;
 }
 
-/** mkdir-if-missing with the same fail-closed type guard as projection roots. */
 function ensureRegularOfficeDirectory(dir: string): void {
   let stats;
   try {
@@ -253,7 +197,6 @@ function ensureRegularOfficeDirectory(dir: string): void {
   }
 }
 
-// ── Office registry journal ───────────────────────────────────────────────────
 const REGISTRY_VERSION = 1;
 const REGISTRY_FILENAME = "office-registry.json";
 const MIGRATION_STATUSES = new Set<OfficeMigrationStatus>([
@@ -268,16 +211,6 @@ const REGISTRY_LOCK_RETRY_MS = 25;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
 const REGISTRY_LOCK_STALE_MS = 60_000;
 
-/**
- * Host-only office directory and migration journal.
- *
- * Office records are the durable raw-id ↔ (platform, office) mapping: the
- * ADR 0005 layout migration renamed workspace dirs to office keys, so dir
- * names carry no raw platform ids and enumeration/legacy-scope lookups
- * resolve through these records. Migration records track claiming legacy
- * raw-id directories. Office materialization lives in `layout.ts`; this
- * module owns only the durable record and its crash-safe transitions.
- */
 interface OfficeRegistryOptions {
   writeState?: (path: string, content: string) => void;
   lockTimeoutMs?: number;
@@ -302,7 +235,6 @@ export class OfficeRegistry {
     this.state = this.readState();
   }
 
-  /** Reload the atomic registry file after another host process changed it. */
   reload(): OfficeRegistryState {
     this.state = this.readState();
     return this.state;
@@ -328,11 +260,6 @@ export class OfficeRegistry {
     });
   }
 
-  /**
-   * Record that an office exists. Idempotent: re-recording a known office is
-   * a lock-free cache hit for callers that materialize directories per
-   * message, so this sits safely on hot write paths.
-   */
   recordOffice(address: OfficeAddress): OfficeRecord {
     const normalized = validateOfficeAddress(address);
     const existing = this.findOffice(normalized);
@@ -365,11 +292,6 @@ export class OfficeRegistry {
     );
   }
 
-  /**
-   * Validate and record a legacy directory. With exactly one enabled platform,
-   * ownership is safe to infer. With zero or multiple platforms, the record
-   * remains explicit `needs-owner` unless the caller supplies an owner.
-   */
   prepareLegacyMigration(options: OfficeMigrationPreparation): OfficeMigrationRecord {
     const rawConversationId = assertConversationId(options.rawConversationId);
     const sourceDir = resolve(options.sourceDir);
@@ -538,11 +460,6 @@ export class OfficeRegistry {
     this.state = candidate;
   }
 
-  /**
-   * Acquire the domain lease, reload while holding it, then perform one
-   * read-modify-write. A future move transaction can retain the same lease
-   * across its filesystem operation instead of splitting the transition.
-   */
   private withExclusiveLease<T>(operation: () => T): T {
     const release = acquireRegistryLease(this.lockPath, this.lockTimeoutMs);
     try {
@@ -650,7 +567,6 @@ function parseState(value: unknown, path: string): OfficeRegistryState {
     throw new Error(`Duplicate enabled platform in ${path}`);
   }
 
-  // Files written before office records existed simply have no offices yet.
   const offices = (Array.isArray(value.offices) ? value.offices : []).map((entry) =>
     parseOfficeRecord(entry, path),
   );
@@ -701,7 +617,6 @@ function hasMigrationStrings(
   );
 }
 
-/** Validate the fields every stored migration record must carry. */
 function parseMigrationFields(value: Record<string, unknown>, path: string): MigrationFields {
   if (!hasMigrationStrings(value)) {
     throw new Error(`Invalid office migration fields in ${path}`);
@@ -723,10 +638,6 @@ function parseMigrationFields(value: Record<string, unknown>, path: string): Mig
   };
 }
 
-/**
- * Ownership rules by status: `needs-owner` must carry neither owner nor
- * target, `failed` may carry either, every other status must carry both.
- */
 function assertOwnershipMatchesStatus(
   status: OfficeMigrationStatus,
   ownerPlatform: PlatformName | undefined,
@@ -851,7 +762,6 @@ function assertRegularDirectory(path: string, label: string): void {
   }
 }
 
-/** `lstat` that reports a missing path as undefined; other errors still throw. */
 function lstatIfExists(path: string): Stats | undefined {
   try {
     return lstatSync(path);
@@ -883,7 +793,6 @@ function pathExists(path: string): boolean {
   return lstatIfExists(path) !== undefined;
 }
 
-/** Create the lock directory and stamp it with our token, unwinding on failure. */
 function claimRegistryLock(lockPath: string, token: string): void {
   mkdirSync(lockPath, { mode: 0o700 });
   try {
@@ -908,10 +817,6 @@ function acquireRegistryLease(lockPath: string, timeoutMs: number): () => void {
   }
 }
 
-/**
- * Handle one failed lock attempt: rethrow anything but a held lock, clear a
- * stale lock so the next attempt wins, else wait until the deadline passes.
- */
 function awaitFreeRegistryLock(lockPath: string, deadline: number, error: unknown): void {
   if (!isErrno(error, "EEXIST")) throw error;
   if (registryLockIsStale(lockPath)) {
@@ -949,9 +854,7 @@ function registryLockIsStale(lockPath: string): boolean {
         if (isErrno(error, "EPERM")) ownerAlive = true;
       }
     }
-  } catch {
-    // The owner file may not have been written before its process died.
-  }
+  } catch {}
   try {
     const oldEnough = Date.now() - statSync(lockPath).mtimeMs >= REGISTRY_LOCK_STALE_MS;
     return ownerKnown ? !ownerAlive : oldEnough;
@@ -964,23 +867,10 @@ function sleepSync(milliseconds: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
-// ── raw-id lookups (cold paths: CLI, Admin enumeration) ──────────────────────
-
-/** Current office inventory, read fresh from disk for cross-process freshness. */
 export function listRegisteredOffices(stateDir: string): readonly OfficeRecord[] {
   return new OfficeRegistry(stateDir).getOffices();
 }
 
-/**
- * Enabled platforms whose id format could have produced this raw
- * conversation id. Auto-claiming uses this as verification, not guessing:
- * every format below is one mikan itself writes (GitHub ids are mikan-derived
- * slugs; Slack/Telegram/Discord ids are the platforms' own grammars), and a
- * directory is only claimed when exactly one enabled platform's format
- * matches. Bare digits stay ambiguous while both Telegram and Discord are
- * enabled (negative ids are Telegram-only); anything matching no enabled
- * format fails closed to needs-owner.
- */
 function platformsMatchingConversationIdFormat(
   rawConversationId: string,
   enabledPlatforms: readonly PlatformName[],
@@ -1012,18 +902,6 @@ function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-// ── Boot-time legacy migration ────────────────────────────────────────────────
-/**
- * Move every legacy raw-id office directory under the workspace root to the
- * canonical office-key layout, journaling each move through the office
- * registry so an interrupted run resumes instead of losing offices.
- *
- * The engine never guesses: with several enabled platforms an unowned raw
- * directory stays in place and is reported for `mikan office claim`. Callers
- * must treat a non-empty `unowned`/`failed` as fatal for daemon boot — after
- * the layout flip, an unmigrated legacy directory is invisible to the
- * runtime, which would silently present the conversation as empty.
- */
 export function migrateLegacyOffices(options: {
   workspaceRoot: string;
   stateDir: string;
@@ -1046,8 +924,6 @@ export function migrateLegacyOffices(options: {
   recoverInterruptedMoves(registry, summary);
   claimAndMoveLegacyDirs(registry, options.workspaceRoot, summary);
 
-  // Credential vaults are keyed by office too; the registry inventory (which
-  // the directory moves above just extended) drives the same rename.
   const vaults = migrateConversationVaultKeys({
     stateDir: options.stateDir,
     offices: registry.getOffices(),
@@ -1067,7 +943,6 @@ export function migrateLegacyOffices(options: {
   return summary;
 }
 
-/** Complete or fail every move the journal says was interrupted mid-rename. */
 function recoverInterruptedMoves(
   registry: OfficeRegistry,
   summary: OfficeMigrationRunSummary,
@@ -1086,7 +961,6 @@ function recoverInterruptedMoves(
   }
 }
 
-/** Complete one interrupted rename; returns the failure reason when it cannot. */
 function finishInterruptedMove(record: OfficeMigrationRecord): string | undefined {
   const targetDir = record.targetDir;
   if (!targetDir) return "Moving record has no target directory";
@@ -1100,12 +974,6 @@ function finishInterruptedMove(record: OfficeMigrationRecord): string | undefine
   return undefined;
 }
 
-/**
- * A legacy directory is claimable unless it already failed (reported via
- * summary.failed). One that reappears after a committed move is a different
- * (or resurrected) office the runtime can no longer see, so refusing to boot
- * beats silently ignoring its data.
- */
 function isClaimableLegacyDir(
   registry: OfficeRegistry,
   workspaceRoot: string,
@@ -1120,7 +988,6 @@ function isClaimableLegacyDir(
   return existing?.status !== "failed";
 }
 
-/** Scan the workspace root and move every claimable legacy office directory. */
 function claimAndMoveLegacyDirs(
   registry: OfficeRegistry,
   workspaceRoot: string,
@@ -1134,7 +1001,7 @@ function claimAndMoveLegacyDirs(
       sourceDir: join(workspaceRoot, rawConversationId),
       workspaceRoot,
     });
-    if (record.status === "needs-owner") continue; // reported via summary.unowned
+    if (record.status === "needs-owner") continue;
 
     const moving = registry.markMoving(rawConversationId);
     const targetDir = moving.targetDir;
@@ -1147,12 +1014,6 @@ function claimAndMoveLegacyDirs(
   }
 }
 
-/**
- * Move each registered office's host state tree from
- * `conversations/<rawId>` to
- * `conversations/<officeKey>` in one rename. Conflicts are reported for
- * manual merge, never clobbered.
- */
 function migrateConversationStateDirs(
   registry: OfficeRegistry,
   stateDir: string,
@@ -1172,7 +1033,6 @@ function migrateConversationStateDirs(
   }
 }
 
-/** A migrated office is an existing office; keep the directory enumerable. */
 function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationRecord): void {
   if (!record.ownerPlatform) return;
   registry.recordOffice({
@@ -1181,19 +1041,6 @@ function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationR
   });
 }
 
-/**
- * Legacy office candidates: regular directories that are not reserved
- * infrastructure, not hidden, and not already office-key named. A symlink in
- * office position is refused outright — following it could move data from
- * outside the workspace root.
- *
- * A candidate must also look like a conversation office: every office that
- * ever saw a message has a `log.jsonl`, and every office that ran the agent
- * has `sessions/`. Trusted workspace roots legitimately accumulate other
- * directories — repos the agent cloned, build output — which are not offices
- * and must be neither renamed nor reported as unowned; they stay where they
- * are (an operator can still claim one explicitly via `mikan office claim`).
- */
 function listLegacyOfficeDirs(workspaceRoot: string): string[] {
   return readdirSync(workspaceRoot, { withFileTypes: true })
     .filter((entry) => isLegacyOfficeDir(workspaceRoot, entry))
@@ -1220,7 +1067,6 @@ function looksLikeConversationOffice(dir: string): boolean {
   return existsSync(join(dir, "log.jsonl")) || existsSync(join(dir, "sessions"));
 }
 
-/** Operator-facing boot failure for offices the engine may not move itself. */
 export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary): string {
   const lines = ["Conversation office migration cannot complete:"];
   if (summary.unowned.length > 0) {
@@ -1251,20 +1097,11 @@ export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary)
   return lines.join("\n");
 }
 
-/** One blank-separated "these need manual work" block, empty when nothing does. */
 function conflictSection(ids: readonly string[], explanation: string[]): string[] {
   if (ids.length === 0) return [];
   return ["", ...explanation, ...ids.map((id) => `  - ${id}`)];
 }
 
-/**
- * Bind-spec translator for the container layout migration: rewrites every
- * host path the office migration renamed — workspace dirs, per-conversation
- * state trees, conversation vaults — and the guest workspace segment, using
- * the registry's office inventory as the raw-id ↔ office mapping. Specs that
- * reference none of the renamed paths come back unchanged, which is also how
- * an already-migrated container is recognized.
- */
 function replacePrefix(path: string, pairs: Array<[string, string]>): string {
   for (const [oldPrefix, newPrefix] of pairs) {
     if (path === oldPrefix) return newPrefix;

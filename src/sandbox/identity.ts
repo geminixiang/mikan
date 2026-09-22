@@ -7,17 +7,6 @@ export type { CredentialScope } from "./types.js";
 
 const IDENTITY_HASH_LENGTH = 12;
 
-/**
- * Vault key for a run. Conversation-scoped sandboxes (image, cloudflare)
- * key credentials by office key: platform-scoped and
- * collision-resistant, so two platforms sharing a raw conversation id can
- * never resolve each other's credentials — and one identity string names the
- * office across the workspace, the registry, and the vault.
- *
- * Host mode keys by user (the host has no execution isolation to scope to)
- * and container mode by the deployment-chosen container; both are
- * platform-neutral on purpose and unchanged by ADR 0005.
- */
 export function credentialAuthorizationKey(
   baseConfig: SandboxConfig,
   scope: CredentialScope,
@@ -36,22 +25,10 @@ export function legacyExactCredentialAuthorizationKey(
   return undefined;
 }
 
-/**
- * The raw-id conversation vault key written before the office migration; the
- * boot-time vault migration renames these directories to office keys.
- */
 export function legacyConversationCredentialKey(rawConversationId: string): string {
   return identityKey("conversation", rawConversationId);
 }
 
-/**
- * Sandbox resource identity (container name, cloudflare sandbox scope).
- * Conversation-scoped backends key by office key (ADR 0005): platform-aware,
- * so two platforms sharing a raw conversation id can never share a
- * container, its writable layer, or a cloudflare slot. Containers named
- * under the previous raw-conversation keys are reaped by the provisioner's
- * boot reconcile.
- */
 export function runtimeResourceKey(
   baseConfig: SandboxConfig,
   ids: { userId: string; address: OfficeAddress },
@@ -61,11 +38,6 @@ export function runtimeResourceKey(
   return officeKey(ids.address);
 }
 
-/**
- * The raw-id resource key conversation-scoped sandboxes used before the
- * office-key migration; the provisioner's boot reconcile uses it to
- * recognize and reap stale containers.
- */
 export function legacyConversationResourceKey(rawConversationId: string): string {
   return identityKey("conversation", rawConversationId);
 }

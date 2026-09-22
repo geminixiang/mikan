@@ -2,7 +2,6 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationResponder } from "../../types.js";
 
-/** A handoff, not a nested run: completion means admitted, not finished. */
 export function createTaskTool() {
   let start: ConversationResponder["startTask"];
   const parameters = Type.Object({

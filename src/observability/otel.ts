@@ -161,7 +161,6 @@ export function resolveOpenTelemetryResourceAttributes(
   return attributes;
 }
 
-/** Parse OTEL_RESOURCE_ATTRIBUTES using the specification's percent-encoding rules. */
 function parseResourceAttributes(value: string | undefined): Record<string, string> | undefined {
   if (!value) return {};
   const attributes: Record<string, string> = {};

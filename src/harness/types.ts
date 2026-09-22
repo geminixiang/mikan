@@ -123,13 +123,6 @@ export interface SubagentModelSpec {
   id: string;
 }
 
-/**
- * A curated capability set a subagent can be launched with. Built-ins ship
- * with the harness; `<workspaceDir>/agents/<name>.md` patches them per
- * installation. Turn, cost, and duration fields are caps — an explicit
- * `request.budget` may tighten them but never raise them. Token budgets use the
- * larger of the profile default and the request value.
- */
 export interface SubagentProfile {
   name: string;
   description: string;
@@ -144,13 +137,9 @@ export interface SubagentProfile {
 }
 
 export interface SubagentRunBudget {
-  /** Maximum assistant/model calls in the subagent run. */
   maxTurns?: number;
-  /** Maximum cumulative input/output/cache tokens. */
   maxTokens?: number;
-  /** Maximum provider cost in USD. */
   maxCostUsd?: number;
-  /** Maximum wall-clock duration. */
   maxDurationMs?: number;
 }
 
@@ -164,33 +153,22 @@ export type SubagentRunStatus =
 
 export interface SubagentParentContext {
   mode: "normalized";
-  /** Number of recent user/assistant turns to include. Defaults to 3. */
   recentTurns?: number;
 }
 
-/** Aggregated model usage across every assistant turn in a subagent run. */
 export type SubagentUsage = Usage;
 
-/** Receives usage from a subagent run, including after detached cleanup settles. */
 export type SubagentUsageSink = (usage: SubagentUsage) => void | Promise<void>;
 
-/** A fresh, isolated subagent run. */
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
   task: string;
-  /** Named profile: a harness built-in, patched by `<workspaceDir>/agents/<name>.md`. */
   profile?: string;
-  /** Opt in to a normalized textual snapshot of the active parent run. Defaults to fresh. */
   parentContext?: SubagentParentContext;
   systemPrompt?: string;
-  /** JSON-serializable input appended to the task. */
   input?: unknown;
-  /** Defaults to the parent runner's configured model. */
   model?: SubagentModelSpec;
-  /** Tool names explicitly granted to the subagent. Defaults to no tools. */
   tools?: string[];
-  /** Per-profile thinking override. */
   thinkingLevel?: ThinkingLevel;
-  /** When present, the final response must be JSON matching this schema. */
   outputSchema?: TOutputSchema;
   budget?: SubagentRunBudget;
   signal?: AbortSignal;
@@ -201,26 +179,15 @@ export type SubagentRunOutput<TSchemaOrUndefined extends TSchema | undefined> =
 
 interface SubagentRunMetadata {
   runId: string;
-  /** Raw final assistant text, including when structured validation failed. */
   text?: string;
   model: SubagentModelSpec;
   turns: number;
   toolCalls: number;
   toolCallCounts: Record<string, number>;
-  /** Full token and cost breakdown across the run. */
   usage: SubagentUsage;
-  /** Aggregate token count; equivalent to `usage.totalTokens`. */
   tokens: number;
-  /** Aggregate provider cost; equivalent to `usage.cost.total`. */
   costUsd: number;
   durationMs: number;
-  /**
-   * The caller received a terminal result before the underlying run settled.
-   * When true, `usage`, `tokens`, and `costUsd` are provisional snapshots;
-   * final usage is delivered later through the run's bound usage sink. The
-   * global slot remains held until cleanup settles because in-process work
-   * cannot be safely reclaimed without a killable execution boundary.
-   */
   cleanupPending?: boolean;
 }
 
@@ -244,15 +211,9 @@ export interface CreateMikanModelsOptions {
   modelsJsonPath?: string;
 }
 
-/**
- * A loaded skill: Pi's native `Skill` shape plus mikan provenance.
- * `baseDir` is the directory containing the skill file.
- */
 export interface MikanSkill extends Skill {
   baseDir: string;
-  /** Where the skill was loaded from (e.g. "workspace", "channel"). */
   source: string;
-  /** Embed the skill body in the prompt instead of referencing its file path. */
   inline?: boolean;
 }
 
@@ -260,7 +221,6 @@ export interface SkillDiagnostic {
   type: "warning";
   message: string;
   path: string;
-  /** Set when the entry was skipped because it is a symlink on a rejecting load. */
   code?: "symlink";
 }
 
@@ -272,13 +232,9 @@ export interface LoadSkillsResult {
 export type RetrySettings = RetryPolicy;
 
 export interface BudgetSettings {
-  /** Max cumulative tokens processed this run (input + output + cache read/write). */
   maxTokens?: number;
-  /** Max cumulative provider cost (USD) this run. Requires a populated model cost table. */
   maxCostUsd?: number;
-  /** Wall-clock deadline in milliseconds; signals cancellation and waits for active cleanup. */
   maxDurationMs?: number;
-  /** Max number of LLM calls (assistant turns) this run. */
   maxLlmCalls?: number;
 }
 
@@ -303,7 +259,6 @@ export type CompactionReason = "threshold" | "overflow" | "manual";
 
 interface CompactionResultSummary {
   summary: string;
-  /** Number of recent messages retained inline on the compaction entry. */
   retainedMessages: number;
   tokensBefore: number;
 }
@@ -328,7 +283,6 @@ export type HarnessEvent =
   | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
   | {
       type: "budget_exceeded";
-      /** Which cap was hit, e.g. "cost 2.01 USD > 2 USD limit". */
       reason: string;
       tokens: number;
       costUsd: number;
@@ -338,18 +292,8 @@ export type HarnessEvent =
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
-/**
- * A tool as the harness sees it: pi-native tools (read/write/edit/bash) and
- * mikan tools adapted at the tool-list boundary. The context carries the
- * sandbox-backed execution env.
- */
 export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
 
-/**
- * A session tool entry: a harness tool (pi-native or adapted), or a plain
- * mikan `AgentTool` that the session upgrades at the boundary. The union keeps
- * the published `MikanAgentSession` API accepting the legacy `AgentTool` shape.
- */
 export type MikanToolInput = AgentTool | MikanHarnessTool;
 
 export interface MikanAgentSessionOptions {
@@ -357,7 +301,6 @@ export interface MikanAgentSessionOptions {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: MikanToolInput[];
-  /** Required by native execution tools; plain AgentTools need no execution env. */
   toolContext?: ExecutionToolContext;
   models: MikanModels;
   sessionStore: SessionStore;
@@ -368,28 +311,12 @@ export interface MikanAgentSessionOptions {
   };
 }
 
-/**
- * MCP (Model Context Protocol) server configuration and load results.
- *
- * A server entry is either stdio (`command` + optional `args`/`env`) or
- * streamable HTTP (`url` + optional `headers`). Exactly one of `command`
- * or `url` must be set — the settings schema keeps both optional so the
- * file stays object-rooted and forgiving; `loadMcpTools` enforces the
- * exclusivity at runtime.
- *
- * Credentials (API keys in `env`/`headers`) stay in host-side settings and
- * the MCP server process; the model sees only tool names and schemas.
- */
 export interface McpServerConfig {
-  /** stdio transport: executable to spawn on the host. */
   command?: string;
   args?: string[];
-  /** Extra environment for the spawned server, merged over a safe default. */
   env?: Record<string, string>;
-  /** streamable-HTTP transport: server endpoint URL. */
   url?: string;
   headers?: Record<string, string>;
-  /** Disable without deleting — lets a conversation turn off a global server. */
   disabled?: boolean;
 }
 
@@ -428,11 +355,8 @@ export interface McpServerInstruction {
 }
 
 export interface McpToolsResult {
-  /** Tools namespaced `mcp__<server>__<tool>`, ready for the agent tool list. */
   tools: AgentTool<TSchema>[];
   errors: McpLoadError[];
-  /** Admin-approved server guidance for operating its tools. */
   instructions: McpServerInstruction[];
-  /** Close all server connections (and kill stdio child processes). */
   dispose: () => Promise<void>;
 }

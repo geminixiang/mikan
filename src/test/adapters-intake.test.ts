@@ -270,7 +270,6 @@ describe("processMessageIntake busy policy", () => {
     expect(outcome).toBe("rejected-busy");
     expect(options.bot.postMessage).toHaveBeenCalledWith("C1", expect.stringContaining("/stop"));
     expect(enqueue).not.toHaveBeenCalled();
-    // The rejected message is still logged (with its prepared attachments).
     expect(log).toHaveBeenCalledWith({ text: "hello", attachments: [] });
   });
 

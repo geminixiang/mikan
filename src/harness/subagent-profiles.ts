@@ -1,22 +1,3 @@
-/**
- * Subagent profiles: the curated capability sets a subagent may be launched
- * with.
- *
- * Profiles exist because the two halves of a subagent definition have
- * different owners. What a profile *does* — its tools, required evidence,
- * prompt and budget — is portable, so it ships as a built-in below and is
- * versioned with the code. Which model runs it is per-installation, so it is
- * overridden by `<workspaceDir>/agents/<name>.md`.
- *
- * A workspace file therefore *patches* the built-in of the same name rather
- * than replacing it: overriding only `model:` must not force an operator to
- * restate the tools and prompt, because a restated copy silently drifts from
- * the built-in it was cloned from. A file whose name matches no built-in
- * defines a new profile and must supply `tools` itself.
- *
- * A malformed file is reported as a diagnostic and skipped, never thrown:
- * these are hand-edited, and one typo must not take the whole workspace down.
- */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -191,7 +172,6 @@ const THINKING_LEVELS = new Set<ThinkingLevel>([
   "xhigh",
 ]);
 
-/** Parse a comma-separated tool list. The literal `none` is an empty grant. */
 function csv(value: string): string[] {
   if (value.trim() === "none") return [];
   return [
@@ -235,7 +215,6 @@ function parseNonNegativeNumber(value: string, field: string): number {
   return parsed;
 }
 
-/** Apply `field` from frontmatter onto `patch` only when the file sets it. */
 function applyField<K extends keyof SubagentProfile>(
   patch: Partial<SubagentProfile>,
   values: Record<string, string>,
@@ -248,10 +227,6 @@ function applyField<K extends keyof SubagentProfile>(
   patch[field] = parse(raw);
 }
 
-/**
- * Build the overlay a single file contributes. Throws with a human-readable
- * message on malformed input; the caller turns that into a diagnostic.
- */
 function parseProfilePatch(filePath: string, base: SubagentProfile | undefined): SubagentProfile {
   const { values, body } = parseFrontmatter(readFileSync(filePath, "utf-8"));
   const name = basename(filePath, ".md");
@@ -291,10 +266,6 @@ function parseProfilePatch(filePath: string, base: SubagentProfile | undefined):
   return merged;
 }
 
-/**
- * Load the built-in profiles, then patch them with `<workspaceDir>/agents/*.md`.
- * Malformed files are reported and skipped, leaving the built-in in place.
- */
 export function loadSubagentProfiles(workspaceDir: string): LoadSubagentProfilesResult {
   const dir = join(workspaceDir, "agents");
   const profiles = new Map(BUILTIN_PROFILES.map((profile) => [profile.name, profile]));

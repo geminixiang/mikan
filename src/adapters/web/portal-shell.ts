@@ -22,11 +22,6 @@ export function requestBaseUrl(req: IncomingMessage): string {
   return `${proto}://${host}`;
 }
 
-/**
- * Read, size-limit, and JSON-parse a request body. Resolves null after
- * replying 413 (size limit, via readRawBody) or 400 (invalid JSON) — the
- * caller only proceeds on a parsed object.
- */
 export async function readJsonBody(
   req: IncomingMessage,
   res: ServerResponse,
@@ -56,13 +51,6 @@ export function jsonResponse(res: ServerResponse, status: number, body: unknown)
   res.end(JSON.stringify(body));
 }
 
-/**
- * Read and size-limit an HTTP request body.
- *
- * Responds with 413 and destroys the request if the body exceeds `maxBytes`.
- * Resolves with the raw body string on success, or `null` if the size limit
- * was exceeded (the response has already been sent in that case).
- */
 export function readRawBody(
   req: IncomingMessage,
   res: ServerResponse,
@@ -91,17 +79,6 @@ export function readRawBody(
     });
   });
 }
-
-// ── Shared portal shell ────────────────────────────────────────────────────────
-//
-// Three portals (admin / session / vault aka login) share the same chrome:
-// - Fixed left rail with three round icon buttons (admin, session, vault)
-// - Compact topbar (product wordmark + identity + optional conversation switcher)
-// - Main content area
-//
-// Each portal renders its own page-head + body inside <main class="shell">.
-// Sidebar buttons whose target token isn't available are rendered as anchors
-// only when href is provided; otherwise they are buttons in a disabled state.
 
 export type { PortalShellOptions } from "../../types.js";
 import type { PortalShellOptions } from "../../types.js";
@@ -216,8 +193,6 @@ export function renderPortalShell(options: PortalShellOptions): string {
 </body>
 </html>`;
 }
-
-// ── Shared stylesheet ──────────────────────────────────────────────────────────
 
 const portalShellStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');

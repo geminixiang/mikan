@@ -16,12 +16,6 @@ import type { GithubSyncFn } from "../types.js";
 
 export type { GithubSyncFn } from "../types.js";
 
-/**
- * The `github_sync` tool refreshes the conversation's ./repo clone — a
- * first-contact snapshot the sandbox cannot update itself (no credentials).
- * Host-side fetch with an ephemeral read token; it reports instead of moving
- * the checkout whenever that could lose the agent's local work.
- */
 export function createGithubSyncTool(): {
   tool: AgentTool<typeof githubSyncSchema>;
   setGithubSyncFunction: (fn: GithubSyncFn | null) => void;

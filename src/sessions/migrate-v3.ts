@@ -1,21 +1,3 @@
-/**
- * One-time migration of legacy v3 session files to pi's v4 JSONL format.
- *
- * v3 is the entry family mikan wrote up to pi 0.83: a `{"type":"session"}`
- * header followed by tree entries with string ISO timestamps and compaction
- * entries that point at `firstKeptEntryId`. Current Pi v4 uses a
- * `{"v":4,"kind":"header","storageVersion":1}` header followed by
- * transactional writes with numeric timestamps and consecutive sequences.
- *
- * The migration preserves entry ids, parent links, and timestamps, converts
- * `custom_message` entries into v4 `custom`-role messages, folds
- * `session_info` into the v4 name fact, `label` entries into label facts,
- * and rewrites each compaction's kept range into its inline `retainedTail`.
- * Every migrated file is verified before it replaces the original: the v4
- * file is re-opened with pi's reader and its built context must equal the
- * v3 context computed by the reference converter below. The original file
- * is kept beside the migrated one as `<name>.v3.bak`.
- */
 import { readFileSync } from "node:fs";
 import {
   createBranchSummaryMessage,
@@ -34,8 +16,6 @@ import {
 } from "./migrate-common.js";
 import type { MigrateResult } from "./types.js";
 export type { MigrateResult } from "./types.js";
-
-// ── v3 shapes ────────────────────────────────────────────────────────────────
 
 interface V3EntryBase {
   type: string;
@@ -98,12 +78,10 @@ interface V3SessionFile {
   entries: V3Entry[];
 }
 
-/** `session_info`, `label` and `leaf` become v4 values, not tree entries. */
 function isFactEntry(entry: V3Entry): boolean {
   return entry.type === "session_info" || entry.type === "label" || entry.type === "leaf";
 }
 
-/** Whether a file's first non-empty line is a v3 session header. */
 export function isV3SessionFile(filePath: string): boolean {
   try {
     const content = readFileSync(filePath, "utf-8");
@@ -116,7 +94,6 @@ export function isV3SessionFile(filePath: string): boolean {
   }
 }
 
-/** Parse every non-empty line, tolerating a torn final line (crash tail). */
 function parseJsonLines(filePath: string): Record<string, unknown>[] {
   const lines = readFileSync(filePath, "utf-8")
     .split("\n")
@@ -134,13 +111,6 @@ function parseJsonLines(filePath: string): Record<string, unknown>[] {
   return records;
 }
 
-/**
- * Crash-era v3 files can contain duplicated lines (a retried append wrote the
- * header+entry pair twice). The v3 runtime read entries into a Map, so
- * duplicates were silently collapsed; v4 rejects duplicate mutation ids.
- * Reproduce the v3 Map semantics: a repeated id replaces its payload while
- * retaining the id's original insertion position.
- */
 function dedupeEntries(records: Record<string, unknown>[]): V3Entry[] {
   const entriesById = new Map<string, V3Entry>();
   for (const record of records) {
@@ -151,7 +121,6 @@ function dedupeEntries(records: Record<string, unknown>[]): V3Entry[] {
   return [...entriesById.values()];
 }
 
-/** Read a v3 session file, ignoring a torn final line (crash tail). */
 function readV3SessionFile(filePath: string): V3SessionFile {
   const records = parseJsonLines(filePath);
   const header = records[0];
@@ -169,7 +138,6 @@ function toEpochMillis(timestamp: string): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-/** Walk a v3 tree from an entry to the root; returns root-first path order. */
 function v3Branch(entries: V3Entry[], fromId: string | null): V3Entry[] {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const path: V3Entry[] = [];
@@ -191,7 +159,6 @@ function v3LeafId(entries: V3Entry[]): string | null {
   return leafId;
 }
 
-/** v3 kept `custom_message` payloads out of band; v4 stores a real message. */
 function customMessageOf(entry: V3CustomMessage): AgentMessage {
   return createCustomMessage(
     entry.customType,
@@ -202,11 +169,10 @@ function customMessageOf(entry: V3CustomMessage): AgentMessage {
   );
 }
 
-/** Convert one tree-shaping v3 entry to its v4 counterpart (facts excluded). */
 function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
   const base = {
     id: entry.id,
-    seq: 0, // assigned at mutation-encoding time
+    seq: 0,
     parentId: resolveV4Parent(entry, entries),
     timestamp: toEpochMillis(entry.timestamp),
   };
@@ -253,16 +219,10 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         ...(entry.data !== undefined ? { data: entry.data as JsonValue } : {}),
       };
     default:
-      // session_info / label / leaf become facts and the lane pointer.
       return null;
   }
 }
 
-/**
- * Skip fact-only ancestors (session_info/label/leaf) when re-linking the v4
- * tree: those entries disappear from the entry stream, so children re-attach
- * to the nearest surviving ancestor.
- */
 function resolveV4Parent(entry: V3Entry, entries: V3Entry[]): string | null {
   const byId = new Map(entries.map((item) => [item.id, item]));
   let parentId = entry.parentId;
@@ -275,10 +235,6 @@ function resolveV4Parent(entry: V3Entry, entries: V3Entry[]): string | null {
   return null;
 }
 
-/**
- * Messages of the v3 kept range (`firstKeptEntryId` .. compaction parent),
- * which v4 stores inline on the compaction entry.
- */
 function compactionKeptMessages(compaction: V3Compaction, entries: V3Entry[]): AgentMessage[] {
   if (!compaction.firstKeptEntryId) return [];
   const ancestors = v3Branch(entries, compaction.parentId);
@@ -292,13 +248,6 @@ function compactionKeptMessages(compaction: V3Compaction, entries: V3Entry[]): A
   return messages;
 }
 
-// ── reference converter (verification oracle) ───────────────────────────────
-
-/**
- * Reorder a v3 branch the way the pi-0.83 context shim did: the last
- * compaction moves ahead of its kept range. The branch is returned unchanged
- * when there is no such compaction or it already carries a `retainedTail`.
- */
 function orderForReference(branch: V3Entry[]): {
   ordered: V3Entry[];
   repositioned?: V3Compaction;
@@ -319,7 +268,6 @@ function orderForReference(branch: V3Entry[]): {
   };
 }
 
-/** A repositioned compaction drops its kept range: the range now follows it. */
 function emptiedCompaction(entry: V3Compaction): PiEntry {
   return {
     type: "compaction",
@@ -334,12 +282,6 @@ function emptiedCompaction(entry: V3Compaction): PiEntry {
   };
 }
 
-/**
- * Convert a v3 branch to v4 entries with the pi-0.83 context semantics, so
- * pi's v4 transform reproduces the v3 context exactly. This mirrors what the
- * runtime shim did before mikan moved to native v4 files, and serves as the
- * verification oracle for migrated output.
- */
 function referenceContextEntries(branch: V3Entry[]): PiEntry[] {
   const { ordered, repositioned } = orderForReference(branch);
   const converted: PiEntry[] = [];
@@ -388,8 +330,6 @@ function referenceContextMessages(entries: PiEntry[]): AgentMessage[] {
   return visible.flatMap(contextMessagesOf);
 }
 
-// ── v4 encoding ─────────────────────────────────────────────────────────────
-
 function buildV4Header(header: V3SessionHeader): Record<string, unknown> {
   return {
     v: 4,
@@ -405,7 +345,6 @@ function buildV4Header(header: V3SessionHeader): Record<string, unknown> {
   };
 }
 
-/** Split a v3 entry stream into tree entries and the facts v4 stores as values. */
 function partitionEntries(entries: V3Entry[]): {
   tree: V3Entry[];
   name?: string;
@@ -431,7 +370,6 @@ function partitionEntries(entries: V3Entry[]): {
   return { tree, name, labels };
 }
 
-/** The v4 branch tip: the v3 leaf, walked back past fact-only entries. */
 function resolveV4Leaf(entries: V3Entry[]): string | null {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   let leafId = v3LeafId(entries);
@@ -444,7 +382,6 @@ function resolveV4Leaf(entries: V3Entry[]): string | null {
   return null;
 }
 
-/** Header fields v4 does not model survive as the durable `mikan/metadata` value. */
 function headerMetadata(header: V3SessionHeader): Record<string, JsonValue> | undefined {
   const {
     type: _type,
@@ -478,8 +415,6 @@ function encodeV4File(file: V3SessionFile): string {
   return writer.toString();
 }
 
-// ── migration driver ────────────────────────────────────────────────────────
-
 async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promise<void> {
   const store = await SessionStore.inspect(v4Path);
   const migratedContext = await store.buildSessionContext();
@@ -499,11 +434,6 @@ async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promis
   }
 }
 
-/**
- * Migrate one session file in place. The migrated file is verified against
- * the v3 reference semantics before it replaces the original; the original
- * is preserved as `<file>.v3.bak`.
- */
 export async function migrateSessionFile(
   filePath: string,
   options?: { dryRun?: boolean },
@@ -524,7 +454,6 @@ export async function migrateSessionFile(
   return { file: filePath, status: "migrated" };
 }
 
-/** Recursively find candidate session files (.jsonl with a v3 header). */
 export function findV3SessionFiles(root: string): string[] {
   return findSessionFiles(root, isV3SessionFile);
 }

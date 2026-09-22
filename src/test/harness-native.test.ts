@@ -108,7 +108,6 @@ test("resume drives a durably accepted operation after reopening the store", asy
   await session.resume();
   expect(faux.state.callCount).toBe(1);
   expect(JSON.stringify(session.messages)).toContain("recovered answer");
-  // The original operation is settled, so a later prompt can be admitted.
   faux.setResponses([fauxAssistantMessage("next answer")]);
   await session.prompt("next request");
   expect(faux.state.callCount).toBe(2);
@@ -210,9 +209,6 @@ test("tool progress retains arguments and each committed message is presented on
 });
 
 test("persisted provider thinking level survives close/reopen", async () => {
-  // Pi 0.85.0 fixed proxied assistant responses dropping the persisted
-  // provider-native thinking level (packages/agent/CHANGELOG.md). Guard
-  // that mikan's own session-store round trip preserves it too.
   const { faux, file, wrap } = setup();
   const store = await SessionStore.create(file, dir);
   const session = wrap(store);
@@ -237,7 +233,6 @@ test("persisted provider thinking level survives close/reopen", async () => {
 test("a successful native retry preserves reasoning and charges both requests once", async () => {
   const { faux, file, wrap } = setup();
   const session = wrap(await SessionStore.create(file, dir));
-  // Avoid real backoff while exercising Pi's actual retry scheduler.
   vi.useFakeTimers();
   try {
     faux.setResponses([
@@ -252,7 +247,6 @@ test("a successful native retry preserves reasoning and charges both requests on
       events.push(event);
     });
     const run = session.prompt("recover");
-    // File persistence uses real I/O; wait for the retry event before advancing time.
     await vi.waitFor(() =>
       expect(events.some((event) => event.type === "auto_retry_start")).toBe(true),
     );

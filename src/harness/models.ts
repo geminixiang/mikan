@@ -1,29 +1,3 @@
-/**
- * Model catalog for the mikan harness.
- *
- * Wraps pi-ai's `Models` collection: all built-in providers are registered
- * with credentials resolved from provider env vars, and custom providers
- * or overrides can be added via a `models.json` file
- * (`~/.mikan/models.json` by default).
- *
- * models.json subset supported by mikan:
- *
- * ```jsonc
- * {
- *   "providers": {
- *     "my-provider": {
- *       "api": "openai-completions",     // required when models are listed
- *       "baseUrl": "http://host/v1",
- *       "apiKey": "literal-key",          // optional; MY_PROVIDER_API_KEY env var otherwise
- *       "headers": { },
- *       "compat": { },
- *       "models": [{ "id": "m", "name": "M", "input": ["text"], "reasoning": false }]
- *     },
- *     "anthropic": { "baseUrl": "https://proxy.example/v1" }  // override built-in provider
- *   }
- * }
- * ```
- */
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -71,7 +45,6 @@ interface CustomModelConfig {
   cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
   contextWindow?: number;
   maxTokens?: number;
-  /** Accepted alias for `maxTokens` (used by existing deployments). */
   maxOutputTokens?: number;
   thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
   headers?: Record<string, string>;
@@ -92,7 +65,6 @@ interface ModelsJsonConfig {
   providers?: Record<string, CustomProviderConfig>;
 }
 
-/** Default location of mikan's models.json. */
 export function defaultModelsJsonPath(): string {
   return join(homedir(), ".mikan", "models.json");
 }
@@ -135,12 +107,6 @@ function envVarNameFor(providerName: string): string {
   return `${providerName.replace(/[^a-zA-Z0-9]+/g, "_").toUpperCase()}_API_KEY`;
 }
 
-/**
- * Register models.json providers on top of the built-ins: a provider with its
- * own model list replaces wholesale; a bare baseUrl/compat entry overrides a
- * matching built-in in place. Returns a user-facing load error, if any —
- * built-in models stay available either way.
- */
 function applyModelsJson(
   models: ReturnType<typeof builtinModels>,
   modelsJsonPath: string,
@@ -217,7 +183,6 @@ function buildCustomProvider(providerName: string, config: CustomProviderConfig)
   });
 }
 
-/** Rebuild a built-in provider with overridden model base URLs / compat. */
 function overrideBuiltinProvider(provider: Provider, config: CustomProviderConfig): Provider {
   const models = provider.getModels().map((model): Model<Api> => {
     const overridden: Model<Api> = Object.assign({}, model);
@@ -231,12 +196,7 @@ function overrideBuiltinProvider(provider: Provider, config: CustomProviderConfi
   };
 }
 
-/**
- * Model catalog backed by pi-ai's `Models`. Exposes the lookup and auth
- * operations mikan needs; streaming goes through {@link MikanModels.models}.
- */
 export class MikanModels {
-  /** Underlying pi-ai collection, for streaming/completion calls. */
   readonly models: Models;
   private loadError: string | undefined;
 
@@ -252,25 +212,18 @@ export class MikanModels {
     return new MikanModels(models, loadError);
   }
 
-  /** Error from loading models.json, if any. Built-in models stay available. */
   getError(): string | undefined {
     return this.loadError;
   }
 
-  /** All known models (built-in plus custom). */
   getAll(): Model<Api>[] {
     return [...this.models.getModels()];
   }
 
-  /** Find a model by provider and id. */
   find(provider: string, modelId: string): Model<Api> | undefined {
     return this.models.getModel(provider, modelId);
   }
 
-  /**
-   * Find a model by provider and id, or throw a user-facing configuration error.
-   * Prefer this at runtime entry points over raw `find` + ad-hoc throws.
-   */
   resolve(provider: string, modelId: string): Model<Api> {
     const model = this.find(provider, modelId);
     if (model) return model;
@@ -279,14 +232,12 @@ export class MikanModels {
     );
   }
 
-  /** Models whose provider auth currently resolves (API key, OAuth, or ambient). */
   async getAvailable(): Promise<Model<Api>[]> {
     const available = await Promise.all(
       this.models.getProviders().map(async (provider) => {
         try {
           return await this.models.getAvailable(provider.id);
         } catch {
-          // One provider's auth failure must not hide models from other providers.
           return [];
         }
       }),
@@ -294,15 +245,10 @@ export class MikanModels {
     return available.flat();
   }
 
-  /** Resolve request auth for a model. Undefined when unconfigured. */
   getAuth(model: Model<Api>): Promise<AuthResult | undefined> {
     return this.models.getAuth(model);
   }
 
-  /**
-   * Resolve an API key for a provider. Convenience for call sites that only
-   * need a bearer key (for example pi-agent-core's compat stream function).
-   */
   async getApiKeyForProvider(provider: string): Promise<string | undefined> {
     try {
       const auth = await this.models.getAuth(provider);

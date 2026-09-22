@@ -235,10 +235,6 @@ describe("system prompt memory guidance", () => {
   ): ReturnType<typeof resolveWorkspaceProjection> {
     const workspace = createWorkspace({ root: workspaceDir, stateDir });
     const office = workspace.office(createOfficeAddress("slack", "C123"));
-    // office.ensure()/resolveWorkspaceProjection materialize the shared roots;
-    // build the projection object directly instead of round-tripping through
-    // settings.json, since this test only cares about how buildSystemPrompt
-    // renders a given projection shape.
     const base = resolveWorkspaceProjection(office);
     const { globalKnowledgeReadOnly: _ignored, ...sources } = base.promptSources;
     return {

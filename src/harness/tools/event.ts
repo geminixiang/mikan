@@ -69,17 +69,14 @@ interface EventToolContext {
   userId: string;
 }
 
-/** Derived from the advertised schema, so the two can never drift apart. */
 type EventToolParams = Static<typeof eventSchema>;
 
-/** Every event action answers with one text block and no structured details. */
 type EventToolResult = Awaited<ReturnType<AgentTool<typeof eventSchema>["execute"]>>;
 
 function textResult(text: string): EventToolResult {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
-/** Log verbs per write action, so each message states exactly one form. */
 const WRITE_VERBS = {
   create: { present: "Writing", past: "Wrote", infinitive: "write" },
   update: { present: "Updating", past: "Updated", infinitive: "update" },
@@ -116,14 +113,12 @@ export function createEventTool(eventStore: EventStore): {
   };
 }
 
-/** Dispatch one `event` call; `create` stays the default for older callers. */
 async function runEventAction(
   eventStore: EventStore,
   params: EventToolParams,
   context: EventToolContext,
 ): Promise<EventToolResult> {
   const action = params.action ?? "create";
-  // Validate at execution too: persisted calls and direct callers can bypass schemas.
   if (params.scope !== undefined && params.scope !== "conversation") {
     throw new Error("Cross-office event access is not authorized");
   }
@@ -144,7 +139,6 @@ async function listEvents(
   eventStore: EventStore,
   context: EventToolContext,
 ): Promise<EventToolResult> {
-  // The store is confined to the current office; nothing else is reachable.
   const events = await eventStore.list();
   return textResult(
     JSON.stringify(
@@ -205,9 +199,6 @@ function buildToolEventPayload(params: EventToolParams, context: EventToolContex
     throw new Error("`text` is required for create and update actions");
   }
 
-  // Per-type field rules live in buildEventPayload above. No sessionKey or
-  // threadTs in the payload: reminders should fire as top-level messages,
-  // not buried in old threads.
   const payload = buildEventPayload({
     type: params.type,
     platform: context.platform,
@@ -220,8 +211,6 @@ function buildToolEventPayload(params: EventToolParams, context: EventToolContex
     timezone: params.timezone,
   });
 
-  // Tool-side write policy, not format knowledge: a reminder in the past
-  // would be deleted unfired by the watcher, so reject it here.
   if (payload.type === "one-shot" && new Date(payload.at).getTime() <= Date.now()) {
     throw new Error(
       `\`at\` must be in the future; got ${payload.at} (now=${new Date().toISOString()}). Check the timezone offset.`,

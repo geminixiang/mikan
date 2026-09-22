@@ -28,34 +28,22 @@ export class GithubApiError extends Error {
   }
 }
 
-/**
- * GitHub rate-limit responses are 429, or 403 with a rate-limit message
- * (secondary limits). Used as the `withRetry` predicate.
- */
 export function githubIsRateLimited(err: Error): boolean {
   if (!(err instanceof GithubApiError)) return false;
   return err.status === 429 || (err.status === 403 && /rate limit/i.test(err.message));
 }
 
-/** Standard retry wrapper for GitHub API calls: backs off on rate limits. */
 export const githubRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: githubIsRateLimited });
 
-/** GitHub comment bodies cap at 65536 chars; leave headroom for markup. */
 export const GITHUB_MAX_COMMENT_LENGTH = 60000;
 
 function base64Url(data: string | Buffer): string {
   return (typeof data === "string" ? Buffer.from(data) : data).toString("base64url");
 }
 
-/** Refresh the cached installation token this long before it expires. */
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
-/**
- * Minimal GitHub REST client authenticated as a GitHub App installation.
- * Mints short-lived installation tokens from an RS256 app JWT and supports
- * ETag conditional polling (304 responses don't count against the rate limit).
- */
 export class GithubClient {
   private readonly appId: string;
   private readonly privateKey: string;
@@ -73,11 +61,9 @@ export class GithubClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
-  /** Short-lived JWT identifying the App itself (not an installation). */
   private appJwt(): string {
     const now = Math.floor(Date.now() / 1000);
     const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-    // 60s clock-drift backdate; GitHub caps exp at 10 minutes.
     const payload = base64Url(JSON.stringify({ iat: now - 60, exp: now + 540, iss: this.appId }));
     const signature = base64Url(
       createSign("RSA-SHA256").update(`${header}.${payload}`).sign(this.privateKey),
@@ -136,10 +122,6 @@ export class GithubClient {
     return (await (options.responseText ? response.text() : response.json())) as T;
   }
 
-  /**
-   * Installation-authenticated request. `conditional` GETs return null on 304
-   * (nothing changed since the last call to the same path).
-   */
   private async request<T>(
     method: string,
     path: string,
@@ -149,7 +131,6 @@ export class GithubClient {
     return this.rawRequest<T>(method, path, { ...options, auth: `Bearer ${token}` });
   }
 
-  /** The App's mention slug; its comments author as `<slug>[bot]`. */
   async getAppSlug(): Promise<string> {
     const app = await this.rawRequest<{ slug: string }>("GET", "/app", {
       auth: `Bearer ${this.appJwt()}`,
@@ -157,17 +138,11 @@ export class GithubClient {
     return app!.slug;
   }
 
-  /** Database id of a user/bot login (for noreply commit-author emails). */
   async getUserId(login: string): Promise<number> {
     const user = await this.request<{ id: number }>("GET", `/users/${encodeURIComponent(login)}`);
     return user!.id;
   }
 
-  /**
-   * Mint a one-off installation token narrowed to a single repo and an
-   * explicit permission subset. Used for host-side git operations so the
-   * broad installation identity never leaves this process.
-   */
   async createScopedInstallationToken(
     repoName: string,
     permissions: GithubTokenPermissions,
@@ -188,12 +163,6 @@ export class GithubClient {
     return details!;
   }
 
-  /**
-   * A user's effective role on a repo: granular `role_name` plus the legacy
-   * `permission` field (callers rank whichever is stronger, so custom roles
-   * still resolve via their legacy mapping). Needs only Metadata: Read — the
-   * mandatory App permission. Unknown users resolve to none.
-   */
   async getCollaboratorPermission(
     owner: string,
     repo: string,
@@ -232,7 +201,6 @@ export class GithubClient {
     return pr!;
   }
 
-  /** Changed files of one PR (first 100; enough for triage-level reads). */
   async listPullRequestFiles(
     owner: string,
     repo: string,
@@ -245,7 +213,6 @@ export class GithubClient {
     return files!;
   }
 
-  /** Submitted reviews of one PR (approvals, change requests, comments). */
   async listPullRequestReviews(
     owner: string,
     repo: string,
@@ -258,7 +225,6 @@ export class GithubClient {
     return reviews!;
   }
 
-  /** Recent comments of one issue/PR conversation, oldest first. */
   async listIssueComments(
     owner: string,
     repo: string,
@@ -271,7 +237,6 @@ export class GithubClient {
     return comments!;
   }
 
-  /** Issues/PRs of a repo filtered for triage-style listing. */
   async listIssues(
     owner: string,
     repo: string,
@@ -292,7 +257,6 @@ export class GithubClient {
     return issues!;
   }
 
-  /** The open PR whose head is `branch`, or null when none exists. */
   async findOpenPullRequestByBranch(
     owner: string,
     repo: string,
@@ -305,7 +269,6 @@ export class GithubClient {
     return prs?.[0] ?? null;
   }
 
-  /** CI check runs for a ref (branch, tag, or sha). Needs Checks: Read. */
   async listCheckRuns(owner: string, repo: string, ref: string): Promise<GithubCheckRun[]> {
     const data = await this.request<{ check_runs: GithubCheckRun[] }>(
       "GET",
@@ -314,11 +277,6 @@ export class GithubClient {
     return data!.check_runs;
   }
 
-  /**
-   * Plaintext log of one Actions job (a check-run id). Needs Actions: Read.
-   * GitHub responds with a redirect to blob storage; fetch follows it and the
-   * Authorization header is dropped cross-origin, which is what we want.
-   */
   async getJobLog(owner: string, repo: string, jobId: number): Promise<string> {
     const text = await this.request<string>(
       "GET",
@@ -336,12 +294,6 @@ export class GithubClient {
     return data!.repositories;
   }
 
-  /**
-   * All issue/PR conversation comments in a repo updated at or after `since`,
-   * oldest first. Returns null when nothing changed (ETag 304). Capped at one
-   * page; the poll cursor advances to the newest item seen, so a burst larger
-   * than 100 comments drains across consecutive polls.
-   */
   async listIssueCommentsSince(
     owner: string,
     repo: string,
@@ -354,11 +306,6 @@ export class GithubClient {
     );
   }
 
-  /**
-   * All inline PR review comments in a repo updated at or after `since`,
-   * oldest first. Same shape and caveats as listIssueCommentsSince (one page,
-   * ETag 304 → null); review comments live in their own id space.
-   */
   async listPullReviewCommentsSince(
     owner: string,
     repo: string,
@@ -371,7 +318,6 @@ export class GithubClient {
     );
   }
 
-  /** All review comments on one PR (for reconstructing a thread's history). */
   async listPullReviewComments(
     owner: string,
     repo: string,
@@ -384,7 +330,6 @@ export class GithubClient {
     return comments!;
   }
 
-  /** Issues and PRs updated at or after `since` (GitHub lists PRs as issues). */
   async listIssuesSince(owner: string, repo: string, since: string): Promise<GithubIssue[] | null> {
     return this.request<GithubIssue[]>(
       "GET",
@@ -498,10 +443,6 @@ export class GithubClient {
     });
   }
 
-  /**
-   * Reply inside one review thread. GitHub 404s when `commentId` is not a
-   * review comment on PR `number` — server-side same-PR validation for free.
-   */
   async replyToReviewComment(
     owner: string,
     repo: string,

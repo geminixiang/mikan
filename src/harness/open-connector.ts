@@ -1,11 +1,3 @@
-/**
- * OpenConnector is an ordinary MCP server with one deployment-provided
- * default. When a Slack office has not declared `open-connector` in global or
- * conversation settings, the host mints a runtime token for that office with
- * the startup admin token and writes a plain conversation `mcpServers` entry.
- * From then on the entry is loaded, tested, disabled, or removed like any
- * other MCP server; the admin token itself never leaves this module.
- */
 import { Type } from "@sinclair/typebox";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -62,7 +54,6 @@ function requestSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-/** Mint a runtime token that copies the deployment's current action policy. */
 async function createRuntimeToken(
   origin: string,
   adminToken: string,
@@ -115,12 +106,6 @@ function isDeclared(office: Office): boolean {
   );
 }
 
-/**
- * Fill in the deployment default for a Slack office that has not declared
- * `open-connector` anywhere. Writes the token as a conversation MCP entry;
- * throws when provisioning fails so the caller can report it. Any declared
- * entry (self-hosted, disabled, or global) is respected untouched.
- */
 export async function ensureDefaultOpenConnector(
   office: Office,
   platformWorkspaceId: string | undefined,
@@ -144,7 +129,6 @@ export async function ensureDefaultOpenConnector(
   const task = (async () => {
     const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
     const token = await createRuntimeToken(new URL(url).origin, adminToken, name, signal);
-    // Re-read after the await: an operator may have declared the server meanwhile.
     if (isDeclared(office)) return;
     const current = loadScopeMcpServers(office).conversation;
     updateConversationSettings(office, {
@@ -165,12 +149,6 @@ export interface LegacyTokenMigrationReport {
   skipped: { key: OfficeKey; reason: string }[];
 }
 
-/**
- * One-time conversion of pre-existing `open-connector-runtime-token.json`
- * files into conversation `mcpServers` entries for `defaultUrl`. Files whose
- * token was minted for another origin, or whose office already declares the
- * server, are left in place and reported. Run with the daemon stopped.
- */
 export function migrateLegacyOpenConnectorTokens(
   stateDir: string,
   defaultUrl: string,

@@ -61,9 +61,6 @@ describe("generate_image tool", () => {
       quality: "low",
       response_format: "b64_json",
     });
-    // The upload callback gets the file's HOST path inside outputDir — not a
-    // bare name for the sandbox-staging attach path (that broke when the
-    // workspace base stopped being mounted into the guest).
     const [hostPath, title] = upload.mock.calls[0]!;
     expect(hostPath.startsWith(`${outputDir}/generated-`)).toBe(true);
     expect(hostPath.endsWith(".png")).toBe(true);

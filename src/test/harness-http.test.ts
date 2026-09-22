@@ -69,14 +69,6 @@ describe("configureHttpDispatcher", () => {
   });
 });
 
-/**
- * mikan is a long-running headless process whose LLM traffic goes through
- * global `fetch`. Node's built-in fetch ignores HTTP_PROXY/HTTPS_PROXY/NO_PROXY,
- * so a proxied deployment silently bypasses the proxy unless
- * `configureHttpDispatcher` installs undici's fetch and dispatcher. These
- * tests exercise that against real local HTTP servers instead of only
- * asserting the dispatcher's class.
- */
 describe("configureHttpDispatcher proxy behavior", () => {
   const envKeys = [
     "HTTP_PROXY",
@@ -105,7 +97,6 @@ describe("configureHttpDispatcher proxy behavior", () => {
     });
   }
 
-  /** A minimal forwarding proxy: relays an absolute-URL request to its target host. */
   function startForwardingProxy(onForward: () => void) {
     return startServer((req, res) => {
       onForward();
@@ -148,7 +139,6 @@ describe("configureHttpDispatcher proxy behavior", () => {
     await Promise.all(
       servers.map((server) => new Promise<void>((resolve) => server.close(() => resolve()))),
     );
-    // Restore a clean, unproxied dispatcher for tests that run afterward.
     configureHttpDispatcher();
   });
 
@@ -179,8 +169,6 @@ describe("configureHttpDispatcher proxy behavior", () => {
     });
 
     process.env.HTTP_PROXY = `http://127.0.0.1:${proxy.port}`;
-    // 127.0.0.1 (the loopback address every local target/proxy uses here)
-    // must bypass the proxy once listed in NO_PROXY.
     process.env.NO_PROXY = "127.0.0.1";
     configureHttpDispatcher();
 

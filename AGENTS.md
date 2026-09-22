@@ -45,6 +45,7 @@ Choose verification proportional to the change. Behavior changes need relevant t
 
 ## Working principles
 
+- Do not write code comments; the urge to add one signals a responsibility-split filename, unclear function name, or malformed architecture that must be fixed instead.
 - Solve the requested problem with the simplest suitable design. Preserve unrelated work and behavior; avoid speculative abstractions and compatibility layers. Surface consequential compatibility changes rather than assuming they are always safe or always forbidden.
 - Investigate failures from evidence and verify the original symptom after a repair. Choose reading depth, tools, delegation, and checks to fit the task rather than following a fixed sequence.
 - Use the access path the user requests. Ask before switching to UI automation or taking an external/destructive action outside the agreed scope.

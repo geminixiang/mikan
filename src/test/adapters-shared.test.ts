@@ -57,8 +57,6 @@ describe("shared stop-target helpers", () => {
   });
 
   describe("offices on different platforms never stop each other", () => {
-    // Discord snowflakes and Telegram chat ids are both bare digits, so an id
-    // alone cannot identify an office.
     const discord = createOfficeAddress("discord", "900100");
     const telegram = createOfficeAddress("telegram", "900100");
 
@@ -168,7 +166,6 @@ describe("MessagingEventQueue", () => {
       events.push("second");
     });
 
-    // The second job must not start while the first is still awaiting.
     await new Promise((resolve) => setImmediate(resolve));
     expect(events).toEqual(["first start"]);
 

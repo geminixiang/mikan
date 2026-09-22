@@ -51,7 +51,6 @@ import type {
   SandboxLimitStatus,
 } from "../types.js";
 
-/** Parse `src:dst[:ro]` back into a ContainerMount for signature computation. */
 function bindSpecToMount(bindSpec: string): ContainerMount {
   const readOnly = bindSpec.endsWith(":ro");
   const spec = readOnly ? bindSpec.slice(0, -3) : bindSpec;
@@ -66,7 +65,6 @@ function bindSpecToMount(bindSpec: string): ContainerMount {
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
   private inflight = new Map<string, Promise<string>>();
-  /** Active layout migration; unset means no translation ever applies. */
   private bindTranslator?: ContainerBindTranslator;
   private layoutMigrations = new Map<string, Promise<void>>();
   private static readonly MANAGED_LABEL = "mikan.managed=true";
@@ -119,9 +117,6 @@ export class DockerContainerManager {
     const containerName =
       options.containerName ?? DockerContainerManager.containerName(containerKey);
     const mounts = options.mounts ?? [];
-    // A container still on the pre-office layout must move its writable layer
-    // to the new mounts before the drift check below would recreate it from
-    // the base image and discard everything installed inside.
     await this.migrateContainerLayout(containerName);
     const status = await this.inspectStatus(containerName);
 
@@ -213,9 +208,6 @@ export class DockerContainerManager {
       `Failed to remove container ${containerName}`,
     );
     if (!removed) {
-      // The container may still be running with its old mounts. Keeping the
-      // ownership state (and throwing) is the honest outcome: callers such
-      // as credential refresh must not report a teardown that did not happen.
       throw new Error(`Failed to remove container ${containerName}`);
     }
 
@@ -247,12 +239,6 @@ export class DockerContainerManager {
     await Promise.all(toStop.map((containerKey) => this.stop(containerKey)));
   }
 
-  /**
-   * Force-remove every managed container belonging to the given conversation
-   * ids. The office layout migration renames the host directories a
-   * container's workspace mount points at, so a surviving container would keep
-   * writing through stale mounts while the runtime works in the new location.
-   */
   async removeContainersForConversations(conversationIds: ReadonlySet<string>): Promise<void> {
     if (conversationIds.size === 0) return;
     const names = await this.listContainerNamesByLabel();
@@ -269,30 +255,14 @@ export class DockerContainerManager {
     );
   }
 
-  /**
-   * Arm the office-layout container migration. Containers whose binds still
-   * reference legacy raw-id paths are moved to the office-key layout without
-   * losing their writable layer: commit → remove → create with translated
-   * binds, preserving everything installed inside. Idempotent per container
-   * and resumable — the pre-removal binds ride on the snapshot image label,
-   * so a crash between commit and create resumes from the snapshot.
-   */
   armContainerLayoutMigration(translator: ContainerBindTranslator): void {
     this.bindTranslator = translator;
   }
 
-  /**
-   * Sweep every managed container through the layout migration, serially and
-   * with a small gap, so the one-time cost never lands on the boot path or on
-   * a message. Safe to fire-and-forget; each unit is idempotent.
-   */
   async sweepContainerLayoutMigration(delayMs = 2000): Promise<void> {
     if (!this.bindTranslator) return;
     let names: string[];
     try {
-      // Include snapshot names: a crash between commit and create leaves a
-      // snapshot with no container, which must resume before the GC below
-      // could mistake it for an orphan.
       const containers = await this.listContainerNamesByLabel();
       const snapshots = await this.listMigrateSnapshotContainerNames();
       names = Array.from(new Set([...containers, ...snapshots]));
@@ -311,12 +281,9 @@ export class DockerContainerManager {
       }
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
-    // Snapshot images whose container has since been recreated from the base
-    // image are no longer referenced; reclaim them.
     await this.removeDanglingMigrateImages();
   }
 
-  /** Move one container to the office-key layout; no-op when already there. */
   private migrateContainerLayout(containerName: string): Promise<void> {
     const translator = this.bindTranslator;
     if (!translator) return Promise.resolve();
@@ -338,9 +305,6 @@ export class DockerContainerManager {
     let originalBinds: string[];
     const status = await this.inspectStatus(containerName);
     if (status === "missing") {
-      // Resume path: a previous run committed and removed the container but
-      // died before creating the replacement. The snapshot carries the
-      // pre-removal binds on its label.
       const labeled = await this.readMigrateImageBinds(snapshotImage);
       if (labeled === undefined) return;
       originalBinds = labeled;
@@ -348,7 +312,7 @@ export class DockerContainerManager {
       originalBinds = await this.inspectBindMounts(containerName);
       const translated = originalBinds.map(translator);
       if (this.sameBinds(translated.toSorted(), originalBinds.slice().toSorted())) {
-        return; // already on the office layout
+        return;
       }
       log.logInfo(`Migrating container ${containerName} to the office layout`);
       await this.execFileImpl("docker", [
@@ -362,30 +326,16 @@ export class DockerContainerManager {
     }
 
     await this.createContainerFromSnapshot(containerName, originalBinds.map(translator));
-    // The snapshot's only job was bridging commit → create; the new container
-    // already owns that content in its own writable layer; untagging it now
-    // (rather than waiting for a "natural recreation from the base image"
-    // that never happens — every recreation path here targets this same
-    // snapshot family) is what makes migration actually one-time instead of
-    // repeating on every future sweep that still finds the tag.
     await this.removeMigrateSnapshot(containerName);
     log.logInfo(`Container ${containerName} migrated to the office layout`);
   }
 
-  /**
-   * Create `containerName` from its layout snapshot with `bindSpecs`,
-   * restoring the managed labels and recomputing the mount signature.
-   * `create`, not `run`: idle containers stay stopped exactly as they were;
-   * callers that need the container running start it themselves.
-   */
   private async createContainerFromSnapshot(
     containerName: string,
     bindSpecs: string[],
     knownContainerKey?: string,
   ): Promise<void> {
     const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
-    // The sweep has only the container name and derives the key; the drift
-    // path knows the real key (container names can be caller-supplied).
     const containerKey =
       knownContainerKey ?? this.containerKeyFromContainerName(containerName) ?? containerName;
     const networkName = await this.ensureNetwork(containerKey);
@@ -434,13 +384,6 @@ export class DockerContainerManager {
     ]);
   }
 
-  /**
-   * `docker commit` captures the empty directories Docker created as bind
-   * targets, so a public office that stopped being mounted would linger in
-   * the snapshot as an empty `/workspace/public/<key>`. Remove any entry
-   * there that no current bind targets; only empty directories are removed,
-   * so a real file could never be deleted by this pass.
-   */
   private async removeStaleMountpoints(
     containerName: string,
     bindSpecs: readonly string[],
@@ -474,15 +417,6 @@ export class DockerContainerManager {
     }
   }
 
-  /**
-   * Recreate a drifted container with the desired mounts while keeping its
-   * writable layer: commit — the new binds ride the snapshot label, so a
-   * crash at any point resumes through the layout-migration path — then
-   * remove, create from the snapshot, and start. The snapshot is untagged
-   * once the new container is confirmed up: its only job was bridging
-   * commit → create, and the container now owns that content in its own
-   * writable layer, so nothing still needs the tag.
-   */
   private async recreateContainerPreservingContents(
     containerKey: string,
     containerName: string,
@@ -504,7 +438,6 @@ export class DockerContainerManager {
     await this.removeMigrateSnapshot(containerName);
   }
 
-  /** Binds recorded on a snapshot image, or undefined when no snapshot exists. */
   private async readMigrateImageBinds(snapshotImage: string): Promise<string[] | undefined> {
     const raw = await this.readImageLabel(
       snapshotImage,
@@ -532,20 +465,13 @@ export class DockerContainerManager {
     }
   }
 
-  /**
-   * Delete a container's layout snapshot after an intentional removal, so a
-   * missing container plus a surviving snapshot can only mean a crash in the
-   * middle of the layout migration (the resume discriminator).
-   */
   private async removeMigrateSnapshot(containerName: string): Promise<void> {
     try {
       await this.execFileImpl("docker", [
         "rmi",
         `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`,
       ]);
-    } catch {
-      // No snapshot for this container — the common case.
-    }
+    } catch {}
   }
 
   private async listMigrateSnapshotContainerNames(): Promise<string[]> {
@@ -562,17 +488,6 @@ export class DockerContainerManager {
     }
   }
 
-  /**
-   * Catch-up pass for snapshots the success path in
-   * `migrateContainerLayoutInner` did not get to remove itself — e.g. a
-   * crash between `createContainerFromSnapshot` and its own cleanup. A
-   * snapshot is only still needed while its container remains "missing"
-   * (the resume path in `migrateContainerLayoutInner` reads pre-removal
-   * binds off it); once the container exists again in any state, the
-   * snapshot has done its job regardless of whether that container's
-   * `Config.Image` still points at it — removing a tag never deletes
-   * layers a live container still uses.
-   */
   private async removeDanglingMigrateImages(): Promise<void> {
     let stdout: string;
     try {
@@ -588,7 +503,7 @@ export class DockerContainerManager {
     for (const image of this.parseNameLines(stdout)) {
       const containerName = image.slice(DockerContainerManager.MIGRATE_IMAGE_PREFIX.length + 1);
       const status = await this.inspectStatus(containerName);
-      if (status === "missing") continue; // still needed for a future resume
+      if (status === "missing") continue;
       try {
         await this.execFileImpl("docker", ["rmi", image]);
         log.logInfo(`Removed layout-migration snapshot image ${image}`);
@@ -629,9 +544,6 @@ export class DockerContainerManager {
         continue;
       }
 
-      // Containers keyed under the pre-office raw-conversation resource key
-      // are unreachable now that resource identity is the office key: no
-      // provision will ever address them again, so reap rather than adopt.
       if (containerKey === legacyConversationResourceKey(details.conversationId)) {
         legacyRemovals.push(
           this.forceRemoveContainer(
@@ -672,9 +584,6 @@ export class DockerContainerManager {
   }
 
   private toBindSpec(mount: ContainerMount): string {
-    // The `:ro` suffix is part of the bind spec, so it also flows into
-    // expectedBinds/mountSignature — flipping a mount's writability is drift
-    // and recreates the container rather than leaving a stale writable bind.
     return `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`;
   }
 
@@ -740,9 +649,6 @@ export class DockerContainerManager {
     if (limits?.cpus) args.push("--cpus", limits.cpus);
     if (limits?.memory) {
       args.push("--memory", limits.memory);
-      // Keep Docker's no-extra-swap semantics explicit. Docker requires
-      // memory-swap to be updated together when raising an existing memory
-      // limit above the current swap limit.
       args.push("--memory-swap", limits.memory);
     }
     return args;
@@ -846,16 +752,8 @@ export class DockerContainerManager {
     try {
       const stat = statSync(source);
       if (stat.isFile()) {
-        // Files are atomically replaced (rename), which leaves the container
-        // holding a stale inode — content changes must recreate the mount.
         return createHash("sha256").update(readFileSync(source)).digest("hex");
       }
-      // Directories: a bind mount follows changes inside the directory live,
-      // so only replacing the directory itself makes the mount stale.
-      // Size/mtime churn from ordinary activity — event files coming and
-      // going, children being created — must not read as drift. Identity is
-      // dev:ino plus birth time, because ext4 recycles inode numbers
-      // immediately and a same-path replacement can reuse the old one.
       return `${stat.isDirectory() ? "dir" : "other"}:${stat.dev}:${stat.ino}:${stat.birthtimeMs}`;
     } catch {
       return "missing";
@@ -1026,7 +924,6 @@ export class DockerContainerManager {
     return containerKey.length > 0 ? containerKey : undefined;
   }
 
-  /** @returns true when the container is gone (removed or already missing). */
   private async forceRemoveContainer(
     containerName: string,
     successLog: string,

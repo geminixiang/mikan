@@ -133,7 +133,6 @@ export class MikanAgentSession {
     };
   }
 
-  /** Bind delegated spend to its owning prompt, even when cleanup finishes late. */
   captureExternalUsageSink(): SubagentUsageSink {
     const tally = this.tally;
     return async (usage) => {
@@ -177,7 +176,6 @@ export class MikanAgentSession {
     return true;
   }
 
-  /** Resume an operation left open by a previous process using Pi's recovery rules. */
   async resume(options?: { budget?: BudgetSettings; tools?: MikanToolInput[] }): Promise<void> {
     await this.run(undefined, options);
   }
@@ -257,7 +255,6 @@ export class MikanAgentSession {
       if (result.status === "failed") throw new Error(result.error?.message ?? "Pi run failed");
       return;
     }
-    // Pi owns admission, retries, compaction, persistence, and the tool loop.
     const admission = getOrThrow(
       await lane.accept({ kind: "prompt", prompt: text, images }, TODO_CONTEXT),
     );
@@ -266,7 +263,6 @@ export class MikanAgentSession {
     const result = getOrThrow(
       await lane.drive({ operationId: admission.operationId, waitForRetry: true }, TODO_CONTEXT),
     );
-    // The assistant error is already persisted and presented when present.
     if (
       result.kind === "settled" &&
       result.outcome.status === "failed" &&
@@ -305,7 +301,6 @@ export class MikanAgentSession {
     throw cleanupFailure.error;
   }
 
-  /** Pi's durable cancellation gate stops providers, tools, retries, and summaries. */
   abort(): void {
     if (!this.runActive) return;
     this.runAborted = true;
@@ -316,9 +311,6 @@ export class MikanAgentSession {
 
   private requestCancellation(): void {
     if (!this.lane || !this.operationId || this.cancellation) return;
-    // Do not await a lane mutation inside an event listener: Pi serializes event
-    // delivery, and the abort mutation itself emits another event. The native
-    // gate closes synchronously; prompt() drains the mutation before releasing ownership.
     this.cancellation = this.lane
       .requestAbort(this.operationId, TODO_CONTEXT)
       .then((result) => {
@@ -329,7 +321,6 @@ export class MikanAgentSession {
       });
   }
 
-  /** Upgrade mikan's own `AgentTool`s; harness-native tools pass through. */
   private toHarnessTools(tools: MikanToolInput[]): MikanHarnessTool[] {
     return tools.map((tool) => (isHarnessTool(tool) ? tool : adaptAgentTool(tool)));
   }
@@ -347,8 +338,6 @@ export class MikanAgentSession {
       compaction: this.settings.compaction,
     });
     this.lane = await this.harness.lane("main", TODO_CONTEXT);
-    // Restored lanes retain their old configuration; the runtime's selected
-    // model and thinking level apply to this session wrapper.
     await this.lane.setModel(
       { provider: this.model.provider, modelId: this.model.id },
       TODO_CONTEXT,
@@ -359,7 +348,6 @@ export class MikanAgentSession {
       this.tally.llmCalls += 1;
       return undefined;
     });
-    // A handoff must never share a batch with effects in the parent session.
     this.harness.hooks.on("before_tool", () => {
       const assistant = this.transcript.findLast((message) => message.role === "assistant");
       const calls =
@@ -645,24 +633,8 @@ export const DEFAULT_RETRY_SETTINGS: RetrySettings = {
   baseDelayMs: 2000,
 };
 
-/**
- * Per-run resource ceilings — the harness's external circuit breakers.
- *
- * An LLM cannot reliably decide on its own when to stop (the halting problem),
- * so a runaway run has to be stopped from the outside. When any populated cap
- * is exceeded, the run is aborted and a `budget_exceeded` event is emitted.
- * Every field is a cap on a single `prompt()` call; an undefined field means
- * "no cap on that axis". Interactive runs are gated turn-by-turn by a human,
- * so they default to uncapped; autonomous runs (scheduled events, triggers)
- * pass {@link DEFAULT_EVENT_BUDGET}, where nobody is watching the loop.
- */
-/** Interactive runs are human-gated per turn — no automatic ceiling by default. */
 export const DEFAULT_BUDGET_SETTINGS: BudgetSettings = {};
 
-/**
- * Ceiling for autonomous (event / trigger) runs, where no human is watching
- * the loop. Deliberately generous — it is a stop-loss, not a target.
- */
 export const DEFAULT_EVENT_BUDGET: BudgetSettings = {
   maxDurationMs: 10 * 60 * 1000,
   maxLlmCalls: 50,
@@ -680,13 +652,6 @@ export function resolveHarnessSettings(overrides?: {
     budget: { ...DEFAULT_BUDGET_SETTINGS, ...overrides?.budget },
   };
 }
-
-/**
- * Harness-wide usage accounting: parent-session assistant turns, compaction
- * completions, and subagent folds all accumulate through these helpers.
- * `SubagentUsage` (public surface) is an alias of pi-ai's `Usage`; the
- * aggregation rules here are not subagent-specific.
- */
 
 export function createEmptyUsage(): Usage {
   return {

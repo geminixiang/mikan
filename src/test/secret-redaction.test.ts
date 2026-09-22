@@ -62,8 +62,6 @@ describe("redactSecrets", () => {
       { label: "SHORT", value: "abc12345" },
       { label: "LONG", value: "prefix-abc12345-suffix" },
     ];
-    // withSecretRedaction/collectSecretEntries sort longest-first before
-    // calling redactSecrets; verify the ordering this function relies on.
     const text = "value is prefix-abc12345-suffix";
     const sorted = overlapping.toSorted((a, b) => b.value.length - a.value.length);
     expect(redactSecrets(text, sorted)).toBe("value is [SECRET:LONG]");
@@ -71,11 +69,6 @@ describe("redactSecrets", () => {
 });
 
 describe("withSecretRedaction identity preservation", () => {
-  // Regression: withSecretRedaction first spread the tool into a new object
-  // (`{ ...tool, execute: ... }`), which silently dropped pi-tools.ts's
-  // non-enumerable HARNESS_TOOL marker and detached the copy from any
-  // closure (e.g. a platform pack's bindRun) still holding the original
-  // object. Every platform/task/subagent tool stopped running as a result.
   test("keeps the isHarnessTool marker intact after wrapping", () => {
     const [bash] = createSandboxTools().filter((tool) => tool.name === "bash");
     expect(isHarnessTool(bash)).toBe(true);
@@ -98,11 +91,6 @@ describe("withSecretRedaction identity preservation", () => {
       }),
     };
     const harnessTool = adaptAgentTool(agentTool);
-    // Mirrors createMikanTools: a platform pack's own `tools` array is built
-    // once, then every entry in the *combined* tool list mikan hands to the
-    // model is separately wrapped with `.map(withSecretRedaction)`. The pack
-    // must still see live behavior through its own array reference to the
-    // same object — that only holds if withSecretRedaction mutates in place.
     const packTools = [harnessTool];
     const modelTools = [harnessTool].map(withSecretRedaction);
     expect(isHarnessTool(packTools[0])).toBe(true);
@@ -116,7 +104,6 @@ describe("withSecretRedaction identity preservation", () => {
     );
     const text = (result.content[0] as { text?: string }).text;
     expect(text).not.toContain(SENTINEL);
-    // The pack's own array entry is the same wrapped object, not a stale copy.
     expect(packTools[0]).toBe(modelTools[0]);
     if (envBefore === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = envBefore;

@@ -19,11 +19,6 @@ import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
-/**
- * Top-level vault namespaces that are not user vaults. `extensions` remains
- * reserved so data left by removed executable extensions is never mistaken
- * for a user credential vault.
- */
 const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
 export function normalizeSharedVaultName(name: string): string | undefined {
@@ -40,16 +35,6 @@ export function sharedVaultKey(name: string): string | undefined {
 export type { ResolvedVault, VaultManager } from "./types.js";
 import type { ResolvedVault, ResolvedVaultMount, VaultManager } from "./types.js";
 
-// ── parseEnvFile ───────────────────────────────────────────────────────────────
-
-/**
- * Parse a KEY=VALUE env file. Supports:
- * - Lines starting with # are comments
- * - Empty lines are skipped
- * - Values can be quoted with single or double quotes (quotes are stripped)
- * - No variable expansion
- * - The value is everything after the first `=` to end of line (no inline comments)
- */
 export function parseEnvFile(content: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const line of content.split(/\r\n|\r|\n/)) {
@@ -59,7 +44,6 @@ export function parseEnvFile(content: string): Record<string, string> {
   return env;
 }
 
-/** One `KEY=VALUE` entry, or undefined for a blank line, comment or non-entry. */
 function parseEnvLine(line: string): [string, string] | undefined {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("#")) return undefined;
@@ -72,14 +56,11 @@ function parseEnvLine(line: string): [string, string] | undefined {
   return [key, unquoteEnvValue(trimmed.slice(eqIndex + 1))];
 }
 
-/** Strip one matching pair of surrounding single or double quotes. */
 function unquoteEnvValue(value: string): string {
   const quote = value[0];
   if ((quote === '"' || quote === "'") && value.endsWith(quote)) return value.slice(1, -1);
   return value;
 }
-
-// ── FileVaultManager ───────────────────────────────────────────────────────────
 
 export class FileVaultManager implements VaultManager {
   private readonly vaultsDir: string;
@@ -204,8 +185,6 @@ export class FileVaultManager implements VaultManager {
     atomicWritePrivateFile(filePath, content);
   }
 
-  // ── private ────────────────────────────────────────────────────────────────
-
   private buildResolved(key: string): ResolvedVault {
     const dir = join(this.vaultsDir, key);
     const mounts = inferMountsFromDir(dir);
@@ -257,7 +236,6 @@ function copyVaultDir(sourceDir: string, targetDir: string): VaultCopyCounts {
   return total;
 }
 
-/** Copy one vault entry: merge `env`, recurse into directories, chmod files. */
 function copyVaultEntry(sourceDir: string, targetDir: string, entry: Dirent): VaultCopyCounts {
   const sourcePath = join(sourceDir, entry.name);
   const targetPath = join(targetDir, entry.name);
@@ -276,7 +254,6 @@ function copyVaultEntry(sourceDir: string, targetDir: string, entry: Dirent): Va
   return { filesCopied: 1, envKeysCopied: 0 };
 }
 
-/** Overlay the source env file onto the target's; returns the keys copied. */
 function mergeVaultEnvFile(sourcePath: string, targetPath: string): number {
   const sourceEnv = parseEnvFile(readTextFileIfExists(sourcePath) ?? "");
   const targetEnv = parseEnvFile(readTextFileIfExists(targetPath) ?? "");
@@ -357,14 +334,6 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   return defaultVaultTargetPath(normalized);
 }
 
-/**
- * Rename legacy raw-id conversation vault directories to office keys, driven
- * by the office registry's inventory (the only raw-id ↔ office authority).
- * Shared, user-keyed, and unrecognized directories are never touched. A
- * conflict — both the legacy and the office-key directory exist — is reported
- * for manual merge, never clobbered; callers treat it as fatal for boot so a
- * conversation cannot silently run with half its credentials.
- */
 export function migrateConversationVaultKeys(options: {
   stateDir: string;
   offices: readonly OfficeAddress[];
@@ -388,19 +357,6 @@ export function migrateConversationVaultKeys(options: {
   return { migrated, conflicts };
 }
 
-/**
- * Decide whether a new conversation vault may inherit `sandbox.defaultSharedVault`.
- *
- * Ambient copy is a membership-trust convenience: only appropriate when the
- * people who can drive the agent are already gated by platform membership
- * (Slack/Discord/Telegram). Open-trigger surfaces (GitHub issue/PR comments)
- * must not inherit ambient credentials — host-side platform identity or an
- * explicitly provisioned vault only.
- *
- * Topology: only isolated sandboxes (`image` / `cloudflare`) auto-provision
- * per-conversation vaults that receive the copy. `host` / `container` do
- * not use this ambient path.
- */
 export function allowsAmbientDefaultSharedVault(options: {
   trustModel?: PlatformTrustModel;
   sandboxType: SandboxConfig["type"];
@@ -413,7 +369,6 @@ export function allowsAmbientDefaultSharedVault(options: {
 export type { VaultInjection } from "./types.js";
 import type { VaultInjection } from "./types.js";
 
-/** Keep the mounts whose source still exists; a missing one is reported, not fatal. */
 function resolveExistingMounts(
   vault: ResolvedVault | undefined,
   sandboxType: SandboxConfig["type"],
@@ -445,7 +400,6 @@ export function resolveVaultInjection(options: {
   vault: ResolvedVault | undefined;
   capabilities: SandboxCredentialCapabilities;
   sandboxType: SandboxConfig["type"];
-  /** Diagnostic identity for error reports only; no injection decision reads it. */
   address: OfficeAddress;
 }): VaultInjection {
   const { vault, capabilities, sandboxType, address } = options;
@@ -460,12 +414,6 @@ export function resolveVaultInjection(options: {
   return { ...(env ? { env } : {}), mounts };
 }
 
-/**
- * Inert VaultManager for embedders that run the conversation runtime without
- * a credential vault. Read paths report an empty, disabled vault; write paths
- * fail loudly so misconfiguration surfaces instead of silently dropping
- * secrets.
- */
 export const disabledVaultManager: VaultManager = {
   isEnabled: () => false,
   hasEntry: () => false,

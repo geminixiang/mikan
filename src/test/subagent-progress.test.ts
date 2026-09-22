@@ -160,11 +160,6 @@ describe("renderSubagentDashboard", () => {
     expect(rendered).toContain("└ Completed · explorer · 2 LLM turns · all good");
   });
 
-  /**
-   * A node reports its metrics on the way out, so for the whole of a long step
-   * the row would otherwise read "Running · profile" and never change — which
-   * is indistinguishable from a hang, and was reported as one.
-   */
   test("a running node shows what it is doing", () => {
     const rendered = renderSubagentDashboard({
       mode: "dag",
@@ -183,7 +178,6 @@ describe("renderSubagentDashboard", () => {
   });
 
   test("activity is dropped once the node settles", () => {
-    // Stale by definition, and the metrics that replace it are the real story.
     const rendered = renderSubagentDashboard({
       mode: "dag",
       nodes: [

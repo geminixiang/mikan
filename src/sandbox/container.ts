@@ -118,7 +118,6 @@ export class ContainerExecutor implements Executor {
         temp?.envFilePath,
         options?.cwd,
       );
-      // cwd belongs to the guest, not the host process launching docker.
       const { cwd: _cwd, ...hostOptions } = options ?? {};
       return await this.hostExecutor.exec(dockerCmd, options ? hostOptions : undefined);
     } finally {

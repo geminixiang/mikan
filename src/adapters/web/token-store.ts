@@ -24,7 +24,6 @@ export class InMemoryTokenStore<T extends TokenRecord> {
     return entry;
   }
 
-  /** One-shot consume. Returns undefined if missing or expired. */
   consume(rawToken: string): T | undefined {
     const entry = this.tokens.get(rawToken);
     if (!entry) return undefined;
@@ -33,7 +32,6 @@ export class InMemoryTokenStore<T extends TokenRecord> {
     return entry;
   }
 
-  /** Remove expired tokens. Call periodically to bound memory usage. */
   purge(): void {
     const now = Date.now();
     for (const [key, t] of this.tokens) {

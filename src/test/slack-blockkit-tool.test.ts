@@ -33,9 +33,6 @@ describe("slack_blockkit tool", () => {
   });
 
   test("rejects an oversized payload without quoting it back", async () => {
-    // Schema validation reports a failure by embedding the whole argument
-    // object, so an unbounded payload lands in the session twice: once as the
-    // call, once echoed as the result. The complaint has to stay small.
     const { tool } = createSlackBlockKitTool();
     const huge = { blocks: [{ type: "markdown", text: "x".repeat(100_000) }], text: "report" };
 

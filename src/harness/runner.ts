@@ -71,9 +71,6 @@ import {
 
 import * as log from "../log.js";
 
-// One process-wide fan-out account: per-conversation queues serialize runs,
-// but each run can fan out up to the per-run cap — without this shared
-// ceiling, N busy conversations hold N × cap live subagent sessions.
 const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
 
 async function createConfiguredAgentSession(params: {
@@ -152,8 +149,6 @@ function createRunnerExecutionContext(
       ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspace)
       : undefined;
 
-  // activeExecutor is replaced at the start of each run() call when executionResolver
-  // is present, so the stable `executor` wrapper always delegates to the latest resolved value.
   let activeExecutor: Executor =
     executionResolver !== undefined
       ? createExecutor({ type: "host" })
@@ -212,11 +207,6 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
   return `[${userLabel}]: ${text}`;
 }
 
-/**
- * Fill in the deployment's default OpenConnector entry before settings are
- * read, so the runner then sees only ordinary MCP configuration. A failed
- * default is reported and skipped; the office keeps its other servers.
- */
 async function ensureDefaultMcpServers(options: {
   office: Office;
   trustModel: CreateRunnerOptions["trustModel"];
@@ -302,8 +292,6 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     skippedSkillLinks: conversationSkillLoad.skippedSkillLinks,
   });
   session.setSystemPrompt(systemPrompt);
-  // A stable hash across turns verifies that turn-specific data did not leak
-  // into the provider-cacheable system prompt.
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
   log.logInfo(
     `[${conversationId}] System prompt (base): ${systemPrompt.length} chars, sha ${promptHash}`,
@@ -339,11 +327,9 @@ function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathC
       responder.uploadFile(stagedPath, title),
     );
   });
-  // Generated images already live host-side and must not be staged through a sandbox.
   setImageUploadFunction(async (hostPath: string, title?: string) => {
     await responder.uploadFile(hostPath, title);
   });
-  // Unset reaction support when the active responder cannot react.
   bindTasks(responder);
   setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
   bindPlatformToolPacks({
@@ -626,8 +612,6 @@ async function steerRun(
   message: ConversationMessage,
 ): Promise<boolean> {
   if (!activeMessage) return false;
-  // Claimed by the control path, including rejected/cancelled inputs: history sync
-  // must not turn a rejected control into a new instruction on the next run.
   await session.sessionStore.appendCustomEntry("mikan.control_input", { messageId: message.id });
   if (!session.isActiveRun)
     throw new Error("Task is preparing or settling. Please retry this update shortly.");
@@ -844,15 +828,12 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   });
   options.signal?.throwIfAborted();
   const resolvedAgentConfig = resolveConversationSettings(office);
-  // open-trigger conversations get no MCP tools at all (see ARCHITECTURE.md).
   const agentConfig = {
     ...resolvedAgentConfig,
     mcpServers: trustModel === "open-trigger" ? {} : (resolvedAgentConfig.mcpServers ?? {}),
   };
 
   const projection = resolveWorkspaceProjection(office);
-  // Bootstrap validation fails runner creation early. resolveForRun repeats
-  // the check against the actor-specific decision before any provider call.
   assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.visibility, office.key);
   const { executor, resolveForRun } = createRunnerExecutionContext(
     sandboxConfig,
@@ -861,8 +842,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     office.workspace,
   );
   const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
-  // The env wraps the stable executor wrapper, which delegates to the
-  // actor-resolved executor per call, so one env serves every run.
   const toolContext: ExecutionToolContext = {
     env: createSandboxExecutionEnv(executor, sandboxConfig.type, pathContext.runtimeWorkspaceRoot),
   };
@@ -873,7 +852,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   }
   const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
 
-  // Create tools (per-runner, with per-runner upload function setter)
   const toolBindings = createMikanTools(
     executor,
     new OfficeEventStore(office, options.eventScheduler),
@@ -882,9 +860,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     {
       model,
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
-      // The conversation's own office dir: mounted into the sandbox, unlike
-      // the workspace base — generated images must land somewhere the agent
-      // (and a future run) can still reach.
       outputDir: conversationDir,
     },
   );

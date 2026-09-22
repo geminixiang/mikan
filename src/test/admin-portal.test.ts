@@ -136,7 +136,6 @@ describe("admin portal skills listing", () => {
     const skillsDir = join(workspaceDir, "skills");
     writeSkill(skillsDir, "zeta", "---\nDescription: Uppercase key still read\n---\nBody\n");
     writeSkill(skillsDir, "alpha", "no frontmatter at all\n");
-    // Directories without SKILL.md and hidden directories are skipped.
     mkdirSync(join(skillsDir, "empty-dir"), { recursive: true });
     writeSkill(skillsDir, ".hidden", "---\nname: nope\ndescription: hidden\n---\n");
 

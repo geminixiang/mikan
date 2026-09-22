@@ -3,10 +3,6 @@ import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import type { SlackEvent } from "../adapters/slack/bot.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
 
-// ============================================================================
-// Minimal SlackMessagingBot mock
-// ============================================================================
-
 function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): SlackMessagingBot {
   return {
     getUser: vi.fn().mockReturnValue(undefined),
@@ -16,8 +12,6 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
     postInThread: vi.fn().mockResolvedValue("T002"),
     updateMessage: vi.fn().mockResolvedValue(undefined),
     startMessageStream: vi.fn().mockRejectedValue(new Error("streaming unsupported in mock")),
-    // The real bot declines once the start tier is spent; a fake that always
-    // grants keeps these cases about rendering rather than about budget.
     tryReserveStreamStart: vi.fn().mockReturnValue(true),
     appendMessageStream: vi.fn().mockResolvedValue(undefined),
     stopMessageStream: vi.fn().mockResolvedValue(undefined),
@@ -49,24 +43,13 @@ function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {
   };
 }
 
-// ============================================================================
-// subagent progress
-// ============================================================================
-
 describe("subagent dashboard", () => {
   test("does not override the harness's response-source dashboard", () => {
     const bot = makeSlackMessagingBot();
     const { responder } = createSlackAdapters(makeEvent(), bot);
-    // The harness composes the Markdown dashboard through replaceResponse and
-    // renderSlackBlocks converts it natively (ADR-0001); a Slack-side override
-    // would be a second renderer.
     expect(responder.replaceSubagentProgress).toBeUndefined();
   });
 });
-
-// ============================================================================
-// Session key derivation
-// ============================================================================
 
 describe("session key derivation", () => {
   test("top-level mention uses persistent channel session", () => {
@@ -99,10 +82,6 @@ describe("session key derivation", () => {
     expect(message.id).toBe("1000.0005");
   });
 });
-
-// ============================================================================
-// respond() routing
-// ============================================================================
 
 describe("respond() — non-threaded", () => {
   test("first call posts top-level in the channel", async () => {
@@ -175,8 +154,6 @@ describe("respond() — non-threaded", () => {
   });
 
   test("default top-level reply mode uses chat.update streaming", async () => {
-    // Redraws are paced by wall clock, so a second one needs the interval to
-    // have passed — appending more text is not enough on its own.
     vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn().mockResolvedValue("MSG1"),
@@ -302,10 +279,6 @@ describe("respond() — threaded", () => {
   });
 });
 
-// ============================================================================
-// respondDiagnostic() — thread anchor
-// ============================================================================
-
 describe("respondDiagnostic()", () => {
   test("non-threaded: anchors diagnostics under the bot message when one exists", async () => {
     const bot = makeSlackMessagingBot({
@@ -343,7 +316,6 @@ describe("respondDiagnostic()", () => {
     const bot = makeSlackMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot);
-    // rootTs is always available (event.ts), so respondDiagnostic posts immediately
     await responder.respondDiagnostic("detail");
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",
@@ -393,10 +365,6 @@ describe("respondDiagnostic()", () => {
     expect(bot.postMessage).not.toHaveBeenCalled();
   });
 });
-
-// ============================================================================
-// setTyping()
-// ============================================================================
 
 describe("non-blocking assistant status", () => {
   test("pending Thinking cannot block runner start or finish/stop cleanup", async () => {
@@ -514,16 +482,12 @@ describe("setTyping()", () => {
     const bot = makeSlackMessagingBot();
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot);
-    await responder.setTyping(true); // creates message
+    await responder.setTyping(true);
     vi.clearAllMocks();
-    await responder.setTyping(true); // should be no-op
+    await responder.setTyping(true);
     expect(bot.postMessage).not.toHaveBeenCalled();
   });
 });
-
-// ============================================================================
-// Text accumulation and truncation
-// ============================================================================
 
 describe("setWorking()", () => {
   test("setWorking(true) does not replace an existing message with a bare indicator", async () => {
@@ -549,10 +513,6 @@ describe("setWorking()", () => {
   });
 });
 
-// ============================================================================
-// Text accumulation and truncation
-// ============================================================================
-
 describe("text accumulation", () => {
   test("multiple respond() calls accumulate text with newlines", async () => {
     const bot = makeSlackMessagingBot({ postMessage: vi.fn().mockResolvedValue("MSG") });
@@ -560,7 +520,6 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
     await responder.respond("line1");
     await responder.respond("line2");
-    // Second call should update with accumulated text
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
     expect(updateCall[2]).toContain("line1");
     expect(updateCall[2]).toContain("line2");
@@ -667,12 +626,6 @@ describe("text accumulation", () => {
     expect(fallbackText).not.toContain("END");
   });
 
-  /**
-   * The truncation notice promises the rest is in a thread, and a run that
-   * ends on the post-stream canonical render reaches the fallback as a plain
-   * render rather than a replace. Delivering only for `replaceResponse` meant
-   * that promise was routinely printed over a tail that was then dropped.
-   */
   test("a finished response delivers its truncated tail, not just the promise", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };
@@ -694,17 +647,6 @@ describe("text accumulation", () => {
     );
   });
 
-  /**
-   * A 429 is transient and the SDK already retries it. Routing it into the
-   * length fallback instead published a response cut to a few thousand
-   * characters, blamed the length in the notice, and re-sent — which kept the
-   * rate limit alive rather than waiting it out.
-   */
-  /**
-   * The notice sits between the two halves, so a cut through the middle of a
-   * line leaves it unreadable in both places — the reassembled text showed
-   * "101| " where the model had written "101 | ".
-   */
   test("truncation falls on a line break so no line is split across the notice", async () => {
     const tooLongError = new Error("An API error occurred: msg_too_long") as Error & {
       data?: { error: string };
@@ -716,8 +658,6 @@ describe("text accumulation", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot);
 
-    // Comfortably past the 3,000-character fallback budget, so the cut has to
-    // fall somewhere in the middle of the list.
     const lines = Array.from({ length: 600 }, (_, i) => `${String(i + 1).padStart(3, "0")} | body`);
     await responder.respond(lines.join("\n"));
     await responder.finishResponse?.();
@@ -726,7 +666,6 @@ describe("text accumulation", () => {
     const continuation = String(vi.mocked(bot.postInThread).mock.calls[0]?.[2] ?? "");
     const body = main.replace(/\n\n_\(message too long.*$/s, "");
 
-    // Every line is whole on one side or the other, none straddling the seam.
     expect(body.endsWith(" | body")).toBe(true);
     const lastInMain = Number(body.trimEnd().slice(-"000 | body".length).slice(0, 3));
     expect(continuation).toContain(`${String(lastInMain + 1).padStart(3, "0")} | body`);
@@ -745,8 +684,6 @@ describe("text accumulation", () => {
 
     await responder.respond(`${"x".repeat(6000)}END`);
 
-    // One attempt, then the error propagates — no truncated re-send, and no
-    // thread continuation for a message that was never too long.
     expect(bot.postMessage).toHaveBeenCalledTimes(1);
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
@@ -756,8 +693,6 @@ describe("text accumulation", () => {
       data?: { error: string };
     };
     tooLongError.data = { error: "msg_too_long" };
-    // Slack refuses anything long, so each render takes the fallback path —
-    // the shape an incremental render has while the text keeps growing.
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn(async (_channel: string, text: string) => {
         if (text.length > 3200) throw tooLongError;
@@ -774,19 +709,12 @@ describe("text accumulation", () => {
     await responder.respond(`${"y".repeat(6000)}BETA`);
     await responder.finishResponse?.();
 
-    // One message, carrying everything: posting per redraw filled the thread
-    // with fragments, and each fragment boundary that fell on whitespace lost
-    // it, because Slack trims message text.
     const posts = vi.mocked(bot.postInThread).mock.calls.map((call) => String(call[2]));
     expect(posts).toHaveLength(1);
     expect(posts[0]).toContain("ALPHA");
     expect(posts[0]).toContain("BETA");
   });
 });
-
-// ============================================================================
-// deleteResponse()
-// ============================================================================
 
 describe("deleteResponse()", () => {
   test("deletes main message and all thread messages", async () => {
@@ -812,10 +740,6 @@ describe("deleteResponse()", () => {
   });
 });
 
-// ============================================================================
-// MessagingInfo
-// ============================================================================
-
 describe("platform info", () => {
   test("name is 'slack'", () => {
     const { platform } = createSlackAdapters(makeEvent(), makeSlackMessagingBot());
@@ -840,10 +764,6 @@ describe("platform info", () => {
   });
 });
 
-// ============================================================================
-// Cross-thread isolation (Phase 1: 高優先級)
-// ============================================================================
-
 describe("cross-channel isolation", () => {
   test("top-level mentions in same channel share channel session, thread replies are isolated", () => {
     const topLevel = makeEvent({ ts: "1000.0001", thread_ts: undefined });
@@ -853,10 +773,6 @@ describe("cross-channel isolation", () => {
     expect(createSlackAdapters(threadReply, bot).message.sessionKey).toBe("C001:1000.0001");
   });
 });
-
-// ============================================================================
-// Same-thread multi-round follow-up (Phase 1: 高優先級)
-// ============================================================================
 
 describe("same-thread multi-round follow-up", () => {
   test("subsequent message in same thread should preserve rootTs", () => {
@@ -888,14 +804,9 @@ describe("same-thread multi-round follow-up", () => {
     await responder.respondDiagnostic("reply 2");
     await responder.respondDiagnostic("reply 3");
     expect(bot.postInThread).toHaveBeenCalledTimes(3);
-    // All calls should use same rootTs
     expect(bot.postInThread).toHaveBeenCalledWith("C001", "1000.0001", expect.any(String));
   });
 });
-
-// ============================================================================
-// thread_ts boundary values (Phase 1: 高優先級)
-// ============================================================================
 
 describe("thread_ts boundary values", () => {
   test("no thread_ts → bare channelId session", () => {
@@ -969,8 +880,6 @@ describe("thread_ts boundary values", () => {
 
 describe("streaming lifecycle", () => {
   test("thread reply mode native stream failure falls back to incremental chat.update", async () => {
-    // Installed before the responder exists: the renderer captures `Date.now`
-    // when it is built, so a later swap would leave it on the real clock.
     vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockRejectedValue(new Error("missing required field: thread_ts")),

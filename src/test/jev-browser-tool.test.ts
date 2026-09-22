@@ -571,13 +571,8 @@ describe("jev_browser tool", () => {
   );
 
   test("reports the last page snapshot even when DONE is reached on the first observation", async () => {
-    // Regression: a run that reaches DONE before any action has an empty
-    // history, so without lastPageSnapshot the caller gets no page content
-    // at all — reproduced live against https://example.com, where the model
-    // fell back to an unrelated `bash curl` call to answer the same goal
-    // this tool had already seen.
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" } }, // open
+      { success: true, data: { targetId: "t1" } },
       {
         success: true,
         data: {
@@ -585,8 +580,8 @@ describe("jev_browser tool", () => {
           refs: {},
           snapshot: '- heading "Example Domain" [ref=e1]\n- link "More information..." [ref=e2]',
         },
-      }, // snapshot
-      { success: true, data: { closed: true } }, // close
+      },
+      { success: true, data: { closed: true } },
     ]);
     fetchMock.mockResolvedValue(
       jsonResponse({
@@ -806,9 +801,9 @@ describe("jev_browser tool", () => {
 
   test("always closes the agent-browser session, even after a mid-loop failure", async () => {
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" } }, // open
-      { success: false, error: "boom" }, // snapshot fails
-      { success: true, data: { closed: true } }, // close
+      { success: true, data: { targetId: "t1" } },
+      { success: false, error: "boom" },
+      { success: true, data: { closed: true } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -828,8 +823,8 @@ describe("jev_browser tool", () => {
 
   test("runs raw commands before the goal loop and reports their own results", async () => {
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" }, error: null }, // open
-      { success: true, data: { started: true }, error: null }, // network har start
+      { success: true, data: { targetId: "t1" }, error: null },
+      { success: true, data: { started: true }, error: null },
       {
         success: true,
         data: {
@@ -838,8 +833,8 @@ describe("jev_browser tool", () => {
           snapshot: '- heading "Example Domain" [ref=e1]',
         },
         error: null,
-      }, // snapshot
-      { success: true, data: { closed: true }, error: null }, // close
+      },
+      { success: true, data: { closed: true }, error: null },
     ]);
     fetchMock.mockResolvedValue(
       jsonResponse({
@@ -880,9 +875,9 @@ describe("jev_browser tool", () => {
 
   test("runs commands-only with no goal, and skips the goal loop entirely", async () => {
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" }, error: null }, // open
-      { success: true, data: { path: "/tmp/shot.png" }, error: null }, // screenshot
-      { success: true, data: { closed: true }, error: null }, // close
+      { success: true, data: { targetId: "t1" }, error: null },
+      { success: true, data: { path: "/tmp/shot.png" }, error: null },
+      { success: true, data: { closed: true }, error: null },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -910,14 +905,9 @@ describe("jev_browser tool", () => {
   });
 
   test("a named session stays open by default — no close flag needed on the calls in between", async () => {
-    // Regression: an earlier version required the caller to remember
-    // `keepOpen: true` on every single call reusing a session, or the
-    // browser silently closed and reopened, discarding any in-progress
-    // recording/HAR capture while every individual call still reported
-    // success. Naming a session must be enough on its own.
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" } }, // open
-      { success: true, data: { started: true } }, // record start
+      { success: true, data: { targetId: "t1" } },
+      { success: true, data: { started: true } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -937,11 +927,10 @@ describe("jev_browser tool", () => {
     const closeCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(closeCall).toBeUndefined();
 
-    // A later call reuses the same session and omits url — no "open" this time.
     execMock.mockReset();
     mockAgentBrowser([
-      { success: true, data: { path: "/tmp/demo.webm", frames: 12 } }, // record stop
-      { success: true, data: { closed: true } }, // close
+      { success: true, data: { path: "/tmp/demo.webm", frames: 12 } },
+      { success: true, data: { closed: true } },
     ]);
     const result2 = await tool.execute(
       "call-2",
@@ -954,7 +943,6 @@ describe("jev_browser tool", () => {
       commandResults: Array<{ data: unknown }>;
     };
     expect(parsed2.commandResults[0]?.data).toEqual({ path: "/tmp/demo.webm", frames: 12 });
-    // close: true on the final call does close it.
     const finalCloseCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(finalCloseCall).toBeDefined();
   });
@@ -1115,8 +1103,8 @@ describe("jev_browser tool", () => {
 
   test("a one-off call (no session) still closes automatically, matching the original single-call ergonomics", async () => {
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" } }, // open
-      { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
+      { success: true, data: { targetId: "t1" } },
+      { success: true, data: { path: "/tmp/shot.png" } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -1132,8 +1120,8 @@ describe("jev_browser tool", () => {
 
   test("an explicit close: false keeps even a one-off session open", async () => {
     mockAgentBrowser([
-      { success: true, data: { targetId: "t1" } }, // open
-      { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
+      { success: true, data: { targetId: "t1" } },
+      { success: true, data: { path: "/tmp/shot.png" } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -1160,8 +1148,8 @@ describe("jev_browser tool", () => {
           targetId: "t1",
           lifecycle: { reused: false, relaunchedBrowser: true, launched: true },
         },
-      }, // open — a fresh/relaunched browser, not a continuation
-      { success: true, data: { started: true, lifecycle: { reused: true } } }, // record start
+      },
+      { success: true, data: { started: true, lifecycle: { reused: true } } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -1184,7 +1172,7 @@ describe("jev_browser tool", () => {
 
   test("reports browserContinuity as continuous when the session actually was reused", async () => {
     mockAgentBrowser([
-      { success: true, data: { path: "/tmp/demo.webm", lifecycle: { reused: true } } }, // record stop
+      { success: true, data: { path: "/tmp/demo.webm", lifecycle: { reused: true } } },
     ]);
 
     const tool = createJevBrowserTool(executor);
@@ -1218,7 +1206,6 @@ describe("jev_browser tool", () => {
       signal,
     );
 
-    // Expected strings are deliberately independent of production shellEscape.
     const prefix = "'agent-browser' '--session' 'user'\\''s $(echo session); `echo name`'";
     expect(execMock.mock.calls).toEqual([
       [

@@ -32,8 +32,6 @@ import { createManagedSessionFile } from "../sessions/store.js";
 import type { SandboxConfig } from "../sandbox/index.js";
 import type { VaultManager } from "../vault/index.js";
 
-// ── Fakes ────────────────────────────────────────────────────────────────────
-
 interface RecordingResponseCtx extends ConversationResponder {
   responses: string[];
 }
@@ -130,10 +128,6 @@ function fakeSessionViewTokenStore() {
   };
 }
 
-/**
- * A Workspace over a test root. The office registry journal lives in a sibling
- * state dir, created on demand, so nothing lands in the developer's ~/.mikan.
- */
 function testWorkspace(root: string) {
   return createWorkspace({ root, stateDir: join(root, "state") });
 }
@@ -191,8 +185,6 @@ function buildContext(args: BuildContextArgs): CommandContext & {
 }
 
 describe("COMMAND_MANIFEST platform registration budgets", () => {
-  // Discord rejects the whole registration batch when any command or option
-  // description exceeds 100 characters — a silent-until-restart failure.
   test("descriptions fit Discord's 100-character limits", () => {
     for (const entry of COMMAND_MANIFEST) {
       expect(entry.description.length, `${entry.name} description`).toBeLessThanOrEqual(100);
@@ -248,8 +240,6 @@ describe("dispatchCommand", () => {
     expect(b.tryHandle).toHaveBeenCalledOnce();
   });
 });
-
-// ── ModelCommandHandler ─────────────────────────────────────────────────────
 
 describe("ModelCommandHandler", () => {
   const handler = new ModelCommandHandler(MikanModels.create());
@@ -315,8 +305,6 @@ describe("ModelCommandHandler", () => {
   });
 });
 
-// ── AdminCommandHandler ─────────────────────────────────────────────────────
-
 describe("AutoReplyCommandHandler", () => {
   test("cycles through on, jev, and off for the current conversation", async () => {
     const root = mkdtempSync(join(tmpdir(), "mikan-auto-reply-command-"));
@@ -376,8 +364,6 @@ describe("AdminCommandHandler", () => {
     expect(ctx.responder.responses.join("\n")).toContain("direct conversation");
   });
 });
-
-// ── LoginCommandHandler ──────────────────────────────────────────────────────
 
 describe("LoginCommandHandler", () => {
   const handler = new LoginCommandHandler();
@@ -524,8 +510,6 @@ describe("LoginCommandHandler", () => {
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
-    // The provisioner is keyed by runtime resource identity, not the
-    // credential key the vault copy used (they differ in image mode).
     expect(remove).toHaveBeenCalledWith(
       runtimeResourceKey(
         { type: "image", image: "ubuntu:24.04" },
@@ -614,8 +598,6 @@ describe("LoginCommandHandler", () => {
   });
 });
 
-// ── SandboxCommandHandler ───────────────────────────────────────────────────
-
 describe("SandboxCommandHandler", () => {
   const handler = new SandboxCommandHandler();
   let workingDir: string;
@@ -627,7 +609,6 @@ describe("SandboxCommandHandler", () => {
       `cmd-sandbox-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     );
     mkdirSync(workingDir, { recursive: true });
-    // Conversation settings are host-authoritative under the state dir.
     sandboxStateDir = join(workingDir, "state");
     mkdirSync(sandboxStateDir, { recursive: true });
     process.env.MIKAN_STATE_DIR = sandboxStateDir;
@@ -701,7 +682,6 @@ describe("SandboxCommandHandler", () => {
     });
   }
 
-  /** The office the handler mutates — same workspace the contexts are built on. */
   function doorOffice() {
     return testWorkspace(workingDir).office(createOfficeAddress("slack", "C123"));
   }
@@ -779,13 +759,10 @@ describe("SandboxCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    // Resource keys stay raw-conversation-derived until the resource-naming migration.
     expect(boost).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });
 });
-
-// ── SessionViewCommandHandler ────────────────────────────────────────────────
 
 describe("SessionViewCommandHandler", () => {
   const handler = new SessionViewCommandHandler();

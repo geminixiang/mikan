@@ -86,8 +86,6 @@ import {
   type Workspace,
 } from "../../../office/index.js";
 
-// ── Handler ────────────────────────────────────────────────────────────────────
-
 export async function handleAdminRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -123,8 +121,6 @@ export async function handleAdminRequest(
 
   return false;
 }
-
-// ── API routing ────────────────────────────────────────────────────────────────
 
 async function routeApiRequest(
   req: IncomingMessage,
@@ -227,19 +223,12 @@ async function routePostApiRequest(
   }
 }
 
-// ── Scope helpers ──────────────────────────────────────────────────────────────
-
 interface AdminConversationScope {
   address: OfficeAddress;
   conversationId: string;
   error?: string;
 }
 
-/**
- * Admin scope is a full office address. The platform defaults to the token's
- * (an admin invoked from Slack browses Slack offices); cross-platform targets
- * name theirs explicitly. Identity validation is the address factory's.
- */
 export function resolveConversationScope(
   requestedId: string,
   requestedPlatform: string,
@@ -293,14 +282,6 @@ function requireConversationWorkspace(
   return workspace ? { scope, workspace } : undefined;
 }
 
-// ── API handlers ───────────────────────────────────────────────────────────────
-
-/**
- * Office directories are office-key named and not reversible to raw ids, so
- * enumeration reads the office registry — the durable raw-id ↔ office
- * mapping — instead of scanning the workspace. Offices whose directory
- * disappeared are filtered out.
- */
 function listAdminOffices(workspace: Workspace): OfficeAddress[] {
   return listRegisteredOffices(workspace.stateDir)
     .filter((office) => existsSync(workspace.office(office).dir))
@@ -332,9 +313,7 @@ function conversationLastActivity(workspace: Workspace, office: OfficeAddress): 
       try {
         const stats = statSync(full);
         if (stats.mtimeMs > latest) latest = stats.mtimeMs;
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   };
   visit(dir, 0);
@@ -502,7 +481,6 @@ function emptyBucket(date: string): UsageBucket {
   return { date, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0, cost: 0 };
 }
 
-/** Per-conversation daily token usage over the last N days (N clamped to 1..7). */
 async function serveConversationUsage(
   res: ServerResponse,
   url: URL,
@@ -546,9 +524,7 @@ async function serveConversationUsage(
       if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
       await accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
     }
-  } catch {
-    // No sessions directory yet — return empty buckets.
-  }
+  } catch {}
 
   const series = order.map((key) => buckets.get(key) ?? emptyBucket(key));
   const totals = series.reduce((sum, b) => {
@@ -614,9 +590,7 @@ async function accumulateSessionUsageByDay(
       bucket.total += input + output + cacheRead + cacheWrite;
       bucket.cost += numberOrZero(usage.cost?.total);
     }
-  } catch {
-    // Skip unreadable session files.
-  }
+  } catch {}
 }
 
 function serveConversationState(
@@ -982,18 +956,12 @@ function respondWithSettingsUpdate(res: ServerResponse, update: () => object): v
   }
 }
 
-// ── Workspace ──────────────────────────────────────────────────────────────────
-
 const WORKSPACE_TREE_MAX_DEPTH = 4;
 const WORKSPACE_TREE_MAX_ENTRIES = 800;
 const PREVIEW_FILE_MAX_BYTES = 256 * 1024;
 
 const WORKSPACE_TOP_DIRS = new Set(["scratch"]);
 
-/**
- * Limit what the admin UI can browse under a conversation directory.
- * Allowed: top-level "scratch/" subtree.
- */
 function isWorkspacePathAllowed(rel: string): boolean {
   if (rel === "") return true;
   const first = rel.split("/").find(Boolean);
@@ -1227,8 +1195,6 @@ function serveWorkspaceFile(
   servePreviewFile(res, safe.absolute, { path: requestedPath }, "File not found");
 }
 
-// ── Skills ─────────────────────────────────────────────────────────────────────
-
 interface SkillEntry {
   name: string;
   description: string;
@@ -1237,11 +1203,6 @@ interface SkillEntry {
   directory: string;
 }
 
-/**
- * Read skill metadata via the harness frontmatter parser (the owning module).
- * The portal historically accepted frontmatter keys case-insensitively, so
- * the lookup — not the parser — preserves that leniency.
- */
 function readSkillMeta(filePath: string): { name?: string; description?: string } {
   let text: string;
   try {
@@ -1284,11 +1245,6 @@ export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"
   return out.toSorted((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * List MCP servers for both scopes, with env/header VALUES redacted to key
- * names: they carry API keys, and this response renders in a browser. The
- * panel edits full entries but only ever needs to show which keys exist.
- */
 function serveMcpServersList(
   res: ServerResponse,
   url: URL,
@@ -1340,16 +1296,6 @@ const MCP_VERIFY_TIMEOUT_MS = 20_000;
 
 type McpVerifyResult = { name: string; tools: number } | { name: string; error: string };
 
-/**
- * Connect to the given servers once, the way the runner will, and report per
- * server either the tool count or the server's own error text. This is the
- * difference between "settings.json was written" and "it works": the runner
- * only logs load failures host-side, so without this the portal is the only
- * place an operator can learn that a pasted token is wrong.
- *
- * For stdio entries this runs the configured command on the host now, at save
- * time, rather than at the next message.
- */
 async function verifyMcpServers(
   servers: Record<string, McpServerConfig>,
 ): Promise<McpVerifyResult[]> {
@@ -1376,13 +1322,6 @@ type McpMutationPlan =
   | { next: Record<string, McpServerConfig>; touched: Record<string, McpServerConfig> }
   | { status: number; error: string };
 
-/**
- * Compute the scope's next server map for one mutation. `import` takes the
- * cross-client `mcpServers` JSON verbatim (see `parseStandardMcpServers`) and
- * replaces every named entry outright — a pasted declaration is the whole
- * truth for that server, so no env/header carry-over from the previous entry.
- * `touched` lists the entries to connection-check after the write.
- */
 function planMcpMutation(
   action: "import" | "install" | "remove" | "toggle",
   body: Record<string, unknown>,
@@ -1425,16 +1364,6 @@ function planMcpMutation(
   return { next, touched: {} };
 }
 
-/**
- * Import / install / remove / toggle / test MCP servers in one scope. Reads
- * the scope's raw map, applies the change, and writes the full map back
- * wholesale because merging would make removal impossible. Runner
- * caches refresh via applyGlobalSettings/applyConversationSettings.
- *
- * Writes persist even when the follow-up connection check fails: the
- * operator edits the entry, not retypes it. `test` re-checks an existing
- * entry without writing.
- */
 async function serveMcpServerMutation(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -1573,14 +1502,6 @@ function resolveSkillsRoot(
   };
 }
 
-/**
- * Create, overwrite, or delete one skill directory. The directory name is
- * fixed at creation (renaming would leave the old directory as an orphan);
- * editing an existing skill always targets its current directory. Writes go
- * straight to the workspace skills tree — the same location the harness
- * loader reads — so a saved skill is available on the conversation's next
- * turn without a restart.
- */
 async function serveSkillMutation(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -1662,13 +1583,6 @@ async function serveSkillMutation(
   jsonRes(res, 200, { ok: true, name, directory, source: resolved.source });
 }
 
-// ── Events ─────────────────────────────────────────────────────────────────────
-
-/**
- * List events through the owning store, whose payloads are validated by the
- * event-format module (files that fail validation stay visible with a null
- * payload so operators can delete them).
- */
 export async function listOfficeEvents(store: EventStore): Promise<EventSummary[]> {
   const entries = await store.list();
   return entries.map((entry) => {
@@ -1702,7 +1616,6 @@ function requireAdminEventStore(
   return services.eventStore(office);
 }
 
-/** Every registered office's events, each read through its own store. */
 async function serveEventsList(res: ServerResponse, services: AdminServices): Promise<void> {
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
@@ -1717,7 +1630,6 @@ async function serveEventsList(res: ServerResponse, services: AdminServices): Pr
   jsonRes(res, 200, { events });
 }
 
-/** Per-conversation listing through that office's confined store. */
 async function serveConversationEventsList(
   res: ServerResponse,
   url: URL,
@@ -1739,7 +1651,6 @@ async function serveConversationEventsList(
   });
 }
 
-/** Delete a single event file scoped to the caller's conversation. */
 async function serveConversationEventDelete(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -1762,7 +1673,6 @@ async function serveConversationEventDelete(
   if (!workspace) return;
   const store = requireAdminEventStore(res, services, workspace.office(scope.address));
   if (!store) return;
-  // The store is confined to this office: another office's filename is "not found".
   try {
     await store.delete(name);
     jsonRes(res, 200, { ok: true });
@@ -1772,18 +1682,8 @@ async function serveConversationEventDelete(
   }
 }
 
-// ── Utilities ──────────────────────────────────────────────────────────────────
-
 const esc = escapeHtml;
 
-// ── HTML ───────────────────────────────────────────────────────────────────────
-
-/**
- * Settings-app rail icons: a fixed inline-SVG set instead of an icon font, so
- * the admin page has no extra network request and every icon shares one
- * visual language (1.6px stroke, 18x18, currentColor). Keys match the
- * `railLink`/`settingsPane` id namespace, not the API endpoints they load.
- */
 type RailIconKey =
   | "settings"
   | "workspace"
@@ -1807,22 +1707,11 @@ const ICONS: Record<RailIconKey, string> = {
   usage: `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V3"/><path d="M3 21h18"/><path d="M7 17V11M12 17V7M17 17v-4"/></svg>`,
 };
 
-/** One entry in the settings rail: an icon, a label, and the pane id it activates. */
 function railLink(id: string, label: string, icon: RailIconKey, active = false): string {
   const svg = ICONS[icon];
-  // The label span is hidden below 860px, so mirror it into aria-label/title to
-  // keep an accessible name and a hover hint once the text disappears.
   return `<button class="rail-link${active ? " active" : ""}" type="button" data-pane="${id}" aria-current="${active ? "page" : "false"}" aria-label="${esc(label)}" title="${esc(label)}">${svg}<span>${esc(label)}</span></button>`;
 }
 
-/**
- * One settings pane: an eyebrow-free header (icon lives in the rail, not
- * repeated here) with a title, a one-line description, and header actions,
- * followed by body content. Every pane shares this shape so scanning the
- * page feels like one continuous settings surface instead of assembled
- * cards — the visual language `frontend-design` calls for here is a
- * quiet, editorial settings app, not a dashboard of boxes.
- */
 function settingsPane(
   id: string,
   title: string,
@@ -3263,8 +3152,6 @@ function renderAdminErrorPage(message: string): string {
     </section>`,
   });
 }
-
-// ── Styles ─────────────────────────────────────────────────────────────────────
 
 const adminViewStyles = `
   /* The shared shell caps at 960px for the narrower session/login portals;

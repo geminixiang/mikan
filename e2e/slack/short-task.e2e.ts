@@ -28,8 +28,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack short task", () => {
       textIncludes: token,
     });
     if (!reply) {
-      // Budget models occasionally reply without the token; one
-      // conversational repair keeps the assertion strict without flaking.
       await postMessage(
         client,
         env.channel,

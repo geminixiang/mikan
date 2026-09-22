@@ -129,10 +129,6 @@ describe("DockerContainerManager", () => {
     });
 
     test("a container migrated once does not migrate again on a later sweep (regression: stayed pinned to its snapshot across every restart)", async () => {
-      // Simulates the production incident: the mock's `created` flag makes
-      // subsequent `docker inspect` calls report the container as existing
-      // (matching real Docker) once `create` has run, so a correct fix must
-      // leave nothing behind that a second sweep would still act on.
       const { exec, calls } = routerMock({
         status: "missing",
         names: [],
@@ -173,8 +169,6 @@ describe("DockerContainerManager", () => {
     });
 
     test("sweep resumes a crash-orphaned snapshot instead of reclaiming it", async () => {
-      // No containers exist; one snapshot with recorded binds survives a
-      // crash between commit and create. The sweep must recreate it.
       const { exec, calls } = routerMock({
         status: "missing",
         names: [],
@@ -189,8 +183,6 @@ describe("DockerContainerManager", () => {
       const create = calls.find((args) => args[0] === "create");
       expect(create).toBeDefined();
       for (const bind of NEW_BINDS) expect(create).toContain(bind);
-      // The resumed container now owns the content in its own writable
-      // layer, so the bridging snapshot is removed once created.
       expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
     });
 
@@ -413,14 +405,11 @@ describe("DockerContainerManager", () => {
 
     const runArgs = execMock.mock.calls[3][1];
     expect(runArgs).toContain("/state/shared/data:/opt/shared/data:ro");
-    // Read-write mounts keep their two-part spec.
     expect(runArgs).toContain("/work/C1:/workspace/C1");
   });
 
   test("flipping an existing mount to read-only is drift, so the container is recreated preserving contents", async () => {
     const mounts = [{ source: "/state/shared/data", target: "/opt/shared/data", readOnly: true }];
-    // A container created before the mount became read-only reports the
-    // two-part bind; the expected spec now carries :ro, so they disagree.
     const { exec, calls } = routerMock({
       status: "running",
       binds: ["/state/shared/data:/opt/shared/data"],
@@ -439,8 +428,6 @@ describe("DockerContainerManager", () => {
     expect(createArgs).toContain("mikan-migrate:mikan-sandbox-alice");
     expect(calls.some((args) => args[0] === "start")).toBe(true);
     expect(calls.some((args) => args[0] === "run")).toBe(false);
-    // The recreated container owns the content in its own writable layer, so
-    // the bridging snapshot is untagged once it is up.
     expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-alice"]);
   });
 
@@ -451,7 +438,6 @@ describe("DockerContainerManager", () => {
     ];
     const { exec, calls } = routerMock({
       status: "running",
-      // The old container also mounted public/c, which is no longer public.
       binds: ["/ws/a:/workspace/a", "/ws/b:/workspace/public/b:ro", "/ws/c:/workspace/public/c:ro"],
     });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
@@ -578,7 +564,6 @@ describe("DockerContainerManager", () => {
       const mounts = [{ source, target: "/workspace/office" }];
       const bind = `${source}:/workspace/office`;
 
-      // Capture the signature a fresh provision stamps on the container.
       const fresh = routerMock({ status: "missing" });
       const freshManager = new DockerContainerManager("ubuntu:24.04", {
         execFileImpl: fresh.exec as any,
@@ -590,9 +575,6 @@ describe("DockerContainerManager", () => {
         ?.slice("mikan.mount-signature=".length);
       expect(signature).toMatch(/^[a-f0-9]{64}$/);
 
-      // Ordinary activity inside the directory (a child created, mtime moved)
-      // must not read as drift — this was the production incident: event-file
-      // churn recreated every migrated container from the base image.
       writeFileSync(join(source, "log.jsonl"), "line\n");
       const withLabel = (sig: string) => {
         const { exec, calls } = routerMock({
@@ -619,8 +601,6 @@ describe("DockerContainerManager", () => {
       expect(logInfo).not.toHaveBeenCalledWith("Container mikan-sandbox-alice already running");
       logInfo.mockRestore();
 
-      // Replacing the directory itself leaves the container mounting a dead
-      // inode — that is real drift and must recreate (preserving contents).
       rmSync(source, { recursive: true, force: true });
       mkdirSync(source);
       const replaced = withLabel(signature!);
@@ -696,8 +676,6 @@ describe("DockerContainerManager", () => {
   });
 
   test("reconcile reaps containers keyed by the pre-office raw-conversation identity", async () => {
-    // legacyConversationResourceKey("D123") — the key conversation-scoped
-    // sandboxes used before resource identity moved to the office key.
     const legacyKey = legacyConversationResourceKey("D123");
     const execMock = vi
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()

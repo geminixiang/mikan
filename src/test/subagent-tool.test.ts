@@ -41,7 +41,6 @@ function testUsage(tokens: number, costUsd = 0): SubagentUsage {
 
 const TEST_PROFILES = new Map([["explorer", { description: "Evidence explorer" }]]);
 
-/** Every subagent runs under a profile, so tests default to a single stub one. */
 function makeTool(
   runSubagent: RunSubagent,
   profiles: ReadonlyMap<string, { description: string }> = TEST_PROFILES,
@@ -135,7 +134,6 @@ describe("subagent tool", () => {
 
     expect(runSubagent).toHaveBeenCalledWith(
       expect.objectContaining({ profile: "explorer" }),
-      // Second argument: the host-side progress sink, kept out of the request.
       expect.objectContaining({ onActivity: expect.any(Function) }),
     );
   });
@@ -156,12 +154,8 @@ describe("subagent tool", () => {
   });
 
   test("clamps a long label instead of rejecting the call", async () => {
-    // A label is a display string the dashboard already truncates. Bounding it
-    // in the schema let a 77-character title reject a whole four-node DAG, and
-    // validation reported that by echoing every node's task text back.
     const runSubagent = vi.fn(completedRun("ok"));
     const tool = makeTool(runSubagent);
-    // 78 chars: the label that once rejected a DAG now fits the bound intact.
     const titleLabel =
       "Execute DAG: clone, analyze risks, propose improvements, final recommendation";
     const oversizeLabel = "x".repeat(150);
@@ -207,8 +201,6 @@ describe("subagent tool", () => {
   });
 
   test("states each profile's tool grant on the menu", () => {
-    // A description alone reads as a stylistic constraint, so a model picks a
-    // no-tool profile for work that needs tools and narrates the call instead.
     const tool = createSubagentTool(
       completedRun("ok"),
       new Map([
@@ -330,8 +322,6 @@ describe("subagent tool", () => {
       } as const;
     }) as RunSubagent;
 
-    // Two conversations' tool instances draw from ONE process-wide account:
-    // each could run 2 concurrently on its own, but the shared ceiling is 2.
     const shared = new SubagentSlotPool(2);
     const bounded = (async (request: SubagentRunRequest) => {
       const release = await shared.acquire(request.signal);
@@ -600,12 +590,6 @@ describe("subagent tool", () => {
     expect((result.content[0] as { type: "text"; text: string }).text).toContain("[6] job 6");
   });
 
-  /**
-   * Every emission redraws the whole response, on a path that is deliberately
-   * not batched — and activity can change several times a second while text
-   * streams. Unbounded, this would spend the platform's edit budget on a
-   * character counter and re-create the rate limiting it exists to report.
-   */
   test("a burst of activity does not redraw the dashboard per report", async () => {
     const updates: unknown[] = [];
     const runSubagent: RunSubagent = (async (
@@ -626,7 +610,6 @@ describe("subagent tool", () => {
         output: "done",
         text: "done",
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- narrowed fake
     }) as any;
     const tool = makeTool(runSubagent);
 
@@ -637,8 +620,6 @@ describe("subagent tool", () => {
       (update) => updates.push(update),
     );
 
-    // Status transitions still emit every time; what must not scale with the
-    // burst is the activity reporting.
     expect(updates.length).toBeLessThan(10);
   });
 
@@ -660,7 +641,6 @@ describe("subagent tool", () => {
       }),
       expect.objectContaining({ onActivity: expect.any(Function) }),
     );
-    // The tool grant is the profile's to make, so nothing reaches the runner.
     expect(runSubagent.mock.calls[0][0]).not.toHaveProperty("tools");
     expect(result.content).toEqual([{ type: "text", text: "focused answer" }]);
     expect(result.details).toMatchObject({ status: "completed", runId: "subagent-1" });

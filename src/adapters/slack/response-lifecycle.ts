@@ -10,18 +10,10 @@ import type { SlackAdapterSessionPlan } from "./types.js";
 import { slackPersonaForProfile } from "./persona.js";
 
 const MAX_MAIN_LENGTH = 35000;
-/**
- * Slack's own SDK buffers streamed output at this size before sending, for
- * exactly the reason we do: appends are rate-limited per call, so forwarding
- * every token spends the budget on latency nobody can perceive.
- */
 const STREAM_MIN_DELTA_CHARS = 256;
 
 const MAX_THREAD_LENGTH = 20000;
 const FALLBACK_MAIN_LENGTH = 3000;
-// A separate paragraph preserves a rich_text block while headings/tables grow.
-// Inline suffixes become part of header/table, and Slack can reject replacing
-// an existing rich_text-only message with that non-rich-text-only shape.
 const WORKING_INDICATOR = "\n\n...";
 const TRUNCATION_NOTE_INCREMENTAL =
   "\n\n_(message truncated, ask me to elaborate on specific parts)_";
@@ -33,15 +25,6 @@ function isSlackMsgTooLong(err: unknown): boolean {
   return data?.error === "msg_too_long" || message.includes("msg_too_long");
 }
 
-/**
- * Where to cut a response that has to be truncated.
- *
- * Back off to the last line break rather than slicing at the exact budget: a
- * hard cut lands mid-word, and since the notice is inserted between the two
- * halves, the line cannot be read whole in either place. Only back off within
- * reach of the limit — a response with no line break in its final quarter has
- * nothing better to offer, and losing a quarter of it would be worse.
- */
 function truncationCut(text: string, limit: number): number {
   if (text.length <= limit) return text.length;
   const lastBreak = text.lastIndexOf("\n", limit);
@@ -70,8 +53,6 @@ async function postSlackTextWithFallback(
     const fallback = fallbackLongSlackText(text, overflowLink, prefixLength);
     try {
       await post(fallback.text);
-      // The continuation resumes from where the text was actually cut, which
-      // is not the nominal budget once it backs off to a line break.
       return { text: fallback.text, prefixLength: fallback.cut };
     } catch (err) {
       if (!isSlackMsgTooLong(err)) throw err;
@@ -120,10 +101,8 @@ class SlackResponseLifecycle {
   private assistantStatusFailureWarned = false;
   private statusEnded = false;
   private statusRequested = false;
-  /** The tail of an over-long response, awaiting delivery to a thread. */
   private pendingContinuation = "";
   private continuationAnchor: string | null = null;
-  /** How much of that tail the thread already holds. */
   private continuationSent = "";
 
   constructor(private readonly context: SlackResponseLifecycleOptions) {}
@@ -166,15 +145,6 @@ class SlackResponseLifecycle {
     return ids;
   }
 
-  /**
-   * Deliver the tail of an over-long response to its thread.
-   *
-   * Called only at points where the response is final, and idempotent, so the
-   * replace path and the end of the run can both call it without the thread
-   * seeing anything twice. Sending the whole remainder in one message is also
-   * what keeps it faithful: Slack trims message text, so every extra split is
-   * a chance to drop the whitespace it lands on.
-   */
   private async flushContinuation(): Promise<void> {
     if (!this.pendingContinuation || this.pendingContinuation === this.continuationSent) return;
     const extendsSentPrefix = this.pendingContinuation.startsWith(this.continuationSent);
@@ -256,11 +226,6 @@ class SlackResponseLifecycle {
     };
     const fallback = await postSlackTextWithFallback(write, text, resolveOverflowLink());
 
-    // The truncation notice promises a thread continuation unconditionally,
-    // so every path that prints it has to deliver one. Incremental renders
-    // reach this repeatedly as the text grows, so the tail is only recorded
-    // here and delivered once the response is final. Posting each increment
-    // would also lose whitespace that Slack trims at fragment boundaries.
     this.pendingContinuation = text.slice(fallback.prefixLength).trimStart();
     this.continuationAnchor = replyInThread
       ? (sessionPlan.rootTs ?? getResponseId() ?? responseId)
@@ -306,8 +271,6 @@ export function createSlackResponseContext({
     eventFilename,
   });
 
-  // Reserve before choosing, not after failing: the buffered path is a
-  // working answer rather than a degraded retry after a wasted request.
   const streamKind =
     replyInThread && rootTs && slack.tryReserveStreamStart() ? "native" : "buffered";
   const { responder } = createProgressiveRenderer({
@@ -370,13 +333,6 @@ export function createSlackResponseContext({
       lifecycle.endStatus();
       await responder.deleteResponse();
     },
-    /**
-     * Spike: post the specialist's answer as a fresh Slack message under that
-     * profile's own username/icon. `chat.update`/`chat.appendStream` cannot
-     * carry an identity, so the in-progress message (already posted under
-     * mikan's own identity) is left as-is and this always sends a new message
-     * rather than editing it.
-     */
     respondAsRole: async (profile, text) => {
       const identity = slackPersonaForProfile(profile);
       if (!identity) {

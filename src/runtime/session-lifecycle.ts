@@ -15,12 +15,10 @@ interface ConversationBarrier {
   workWaiters: Array<() => void>;
 }
 
-/** Wake everyone waiting on a barrier gate and clear the queue. */
 function releaseWaiters(waiters: Array<() => void>): void {
   for (const resolve of waiters.splice(0)) resolve();
 }
 
-/** Runtime state is addressed by office plus the platform session key. */
 function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
   return `${officeKey(address)}|${sessionKey}`;
 }
@@ -52,7 +50,6 @@ export class SessionLifecycle {
     return this.states.get(runtimeSessionId(address, sessionKey));
   }
 
-  /** Test/support insertion. Production materialization goes through acquire(). */
   set(state: ConversationRuntimeState): void {
     this.states.set(runtimeSessionId(state.address, state.sessionKey), state);
   }
@@ -72,10 +69,6 @@ export class SessionLifecycle {
     });
   }
 
-  /**
-   * A cached runner that may be handed out: one already writing the expected
-   * file, or one still busy with active work that must not be replaced.
-   */
   private reusableState(
     id: string,
     expectedFile: () => string | null | undefined,
@@ -89,10 +82,6 @@ export class SessionLifecycle {
     return this.isStateActive(id, existing) ? existing : undefined;
   }
 
-  /**
-   * Publish a freshly materialized runner, or dispose it when the office was
-   * invalidated (or shutdown began) while it was being built.
-   */
   private async publishMaterialized(
     id: string,
     address: OfficeAddress,
@@ -348,7 +337,6 @@ export class SessionLifecycle {
     }
   }
 
-  /** Explicit reset/replacement path; caller guarantees the runner will not be used again. */
   async discardAndWait(address: OfficeAddress, sessionKey: string): Promise<void> {
     const id = runtimeSessionId(address, sessionKey);
     const state = this.states.get(id);

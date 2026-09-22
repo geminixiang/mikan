@@ -5,21 +5,10 @@ import type { GithubWebhookOptions } from "./types.js";
 
 export type { GithubWebhookOptions } from "./types.js";
 
-/**
- * GitHub webhook receiver — a poke, not an event source. Deliveries are
- * unordered, unguaranteed, and may repeat, so the payload is never parsed into
- * the intake pipeline; a verified delivery only asks the bot to poll soon, and
- * the poll's watermark/dedup discipline decides what actually triggers
- * (DESIGN.md § Event source). Polling stays on as the missed-delivery
- * backstop.
- */
-
 export const GITHUB_WEBHOOK_PATH = "/github/webhook";
 
-/** Events that can carry a new conversation-triggering item. */
 const POKE_EVENTS = new Set(["issues", "issue_comment", "pull_request_review_comment"]);
 
-/** GitHub payloads are small; anything larger than this is not GitHub. */
 const MAX_BODY_BYTES = 1024 * 1024;
 
 function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | null> {
@@ -40,7 +29,6 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<Buffer | null
   });
 }
 
-/** Constant-time check of `X-Hub-Signature-256: sha256=<hex>` over the raw body. */
 export function verifyWebhookSignature(
   secret: string,
   body: Buffer,
@@ -53,10 +41,6 @@ export function verifyWebhookSignature(
   return timingSafeEqual(Buffer.from(received, "utf-8"), Buffer.from(expected, "utf-8"));
 }
 
-/**
- * Handle a request if it targets the webhook path. Returns false when the
- * request is not for this route so the caller falls through.
- */
 export async function handleGithubWebhookRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -92,7 +76,6 @@ export async function handleGithubWebhookRequest(
     res.end(JSON.stringify({ ok: true }));
     return true;
   }
-  // Respond before the poll runs — GitHub times deliveries out at 10s.
   res.writeHead(202).end();
   if (typeof event === "string" && POKE_EVENTS.has(event)) {
     options.onPoke();

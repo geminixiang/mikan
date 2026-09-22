@@ -44,26 +44,17 @@ const SyncStateSchema = Type.Object({
       cursor: Type.String(),
       seenComments: Type.Array(Type.Number()),
       seenIssues: Type.Array(Type.Number()),
-      // Optional: state files written before review-comment polling must keep
-      // loading — a schema failure re-baselines and silently drops dedup state.
       seenReviewComments: Type.Optional(Type.Array(Type.Number())),
     }),
   ),
 });
 
-/**
- * Re-fetch this far behind the cursor each poll. Dedup is by id (the
- * watermark), so the overlap only costs bandwidth and closes the boundary
- * races of a bare `since` timestamp (DESIGN.md § Event source).
- */
 const POLL_OVERLAP_MS = 5 * 60 * 1000;
 
 const MAX_SEEN_IDS = 5000;
 
-/** Webhook pokes within this window collapse into one poll tick. */
 const REQUEST_POLL_DEBOUNCE_MS = 1500;
 
-/** Effective role → rank, for the trigger-permission gate. */
 const PERMISSION_RANK = {
   none: 0,
   read: 1,
@@ -73,22 +64,14 @@ const PERMISSION_RANK = {
   admin: 5,
 };
 
-/**
- * Commenters need write or better to trigger the agent. Fixed, not a config
- * knob: it guards public repos (anyone can comment there), and the people who
- * ask an agent to change code are exactly the people with push access.
- */
 const REQUIRED_TRIGGER_RANK = PERMISSION_RANK.write;
 
-/** Rank for an arbitrary API-reported permission name; unknown names rank 0. */
 function rankOfPermission(name: string): number {
   return PERMISSION_RANK[name as keyof typeof PERMISSION_RANK] ?? 0;
 }
 
-/** Permission lookups are cached this long per repo+user. */
 const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000;
 
-/** In-memory form of one repo's persisted watermark. */
 interface RepoWatermark {
   baseline: string;
   cursor: string;
@@ -99,7 +82,6 @@ interface RepoWatermark {
 
 export const formatGithubContinuation = (partNum: number): string => `*(continued ${partNum})*`;
 
-/** Slack-style emoji short names → GitHub reaction content values. */
 const GITHUB_REACTIONS: Record<string, GithubReactionContent> = {
   "+1": "+1",
   thumbsup: "+1",
@@ -117,14 +99,11 @@ const GITHUB_REACTIONS: Record<string, GithubReactionContent> = {
 
 interface IncomingItem {
   ref: GithubConversationRef;
-  /** Comment id, rc-<id> for review comments, or GITHUB_ISSUE_BODY_TS for the body. */
   ts: string;
   user: string;
   text: string;
   createdAt: string;
-  /** Known only for issue-body items; comment first-contact resolves it via getIssue. */
   isPr?: boolean;
-  /** Present for inline PR review comments: the diff anchor to inject as context. */
   review?: {
     commentId: number;
     path: string;
@@ -134,9 +113,6 @@ interface IncomingItem {
   };
 }
 
-// Repo refs are lowercased at every entry point (env config here, the
-// installation API in start()) so conversation ids and sync-state keys never
-// depend on how a repo's name was spelled — GitHub is case-insensitive.
 function parseRepoList(repos: string[]): GithubRepoRef[] {
   return repos.map((entry) => {
     const [owner, repo, ...rest] = entry.split("/");
@@ -147,7 +123,6 @@ function parseRepoList(repos: string[]): GithubRepoRef[] {
   });
 }
 
-/** Sets iterate in insertion order; drop the oldest ids once over the cap. */
 function pruneSeen(seen: Set<number>): void {
   if (seen.size <= MAX_SEEN_IDS) return;
   let toDrop = seen.size - MAX_SEEN_IDS / 2;
@@ -157,7 +132,6 @@ function pruneSeen(seen: Set<number>): void {
   }
 }
 
-/** Issue number from a comment's `issue_url` (…/repos/o/r/issues/42). */
 function issueNumberFromUrl(issueUrl: string): number {
   const match = /\/issues\/(\d+)$/.exec(issueUrl);
   if (!match) {
@@ -166,7 +140,6 @@ function issueNumberFromUrl(issueUrl: string): number {
   return Number(match[1]);
 }
 
-/** PR number from a review comment's `pull_request_url` (…/repos/o/r/pulls/42). */
 function prNumberFromUrl(pullRequestUrl: string): number {
   const match = /\/pulls\/(\d+)$/.exec(pullRequestUrl);
   if (!match) {
@@ -175,7 +148,6 @@ function prNumberFromUrl(pullRequestUrl: string): number {
   return Number(match[1]);
 }
 
-/** Keep the tail: a review comment anchors to the hunk's final lines. */
 const MAX_DIFF_HUNK_CHARS = 1500;
 const MAX_THREAD_TURNS = 10;
 const MAX_THREAD_TURN_CHARS = 500;
@@ -184,7 +156,6 @@ export class GithubMessagingBot implements MessagingBot {
   private readonly client: GithubClient;
   private readonly handler: MessagingEventHandler;
   private readonly config: GithubBotConfig;
-  /** Host-side backend for the github_* tool pack; standalone from polling. */
   readonly ops: GithubOps;
   private appSlug: string | null = null;
   private botEmail: string | null = null;
@@ -212,17 +183,10 @@ export class GithubMessagingBot implements MessagingBot {
     this.ops = new GithubOps(this.client, { workspace: config.workspace });
   }
 
-  // ==========================================================================
-  // Public API (implements MessagingBot)
-  // ==========================================================================
-
   async start(): Promise<void> {
     this.stopped = false;
     this.stopping = false;
     this.appSlug = await this.client.getAppSlug();
-    // Canonical noreply author email (<user-id>+<login>@users.noreply.github.com)
-    // so the bot's commits link to its avatar/profile; degrade to a plain
-    // noreply spelling when the lookup fails.
     try {
       const botUserId = await this.client.getUserId(`${this.appSlug}[bot]`);
       this.botEmail = `${botUserId}+${this.appSlug}[bot]@users.noreply.github.com`;
@@ -240,8 +204,6 @@ export class GithubMessagingBot implements MessagingBot {
       log.logWarning("GitHub: installation has no repositories; nothing to poll");
     }
 
-    // Restore persisted watermarks; a repo watched for the first time gets a
-    // baseline of "now" so history never triggers (DESIGN.md § Event source).
     const persisted = this.loadSyncState();
     const now = new Date().toISOString();
     for (const repo of this.watchedRepos) {
@@ -366,10 +328,6 @@ export class GithubMessagingBot implements MessagingBot {
     };
   }
 
-  // ==========================================================================
-  // Internal helpers (used by context.ts)
-  // ==========================================================================
-
   async postComment(ref: GithubConversationRef, text: string): Promise<number> {
     const comment = await githubRetry(() =>
       this.client.createIssueComment(ref.owner, ref.repo, ref.number, text),
@@ -389,10 +347,6 @@ export class GithubMessagingBot implements MessagingBot {
     appendBotResponseLog(this.office(conversationId), text, ts);
   }
 
-  // ==========================================================================
-  // Private - polling
-  // ==========================================================================
-
   private getQueue(conversationId: string): MessagingEventQueue {
     let queue = this.queues.get(conversationId);
     if (!queue) {
@@ -402,11 +356,6 @@ export class GithubMessagingBot implements MessagingBot {
     return queue;
   }
 
-  /**
-   * Webhook poke: run a poll soon. Debounced so a burst of deliveries costs
-   * one tick; a poke landing mid-poll marks it pending and the tick re-runs,
-   * because the in-flight pass may already be past the poked repo's feeds.
-   */
   requestPoll(debounceMs = REQUEST_POLL_DEBOUNCE_MS): void {
     if (this.stopped || this.stopping) return;
     if (this.activePoll) {
@@ -421,7 +370,6 @@ export class GithubMessagingBot implements MessagingBot {
     this.requestPollTimer.unref();
   }
 
-  /** One poll tick over every watched repo. Public for tests. */
   async poll(): Promise<void> {
     if (this.stopped || this.stopping) return;
     if (this.activePoll) {
@@ -463,9 +411,6 @@ export class GithubMessagingBot implements MessagingBot {
     const since = new Date(Date.parse(state.cursor) - POLL_OVERLAP_MS).toISOString();
     let changed = false;
 
-    // Comment activity also bumps the parent issue's updated_at, so the issues
-    // list mostly echoes the comments list; only issues *created* since the
-    // baseline are new conversations (their body is the first message).
     const issues = (await this.client.listIssuesSince(repo.owner, repo.repo, since)) ?? [];
     changed =
       (await this.advanceFeed(state, state.seenIssues, issues, (issue) => ({
@@ -487,9 +432,6 @@ export class GithubMessagingBot implements MessagingBot {
         createdAt: comment.created_at,
       }))) || changed;
 
-    // Inline PR review comments live in their own endpoint and id space; the
-    // same watermark discipline applies. The bot's own thread replies (the
-    // github_review_reply tool) re-surface here and are dropped as Bot-authored.
     const reviewComments =
       (await this.client.listPullReviewCommentsSince(repo.owner, repo.repo, since)) ?? [];
     changed =
@@ -515,13 +457,6 @@ export class GithubMessagingBot implements MessagingBot {
     return changed;
   }
 
-  /**
-   * One feed's watermark advance — the same discipline for all three feeds:
-   * bump the cursor on any fresher updated_at, then let the id watermark plus
-   * the creation baseline decide what actually triggers (edits re-surface old
-   * items with a fresh updated_at). Bot-authored items advance the watermark
-   * without triggering.
-   */
   private async advanceFeed<
     T extends {
       id: number;
@@ -550,10 +485,6 @@ export class GithubMessagingBot implements MessagingBot {
     return changed;
   }
 
-  // ==========================================================================
-  // Private - watermark persistence
-  // ==========================================================================
-
   private loadSyncState(): GithubSyncState | undefined {
     try {
       return readJsonSchemaFileIfExists(
@@ -562,8 +493,6 @@ export class GithubMessagingBot implements MessagingBot {
         (detail) => `Malformed GitHub sync state at ${this.config.syncStatePath}: ${detail}`,
       );
     } catch (err) {
-      // A bad state file re-baselines (history won't trigger) rather than
-      // blocking startup; the next persist overwrites it.
       log.logWarning(
         "GitHub: ignoring unreadable sync state",
         err instanceof Error ? err.message : String(err),
@@ -572,7 +501,6 @@ export class GithubMessagingBot implements MessagingBot {
     }
   }
 
-  /** The persisted form of the current watermarks; the test/inspection surface. */
   syncStateSnapshot(): GithubSyncState {
     const state: GithubSyncState = { repos: {} };
     for (const [repoKey, watermark] of this.repoState) {
@@ -592,11 +520,6 @@ export class GithubMessagingBot implements MessagingBot {
     atomicWritePrivateFile(this.config.syncStatePath, JSON.stringify(this.syncStateSnapshot()));
   }
 
-  // ==========================================================================
-  // Private - triggering
-  // ==========================================================================
-
-  /** Fresh regex per call: the `g` flag makes `test`/`replace` stateful. */
   private mentionPattern(): RegExp | null {
     return this.appSlug ? new RegExp(`@${this.appSlug}(?![\\w-])`, "gi") : null;
   }
@@ -611,7 +534,6 @@ export class GithubMessagingBot implements MessagingBot {
     return (pattern ? text.replace(pattern, "") : text).trim();
   }
 
-  /** The Conversation office for a GitHub conversation id (one PR/issue). */
   private office(conversationId: string): Office {
     return this.config.workspace.office(createOfficeAddress("github", conversationId));
   }
@@ -620,11 +542,6 @@ export class GithubMessagingBot implements MessagingBot {
     return existsSync(this.office(conversationId).logPath);
   }
 
-  /**
-   * True when `user` holds at least write permission on the repo. Fails
-   * closed: a failed lookup denies the trigger (and logs) rather than
-   * letting an unverified commenter drive the agent.
-   */
   private async hasTriggerPermission(ref: GithubConversationRef, user: string): Promise<boolean> {
     const cacheKey = `${ref.owner}/${ref.repo}#${user}`;
     const cached = this.permissionCache.get(cacheKey);
@@ -636,8 +553,6 @@ export class GithubMessagingBot implements MessagingBot {
       const role = await githubRetry(() =>
         this.client.getCollaboratorPermission(ref.owner, ref.repo, user),
       );
-      // Custom role_name values are unrankable; the legacy permission field
-      // still carries their closest standard mapping, so take the stronger.
       rank = Math.max(rankOfPermission(role.role_name ?? ""), rankOfPermission(role.permission));
     } catch (err) {
       log.logWarning(
@@ -657,13 +572,8 @@ export class GithubMessagingBot implements MessagingBot {
     const conversationId = buildGithubConversationId(item.ref);
     const mentioned = this.isMentioned(item.text);
     const participating = this.isParticipating(conversationId);
-    // Narrow trigger (DESIGN.md): only threads the bot is mentioned in or
-    // already participates in. Everything else is ignored without logging so
-    // busy repos don't grow conversation dirs for untouched issues.
     if (!mentioned && !participating) return;
 
-    // Permission gate: on public repos anyone can comment, so a mention from
-    // anyone below write permission is ignored entirely (no log, no state).
     if (!(await this.hasTriggerPermission(item.ref, item.user))) {
       log.logInfo(
         `GitHub: ignoring ${conversationId} comment from ${item.user} (below write permission)`,
@@ -698,7 +608,6 @@ export class GithubMessagingBot implements MessagingBot {
     await processMessageIntake({
       eventBase,
       addressed: true,
-      // Match on the user-typed text, not the review-decorated messageText.
       magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
       busyPolicy: "queue",
       logEntryBase: {
@@ -709,17 +618,10 @@ export class GithubMessagingBot implements MessagingBot {
         text: messageText,
         isMessagingBot: false,
       },
-      // log.jsonl existence is the participation authority for this adapter:
-      // a first-contact magic word ("@bot stop" on an untouched issue) must
-      // not materialize the log, or every later comment from any writer
-      // would be treated as addressed to a conversation the bot never joined.
       log: (entry) => {
         if (!participating && matchMagicWord(cleanedText) === "stop") return;
         this.logToFile(conversationId, entry);
       },
-      // GitHub has no attachments; the prep hook is used to lay down the
-      // issue context and repo clone only for messages that will dispatch,
-      // and before the comment itself is logged.
       processAttachments: async () => {
         await this.prepareConversation(item, conversationId, participating);
         return [];
@@ -732,13 +634,6 @@ export class GithubMessagingBot implements MessagingBot {
     });
   }
 
-  /**
-   * First contact: log the issue title/body ahead of the comment so the
-   * session history starts with what the thread is about. The clone is
-   * (re)attempted on every trigger while ./repo is missing — a no-op once
-   * it exists — so a failed first clone (e.g. App permissions granted
-   * later) heals on the next mention instead of wedging the conversation.
-   */
   private async prepareConversation(
     item: IncomingItem,
     conversationId: string,
@@ -747,8 +642,6 @@ export class GithubMessagingBot implements MessagingBot {
     let isPrHint = item.isPr;
     if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
       const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
-      // Only comments arrive without the PR-ness hint; review comments carry
-      // isPr: true (they only exist on PRs) and that knowledge is authoritative.
       if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
     }
     if (!existsSync(conversationRepoDir(this.office(conversationId)))) {
@@ -757,12 +650,6 @@ export class GithubMessagingBot implements MessagingBot {
     }
   }
 
-  /**
-   * Decorates an inline review comment with its diff anchor and (for replies)
-   * the thread's earlier turns, so the agent knows which code the feedback is
-   * about without hunting through the PR. The rc-<id> in the header is what
-   * github_review_reply takes to answer in-thread.
-   */
   private async formatReviewMessage(item: IncomingItem, cleanedText: string): Promise<string> {
     const review = item.review!;
     const location = review.line !== null ? `${review.path}:${review.line}` : review.path;
@@ -784,10 +671,6 @@ export class GithubMessagingBot implements MessagingBot {
     return parts.join("\n");
   }
 
-  /**
-   * Earlier turns of one review thread (root + replies before the trigger),
-   * newest-truncated. Fail-soft: context is a nicety, the trigger is not.
-   */
   private async reviewThreadContext(
     ref: GithubConversationRef,
     rootId: number,
@@ -834,10 +717,6 @@ export class GithubMessagingBot implements MessagingBot {
       );
       return null;
     }
-    // Dated just before the triggering comment, NOT issue.created_at: history
-    // sync date-sorts entries and drops anything older than its recency
-    // window, so an old issue's real creation date would silently evict the
-    // one message that says what the thread is about.
     const triggerMs = Date.parse(triggerCreatedAt);
     const contextDate = new Date((Number.isFinite(triggerMs) ? triggerMs : Date.now()) - 1000);
     this.logToFile(conversationId, {
@@ -852,15 +731,6 @@ export class GithubMessagingBot implements MessagingBot {
     return issue;
   }
 
-  // ==========================================================================
-  // Repo clone
-  // ==========================================================================
-
-  /**
-   * Clone the conversation's repo into its dir (bind-mounted into the
-   * sandbox) using an ephemeral contents:read token that never leaves the
-   * host. Non-fatal: a failed clone degrades to the pre-clone experience.
-   */
   private async ensureRepoClone(
     ref: GithubConversationRef,
     conversationId: string,

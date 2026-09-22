@@ -8,12 +8,6 @@ import type { Executor } from "../sandbox/index.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "../sandbox/utils.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 
-/**
- * Contract test for the sandbox-backed `ExecutionEnv`: an exec-only executor
- * (the container/cloudflare shape) is wrapped and driven through pi's
- * FileSystem/Shell surface, including the no-throw `Result` invariant.
- */
-
 function onlyShellEnv(dir: string) {
   const host = new HostExecutor();
   const executor: Executor = {

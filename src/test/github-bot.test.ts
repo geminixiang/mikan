@@ -159,7 +159,6 @@ const CONVERSATION_ID = "GH_octo_widgets_5";
 const CONVERSATION_OFFICE = officeKey(createOfficeAddress("github", CONVERSATION_ID));
 
 async function settleQueues(): Promise<void> {
-  // MessagingEventQueue processes asynchronously; yield a few microtask turns.
   for (let i = 0; i < 5; i++) {
     await new Promise((resolve) => setImmediate(resolve));
   }
@@ -197,8 +196,6 @@ describe("GitHub conversation ids", () => {
   });
 
   test("review-comment ts round-trips and other ts kinds parse to null", () => {
-    // The rc- prefix is what keeps a review-comment id from being routed to
-    // an issue-comment endpoint — the two id families overlap numerically.
     expect(githubReviewCommentTs(8001)).toBe("rc-8001");
     expect(parseReviewCommentTs("rc-8001")).toBe(8001);
     expect(parseReviewCommentTs("8001")).toBeNull();
@@ -305,8 +302,6 @@ describe("GithubMessagingBot", () => {
   });
 
   test("first contact via comment logs the issue body before the comment", async () => {
-    // Issue created long ago: its log entry must still be dated just before
-    // the triggering comment, or history sync's recency window drops it.
     client.getIssue.mockResolvedValue(
       makeIssue({ created_at: "2020-01-01T00:00:00Z", updated_at: "2020-01-01T00:00:00Z" }),
     );
@@ -435,9 +430,6 @@ describe("GithubMessagingBot", () => {
   });
 
   test("first-contact 'stop' does not create participation state", async () => {
-    // A "@bot stop" on an issue the bot never joined must not materialize
-    // log.jsonl — its existence is the participation authority, and creating
-    // it would make every later unmentioned comment trigger the agent.
     const bot = makeBot();
     await bot.start();
     client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan stop" })]);
@@ -448,7 +440,6 @@ describe("GithubMessagingBot", () => {
     expect(handler.handleEvent).not.toHaveBeenCalled();
     expect(existsSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"))).toBe(false);
 
-    // And a later unmentioned comment still does not trigger.
     client.listIssueCommentsSince.mockResolvedValue([
       makeComment({ id: 991, body: "unrelated follow-up" }),
     ]);
@@ -510,7 +501,6 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    // Poll re-fetches with an overlap window behind the persisted cursor.
     const since = client.listIssueCommentsSince.mock.calls[0][2] as string;
     expect(Date.parse(since)).toBeLessThan(Date.parse(cursor));
   });
@@ -708,8 +698,6 @@ describe("GithubMessagingBot", () => {
   });
 
   test("a participating conversation with a missing clone retries on the next trigger", async () => {
-    // Simulate a conversation whose first-contact clone failed (log exists,
-    // repo dir does not) — e.g. App permissions were granted only later.
     mkdirSync(join(workingDir, CONVERSATION_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
     client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
@@ -867,7 +855,6 @@ describe("GithubMessagingBot", () => {
     expect(event.text).toContain("+const widgetCount = 1;");
     expect(event.text).toContain("please rename this");
     expect(event.text).not.toContain("@mikan");
-    // Review comments only exist on PRs; first contact clones the PR head.
     expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
   });
 
@@ -919,7 +906,6 @@ describe("GithubMessagingBot", () => {
     const statePath = join(workingDir, "state", "github-sync.json");
     mkdirSync(join(workingDir, "state"), { recursive: true });
     const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    // Old-format file: no seenReviewComments field.
     writeFileSync(
       statePath,
       JSON.stringify({
@@ -938,8 +924,6 @@ describe("GithubMessagingBot", () => {
     await bot.poll();
     await settleQueues();
 
-    // Baseline survived (no re-baseline): the downtime review comment triggers,
-    // and the old seenComments dedup state is intact.
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const state = JSON.parse(readFileSync(statePath, "utf-8"));
     expect(state.repos["octo/widgets"].seenComments).toEqual([9001]);
@@ -969,7 +953,6 @@ describe("GithubMessagingBot", () => {
     expect(event.text).toContain("Thread so far:");
     expect(event.text).toContain("@bob: root: why this name?");
     expect(event.text).toContain("@alice: because clarity");
-    // The triggering comment itself is not repeated as a prior turn.
     expect(event.text.indexOf("settle this")).toBe(event.text.lastIndexOf("settle this"));
   });
 

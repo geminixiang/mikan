@@ -5,9 +5,6 @@ import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
 
-// Components V2 allows 4000 characters across a message's text, against 2000
-// for classic content — the reason for using it at all. The margin leaves room
-// for the working indicator and for the continuation marker on a split.
 const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 
 const formatDiscordContinuation = (partNum: number): string => `*(continued ${partNum})*`;
@@ -47,7 +44,6 @@ export function createDiscordAdapters(
     threadTs: event.thread_ts,
   });
 
-  // The bot's getMessagingInfo() is the single authority for platform info.
   const platform = bot.getMessagingInfo();
 
   function postFirst(text: string): Promise<string> {
@@ -64,14 +60,10 @@ export function createDiscordAdapters(
     workingIndicator: " ...",
     supportsDeltas: true,
     typing: {
-      // Send immediately and repeat every 8s (Discord clears indicator after ~10s)
       send: () => bot.sendTyping(channelId),
       intervalMs: 8000,
       stopOnSend: true,
     },
-    // The last step before sending: the model writes standard markdown, and
-    // the parts Discord cannot render are converted here rather than by
-    // constraining what the model may write.
     prepareSource: (text) => formatDiscordMarkdown(text),
     formatToolResult: formatMarkdownToolResult,
     responseErrorContext: (responseId) => ({
@@ -87,8 +79,6 @@ export function createDiscordAdapters(
     }),
     post: postFirst,
     update: (id, text) => bot.updateMessageRaw(channelId, id, text),
-    // Returns the id so the renderer can edit this overflow message on the
-    // next redraw instead of posting another copy of the tail.
     postExtra: async (text, responseId) => {
       if (threadTargetId) return bot.postInThread(channelId, threadTargetId, text);
       if (replyTargetId) return bot.postReply(channelId, replyTargetId, text);

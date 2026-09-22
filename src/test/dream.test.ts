@@ -26,7 +26,7 @@ import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office, Workspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 
-const DREAM_NOW = new Date("2026-06-01T19:00:00.000Z"); // 03:00 in Taiwan
+const DREAM_NOW = new Date("2026-06-01T19:00:00.000Z");
 
 let root: string;
 let office: Office;

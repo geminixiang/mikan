@@ -1,44 +1,5 @@
-/**
- * Minimal Chrome DevTools Protocol driver for the Discord desktop app.
- *
- * Dependency-free on purpose: CDP is HTTP plus a WebSocket, and Node has both.
- * A third-party "Electron MCP" would mean handing unaudited code a logged-in
- * Discord session, which is a far worse trade than the code here.
- *
- * Reach for this only for what Discord's REST API cannot answer — how a
- * message *renders*. For anything about what a message contains, the API is
- * both easier and more precise; see SKILL.md.
- *
- * Start Discord with the port open first (9334 leaves 9333 to Slack, so both
- * can be driven at once):
- *   osascript -e 'quit app "Discord"'
- *   open -a Discord --args --remote-debugging-port=9334
- *
- * Usage:
- *   node cdp.mjs eval    '<javascript expression>'
- *   node cdp.mjs click   '<css selector>'
- *   node cdp.mjs clickat '<exact element text>'
- *   node cdp.mjs text    '<css selector>'
- *   node cdp.mjs type    '<message text>'     # compose without sending
- *   node cdp.mjs press   '<Enter|Escape|Backspace|Tab>'
- *   node cdp.mjs shot    '<output.png>'      # what the screen actually shows
- *   node cdp.mjs send    '<message text>'     # requires CDP_EXPECT_CONVERSATION
- *
- * Environment:
- *   CDP_PORT                  debugging port (default 9334)
- *   CDP_EXPECT_CONVERSATION   channel id that must appear in the current URL
- *                             before `send` will deliver anything
- */
 const PORT = Number(process.env.CDP_PORT ?? 9334);
 
-/**
- * The message composer, and only it.
- *
- * Discord's quick-switcher search box is *also* a Slate editor, so matching on
- * `[data-slate-editor]` alone can land on it — and text typed there silently
- * becomes a search instead of a message. `role=textbox` is what separates the
- * composer from the search box's `role=combobox`.
- */
 const COMPOSER = '[data-slate-editor="true"][role="textbox"]';
 
 async function pageSocketUrl() {
@@ -51,7 +12,6 @@ async function pageSocketUrl() {
   return page.webSocketDebuggerUrl;
 }
 
-/** One socket for the whole run, so multi-step commands share a session. */
 class Session {
   #socket;
   #nextId = 1;
@@ -112,10 +72,6 @@ class Session {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Click through the element's own handler. Discord renders controls as nested
- * spans and svgs, so walk up to the nearest node that has `.click()`.
- */
 const CLICK = (selector) => `(() => {
   const start = document.querySelector(${JSON.stringify(selector)});
   if (!start) return "NOT FOUND: " + ${JSON.stringify(selector)};
@@ -137,8 +93,6 @@ async function focusComposer(session) {
 }
 
 async function clearComposer(session) {
-  // One Backspace per character: Slate reconciles from real input events, and
-  // ignores a synthetic Cmd+A, so there is no select-all to lean on.
   const existing = await session.evaluate(
     `(document.querySelector(${JSON.stringify(COMPOSER)})?.textContent ?? "").length`,
   );
@@ -156,17 +110,7 @@ async function clearComposer(session) {
   await sleep(150);
 }
 
-/**
- * Type into the composer and press Enter through the Input domain rather than
- * synthetic DOM events. Discord's composer is a Slate editor: it builds its
- * model from real input and ignores `textContent` writes or hand-built
- * KeyboardEvents.
- */
 async function sendMessage(session, text) {
-  // A human is usually using this same Discord. The view can change between
-  // deciding to send and sending, so bind delivery to the conversation we
-  // meant rather than to whatever is on screen — a misdelivered message lands
-  // in a real channel and cannot be recalled.
   const expected = process.env.CDP_EXPECT_CONVERSATION;
   if (!expected) {
     throw new Error("refusing to send: set CDP_EXPECT_CONVERSATION to the target channel id");
@@ -177,8 +121,6 @@ async function sendMessage(session, text) {
   }
 
   await focusComposer(session);
-  // An attempt that failed to send leaves its text behind, and inserting on
-  // top of it silently doubles the message.
   await clearComposer(session);
 
   await session.send("Input.insertText", { text });
@@ -235,10 +177,6 @@ try {
     await sleep(500);
     value = `pressed ${argument}`;
   } else if (command === "clickat") {
-    // Real mouse events at the element's own viewport coordinates, for
-    // controls that ignore `element.click()`. Not screen coordinates: this
-    // goes through the debugger into the page's own space, so nothing depends
-    // on window position or which application is frontmost.
     const box = await session.evaluate(`(() => {
       const match = [...document.querySelectorAll("button,[role=button],a")]
         .find((el) => (el.textContent || "").trim() === ${JSON.stringify(argument)});
@@ -259,8 +197,6 @@ try {
     await sleep(800);
     value = `clicked "${argument}" at ${Math.round(box.x)},${Math.round(box.y)}`;
   } else if (command === "shot") {
-    // A screenshot is the only artefact that answers "how does this look",
-    // which is the entire reason to reach past the REST API.
     const { data } = await session.send("Page.captureScreenshot", { format: "png" });
     const { writeFileSync } = await import("node:fs");
     writeFileSync(argument, Buffer.from(data, "base64"));

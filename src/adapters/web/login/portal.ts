@@ -18,8 +18,6 @@ import { reportUserFacingError } from "../../../observability/index.js";
 import { PRODUCT_NAME } from "../../messages.js";
 import { defaultVaultTargetPath, type VaultManager } from "../../../vault/index.js";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
-
 export type { NotifyFn } from "./types.js";
 
 const TTL_MS = 15 * 60 * 1000;
@@ -259,18 +257,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   },
 ];
 
-// ── request handler ───────────────────────────────────────────────────────────
-
-/**
- * Start a small HTTP server that receives credential onboarding callbacks from the web portal.
- *
- * Routes:
- *   GET  /health              — health check
- *   GET  /link?token=xxx      — credential onboarding page
- *   POST /api/link/complete   — API key completion endpoint
- *   POST /api/oauth/start     — creates provider OAuth redirect URL
- *   GET  /oauth/callback      — OAuth callback endpoint
- */
 export function createLoginRequestHandler(
   linkTokenStore: InMemoryLinkTokenStore,
   vaultManager: VaultManager,
@@ -378,16 +364,6 @@ export function createLoginRequestHandler(
   };
 }
 
-/**
- * Block cross-site POSTs to the credential endpoints. Two defenses:
- *   1. Require Content-Type: application/json, which forces a CORS preflight
- *      for any cross-origin fetch and rules out `<form enctype="text/plain">`
- *      tricks that could otherwise smuggle a JSON body.
- *   2. When MIKAN_LINK_URL is configured, require that the Origin (or Referer,
- *      as a fallback for browsers that strip Origin) matches that base URL.
- *      This stops an attacker-controlled page — even one that somehow stole a
- *      victim's link token — from completing the flow.
- */
 function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   const contentType = (req.headers["content-type"] as string | undefined)
     ?.split(";")[0]
@@ -401,8 +377,6 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
 
   const configured = resolveLinkBaseUrl();
   if (!configured) {
-    // No trusted origin to compare against in local/dev mode; the loopback
-    // bind already prevents cross-host access.
     return true;
   }
 
@@ -410,7 +384,6 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   try {
     configuredOrigin = new URL(configured).origin;
   } catch {
-    // Misconfigured MIKAN_LINK_URL — fail closed.
     res.writeHead(500, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Server misconfiguration" }));
     return false;
@@ -425,7 +398,6 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   return true;
 }
 
-/** Best-effort origin of the request, derived from Origin or Referer. */
 function requestOrigin(req: IncomingMessage): string | undefined {
   const origin = (req.headers.origin as string | undefined)?.trim();
   if (origin && origin !== "null") return origin;
@@ -438,8 +410,6 @@ function requestOrigin(req: IncomingMessage): string | undefined {
     return undefined;
   }
 }
-
-// ── HTML helpers ───────────────────────────────────────────────────────────────
 
 const esc = escapeHtml;
 
@@ -1216,8 +1186,6 @@ function renderSentryCliConfig(updates: Record<string, string>): string | undefi
   return lines.join("\n");
 }
 
-// ── API-key completion ────────────────────────────────────────────────────────
-
 async function handleLinkComplete(
   data: Partial<LinkCompleteBody>,
   linkTokenStore: InMemoryLinkTokenStore,
@@ -1240,8 +1208,6 @@ async function handleLinkComplete(
 
   const envKeys = Object.keys(updates).toSorted((left, right) => left.localeCompare(right));
 
-  // Atomic consume prevents two concurrent requests from both passing the
-  // validity check before either deletes the token.
   const linkToken = linkTokenStore.consume(data.token);
   if (!linkToken) {
     res.writeHead(400, { "Content-Type": "application/json" });
@@ -1322,8 +1288,6 @@ async function handleLinkComplete(
     });
   });
 }
-
-// ── OAuth flow ────────────────────────────────────────────────────────────────
 
 async function handleOAuthStart(
   data: Partial<OAuthStartBody>,
@@ -1425,7 +1389,6 @@ function resolveOAuthCallback(options: OAuthCallbackOptions): ResolvedOAuthCallb
   const code = url.searchParams.get("code") ?? "";
   const oauthError = url.searchParams.get("error");
 
-  // Atomic pop: whatever path we take from here, this state is spent.
   const pending = oauthStates.get(state);
   if (pending) oauthStates.delete(state);
 
@@ -1459,7 +1422,6 @@ function resolveOAuthCallback(options: OAuthCallbackOptions): ResolvedOAuthCallb
     return undefined;
   }
 
-  // Atomic consume keeps the callback one-shot across the token exchange await.
   const linkToken = linkTokenStore.consume(pending.linkToken);
   if (!linkToken) {
     res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });

@@ -20,13 +20,6 @@ const githubPrSchema = Type.Object({
 
 type GithubPrArgs = GithubPrRequest;
 
-/**
- * The `github_pr` tool pushes a branch the agent prepared in the
- * conversation's ./repo clone and opens a pull request as the GitHub App.
- * The push and API calls run host-side with an ephemeral repo-scoped token;
- * the sandbox never holds credentials. Wired per run via the setter, and only
- * for GitHub conversations.
- */
 export function createGithubPrTool(): {
   tool: AgentTool<typeof githubPrSchema>;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;

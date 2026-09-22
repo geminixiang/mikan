@@ -17,22 +17,12 @@ const CHANNEL_KINDS: readonly PlatformChannelKind[] = [
   "external",
 ];
 
-/**
- * Record the platform's own channel kind for this conversation, as observed
- * by the adapter at message intake. Stored under the host-only office state
- * dir (never the sandbox-mounted workspace), so sandboxed code cannot
- * promote its own conversation into the shared pool. Written only on change;
- * the value is a snapshot as of the last message, which is exactly the
- * freshness the projection needs — a conversation that never speaks again
- * never needs a fresher value.
- */
 export function recordPlatformChannelKind(office: Office, kind: PlatformChannelKind): void {
   if (readPlatformChannelKind(office) === kind) return;
   ensureDirExists(office.stateDir);
   atomicWritePrivateFile(join(office.stateDir, CHANNEL_KIND_FILE), kind + "\n");
 }
 
-/** The recorded platform channel kind, or undefined when never observed. */
 export function readPlatformChannelKind(office: Office): PlatformChannelKind | undefined {
   const path = join(office.stateDir, CHANNEL_KIND_FILE);
   let raw: string;
@@ -52,25 +42,13 @@ export function readPlatformChannelKind(office: Office): PlatformChannelKind | u
     : undefined;
 }
 
-/** Where an office's visibility came from; shown to operators instead of raw values. */
 export interface OfficeVisibilityDecision {
   visibility: WorkspaceVisibility;
   source: "platform" | "override" | "unknown";
 }
 
-/** Platforms whose public conversations become public offices (ADR 0008). */
 const PUBLIC_CAPABLE_PLATFORMS: ReadonlySet<string> = new Set(["slack"]);
 
-/**
- * One dimension, derived from the platform (ADR 0008): Slack public channels
- * are public; private channels, DMs, group DMs, and externally shared
- * conversations are private; a Slack conversation whose kind has not been
- * recorded yet fails closed to private. Every other platform is private by
- * decision, not by omission — Telegram groups, Discord channels, and GitHub
- * threads have no "visible to the whole workspace" notion that maps cleanly
- * onto a shared office. An operator may narrow a public conversation to
- * private, never the reverse.
- */
 export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecision {
   if (loadOfficeVisibilityOverride(office) === "private") {
     return { visibility: "private", source: "override" };
@@ -83,14 +61,6 @@ export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecisio
   return { visibility: kind === "public_channel" ? "public" : "private", source: "platform" };
 }
 
-/**
- * Every public office other than `self`, as read-only mounts under
- * `/workspace/public/<key>`. Bind mounts rather than a symlink directory:
- * symlinks would resolve against the container's own filesystem, where host
- * paths do not exist. A public channel appearing or changing visibility
- * changes the mount signature, so affected containers rebuild on their next
- * message with contents preserved.
- */
 function publicOfficeMounts(self: Office): ContainerMount[] {
   const { workspace } = self;
   const mounts: ContainerMount[] = [];
@@ -103,14 +73,6 @@ function publicOfficeMounts(self: Office): ContainerMount[] {
   return mounts.toSorted((a, b) => a.target.localeCompare(b.target));
 }
 
-/**
- * The single policy seam for a managed office. It both materializes the
- * host-side roots and authorizes the prompt sources that describe them.
- * Every office gets the same shape (ADR 0008): its own directory read-write,
- * every other public office read-only under /workspace/public, and the
- * workspace-global knowledge read-write for public offices or read-only for
- * private ones. No layout mounts the workspace root.
- */
 export function resolveWorkspaceProjection(office: Office): WorkspaceProjection {
   const { workspace } = office;
   const decision = resolveOfficeVisibility(office);

@@ -8,14 +8,8 @@ export interface RecentLine {
   isMikan: boolean;
 }
 
-/** Maps a Slack user id to a display name; undefined when unknown. */
 export type SlackNameResolver = (userId: string) => string | undefined;
 
-/**
- * Rewrite native `<@U…>` mentions as `@Name` so Jev can tell "@someone else"
- * from "@mikan" — the raw id carries no such signal. mikan's own id renders
- * as `@mikan` regardless of its Slack profile name.
- */
 export function humanizeMentions(
   text: string,
   resolve: SlackNameResolver,
@@ -28,13 +22,6 @@ export function humanizeMentions(
   });
 }
 
-/**
- * Recent messages from log.jsonl in the same scope as `event` — the channel's
- * top level, or one thread (root included) — oldest first. Streamed bot
- * responses are logged in chunks sharing one ts and are merged back into one
- * line. Jev decisions score these alongside the new message, since a bare
- * "好啊" or "好了嗎" cannot be judged on its own.
- */
 export function readRecentScope(
   conversationDir: string,
   event: { ts: string; thread_ts?: string },

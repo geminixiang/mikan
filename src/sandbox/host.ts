@@ -11,7 +11,6 @@ import type {
 } from "./types.js";
 import { createMountedRuntimePathContext, killProcessTree, linkAbortSignal } from "./utils.js";
 
-/** Cap on captured output, so a runaway command cannot exhaust the daemon. */
 const MAX_CAPTURE_CHARS = 10 * 1024 * 1024;
 
 interface Capture {
@@ -104,7 +103,6 @@ function spawnShell(command: string, cwd?: string): ChildProcess {
   });
 }
 
-/** Accumulate the child's streams into one capped buffer per stream. */
 function captureOutput(child: ChildProcess): Capture {
   const capture: Capture = { stdout: "", stderr: "" };
   for (const stream of ["stdout", "stderr"] as const) {

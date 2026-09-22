@@ -41,8 +41,6 @@ beforeEach(() => {
     tmpdir(),
     `mikan-session-runtime-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  // Every runtime path reads global settings and the office registry; a
-  // test-scoped state dir keeps that off the developer's real ~/.mikan.
   const stateDir = join(workingDir, "state");
   mkdirSync(stateDir, { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
@@ -151,10 +149,6 @@ const bot = {
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
 } as unknown as MessagingBot;
 
-/**
- * Seed a live shared-session state whose runner is entirely stubbed, so a test
- * can assert on the dispatch gate without standing up a model.
- */
 function seedRunnerState(runtime: ConversationRuntime): PiAgentWrapper {
   const runner = {
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
@@ -686,8 +680,6 @@ describe("ConversationRuntime lifecycle", () => {
     const sync = new ChatHistorySync();
     await sync.resetSession({ conversationDir, sessionKey: "C123" });
 
-    // Scope resolution only materializes; run the runtime's incremental
-    // sync explicitly, as ConversationRuntime does per event.
     const syncOnce = async (file: string) => {
       const session = await openManagedSession(file, conversationDir);
       try {

@@ -55,8 +55,6 @@ describe("createGithubToolPack", () => {
   });
 
   test("packs from separate factory calls have independent bind state", async () => {
-    // Packs are injected as factories and instantiated per runner: bind state
-    // must never leak across concurrently running conversations.
     const ops = mockOps();
     const packA = createGithubToolPack(ops);
     const packB = createGithubToolPack(ops);
@@ -72,7 +70,6 @@ describe("createGithubToolPack", () => {
       title: "a",
     });
 
-    // B rebinding to a non-github platform must not disable A's tools either.
     packB.bindRun({ conversationId: "D123", platformName: "slack" });
     await prA.execute("id", { branch: "pi/a2", title: "a2" });
     expect(ops.pushAndCreatePr).toHaveBeenLastCalledWith("GH_o_r_1", {

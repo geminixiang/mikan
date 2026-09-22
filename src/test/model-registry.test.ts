@@ -47,8 +47,6 @@ describe("MikanModels.resolve", () => {
   });
 
   test("maps a production-shaped provider entry field-for-field (maxOutputTokens alias)", () => {
-    // Mirrors the deployed models.json shape: inline apiKey, provider compat,
-    // thinkingLevelMap, and the maxOutputTokens spelling for maxTokens.
     const registry = withTempRegistry({
       providers: {
         "agent-model": {
@@ -126,9 +124,6 @@ describe("MikanModels.getApiKeyForProvider", () => {
 
 describe("MikanModels built-in catalog", () => {
   test("resolves the onboarding default model and its lazy provider adapter", async () => {
-    // Mirrors src/settings/index.ts's ONBOARD_SETTINGS default. A Pi upgrade
-    // that removes this model or renames its lazy api subpath export must
-    // fail here instead of silently breaking `/model` and onboarding.
     const registry = MikanModels.create({
       modelsJsonPath: join(mkdtempSync(join(tmpdir(), "mikan-catalog-gate-")), "models.json"),
     });
@@ -142,9 +137,6 @@ describe("MikanModels built-in catalog", () => {
   });
 
   test("exposes every lazy provider api subpath the harness imports", async () => {
-    // src/harness/models.ts wires these subpaths into CUSTOM_API_STREAMS for
-    // custom models.json providers; a renamed/removed export breaks that
-    // wiring at import time rather than at a call site, so gate all of them.
     const modules = await Promise.all([
       import("@earendil-works/pi-ai/api/anthropic-messages.lazy"),
       import("@earendil-works/pi-ai/api/azure-openai-responses.lazy"),

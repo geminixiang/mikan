@@ -161,7 +161,6 @@ describe("SessionStore", () => {
 
     await expect(SessionStore.open(file)).rejects.toThrow(/legacy v3/);
     await expect(SessionStore.open(file)).rejects.toThrow(/mikan sessions migrate/);
-    // The file is left untouched for the migration script.
     expect(readFileSync(file, "utf-8")).toBe(original);
   });
 
@@ -209,8 +208,6 @@ describe("SessionStore", () => {
   test.each([false, true])(
     "inspection context matches Pi's native execution projection (compacted=%s)",
     async (compacted) => {
-      // Seed through Pi's public mutation API, not a production mikan writer
-      // maintained solely to construct test fixtures.
       const repo = new JsonlSessionRepo({
         fileSystem: new NodeExecutionEnv({ cwd: dir }),
         sessionsRoot: dir,
@@ -311,13 +308,9 @@ describe("SessionStore", () => {
   );
 
   test("open throws on a file with content but no valid header, instead of silently overwriting", async () => {
-    // A file whose header line is corrupted but whose message lines survive
-    // must not be opened as a fresh session: the first append would rewrite
-    // the file and erase the existing history. Surface the problem instead.
     const notJson = join(dir, "not-json.jsonl");
     writeFileSync(notJson, 'not json\n{"kind":"entry","content":"kept"}\n');
     await expect(SessionStore.open(notJson, "/work")).rejects.toThrow(/not valid JSON/i);
-    // The original content is left untouched on disk.
     expect(readFileSync(notJson, "utf-8")).toContain("kept");
 
     const wrongShape = join(dir, "wrong-shape.jsonl");
@@ -338,7 +331,6 @@ describe("SessionStore", () => {
     const file = join(dir, "blank.jsonl");
     writeFileSync(file, "\n  \n");
     const store = await SessionStore.open(file, "/work");
-    // Nothing is written until the first append.
     expect(readFileSync(file, "utf-8").trim()).toBe("");
     await store.appendMessage({
       role: "user",
@@ -413,13 +405,6 @@ describe("SessionStore", () => {
   });
 
   test("a leaked claim for a deleted file does not block an unrelated new file", async () => {
-    // Simulates the CI failure mode: a store is never closed (leaked claim),
-    // its file is deleted, and a session file at a *different* path later
-    // receives the same dev:ino (Linux filesystems reuse inodes eagerly).
-    // The stale claim must not deny the new writer. Inode collision cannot be
-    // forced portably, so this exercises the detection path: once the claimed
-    // path is gone, the claim no longer resolves to its inode identity and
-    // must be treated as stale regardless of who now holds that inode.
     const leakedDir = join(dir, "leaked-office");
     mkdirSync(leakedDir, { recursive: true });
     await SessionStore.create(join(leakedDir, "session.jsonl"), "/work");

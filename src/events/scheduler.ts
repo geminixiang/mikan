@@ -27,13 +27,6 @@ interface Scheduled {
   cron?: Cron;
 }
 
-/**
- * In-memory timer/cron owner for every office's admitted events. Records are
- * loaded once from each registered office's host-only events directory at
- * start; afterwards the only inputs are {@link OfficeEventStore} mutations
- * through {@link EventScheduleSink}. There is no filesystem watcher: files
- * edited by hand take effect on the next start.
- */
 export class EventScheduler implements EventScheduleSink {
   private readonly scheduled = new Map<string, Scheduled>();
   private startTime = Date.now();
@@ -81,7 +74,6 @@ export class EventScheduler implements EventScheduleSink {
     return this.scheduled.size;
   }
 
-  /** Active periodic events of one office with their next run. */
   periodicEvents(address: OfficeAddress): PeriodicEventInfo[] {
     const prefix = `${officeKey(address)}/`;
     const results: PeriodicEventInfo[] = [];

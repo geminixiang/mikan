@@ -10,12 +10,6 @@ import {
 } from "./jev-context.js";
 import { isTaskStatusQuestion } from "./task-status.js";
 
-/**
- * What a DM message means while a task is around:
- * - `status`: a pure progress question, answered from observation without a model turn
- * - `steer`: a supplement or correction for the running work, folded into its next step
- * - `request`: anything else, handled as an ordinary conversation turn
- */
 export type TaskIntent = "status" | "steer" | "request";
 
 const TASK_INTENT_CRITERIA = {
@@ -27,7 +21,6 @@ const TASK_INTENT_CRITERIA = {
     "A new standalone question or request unrelated to steering the ongoing work, a reaction to a finished result, or anything else.",
 } as const;
 
-/** The shared `state` Jev scores: the scope's recent lines, the tasks in play, and the new message. */
 export function buildTaskIntentState(
   conversationDir: string,
   event: { ts: string; thread_ts?: string; user: string; text: string },
@@ -65,12 +58,6 @@ export function buildTaskIntentState(
   ].join("\n");
 }
 
-/**
- * Classify with Jev. When Jev is unavailable or fails, reproduce the pre-Jev
- * behavior exactly: the regex shortcut decides `status`, and other text is
- * `steer` inside a task thread (where it always targeted that task) or
- * `request` at top level.
- */
 export async function classifyTaskIntent(
   state: string,
   text: string,

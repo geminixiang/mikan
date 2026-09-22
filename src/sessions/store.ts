@@ -28,48 +28,26 @@ export function isPlatformHistorySession(sessionFile: string): boolean {
   }
 }
 
-/**
- * Resolves the current active session file for a session directory.
- * Reads the "current" pointer file; creates a new session if none exists
- * or the pointed-to file is missing.
- */
 export function resolveSessionFile(sessionDir: string): string {
   const existing = tryResolveCurrentSession(sessionDir);
   if (existing) return existing;
   return createNewSessionFile(sessionDir);
 }
 
-/**
- * Resolve the current active session file for a session directory.
- * Creates a fully initialized persistent session with the provided cwd when none exists.
- */
 export function resolveManagedSessionFile(sessionDir: string, cwd: string): string {
   const existingPath = getCurrentSessionPath(sessionDir);
   if (existingPath && !isPlatformHistorySession(existingPath)) return existingPath;
   return createManagedSessionFile(sessionDir, cwd);
 }
 
-/**
- * Extracts the short UUID from a session file path.
- * e.g. "2026-04-05T00-00_7b54cf90.jsonl" → "7b54cf90"
- */
 export function extractSessionUuid(sessionFile: string): string {
   return basename(sessionFile).replace(".jsonl", "").split("_").pop()!;
 }
 
-/**
- * Extracts the thread/suffix part of a session key.
- * "channelId:threadId" → "threadId", "channelId" → "channelId"
- */
 export function extractSessionSuffix(sessionKey: string): string {
   return assertSessionSuffix(threadSuffixOf(sessionKey) ?? sessionKey);
 }
 
-/**
- * Resolve one child path and prove it remains inside its owning directory.
- * Identity validation is the first guard; containment is defense in depth for
- * every session path derived from platform-controlled values.
- */
 function resolveChildPath(root: string, child: string): string {
   const resolvedRoot = resolve(root);
   const resolvedChild = resolve(resolvedRoot, child);
@@ -80,13 +58,6 @@ function resolveChildPath(root: string, child: string): string {
   return resolvedChild;
 }
 
-/**
- * Creates an empty timestamped file and updates the "current" pointer.
- * Used only by tests for placeholder-file scenarios.
- *
- * Order matters: write the session file first, then atomic-rename the pointer
- * last so a crash mid-create never leaves "current" pointing at a missing file.
- */
 export function createNewSessionFile(sessionDir: string): string {
   mkdirSync(sessionDir, { recursive: true });
   const filename = createSessionFilename();
@@ -96,11 +67,6 @@ export function createNewSessionFile(sessionDir: string): string {
   return filePath;
 }
 
-/**
- * Creates a new persistent session file with a proper SessionManager header and cwd.
- * Also updates the "current" pointer. Header is written before the pointer flips so a
- * partial create cannot leave "current" pointing at a missing file.
- */
 export function createManagedSessionFile(sessionDir: string, cwd: string): string {
   mkdirSync(sessionDir, { recursive: true });
   const sessionId = randomUUID();
@@ -110,10 +76,6 @@ export function createManagedSessionFile(sessionDir: string, cwd: string): strin
   return sessionFile;
 }
 
-/**
- * Open a session file with an explicit cwd, even if the file does not exist yet.
- * This avoids SessionStore.open() falling back to process.cwd() for fresh sessions.
- */
 export function openManagedSession(sessionFile: string, cwd: string): Promise<SessionStore> {
   if (shouldRecreatePreinitializedSession(sessionFile)) {
     rmSync(sessionFile, { force: true });
@@ -127,7 +89,6 @@ function createSessionFilename(sessionId: string = randomUUID()): string {
   return `${timestamp}_${sessionId.slice(0, 8)}.jsonl`;
 }
 
-/** Preserve a fixed-path session before recreating that scope at the same path. */
 export function archiveManagedSessionFile(sessionFile: string): string | null {
   if (!existsSync(sessionFile)) return null;
   let archiveName: string;
@@ -149,9 +110,6 @@ function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {
   atomicWritePrivateFile(join(sessionDir, "current"), filename);
 }
 
-/**
- * Creates or overwrites a fixed-path session file with a valid session header.
- */
 export function createManagedSessionFileAtPath(
   sessionFile: string,
   cwd: string,
@@ -167,17 +125,12 @@ function writeSessionHeader(
   sessionId = randomUUID(),
   parent?: ParentSessionRef,
 ): void {
-  // The header format (and its version) is owned by the harness store; this
-  // layer only decides the path and the id.
   SessionStore.writeHeaderFile(sessionFile, cwd, {
     id: sessionId,
     ...(parent ? { parentSession: parent.path, parentSessionId: parent.id } : {}),
   });
 }
 
-/**
- * Returns the fixed session file path for a Slack thread.
- */
 export function getThreadSessionFile(channelDir: string, sessionKey: string): string {
   const sessionDir = officeSessionsDir(channelDir);
   return resolveChildPath(sessionDir, `${extractSessionSuffix(sessionKey)}.jsonl`);
@@ -192,10 +145,6 @@ function isRegularSessionFile(sessionFile: string): boolean {
 }
 
 function hasSessionHeader(sessionFile: string): boolean {
-  // readHeader returns null for missing/garbage files and throws ONLY for
-  // legacy v3 files. Let that throw propagate: treating an unmigrated v3
-  // session as "no session" would flip the current pointer to a fresh file
-  // and silently orphan the conversation history.
   return SessionStore.readHeader(sessionFile) !== null;
 }
 
@@ -216,7 +165,6 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
       metadata?: { parentSessionPath?: unknown };
     };
     if (only.kind !== "header") return false;
-    // Sessions with lineage metadata are fully initialized — preserve them.
     if (only.parentSessionId || only.metadata?.parentSessionPath) return false;
     return true;
   } catch {
@@ -243,42 +191,22 @@ function getCurrentSessionPath(sessionDir: string): string | null {
   }
 }
 
-/**
- * Try to resolve an existing current session file.
- * Returns null if no current pointer exists or the pointed file has no valid session header.
- */
 export function tryResolveCurrentSession(sessionDir: string): string | null {
   const fullPath = getCurrentSessionPath(sessionDir);
   if (fullPath && isRegularSessionFile(fullPath) && hasSessionHeader(fullPath)) return fullPath;
   return null;
 }
 
-/**
- * Try to resolve an existing thread session file.
- * Returns the file path if found, or null if no valid thread session exists yet.
- */
 export function tryResolveThreadSession(sessionFile: string): string | null {
   return isRegularSessionFile(sessionFile) && hasSessionHeader(sessionFile) ? sessionFile : null;
 }
 
-/**
- * Resolve the channel's current session file path.
- * Returns null if no channel session exists.
- */
 export function resolveChannelSessionFile(channelDir: string): string | null {
   return tryResolveCurrentSession(officeSessionsDir(channelDir));
 }
 
-// Matches timestamped main session filenames; thread sessions use bare threadTs.
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
 
-/**
- * Resolve the main session file that was active when a thread was created.
- * Uses the thread's Slack timestamp to find the main session whose creation
- * time is the latest one at or before that moment — stable across rotations.
- * Falls back to resolveChannelSessionFile when threadTs is absent or unparseable.
- * Returns both path and session UUID so callers can store a UUID-stable reference.
- */
 export function resolveParentSessionForThread(
   channelDir: string,
   threadTs: string | undefined,
@@ -296,7 +224,6 @@ export function resolveParentSessionForThread(
   return id ? { path, id } : null;
 }
 
-/** Header summaries of the main session files in an office's session directory. */
 function mainSessionSummaries(
   sessionDir: string,
 ): Array<ParentSessionRef & { timestampMs: number }> {
@@ -309,7 +236,6 @@ function mainSessionSummaries(
     });
 }
 
-/** The main session current at `targetMs`: the newest one created at or before it. */
 function findMainSessionActiveAtTime(
   channelDir: string,
   targetMs: number,
@@ -335,13 +261,7 @@ function readSessionHeaderSummary(filePath: string): { id: string; timestampMs: 
   }
 }
 
-/**
- * Biweekly rotation clock for top-level shared sessions: a session file
- * rotates when its header timestamp falls in a different two-week bucket
- * (anchored to a fixed Sunday) than the given "now".
- */
-
-const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4); // Sunday
+const BIWEEKLY_ROTATION_ANCHOR = new Date(2026, 0, 4);
 const BIWEEKLY_MS = 14 * 24 * 60 * 60 * 1000;
 
 export function shouldRotateTopLevelSession(sessionFile: string, now: Date): boolean {
@@ -360,7 +280,6 @@ function readSessionTimestamp(sessionFile: string): Date | null {
       (value): value is { timestamp?: unknown; createdAt?: unknown } => isRecord(value),
       (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
     );
-    // v4 headers carry a numeric createdAt; legacy v3 headers a string timestamp.
     const value = typeof header.createdAt === "number" ? header.createdAt : header.timestamp;
     if (typeof value !== "number" && typeof value !== "string") return null;
     const date = new Date(value);

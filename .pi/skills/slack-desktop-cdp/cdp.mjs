@@ -1,26 +1,3 @@
-/**
- * Minimal Chrome DevTools Protocol driver for the Slack desktop app.
- *
- * Deliberately dependency-free: CDP is HTTP plus a WebSocket, and Node has
- * both built in. A third-party "Electron MCP" would mean trusting unaudited
- * code with full control of a logged-in Slack session — a far worse trade
- * than the code here.
- *
- * Start Slack with the port open first:
- *   osascript -e 'quit app "Slack"'
- *   open -a Slack --args --remote-debugging-port=9333
- *
- * Usage:
- *   node cdp.mjs eval  '<javascript expression>'
- *   node cdp.mjs click '<css selector>'
- *   node cdp.mjs text  '<css selector>'
- *   node cdp.mjs send  '<message text>'      # requires CDP_EXPECT_CONVERSATION
- *
- * Environment:
- *   CDP_PORT                  debugging port (default 9333)
- *   CDP_EXPECT_CONVERSATION   conversation id that must appear in the current
- *                             URL before `send` will deliver anything
- */
 const PORT = Number(process.env.CDP_PORT ?? 9333);
 
 async function pageSocketUrl() {
@@ -32,7 +9,6 @@ async function pageSocketUrl() {
   return page.webSocketDebuggerUrl;
 }
 
-/** One socket for the whole run, so multi-step commands share a session. */
 class Session {
   #socket;
   #nextId = 1;
@@ -93,13 +69,6 @@ class Session {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/**
- * Click through the element's own handler rather than at screen coordinates,
- * so nothing depends on window position or on which app is frontmost.
- *
- * Slack renders many controls as `<svg>` inside a `[role=button]` wrapper, and
- * SVGElement has no `.click()`. Walk up to the nearest element that does.
- */
 const CLICK = (selector) => `(() => {
   const start = document.querySelector(${JSON.stringify(selector)});
   if (!start) return "NOT FOUND: " + ${JSON.stringify(selector)};
@@ -110,17 +79,7 @@ const CLICK = (selector) => `(() => {
   return "clicked: " + (node.getAttribute("aria-label") || node.textContent || "").trim().slice(0, 60);
 })()`;
 
-/**
- * Type into the composer and press Enter through the Input domain rather than
- * synthetic DOM events. Slack's composer is a Quill editor: it reconciles its
- * own model from real input and ignores `textContent` writes or hand-built
- * KeyboardEvents.
- */
 async function sendMessage(session, text) {
-  // A human is usually using this same Slack. The view can change between
-  // deciding to send and sending, so bind delivery to the conversation we
-  // meant rather than to whatever is on screen — a misdelivered message lands
-  // in someone's real DM and cannot be recalled.
   const expected = process.env.CDP_EXPECT_CONVERSATION;
   if (!expected) {
     throw new Error("refusing to send: set CDP_EXPECT_CONVERSATION to the target conversation id");
@@ -151,10 +110,6 @@ async function sendMessage(session, text) {
     );
   }
 
-  // Start from an empty composer: an attempt that failed to send leaves its
-  // text behind, and inserting on top of it silently doubles the message.
-  // One Backspace per character — Quill ignores a synthetic Cmd+A, so there
-  // is no select-all to lean on.
   const existing = await session.evaluate(`(document.activeElement?.textContent ?? "").length`);
   for (let index = 0; index < existing; index++) {
     for (const type of ["keyDown", "keyUp"]) {
@@ -172,9 +127,6 @@ async function sendMessage(session, text) {
   await session.send("Input.insertText", { text });
   await sleep(400);
 
-  // Text starting with "/" opens Slack's command autocomplete, which swallows
-  // the Enter that would otherwise send. Escape dismisses the menu without
-  // touching the composed text.
   if (text.startsWith("/")) {
     for (const type of ["keyDown", "keyUp"]) {
       await session.send("Input.dispatchKeyEvent", {
@@ -219,13 +171,6 @@ try {
   } else if (command === "eval") {
     value = await session.evaluate(argument);
   } else if (command === "clickat") {
-    // Real mouse events at the element's own viewport coordinates. Slack
-    // ignores `element.click()` on interactive Block Kit controls the same way
-    // it ignores a synthetic Enter on a slash command.
-    //
-    // Not to be confused with clicking at *screen* coordinates: this goes into
-    // the page's coordinate space through the debugger, so nothing depends on
-    // window position or which application is frontmost.
     const box = await session.evaluate(`(() => {
       const match = [...document.querySelectorAll("button,[role=button],a")]
         .find((el) => (el.textContent || "").trim() === ${JSON.stringify(argument)});
@@ -246,8 +191,6 @@ try {
     await sleep(800);
     value = `clicked "${argument}" at ${Math.round(box.x)},${Math.round(box.y)}`;
   } else if (command === "type") {
-    // Compose without sending, for inspecting what Slack does in response to
-    // the text itself — autocomplete menus, command validation, and so on.
     await session.evaluate(
       `document.querySelector(".ql-editor[contenteditable=true]")?.focus(), "ok"`,
     );

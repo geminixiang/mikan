@@ -10,15 +10,10 @@ function makeStore() {
   return { store, create };
 }
 
-// ── InMemoryTokenStore base behaviour ─────────────────────────────────────────
-// Tested through InMemoryAdminTokenStore (simplest create signature).
-
 describe("InMemoryTokenStore base", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
-
-  // ── peek ──────────────────────────────────────────────────────────────────
 
   test("peek returns the token before expiry", () => {
     const { store, create } = makeStore();
@@ -37,12 +32,9 @@ describe("InMemoryTokenStore base", () => {
     const { store, create } = makeStore();
     const t = create();
 
-    // AdminToken TTL is 30 min; advance past it
     vi.setSystemTime(new Date("2026-01-01T00:31:00Z"));
     expect(store.peek(t.token)).toBeUndefined();
   });
-
-  // ── consume ───────────────────────────────────────────────────────────────
 
   test("consume returns the token and removes it", () => {
     const { store, create } = makeStore();
@@ -67,8 +59,6 @@ describe("InMemoryTokenStore base", () => {
     expect(store.consume(t.token)).toBeUndefined();
   });
 
-  // ── purge ─────────────────────────────────────────────────────────────────
-
   test("purge removes expired tokens", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
@@ -76,7 +66,6 @@ describe("InMemoryTokenStore base", () => {
     const expired = create();
 
     vi.setSystemTime(new Date("2026-01-01T00:31:00Z"));
-    // Create a fresh token at the new time
     const fresh = store.create({ platform: "slack", platformUserId: "U2", conversationId: "D2" });
 
     store.purge();
@@ -90,8 +79,6 @@ describe("InMemoryTokenStore base", () => {
     expect(() => store.purge()).not.toThrow();
   });
 });
-
-// ── Subclass-specific behaviour ───────────────────────────────────────────────
 
 describe("InMemoryAdminTokenStore", () => {
   afterEach(() => vi.useRealTimers());
@@ -140,7 +127,7 @@ describe("InMemoryLinkTokenStore", () => {
     const store = new InMemoryLinkTokenStore();
     const t = store.create("slack", "U1", "D1", "vault1", "");
 
-    vi.setSystemTime(new Date("2026-01-01T00:16:00Z")); // TTL is 15 min
+    vi.setSystemTime(new Date("2026-01-01T00:16:00Z"));
     expect(store.consume(t.token)).toBeUndefined();
   });
 });
@@ -177,7 +164,6 @@ describe("InMemorySessionViewTokenStore", () => {
       sessionFile: "/b.jsonl",
     });
 
-    // SessionViewTokenStore intentionally does NOT dedup on create
     expect(store.peek(a.token)).toBeDefined();
     expect(store.peek(b.token)).toBeDefined();
   });
@@ -194,7 +180,7 @@ describe("InMemorySessionViewTokenStore", () => {
       sessionFile: "/session.jsonl",
     });
 
-    vi.setSystemTime(new Date("2026-01-02T01:00:00Z")); // TTL is 24 h
+    vi.setSystemTime(new Date("2026-01-02T01:00:00Z"));
     expect(store.peek(t.token)).toBeUndefined();
   });
 });

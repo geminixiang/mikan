@@ -40,8 +40,6 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       cpus: "2",
       memory: "4g",
     },
-    // Office visibility is not a setting here: it follows the platform
-    // conversation type (see office/projection resolveOfficeVisibility).
     defaultSharedVault: "",
   },
 };
@@ -74,11 +72,6 @@ const SettingsFileSchema = Type.Object({
       replyMode: Type.Optional(Type.Union([Type.Literal("top-level"), Type.Literal("thread")])),
     }),
   ),
-  /**
-   * Conversation-only office policy. `visibility: "private"` marks a
-   * platform-public conversation as private; nothing can widen visibility
-   * beyond what the platform grants, so "public" is never stored here.
-   */
   office: Type.Optional(
     Type.Object({
       visibility: Type.Optional(Type.Literal("private")),
@@ -94,11 +87,6 @@ const SettingsFileSchema = Type.Object({
           memory: Type.Optional(Type.String()),
         }),
       ),
-      /**
-       * Retired door-policy keys (ADR 0008). Still accepted so existing files
-       * load, never copied into AgentConfig, and removed by
-       * `mikan office migrate-door-policy`.
-       */
       image: Type.Optional(
         Type.Object({
           workspaceMount: Type.Optional(
@@ -124,13 +112,6 @@ const SettingsFileSchema = Type.Object({
       defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
-  /**
-   * MCP servers, keyed by name. Merged per key across scopes: a conversation
-   * entry overrides (or, with `disabled: true`, turns off) the same-name
-   * global entry; other global entries stay available. `open-connector` is an
-   * ordinary entry that the host fills in from `OPENCONNECTOR_ENDPOINT` when
-   * neither scope declares it (see `src/harness/open-connector.ts`).
-   */
   mcpServers: Type.Optional(
     Type.Record(
       Type.String(),
@@ -169,15 +150,8 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
   };
 }
 
-/**
- * File shape → in-memory shape for the sandbox group. An empty or
- * whitespace-only `defaultSharedVault` means "no default" and is dropped;
- * non-empty values are trimmed. Everything else passes through as-is.
- */
 function normalizeSandboxSettings(sandbox: SandboxFileSettings): SandboxSettings {
   const defaultSharedVault = sandbox.defaultSharedVault?.trim();
-  // Retired `image.workspaceMount` and `workspace` are dropped here: office
-  // visibility comes from the platform (ADR 0008), never from these keys.
   return {
     ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
@@ -186,13 +160,6 @@ function normalizeSandboxSettings(sandbox: SandboxFileSettings): SandboxSettings
   };
 }
 
-/**
- * Merge two sandbox settings groups. The merge invariant is LEAF-LEVEL:
- * an override that only sets `sandbox.memory` keeps the base `sandbox.cpus`,
- * and an override that only sets `boost.memory` keeps the base `boost.cpus`
- * (same for `image`). This mirrors how the fields merged when they were
- * flat top-level keys; a group-level spread would silently drop base leaves.
- */
 function mergeSandboxSettings(
   base: SandboxSettings | undefined,
   override: SandboxSettings | undefined,
@@ -256,25 +223,6 @@ export function loadGlobalSettings(): AgentConfig {
   return toAgentConfig(loadRawGlobalSettings());
 }
 
-/**
- * Host-authoritative location of a conversation's settings file:
- * `<office state dir>/settings.json`. The Office value names both the
- * state-dir key and the legacy pre-host-migration location (its workspace
- * dir) — the key is never inferred from a directory basename.
- *
- * Conversation settings used to live at `<conversationDir>/settings.json`,
- * but conversation dirs are bind-mounted read-write into sandbox containers
- * in image mode — code inside the sandbox could edit its own settings.json
- * and flip `sandbox.image.workspaceMount` to "full", remounting the entire
- * workspace into its container (cross-conversation access). Settings are an
- * administrator surface, so they live under the host-only state dir.
- *
- * Migration: on first access per conversation, a legacy
- * `<conversationDir>/settings.json` is moved here. The new file's existence
- * (an empty `{}` is written when there is nothing to migrate) is the
- * migration marker — a legacy file (re)appearing later, e.g. planted from
- * inside the sandbox, is never read again.
- */
 export function conversationSettingsPath(office: Office): string {
   const hostPath = join(office.stateDir, "settings.json");
   if (existsSync(hostPath)) {
@@ -289,8 +237,6 @@ export function conversationSettingsPath(office: Office): string {
   if (existsSync(legacyPath)) {
     assertSettingsFile(legacyPath, "Legacy conversation settings");
     content = readFileSync(legacyPath, "utf-8");
-    // Validate before moving the file. A malformed legacy file must fail
-    // closed and remain available for an operator to repair.
     loadSettingsFile(legacyPath);
     migrated = true;
   }
@@ -318,13 +264,6 @@ function assertSettingsFile(path: string, label: string): void {
   }
 }
 
-/**
- * Auto-reply is tri-state: `off` (default, must mention mikan), `on`
- * (every message in the channel is addressed), `jev` (Jev decides per
- * message whether it addresses mikan). Exactly one marker file exists at a
- * time; its absence means `off`. Markers are mutually exclusive so callers
- * cannot read a self-contradictory state.
- */
 export type SlackAutoReplyMode = "off" | "on" | "jev";
 
 const AUTO_REPLY_FILE = "auto-reply";
@@ -357,11 +296,7 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(conversationSettingsPath(office)) ?? {},
   );
-  // MCP servers merge per key: a conversation redefines or disables individual
-  // servers without losing the rest of the global set.
   const mcpServers = { ...globalConfig.mcpServers, ...conversationConfig.mcpServers };
-  // The sandbox group merges at the leaf level (see mergeSandboxSettings):
-  // a conversation that only sets sandbox.memory keeps the global sandbox.cpus.
   const sandbox = mergeSandboxSettings(globalConfig.sandbox, conversationConfig.sandbox);
   return toAgentConfig({
     ...globalConfig,
@@ -371,7 +306,6 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   });
 }
 
-/** Settings-file DSN wins over SENTRY_DSN env — the rule lives only here. */
 function sentryDsnFrom(fromFile: string | undefined): string | undefined {
   return fromFile || readEnv("SENTRY_DSN");
 }
@@ -412,7 +346,6 @@ export function compactSettingsConfig(config: SettingsFileConfig): SettingsFileC
     ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
     ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
     ...(hasDefinedValue(config.office) ? { office: config.office } : {}),
-    // An empty map means "all servers removed".
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
 }
@@ -433,19 +366,12 @@ function patchSettingsConfig(
       ...existing.sentry,
       ...(config.sentryDsn !== undefined ? { dsn: config.sentryDsn } : {}),
     },
-    // Leaf-level merge: a patch that only sets sandbox.boost.memory keeps the
-    // existing boost.cpus (and every other existing leaf). compactSettingsConfig
-    // drops the group entirely when it ends up with no defined values.
     sandbox: mergeSandboxSettings(existing.sandbox, config.sandbox) ?? {},
     slack: {
       ...existing.slack,
       ...config.slack,
     },
-    // Office visibility has its own writer (setOfficeVisibilityOverride); the
-    // generic patch must not drop it.
     ...(existing.office !== undefined ? { office: existing.office } : {}),
-    // The portal edits the full MCP map, and
-    // a merge would make removing a server impossible.
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
   return compactSettingsConfig(patched);
@@ -488,11 +414,6 @@ export function updateConversationSettings(office: Office, patch: Partial<AgentC
   updateSettingsFile(conversationSettingsPath(office), patch, {});
 }
 
-/**
- * The two scope-level MCP server maps, unmerged: the portal edits each scope's
- * own file, so it needs the raw per-scope values, not the effective merge
- * (`resolveConversationSettings` owns that).
- */
 export function loadScopeMcpServers(office: Office): {
   global: Record<string, McpServerConfig>;
   conversation: Record<string, McpServerConfig>;
@@ -503,11 +424,6 @@ export function loadScopeMcpServers(office: Office): {
   };
 }
 
-/**
- * The conversation's own visibility override, or null when it follows the
- * platform. Only "private" can be stored: an operator may narrow a public
- * channel, never widen a private one (see ADR 0008).
- */
 export function loadOfficeVisibilityOverride(office: Office): "private" | null {
   return loadSettingsFile(conversationSettingsPath(office))?.office?.visibility ?? null;
 }

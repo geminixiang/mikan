@@ -32,7 +32,6 @@ interface StartWebServerOptions {
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
-    /** Scheduler notified by Admin event deletes; resolved lazily (starts after bots). */
     eventScheduler?: () => EventScheduleSink | undefined;
   };
   githubWebhook?: GithubWebhookOptions;
@@ -45,8 +44,6 @@ export function startWebServer(options: StartWebServerOptions): Server {
     options.notify,
   );
 
-  // The admin portal consumes office-confined event stores instead of
-  // re-parsing event files off disk.
   const adminEventStore = (office: Office) =>
     new OfficeEventStore(office, options.adminOptions?.eventScheduler?.());
 

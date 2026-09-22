@@ -7,16 +7,6 @@ import { createGithubSyncTool } from "./tools/sync.js";
 import type { PlatformToolPack } from "../../harness/tools/types.js";
 import type { PlatformGithubOps } from "./types.js";
 
-/**
- * GitHub host-side capability pack — one tool per module under `tools/`:
- * github_pr, github_checks, github_review_reply, github_sync, github_read,
- * github_issue.
- *
- * These tools never run in the sandbox; they call PlatformGithubOps which
- * mints short-lived installation tokens on the host. The pack is only
- * constructed when the GitHub bot is configured; bindRun enables the tools
- * only for github-named conversations so multi-platform processes stay safe.
- */
 export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
   const { tool: githubPrTool, setGithubPrFunction } = createGithubPrTool();
   const { tool: githubChecksTool, setGithubChecksFunction } = createGithubChecksTool();

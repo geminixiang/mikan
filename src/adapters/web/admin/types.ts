@@ -22,7 +22,6 @@ export interface AdminServices {
   adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
   workspace?: Workspace;
-  /** Office-confined event store factory; Admin never reads event files directly. */
   eventStore?: (office: Office) => EventStore;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
@@ -34,7 +33,6 @@ export interface EventSummary {
   size: number;
   mtimeMs: number;
   type: string | null;
-  /** Owning office, from the store — authoritative even when the payload is unparseable. */
   officePlatform: string;
   officeConversationId: string;
   platform: string | null;
@@ -49,6 +47,5 @@ export interface AdminToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;
   platformUserName?: string;
-  /** The conversation where /admin was invoked. Default scope for the 3 sub-pages. */
   conversationId: string;
 }

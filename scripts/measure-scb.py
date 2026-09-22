@@ -108,7 +108,6 @@ def main():
                     included=included, excluded=excluded, tracked_missing=missing,
                     git_status=git("status", "--porcelain", "--", "src/").decode(),
                     note="total_loc is scanner SLOC, not physical lines; unsupported files remain in snapshot")
-    # Explicit empty config prevents inherited user/temp-directory exclusions.
     config = directory / "scb-check.toml"
     config.write_text("exclude = []\n")
     command = UV + ["scb-check", "check", str(root), "--config", str(config),

@@ -1,4 +1,3 @@
-// Exercises actual Slack intake, runtime, Pi and session persistence with fake transport/model.
 import {
   mkdtempSync,
   mkdirSync,
@@ -30,8 +29,6 @@ import {
 } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 
-// Jev is unavailable by default so every path below exercises the regex
-// fallback; individual tests hand it a decision to cover the Jev-only paths.
 const jev = vi.fn();
 vi.mock("../harness/jev.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../harness/jev.js")>();
@@ -564,7 +561,6 @@ test("stop during runner preparation prevents provider and tool execution", asyn
 test("status between admission and run start reports queued, not unknown", async () => {
   faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
   const office = workspace.office(createOfficeAddress("slack", "D123"));
-  // Stall the task thread's run between admission and its first operation.
   const preparing = deferred();
   const release = deferred();
   const original = MikanAgentSession.prototype.reloadFromSession;

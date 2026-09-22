@@ -1,9 +1,6 @@
 import type { AgentTool, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "../types.js";
-// Progress statuses extend run statuses with the pre- and non-run states. The
-// dashboard renders the same union, so it is defined once alongside the
-// snapshot the tool emits rather than restated here.
 import type {
   SubagentProgressNode,
   SubagentProgressSnapshot,
@@ -17,18 +14,6 @@ const MAX_DAG_DEPTH = 4;
 const MAX_CONCURRENT_SUBAGENTS = 4;
 const MAX_DEPENDENCY_OUTPUT_CHARS = 4000;
 
-/**
- * Every subagent runs under a named profile: the profile owns the prompt,
- * tool grant, model and budget defaults. Letting the model assemble those
- * per call proved unstable, so the schema deliberately exposes no
- * `systemPrompt`, `tools` or `model` escape hatch — narrowing what the model
- * can get wrong is the point. The model may request a larger token allowance,
- * but cannot accidentally shrink the profile's turn, cost, or duration limits.
- *
- * `profileNames` is baked into the schema as an enum to steer the model's
- * choice. TypeBox does not check `enum` on a string, so an unknown name still
- * reaches `validatePlanProfiles`, which names the available profiles.
- */
 function buildTaskProperties(profileNames: string[]) {
   return {
     task: Type.String({ minLength: 1, description: "Self-contained task for a fresh subagent." }),
@@ -39,9 +24,6 @@ function buildTaskProperties(profileNames: string[]) {
           "Profile this subagent runs under. Required, but a top-level profile covers every task and DAG node that does not set its own.",
       }),
     ),
-    // No length bound: a label is a display string, and `taskLabel` clamps it.
-    // Bounding it in the schema only lets a cosmetic field reject a whole DAG,
-    // and validation reports that failure by echoing every node back.
     label: Type.Optional(Type.String({ description: "Short progress label for this subagent." })),
     input: Type.Optional(
       Type.Unknown({ description: "Optional JSON-serializable structured input for the task." }),
@@ -73,10 +55,6 @@ const sharedProperties = {
   ),
 };
 
-/**
- * The runtime schema varies only in the `profile` enum, so every instance
- * shares one static type and `subagentSchema` below can stand in for it.
- */
 function buildSubagentSchema(profileNames: string[]) {
   const taskProperties = buildTaskProperties(profileNames);
   return Type.Object(
@@ -128,11 +106,6 @@ type SubagentParams = Static<typeof subagentSchema>;
 type SubagentTask = NonNullable<SubagentParams["tasks"]>[number];
 type DagNode = NonNullable<SubagentParams["dag"]>["nodes"][number];
 type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "budget">;
-/**
- * `hooks` carries host-side callbacks rather than widening the request: the
- * request is the public shape the model asks for, and a
- * progress sink belongs to whoever is displaying the run.
- */
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
   hooks?: { onActivity?: (activity: string) => void },
@@ -140,7 +113,6 @@ type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
 
 type PlanMode = "single" | "parallel" | "dag";
 
-/** One planned subagent run; single and tasks modes are plans with no edges. */
 interface PlanItem {
   id: string;
   label: string;
@@ -159,10 +131,8 @@ type PlanOutcome =
   | ({ id: string } & SubagentRunResult<unknown>)
   | { id: string; status: "skipped"; error: string };
 
-/** The metrics half of a progress node — derived, not restated. */
 type SubagentProgressMetrics = Omit<SubagentProgressNode, "id" | "label" | "status" | "profile">;
 
-/** Shortest gap between activity-driven redraws of the dashboard. */
 const ACTIVITY_EMIT_INTERVAL_MS = 2000;
 
 class SubagentProgressTracker {
@@ -184,15 +154,6 @@ class SubagentProgressTracker {
     this.emit();
   }
 
-  /**
-   * Record what a node is doing, rate-limited.
-   *
-   * Status changes are rare and each one matters, so `update` emits every
-   * time. Activity is the opposite — it can change several times a second
-   * while text streams — and every emission redraws the whole response, on a
-   * path that is deliberately not batched. Left unbounded this would spend the
-   * platform's edit budget on a character counter.
-   */
   activity(id: string, activity: string): void {
     const previous = this.metrics.get(id) ?? {};
     this.metrics.set(id, { ...previous, activity });
@@ -305,11 +266,6 @@ function buildDagWaves(nodes: DagNode[]): DagNode[][] {
   return waves;
 }
 
-/**
- * A top-level `profile` is the default for every task and DAG node, like the
- * other shared params. A fan-out that runs entirely under one profile then
- * names it once instead of repeating it per node.
- */
 function withDefaultProfile<T extends { profile?: string }>(task: T, fallback?: string): T {
   return task.profile || !fallback ? task : { ...task, profile: fallback };
 }
@@ -323,7 +279,6 @@ function itemForNode(node: DagNode, defaultProfile?: string): PlanItem {
   };
 }
 
-/** Normalize every tool mode into one plan: nodes, waves, concurrency. */
 function buildPlan(params: SubagentParams): Plan {
   const modeCount = [params.task, params.tasks, params.dag].filter(
     (mode) => mode !== undefined,
@@ -358,7 +313,6 @@ function buildPlan(params: SubagentParams): Plan {
   return { mode: "single", items: [item], waves: [[item]], concurrency: 1 };
 }
 
-/** Run `worker` over every item with at most `limit` in flight. */
 async function forEachConcurrent<T>(
   items: readonly T[],
   limit: number,
@@ -383,8 +337,6 @@ function dependencyOutput(outcome: PlanOutcome): unknown {
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
   if (serialized === undefined) return null;
   if (serialized.length <= MAX_DEPENDENCY_OUTPUT_CHARS) return value;
-  // Oversized structured output becomes a marked string — the shape is lost,
-  // which the tool description warns downstream consumers about.
   return `${serialized.slice(0, MAX_DEPENDENCY_OUTPUT_CHARS)}\n[truncated]`;
 }
 
@@ -405,10 +357,6 @@ function planRequest(
   return buildRequest({ ...item.task, input }, shared, signal);
 }
 
-/**
- * One executor for every mode: wave barriers and a per-invocation concurrency
- * bound. Process-wide slots are acquired by the shared runner seam.
- */
 async function runWaves(
   plan: Plan,
   shared: SharedParams,
@@ -483,17 +431,11 @@ async function runWaves(
   return plan.items.map((item) => outcomes.get(item.id)!);
 }
 
-/** What the model needs to choose a profile: what it is, and what it can do. */
 interface SubagentProfileMenuEntry {
   description: string;
   tools?: string[];
 }
 
-/**
- * The tool grant belongs in the menu. A description alone reads as a stylistic
- * constraint, so a model will pick a no-tool profile for work that needs tools
- * and then narrate the tool call it could not make.
- */
 function formatToolGrant(tools: string[] | undefined): string {
   if (!tools) return "tools unknown";
   return tools.length === 0 ? "no tools" : `tools: ${tools.join(", ")}`;
@@ -512,14 +454,6 @@ function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>
   }
 }
 
-/**
- * Create the normal agent's bounded subagent delegation and DAG tool.
- * `globalSlots` is the process-wide fan-out account shared across every
- * conversation's tool instance; omitted, fan-out is bounded per run only.
- *
- * `profiles` must be non-empty: it is both the model-facing menu and the only
- * way to grant a subagent any capability at all.
- */
 export function createSubagentTool(
   runSubagent: RunSubagent,
   profiles: ReadonlyMap<string, SubagentProfileMenuEntry>,
@@ -603,10 +537,6 @@ export function createSubagentTool(
   };
 }
 
-// Subagent progress protocol: the tool owns construction, transport validation,
-// settlement and its canonical response-source dashboard. Presenters consume it.
-
-/** Longest label the dashboard renders; longer ones are clamped, never rejected. */
 export const MAX_SUBAGENT_LABEL_CHARS = 100;
 const MAX_PROFILE_CHARS = 64;
 const MAX_REASON_CHARS = 240;
@@ -636,20 +566,13 @@ const SUBAGENT_STATUS_LABEL = {
   skipped: "Skipped",
 } satisfies Record<SubagentProgressStatus, string>;
 
-/**
- * Derived from the marker table, which `satisfies` keeps exhaustive: a new
- * terminal status is a compile error there, and this runtime set follows —
- * the validator can never silently drop a status the tables know about.
- */
 const VALID_STATUSES: ReadonlySet<string> = new Set(Object.keys(SUBAGENT_STATUS_MARKER));
 
-/** Clamp a label to the display bound, ending a truncation visibly with `…`. */
 function clampSubagentLabel(label: string): string {
   if (label.length <= MAX_SUBAGENT_LABEL_CHARS) return label;
   return `${label.slice(0, MAX_SUBAGENT_LABEL_CHARS - 1)}…`;
 }
 
-/** The display bounds, applied once at construction and again on parse. */
 export function boundSubagentProgressNode(node: SubagentProgressNode): SubagentProgressNode {
   return {
     ...node,
@@ -698,11 +621,6 @@ function parseNode(value: unknown): SubagentProgressNode | undefined {
   });
 }
 
-/**
- * Parse a snapshot back off the untyped transport. All-or-nothing: one
- * malformed node means the payload is not ours (any tool can put anything in
- * `details`), so the whole candidate is rejected rather than partially shown.
- */
 export function parseSubagentProgressSnapshot(
   value: unknown,
 ): SubagentProgressSnapshot | undefined {
@@ -723,11 +641,6 @@ export function parseSubagentProgressSnapshot(
   return { mode: candidate.mode, nodes };
 }
 
-/**
- * Project a live snapshot to its end-of-tool state: nodes still pending or
- * running settle to the tool call's outcome. Metrics spread through
- * unchanged — an unsettled node never reported any.
- */
 export function settleSubagentProgress(
   snapshot: SubagentProgressSnapshot,
   isError: boolean,
@@ -742,13 +655,6 @@ export function settleSubagentProgress(
   };
 }
 
-/**
- * Fold concurrent or successive subagent fan-outs into the single snapshot the
- * dashboard renders. A run can call the subagent tool more than once; picking
- * one snapshot would drop the others' cost and status, and alternating between
- * them makes the live view flicker. Node ids are namespaced by source because
- * each fan-out numbers its own nodes from zero.
- */
 export function mergeSubagentProgress(
   snapshots: readonly SubagentProgressSnapshot[],
 ): SubagentProgressSnapshot | undefined {
@@ -764,10 +670,6 @@ export function mergeSubagentProgress(
       : "single";
   return { mode, nodes };
 }
-
-// ---------------------------------------------------------------------------
-// Dashboard text
-// ---------------------------------------------------------------------------
 
 function settledCount(snapshot: SubagentProgressSnapshot): number {
   return snapshot.nodes.filter((node) => node.status !== "pending" && node.status !== "running")
@@ -810,7 +712,6 @@ function summaryText(snapshot: SubagentProgressSnapshot): string {
     .join(" · ");
 }
 
-/** The dashboard's one-line summary header, unformatted. */
 function dashboardHeader(snapshot: SubagentProgressSnapshot): string {
   const base = `Subagents · ${settledCount(snapshot)}/${snapshot.nodes.length} · ${modeLabel(snapshot)}`;
   const summary = summaryText(snapshot);
@@ -836,18 +737,12 @@ function detailText(node: SubagentProgressNode): string {
     node.durationMs !== undefined ? `${(node.durationMs / 1000).toFixed(1)}s` : undefined,
   ].filter(Boolean);
   const reason = node.cleanupPending ? "Cleanup pending; usage is provisional" : node.reason;
-  // Activity is shown only while running, and that is exactly when there is
-  // nothing else: a node reports its metrics on the way out, so without this
-  // the whole of a long step reads "Running · profile" and never changes.
   const activity = node.status === "running" ? node.activity : undefined;
-  // Profile leads the line: when a node reports no tool calls, the profile is
-  // what says whether that was the plan or a bad pick.
   return [SUBAGENT_STATUS_LABEL[node.status], node.profile, activity, ...metrics, reason]
     .filter(Boolean)
     .join(" · ");
 }
 
-/** The dashboard as response source Markdown; adapters own any conversion. */
 export function renderSubagentDashboard(snapshot: SubagentProgressSnapshot): string {
   const header = `**${dashboardHeader(snapshot)}**`;
   const rows = snapshot.nodes.flatMap((node) => [

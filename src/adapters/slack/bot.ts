@@ -135,14 +135,8 @@ type CommandAdapterInput = {
   sessionKey?: string;
 };
 
-/**
- * Slack's per-call limit on `markdown_text`: "Limit this field to 12,000
- * characters." mikan allows far more in a message, so streamed text is split
- * to fit rather than truncated.
- */
 const MAX_STREAM_TEXT_CHARS = 12_000;
 
-/** Slices `text` into pieces that each fit one streaming call. */
 export function chunkStreamText(text: string, limit = MAX_STREAM_TEXT_CHARS): string[] {
   if (text.length <= limit) return [text];
   const chunks: string[] = [];
@@ -152,8 +146,6 @@ export function chunkStreamText(text: string, limit = MAX_STREAM_TEXT_CHARS): st
   return chunks;
 }
 
-// web-api v8 throws WebAPIRateLimitedError; the duck-typed shapes cover
-// platform `data.error === "rate_limited"` / 429 responses and older callers.
 function slackIsRateLimited(err: Error): boolean {
   if (err instanceof WebAPIRateLimitedError) return true;
   if ((err as { code?: unknown }).code === "rate_limited") return true;
@@ -199,16 +191,8 @@ function buildSlackAppMessageText(event: {
   return deduped.join("\n");
 }
 
-// ---------------------------------------------------------------------------
-// Shared mrkdwn truncation helper
-// ---------------------------------------------------------------------------
-
 const MRKDWN_CONTEXT_TEXT_LIMIT = 3000;
 
-/**
- * Build a Slack context block whose text is capped at the mrkdwn limit.
- * Used for muted diagnostics and ephemeral command responses.
- */
 export function buildMrkdwnContextBlock(text: string): object {
   const blockText =
     text.length > MRKDWN_CONTEXT_TEXT_LIMIT
@@ -217,15 +201,7 @@ export function buildMrkdwnContextBlock(text: string): object {
   return { type: "context", elements: [{ type: "mrkdwn", text: blockText }] };
 }
 
-// ============================================================================
-// Types
-// ============================================================================
-
 export type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
-
-// ============================================================================
-// SlackMessagingBot
-// ============================================================================
 
 class AttachmentDownloadHttpError extends Error {
   constructor(
@@ -244,7 +220,6 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
 export class SlackMessagingBot implements MessagingBot {
   private socketClient: SocketModeClient;
   private webClient: WebClient;
-  // Status is cosmetic: its rate limits must never pause the message client's queue.
   private readonly statusClient: WebClient;
   private readonly statusUpdates = new Map<string, Promise<void>>();
   private handler: MessagingEventHandler;
@@ -254,25 +229,17 @@ export class SlackMessagingBot implements MessagingBot {
   private botId: string | null = null;
   private teamId: string | null = null;
   private ownMentionRegex: RegExp | null = null;
-  private startupTs: string | null = null; // Messages older than this are just logged, not processed
+  private startupTs: string | null = null;
 
   private users = new Map<string, SlackUser>();
   private channels = new Map<string, SlackChannel>();
-  /** Which threads belong to the assistant pane, and their last known context. */
   private assistantThreads = new AssistantThreadRegistry();
-  /**
-   * Native response streams opened recently. Per bot rather than per module:
-   * the rate tier applies per workspace, and this bot is the connection to
-   * one — which also means a test constructing a bot gets a fresh budget
-   * instead of inheriting whatever ran before it.
-   */
   private streamStarts = new StreamStartLimiter();
   private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
   private intake = new MessagingIntakeTracker("Slack");
   private eventScheduler: EventScheduler | null = null;
 
-  /** Host office dir for a Slack conversation. */
   private conversationDir(channelId: string): string {
     return this.workspace.office(createOfficeAddress("slack", channelId)).dir;
   }
@@ -392,8 +359,6 @@ export class SlackMessagingBot implements MessagingBot {
     this.botToken = config.botToken;
     this.socketClient = new SocketModeClient({
       appToken: config.appToken,
-      // Default 5s is too tight: brief event-loop stalls (e.g. backfill, sync fs)
-      // cause false pong timeouts; 4 in a row makes Slack drop the socket.
       clientPingTimeout: 12_000,
     });
     this.webClient = new WebClient(config.botToken);
@@ -408,10 +373,6 @@ export class SlackMessagingBot implements MessagingBot {
     this.eventScheduler = scheduler;
   }
 
-  // ==========================================================================
-  // Public API
-  // ==========================================================================
-
   async start(): Promise<void> {
     this.stopped = false;
     const auth = await this.webClient.auth.test();
@@ -424,9 +385,6 @@ export class SlackMessagingBot implements MessagingBot {
     log.logInfo(`Loaded ${this.channels.size} channels, ${this.users.size} users`);
     this.backfillChannelKinds();
 
-    // Record startup time before opening the socket. Slack may replay older events;
-    // those should be logged but not processed. Backfill runs in the background up
-    // to this timestamp so startup is not blocked by one history call per channel.
     this.startupTs = (Date.now() / 1000).toFixed(6);
 
     this.setupEventHandlers();
@@ -474,11 +432,6 @@ export class SlackMessagingBot implements MessagingBot {
     return source.replace(this.ownMentionRegex, "").trim();
   }
 
-  /**
-   * Response-source `<@userName>` mentions become native `<@U…>` here — the
-   * one conversion every outgoing response path funnels through. Slack only
-   * links and notifies on raw user ids.
-   */
   private resolveMentions(text: string): string {
     return resolveSlackMentions(text, this.users.values());
   }
@@ -502,13 +455,11 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   async addReaction(channel: string, messageTs: string, emoji: string): Promise<void> {
-    // Slack reaction names are colon-free short names; strip any wrapping colons.
     const name = emoji.replace(/^:|:$/g, "");
     await slackRetry(async () => {
       try {
         await this.webClient.reactions.add({ channel, timestamp: messageTs, name });
       } catch (err) {
-        // Re-reacting with the same emoji is not an error worth surfacing.
         if ((err as { data?: { error?: string } })?.data?.error === "already_reacted") return;
         throw err;
       }
@@ -604,13 +555,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /**
-   * Fetch recent messages from a channel, oldest first. Without `threadTs`
-   * this is one `conversations.history` page of top-level messages (thread
-   * replies are not expanded); with it, one `conversations.replies` page of
-   * that thread's replies, excluding the parent. Callers page forward by
-   * passing the last returned `ts` as `oldest`.
-   */
   async fetchHistory(
     channel: string,
     options?: PlatformHistoryOptions,
@@ -640,9 +584,6 @@ export class SlackMessagingBot implements MessagingBot {
       }>;
       const mapped = messages
         .filter((msg): msg is typeof msg & { ts: string } => !!msg.ts)
-        // conversations.replies leads with the thread parent; the caller asked
-        // for the replies to it, and including it would re-ingest the bot's
-        // own message on every poll.
         .filter((msg) => msg.ts !== threadTs)
         .map((msg) => {
           const user = msg.user ? this.users.get(msg.user) : undefined;
@@ -656,13 +597,10 @@ export class SlackMessagingBot implements MessagingBot {
           if (user) message.userName = user.userName;
           return message;
         });
-      // history returns newest-first, replies oldest-first; the contract is
-      // oldest-first either way.
       return threadTs ? mapped : mapped.toReversed();
     });
   }
 
-  /** Refresh and list the workspace's active users (`users.list`). */
   async listUsers(): Promise<PlatformUserInfo[]> {
     await slackRetry(() => this.fetchUsers());
     return this.getAllUsers().map((user) => ({
@@ -686,29 +624,10 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /**
-   * Claim one native stream, or decline. Declining is not an error: the caller
-   * falls back to edit-based updates, which is a working answer rather than a
-   * degraded one, and costs no request against the tighter start tier.
-   */
   tryReserveStreamStart(): boolean {
     return this.streamStarts.tryReserve();
   }
 
-  /**
-   * Open a stream, carrying text of any length.
-   *
-   * Slack caps `markdown_text` at 12,000 characters per call, and a long first
-   * render exceeds that easily — mikan allows 35,000 in a message. Rather than
-   * truncating (losing the answer) or failing (falling back to edit mode for
-   * the whole response), the opening call takes the first slice and the rest
-   * follows as appends before this resolves. The caller sees one operation
-   * that sent everything, so the renderer's idea of what has been streamed
-   * stays true.
-   *
-   * Splitting mid-word or mid-fence is harmless here: a stream concatenates,
-   * so Slack renders the reassembled text, not the pieces.
-   */
   async startMessageStream(
     channel: string,
     text: string,
@@ -732,7 +651,6 @@ export class SlackMessagingBot implements MessagingBot {
     return ts;
   }
 
-  /** Append a delta of any length, split to the per-call cap. */
   async appendMessageStream(channel: string, ts: string, text: string): Promise<void> {
     for (const part of chunkStreamText(text)) {
       await this.appendStreamChunk(channel, ts, part);
@@ -744,8 +662,6 @@ export class SlackMessagingBot implements MessagingBot {
       await this.webClient.apiCall("chat.appendStream", {
         channel,
         ts,
-        // A mention split across stream deltas stays unresolved here; the
-        // canonical final render (updateMessage) resolves the full text.
         markdown_text: this.resolveMentions(text),
       });
     });
@@ -763,11 +679,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  // ==========================================================================
-  // Slack Assistant API (AI assistant experience)
-  // ==========================================================================
-
-  /** Set the status for an assistant thread (shows "thinking" state) */
   async setAssistantStatus(channel: string, threadTs: string, status: string): Promise<void> {
     const key = `${channel}:${threadTs}`;
     const previous = this.statusUpdates.get(key) ?? Promise.resolve();
@@ -788,15 +699,12 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  /** Offer starting points in a new assistant thread. */
   async setAssistantSuggestedPrompts(
     channel: string,
     threadTs: string | undefined,
     prompts: SuggestedPrompt[],
   ): Promise<void> {
     return slackRetry(async () => {
-      // Omitting thread_ts pins the prompts to the DM itself, which is what
-      // the agent surface wants: there is no thread yet when it opens.
       await this.webClient.assistant.threads.setSuggestedPrompts({
         channel_id: channel,
         ...(threadTs ? { thread_ts: threadTs } : {}),
@@ -805,7 +713,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /** Name an assistant thread, which is what the sidebar conversation list shows. */
   async setAssistantTitle(channel: string, threadTs: string, title: string): Promise<void> {
     return slackRetry(async () => {
       await this.webClient.assistant.threads.setTitle({
@@ -816,7 +723,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /** The assistant surface's view of this bot, handed to the lifecycle handlers. */
   private assistantOps(): AssistantSurfaceOps {
     return {
       postInThread: (channel, threadTs, text) => this.postInThread(channel, threadTs, text),
@@ -827,10 +733,6 @@ export class SlackMessagingBot implements MessagingBot {
     };
   }
 
-  /**
-   * A new conversation opened in the assistant pane. Slack waits for the app
-   * to speak first here; staying silent is what makes the pane look broken.
-   */
   private handleAssistantThreadStarted({ event, ack }: { event: unknown; ack: () => void }): void {
     ack();
     const payload = event as { assistant_thread?: AssistantThreadPayload };
@@ -842,12 +744,6 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
-  /**
-   * The person navigated to another channel while the pane is open. Slack
-   * sends this as `assistant_thread_context_changed` under `assistant_view`
-   * and `app_context_changed` under `agent_view`; the payload differs enough
-   * to normalize here rather than in the handler.
-   */
   private handleAgentContextChangedEvent({
     event,
     ack,
@@ -976,14 +872,6 @@ export class SlackMessagingBot implements MessagingBot {
     };
   }
 
-  // ==========================================================================
-  // Events Integration
-  // ==========================================================================
-
-  /**
-   * Enqueue an event for processing. Always queues (no "already working" rejection).
-   * Returns true if enqueued, false if queue is full (max 5).
-   */
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
     const conversationId = event.conversationId;
@@ -1062,10 +950,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  // ==========================================================================
-  // Private - Event Handlers
-  // ==========================================================================
-
   private getQueue(channelId: string): MessagingEventQueue {
     let queue = this.queues.get(channelId);
     if (!queue) {
@@ -1108,14 +992,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /**
-   * Slack's own conversation vocabulary for this channel, from the metadata
-   * fetchChannels() already loads. Externally shared channels report
-   * "external" regardless of privacy — platform-public within one workspace
-   * is the sharing condition, and a channel visible to another organization
-   * does not satisfy it. Unknown channels return undefined (never recorded,
-   * so the projection keeps its isolated default).
-   */
   private channelKindFor(channelId: string): PlatformChannelKind | undefined {
     if (channelId.startsWith("D")) return "im";
     const channel = this.channels.get(channelId);
@@ -1127,13 +1003,6 @@ export class SlackMessagingBot implements MessagingBot {
     return undefined;
   }
 
-  /**
-   * Office visibility follows the recorded channel kind, and an unrecorded
-   * kind fails closed to private (ADR 0008). Offices created before kinds
-   * were recorded would therefore lose public status until their next
-   * message; the channel list loaded at startup already knows every kind, so
-   * record it for all registered Slack offices now. Metadata only.
-   */
   private backfillChannelKinds(): void {
     let recorded = 0;
     for (const record of listRegisteredOffices(this.workspace.stateDir)) {
@@ -1164,8 +1033,6 @@ export class SlackMessagingBot implements MessagingBot {
       try {
         recordPlatformChannelKind(this.workspace.office(options.event.address), kind);
       } catch (err) {
-        // A failed snapshot must not block the message; the projection just
-        // keeps its previous (or isolated default) posture.
         log.logWarning("Failed to record Slack channel kind", String(err));
       }
     }
@@ -1192,8 +1059,6 @@ export class SlackMessagingBot implements MessagingBot {
       deferAttachmentsUntilRun: true,
     }).then(
       (outcome) => {
-        // Slack logs eagerly via logUserMessage; when intake does not enqueue,
-        // nothing awaits the attachment download, so absorb its failure here.
         if (outcome !== "enqueued") absorbAttachmentFailure();
       },
       (err) => {
@@ -1252,7 +1117,6 @@ export class SlackMessagingBot implements MessagingBot {
             {
               type: "button",
               text: { type: "plain_text", text: "Force Stop", emoji: true },
-              // `value` preserves the raw key; action_id is only a unique route.
               action_id: `force_stop_${session.sessionKey.replace(/:/g, "_")}`,
               value: session.sessionKey,
               style: "danger",
@@ -1263,10 +1127,6 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  /**
-   * Scheduled jobs of the opener's own DM office only: the App Home is a
-   * personal surface, so other offices' schedules are not listed here.
-   */
   private appendScheduledJobs(blocks: object[], dmChannelId: string | undefined): void {
     const periodicEvents =
       dmChannelId && this.eventScheduler
@@ -1349,9 +1209,6 @@ export class SlackMessagingBot implements MessagingBot {
       platform: "slack",
       conversationId,
       id: ts,
-      // One session identity per dispatch: the caller's thread-resolved key.
-      // Defaulting to the top-level conversation here while the event carried
-      // a thread key made the same run answer to two different sessions.
       sessionKey: options.sessionKey ?? conversationId,
       conversationKind: options.ephemeralChannelId ? "shared" : "direct",
       userId,
@@ -1473,12 +1330,6 @@ export class SlackMessagingBot implements MessagingBot {
     return { event, context };
   }
 
-  /**
-   * Generic slash-command route: synthesize the command text per the
-   * manifest's SlackSlashRoute data and dispatch to the handler. Every
-   * routed command — including `/pi-new` — reaches its CommandHandler
-   * through runtime dispatch; the adapter holds no per-command behavior.
-   */
   private async routeSlashCommand(
     route: SlackSlashRoute,
     payload: {
@@ -1527,16 +1378,12 @@ export class SlackMessagingBot implements MessagingBot {
     this.socketClient.on("app_home_opened", (payload) => {
       void this.intake.run(() => this.handleAppHomeOpened(payload));
     });
-    // The assistant surface's lifecycle. Both events were already subscribed
-    // in the app manifest and then dropped on the floor, which is why the pane
-    // opened empty and the sidebar filled with untitled conversations.
     this.socketClient.on("assistant_thread_started", (payload) => {
       void this.intake.run(() => this.handleAssistantThreadStarted(payload));
     });
     this.socketClient.on("assistant_thread_context_changed", (payload) => {
       void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
     });
-    // agent_view's spelling of the same signal.
     this.socketClient.on("app_context_changed", (payload) => {
       void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
     });
@@ -1566,14 +1413,11 @@ export class SlackMessagingBot implements MessagingBot {
       files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
     };
 
-    // Skip DMs (handled by message event)
     if (e.channel.startsWith("D")) {
       ack();
       return;
     }
 
-    // Top-level mentions use a persistent channel session.
-    // Thread replies get their own isolated session (channelId:thread_ts).
     const sessionKey = resolveSlackSessionKey(e.channel, e.thread_ts);
 
     const mentionText = this.stripOwnMention(e.text);
@@ -1593,7 +1437,6 @@ export class SlackMessagingBot implements MessagingBot {
 
     const attachmentsPromise = this.logUserMessage(slackEvent);
 
-    // Only trigger processing for messages AFTER startup (not replayed old messages)
     if (this.startupTs && e.ts < this.startupTs) {
       log.logInfo(
         `[${e.channel}] Logged old message (pre-startup), not triggering: ${slackEvent.text.substring(0, 30)}`,
@@ -1628,8 +1471,6 @@ export class SlackMessagingBot implements MessagingBot {
       return false;
     }
 
-    // User-token posts carry bot_id/app_id beside the human user. Only unknown
-    // authors and known bot users take the external-bot loop-protection path.
     const authorIsKnownHuman = !!event.user && this.users.get(event.user)?.isBot === false;
     const isExternalMessage =
       event.subtype === "bot_message" || (!!event.bot_id && !authorIsKnownHuman);
@@ -1651,13 +1492,6 @@ export class SlackMessagingBot implements MessagingBot {
     return false;
   }
 
-  /**
-   * Handle a DM message that may be about a background task without spending
-   * a model turn: a pure status question is answered from observation, and a
-   * supplement is steered into the running task. Jev decides which (falling
-   * back to the regex status shortcut); anything else returns false so the
-   * message becomes an ordinary conversation turn.
-   */
   private async deliverTaskUpdate(
     event: SlackEvent,
     attachmentsPromise: Promise<Attachment[]>,
@@ -1676,8 +1510,6 @@ export class SlackMessagingBot implements MessagingBot {
       if (!tasks.length) return false;
       const active = tasks.filter((t) => t.status === "running" || t.status === "stopping");
       const user = this.users.get(event.user);
-      // A message carrying files is never a pure status question; in a task
-      // thread it is a supplement, at top level an ordinary turn.
       const intent: TaskIntent = event.attachments?.length
         ? event.thread_ts
           ? "steer"
@@ -1703,8 +1535,6 @@ export class SlackMessagingBot implements MessagingBot {
         return true;
       }
       if (intent === "steer") {
-        // In a thread the message already targets that task; at top level it
-        // can only be steered when exactly one task is running.
         const target = event.thread_ts
           ? context.message
           : active.length === 1
@@ -1728,17 +1558,6 @@ export class SlackMessagingBot implements MessagingBot {
     return false;
   }
 
-  /**
-   * Ask Jev a single typed yes/no question about whether this unaddressed
-   * shared-channel message (top-level or thread reply) addresses mikan. The
-   * scored state carries the surrounding scope from log.jsonl, since a bare
-   * thread reply cannot be judged from its own text. Only called in `jev`
-   * auto-reply mode, and only awaited by the caller in that mode, so
-   * `on`/`off` stay synchronous (magic-word `stop` handling depends on that).
-   * Any failure (including a missing `OPENROUTER_API_KEY`) fails closed to
-   * "not addressed" so a misconfiguration cannot make the bot noisy in a
-   * shared channel.
-   */
   private async evaluateJevAddressed(event: SlackEvent): Promise<boolean> {
     if (!event.text.trim() || matchMagicWord(event.text) === "stop") return false;
 
@@ -1788,15 +1607,10 @@ export class SlackMessagingBot implements MessagingBot {
     const e = event as SlackIncomingMessage;
     if (!this.admitHumanMessage(e, ack)) return;
 
-    // message.im normally carries channel_type "im", but fall back to the
-    // D-prefix convention (used by handleAppMention and session keys) so a
-    // missing channel_type cannot silently classify a DM as an unaddressed
-    // channel message that never triggers.
     const isDM = e.channel_type === "im" || e.channel.startsWith("D");
     const conversationKind: ConversationKind = isDM ? "direct" : "shared";
     const isMessagingBotMention = e.text?.includes(`<@${this.botUserId}>`);
 
-    // Skip channel @mentions - already handled by app_mention event
     if (!isDM && isMessagingBotMention) {
       ack();
       return;
@@ -1804,9 +1618,6 @@ export class SlackMessagingBot implements MessagingBot {
 
     const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
 
-    // Name the conversation from the first thing the person said. Guarded on
-    // the assistant registry, so classic DM threads are untouched, and it
-    // claims the title once per thread.
     if (isDM && e.thread_ts && e.text) {
       void titleAssistantThread(
         this.assistantOps(),
@@ -1833,7 +1644,6 @@ export class SlackMessagingBot implements MessagingBot {
 
     const attachmentsPromise = this.logUserMessage(slackEvent);
 
-    // Only trigger processing for messages AFTER startup (not replayed old messages)
     if (this.startupTs && e.ts < this.startupTs) {
       log.logInfo(
         `[${e.channel}] Skipping old message (pre-startup): ${slackEvent.text.substring(0, 30)}`,
@@ -1848,10 +1658,6 @@ export class SlackMessagingBot implements MessagingBot {
     const activeSessionKey =
       slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
     slackEvent.sessionKey = activeSessionKey;
-    // Task threads always go through the task gate. Top-level DMs do only
-    // while a task is running (so supplements can be steered) or when the
-    // regex already recognises a status question about a finished one, so
-    // idle DMs never pay a Jev round-trip.
     const taskControl =
       isDM &&
       (e.thread_ts
@@ -1861,9 +1667,6 @@ export class SlackMessagingBot implements MessagingBot {
       ack();
       if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
     }
-    // Shared-channel messages without a mention, top-level or in a thread,
-    // all go through the same auto-reply gate; jev mode sees the surrounding
-    // scope so thread follow-ups are judged in context rather than dropped.
     const autoReplyMode = isDM
       ? "off"
       : slackConversationAutoReplyMode(this.workspace.office(slackEvent.address));
@@ -1930,10 +1733,6 @@ export class SlackMessagingBot implements MessagingBot {
     const e = event as { user: string; tab: string; channel?: string; context?: AgentContext };
     ack();
 
-    // Under agent_view this is how Slack says "the person opened the app's
-    // DM" — the signal assistant_thread_started used to carry. It fires on
-    // every open, not once per conversation, so this path refreshes the
-    // pinned prompts and deliberately does not greet.
     if (e.tab === "messages") {
       if (e.channel) {
         void handleAgentDmOpened(this.assistantOps(), this.assistantThreads, e.channel, e.context);
@@ -1972,9 +1771,6 @@ export class SlackMessagingBot implements MessagingBot {
     }
 
     ack();
-    // Prefer the verbatim key from `value`; the action_id fallback only
-    // serves buttons rendered before `value` existed and misdecodes session
-    // keys whose conversation id contains "_".
     const sessionKey =
       action.value ?? action.action_id.replace("force_stop_", "").replace(/_/g, ":");
     const userId = body.user?.id;
@@ -1982,13 +1778,10 @@ export class SlackMessagingBot implements MessagingBot {
 
     log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
 
-    // Use handler's forceStop method
     this.handler.forceStop(createOfficeAddress("slack", channelId), sessionKey);
 
-    // Notify in channel
     await this.postMessage(channelId, formatForceStopped("slack", userId ?? "unknown"));
 
-    // Refresh home tab
     if (userId) {
       this.openDirectConversation(userId)
         .then((dmChannelId) =>
@@ -2085,11 +1878,6 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  /**
-   * Download Slack message files into the office's attachments directory.
-   * The Slack contract is all-or-error: any failed download throws after the
-   * successful ones are on disk, so callers still log the message text.
-   */
   private async processAttachments(
     channelId: string,
     files: Array<{ name?: string; url_private_download?: string; url_private?: string }>,
@@ -2104,7 +1892,6 @@ export class SlackMessagingBot implements MessagingBot {
       }
       items.push({
         name: file.name,
-        // Slack timestamps are float seconds; the stored filename uses ms.
         timestampMs: Math.floor(parseFloat(timestamp) * 1000),
         download: (destPath: string) => this.downloadSlackFile(url, destPath),
       });
@@ -2121,7 +1908,6 @@ export class SlackMessagingBot implements MessagingBot {
     return saved;
   }
 
-  /** Authorized download with retry; Slack file URLs require the bot token. */
   private async downloadSlackFile(url: string, destPath: string): Promise<void> {
     await withRetry(
       async () => {
@@ -2141,9 +1927,6 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
-  /**
-   * Log a user message to log.jsonl after attachments are ready.
-   */
   private async logUserMessage(event: SlackEvent): Promise<Attachment[]> {
     const user = this.users.get(event.user);
     let attachments: Attachment[] = [];
@@ -2155,8 +1938,6 @@ export class SlackMessagingBot implements MessagingBot {
         attachmentError = err;
       }
     }
-    // Always write the text log, even if attachment processing failed — we want
-    // a record of the user message regardless of file-handling errors.
     this.logToFile(event.channel, {
       date: new Date(parseFloat(event.ts) * 1000).toISOString(),
       ts: event.ts,
@@ -2208,10 +1989,6 @@ export class SlackMessagingBot implements MessagingBot {
     return attachments;
   }
 
-  // ==========================================================================
-  // Private - Backfill
-  // ==========================================================================
-
   private async getExistingTimestamps(channelId: string): Promise<Set<string>> {
     const logPath = join(this.conversationDir(channelId), "log.jsonl");
     const timestamps = new Set<string>();
@@ -2239,7 +2016,6 @@ export class SlackMessagingBot implements MessagingBot {
       if (this.botId && message.bot_id === this.botId) return false;
       return BOT_MESSAGE_SUBTYPES.has(message.subtype) && hasMessageContent(message);
     }
-    // Unlike live intake, historical human posts need text or files, not just blocks.
     return (
       !!message.user &&
       USER_MESSAGE_SUBTYPES.has(message.subtype) &&
@@ -2250,7 +2026,6 @@ export class SlackMessagingBot implements MessagingBot {
   private async backfillChannel(channelId: string, upperBoundTs?: string): Promise<number> {
     const existingTs = await this.getExistingTimestamps(channelId);
 
-    // Find the biggest ts in log.jsonl
     let lastLoggedTs: string | undefined;
     for (const ts of existingTs) {
       if (!lastLoggedTs || parseFloat(ts) > parseFloat(lastLoggedTs)) lastLoggedTs = ts;
@@ -2265,8 +2040,8 @@ export class SlackMessagingBot implements MessagingBot {
     do {
       const result = await this.webClient.conversations.history({
         channel: channelId,
-        oldest: lastLoggedTs, // Only fetch messages newer than what we have
-        latest: upperBoundTs, // Do not race live socket events after startup
+        oldest: lastLoggedTs,
+        latest: upperBoundTs,
         inclusive: false,
         limit: 1000,
         cursor,
@@ -2278,16 +2053,13 @@ export class SlackMessagingBot implements MessagingBot {
       pageCount++;
     } while (cursor && pageCount < maxPages);
 
-    // Filter: include mikan's messages, external app/bot messages, and user messages.
     const relevantMessages = allMessages.filter((msg) => {
-      if (!msg.ts || existingTs.has(msg.ts)) return false; // Skip duplicates
+      if (!msg.ts || existingTs.has(msg.ts)) return false;
       return this.isBackfillableMessage(msg);
     });
 
-    // Reverse to chronological order
     relevantMessages.reverse();
 
-    // Log each message to log.jsonl
     for (const msg of relevantMessages) {
       const isMikanMessage = msg.user === this.botUserId;
       const isExternalMessagingBotMessage = !isMikanMessage && hasBotIdentity(msg);
@@ -2321,7 +2093,6 @@ export class SlackMessagingBot implements MessagingBot {
   private async backfillAllChannels(upperBoundTs?: string): Promise<void> {
     const startTime = Date.now();
 
-    // Only backfill channels that already have a log.jsonl (mikan has interacted with them before)
     const channelsToBackfill: Array<[string, SlackChannel]> = [];
     for (const [channelId, channel] of this.channels) {
       const logPath = join(this.conversationDir(channelId), "log.jsonl");
@@ -2342,7 +2113,6 @@ export class SlackMessagingBot implements MessagingBot {
         log.logWarning(`Failed to backfill #${channel.name}`, String(error));
       }
 
-      // Add delay between channels to avoid hitting Slack rate limits
       if (channelId !== channelsToBackfill[channelsToBackfill.length - 1]?.[0]) {
         await new Promise((resolve) => setTimeout(resolve, 500));
       }
@@ -2351,10 +2121,6 @@ export class SlackMessagingBot implements MessagingBot {
     const durationMs = Date.now() - startTime;
     log.logBackfillComplete(totalMessages, durationMs);
   }
-
-  // ==========================================================================
-  // Private - Fetch Users/Channels
-  // ==========================================================================
 
   private async fetchUsers(): Promise<void> {
     let cursor: string | undefined;
@@ -2383,7 +2149,6 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private async fetchChannels(): Promise<void> {
-    // Fetch public/private channels
     let cursor: string | undefined;
     do {
       const result = await this.webClient.conversations.list({
@@ -2414,7 +2179,6 @@ export class SlackMessagingBot implements MessagingBot {
       cursor = result.response_metadata?.next_cursor;
     } while (cursor);
 
-    // Also fetch DM channels (IMs)
     cursor = undefined;
     do {
       const result = await this.webClient.conversations.list({
@@ -2425,7 +2189,6 @@ export class SlackMessagingBot implements MessagingBot {
       const ims = result.channels as Array<{ id?: string; user?: string }> | undefined;
       for (const im of ims ?? []) {
         if (!im.id) continue;
-        // Use user's name as channel name for DMs
         const user = im.user ? this.users.get(im.user) : undefined;
         const name = user ? `DM:${user.userName}` : `DM:${im.id}`;
         this.channels.set(im.id, { id: im.id, name });

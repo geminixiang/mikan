@@ -653,8 +653,6 @@ describe("ChatHistorySync", () => {
     await session.close();
     writeLog(logEntries);
 
-    // Scope resolution only materializes; the incremental sync is the
-    // runtime's single per-event call through syncSessionManager.
     const secondScope = await manager.resolveSessionScope({
       conversationDir,
       sessionKey: "C123",
@@ -942,8 +940,6 @@ describe("ChatHistorySync", () => {
       currentMessageId: "2000.0002",
     });
 
-    // Nothing new to sync: the report says so through the interface, and the
-    // bootstrap's single watermark entry is the only one on disk.
     expect(report).toEqual({ appended: 0 });
     expect(
       countJsonlEntries(

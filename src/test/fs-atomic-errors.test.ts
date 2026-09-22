@@ -29,7 +29,6 @@ describe("atomicWritePrivateFile error handling", () => {
 
     expect(() => atomicWritePrivateFile("/tmp/target.txt", "hello")).toThrow("disk full");
     expect(fs.writeSync).toHaveBeenCalled();
-    // The temp sibling (never the target) is removed and the fd is closed.
     expect(fs.unlinkSync).toHaveBeenCalledWith(
       expect.stringMatching(/\/tmp\/\.target\.txt\..+\.tmp$/),
     );

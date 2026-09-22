@@ -32,25 +32,9 @@ interface RendererState {
   typingInterval: ReturnType<typeof setInterval> | null;
   typingFailureWarned: boolean;
   extraIds: Array<string | number>;
-  /**
-   * Messages holding the overflow of a response too long for one message,
-   * in order. Reused across redraws — see `postSplit`.
-   */
   continuationIds: Array<string | number>;
 }
 
-/**
- * Floor on how often a streaming response redraws.
- *
- * Every platform meters edits per channel — Slack's is the tightest at roughly
- * fifty a minute — and a redraw sends the whole message, so the cost is the
- * number of calls, not their size. One second keeps a long answer inside that
- * budget while still reading as live.
- *
- * This is a floor, not a target: the interval is measured from when the last
- * redraw *finished*, so a platform that slows down under load slows the redraw
- * rate with it instead of queueing work it cannot deliver.
- */
 const DEFAULT_FLUSH_INTERVAL_MS = 1000;
 
 class ProgressiveRenderer {
@@ -289,12 +273,8 @@ class ProgressiveRenderer {
       if (this.platform.notifySendFailure) {
         try {
           await this.platform.notifySendFailure(message);
-        } catch {
-          // A secondary notification must not poison the response queue.
-        }
+        } catch {}
       }
-      // Incremental/status updates are best effort. Replacements and finalization
-      // are delivery boundaries: callers must not mistake a rejected send for success.
       if (label === "replaceResponse" || label === "finishResponse") throw err;
     });
     this.queueTail = handled.catch(() => undefined);
@@ -324,8 +304,6 @@ class ProgressiveRenderer {
           try {
             this.state.source = await this.renderDelta(this.state.source);
           } finally {
-            // A rejected edit still spent an API call. Pace subsequent deltas
-            // from its completion too, retaining source for the next attempt.
             this.state.lastFlushAt = this.now();
           }
         }
@@ -519,18 +497,14 @@ class ProgressiveRenderer {
         for (const id of [...this.state.extraIds, ...this.state.continuationIds]) {
           try {
             await this.platform.deleteExtra?.(id);
-          } catch {
-            // Deleting diagnostics is best effort.
-          }
+          } catch {}
         }
         this.state.extraIds = [];
         this.state.continuationIds = [];
         if (this.state.responseId !== null) {
           try {
             await this.platform.delete?.(this.state.responseId);
-          } catch {
-            // Deleting the main response is best effort.
-          }
+          } catch {}
         }
         this.state.responseId = null;
         this.state.source = "";

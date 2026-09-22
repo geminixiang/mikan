@@ -99,7 +99,6 @@ describe("migrateLegacyDoorPolicy", () => {
       {},
     );
     expect(statSync(join(newStyleFull.stateDir, "settings.json")).mode & 0o777).toBe(0o600);
-    // Files without retired keys are not rewritten; migration markers survive.
     expect(readFileSync(join(untouched.stateDir, "settings.json"), "utf8")).toBe(
       JSON.stringify({ slack: { replyMode: "thread" } }),
     );

@@ -86,14 +86,6 @@ export function getSandboxWorkspaceCapabilities(
 
 const warnedUnenforcedPrivacy = new Set<string>();
 
-/**
- * Only backends with a managed Workspace projection enforce office
- * visibility (read-only global knowledge, no access to other private
- * offices). Host, shared-container, and remote backends run every office in
- * one filesystem and are documented as trusted deployments (ADR 0003), so a
- * private office there is served with a one-time warning rather than
- * refused: refusing would take every DM offline on those backends.
- */
 export function assertSandboxSupportsWorkspacePolicy(
   sandboxConfig: SandboxConfig,
   visibility: "public" | "private",
@@ -132,10 +124,6 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
   await requireSandboxAdapter(config.type).validate?.(config);
 }
 
-/**
- * Create an executor that runs commands on host, in Docker, or through a
- * Cloudflare sandbox bridge.
- */
 export function createExecutor(
   config: SandboxConfig,
   env?: Record<string, string>,
@@ -148,12 +136,6 @@ export function createExecutor(
   return adapter.createExecutor(config, env, ensureReady);
 }
 
-/**
- * The runtime path context for a sandbox config before an actor-specific
- * executor is resolved. `image` configs are unresolved by nature (the actor
- * decides the concrete container), but their mount layout is fixed, so path
- * mapping is known without resolving.
- */
 export function getUnresolvedSandboxPathContext(
   sandboxConfig: SandboxConfig,
   hostWorkspaceRoot: string,

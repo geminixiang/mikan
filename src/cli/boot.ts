@@ -1,12 +1,3 @@
-/**
- * Boot resolution for the `mikan` binary: argv → a BootPlan saying which mode
- * to run and with what configuration. Pure — no side effects, no exits — so
- * the grammar that actually drives the daemon is testable without spawning a
- * process; main.ts just executes the plan.
- *
- * Modes, highest priority first: `office`, `sessions`, `env` (own grammars, never
- * flag-parsed here), `help`, `version`, `onboard`, `download`, `run`.
- */
 import { join, resolve } from "node:path";
 import { envSummaryLines } from "../env-manifest.js";
 import { parseSandboxArg } from "../sandbox/index.js";
@@ -51,8 +42,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   const command = bootCommand();
   command.parse(args, { from: "user" });
   const options = command.opts<BootOptions & { V?: boolean }>();
-  // `onboard` counts as a subcommand only in first position; anywhere else it
-  // is an ordinary working-directory positional.
   const onboardFirst = args[0] === "onboard";
   const workingDirArg = (onboardFirst ? command.args.slice(1) : command.args).at(-1);
   const downloadChannel = options.download;

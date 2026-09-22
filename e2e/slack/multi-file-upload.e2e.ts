@@ -36,7 +36,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack multi-file upload", () =
       ],
       `<@${botUserId}> 請閱讀這兩個檔案，並在同一則回覆中原樣包含兩個 token`,
     );
-    // Upload success is not proof that Slack shared the files to this channel.
     let shareTs: string | undefined;
     const deadline = Date.now() + LOCAL_DELIVERY_TIMEOUT_MS;
     while (!shareTs && Date.now() < deadline) {
@@ -72,8 +71,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack multi-file upload", () =
     });
     expect(reply, `no multi-file reply containing ${tokenA}`).not.toBeNull();
 
-    // The second token normally lands in the same message; poll again so a
-    // split reply still passes.
     const replyWithB = await waitForRecentBotReply({
       client,
       channel: env.channel,

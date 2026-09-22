@@ -76,7 +76,6 @@ describe("MikanAgentSession", () => {
     expect(lastAssistant).toBeDefined();
     expect(JSON.stringify(lastAssistant)).toContain("hello from faux");
 
-    // User + assistant messages are persisted to the session file.
     const persisted = readFileSync(sessionFile, "utf-8")
       .split("\n")
       .filter(Boolean)
@@ -151,7 +150,6 @@ describe("MikanAgentSession", () => {
 
   test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
     const { models, faux, model } = createFauxSetup();
-    // Would take two LLM calls (tool call, then final); the cap stops it at one.
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
       fauxAssistantMessage("done"),
@@ -181,8 +179,6 @@ describe("MikanAgentSession", () => {
       expect(budgetEvent.reason).toContain("LLM calls");
     }
 
-    // The cap trips after the first LLM call and aborts the run, so the second
-    // turn produces no output — the "done" response never materializes.
     expect(JSON.stringify(await sessionStore.getEntries())).not.toContain("done");
   });
 
@@ -249,8 +245,6 @@ describe("MikanAgentSession", () => {
     expect(stats.usage.cacheWrite).toBeGreaterThanOrEqual(500);
     expect(stats.budgetExceededReason).toContain("cost");
     expect(events.some((event) => event.type === "budget_exceeded")).toBe(true);
-    // Enforcement happens at the fold itself: the run aborts before paying
-    // for another parent LLM call, so the second response never materializes.
     expect(JSON.stringify(session.messages)).not.toContain("done");
   });
 
@@ -438,7 +432,6 @@ describe("MikanAgentSession", () => {
   });
 
   test("throws a clear error when provider auth is missing", async () => {
-    // Custom provider with no key configured anywhere: auth resolution fails.
     const modelsJsonPath = join(dir, "models.json");
     writeFileSync(
       modelsJsonPath,

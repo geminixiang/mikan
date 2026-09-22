@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import * as log from "../log.js";
 import type { LogContext } from "../types.js";
 
-// eslint-disable-next-line no-control-regex
 const ANSI = /\[[0-9;]*m/g;
 
 function captureConsole() {
@@ -162,7 +161,6 @@ describe("log usage summary", () => {
     expect(summary).toContain("_Usage Summary_");
     expect(summary).toContain("Input: 1,200 tokens");
     expect(summary).toContain("Output: 3,400 tokens");
-    // 800 / (1200 + 800 + 0) = 40.0%
     expect(summary).toContain("CH 40.0%");
     expect(summary).toContain("= *$0.0350*");
     expect(summary).not.toContain("Context:");
@@ -190,13 +188,11 @@ describe("log usage summary", () => {
 
   test("includes a context line with human-friendly token counts when provided", () => {
     const summary = log.logUsageSummary(ctx, usage, 5_000, 200_000);
-    // formatTokenCount: 5000 (<10k) -> "5.0k", 200000 -> "200k"
     expect(summary).toContain("Context: 5.0k / 200k (2.5%)");
   });
 
   test("formats sub-thousand context counts without a suffix", () => {
     const summary = log.logUsageSummary(ctx, usage, 500, 1_000_000);
-    // 500 -> "500", 1_000_000 -> "1.0M"
     expect(summary).toContain("Context: 500 / 1.0M");
   });
 });

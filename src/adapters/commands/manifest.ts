@@ -1,24 +1,7 @@
-/**
- * Platform-agnostic command manifest — the single inventory that platform
- * adapters derive their native slash-command registration and routing from,
- * and that `isCommandText` and the handler grammars mirror.
- *
- * Adding a command means adding a manifest entry plus a handler in this
- * directory; adapters pick up registration and routing from the entry instead
- * of hand-restating the inventory (where a missed spot used to mean a silent
- * no-response).
- *
- * Per CONTEXT.md, slash commands are a minimal chat control surface: detailed
- * or infrequent settings belong in Admin, and bare commands are limited to
- * `session`. `stop` is listed for platform registration/UI only — it is a
- * magic word owned by conversation intake, not a command handler.
- */
-
 import type { CommandManifestEntry } from "./types.js";
 
 export type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
 
-/** Entry order is the Telegram command-menu order. */
 export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
   {
     name: "login",
@@ -55,12 +38,6 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     description: "Show sandbox status or boost limits",
     arg: {
       name: "action",
-      // Discord caps option descriptions at 100 characters (registration
-      // fails otherwise); commands.test.ts enforces the budget.
-      // The `door` action still works but is deliberately undocumented: the
-      // workspace posture follows the platform's own channel visibility
-      // automatically, and overriding it is an admin escape hatch, not a
-      // user-facing feature.
       description: "'boost' temporarily applies the configured boost limits",
       required: false,
     },
@@ -115,7 +92,6 @@ export function commandManifestEntry(name: string): CommandManifestEntry {
   return entry;
 }
 
-/** Slash spellings of a command: `/<name>` and `/pi-<name>` for the name and each alias. */
 export function slashForms(name: string): readonly string[] {
   const entry = commandManifestEntry(name);
   return [entry.name, ...(entry.aliases ?? [])].flatMap((spelling) => [
@@ -124,13 +100,11 @@ export function slashForms(name: string): readonly string[] {
   ]);
 }
 
-/** Every accepted spelling: the bare name (when the command is bare) plus slash forms. */
 export function commandForms(name: string): readonly string[] {
   const entry = commandManifestEntry(name);
   return [...(entry.bare ? [entry.name] : []), ...slashForms(name)];
 }
 
-/** Telegram `setMyCommands` payload (menu registration; routing is separate). */
 export function telegramCommandMenu(): { command: string; description: string }[] {
   return COMMAND_MANIFEST.filter((entry) => entry.telegramMenu).map((entry) => ({
     command: entry.name,
@@ -152,15 +126,6 @@ export function matchCommand<Command extends string>(
   return aliases.includes(command) ? { command, args: tokens.slice(1) } : null;
 }
 
-/**
- * Chat-command text recognition, derived from the command manifest so the
- * inventory has a single source of truth. Session resume uses it to keep
- * command messages out of replayed history.
- *
- * The `pi-[\w-]+` alternative is a catch-all for platform-prefixed command
- * names (including ones a platform registers but this build no longer
- * handles), independent of the manifest.
- */
 const COMMAND_NAMES = COMMAND_MANIFEST.flatMap((entry) => [entry.name].concat(entry.aliases ?? []));
 
 const COMMAND_TEXT_PATTERN = new RegExp(

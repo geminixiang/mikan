@@ -22,7 +22,6 @@ function formatMessage(ts: string, user: string, text: string, indent = ""): str
   const lines = text.split("\n");
   const firstLine = `${indent}${prefix}${lines[0]}`;
   if (lines.length === 1) return firstLine;
-  // All continuation lines get same indent as content start
   const contentIndent = indent + " ".repeat(prefix.length);
   return [firstLine, ...lines.slice(1).map((l) => contentIndent + l)].join("\n");
 }
@@ -35,14 +34,13 @@ export async function downloadChannel(channelId: string, botToken: string): Prom
   console.error(`Downloading history for #${channelName} (${channelId})...`);
 
   const messages = await fetchHistory(client, channelId);
-  messages.reverse(); // chronological order
+  messages.reverse();
 
   const threadReplies = await fetchThreadReplies(client, channelId, messages);
   const totalReplies = printTranscript(messages, threadReplies);
   console.error(`Done! ${messages.length} messages, ${totalReplies} thread replies`);
 }
 
-/** DM channels have no name; the id is the readable fallback. */
 async function resolveChannelName(client: WebClient, channelId: string): Promise<string> {
   try {
     const info = await client.conversations.info({ channel: channelId });
@@ -57,7 +55,6 @@ interface Page {
   response_metadata?: { next_cursor?: string };
 }
 
-/** Drain one cursor-paginated Slack conversations endpoint, page by page. */
 async function* pages(fetchPage: (cursor?: string) => Promise<Page>): AsyncGenerator<Message[]> {
   let cursor: string | undefined;
   do {
@@ -99,12 +96,11 @@ async function fetchReplies(client: WebClient, channelId: string, ts: string): P
   const fetchPage = (cursor?: string) =>
     client.conversations.replies({ channel: channelId, ts, limit: 200, cursor });
   for await (const page of pages(fetchPage)) {
-    replies.push(...page.slice(1)); // the first message is the parent
+    replies.push(...page.slice(1));
   }
   return replies;
 }
 
-/** Print every message with its thread replies indented underneath. */
 function printTranscript(
   messages: readonly Message[],
   threadReplies: ReadonlyMap<string, Message[]>,

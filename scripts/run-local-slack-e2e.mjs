@@ -1,4 +1,3 @@
-// Authorized real-platform tests only. See docs/testing/slack-e2e.md first.
 import {
   chmodSync,
   existsSync,
@@ -29,7 +28,6 @@ for (const key of [
 ]) {
   if (!env[key]) throw new Error(`Missing ${key}; set it before running real Slack E2E`);
 }
-// Confirm identities without printing any credentials.
 async function identity(token) {
   const response = await fetch("https://slack.com/api/auth.test", {
     headers: { Authorization: `Bearer ${token}` },
@@ -46,7 +44,6 @@ if (botAuth.team_id !== userAuth.team_id || botAuth.user_id === userAuth.user_id
 const base = mkdtempSync(join(tmpdir(), "mikan-slack-e2e-"));
 chmodSync(base, 0o700);
 const settings = JSON.parse(readFileSync(join(source, "settings.json"), "utf8"));
-// Disposable local QA intentionally uses host execution; never changes user settings.
 settings.sandbox = { workspace: { doorPolicy: "trusted", layout: "full" } };
 delete settings.sentry;
 delete settings.observability;

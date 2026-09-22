@@ -22,15 +22,9 @@ interface ImageResponse {
 export function createGenerateImageTool(options: {
   model: Model<Api>;
   getApiKey: () => Promise<string | undefined>;
-  /** Host directory the generated image is written into. Must be the
-   *  conversation's own office dir so the agent can also reach the file
-   *  from inside the sandbox; the workspace base is NOT guest-visible. */
   outputDir: string;
 }): {
   tool: AgentTool<typeof schema>;
-  /** The callback receives the HOST path of the generated file. The image is
-   *  written host-side, so upload must not stage it through the sandbox the
-   *  way the attach tool does — the file may not be mounted there. */
   setUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
 } {
   let uploadFn: ((hostPath: string, title?: string) => Promise<void>) | null = null;

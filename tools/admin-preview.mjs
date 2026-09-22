@@ -1,13 +1,4 @@
 #!/usr/bin/env node
-/**
- * Local admin-portal preview harness.
- *
- * Boots the real `handleAdminRequest` router against a throwaway workspace
- * seeded with realistic offices, sessions, skills, events and settings, so the
- * /admin UI can be exercised in a browser without any platform credentials.
- *
- *   node tools/admin-preview.mjs [port]
- */
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
@@ -36,7 +27,6 @@ const { InMemoryLinkTokenStore, createLoginRequestHandler } =
 const { InMemorySessionViewTokenStore, handleSessionViewRequest } =
   await import("../dist/adapters/web/session-view/portal.js");
 
-// ── workspace-level files ────────────────────────────────────────────────────
 writeFileSync(
   join(WS, "MEMORY.md"),
   `# Memory\n\n- User prefers concise replies\n- Deploys happen on Fridays\n`,
@@ -55,8 +45,6 @@ for (const [name, desc] of Object.entries(globalSkills)) {
   );
 }
 
-// ── offices ──────────────────────────────────────────────────────────────────
-/** @type {{platform:string,conversationId:string,title:string}[]} */
 const offices = [
   { platform: "telegram", conversationId: "1001", title: "Alice" },
   { platform: "telegram", conversationId: "100200", title: "Dev Group" },
@@ -65,7 +53,6 @@ const offices = [
   { platform: "github", conversationId: "geminixiang-mikan", title: "mikan repo" },
 ];
 
-// AgentMessage carries `content` blocks, not a `text` field.
 const say = (role, text) => ({ role, content: [{ type: "text", text }] });
 const CONVERSATIONS = [
   say("user", "Can you summarise the deploy notes from yesterday?"),
@@ -85,20 +72,17 @@ for (const spec of offices) {
   mkdirSync(office.sessionsDir, { recursive: true, mode: 0o700 });
   mkdirSync(office.attachmentsDir, { recursive: true, mode: 0o700 });
 
-  // per-conversation settings
   writeFileSync(
     join(office.stateDir, "settings.json"),
     JSON.stringify({ llm: { thinkingLevel: "medium" } }, null, 2),
   );
 
-  // conversation-level skills
   mkdirSync(join(office.skillsDir, "daily-standup"), { recursive: true });
   writeFileSync(
     join(office.skillsDir, "daily-standup", "SKILL.md"),
     `---\nname: daily-standup\ndescription: Summarise yesterday's deploys for ${spec.title}.\n---\n\n# daily-standup\n`,
   );
 
-  // one session with a realistic transcript
   const session = await SessionStore.create(
     join(office.sessionsDir, `s${sessionIndex}.jsonl`),
     WS,
@@ -120,7 +104,6 @@ for (const spec of offices) {
     await s2.appendMessage(say("assistant", "Three PRs merged, one release cut."));
   }
 
-  // events
   await eventStore(office).create(`preview-${sessionIndex}.json`, {
     type: "one-shot",
     platform: spec.platform,
@@ -130,7 +113,6 @@ for (const spec of offices) {
     at: new Date(Date.now() + 86_400_000).toISOString(),
   });
 
-  // conversation scratch workspace (the only browsable subtree in the admin UI)
   const scratch = join(office.dir, "scratch");
   mkdirSync(join(scratch, "notes"), { recursive: true });
   writeFileSync(
@@ -149,7 +131,6 @@ for (const spec of offices) {
   sessionIndex += 1;
 }
 
-// ── global settings ──────────────────────────────────────────────────────────
 writeFileSync(
   join(STATE, "settings.json"),
   JSON.stringify(
@@ -176,7 +157,6 @@ writeFileSync(
   ),
 );
 
-// ── admin token + server ─────────────────────────────────────────────────────
 const adminTokenStore = new InMemoryAdminTokenStore();
 const token = adminTokenStore.create({
   platform: "telegram",
@@ -197,8 +177,6 @@ const services = {
 
 const TOKEN_VALUE = typeof token === "string" ? token : token.token;
 
-// ── vault (/link) and session view (/session) share the same portal shell, so
-// they are served here too in order to catch regressions in shared styles.
 const linkTokenStore = new InMemoryLinkTokenStore();
 const linkToken = linkTokenStore.create("telegram", "1001", "1001", "vault-1001", "anthropic");
 const handleLoginRequest = createLoginRequestHandler(
@@ -220,10 +198,8 @@ const sessionToken = sessionViewTokenStore.create({
   sessionFile: previewSessionFile,
 });
 
-/** Minimal in-memory vault manager stub for the credential page. */
 function previewVaultManager() {
   return {
-    /** The credential page only reads `env` and `mounts`. */
     resolve: (id) =>
       id === "vault-1001"
         ? {

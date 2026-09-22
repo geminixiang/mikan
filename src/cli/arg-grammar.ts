@@ -3,7 +3,6 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readEnv } from "../env-manifest.js";
 
-/** Keep parsing testable: callers own output and exit codes. */
 export function cliCommand(name: string): Command {
   return new Command(name)
     .configureHelp({ showGlobalOptions: true })
@@ -31,7 +30,6 @@ export function defaultStateDir(): string {
   return join(homedir(), ".mikan");
 }
 
-/** Early instrumentation probe: tolerate unrelated flags without loading boot. */
 export function resolveStateDir(
   args: string[] = process.argv.slice(2),
   envValue: string | undefined = readEnv("STATE_DIR"),
@@ -50,7 +48,6 @@ export function resolveStateDir(
       : defaultStateDir();
 }
 
-/** Boot has already folded argv into the environment at this point. */
 export function effectiveStateDir(): string {
   return resolveStateDir([]);
 }

@@ -190,8 +190,6 @@ describe("requestPoll", () => {
     vi.useFakeTimers();
     const bot = makeBot();
     let resolveFirst!: () => void;
-    // Real poll(): sets pollInFlight, then re-runs via requestPoll when a poke
-    // arrived mid-flight. Stub only the repo scan.
     const pollRepoGate = new Promise<void>((resolve) => {
       resolveFirst = resolve;
     });

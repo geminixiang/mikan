@@ -96,19 +96,12 @@ export function createSentryInitOptions(dsn?: string, customOpenTelemetry = fals
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
     enabled: Boolean(dsn) && readEnv("SENTRY_ENABLED") !== "false",
-    // Also keeps gen_ai inputs/outputs off. Do not add a `dataCollection`
-    // block here: its mere presence switches the SDK base to all-true, and
-    // prompts and completions start shipping unless every key is set false.
     sendDefaultPii: false,
     tracesSampleRate: customOpenTelemetry ? undefined : 1.0,
     skipOpenTelemetrySetup: customOpenTelemetry,
     registerEsmLoaderHooks: customOpenTelemetry ? false : undefined,
     includeLocalVariables: false,
     enableLogs: true,
-    // Sentry's OpenAI APIPromise wrapper leaks a second rejection when an
-    // in-flight request is aborted (for example by an agent budget limit).
-    // Keep all other default integrations until the upstream wrapper handles
-    // both withResponse() branches without an unhandled rejection.
     integrations(defaultIntegrations: ReturnType<typeof Sentry.getDefaultIntegrations>) {
       const retained = defaultIntegrations.filter(
         (integration) =>
@@ -118,9 +111,6 @@ export function createSentryInitOptions(dsn?: string, customOpenTelemetry = fals
       );
       if (!customOpenTelemetry) return retained;
 
-      // OTel owns span creation and W3C propagation in custom mode. Keep
-      // Sentry's HTTP integration for request isolation, but do not let either
-      // Sentry integration create spans or inject a second set of headers.
       return [
         ...retained,
         Sentry.httpIntegration({ spans: false, tracePropagation: false }),
@@ -278,7 +268,6 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
     scope.setTag(key, value);
   }
   scope.setAttributes(attributes);
-  // Agent Monitoring groups spans by the platform session identifier.
   scope.setUser({ id: String(attributes.user_id) });
   scope.setConversationId(String(attributes.session_key));
   scope.setContext("agent_run", {
@@ -326,8 +315,6 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
     extra: sanitizeValue(event.extra) as T["extra"],
     contexts: sanitizeValue(event.contexts) as T["contexts"],
     request: sanitizeRequest(event.request),
-    // Keep the identity applyRunScope set so Conversations show who sent each
-    // message; drop anything else the SDK may have attached (email, IP).
     user: event.user ? { id: event.user.id, username: event.user.username } : undefined,
     server_name: undefined,
   };
@@ -491,23 +478,11 @@ export function sanitizeTelemetryString(value: string): string {
   return sanitized;
 }
 
-/**
- * Subagent outcomes that page. Everything else is a bounded, expected end
- * state the parent model already sees in the tool result: a budget or clock
- * ran out, the caller aborted, or a dependency failed upstream.
- */
 const UNEXPECTED_SUBAGENT_STATUSES: ReadonlySet<SubagentOutcomeStatus> = new Set([
   "failed",
   "invalid_output",
 ]);
 
-/**
- * Record one subagent outcome: a run counter and duration for every status,
- * a lifecycle breadcrumb, and a Sentry error only for statuses in
- * `UNEXPECTED_SUBAGENT_STATUSES`. Fingerprinted on the error's prefix before
- * the first colon so one failure class is one issue regardless of which
- * tool, file, or model message follows it.
- */
 export function recordSubagentOutcome(report: SubagentOutcomeReport): string | undefined {
   const attributes = metricAttributes({
     status: report.status,
@@ -566,11 +541,6 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
   );
 }
 
-/**
- * A subagent that never started: unknown profile, ungranted tool, or a
- * harness rejection. The throw still reaches the parent model as a tool
- * error; this only makes sure it also reaches Sentry.
- */
 export function reportSubagentLaunchError(
   error: unknown,
   report: Pick<SubagentOutcomeReport, "itemId" | "mode" | "profile">,
@@ -586,12 +556,6 @@ export function reportSubagentLaunchError(
   });
 }
 
-/**
- * Record one `evaluateWithJev` call's cost/duration, tagged by which call
- * site made it (the `jev` tool, `jev_browser`'s decision loop, Slack
- * auto-reply gating, task intent classification). Never receives the
- * judged state, questions, or answers — only the numbers.
- */
 export function recordJevOutcome(report: JevOutcomeReport): void {
   const attributes = metricAttributes({ caller: report.caller, status: report.status });
   Sentry.metrics.count("agent.jev.calls", 1, { attributes });

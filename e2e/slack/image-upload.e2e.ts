@@ -8,7 +8,6 @@ import {
   waitForRecentBotReply,
 } from "./helpers/slack.js";
 
-// Valid 1x1 orange PNG (8-bit RGB), generated offline and verified with `file`.
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP438AAAAQBAYDFKhhdAAAAAElFTkSuQmCC",
   "base64",
@@ -40,8 +39,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack image upload", () => {
       textIncludes: token,
     });
     if (!reply) {
-      // Budget models occasionally reply without the token; one
-      // conversational repair keeps the assertion strict without flaking.
       await postMessage(
         client,
         env.channel,

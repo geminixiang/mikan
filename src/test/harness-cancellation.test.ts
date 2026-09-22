@@ -205,7 +205,6 @@ describe("harness run cancellation", () => {
     });
     await session.prompt("new request");
     expect(faux.state.callCount).toBe(1);
-    // Pi persists the admitted user request even when execution is cancelled.
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 
@@ -216,7 +215,6 @@ describe("harness run cancellation", () => {
     await session.prompt("new request", { budget: { maxTokens: 1 } });
     expect(faux.state.callCount).toBe(1);
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
-    // Pi persists the admitted user request even when execution is cancelled.
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 
@@ -345,7 +343,6 @@ describe("harness run cancellation", () => {
     expect(
       (await session.sessionStore.getEntries()).some((entry) => entry.type === "compaction"),
     ).toBe(false);
-    // Pi persists the admitted user request even when execution is cancelled.
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 

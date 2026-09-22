@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-/**
- * Responsive audit for the admin portal.
- *
- * Drives an already-running Chrome over CDP to emulate several viewport
- * widths, then reports horizontal overflow and captures screenshots.
- *
- *   node tools/admin-responsive-audit.mjs <adminUrl> [outDir] [extraUrls...]
- *
- * Extra URLs (for example the vault and session-view pages that share the same
- * portal shell) are captured at each viewport as a single static page.
- */
 import { writeFileSync, mkdirSync } from "node:fs";
 
 const ADMIN_URL = process.argv[2];
@@ -42,7 +31,6 @@ const PANES = [
 
 mkdirSync(OUT, { recursive: true });
 
-// ── tiny CDP client over the raw websocket ──────────────────────────────────
 const target = await (await fetch(`${CDP_HTTP}/json/new?about:blank`, { method: "PUT" })).json();
 const ws = new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve, reject) => {
@@ -146,7 +134,6 @@ for (const vp of WIDTHS) {
     writeFileSync(`${OUT}/${vp.name}__${pane}.png`, Buffer.from(shot.data, "base64"));
   }
 
-  // Static pages that share the portal shell need no pane switching.
   for (const [i, url] of EXTRA_URLS.entries()) {
     await send("Page.navigate", { url });
     await new Promise((r) => setTimeout(r, 1200));

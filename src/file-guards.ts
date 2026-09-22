@@ -96,14 +96,6 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 const PRIVATE_FILE_MODE = 0o600;
 
-/**
- * Write `content` to `targetPath` with mode 0600, even when `targetPath`
- * already exists. Uses O_CREAT|O_EXCL on a temp sibling (so the kernel
- * guarantees permissions at creation, not after a racy chmod) and then
- * rename(2) into place for atomicity. Readers never see a torn write,
- * and a crash mid-write leaves either the old file or a stray .tmp
- * (cleaned by the next attempt or manually) — never a half-written target.
- */
 export function atomicWritePrivateFile(targetPath: string, content: string): void {
   const dir = dirname(targetPath);
   const tmpPath = join(
@@ -120,9 +112,7 @@ export function atomicWritePrivateFile(targetPath: string, content: string): voi
   } catch (err) {
     try {
       unlinkSync(tmpPath);
-    } catch {
-      // ignore — original error is more informative
-    }
+    } catch {}
     throw err;
   } finally {
     closeSync(fd);
@@ -132,31 +122,17 @@ export function atomicWritePrivateFile(targetPath: string, content: string): voi
   } catch (err) {
     try {
       unlinkSync(tmpPath);
-    } catch {
-      // ignore
-    }
+    } catch {}
     throw err;
   }
 }
 
-/**
- * True when `child` is `parent` or a path inside it. Purely lexical (no
- * symlink resolution) — used for configuration sanity checks, not as the
- * final security boundary.
- */
 function isPathInside(child: string, parent: string): boolean {
   const parentPath = resolve(parent);
   const childPath = resolve(child);
   return childPath === parentPath || childPath.startsWith(parentPath + "/");
 }
 
-/**
- * The state dir (settings, office records, vaults) must never live inside
- * the working dir: conversation opt-in "full" mode mounts the entire working
- * dir read-write into sandbox containers, which would expose host-authoritative
- * state and credentials. Fatal under sandboxed modes; host mode has no mounts,
- * so only warn about the bad hygiene.
- */
 export function assertStateDirOutsideWorkspace(
   stateDir: string,
   workingDir: string,

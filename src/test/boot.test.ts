@@ -8,8 +8,6 @@ const HOME_STATE = join(homedir(), ".mikan");
 
 describe("resolveBoot", () => {
   test("no args: run mode with all defaults", () => {
-    // The suite-wide temp MIKAN_STATE_DIR (test/setup/state-dir.ts) must not
-    // read as this test's ambient environment.
     const prev = process.env.MIKAN_STATE_DIR;
     delete process.env.MIKAN_STATE_DIR;
     let plan;
@@ -79,7 +77,6 @@ describe("resolveBoot", () => {
   test("`onboard` subcommand selects onboard mode, but only in first position", () => {
     expect(resolveBoot(["onboard"]).mode).toBe("onboard");
     expect(resolveBoot(["onboard", "--state-dir", "/tmp/x"]).stateDir).toBe("/tmp/x");
-    // Elsewhere it is a working-directory positional, unchanged.
     expect(resolveBoot(["/some/dir", "onboard"]).mode).toBe("run");
   });
 
@@ -116,8 +113,6 @@ describe("helpText", () => {
     for (const flag of [
       "--state-dir",
       "--sandbox",
-      // --onboard stays accepted for compatibility; help now documents the
-      // `mikan onboard` subcommand form instead.
       "mikan onboard",
       "--download",
       "--version",

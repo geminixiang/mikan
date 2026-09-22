@@ -6,7 +6,6 @@ import { reportUserFacingError } from "../../observability/index.js";
 import { SessionStore } from "../../sessions/session-store.js";
 import type { TaskStatus, RunningSession } from "../../types.js";
 
-/** Narrow pure-status shortcut. Mixed instructions must still reach the agent. */
 export function isTaskStatusQuestion(text: string): boolean {
   return /^(好了嗎|完成了嗎|有進展嗎|現在做到哪了|進度如何|還要多久|還要多久啊|現在怎麼樣|怎麼樣了|how(?:'s| is) it going|are you done|any updates|status)[？?！!。\s]*$/i.test(
     text.trim(),
@@ -21,9 +20,7 @@ export function readTaskRoots(conversationDir: string): Map<string, string> {
       const entry = JSON.parse(line);
       if (entry.taskRoot === true && entry.isMessagingBot === true && typeof entry.ts === "string")
         roots.set(entry.ts, String(entry.text ?? ""));
-    } catch {
-      /* unrelated malformed log record */
-    }
+    } catch {}
   }
   return roots;
 }
@@ -43,7 +40,6 @@ export async function querySlackTasks(
       .filter((s) => s.address.platform === "slack" && s.address.conversationId === channel)
       .map((s) => [s.sessionKey, s]),
   );
-  // Never hide active work behind the recent-completed history limit.
   const selected = matching.filter(
     ([root], index) => index < 10 || activeByKey.has(resolveSlackSessionKey(channel, root)),
   );
@@ -70,9 +66,6 @@ export async function querySlackTasks(
         observation.status = state.result.status;
         observation.endedAt = new Date(state.result.endedAt).toISOString();
       } else if (!state.started) {
-        // Admitted (the root exists) but no operation has been recorded yet:
-        // the run is still waiting in the queue. An open operation with no
-        // runtime stays unknown, since that is a crash, not a queue.
         observation.status = "queued";
       }
     } catch (error) {
@@ -84,7 +77,6 @@ export async function querySlackTasks(
         platform: "slack",
         context: { conversationId: channel, sessionKey: key, threadTs: root },
       });
-      // No runtime or durable outcome: do not invent queued/completed state.
     }
     observations.push(observation);
   }

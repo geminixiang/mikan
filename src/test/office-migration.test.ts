@@ -407,8 +407,6 @@ describe("migrateLegacyOffices", () => {
   test("workspace directories without office markers are skipped, not claimed", () => {
     const { stateDir, workspaceRoot } = makeFixture();
     makeLegacyOffice(workspaceRoot, "C123");
-    // A repo the agent cloned into a trusted workspace root: no log.jsonl,
-    // no sessions/ — not an office, must stay put and not block boot.
     mkdirSync(join(workspaceRoot, "pi-mono"), { recursive: true });
     writeFileSync(join(workspaceRoot, "pi-mono", "README.md"), "repo\n");
 

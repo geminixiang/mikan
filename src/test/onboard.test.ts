@@ -16,7 +16,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** IO that replays a fixed list of answers (secret or not) in order. */
 function scriptedIo(answers: string[]): OnboardIo & { transcript: string[] } {
   const queue = [...answers];
   const transcript: string[] = [];
@@ -55,15 +54,7 @@ describe("renderEnvFile", () => {
 describe("runOnboardWizard", () => {
   test("slack + anthropic + host writes settings and env file", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo([
-      "1", // platform: Slack
-      "xapp-123", // SLACK_APP_TOKEN
-      "xoxb-456", // SLACK_BOT_TOKEN
-      "1", // provider: Anthropic
-      "sk-ant-789", // ANTHROPIC_API_KEY
-      "", // model (default)
-      "1", // sandbox: host
-    ]);
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
 
@@ -83,15 +74,15 @@ describe("runOnboardWizard", () => {
     const envFile = join(dir, "mikan.env");
     const modelsFile = join(dir, "models.json");
     const io = scriptedIo([
-      "2", // platform: Telegram
-      "tg-token", // TELEGRAM_BOT_TOKEN
-      "3", // provider: custom
-      "agent-model", // provider name
-      "http://10.0.0.1:8080/v1", // base url
-      "gw-key", // api key
-      "chatgpt, gpt-5.6-sol", // model ids
-      "2", // sandbox: image
-      "", // image (default)
+      "2",
+      "tg-token",
+      "3",
+      "agent-model",
+      "http://10.0.0.1:8080/v1",
+      "gw-key",
+      "chatgpt, gpt-5.6-sol",
+      "2",
+      "",
     ]);
     const code = await runOnboardWizard(dir, io, {
       envFilePath: envFile,
@@ -118,16 +109,7 @@ describe("runOnboardWizard", () => {
 
   test("github adapter asks required vars plus the private-key path", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo([
-      "4", // platform: GitHub
-      "12345", // GITHUB_APP_ID
-      "678", // GITHUB_INSTALLATION_ID
-      "/etc/mikan/app.pem", // GITHUB_APP_PRIVATE_KEY_PATH (anyOf)
-      "2", // provider: OpenAI
-      "sk-oai", // OPENAI_API_KEY
-      "", // model (default)
-      "1", // sandbox: host
-    ]);
+    const io = scriptedIo(["4", "12345", "678", "/etc/mikan/app.pem", "2", "sk-oai", "", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
@@ -140,15 +122,7 @@ describe("runOnboardWizard", () => {
 
   test("re-prompts on empty required answers", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo([
-      "3", // Discord
-      "", // empty token → re-ask
-      "dc-token",
-      "1", // Anthropic
-      "sk-ant",
-      "",
-      "1", // host
-    ]);
+    const io = scriptedIo(["3", "", "dc-token", "1", "sk-ant", "", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: envFile })).toBe(0);
     expect(readFileSync(envFile, "utf-8")).toContain("DISCORD_BOT_TOKEN=dc-token");
   });

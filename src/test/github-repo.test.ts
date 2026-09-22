@@ -18,7 +18,6 @@ function git(cwd: string, ...args: string[]): string {
   ).trim();
 }
 
-/** Read git state without the fixture-identity `-c` overrides. */
 function gitPlain(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf-8" }).trim();
 }
@@ -37,7 +36,6 @@ describe("github repo git operations", () => {
     git(originDir, "init", "--bare", "--initial-branch=main", ".");
     originUrl = `file://${originDir}`;
 
-    // Seed origin: one commit on main, plus a PR head ref (refs/pull/3/head).
     const seedDir = join(root, "seed");
     mkdirSync(seedDir);
     git(seedDir, "init", "--initial-branch=main", ".");
@@ -69,7 +67,6 @@ describe("github repo git operations", () => {
     expect(gitPlain(cloneDir, "config", "user.email")).toBe(
       "999+mikan[bot]@users.noreply.github.com",
     );
-    // The ephemeral token must not be persisted anywhere in git config.
     expect(gitPlain(cloneDir, "config", "--list")).not.toContain("extraheader");
   });
 
@@ -162,7 +159,6 @@ describe("github repo git operations", () => {
       botEmail: "bot@example.com",
       prNumber: 3,
     });
-    // New commit lands on the PR head after the clone.
     const seedDir = join(root, "seed");
     writeFileSync(join(seedDir, "more.txt"), "more\n");
     git(seedDir, "add", ".");
@@ -207,7 +203,6 @@ describe("github repo git operations", () => {
   });
 
   test("syncRepo migrates a clean legacy pr-<n> checkout to the real head branch name", async () => {
-    // Clone made before the head branch name was resolvable: sits on pr-3.
     await cloneRepo({
       url: originUrl,
       dir: cloneDir,
@@ -264,7 +259,6 @@ describe("github repo git operations", () => {
       botEmail: "bot@example.com",
       prNumber: 3,
     });
-    // Rewrite the PR head: amend away feature.txt into a different file.
     const seedDir = join(root, "seed");
     git(seedDir, "rm", "feature.txt");
     writeFileSync(join(seedDir, "rewritten.txt"), "rewritten\n");
@@ -300,7 +294,6 @@ describe("github repo git operations", () => {
     expect(result.updatedCheckout).toBe(false);
     expect(result.dirty).toBe(true);
     expect(result.fetchedSha).toBeTruthy();
-    // The agent's uncommitted file survives and the head did not move.
     expect(existsSync(join(cloneDir, "wip.txt"))).toBe(true);
     expect(existsSync(join(cloneDir, "more.txt"))).toBe(false);
   });
@@ -315,7 +308,6 @@ describe("github repo git operations", () => {
       prNumber: 3,
     });
     writeFileSync(join(cloneDir, "local.txt"), "local commit\n");
-    // Commit as the agent does: with the clone's preconfigured bot identity.
     gitPlain(cloneDir, "add", ".");
     gitPlain(cloneDir, "commit", "-m", "agent work on pr-3");
     const localSha = gitPlain(cloneDir, "rev-parse", "HEAD");

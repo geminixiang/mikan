@@ -80,7 +80,6 @@ test.each(["committed-entry delivery", "terminal listener"] as const)(
       },
     );
     try {
-      // Fail promptly if the run exits before reaching the expected seam.
       await Promise.race([entered.promise, run]);
       expect(settled).toBe(false);
       expect(session.isActiveRun).toBe(true);

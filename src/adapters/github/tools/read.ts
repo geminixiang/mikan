@@ -77,8 +77,6 @@ function formatReviews({
       const body = review.body?.trim() ? ` — ${truncate(review.body, MAX_REVIEW_BODY_CHARS)}` : "";
       return `@${review.user.login}: ${review.state}${body}`;
     });
-  // Count once rather than rescanning every comment for each root. Orphan replies
-  // still count only toward their own parent; they never become root threads.
   const replyCounts = new Map<number | undefined, number>();
   for (const { in_reply_to_id: parent } of threads) {
     replyCounts.set(parent, (replyCounts.get(parent) ?? 0) + 1);
@@ -150,12 +148,6 @@ function formatResult(result: GithubReadResult): string {
   }
 }
 
-/**
- * The `github_read` tool reads what the ./repo clone cannot show: PR diff
- * stats and changed files, review state with open inline threads, and other
- * issues/PRs in this repo for triage. Read-only, host-side, same-repo by
- * construction; wired per run and only for GitHub conversations.
- */
 export function createGithubReadTool(): {
   tool: AgentTool<typeof githubReadSchema>;
   setGithubReadFunction: (fn: GithubReadFn | null) => void;

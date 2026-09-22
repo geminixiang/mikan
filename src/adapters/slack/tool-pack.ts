@@ -3,12 +3,6 @@ import { createSlackBlockKitTool } from "./tools/blockkit.js";
 export type { PlatformSlackOps } from "./types.js";
 import type { PlatformSlackOps } from "./types.js";
 
-/**
- * Slack capability pack: tools that post platform-native surfaces (Block Kit)
- * the response renderer deliberately does not produce. bindRun enables the
- * tools only for slack-named conversations so multi-platform processes stay
- * safe.
- */
 export function createSlackToolPack(ops: PlatformSlackOps): PlatformToolPack {
   const { tool: blockkitTool, setSlackBlockKitOps } = createSlackBlockKitTool();
   const ownedMessageTs = new Set<string>();

@@ -20,11 +20,6 @@ const DEFAULT_GOOGLE_CLOUD_SDK_SCOPES = [
   "https://www.googleapis.com/auth/cloud-platform",
 ];
 
-// Conservative default: enough for `gh` CLI repo/user/org operations, but
-// without `workflow` (can dispatch CI), `write:packages` (can publish
-// packages), or `project`. Operators who need those can opt in via
-// GITHUB_OAUTH_SCOPES (or MIKAN_GITHUB_OAUTH_SCOPES) to keep the blast radius
-// of a compromised agent host explicit and configurable.
 const DEFAULT_GITHUB_OAUTH_SCOPES = ["repo", "read:user", "user:email", "read:org", "gist"];
 
 function resolveScopesFromEnv(envKey: string, fallback: string[]): string[] {

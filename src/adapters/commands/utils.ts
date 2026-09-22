@@ -39,7 +39,6 @@ export async function replyPrivatelyWithContext(
   await replyDiagnosticWithContext(context.responder, text, options);
 }
 
-/** Shared reply body for the commands that need the link portal configured. */
 export function portalNotConfiguredLines(feature: string): string[] {
   return [
     `${feature} is not configured.`,
@@ -47,7 +46,6 @@ export function portalNotConfiguredLines(feature: string): string[] {
   ];
 }
 
-/** Muted `_Title_` summary reply in the conversation the command arrived from. */
 export async function replySummary(
   context: CommandContext,
   title: string,
@@ -58,7 +56,6 @@ export async function replySummary(
   });
 }
 
-/** Same summary, routed to the user privately when the conversation is shared. */
 export async function replySummaryPrivately(
   context: CommandContext,
   title: string,

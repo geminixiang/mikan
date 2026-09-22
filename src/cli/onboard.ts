@@ -1,22 +1,3 @@
-/**
- * `mikan onboard` — interactive first-run setup.
- *
- * Three questions cover the minimum viable deployment: one chat adapter,
- * one LLM provider, and an optional sandbox mode. Everything asked is
- * derived from existing authorities (ENV_MANIFEST for platform vars,
- * settings/models.json shapes from settings/index.ts / harness/models.ts) — this
- * file adds no second inventory of anything.
- *
- * Products:
- *   - <state-dir>/settings.json        (llm section follows the choice)
- *   - <state-dir>/mikan.env  (0600)    (tokens/keys; at the default state
- *                                       dir this is the ~/.mikan/mikan.env
- *                                       the pm2 ecosystem file loads)
- *   - ~/.mikan/models.json             (custom endpoint choice only)
- *
- * Non-interactive stdin (CI, piped) falls back to writing the settings
- * template only — the pre-wizard `--onboard` behavior.
- */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as prompts from "@clack/prompts";
@@ -33,7 +14,6 @@ class OnboardAborted extends Error {
   }
 }
 
-/** Cancellation is handled before any settings are written. */
 async function answer<T>(result: Promise<T>): Promise<Exclude<T, symbol>> {
   const value = await result;
   if (prompts.isCancel(value)) throw new OnboardAborted();
@@ -69,7 +49,6 @@ async function askChoice(io: OnboardIo, labels: string[], prompt: string): Promi
   return io.select(prompt, labels);
 }
 
-/** Q1: pick a platform group from the manifest and collect its vars. */
 async function askAdapter(io: OnboardIo, env: Record<string, string>): Promise<void> {
   const platforms = ENV_MANIFEST.filter((group) => group.kind === "platform");
   io.print("\nStep 1/3 — chat adapter");
@@ -83,14 +62,12 @@ async function askAdapter(io: OnboardIo, env: Record<string, string>): Promise<v
     env[spec.name] = await askRequired(io, `  ${spec.name} (${spec.doc}): `, spec.secret);
   }
   if (group.anyOf) {
-    // Prefer the path form of an either/or pair (keeps PEMs out of env files).
     const name = group.anyOf.find((n) => n.endsWith("_PATH")) ?? group.anyOf[0]!;
     const doc = group.vars.find((v) => v.name === name)?.doc ?? "";
     env[name] = await askRequired(io, `  ${name} (${doc}): `);
   }
 }
 
-/** Q2: LLM provider. Returns settings llm choice; may add env vars / models.json. */
 async function askLlm(
   io: OnboardIo,
   env: Record<string, string>,
@@ -139,7 +116,6 @@ async function askLlm(
   return { llm: { provider, model: ids[0]! }, modelsJson };
 }
 
-/** Q3: sandbox mode. Returns the `--sandbox` argument, or undefined for host. */
 async function askSandbox(io: OnboardIo): Promise<string | undefined> {
   io.print("\nStep 3/3 — sandbox (where agent commands run)");
   const index = await askChoice(
@@ -162,7 +138,6 @@ async function askSandbox(io: OnboardIo): Promise<string | undefined> {
   return undefined;
 }
 
-/** Merge collected vars into the env file, preserving unrelated existing lines. */
 export function renderEnvFile(existing: string | undefined, vars: Record<string, string>): string {
   const pending = new Map(Object.entries(vars));
   const lines: string[] = [];
@@ -175,7 +150,6 @@ export function renderEnvFile(existing: string | undefined, vars: Record<string,
   return `${lines.join("\n")}\n`;
 }
 
-/** Replace a `KEY=` line whose key is still pending, consuming that key. */
 function rewriteEnvLine(line: string, pending: Map<string, string>): string {
   const key = /^([A-Za-z_][A-Za-z0-9_]*)=/.exec(line)?.[1];
   if (key === undefined || !pending.has(key)) return line;
@@ -224,14 +198,11 @@ export async function runOnboardWizard(
     io.print(`Wrote ${modelsPath}`);
   }
 
-  // Lives beside settings.json; at the default state dir this is exactly
-  // the ~/.mikan/mikan.env that the pm2 ecosystem file loads.
   const envFilePath = paths?.envFilePath ?? join(stateDir, "mikan.env");
   const existing = existsSync(envFilePath) ? readFileSync(envFilePath, "utf-8") : undefined;
   atomicWritePrivateFile(envFilePath, renderEnvFile(existing, env));
   io.print(`Wrote ${envFilePath} (0600)`);
 
-  // Report against the answers just given without mutating process.env.
   io.print(`\n${envReport((name) => env[name] ?? readEnv(name))}`);
 
   const sandboxFlag = sandboxArg ? ` --sandbox ${sandboxArg}` : "";
@@ -241,7 +212,6 @@ export async function runOnboardWizard(
   return 0;
 }
 
-/** Entry point for main.ts. Interactive on a TTY; template-only otherwise. */
 export async function runOnboardCommand(stateDir: string): Promise<number> {
   if (!process.stdin.isTTY) {
     const settingsPath = createGlobalSettingsFile(stateDir);

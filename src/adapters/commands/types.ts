@@ -20,47 +20,23 @@ interface CommandArgSpec {
   required: boolean;
 }
 
-/**
- * Data for the Slack adapter's generic slash route (how the synthesized
- * command event is built). All flags default to false.
- */
 export interface SlackSlashRoute {
-  /** Append the slash payload's free text to the synthesized command text. */
   includeText?: boolean;
-  /** Scope the event to the invoking thread (thread-scoped session key). */
   thread?: boolean;
-  /** Outside DMs, mark the event `private_command` so replies stay between the bot and the user. */
   privateCommand?: boolean;
 }
 
 export interface CommandManifestEntry {
-  /** Canonical name without slash, e.g. "login"; `/login` and `/pi-login` are derived. */
   name: string;
   description: string;
-  /** Extra accepted spellings beyond `name` (e.g. "autoreply"); each also gets a `pi-` form. */
   aliases?: readonly string[];
-  /** Optional single free-text argument for platforms that register typed args. */
   arg?: CommandArgSpec;
-  /** Accepted without a leading slash. Per CONTEXT.md, only `session`. */
   bare?: boolean;
-  /**
-   * Routed by conversation intake as a magic word, never by a command
-   * handler. Such an entry exists for platform registration/UI only.
-   */
   magicWord?: boolean;
-  /** Slack slash-command name, e.g. "/pi-login". Absent = not a Slack slash command. */
   slackCommand?: string;
-  /** Slack routing data; absent for `new`, whose Slack dispatch is bespoke. */
   slackRoute?: SlackSlashRoute;
-  /** Registered as a Discord application command. */
   discord?: boolean;
-  /** Listed in Telegram's command menu; `description` overrides the shared one. */
   telegramMenu?: { description?: string };
-  /**
-   * Registered as a native grammY command handler, bypassing conversation
-   * intake (no trigger/busy policy). Other menu commands reach the runtime
-   * through the catch-all message path.
-   */
   telegramCommand?: boolean;
 }
 
@@ -125,20 +101,14 @@ export interface CommandHandler {
   tryHandle(context: CommandContext): Promise<boolean>;
 }
 
-/** Minimal model lookup contract used by the model command. */
 export interface ModelRegistry {
   find(provider: string, modelId: string): Model<Api> | undefined;
 }
 
-// ── command-specific parsed types ────────────────────────────────────────────
-
 export interface ParsedModelCommand {
   provider?: string;
-  /** Model id without a thinking-level suffix, when one was supplied. */
   model?: string;
-  /** Complete model id candidate, including a possible colon suffix. */
   modelCandidate?: string;
-  /** Suffix kept for handler-side validation after exact model lookup. */
   thinkingLevelCandidate?: string;
   thinkingLevel?: ThinkingLevel;
   error?: "invalid_spec";
@@ -146,7 +116,6 @@ export interface ParsedModelCommand {
 
 export interface ParsedSandboxCommand {
   action?: "boost" | "visibility";
-  /** Raw visibility argument; the handler validates it so typos get a usage reply. */
   visibility?: string;
 }
 

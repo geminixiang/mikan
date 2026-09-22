@@ -21,7 +21,6 @@ export function parseLoginCommand(text: string): ParsedLoginCommand | null {
   const verb = subcommand.toLowerCase();
   if (verb === "shared") return parseSharedLogin(operation?.toLowerCase(), name);
   if (verb === "copy" && operation && !name) return { action: "copy_shared", name: operation };
-  // Backward-compatible provider arguments open the generic login page.
   return operation ? null : { action: "setup" };
 }
 
@@ -37,8 +36,6 @@ function parseSharedLogin(
 
 function ensureLoginVault(context: CommandContext): string {
   const { services, platformUserId, conversationId, vaultConversationId } = context;
-  // The vault target is a conversation on the same platform; a command may
-  // aim at another conversation's vault via vaultConversationId.
   return credentialAuthorizationKey(services.sandbox, {
     userId: platformUserId,
     address: createOfficeAddress(context.address.platform, vaultConversationId ?? conversationId),
@@ -61,10 +58,6 @@ async function refreshCopiedVaultRuntime(context: CommandContext): Promise<strin
     return "The cached session was refreshed. The sandbox will pick up copied credentials on the next provision.";
   }
 
-  // The provisioner names containers by runtime resource key, not by the
-  // credential key the vault copy used — the two identities differ in image
-  // mode (office key vs raw-conversation key). Removing by the wrong key
-  // would silently leave the real container running with stale mounts.
   const resourceKey = runtimeResourceKey(context.services.sandbox, {
     userId: context.platformUserId,
     address: targetAddress,
@@ -94,7 +87,6 @@ export class LoginCommandHandler implements CommandHandler {
   }
 }
 
-/** Surface a vault-manager failure to the user without failing the command. */
 async function replyVaultError(context: CommandContext, error: unknown): Promise<void> {
   await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
 }
@@ -139,7 +131,6 @@ async function copySharedProfile(context: CommandContext, name: string): Promise
   }
 }
 
-/** Issue a portal link for this conversation's vault, or for a shared profile. */
 async function startLoginSetup(context: CommandContext, parsed: ParsedLoginCommand): Promise<void> {
   if (!context.services.portalBaseUrl) {
     await replySummary(context, "Vault", portalNotConfiguredLines("Login"));

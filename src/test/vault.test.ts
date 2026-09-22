@@ -292,8 +292,6 @@ describe("ActorExecutionResolver image mode", () => {
   let tmpDir: string;
   let vaultsDir: string;
 
-  // The image-mode fixtures keep workspace root and state dir on the same
-  // directory, so the office dir and its state dir both hang off tmpDir.
   const workspace = () => createWorkspace({ root: tmpDir, stateDir: tmpDir });
 
   beforeEach(() => {
@@ -395,13 +393,10 @@ describe("ActorExecutionResolver image mode", () => {
       trustModel: "open-trigger",
     });
 
-    // The GitHub conversation's sandbox stays credential-free: no vault is
-    // provisioned from the ambient default.
     expect(
       mgr.resolve(DockerContainerManager.sanitizeSegment("GH_octo_widgets_5")),
     ).toBeUndefined();
 
-    // Same resolver, same default — a Slack conversation still inherits it.
     await resolver.resolve({ userId: "U1", address: createOfficeAddress("slack", "D999") });
     expect(
       readFileSync(

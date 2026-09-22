@@ -21,7 +21,6 @@ const githubChecksSchema = Type.Object({
   ),
 });
 
-/** Conclusions that mean "this check did not pass and needs attention". */
 const FAILING_CONCLUSIONS = new Set(["failure", "timed_out", "action_required", "cancelled"]);
 
 function formatCheckLine(run: GithubCheckSummary): string {
@@ -45,12 +44,6 @@ function formatCheckLine(run: GithubCheckSummary): string {
     : line;
 }
 
-/**
- * The `github_checks` tool reads CI check runs (GitHub Actions and other
- * check-reporting apps) for a branch or the conversation's PR head, and can
- * fetch one job's log tail so the agent can diagnose failures and iterate.
- * Read-only, host-side; wired per run and only for GitHub conversations.
- */
 export function createGithubChecksTool(): {
   tool: AgentTool<typeof githubChecksSchema>;
   setGithubChecksFunction: (fns: GithubChecksFns | null) => void;

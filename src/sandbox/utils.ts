@@ -27,26 +27,18 @@ export function killProcessTree(pid: number): void {
         stdio: "ignore",
         detached: true,
       });
-    } catch {
-      // Ignore errors
-    }
+    } catch {}
   } else {
     try {
       process.kill(-pid, "SIGKILL");
     } catch {
       try {
         process.kill(pid, "SIGKILL");
-      } catch {
-        // Process already dead
-      }
+      } catch {}
     }
   }
 }
 
-/**
- * Forward an abort from `signal` to `onAbort`, firing immediately when it has
- * already aborted. Returns the unsubscribe every caller must run on settle.
- */
 export function linkAbortSignal(signal: AbortSignal | undefined, onAbort: () => void): () => void {
   if (!signal) return () => {};
   if (signal.aborted) {
@@ -58,17 +50,9 @@ export function linkAbortSignal(signal: AbortSignal | undefined, onAbort: () => 
 }
 
 export function shellEscape(s: string): string {
-  // Escape for passing to sh -c
   return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-/**
- * Shared exec-backed file transport for executors whose only channel into the
- * runtime is `exec` (docker exec, ssh, HTTP). Contents travel base64-encoded —
- * the base64 alphabet is inert under every shell parse layer — and writes are
- * chunked so no single command approaches the per-argument ARG_MAX limit,
- * staged, then moved into place so an aborted write never truncates the file.
- */
 const WRITE_CHUNK_CHARS = 65536;
 
 interface ExecLikeResult {

@@ -25,14 +25,6 @@ import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { CreateRunnerOptions } from "../types.js";
 import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
 
-/**
- * Drives PiAgentWrapper.run() end to end with a faux provider: the runner is
- * built by the real createRunner (host sandbox, no vault/provisioner) and the
- * scripted responder observes the run-lifecycle behaviour that previously had
- * no test through this interface — final replacement, [SILENT], error
- * finalize, and run-state reset between runs.
- */
-
 let dir: string;
 
 beforeEach(() => {
@@ -59,7 +51,6 @@ afterEach(() => {
 
 const C1_ADDRESS = createOfficeAddress("slack", "C1");
 
-/** The office every test in this file drives, rooted in the per-test tmpdir. */
 function testOffice(): Office {
   return createWorkspace({ root: join(dir, "workspace"), stateDir: join(dir, "state") }).office(
     C1_ADDRESS,
@@ -254,8 +245,6 @@ describe("PiAgentWrapper.run", () => {
       }),
       expect.stringContaining("parent complete"),
     );
-    // toContain compares by equality and never evaluates an asymmetric
-    // matcher, so the substring check has to be toContainEqual.
     const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
     expect(replacements).not.toContainEqual(expect.stringContaining("Subagent parallel"));
     expect(responder.replaceSubagentProgress).toHaveBeenLastCalledWith(
@@ -292,8 +281,6 @@ describe("PiAgentWrapper.run", () => {
 
     await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
 
-    // "dashboard, blank line, answer" — composed by the harness, converted by
-    // the platform like any response.
     const finalReplacement = String(responder.replaceResponse.mock.calls.at(-1)?.[0]);
     expect(finalReplacement).toContain("**Subagents · 2/2 · Parallel");
     expect(finalReplacement).toContain("✓ first");
@@ -301,8 +288,6 @@ describe("PiAgentWrapper.run", () => {
     expect(finalReplacement.indexOf("**Subagents")).toBeLessThan(
       finalReplacement.indexOf("parent complete"),
     );
-    // The intermediate finish is skipped: nothing may overwrite the dashboard
-    // with the bare answer before the final composition.
     const bareResponds = responder.respond.mock.calls.map((call) => String(call[0]));
     expect(bareResponds).not.toContain("parent complete");
   });

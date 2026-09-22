@@ -17,11 +17,8 @@ import type {
   PlatformGithubOps,
 } from "./types.js";
 
-/** CI job logs are tail-truncated to this many characters. */
 const MAX_LOG_CHARS = 20000;
 
-/** Whether the conversation's issue is a PR, for callers where the triggering
- *  item didn't carry that knowledge. Errs toward plain issue. */
 export async function fetchIsPr(
   client: GithubClient,
   ref: GithubConversationRef,
@@ -34,13 +31,6 @@ export async function fetchIsPr(
   }
 }
 
-/**
- * The PR's head branch name when it lives in this repo — that is the name
- * the local checkout should carry, so committing on it and calling
- * github_pr pushes back to the PR itself instead of opening a new one.
- * Fork heads (unpushable with the repo-scoped token) and failed lookups
- * return undefined; callers then fall back to the synthetic pr-<n>.
- */
 export async function fetchPrHeadBranch(
   client: GithubClient,
   ref: GithubConversationRef,
@@ -55,13 +45,6 @@ export async function fetchPrHeadBranch(
   }
 }
 
-/**
- * Host-side backend of the github_* tool pack (`PlatformGithubOps`),
- * standalone from the messaging bot: it needs the API client, the
- * conversation working dir — not the poll
- * loop, queues, or trigger gate. Tokens are minted per call, scoped to the
- * conversation's repo, and never enter the sandbox.
- */
 export class GithubOps implements PlatformGithubOps {
   constructor(
     private readonly client: GithubClient,
@@ -74,12 +57,6 @@ export class GithubOps implements PlatformGithubOps {
     );
   }
 
-  /**
-   * Backs the `github_pr` tool: push a `pi/*` branch the agent prepared in
-   * the conversation's clone, then open a pull request as the App. The write
-   * token is minted per call, scoped to this one repo, and never enters the
-   * sandbox.
-   */
   async pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult> {
     const ref = parseGithubConversationId(conversationId);
     const dir = this.repoDir(conversationId);
@@ -111,9 +88,6 @@ export class GithubOps implements PlatformGithubOps {
       log.logInfo(`[${conversationId}] Opened PR #${pr.number}: ${pr.html_url}`);
       return { number: pr.number, url: pr.html_url };
     } catch (err) {
-      // Idempotency: pushing more commits to a branch that already has an
-      // open PR updates that PR; the create call then 422s. Surface the
-      // existing PR instead of failing the fix-CI-push-again loop.
       if (
         err instanceof GithubApiError &&
         err.status === 422 &&
@@ -135,10 +109,6 @@ export class GithubOps implements PlatformGithubOps {
     }
   }
 
-  /**
-   * Backs the `github_checks` tool: CI check runs for a branch the agent
-   * pushed, or for the conversation's PR head when no branch is given.
-   */
   async getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]> {
     const ref = parseGithubConversationId(conversationId);
     let target = branch;
@@ -168,12 +138,6 @@ export class GithubOps implements PlatformGithubOps {
     }));
   }
 
-  /**
-   * Backs the `github_sync` tool: refresh the conversation's ./repo clone
-   * from origin with an ephemeral read token. Fetch-only when moving the
-   * checkout could lose agent work; the formatted report tells the agent
-   * what happened and what to do next.
-   */
   async syncRepo(conversationId: string, branch?: string): Promise<string> {
     const ref = parseGithubConversationId(conversationId);
     const dir = this.repoDir(conversationId);
@@ -217,11 +181,6 @@ export class GithubOps implements PlatformGithubOps {
     );
   }
 
-  /**
-   * Backs the `github_read` tool: PR/issue metadata the ./repo clone cannot
-   * provide (diff stats, review state, other issues in the repo). Owner/repo
-   * always come from the conversation id, so reads never leave this repo.
-   */
   async readGithub(conversationId: string, request: GithubReadRequest): Promise<GithubReadResult> {
     const ref = parseGithubConversationId(conversationId);
     const number = request.number ?? ref.number;
@@ -268,12 +227,6 @@ export class GithubOps implements PlatformGithubOps {
     }
   }
 
-  /**
-   * Backs the `github_issue` tool: labels, assignees, and open/closed state
-   * on any issue of this conversation's repo (triage). Same-repo by
-   * construction — owner/repo come from the conversation id; the action enum
-   * is closed, so lock/delete/transfer cannot be expressed at all.
-   */
   async manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string> {
     const ref = parseGithubConversationId(conversationId);
     const number = request.number ?? ref.number;
@@ -344,12 +297,6 @@ export class GithubOps implements PlatformGithubOps {
     }
   }
 
-  /**
-   * Backs the `github_review_reply` tool: answer inside one inline review
-   * thread of this conversation's PR. The comment id comes from an
-   * `[PR review comment rc-<id> …]` message; GitHub validates it belongs to
-   * this PR (404 otherwise, translated into agent-actionable guidance).
-   */
   async replyToReviewThread(
     conversationId: string,
     commentId: number,
@@ -384,12 +331,6 @@ export class GithubOps implements PlatformGithubOps {
     }
   }
 
-  /**
-   * Backs the log mode of `github_checks`: the tail of one CI job's log so
-   * the agent can diagnose a failing check without sandbox credentials. Only
-   * GitHub Actions checks have logs on GitHub; external CI apps keep theirs
-   * on their own service, so a 404 here becomes guidance instead of a dead end.
-   */
   async getJobLog(conversationId: string, jobId: number): Promise<string> {
     if (!Number.isInteger(jobId) || jobId <= 0) {
       throw new Error(

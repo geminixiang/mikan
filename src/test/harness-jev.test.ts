@@ -77,9 +77,6 @@ describe("evaluateWithJev", () => {
     });
     expect(result.answers.q).toEqual({ type: "boolean", probability: 0.9 });
     expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 2, cost: 0.0001 });
-    // Regression: Jev spend was invisible to Sentry/OTel until evaluateWithJev
-    // itself reported it — covering every call site (the jev tool, jev_browser,
-    // Slack auto-reply, task intent) from one instrumentation point.
     expect(recordJevOutcomeMock).toHaveBeenCalledWith(
       expect.objectContaining({
         caller: "jev_tool",

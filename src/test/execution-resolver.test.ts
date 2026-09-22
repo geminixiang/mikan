@@ -19,9 +19,6 @@ describe("ActorExecutionResolver", () => {
   const workspace = () => createWorkspace({ root: workspaceDir, stateDir });
 
   beforeEach(() => {
-    // mkdtemp, not Date.now(): two tests entering the same millisecond would
-    // otherwise share a state dir, and one's cleanup would race the other's
-    // setup (ENOTEMPTY).
     stateDir = mkdtempSync(join(tmpdir(), "mikan-execution-resolver-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
@@ -94,8 +91,6 @@ describe("ActorExecutionResolver", () => {
       "nested/id",
       "nested\\id",
     ]) {
-      // Identity validation moved to the address factory, ahead of any
-      // directory reads or creation: the address never reaches `resolve`.
       expect(() =>
         resolver.resolve({
           userId: "U123",
@@ -119,14 +114,11 @@ describe("ActorExecutionResolver", () => {
       address: createOfficeAddress("slack", "C123"),
     });
 
-    // Image mode resolves to the office's dedicated container; the mount
-    // layout itself is covered by workspace-projection.test.ts.
     expect(decision.executor.getSandboxConfig().type).toBe("container");
     expect(decision.pathContext).toMatchObject({
       hostWorkspaceRoot: workspaceDir,
       runtimeWorkspaceRoot: "/workspace",
     });
-    // Unknown channel kind fails closed to private.
     expect(decision.projection).toMatchObject({ visibility: "private", source: "unknown" });
     expect(existsSync(join(workspaceDir, C123_OFFICE))).toBe(true);
   });
@@ -222,7 +214,6 @@ describe("ActorExecutionResolver", () => {
     async (label, sandboxConfig) => {
       createGlobalSettingsFile(stateDir);
       const currentWorkspace = workspace();
-      // The warning is once per office key process-wide, so each case uses its own.
       const address = createOfficeAddress("slack", `C${label.toUpperCase()}PRIV`);
       recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
       const resolver = new ActorExecutionResolver(

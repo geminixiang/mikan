@@ -26,61 +26,29 @@ export interface CloudflareSandboxConfig {
 }
 
 export interface Executor {
-  /**
-   * Execute a bash command.
-   */
   exec(command: string, options?: ExecOptions): Promise<ExecResult>;
 
-  /**
-   * Read a runtime file as UTF-8 text. The executor owns the transport, so
-   * file contents never pass through shell argv or extra shell parse layers.
-   */
   readFile(path: string, options?: ExecOptions): Promise<string>;
 
-  /**
-   * Read a runtime file as base64 (for binary content, e.g. images). Same
-   * transport ownership as readFile.
-   */
   readFileBase64(path: string, options?: ExecOptions): Promise<string>;
 
-  /**
-   * Write a runtime file, creating parent directories and replacing via a
-   * staging file so an aborted write never truncates the target. Like
-   * readFile, transport is the executor's concern — content must survive
-   * arbitrary quoting and ARG_MAX limits.
-   */
   writeFile(path: string, content: string, options?: ExecOptions): Promise<void>;
 
-  /**
-   * Get the workspace path prefix for this executor.
-   * Host: returns the actual path.
-   * Container: returns /workspace.
-   */
   getWorkspacePath(hostPath: string): string;
 
-  /**
-   * Return explicit host/control-plane/runtime path semantics for this executor.
-   */
   getPathContext(hostWorkspaceRoot: string): RuntimePathContext;
 
-  /**
-   * Get the current sandbox config used by this executor.
-   */
   getSandboxConfig(): SandboxConfig;
 }
 
 export interface RuntimePathContext {
-  /** Host-side workspace root used by mikan's control plane. */
   hostWorkspaceRoot: string;
-  /** Workspace root as seen by bash/read/write/edit inside the runtime. */
   runtimeWorkspaceRoot: string;
-  /** Translate a runtime path back to a host path when the runtime is host-backed. */
   runtimeToHostPath?: (runtimePath: string) => string;
 }
 
 export interface ExecOptions {
   timeout?: number;
-  /** Working directory for the command. Defaults to the backend's own cwd. */
   cwd?: string;
   signal?: AbortSignal;
 }
@@ -96,19 +64,12 @@ export interface SandboxCredentialCapabilities {
   fileMounts: boolean;
 }
 
-/** Identity a run authenticates as when resolving credentials. */
 export interface CredentialScope {
   userId: string;
-  /**
-   * Office whose credentials the run may use — the vault-routing address
-   * (`vaultConversationId` substituted where a command targets another
-   * conversation's vault on the same platform).
-   */
   address: OfficeAddress;
 }
 
 interface SandboxWorkspaceCapabilities {
-  /** Whether mikan can enforce the managed conversation workspace projection. */
   managedProjection: boolean;
 }
 

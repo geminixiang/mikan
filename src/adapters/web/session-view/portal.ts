@@ -211,11 +211,6 @@ type SessionRequestTarget =
       message: string;
     };
 
-/**
- * Token/session selection is shared by HTML, SSE, and message transports.
- * Invalid or expired client capabilities are 400; missing server wiring is
- * 503; a selected corrupt session is a server-side storage failure and is 500.
- */
 async function resolveSessionRequestTarget(
   sessionViewTokenStore: InMemorySessionViewTokenStore | undefined,
   rawToken: string | null | undefined,
@@ -392,7 +387,6 @@ export function parseUserBody(raw: string): {
   header: string | null;
   content: string;
 } {
-  // [timestamp] [username] [in-thread:ts]: content
   let m = raw.match(
     /^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2})\]\s*\[([^\]]+)\](?:\s*\[in-thread:([^\]]+)\])?:\s*([\s\S]*)$/,
   );
@@ -408,7 +402,6 @@ export function parseUserBody(raw: string): {
       content: m[4] ?? "",
     };
   }
-  // [username] [in-thread:ts]: content
   m = raw.match(/^\[([^\]]+)\](?:\s*\[in-thread:([^\]]+)\])?:\s*([\s\S]*)$/);
   if (m) {
     const header = [`[${m[1]}]`, m[2] ? `[in-thread:${m[2]}]` : ""].filter(Boolean).join(" ");
@@ -481,7 +474,6 @@ function renderItem(item: SessionViewItem, token?: string): string {
 </div>`;
   }
 
-  // assistant
   const body = item.body ? renderMarkdownBlock(item.body, "assistant") : "";
   const threads = renderThreadLinks(item.threads, token ?? "");
   return `<div class="msg-row msg-assistant copy-host">
@@ -1839,8 +1831,6 @@ const sessionViewStyles = `
   }
 `;
 
-// ── Session view model (formerly service.ts) ──────────────────────────────────
-
 function entryIsoTime(entry: SessionEntry | undefined): string | undefined {
   if (!entry || typeof entry.timestamp !== "number" || !Number.isFinite(entry.timestamp)) {
     return undefined;
@@ -2019,7 +2009,6 @@ async function resolveParentRelation(
     if (existsSync(parentPath)) {
       return (await buildSessionRelation(parentPath, "parent")) ?? undefined;
     }
-    // Path is stale — try UUID fallback before heuristic.
     if (header.parentSessionId) {
       const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
       if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
@@ -2070,7 +2059,6 @@ function isChildThreadSession(
     ) {
       return true;
     }
-    // Path is stale — fall back to UUID comparison.
     if (expectedParentId && threadParentSessionId) {
       return threadParentSessionId === expectedParentId;
     }

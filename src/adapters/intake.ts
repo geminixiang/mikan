@@ -7,27 +7,10 @@ import { formatAlreadyWorking, formatNothingRunning } from "./messages.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
 import type { MessageIntakeOptions, MessageIntakeOutcome } from "./types.js";
 
-/**
- * Recognize a magic word: a highest-priority chat control phrase that bypasses
- * trigger policy and queueing (see CONTEXT.md). One grammar for every
- * platform: optional leading slash, optional `@botname` suffix, any case.
- */
 export function matchMagicWord(text: string): "stop" | null {
   return /^\/?stop(?:@\w+)?$/i.test(text.trim()) ? "stop" : null;
 }
 
-/**
- * Shared message ingress pipeline for platform adapters.
- *
- * Platform adapters normalize SDK events; this module owns the ordering for
- * messages that may start an agent run:
- *
- *   magic word → trigger policy → attachments → log → busy policy → queue → dispatch
- *
- * Magic words are matched before the trigger gate — `stop` must never wait on
- * trigger filtering or queue behind a running agent turn. Adapters state
- * platform policy as data (`magicWord`, `busyPolicy`) instead of callbacks.
- */
 export async function processMessageIntake<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<MessageIntakeOutcome> {
@@ -71,8 +54,6 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
   }
 
   if (options.deferAttachmentsUntilRun) {
-    // Busy rejection happens inside the queued work here, so the outcome is
-    // already "enqueued" by the time it is evaluated.
     options.enqueue(options.queueKey, async () => {
       const event = prepareEvent(await options.processAttachments());
       if (options.busyPolicy === "reject" && (await rejectedWhileBusy())) return;
@@ -87,11 +68,6 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
   return "enqueued";
 }
 
-/**
- * Resolve and stop the session a magic-word `stop` targets. When nothing is
- * running, reply only if the message addressed the bot — an unaddressed
- * "stop" in a busy channel should never make the bot pipe up.
- */
 async function handleStopMagicWord<TEvent extends ConversationEvent>(
   options: MessageIntakeOptions<TEvent>,
 ): Promise<void> {
@@ -127,7 +103,5 @@ function widensToScopedSession(
 ): boolean {
   if (scopeFallback === "never") return false;
   if (scopeFallback === "always") return true;
-  // "top-level": only a message aimed at the persistent conversation session
-  // may widen to the single running scoped session; thread messages stay put.
   return sessionKey === undefined || sessionKey === conversationId;
 }

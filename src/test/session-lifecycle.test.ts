@@ -349,7 +349,6 @@ describe("SessionLifecycle", () => {
       const maintenanceGate = new Promise<void>((resolve) => (releaseMaintenance = resolve));
       const maintenance = lifecycle.runConversationMaintenance(discord, () => maintenanceGate);
 
-      // Same raw id, different platform: this office is not under maintenance.
       const release = await lifecycle.acquireConversationWork(telegram);
       release();
 

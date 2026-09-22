@@ -22,10 +22,8 @@ export interface RunScopeContext {
 
 export type ObservabilityAttributes = Record<string, SentryPrimitive>;
 
-/** @internal Sentry adapter alias; application code uses ObservabilityAttributes. */
 export type SentryAttributionAttributes = ObservabilityAttributes;
 
-/** @internal Sentry adapter alias; application code uses RunScopeContext. */
 export type SentryRunScopeContext = RunScopeContext;
 
 export interface SentrySpanPayload {
@@ -68,7 +66,6 @@ export interface ReportUserFacingErrorOptions {
   context?: Record<string, unknown>;
 }
 
-/** Terminal states of one subagent run as seen by the parent tool. */
 export type SubagentOutcomeStatus =
   | "completed"
   | "failed"
@@ -78,7 +75,6 @@ export type SubagentOutcomeStatus =
   | "invalid_output"
   | "skipped";
 
-/** Metrics-only view of a subagent outcome; never carries task text or labels. */
 export interface SubagentOutcomeReport {
   itemId: string;
   mode: "single" | "parallel" | "dag";
@@ -93,13 +89,8 @@ export interface SubagentOutcomeReport {
   cleanupPending?: boolean;
 }
 
-/**
- * Every `evaluateWithJev` call site, so Jev spend is attributable without
- * carrying any judged content (state/questions/answers are never reported).
- */
 export type JevCaller = "jev_tool" | "jev_browser" | "slack_auto_reply" | "task_intent";
 
-/** Metrics-only view of one Jev decision call; never carries state, questions, or answers. */
 export interface JevOutcomeReport {
   caller: JevCaller;
   status: "ok" | "error";

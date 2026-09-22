@@ -54,14 +54,6 @@ export async function postMessage(
   return String(res.ts);
 }
 
-/**
- * Per-attempt bound for confirming that this runner's daemon logged a posted
- * message. The daemon appends the history line at intake, before any model
- * run, so this measures Socket Mode event latency only. Keep it independent
- * of `SLACK_QA_TIMEOUT_MS` (which bounds model replies): tying the two
- * together turned every lost event into a 60s wait, so one helper call could
- * exhaust an entire test timeout before its own diagnostic fired.
- */
 export const LOCAL_DELIVERY_TIMEOUT_MS = 15_000;
 
 export interface PostLocallyDeliveredMessageOptions {
@@ -75,13 +67,6 @@ export interface PostLocallyDeliveredMessageOptions {
   maxAttempts?: number;
 }
 
-/**
- * Socket Mode distributes one event to one connected client. A developer
- * daemon using the same app can therefore consume a QA event instead of the
- * GitHub runner. Retry with a unique marker until this runner's log proves it
- * received the exact Slack message; callers then match the same marker in the
- * reply so another daemon cannot satisfy the assertion.
- */
 export async function postLocallyDeliveredMessage(
   options: PostLocallyDeliveredMessageOptions,
 ): Promise<{ ts: string; deliveryMarker: string }> {
@@ -119,7 +104,6 @@ export async function waitForLocalLogMessage(options: {
   pollMs: number;
 }): Promise<boolean> {
   const deadline = Date.now() + options.timeoutMs;
-  // The daemon writes under the office-key layout, not the raw channel id.
   const logPath = join(
     options.workingDir,
     officeKey(createOfficeAddress("slack", options.channel)),
@@ -344,7 +328,6 @@ export interface WaitForRecentBotReplyOptions {
   startedAt: number;
   timeoutMs: number;
   pollMs: number;
-  /** Slack ts lower bound: only messages with ts strictly greater match (no local-clock skew). */
   afterTs?: string;
   textIncludes?: string;
   textMatches?: RegExp;

@@ -9,13 +9,6 @@ import {
   type AssistantSurfaceOps,
 } from "../adapters/slack/assistant.js";
 
-/**
- * The assistant surface (Slack's "AI app" pane) has a lifecycle the classic
- * app path does not: Slack expects the app to speak first, and shows past
- * conversations by title. Both events were subscribed in the manifest and
- * dropped, which is what made the pane look broken rather than quiet.
- */
-
 function createOps(overrides: Partial<AssistantSurfaceOps> = {}) {
   const posts: Array<{ channel: string; threadTs: string; text: string }> = [];
   const prompts: Array<{ threadTs: string | undefined; titles: string[] }> = [];
@@ -48,7 +41,6 @@ describe("assistant thread lifecycle", () => {
       user_id: "U1",
     });
 
-    // Slack waits for the app to speak first; silence is what reads as broken.
     expect(posts).toHaveLength(1);
     expect(posts[0]).toMatchObject({ channel: "D1", threadTs: "100.1" });
     expect(prompts[0]?.titles.length).toBeGreaterThan(0);
@@ -67,8 +59,6 @@ describe("assistant thread lifecycle", () => {
       context: { channel_id: "C9" },
     });
 
-    // Naming the channel is the cheap half of context-awareness: no model
-    // call, and it is what makes the suggestions feel addressed to the moment.
     expect(posts[0]?.text).toContain("#engineering");
     expect(prompts[0]?.titles.join(" ")).toContain("#engineering");
   });
@@ -81,8 +71,6 @@ describe("assistant thread lifecycle", () => {
     });
     const registry = new AssistantThreadRegistry();
 
-    // A pane without a greeting is worse, not broken — the handler must not
-    // take the socket listener down with it.
     await expect(
       handleAssistantThreadStarted(ops, registry, { channel_id: "D1", thread_ts: "100.1" }),
     ).resolves.toBeUndefined();
@@ -118,12 +106,8 @@ describe("agent_view: the app DM", () => {
 
     await handleAgentDmOpened(ops, registry, "D1", { channel_id: "C9" });
 
-    // app_home_opened fires on EVERY open, so greeting here would nag. Only
-    // the prompts refresh, which is idempotent.
     expect(posts).toHaveLength(0);
     expect(prompts).toHaveLength(1);
-    // No thread_ts: the prompts pin to the DM, because under agent_view there
-    // is no thread yet when it opens.
     expect(prompts[0]?.threadTs).toBeUndefined();
     expect(registry.channelContext("D1")?.channel_id).toBe("C9");
   });
@@ -133,8 +117,6 @@ describe("agent_view: the app DM", () => {
     const registry = new AssistantThreadRegistry();
     await handleAgentDmOpened(ops, registry, "D1");
 
-    // Slack opens threads itself under agent_view and never announces them,
-    // so titles have to work off the channel rather than a registered thread.
     await titleAssistantThread(ops, registry, "D1", "100.1", "看一下昨天的部署");
     expect(titles).toEqual([{ threadTs: "100.1", title: "看一下昨天的部署" }]);
   });
@@ -163,8 +145,6 @@ describe("assistant thread titles", () => {
     const { ops, titles } = createOps();
     const registry = new AssistantThreadRegistry();
 
-    // Never registered by the assistant lifecycle, so it is an ordinary thread
-    // in a DM and Slack has no conversation list to label.
     await titleAssistantThread(ops, registry, "D1", "100.1", "hello");
     expect(titles).toHaveLength(0);
   });

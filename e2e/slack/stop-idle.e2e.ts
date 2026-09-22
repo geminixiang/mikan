@@ -16,8 +16,6 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack stop while idle", () => 
   const botUserId = ctx.env.mikanBotUserId;
 
   it("S-019 addressed stop with nothing running reports idle", async () => {
-    // First stop clears anything a previous scenario may have left running,
-    // so the second stop deterministically hits the idle path.
     const startedAt = nowSeconds();
     const firstTs = await postMessage(client, env.channel, `<@${botUserId}> stop`);
     const firstAck = await waitForRecentBotReply({

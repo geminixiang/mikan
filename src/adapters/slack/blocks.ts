@@ -8,34 +8,17 @@ import {
   normalizeMarkdownTables,
 } from "../markdown-tables.js";
 
-// Parser is used only to locate tables and derive plain-text fallback.
-// Prose is never re-serialized from tokens: it is sliced verbatim from the
-// source and handed to Slack as a native `markdown` block, so Slack owns
-// all prose rendering (same renderer as the markdown_text streaming API).
 const markdown = new MarkdownIt({ html: false });
 
 const MAX_BLOCKS = 50;
-// Slack rejects messages whose markdown block text exceeds 12k (msg_too_long).
 const MARKDOWN_TEXT_LIMIT = 12000;
 const FIELD_TEXT_LIMIT = 2000;
 
-// Legacy Slack-style links (<url|label>) predate the standard-GFM response
-// source contract; system producers may still emit them.
 const LEGACY_MRKDWN_LINK_PATTERN = /<(https?:\/\/[^<>|\s]+)\|([^<>\n]+)>/g;
 
-// Slack user/bot-user ids: U/W prefix. Already-native mentions pass through.
 const SLACK_USER_ID_PATTERN = /^[UW][A-Z0-9]{2,}$/;
 const MENTION_PATTERN = /<@([^<>\n]+)>/g;
 
-/**
- * Resolve response-source mentions to Slack's native form.
- *
- * The response source is platform-neutral: the model writes `<@userName>`
- * from the prompt's Users table, and the adapter owns the conversion to
- * `<@U…>` — Slack only links and notifies on the raw user id. Lookup covers
- * userName and displayName case-insensitively; native-id mentions pass
- * through, and unknown names stay verbatim rather than guessing.
- */
 export function resolveSlackMentions(
   source: string,
   users: Iterable<{ id: string; userName: string; displayName: string }>,
@@ -46,7 +29,6 @@ export function resolveSlackMentions(
   for (const user of list) {
     if (user.userName) byName.set(user.userName.toLowerCase(), user.id);
   }
-  // Display names never shadow a userName held by someone else.
   for (const user of list) {
     const display = user.displayName?.toLowerCase();
     if (display && !byName.has(display)) byName.set(display, user.id);
@@ -73,8 +55,6 @@ function buildTableBlock(headers: string[], rows: string[][]): KnownBlock {
   } as KnownBlock;
 }
 
-/** Split prose into chunks under the markdown block limit, preferring
- *  paragraph boundaries, then line boundaries, then a hard slice. */
 function splitProse(text: string): string[] {
   if (text.length <= MARKDOWN_TEXT_LIMIT) return [text];
   const chunks: string[] = [];

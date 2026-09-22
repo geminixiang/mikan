@@ -16,7 +16,6 @@ import {
 describe("loadGlobalSettings", () => {
   let stateDir: string;
 
-  /** The C123 Slack office of a workspace rooted under this test's state dir. */
   function office(): Office {
     return createWorkspace({ root: join(stateDir, "workspace"), stateDir }).office(
       createOfficeAddress("slack", "C123"),
@@ -68,8 +67,6 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.memory).toBe("1g");
     expect(config.sandbox?.boost?.cpus).toBe("2");
     expect(config.sandbox?.boost?.memory).toBe("4g");
-    // No pinned workspace policy: the projection follows the platform's own
-    // channel vocabulary until an admin sets an explicit door policy.
     expect(config.sandbox?.workspace).toBeUndefined();
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
@@ -213,8 +210,6 @@ describe("loadGlobalSettings", () => {
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
     expect(config.thinkingLevel).toBe("low");
-    // Settings are host-authoritative: stored under the state dir, never in
-    // the (sandbox-mounted) conversation dir.
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(false);
     expect(JSON.parse(readFileSync(conversationSettingsPath(conversation), "utf-8"))).toEqual({
       llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "low" },
@@ -249,10 +244,8 @@ describe("loadGlobalSettings", () => {
     });
 
     const config = resolveConversationSettings(conversation);
-    // Global sandbox.cpus survives a conversation that only sets sandbox.memory.
     expect(config.sandbox?.cpus).toBe("1");
     expect(config.sandbox?.memory).toBe("2g");
-    // Same invariant one level down: boost merges per leaf too.
     expect(config.sandbox?.boost?.cpus).toBe("4");
     expect(config.sandbox?.boost?.memory).toBe("8g");
   });
@@ -274,10 +267,8 @@ describe("loadGlobalSettings", () => {
     });
 
     const config = resolveConversationSettings(conversation);
-    // Conversation entry replaces the same-name global entry wholesale…
     expect(config.mcpServers?.github?.disabled).toBe(true);
     expect(config.mcpServers?.github?.env).toBeUndefined();
-    // …other global servers survive, and conversation-only ones are added.
     expect(config.mcpServers?.docs?.url).toBe("https://docs.example/mcp");
     expect(config.mcpServers?.local?.command).toBe("./bin/local-mcp");
   });
@@ -303,7 +294,6 @@ describe("loadGlobalSettings", () => {
 
     const config = resolveConversationSettings(conversation);
     expect(config.sandbox?.memory).toBe("3g");
-    // Legacy file was moved out of the (sandbox-mounted) conversation dir.
     expect(existsSync(legacyPath)).toBe(false);
     expect(existsSync(conversationSettingsPath(conversation))).toBe(true);
   });
@@ -313,20 +303,15 @@ describe("loadGlobalSettings", () => {
     const conversation = office();
     mkdirSync(conversation.dir, { recursive: true });
 
-    // First access with no legacy file writes the migration marker.
-    // Onboard settings pin no workspace policy.
     expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
     expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
 
-    // An agent inside the sandbox plants a legacy settings.json afterwards,
-    // trying to flip its own mount mode to full. It must stay ignored.
     writeFileSync(
       join(conversation.dir, "settings.json"),
       JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
     );
     expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
     expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
-    // And it is not deleted either: only pre-migration files are moved.
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
   });
 });

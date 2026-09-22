@@ -36,8 +36,6 @@ describe.skipIf(!ctx)("Slack Block Kit markdown", () => {
   it("S-024 renders response-source links as native Slack links", async () => {
     const token = `QA_MRKDWN_LINK_${Date.now()}`;
     const url = "https://github.com/livingbio/designers/issues/523";
-    // Legacy Slack-style link in the response source; the renderer converts it
-    // to GFM, and Slack translates the markdown block into a rich_text link.
     const source = `${token} <${url}|#523>`;
     let rootTs: string | undefined;
     let messageTs: string | undefined;

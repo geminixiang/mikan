@@ -1,4 +1,3 @@
-// CI-only diagnostics: identifiers and synthetic QA markers, never raw message bodies.
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { SessionStore } from "../dist/sessions/session-store.js";
@@ -30,9 +29,7 @@ for (const office of readdirSync(root)) {
           })),
         }),
       );
-    } catch {
-      /* malformed record */
-    }
+    } catch {}
   }
   const dir = join(root, office, "sessions");
   if (!existsSync(dir)) continue;

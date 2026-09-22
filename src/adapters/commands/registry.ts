@@ -9,13 +9,6 @@ import { SandboxCommandHandler } from "./sandbox.js";
 import { SessionViewCommandHandler } from "./session-view.js";
 import type { CommandContext, CommandHandler, ModelRegistry } from "./types.js";
 
-/**
- * Handler factory per manifest command name. The manifest is the inventory
- * authority; this map only binds each entry to its implementation, and
- * `defaultCommandHandlers` verifies the binding is complete so a manifest
- * entry without a handler fails at construction instead of dispatching into
- * silence. Magic-word entries (routed by conversation intake) are exempt.
- */
 const HANDLER_FACTORIES: Record<string, (modelRegistry: ModelRegistry) => CommandHandler> = {
   admin: () => new AdminCommandHandler(),
   autoreply: () => new AutoReplyCommandHandler(),
@@ -40,7 +33,6 @@ export function defaultCommandHandlers(
   });
 }
 
-/** Run handlers in order, returning true as soon as one accepts the command. */
 export async function dispatchCommand(
   handlers: readonly CommandHandler[],
   context: CommandContext,

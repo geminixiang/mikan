@@ -20,11 +20,6 @@ import {
 const address = createOfficeAddress("slack", "C123");
 const officeSegment = officeKey(address);
 
-/**
- * Host-side hardening of the projection: channel-kind snapshots, root type
- * checks, and settings failure modes. The visibility model itself is covered
- * by office-visibility.test.ts.
- */
 describe("workspace office projection", () => {
   let stateDir: string;
   let workspaceDir: string;

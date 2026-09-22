@@ -70,7 +70,6 @@ describe("DiscordMessagingBot attachments", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-discord-bot-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 
@@ -109,7 +108,6 @@ describe("DiscordMessagingBot attachments", () => {
           ),
         },
       ]);
-      // The failed download leaves no file; the saved one is on disk.
       expect(existsSync(join(workingDir, result[0].localPath))).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
@@ -124,7 +122,6 @@ describe("DiscordMessagingBot message routing", () => {
   beforeEach(() => {
     workingDir = join(tmpdir(), `mikan-discord-route-${Date.now()}`);
     mkdirSync(workingDir, { recursive: true });
-    // Sibling state dir: the office registry journal never touches ~/.mikan.
     workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
   });
 

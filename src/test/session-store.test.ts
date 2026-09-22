@@ -401,9 +401,6 @@ describe("fixed thread sessions", () => {
 });
 
 describe("top-level session rotation", () => {
-  // The biweekly clock rule lives in rotation.ts; the reset-and-re-run
-  // workflow is the runtime's alone. Scope resolution never rotates — it
-  // reuses whatever session is current.
   test("clock rule: rotates across biweekly Sunday buckets, not within one", () => {
     const sessionDir = officeSessionsDir(channelDir);
     const staleFile = createManagedSessionFile(sessionDir, channelDir);
@@ -487,9 +484,6 @@ describe("top-level session rotation", () => {
   });
 
   test("keeps old log messages out after a runtime rotation reset", async () => {
-    // The runtime rotates by calling resetSession; the fresh session's
-    // chat_sync watermark must fence out log messages
-    // that predate the reset.
     const sessionDir = officeSessionsDir(channelDir);
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");

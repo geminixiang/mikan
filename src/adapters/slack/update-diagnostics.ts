@@ -1,7 +1,6 @@
 import { recordDiagnosticEvent } from "../../observability/index.js";
 import type { KnownBlock } from "@slack/types";
 
-// Diagnostic correlation only: eviction never changes transport behavior.
 const pending = new WeakMap<object, Map<string, { at: number; attempts: number }>>();
 const MAX_PENDING = 128;
 const RETENTION_MS = 10 * 60_000;
@@ -52,7 +51,6 @@ function shape(source: string, payload: { text: string; blocks: KnownBlock[] }) 
     fallbackLength: payload.text.length,
     blockCount: payload.blocks.length,
     ...syntax(source),
-    // Flat arrays survive the existing Sentry depth limit. No text or identifiers.
     blockTypes: payload.blocks
       .slice(0, 50)
       .map((block) => (BLOCK_TYPES.has(block.type) ? block.type : "other")),
@@ -80,7 +78,6 @@ function validation(error: unknown) {
   return {
     errorCode: typeof data.error === "string" && ERROR_CODES.has(data.error) ? data.error : "other",
     validationCount: Array.isArray(messages) ? messages.length : 0,
-    // Never copy a free-form Slack validation message: it can quote user content.
     validationCategories: details.map((message) =>
       /must be less than|maximum|too long/i.test(message)
         ? "limit"
@@ -100,7 +97,6 @@ function validation(error: unknown) {
   };
 }
 
-/** Best-effort telemetry: must not mask an API error or fail a successful update. */
 export function recordSlackUpdate(
   owner: object,
   target: { channel: string; ts: string },
@@ -139,7 +135,5 @@ export function recordSlackUpdate(
       ...shape(source, payload),
       ...("error" in outcome ? validation(outcome.error) : {}),
     });
-  } catch {
-    // Observability must never change delivery or retry semantics.
-  }
+  } catch {}
 }

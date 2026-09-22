@@ -9,7 +9,6 @@ import { MikanAgentSession, MikanModels } from "../harness/index.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 
-// Reproduce S-023 without Slack, network, model sampling, or wall-clock sleeps.
 test("the run after a busy tool receives and answers the queued token, not the previous prompt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mikan-slack-busy-regression-"));
   const store = await SessionStore.create(join(dir, "session.jsonl"), dir);

@@ -1,8 +1,3 @@
-/**
- * Shared mechanics for the offline session migrations (`migrate-v3.ts`,
- * `migrate-pi-084.ts`): candidate discovery, Pi v4 JSONL encoding, and the
- * verify-then-replace commit that keeps the original file as a backup.
- */
 import {
   existsSync,
   linkSync,
@@ -17,15 +12,10 @@ import type { Entry as PiEntry, JsonValue } from "@earendil-works/pi-agent-core"
 import type { Usage } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../file-guards.js";
 
-/** Deep-copy a JSON-derived value into a `JsonValue`. */
 export function jsonValue(value: unknown): JsonValue {
   return JSON.parse(JSON.stringify(value)) as JsonValue;
 }
 
-/**
- * `details` and `usage` are optional on v4 compaction and branch-summary
- * entries; absent keys must stay absent rather than become `undefined`.
- */
 export function optionalAnnotations(source: { details?: unknown; usage?: unknown }): {
   details?: JsonValue;
   usage?: Usage;
@@ -36,7 +26,6 @@ export function optionalAnnotations(source: { details?: unknown; usage?: unknown
   };
 }
 
-/** Accumulates Pi v4 JSONL lines, numbering mutations consecutively from 1. */
 export class V4FileWriter {
   readonly #lines: string[];
   #seq = 0;
@@ -49,12 +38,10 @@ export class V4FileWriter {
     this.#lines.push(JSON.stringify({ kind: "entry", ...entry, seq: ++this.#seq }));
   }
 
-  /** Replace the value at `namespace`/`key`. */
   set(namespace: string, key: string, value: unknown): void {
     this.#write("value", "set", namespace, key, value);
   }
 
-  /** Append to the list at `namespace`/`key`. */
   append(namespace: string, key: string, value: unknown): void {
     this.#write("list", "append", namespace, key, value);
   }
@@ -81,7 +68,6 @@ function collectSessionFiles(
   }
 }
 
-/** Recursively collect `.jsonl` files under `root` that `isCandidate` accepts. */
 export function findSessionFiles(root: string, isCandidate: (path: string) => boolean): string[] {
   if (!existsSync(root)) return [];
   const found: string[] = [];
@@ -97,14 +83,8 @@ function backupAlreadyLinked(sourcePath: string, backupPath: string): boolean {
   throw new Error(`Backup already exists: ${backupPath}`);
 }
 
-/**
- * Write `encoded` beside `filePath`, verify it, then swap it in — hard-linking
- * the untouched original to `backupPath` first. A failed verification, or a
- * source that changed while the migration ran, leaves the original in place.
- */
 export async function commitMigration(options: {
   filePath: string;
-  /** Bytes read before parsing; the source must be unchanged at swap time. */
   sourceBytes: Buffer;
   encoded: string;
   tempPath: string;
