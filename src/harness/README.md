@@ -188,6 +188,18 @@ model's per-run cost, and instrumenting inside this one function covers all
 four call sites instead of each one remembering to report it. The report
 never carries the judged state, questions, or answers.
 
+`jev_browser` runs **every** `agent-browser` command (including cleanup) through
+this runner's actor-resolved sandbox `Executor`, not a host subprocess. The CLI,
+Chrome, named browser sessions, and output files belong to that sandbox; the
+same session name can be used from the sandbox's `bash` tool. Jev's decision
+requests still use the host-side adapter above. Tool assembly is not restricted
+to host mode; each backend must provision `agent-browser` and its browser
+runtime on the sandbox PATH. A missing CLI is a provisioning error: the tool
+does not install packages, use a global npm fallback, or launch a browser on
+the mikan host. Explicit host sandbox mode uses its configured host Executor.
+Session names inherit the runtime's isolation: explicitly shared host/container
+runtimes must use distinct names where separate browsers are desired.
+
 ## Boundaries
 
 - The harness receives platform-neutral messages, responders, tools, prompt

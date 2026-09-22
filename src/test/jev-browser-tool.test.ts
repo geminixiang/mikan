@@ -1,7 +1,17 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-const execFileMock = vi.fn();
-vi.mock("node:child_process", () => ({ execFile: (...args: unknown[]) => execFileMock(...args) }));
+import type { Executor } from "../sandbox/types.js";
+
+const execMock = vi.fn<Executor["exec"]>();
+const executor: Executor = {
+  exec: execMock,
+  getSandboxConfig: () => ({ type: "container", container: "browser-test" }),
+  readFile: vi.fn(),
+  readFileBase64: vi.fn(),
+  writeFile: vi.fn(),
+  getWorkspacePath: vi.fn(),
+  getPathContext: vi.fn(),
+};
 
 const {
   buildQuestionPlan,
@@ -12,7 +22,6 @@ const {
   truncate,
 } = await import("../harness/tools/jev-browser.js");
 
-/** Adapts `execFileMock`'s node-style callback to `promisify(execFile)`'s call shape. */
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -24,13 +33,11 @@ function mockAgentBrowser(
   responses: Array<{ success: boolean; data?: unknown; error?: string | null }>,
 ) {
   let call = 0;
-  execFileMock.mockImplementation(
-    (_bin: string, _args: string[], _opts: unknown, callback: (...cbArgs: unknown[]) => void) => {
-      const response = responses[Math.min(call, responses.length - 1)];
-      call++;
-      callback(null, { stdout: JSON.stringify(response), stderr: "" });
-    },
-  );
+  execMock.mockImplementation(async () => {
+    const response = responses[Math.min(call, responses.length - 1)];
+    call++;
+    return { stdout: JSON.stringify(response), stderr: "", code: 0 };
+  });
 }
 
 describe("categorizeRefs", () => {
@@ -140,7 +147,7 @@ describe("jev_browser tool", () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
-    execFileMock.mockReset();
+    execMock.mockReset();
     fetchMock.mockReset();
     global.fetch = fetchMock as unknown as typeof fetch;
     process.env.OPENROUTER_API_KEY = "test-key";
@@ -177,7 +184,7 @@ describe("jev_browser tool", () => {
       }),
     );
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "Find the page's main heading text." },
@@ -198,7 +205,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { closed: true } }, // close
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "anything" },
@@ -209,9 +216,7 @@ describe("jev_browser tool", () => {
     const parsed = JSON.parse(text) as { status: string; message: string };
     expect(parsed.status).toBe("blocked");
     expect(parsed.message).toContain("Snapshot failed");
-    const closeCall = execFileMock.mock.calls.find((call) =>
-      (call[1] as string[]).includes("close"),
-    );
+    const closeCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(closeCall).toBeDefined();
   });
 
@@ -237,7 +242,7 @@ describe("jev_browser tool", () => {
       }),
     );
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       {
@@ -258,14 +263,12 @@ describe("jev_browser tool", () => {
     expect(parsed.commandResults).toEqual([
       { command: ["network", "har", "start"], success: true, data: { started: true }, error: null },
     ]);
-    const harCall = execFileMock.mock.calls.find((call) => (call[1] as string[]).includes("har"));
-    expect(harCall?.[1]).toEqual([
-      "--session",
-      expect.any(String),
-      "network",
-      "har",
-      "start",
-      "--json",
+    const harCall = execMock.mock.calls.find((call) => call[0].includes("'har'"));
+    expect(harCall).toEqual([
+      expect.stringMatching(
+        /^'agent-browser' '--session' 'mikan-jb-[^']+' 'network' 'har' 'start' '--json'$/,
+      ),
+      { timeout: 90, signal: undefined },
     ]);
   });
 
@@ -276,7 +279,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { closed: true }, error: null }, // close
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
@@ -311,7 +314,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { started: true } }, // record start
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       {
@@ -325,13 +328,11 @@ describe("jev_browser tool", () => {
 
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as { session: string };
     expect(parsed.session).toBe("my-recording");
-    const closeCall = execFileMock.mock.calls.find((call) =>
-      (call[1] as string[]).includes("close"),
-    );
+    const closeCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(closeCall).toBeUndefined();
 
     // A later call reuses the same session and omits url — no "open" this time.
-    execFileMock.mockReset();
+    execMock.mockReset();
     mockAgentBrowser([
       { success: true, data: { path: "/tmp/demo.webm", frames: 12 } }, // record stop
       { success: true, data: { closed: true } }, // close
@@ -341,16 +342,14 @@ describe("jev_browser tool", () => {
       { label: "test", session: "my-recording", commands: [["record", "stop"]], close: true },
       undefined,
     );
-    const openCall = execFileMock.mock.calls.find((call) => (call[1] as string[]).includes("open"));
+    const openCall = execMock.mock.calls.find((call) => call[0].includes("'open'"));
     expect(openCall).toBeUndefined();
     const parsed2 = JSON.parse((result2.content[0] as { text: string }).text) as {
       commandResults: Array<{ data: unknown }>;
     };
     expect(parsed2.commandResults[0]?.data).toEqual({ path: "/tmp/demo.webm", frames: 12 });
     // close: true on the final call does close it.
-    const finalCloseCall = execFileMock.mock.calls.find((call) =>
-      (call[1] as string[]).includes("close"),
-    );
+    const finalCloseCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(finalCloseCall).toBeDefined();
   });
 
@@ -360,16 +359,14 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
       undefined,
     );
 
-    const closeCall = execFileMock.mock.calls.find((call) =>
-      (call[1] as string[]).includes("close"),
-    );
+    const closeCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(closeCall).toBeDefined();
   });
 
@@ -379,7 +376,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/shot.png" } }, // screenshot
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     await tool.execute(
       "call-1",
       {
@@ -391,9 +388,7 @@ describe("jev_browser tool", () => {
       undefined,
     );
 
-    const closeCall = execFileMock.mock.calls.find((call) =>
-      (call[1] as string[]).includes("close"),
-    );
+    const closeCall = execMock.mock.calls.find((call) => call[0].includes("'close'"));
     expect(closeCall).toBeUndefined();
   });
 
@@ -409,7 +404,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { started: true, lifecycle: { reused: true } } }, // record start
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-1",
       {
@@ -432,7 +427,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/demo.webm", lifecycle: { reused: true } } }, // record stop
     ]);
 
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     const result = await tool.execute(
       "call-2",
       { label: "test", session: "my-recording", commands: [["record", "stop"]] },
@@ -445,20 +440,215 @@ describe("jev_browser tool", () => {
     expect(parsed.browserContinuity).toMatch(/^continuous:/);
   });
 
+  test("quotes session, URL, and eval argv literally, including shell substitutions", async () => {
+    mockAgentBrowser([{ success: true, data: null, error: null }]);
+    const signal = new AbortController().signal;
+    await createJevBrowserTool(executor).execute(
+      "quoting",
+      {
+        label: "test",
+        session: "user's $(echo session); `echo name`",
+        url: "https://example.com/a'b?q=$(echo url)&x=`echo query`",
+        commands: [
+          ["eval", "document.title = '$(echo eval)'; `echo script`"],
+          ["eval", ""],
+        ],
+        close: true,
+      },
+      signal,
+    );
+
+    // Expected strings are deliberately independent of production shellEscape.
+    const prefix = "'agent-browser' '--session' 'user'\\''s $(echo session); `echo name`'";
+    expect(execMock.mock.calls).toEqual([
+      [
+        `${prefix} 'open' 'https://example.com/a'\\''b?q=$(echo url)&x=\`echo query\`' '--json'`,
+        { timeout: 90, signal },
+      ],
+      [
+        `${prefix} 'eval' 'document.title = '\\''$(echo eval)'\\''; \`echo script\`' '--json'`,
+        { timeout: 90, signal },
+      ],
+      [`${prefix} 'eval' '' '--json'`, { timeout: 90, signal }],
+      [`${prefix} 'close' '--json'`, { timeout: 90, signal: undefined }],
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("forwards the signal to goal-loop snapshots and actions through the same executor", async () => {
+    mockAgentBrowser([
+      { success: true, data: { snapshot: "A page", refs: {} } },
+      { success: true, data: null },
+      { success: true, data: { snapshot: "Ready", refs: {} } },
+      { success: true, data: { closed: true } },
+    ]);
+    for (const choice of ["WAIT", "DONE"]) {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          model: "typesafe/jev-1.0",
+          answers: { operation: { type: "choice", choice, probabilities: { [choice]: 1 } } },
+        }),
+      );
+    }
+    const signal = new AbortController().signal;
+    const result = await createJevBrowserTool(executor).execute(
+      "goal",
+      { label: "test", session: "goal", goal: "Wait until ready", close: true },
+      signal,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "done",
+      steps: 1,
+      lastPageSnapshot: "Ready",
+    });
+    expect(execMock.mock.calls).toEqual([
+      ["'agent-browser' '--session' 'goal' 'snapshot' '-i' '--json'", { timeout: 90, signal }],
+      ["'agent-browser' '--session' 'goal' 'wait' '1000' '--json'", { timeout: 90, signal }],
+      ["'agent-browser' '--session' 'goal' 'snapshot' '-i' '--json'", { timeout: 90, signal }],
+      ["'agent-browser' '--session' 'goal' 'close' '--json'", { timeout: 90, signal: undefined }],
+    ]);
+  });
+
+  test("cleans up through the executor without the aborted signal after execution rejects", async () => {
+    const controller = new AbortController();
+    const failure = new Error("Browser command aborted");
+    execMock
+      .mockImplementationOnce(async () => {
+        controller.abort();
+        throw failure;
+      })
+      .mockResolvedValueOnce({ stdout: '{"success":true}', stderr: "", code: 0 });
+
+    await expect(
+      createJevBrowserTool(executor).execute(
+        "abort",
+        { label: "test", session: "abort", commands: [["eval", "1"]], close: true },
+        controller.signal,
+      ),
+    ).rejects.toBe(failure);
+    expect(controller.signal.aborted).toBe(true);
+    expect(execMock.mock.calls).toEqual([
+      [
+        "'agent-browser' '--session' 'abort' 'eval' '1' '--json'",
+        { timeout: 90, signal: controller.signal },
+      ],
+      ["'agent-browser' '--session' 'abort' 'close' '--json'", { timeout: 90, signal: undefined }],
+    ]);
+  });
+
+  test("does not execute or clean up when the signal is already aborted", async () => {
+    await expect(
+      createJevBrowserTool(executor).execute(
+        "aborted",
+        { label: "test", session: "abort", commands: [["snapshot"]], close: true },
+        AbortSignal.abort(),
+      ),
+    ).rejects.toThrow(/aborted/i);
+    expect(execMock).not.toHaveBeenCalled();
+  });
+
+  test("preserves structured JSON errors from nonzero exits and continues raw commands", async () => {
+    execMock
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({ success: false, data: null, error: "No matching element" }),
+        stderr: "command failed",
+        code: 1,
+      })
+      .mockResolvedValueOnce({
+        stdout: JSON.stringify({ success: true, data: { title: "Example" }, error: null }),
+        stderr: "",
+        code: 0,
+      });
+    const result = await createJevBrowserTool(executor).execute(
+      "nonzero",
+      {
+        label: "test",
+        session: "errors",
+        commands: [
+          ["click", "@e1"],
+          ["get", "title"],
+        ],
+      },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "no-goal",
+      commandResults: [
+        { command: ["click", "@e1"], success: false, data: null, error: "No matching element" },
+        { command: ["get", "title"], success: true, data: { title: "Example" }, error: null },
+      ],
+    });
+    expect(execMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("missing CLI reports provisioning in the selected sandbox without installing anything", async () => {
+    execMock.mockResolvedValue({
+      stdout: "",
+      stderr: "sh: agent-browser: command not found",
+      code: 127,
+    });
+    const execution = createJevBrowserTool(executor).execute(
+      "missing",
+      { label: "test", session: "missing", commands: [["snapshot"]] },
+      undefined,
+    );
+    await expect(execution).rejects.toThrow(/agent-browser/i);
+    await expect(execution).rejects.toThrow(/container/i);
+    await expect(execution).rejects.toThrow(/install|provision/i);
+    expect(execMock.mock.calls).toEqual([
+      [
+        "'agent-browser' '--session' 'missing' 'snapshot' '--json'",
+        { timeout: 90, signal: undefined },
+      ],
+    ]);
+  });
+
+  test("tools with different executors never cross-run even with the same session name", async () => {
+    mockAgentBrowser([{ success: true, data: { owner: "first" }, error: null }]);
+    const otherExec = vi.fn<Executor["exec"]>().mockResolvedValue({
+      stdout: JSON.stringify({ success: true, data: { owner: "second" }, error: null }),
+      stderr: "",
+      code: 0,
+    });
+    const otherExecutor = { ...executor, exec: otherExec } as Executor;
+    const first = createJevBrowserTool(executor);
+    const second = createJevBrowserTool(otherExecutor);
+    const args = { label: "test", session: "shared", commands: [["get", "title"]], close: true };
+    for (const [tool, owner] of [
+      [first, "first"],
+      [second, "second"],
+      [first, "first"],
+    ] as const) {
+      const result = await tool.execute(owner, args, undefined);
+      expect(JSON.parse((result.content[0] as { text: string }).text).commandResults).toEqual([
+        { command: ["get", "title"], success: true, data: { owner }, error: null },
+      ]);
+    }
+    const calls = [
+      [
+        "'agent-browser' '--session' 'shared' 'get' 'title' '--json'",
+        { timeout: 90, signal: undefined },
+      ],
+      ["'agent-browser' '--session' 'shared' 'close' '--json'", { timeout: 90, signal: undefined }],
+    ];
+    expect(execMock.mock.calls).toEqual([...calls, ...calls]);
+    expect(otherExec.mock.calls).toEqual(calls);
+  });
+
   test("rejects a call with neither url nor session", async () => {
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     await expect(
       tool.execute("call-1", { label: "test", goal: "anything" }, undefined),
     ).rejects.toThrow(/Provide url .* or session/);
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(execMock).not.toHaveBeenCalled();
   });
 
   test("rejects a call with neither goal nor commands", async () => {
-    const tool = createJevBrowserTool();
+    const tool = createJevBrowserTool(executor);
     await expect(
       tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
     ).rejects.toThrow(/Provide goal, commands, or both/);
-    expect(execFileMock).not.toHaveBeenCalled();
+    expect(execMock).not.toHaveBeenCalled();
   });
 });
 
