@@ -105,6 +105,27 @@ describe("buildQuestionPlan", () => {
     expect(Object.keys(criteria)).toEqual(["e1", "e2"]);
   });
 
+  test("duplicate labels include current checked state and neighboring item text", () => {
+    const snapshot =
+      '- listitem\n  - checkbox "Toggle Todo" [checked=true, ref=e1]\n  - LabelText\n    - StaticText "QA Alpha"\n- listitem\n  - checkbox "Toggle Todo" [checked=false, ref=e2]\n  - LabelText\n    - StaticText "QA Beta"';
+    const { questions } = buildQuestionPlan(
+      {
+        e1: { role: "checkbox", name: "Toggle Todo" },
+        e2: { role: "checkbox", name: "Toggle Todo" },
+      },
+      false,
+      false,
+      snapshot,
+    );
+    const q = questions.click_target;
+    expect(q?.type).toBe("choice");
+    if (q?.type !== "choice") throw new Error("Missing choice");
+    expect(q.criteria.e1).toContain("QA Alpha");
+    expect(q.criteria.e1).toContain("checked=true");
+    expect(q.criteria.e2).toContain("QA Beta");
+    expect(q.criteria.e2).toContain("checked=false");
+  });
+
   test("no click/type/select candidates omit those operations from the criteria", () => {
     const { questions } = buildQuestionPlan({}, false, false);
     const criteria = questions.operation?.type === "choice" ? questions.operation.criteria : {};
@@ -159,6 +180,396 @@ describe("jev_browser tool", () => {
     global.fetch = originalFetch;
   });
 
+  function answerOperation(choice: string) {
+    return jsonResponse({
+      model: "typesafe/jev-1.0",
+      answers: { operation: { type: "choice", choice, probabilities: { [choice]: 1 } } },
+    });
+  }
+
+  test.each([
+    { command: [], error: /commands cannot be empty/ },
+    ...["press", "key"].flatMap((operation) =>
+      ["e1", "@e23"].map((ref) => ({
+        command: [operation, ref, "Enter"],
+        error: /press takes a key, not a target ref/,
+      })),
+    ),
+  ])("rejects invalid argv $command before any browser side effect", async ({ command, error }) => {
+    await expect(
+      createJevBrowserTool(executor).execute(
+        "invalid",
+        {
+          label: "test",
+          session: "preflight",
+          url: "https://example.com",
+          frame: "#form",
+          commands: [["click", "@e1"], command],
+          goal: "Submit",
+          close: true,
+        },
+        undefined,
+      ),
+    ).rejects.toThrow(error);
+    expect(execMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["press", "Enter"],
+    ["key", "Enter"],
+  ])("forwards valid %s %s argv", async (operation, key) => {
+    mockAgentBrowser([{ success: true, data: null, error: null }]);
+    const result = await createJevBrowserTool(executor).execute(
+      "key",
+      {
+        label: "test",
+        session: "keys",
+        commands: [[operation, key]],
+      },
+      undefined,
+    );
+    expect(execMock.mock.calls[0]?.[0]).toBe(
+      "'agent-browser' '--session' 'keys' '" + operation + "' 'Enter' '--json'",
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text).status).toBe("no-goal");
+  });
+
+  test.each([
+    { command: ["--help"] },
+    { command: ["press", "--help"] },
+    { command: ["skills", "get", "core", "--full"] },
+  ])("returns native plain-text help for $command", async ({ command }) => {
+    const help = "Usage: agent-browser\n  press <key>\n";
+    execMock.mockResolvedValue({ stdout: help, stderr: "", code: 0 });
+    const result = await createJevBrowserTool(executor).execute(
+      "help",
+      {
+        label: "Help",
+        session: "help",
+        commands: [command],
+      },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "no-goal",
+      commandResults: [{ command, success: true, data: { help }, error: null }],
+    });
+    expect(execMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test("a raw protocol failure stops the batch and goal evaluation but still closes", async () => {
+    mockAgentBrowser([
+      { success: true, data: { title: "Form" }, error: null },
+      { success: false, data: null, error: "No matching element" },
+      { success: true, data: null },
+    ]);
+    const result = await createJevBrowserTool(executor).execute(
+      "batch",
+      {
+        label: "test",
+        session: "batch",
+        close: true,
+        goal: "Submit",
+        commands: [
+          ["get", "title"],
+          ["click", "@e1"],
+          ["press", "Enter"],
+        ],
+      },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "blocked",
+      message: "Browser command failed: click: No matching element",
+      commandResults: [
+        { command: ["get", "title"], success: true, data: { title: "Form" }, error: null },
+        { command: ["click", "@e1"], success: false, data: null, error: "No matching element" },
+      ],
+    });
+    expect(execMock.mock.calls.map(([command]) => command)).toEqual([
+      "'agent-browser' '--session' 'batch' 'get' 'title' '--json'",
+      "'agent-browser' '--session' 'batch' 'click' '@e1' '--json'",
+      "'agent-browser' '--session' 'batch' 'close' '--json'",
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([11999, 12000, 12001])("bounds goal page evidence at %s characters", async (length) => {
+    const snapshot = "x".repeat(length);
+    mockAgentBrowser([
+      { success: true, data: { snapshot, origin: "https://example.com/active", refs: {} } },
+    ]);
+    fetchMock.mockResolvedValueOnce(answerOperation("DONE"));
+    await createJevBrowserTool(executor).execute(
+      "page",
+      {
+        label: "test",
+        session: "page",
+        goal: "Read page",
+      },
+      undefined,
+    );
+    const request = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(request.state).toMatchObject({
+      page: length > 12000 ? "x".repeat(12000) + "…" : snapshot,
+      pageTruncated: length > 12000,
+      url: "https://example.com/active",
+      history: [],
+    });
+  });
+
+  test("completion decisions receive successful history and current evidence for filtered-away items", async () => {
+    mockAgentBrowser([
+      {
+        success: true,
+        data: {
+          snapshot: '- checkbox "Task"',
+          refs: { e1: { role: "checkbox", name: "Task" } },
+          origin: "https://example.com/",
+        },
+      },
+      { success: true, data: null },
+      {
+        success: true,
+        data: {
+          snapshot: "Active: 0 items left",
+          refs: {},
+          origin: "https://example.com/#/active",
+        },
+      },
+    ]);
+    fetchMock
+      .mockResolvedValueOnce(answerOperation("CLICK"))
+      .mockResolvedValueOnce(answerOperation("DONE"));
+    const result = await createJevBrowserTool(executor).execute(
+      "filtered",
+      {
+        label: "test",
+        session: "filtered",
+        goal: "Complete Task and verify Active has no remaining items",
+      },
+      undefined,
+    );
+    const request = JSON.parse(fetchMock.mock.calls[1]![1].body);
+    expect(request.state).toMatchObject({
+      page: "Active: 0 items left",
+      url: "https://example.com/#/active",
+      history: [{ step: 1, operation: "CLICK", target: "e1", label: "Task" }],
+    });
+    expect(request.questions.operation.instructions).toContain(
+      "History records attempted actions, NOT confirmed effects",
+    );
+    expect(request.questions.operation.instructions).toContain("filtered-away completed item");
+    expect(request.questions.operation.instructions).toContain(
+      "A successful command alone is not proof",
+    );
+    expect(request.questions.operation.instructions).toContain("resulting URL");
+    expect(request.questions.operation.instructions).toContain(
+      "If content is truncated, do not infer missing evidence",
+    );
+    expect(request.questions.operation.criteria.DONE).toContain(
+      "attempted actions in history are not proof",
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "done",
+      steps: 1,
+    });
+  });
+
+  test.each(["WAIT", "DONE", "BLOCKED"])(
+    "three unchanged post-action observations allow %s before the progress guard",
+    async (lastChoice) => {
+      const snapshot = {
+        success: true,
+        data: { snapshot: "Unchanged", refs: {}, origin: "https://example.com/" },
+      };
+      mockAgentBrowser([
+        snapshot,
+        { success: true },
+        snapshot,
+        { success: true },
+        snapshot,
+        { success: true },
+        snapshot,
+      ]);
+      for (const choice of ["WAIT", "WAIT", "WAIT", lastChoice])
+        fetchMock.mockResolvedValueOnce(answerOperation(choice));
+      const result = await createJevBrowserTool(executor).execute(
+        "progress",
+        {
+          label: "test",
+          session: "progress",
+          goal: "Wait for completion",
+          maxSteps: 10,
+        },
+        undefined,
+      );
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+        status: lastChoice === "DONE" ? "done" : "blocked",
+        steps: 3,
+        message:
+          lastChoice === "DONE"
+            ? "Goal reported complete."
+            : lastChoice === "BLOCKED"
+              ? "No further progress possible."
+              : expect.stringContaining("No observable page change after 3 actions"),
+        history: [1, 2, 3].map((step) => ({ step, operation: "WAIT" })),
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(execMock).toHaveBeenCalledTimes(7);
+    },
+  );
+
+  test("alternating page states hand control back instead of toggling forever", async () => {
+    mockAgentBrowser(
+      ["unchecked", "checked", "unchecked", "checked", "unchecked"].flatMap((state, index) => {
+        const snapshot = {
+          success: true,
+          data: { snapshot: state, refs: { e1: { role: "checkbox", name: "Toggle Todo" } } },
+        };
+        return index < 4 ? [snapshot, { success: true }] : [snapshot];
+      }),
+    );
+    fetchMock.mockImplementation(async () => answerOperation("CLICK"));
+    const result = await createJevBrowserTool(executor).execute(
+      "cycle",
+      { label: "test", session: "cycle", goal: "Complete an item", maxSteps: 10 },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "blocked",
+      steps: 4,
+      message: expect.stringContaining("actions are cycling"),
+    });
+    expect(execMock.mock.calls.filter(([command]) => command.includes("'click'"))).toHaveLength(4);
+  });
+
+  test.each(["url", "page"])("a changed %s resets the no-progress count", async (changed) => {
+    const observations = Array.from({ length: 7 }, (_, index) => ({
+      success: true,
+      data: {
+        snapshot: changed === "page" && index >= 3 ? "Changed" : "Initial",
+        origin:
+          changed === "url" && index >= 3 ? "https://example.com/new" : "https://example.com/",
+        refs: {},
+      },
+    }));
+    mockAgentBrowser(
+      observations.flatMap((snapshot, index) =>
+        index < 6 ? [snapshot, { success: true }] : [snapshot],
+      ),
+    );
+    fetchMock.mockImplementation(async () => answerOperation("WAIT"));
+    const result = await createJevBrowserTool(executor).execute(
+      "reset",
+      {
+        label: "test",
+        session: "reset",
+        goal: "Wait until ready",
+        maxSteps: 10,
+      },
+      undefined,
+    );
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "blocked",
+      steps: 6,
+      message: expect.stringContaining("No observable page change after 3 actions"),
+    });
+    expect(execMock).toHaveBeenCalledTimes(13);
+    expect(fetchMock).toHaveBeenCalledTimes(7);
+  });
+
+  test.each(["WAIT", "SCROLL_DOWN", "SCROLL_UP"])(
+    "failed %s blocks without adding unsuccessful history",
+    async (operation) => {
+      mockAgentBrowser([
+        { success: true, data: { snapshot: "scroll_up", refs: {} } },
+        { success: false, error: "Browser disconnected" },
+      ]);
+      fetchMock.mockResolvedValueOnce(answerOperation(operation));
+      const result = await createJevBrowserTool(executor).execute(
+        "failed-action",
+        {
+          label: "test",
+          session: "failed-action",
+          goal: "Continue",
+        },
+        undefined,
+      );
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+        status: "blocked",
+        message: operation + " failed: Browser disconnected",
+        steps: 0,
+        history: [],
+      });
+      expect(execMock).toHaveBeenCalledTimes(2);
+      expect(execMock.mock.calls[1]?.[0]).toContain(
+        operation === "WAIT"
+          ? "'wait' '1000'"
+          : "'scroll' '" + (operation === "SCROLL_UP" ? "up" : "down") + "' '500'",
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each([
+    { operation: "INVALID", target: undefined, message: "Jev returned no valid operation choice." },
+    {
+      operation: "CLICK",
+      target: undefined,
+      message: "Jev chose CLICK but no target was available.",
+    },
+    { operation: "CLICK", target: "e999", message: "Jev chose CLICK but no target was available." },
+  ])(
+    "invalid goal decision $operation/$target blocks without action",
+    async ({ operation, target, message }) => {
+      mockAgentBrowser([
+        {
+          success: true,
+          data: {
+            snapshot: "Buttons",
+            refs: target
+              ? {
+                  e1: { role: "button", name: "Save" },
+                  e2: { role: "button", name: "Cancel" },
+                }
+              : {},
+          },
+        },
+      ]);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          model: "typesafe/jev-1.0",
+          answers: {
+            operation: { type: "choice", choice: operation, probabilities: { [operation]: 1 } },
+            ...(target
+              ? { click_target: { type: "choice", choice: target, probabilities: { [target]: 1 } } }
+              : {}),
+          },
+        }),
+      );
+      const result = await createJevBrowserTool(executor).execute(
+        "invalid-decision",
+        {
+          label: "test",
+          session: "invalid-decision",
+          goal: "Save",
+        },
+        undefined,
+      );
+      expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+        status: "blocked",
+        message,
+        steps: 0,
+        history: [],
+      });
+      expect(execMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
   test("reports the last page snapshot even when DONE is reached on the first observation", async () => {
     // Regression: a run that reaches DONE before any action has an empty
     // history, so without lastPageSnapshot the caller gets no page content
@@ -197,6 +608,201 @@ describe("jev_browser tool", () => {
     expect(parsed.steps).toBe(0);
     expect(parsed.lastPageSnapshot).toContain("Example Domain");
   });
+
+  test("declares frame as an optional string", () => {
+    const schema = createJevBrowserTool(executor).parameters;
+    expect(schema.properties.frame).toMatchObject({ type: "string" });
+    expect(schema.required).not.toContain("frame");
+  });
+
+  test("switches frames after opening and before commands and full goal snapshots, quoting selectors literally", async () => {
+    const snapshot =
+      '- iframe "Customer form"\n  - paragraph: Thank you, your request is complete.';
+    mockAgentBrowser([
+      { success: true, data: { targetId: "t1" } },
+      { success: true, data: null },
+      { success: true, data: { title: "Customer form" } },
+      { success: true, data: { snapshot, refs: {} } },
+      { success: true, data: { closed: true } },
+    ]);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        model: "typesafe/jev-1.0",
+        answers: { operation: { type: "choice", choice: "DONE", probabilities: { DONE: 1 } } },
+      }),
+    );
+    const signal = new AbortController().signal;
+    const result = await createJevBrowserTool(executor).execute(
+      "frame",
+      {
+        label: "Complete form",
+        session: "frame-test",
+        url: "https://example.com",
+        frame: 'iframe[title="Customer\'s $(echo frame); `echo frame`"]',
+        commands: [["get", "title"]],
+        goal: "Confirm the request is complete",
+        close: true,
+      },
+      signal,
+    );
+    const prefix = "'agent-browser' '--session' 'frame-test'";
+    expect(execMock.mock.calls).toEqual([
+      [prefix + " 'open' 'https://example.com' '--json'", { timeout: 90, signal }],
+      [
+        prefix + " 'frame' 'iframe[title=\"Customer'\\''s $(echo frame); `echo frame`\"]' '--json'",
+        { timeout: 90, signal },
+      ],
+      [prefix + " 'get' 'title' '--json'", { timeout: 90, signal }],
+      [prefix + " 'snapshot' '--json'", { timeout: 90, signal }],
+      [prefix + " 'close' '--json'", { timeout: 90, signal: undefined }],
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const request = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(request.state.page).toBe(snapshot);
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "done",
+      steps: 0,
+      lastPageSnapshot: snapshot,
+    });
+  });
+
+  test("frame main returns an existing session to the parent before raw commands without reopening", async () => {
+    mockAgentBrowser([{ success: true, data: null }]);
+    const result = await createJevBrowserTool(executor).execute(
+      "main",
+      {
+        label: "Return to parent",
+        session: "existing",
+        frame: "main",
+        commands: [["snapshot"]],
+      },
+      undefined,
+    );
+    expect(execMock.mock.calls).toEqual([
+      [
+        "'agent-browser' '--session' 'existing' 'frame' 'main' '--json'",
+        { timeout: 90, signal: undefined },
+      ],
+      [
+        "'agent-browser' '--session' 'existing' 'snapshot' '--json'",
+        { timeout: 90, signal: undefined },
+      ],
+    ]);
+    expect(JSON.parse((result.content[0] as { text: string }).text).status).toBe("no-goal");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test.each([undefined, false])(
+    "failed frame switching never acts on the parent and respects close=%s",
+    async (close) => {
+      mockAgentBrowser([
+        { success: true, data: { targetId: "t1" } },
+        { success: false, error: "No matching frame" },
+        { success: true, data: { closed: true } },
+      ]);
+      const signal = new AbortController().signal;
+      await expect(
+        createJevBrowserTool(executor).execute(
+          "missing-frame",
+          {
+            label: "Submit inside frame",
+            url: "https://example.com",
+            frame: "#missing",
+            commands: [["click", "@e1"]],
+            goal: "Submit the form",
+            close,
+          },
+          signal,
+        ),
+      ).rejects.toThrow("Failed to switch browser frame: No matching frame");
+      expect(execMock.mock.calls).toEqual([
+        [
+          expect.stringMatching(
+            /^'agent-browser' '--session' 'mikan-jb-[^']+' 'open' 'https:\/\/example.com' '--json'$/,
+          ),
+          { timeout: 90, signal },
+        ],
+        [
+          expect.stringMatching(
+            /^'agent-browser' '--session' 'mikan-jb-[^']+' 'frame' '#missing' '--json'$/,
+          ),
+          { timeout: 90, signal },
+        ],
+        ...(close === false
+          ? []
+          : [
+              [
+                expect.stringMatching(
+                  /^'agent-browser' '--session' 'mikan-jb-[^']+' 'close' '--json'$/,
+                ),
+                { timeout: 90, signal: undefined },
+              ],
+            ]),
+      ]);
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test.each([false, true])(
+    "refreshes the final snapshot after the last budgeted action (snapshot fails=%s)",
+    async (fails) => {
+      const snapshot = "- paragraph: Submission complete";
+      mockAgentBrowser([
+        {
+          success: true,
+          data: {
+            origin: "https://example.com/form",
+            snapshot: '- button "Submit" [ref=e1]',
+            refs: { e1: { role: "button", name: "Submit" } },
+          },
+        },
+        { success: true, data: null },
+        fails
+          ? { success: false, error: "Page disappeared" }
+          : { success: true, data: { origin: "https://example.com/complete", snapshot, refs: {} } },
+        { success: true, data: { closed: true } },
+      ]);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          model: "typesafe/jev-1.0",
+          answers: { operation: { type: "choice", choice: "CLICK", probabilities: { CLICK: 1 } } },
+        }),
+      );
+      const signal = new AbortController().signal;
+      const execution = createJevBrowserTool(executor).execute(
+        "last-action",
+        {
+          label: "Submit",
+          session: "budget",
+          goal: "Submit the form",
+          maxSteps: 1,
+          close: true,
+        },
+        signal,
+      );
+      if (fails) {
+        await expect(execution).rejects.toThrow("Final snapshot failed: Page disappeared");
+      } else {
+        const result = await execution;
+        expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+          status: "step-limit",
+          steps: 1,
+          lastPageSnapshot: snapshot,
+          finalUrl: "https://example.com/complete",
+        });
+      }
+      expect(execMock.mock.calls).toEqual([
+        ["'agent-browser' '--session' 'budget' 'snapshot' '--json'", { timeout: 90, signal }],
+        ["'agent-browser' '--session' 'budget' 'click' '@e1' '--json'", { timeout: 90, signal }],
+        ["'agent-browser' '--session' 'budget' 'snapshot' '--json'", { timeout: 90, signal }],
+        [
+          "'agent-browser' '--session' 'budget' 'close' '--json'",
+          { timeout: 90, signal: undefined },
+        ],
+      ]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
   test("always closes the agent-browser session, even after a mid-loop failure", async () => {
     mockAgentBrowser([
@@ -502,9 +1108,9 @@ describe("jev_browser tool", () => {
       lastPageSnapshot: "Ready",
     });
     expect(execMock.mock.calls).toEqual([
-      ["'agent-browser' '--session' 'goal' 'snapshot' '-i' '--json'", { timeout: 90, signal }],
+      ["'agent-browser' '--session' 'goal' 'snapshot' '--json'", { timeout: 90, signal }],
       ["'agent-browser' '--session' 'goal' 'wait' '1000' '--json'", { timeout: 90, signal }],
-      ["'agent-browser' '--session' 'goal' 'snapshot' '-i' '--json'", { timeout: 90, signal }],
+      ["'agent-browser' '--session' 'goal' 'snapshot' '--json'", { timeout: 90, signal }],
       ["'agent-browser' '--session' 'goal' 'close' '--json'", { timeout: 90, signal: undefined }],
     ]);
   });
@@ -547,7 +1153,7 @@ describe("jev_browser tool", () => {
     expect(execMock).not.toHaveBeenCalled();
   });
 
-  test("preserves structured JSON errors from nonzero exits and continues raw commands", async () => {
+  test("preserves structured JSON errors from nonzero exits and stops raw commands", async () => {
     execMock
       .mockResolvedValueOnce({
         stdout: JSON.stringify({ success: false, data: null, error: "No matching element" }),
@@ -572,13 +1178,13 @@ describe("jev_browser tool", () => {
       undefined,
     );
     expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
-      status: "no-goal",
+      status: "blocked",
       commandResults: [
         { command: ["click", "@e1"], success: false, data: null, error: "No matching element" },
-        { command: ["get", "title"], success: true, data: { title: "Example" }, error: null },
       ],
     });
-    expect(execMock).toHaveBeenCalledTimes(2);
+    expect(execMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   test("missing CLI reports provisioning in the selected sandbox without installing anything", async () => {
