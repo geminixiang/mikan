@@ -11,6 +11,7 @@ import {
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
 import { MikanAgentSession, MikanModels, type HarnessEvent } from "../harness/index.js";
+import * as log from "../log.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 let dir: string;
@@ -196,15 +197,25 @@ describe("harness run cancellation", () => {
     );
   });
 
-  test("abort after initial compaction prevents the new model turn", async () => {
+  test("abort after initial compaction does not report a completed provider request", async () => {
     const { session, faux } = setup({ compact: true });
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     await seedHistory(session);
-    faux.setResponses([fauxAssistantMessage("summary"), fauxAssistantMessage("must not start")]);
+    faux.setResponses([
+      async (_context, options, _state, requestModel) => {
+        await options?.onPayload?.({}, requestModel);
+        return fauxAssistantMessage("summary");
+      },
+      fauxAssistantMessage("must not start"),
+    ]);
     session.subscribe((event) => {
       if (event.type === "compaction_end") session.abort();
     });
     await session.prompt("new request");
     expect(faux.state.callCount).toBe(1);
+    expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
+      false,
+    );
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 
@@ -218,14 +229,16 @@ describe("harness run cancellation", () => {
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 
-  test("duration budget aborts an in-flight provider call before its response", async () => {
+  test("duration budget logs and aborts an in-flight provider call before its response", async () => {
     const { session, faux, events } = setup();
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     const gate = deferred();
     let signal: AbortSignal | undefined;
     faux.setResponses([
-      async (_context, options) => {
+      async (_context, options, _state, requestModel) => {
         signal = options?.signal;
+        await options?.onPayload?.({}, requestModel);
         ready.resolve();
         await gate.promise;
         return fauxAssistantMessage("late answer");
@@ -242,9 +255,14 @@ describe("harness run cancellation", () => {
     expect(notifiedBeforeResponse).toBe(true);
     expect(events.filter((event) => event.type === "budget_exceeded")).toHaveLength(1);
     expect(faux.state.callCount).toBe(1);
+    expect(info).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^LLM request aborted \{"abort_reason":"\d+ms >= 100ms limit","run_id":"[^"]+"\}$/,
+      ),
+    );
   });
 
-  test("duration budget aborts a running tool and waits for its cleanup", async () => {
+  test("duration budget aborts a running tool without reporting an LLM request", async () => {
     const ready = deferred();
     const gate = deferred();
     let signal: AbortSignal | undefined;
@@ -261,8 +279,12 @@ describe("harness run cancellation", () => {
       },
     };
     const { session, faux } = setup({ tools: [tool] });
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("hold", {})),
+      async (_context, options, _state, requestModel) => {
+        await options?.onPayload?.({}, requestModel);
+        return fauxAssistantMessage(fauxToolCall("hold", {}));
+      },
       fauxAssistantMessage("must not continue"),
     ]);
     const run = session.prompt("slow tool", { budget: { maxDurationMs: 100 } });
@@ -276,12 +298,22 @@ describe("harness run cancellation", () => {
     expect(activeDuringCleanup).toBe(true);
     expect(faux.state.callCount).toBe(1);
     expect(session.isActiveRun).toBe(false);
+    expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
+      false,
+    );
   });
 
-  test("duration budget cancels retry backoff without another model call", async () => {
+  test("duration budget cancels retry backoff without reporting an LLM request", async () => {
     const { session, faux, events } = setup();
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
-    faux.setResponses([retryError(), fauxAssistantMessage("must not retry")]);
+    faux.setResponses([
+      async (_context, options, _state, requestModel) => {
+        await options?.onPayload?.({}, requestModel);
+        return retryError();
+      },
+      fauxAssistantMessage("must not retry"),
+    ]);
     session.subscribe((event) => {
       if (event.type === "auto_retry_start") ready.resolve();
     });
@@ -293,10 +325,14 @@ describe("harness run cancellation", () => {
     await run;
     expect(notifiedAtDeadline).toBe(true);
     expect(faux.state.callCount).toBe(1);
+    expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
+      false,
+    );
   });
 
-  test("deadline during auth prevents a later model call", async () => {
+  test("deadline during preflight auth does not report a provider stream", async () => {
     const { session, models, faux, events } = setup();
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     const gate = deferred();
     const getAuth = models.getAuth.bind(models);
@@ -313,17 +349,52 @@ describe("harness run cancellation", () => {
     await run;
     expect(notifiedDuringAuth).toBe(true);
     expect(faux.state.callCount).toBe(0);
+    expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
+      false,
+    );
   });
 
-  test("deadline aborts an in-flight compaction without persisting a partial summary", async () => {
+  test("deadline during provider auth does not report a transport that never started", async () => {
+    const { session, models, events } = setup();
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
+    const ready = deferred();
+    const gate = deferred();
+    const rawModels = models.models;
+    const getAuth = rawModels.getAuth.bind(rawModels);
+    let authCalls = 0;
+    vi.spyOn(rawModels, "getAuth").mockImplementation(async (model) => {
+      authCalls += 1;
+      if (authCalls === 2) {
+        ready.resolve();
+        await gate.promise;
+      }
+      return getAuth(model);
+    });
+
+    const run = session.prompt("slow provider auth", { budget: { maxDurationMs: 100 } });
+    await ready.promise;
+    await vi.advanceTimersByTimeAsync(100);
+    const notifiedDuringAuth = events.some((event) => event.type === "budget_exceeded");
+    gate.resolve();
+    await run;
+    expect(notifiedDuringAuth).toBe(true);
+    expect(authCalls).toBeGreaterThanOrEqual(2);
+    expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
+      false,
+    );
+  });
+
+  test("deadline logs and aborts an in-flight compaction without persisting a partial summary", async () => {
     const { session, faux, events } = setup({ compact: true });
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     await seedHistory(session);
     const ready = deferred();
     const gate = deferred();
     let signal: AbortSignal | undefined;
     faux.setResponses([
-      async (_context, options) => {
+      async (_context, options, _state, requestModel) => {
         signal = options?.signal;
+        await options?.onPayload?.({}, requestModel);
         ready.resolve();
         await gate.promise;
         return fauxAssistantMessage("late summary");
@@ -343,6 +414,11 @@ describe("harness run cancellation", () => {
     expect(
       (await session.sessionStore.getEntries()).some((entry) => entry.type === "compaction"),
     ).toBe(false);
+    expect(info).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^LLM request aborted \{"abort_reason":"\d+ms >= 100ms limit","run_id":"[^"]+"\}$/,
+      ),
+    );
     expect(JSON.stringify(session.messages)).toContain("new request");
   });
 

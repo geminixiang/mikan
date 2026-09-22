@@ -22,6 +22,7 @@ import { MikanAgentSession, MikanModels, type SubagentUsage } from "../harness/i
 import { SessionStore } from "../sessions/session-store.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
+import * as log from "../log.js";
 
 let dir: string;
 
@@ -208,6 +209,38 @@ describe("runSubagent", () => {
     const persisted = JSON.stringify(await sessionStore.getEntries());
     expect(persisted).toContain("delegated result");
     expect(persisted).toContain("parent complete");
+  });
+
+  test("logs the abort reason and run id when a subagent timeout cancels an LLM request", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const requestStarted = Promise.withResolvers<void>();
+    faux.setResponses([
+      async (_context, options, _state, requestModel) => {
+        await options?.onPayload?.({}, requestModel);
+        requestStarted.resolve();
+        await new Promise<void>((resolve) => {
+          options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return fauxAssistantMessage("aborted");
+      },
+    ]);
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
+
+    const pending = runSubagent({
+      request: { task: "Time out during the request", budget: { maxDurationMs: 20 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+    });
+    await requestStarted.promise;
+    const result = await pending;
+
+    expect(result.status).toBe("timeout");
+    expect(info).toHaveBeenCalledWith(
+      expect.stringMatching(/^LLM request aborted \{"abort_reason":"timeout","run_id":"[^"]+"\}$/),
+    );
   });
 
   test("returns a bounded timeout while retaining the slot until active cleanup settles", async () => {

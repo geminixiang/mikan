@@ -665,7 +665,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
   const abort = (reason: TerminalSignal) => {
     if (terminalSignal) return;
     terminalSignal = reason;
-    run?.session.abort();
+    run?.session.abort(reason);
     notifyAbort();
   };
   const onAbort = () => abort("cancelled");

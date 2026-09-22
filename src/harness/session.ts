@@ -9,7 +9,15 @@ import {
   DEFAULT_COMPACTION_SETTINGS,
   type CompactionSettings,
 } from "@earendil-works/pi-agent-core";
-import type { ImageContent, Model, Api, Usage } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessageEventStream,
+  ImageContent,
+  Model,
+  Models,
+  ProviderRequestOptions,
+  Usage,
+} from "@earendil-works/pi-ai";
 import type { SessionStore } from "../sessions/session-store.js";
 import type {
   BudgetSettings,
@@ -39,6 +47,11 @@ interface RunTally {
   toolCallCounts: Record<string, number>;
   startedAt: number;
   endedAt?: number;
+}
+
+interface ProviderRequestState {
+  token: symbol;
+  runId: string;
 }
 
 const FORWARDED_EVENTS = [
@@ -71,6 +84,9 @@ export class MikanAgentSession {
   private lane: AgentLane | undefined;
   private runActive = false;
   private runAborted = false;
+  private pendingProviderRequest: ProviderRequestState | undefined;
+  private currentProviderRequest: ProviderRequestState | undefined;
+  private activeProviderRequest: ProviderRequestState | undefined;
   private operationId: string | undefined;
   private cancellation: Promise<void> | undefined;
   private cancellationError: unknown;
@@ -193,6 +209,9 @@ export class MikanAgentSession {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
     this.runActive = true;
     this.runAborted = false;
+    this.pendingProviderRequest = undefined;
+    this.currentProviderRequest = undefined;
+    this.activeProviderRequest = undefined;
     this.budgetExceededReason = undefined;
     this.cancellationError = undefined;
     this.retryAttempt = 0;
@@ -284,6 +303,9 @@ export class MikanAgentSession {
       cleanupFailure = { error };
     } finally {
       this.toolArgs.clear();
+      this.pendingProviderRequest = undefined;
+      this.currentProviderRequest = undefined;
+      this.activeProviderRequest = undefined;
       this.operationId = undefined;
       this.cancellation = undefined;
       this.deadlineNotification = undefined;
@@ -301,11 +323,20 @@ export class MikanAgentSession {
     throw cleanupFailure.error;
   }
 
-  abort(): void {
+  abort(reason = "cancelled"): void {
     if (!this.runActive) return;
+    const firstAbort = !this.runAborted;
     this.runAborted = true;
     clearTimeout(this.deadlineTimer);
     this.deadlineTimer = undefined;
+    if (firstAbort && this.activeProviderRequest) {
+      log.logInfo(
+        `LLM request aborted ${JSON.stringify({
+          abort_reason: reason,
+          run_id: this.activeProviderRequest.runId,
+        })}`,
+      );
+    }
     this.requestCancellation();
   }
 
@@ -321,6 +352,110 @@ export class MikanAgentSession {
       });
   }
 
+  private beginProviderRequest(): ProviderRequestState | undefined {
+    const request = this.pendingProviderRequest;
+    this.pendingProviderRequest = undefined;
+    if (request) this.currentProviderRequest = request;
+    return request;
+  }
+
+  private endProviderRequest(request: ProviderRequestState | undefined): void {
+    if (!request) return;
+    if (this.currentProviderRequest?.token === request.token) {
+      this.currentProviderRequest = undefined;
+    }
+    if (this.activeProviderRequest?.token === request.token) {
+      this.activeProviderRequest = undefined;
+    }
+  }
+
+  private withProviderActivation<TOptions extends ProviderRequestOptions>(
+    options: TOptions | undefined,
+    request: ProviderRequestState | undefined,
+  ): TOptions | undefined {
+    if (!request) return options;
+    const onPayload = options?.onPayload;
+    return {
+      ...options,
+      onPayload: async (payload, model) => {
+        const transformed = await onPayload?.(payload, model);
+        if (this.currentProviderRequest?.token === request.token) {
+          this.activeProviderRequest = request;
+        }
+        return transformed;
+      },
+    } as TOptions;
+  }
+
+  private trackProviderStream(
+    start: (request: ProviderRequestState | undefined) => AssistantMessageEventStream,
+  ): AssistantMessageEventStream {
+    const request = this.beginProviderRequest();
+    try {
+      const stream = start(request);
+      if (request) {
+        void stream.result().then(
+          () => this.endProviderRequest(request),
+          () => this.endProviderRequest(request),
+        );
+      }
+      return stream;
+    } catch (error) {
+      this.endProviderRequest(request);
+      throw error;
+    }
+  }
+
+  private trackProviderPromise<T>(
+    start: (request: ProviderRequestState | undefined) => Promise<T>,
+  ): Promise<T> {
+    const request = this.beginProviderRequest();
+    try {
+      const promise = start(request);
+      if (!request) return promise;
+      return promise.then(
+        (result) => {
+          this.endProviderRequest(request);
+          return result;
+        },
+        (error: unknown) => {
+          this.endProviderRequest(request);
+          throw error;
+        },
+      );
+    } catch (error) {
+      this.endProviderRequest(request);
+      throw error;
+    }
+  }
+
+  private trackedModels(models: Models): Models {
+    return new Proxy(models, {
+      get: (target, property) => {
+        if (property === "streamSimple") {
+          return (...[model, context, options]: Parameters<Models["streamSimple"]>) =>
+            this.trackProviderStream((request) =>
+              target.streamSimple(model, context, this.withProviderActivation(options, request)),
+            );
+        }
+        if (property === "completeSimple") {
+          return (...[model, context, options]: Parameters<Models["completeSimple"]>) =>
+            this.trackProviderPromise((request) =>
+              target.completeSimple(model, context, this.withProviderActivation(options, request)),
+            );
+        }
+        if (property === "streamDeferred") {
+          return (...[model, handle, options]: Parameters<Models["streamDeferred"]>) =>
+            this.trackProviderStream((request) =>
+              target.streamDeferred(model, handle, this.withProviderActivation(options, request)),
+            );
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
   private toHarnessTools(tools: MikanToolInput[]): MikanHarnessTool[] {
     return tools.map((tool) => (isHarnessTool(tool) ? tool : adaptAgentTool(tool)));
   }
@@ -328,7 +463,7 @@ export class MikanAgentSession {
   private async initialize(): Promise<void> {
     if (this.harness) return;
     this.harness = await this.sessionStore.createHarness({
-      models: this.options.models.models,
+      models: this.trackedModels(this.options.models.models),
       model: this.model,
       thinkingLevel: this.options.thinkingLevel,
       tools: this.toHarnessTools(this.options.tools),
@@ -343,8 +478,9 @@ export class MikanAgentSession {
       TODO_CONTEXT,
     );
     await this.lane.setThinkingLevel(this.options.thinkingLevel, TODO_CONTEXT);
-    this.harness.hooks.on("before_request", async () => {
+    this.harness.hooks.on("before_request", async (event) => {
       if (!(await this.checkCallBudget())) return undefined;
+      this.pendingProviderRequest = { token: Symbol("provider-request"), runId: event.runId };
       this.tally.llmCalls += 1;
       return undefined;
     });
@@ -563,7 +699,7 @@ export class MikanAgentSession {
   private async exceedBudget(reason: string): Promise<void> {
     if (this.budgetExceededReason) return;
     this.budgetExceededReason = reason;
-    this.abort();
+    this.abort(reason);
     await this.emit({
       type: "budget_exceeded",
       reason,
