@@ -8,6 +8,7 @@ on:
     paths:
       - deploy/docker/mikan-sandbox.Dockerfile
       - package.json
+      - scripts/smoke-sandbox-image.sh
       - .github/workflows/sandbox-image.yml
   workflow_dispatch:
 
@@ -71,6 +72,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build sandbox image for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/mikan-sandbox.Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: mikan-sandbox:smoke
+          cache-from: type=gha
+
+      - name: Smoke test sandbox image
+        run: scripts/smoke-sandbox-image.sh mikan-sandbox:smoke
 
       - name: Build and push sandbox image
         uses: docker/build-push-action@v6

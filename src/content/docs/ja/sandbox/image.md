@@ -23,6 +23,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 特徴：
 
 - 標準 tool image には Node.js 24、Chromium、ffmpeg、および `jev_browser` が使用する固定版 `agent-browser` 0.38.1 runtime が含まれます
+- image のツールは `/root` ではなく `/usr/local` と `/opt` にインストールされます。sandbox 内での `npm i -g`、`uv tool install`、`pip install --user` は `PATH` 上の `/root/.local` に入ります
 - mikan は conversation ごとに独立した vault と container を作成します
 - 各 container は専用の Docker bridge network に接続され、container 間の直接通信が分離されます。outbound network access は引き続き有効です
 - managed container 作成時は `--cap-drop=ALL`、`--security-opt=no-new-privileges`、`--pids-limit=1024` を付けます

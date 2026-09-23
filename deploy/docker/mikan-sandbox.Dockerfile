@@ -1,11 +1,22 @@
+ARG NODE_VERSION=24
+ARG BUN_VERSION=1.4
+ARG UV_VERSION=0.9
+
+FROM node:${NODE_VERSION}-trixie-slim AS node
+FROM oven/bun:${BUN_VERSION}-debian AS bun
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
+
 FROM debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Taipei
-ENV NVM_DIR=/root/.nvm
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+ENV NPM_CONFIG_PREFIX=/root/.local
 ENV CLOUDSDK_CORE_DISABLE_PROMPTS=1
+ENV CLOUDSDK_CORE_DISABLE_USAGE_REPORTING=true
+ENV CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=true
 
-SHELL ["/bin/bash", "-lc"]
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   apt-transport-https \
@@ -50,22 +61,24 @@ RUN mkdir -p /etc/apt/keyrings \
   && apt-get install -y --no-install-recommends gh \
   && rm -rf /var/lib/apt/lists/*
 
-ARG NODE_VERSION=24
 ARG AGENT_BROWSER_VERSION=0.38.1
 ARG GWS_VERSION=0.22.5
 
-RUN curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash \
-  && source "$NVM_DIR/nvm.sh" \
-  && nvm install "$NODE_VERSION" \
-  && nvm alias default "$NODE_VERSION" \
-  && NODE_BIN_DIR="$NVM_DIR/versions/node/$(nvm version "$NODE_VERSION")/bin" \
-  && ln -sf "$NODE_BIN_DIR/node" /usr/local/bin/node \
-  && ln -sf "$NODE_BIN_DIR/npm" /usr/local/bin/npm \
-  && ln -sf "$NODE_BIN_DIR/npx" /usr/local/bin/npx \
-  && ln -sf "$NODE_BIN_DIR/corepack" /usr/local/bin/corepack \
-  && npm install -g yarn \
-  && ln -sf "$NODE_BIN_DIR/yarn" /usr/local/bin/yarn \
-  && (ln -sf "$NODE_BIN_DIR/yarnpkg" /usr/local/bin/yarnpkg 2>/dev/null || true)
+COPY --from=node /usr/local/bin/ /usr/local/bin/
+COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
+COPY --from=node /usr/local/include/node/ /usr/local/include/node/
+COPY --from=node /opt/ /opt/
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=uv /uv /uvx /usr/local/bin/
+RUN ln -s bun /usr/local/bin/bunx && rm -f /usr/local/bin/docker-entrypoint.sh
+
+RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor -o /etc/apt/keyrings/cloud.google.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+    > /etc/apt/sources.list.d/google-cloud-sdk.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends google-cloud-cli \
+  && rm -rf /var/lib/apt/lists/*
 
 # The gws npm postinstall downloads its native binary with Node fetch, which can
 # terminate on slow GitHub release streams. Install the pinned, checksummed
@@ -78,44 +91,26 @@ RUN case "$(dpkg --print-architecture)" in \
   && GWS_ARTIFACT="google-workspace-cli-${GWS_ARCH}-unknown-linux-gnu.tar.gz" \
   && GWS_URL="https://github.com/googleworkspace/cli/releases/download/v${GWS_VERSION}/${GWS_ARTIFACT}" \
   && GWS_TMP="$(mktemp -d)" \
-  && wget -q --timeout=30 --tries=10 --retry-connrefused -O "$GWS_TMP/$GWS_ARTIFACT" "$GWS_URL" \
-  && wget -q --timeout=30 --tries=10 --retry-connrefused -O "$GWS_TMP/$GWS_ARTIFACT.sha256" "$GWS_URL.sha256" \
+  && wget -q --no-hsts --timeout=30 --tries=10 --retry-connrefused -O "$GWS_TMP/$GWS_ARTIFACT" "$GWS_URL" \
+  && wget -q --no-hsts --timeout=30 --tries=10 --retry-connrefused -O "$GWS_TMP/$GWS_ARTIFACT.sha256" "$GWS_URL.sha256" \
   && (cd "$GWS_TMP" && sha256sum -c "$GWS_ARTIFACT.sha256") \
   && tar -xzf "$GWS_TMP/$GWS_ARTIFACT" -C "$GWS_TMP" \
   && install -m 0755 "$GWS_TMP/gws" /usr/local/bin/gws \
   && rm -rf "$GWS_TMP"
 
-RUN source "$NVM_DIR/nvm.sh" \
-  && NODE_BIN_DIR="$NVM_DIR/versions/node/$(nvm version "$NODE_VERSION")/bin" \
-  && npm install -g "agent-browser@$AGENT_BROWSER_VERSION" \
-  && ln -sf "$NODE_BIN_DIR/agent-browser" /usr/local/bin/agent-browser \
-  && test "$(agent-browser --version)" = "agent-browser $AGENT_BROWSER_VERSION"
+RUN npm install -g --prefix /usr/local --cache /tmp/npm-cache "agent-browser@$AGENT_BROWSER_VERSION" \
+  && test "$(agent-browser --version)" = "agent-browser $AGENT_BROWSER_VERSION" \
+  && rm -rf /tmp/npm-cache
 
-RUN curl -fsSL https://bun.sh/install | bash \
-  && ln -sf /root/.bun/bin/bun /usr/local/bin/bun \
-  && ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx
+RUN export UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/usr/local/bin \
+    UV_PYTHON_INSTALL_DIR=/opt/uv/python UV_CACHE_DIR=/tmp/uv-cache \
+  && uv tool install keyring --with keyrings.google-artifactregistry-auth \
+  && uv tool install yt-dlp \
+  && rm -rf /tmp/uv-cache
 
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-  && ln -sf /root/.local/bin/uv /usr/local/bin/uv \
-  && ln -sf /root/.local/bin/uvx /usr/local/bin/uvx
+RUN curl -fsSL https://sentry.io/get-cli/ | INSTALL_DIR=/usr/local/bin sh
 
-RUN uv tool install keyring --with keyrings.google-artifactregistry-auth \
-  && ln -sf /root/.local/bin/keyring /usr/local/bin/keyring
-
-RUN uv tool install yt-dlp \
-  && ln -sf /root/.local/bin/yt-dlp /usr/local/bin/yt-dlp
-
-RUN curl -fsSL https://sentry.io/get-cli/ | sh
-
-RUN curl -fsSL https://sdk.cloud.google.com | bash -s -- --disable-prompts --install-dir=/root \
-  && ln -sf /root/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud \
-  && ln -sf /root/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil \
-  && ln -sf /root/google-cloud-sdk/bin/bq /usr/local/bin/bq \
-  && gcloud config set core/disable_usage_reporting true \
-  && gcloud config set component_manager/disable_update_check true
-
-RUN printf '\n# nvm\nexport NVM_DIR="%s"\n[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"\n[ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion"\n' \
-  "$NVM_DIR" >> /root/.bashrc
+RUN rmdir /root/.ssh 2>/dev/null; test "$(ls -A /root | tr "\n" " ")" = ".bashrc .profile " || (ls -la /root && exit 1)
 
 WORKDIR /workspace
 
