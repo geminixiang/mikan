@@ -27,6 +27,7 @@ import type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
 export type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
 import { parseGithubConversationId } from "../adapters/github/ids.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
+import { guestWorkspacePath } from "../sandbox/layout.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
 import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 
@@ -1129,7 +1130,7 @@ export function buildContainerBindTranslator(options: {
       join(options.stateDir, "vaults", legacyConversationCredentialKey(rawId)),
       join(options.stateDir, "vaults", key),
     ]);
-    guestPairs.push([`/workspace/${rawId}`, `/workspace/${key}`]);
+    guestPairs.push([guestWorkspacePath(rawId), guestWorkspacePath(key)]);
   }
 
   return (bindSpec: string): string => {

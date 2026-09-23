@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { legacyConversationResourceKey, sanitizeIdentitySegment } from "./identity.js";
+import { GUEST_PUBLIC_OFFICES_DIR, SANDBOX_LAYOUT_VERSION } from "./layout.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -10,6 +11,7 @@ const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
 
 type ContainerStatus = "running" | "stopped" | "missing";
+type DriftReason = "binds" | "mount-content" | "network";
 
 function isDockerNotFoundError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -72,6 +74,7 @@ export class DockerContainerManager {
   private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
   private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
   private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
+  private static readonly LAYOUT_LABEL = `mikan.layout=${SANDBOX_LAYOUT_VERSION}`;
   private static readonly MIGRATE_IMAGE_PREFIX = "mikan-migrate";
   private static readonly MIGRATE_BINDS_LABEL_KEY = "mikan.migrate-binds";
 
@@ -121,11 +124,14 @@ export class DockerContainerManager {
     const status = await this.inspectStatus(containerName);
 
     try {
-      if (
-        status !== "missing" &&
-        (await this.hasRuntimeDrift(containerKey, containerName, mounts))
-      ) {
-        log.logInfo(`Container ${containerName} configuration changed; recreating container`);
+      const drift =
+        status === "missing"
+          ? undefined
+          : await this.runtimeDrift(containerKey, containerName, mounts);
+      if (drift) {
+        log.logInfo(
+          `Container ${containerName} configuration changed (${drift}); recreating container`,
+        );
         await this.recreateContainerPreservingContents(containerKey, containerName, mounts);
         log.logInfo(`Container ${containerName} recreated`);
       } else if (status === "stopped") {
@@ -391,12 +397,12 @@ export class DockerContainerManager {
     const keep = new Set(
       bindSpecs
         .map((bind) => bindSpecToMount(bind).target)
-        .filter((target) => target.startsWith("/workspace/public/"))
-        .map((target) => target.slice("/workspace/public/".length)),
+        .filter((target) => target.startsWith(`${GUEST_PUBLIC_OFFICES_DIR}/`))
+        .map((target) => target.slice(GUEST_PUBLIC_OFFICES_DIR.length + 1)),
     );
     const script = [
-      "[ -d /workspace/public ] || exit 0",
-      "for d in /workspace/public/*; do",
+      `cd ${GUEST_PUBLIC_OFFICES_DIR} 2>/dev/null || exit 0`,
+      "for d in *; do",
       '  [ -e "$d" ] || continue',
       '  case " $KEEP " in *" ${d##*/} "*) continue;; esac',
       '  rmdir "$d" 2>/dev/null || true',
@@ -602,6 +608,8 @@ export class DockerContainerManager {
       DockerContainerManager.IMAGE_MODE_LABEL,
       "--label",
       `${DockerContainerManager.VAULT_ID_LABEL_KEY}=${containerKey}`,
+      "--label",
+      DockerContainerManager.LAYOUT_LABEL,
     ];
     if (options.conversationId) {
       labels.push(
@@ -681,18 +689,15 @@ export class DockerContainerManager {
     }
   }
 
-  private async hasRuntimeDrift(
+  private async runtimeDrift(
     containerKey: string,
     containerName: string,
     mounts: ContainerMount[],
-  ): Promise<boolean> {
-    if (await this.hasBindMountDrift(containerName, mounts)) {
-      return true;
-    }
-    if (await this.hasMountSignatureDrift(containerName, mounts)) {
-      return true;
-    }
-    return this.hasNetworkModeDrift(containerKey, containerName);
+  ): Promise<DriftReason | undefined> {
+    if (await this.hasBindMountDrift(containerName, mounts)) return "binds";
+    if (await this.hasMountSignatureDrift(containerName, mounts)) return "mount-content";
+    if (await this.hasNetworkModeDrift(containerKey, containerName)) return "network";
+    return undefined;
   }
 
   private async hasBindMountDrift(

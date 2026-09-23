@@ -77,6 +77,13 @@ Changing the policy changes the container's desired mounts, which reads as
 drift: the provisioner recreates the container with the new binds while
 keeping its writable layer, so installed packages survive the switch. The
 same translation carries containers across the raw-id → office-key rename.
+The recreate log names the first drift found: `binds`, `mount-content`, or
+`network`.
+
+Guest paths (`/workspace`, `/workspace/public`, `/root`) come from
+`layout.ts`. Containers created fresh carry `mikan.layout=<version>`;
+recreated containers inherit the label from their snapshot, so containers
+without it predate the label.
 
 Consequences to keep in mind:
 

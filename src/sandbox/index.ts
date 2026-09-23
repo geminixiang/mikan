@@ -2,6 +2,7 @@ import { ContainerExecutor, containerSandboxAdapter } from "./container.js";
 import { CloudflareSandboxExecutor, cloudflareSandboxAdapter } from "./cloudflare.js";
 import { HostExecutor, hostSandboxAdapter } from "./host.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
+import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 import * as log from "../log.js";
 import type {
   Executor,
@@ -141,7 +142,7 @@ export function getUnresolvedSandboxPathContext(
   hostWorkspaceRoot: string,
 ): RuntimePathContext {
   if (sandboxConfig.type === "image") {
-    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
+    return createMountedRuntimePathContext(hostWorkspaceRoot, GUEST_WORKSPACE_ROOT);
   }
 
   return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);

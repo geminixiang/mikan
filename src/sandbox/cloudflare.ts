@@ -14,8 +14,9 @@ import {
   linkAbortSignal,
 } from "./utils.js";
 import { readEnv } from "../env-manifest.js";
+import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 
-const DEFAULT_CLOUDFLARE_CWD = "/workspace";
+const DEFAULT_CLOUDFLARE_CWD = GUEST_WORKSPACE_ROOT;
 
 interface CloudflareExecPayload {
   sandboxId: string;

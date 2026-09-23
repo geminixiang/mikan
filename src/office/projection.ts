@@ -4,6 +4,7 @@ import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
 import { loadOfficeVisibilityOverride } from "../settings/index.js";
 import { listRegisteredOffices, type Office } from "./index.js";
 import * as log from "../log.js";
+import { guestPublicOfficePath, guestWorkspacePath } from "../sandbox/layout.js";
 import type { ContainerMount, WorkspaceVisibility } from "../types.js";
 import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
@@ -68,7 +69,7 @@ function publicOfficeMounts(self: Office): ContainerMount[] {
     const other = workspace.office(record);
     if (other.key === self.key || !exists(other.dir)) continue;
     if (resolveOfficeVisibility(other).visibility !== "public") continue;
-    mounts.push({ source: other.dir, target: `/workspace/public/${other.key}`, readOnly: true });
+    mounts.push({ source: other.dir, target: guestPublicOfficePath(other.key), readOnly: true });
   }
   return mounts.toSorted((a, b) => a.target.localeCompare(b.target));
 }
@@ -86,15 +87,15 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   return {
     ...decision,
     mounts: [
-      { source: office.dir, target: `/workspace/${office.key}` },
+      { source: office.dir, target: guestWorkspacePath(office.key) },
       {
         source: workspace.memoryPath,
-        target: "/workspace/MEMORY.md",
+        target: guestWorkspacePath("MEMORY.md"),
         ...(readOnlyKnowledge ? ro : {}),
       },
       {
         source: workspace.skillsDir,
-        target: "/workspace/skills",
+        target: guestWorkspacePath("skills"),
         ...(readOnlyKnowledge ? ro : {}),
       },
       ...publicOfficeMounts(office),

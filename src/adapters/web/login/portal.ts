@@ -1219,13 +1219,9 @@ async function handleLinkComplete(
   try {
     vaultManager.upsertEnv(linkToken.vaultId, updates);
     if (sentryCliConfig) {
-      vaultManager.upsertFile(
-        linkToken.vaultId,
-        ".sentryclirc",
-        sentryCliConfig,
-        "/root/.sentryclirc",
-      );
-      fileTargets.push("/root/.sentryclirc");
+      const target = defaultVaultTargetPath(".sentryclirc");
+      vaultManager.upsertFile(linkToken.vaultId, ".sentryclirc", sentryCliConfig, target);
+      fileTargets.push(target);
     }
   } catch (persistError) {
     log.logWarning(

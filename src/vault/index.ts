@@ -11,6 +11,7 @@ import {
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
 import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
+import { guestHomePath } from "../sandbox/layout.js";
 import type { OfficeAddress } from "../types.js";
 import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/index.js";
@@ -434,7 +435,7 @@ function normalizeVaultTargetPath(targetPath?: string): string | undefined {
 
 export function defaultVaultTargetPath(relativePath: string): string {
   const normalized = normalizeVaultRelativePath(relativePath) ?? relativePath.replace(/^\/+/, "");
-  return `/root/${normalized}`;
+  return guestHomePath(normalized);
 }
 
 function inferredVaultTargetPath(relativePath: string): string | undefined {
@@ -442,19 +443,19 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   if (!normalized) return undefined;
 
   if (normalized === "gws.json") {
-    return "/root/.config/gws/credentials.json";
+    return guestHomePath(".config/gws/credentials.json");
   }
   if (normalized === "gcloud-adc.json") {
-    return "/root/.config/gcloud/application_default_credentials.json";
+    return guestHomePath(".config/gcloud/application_default_credentials.json");
   }
   if (normalized === ".ssh" || normalized.startsWith(".ssh/")) {
-    return "/root/.ssh";
+    return guestHomePath(".ssh");
   }
   if (normalized === ".kube" || normalized.startsWith(".kube/")) {
-    return "/root/.kube";
+    return guestHomePath(".kube");
   }
   if (normalized === ".config/gh" || normalized.startsWith(".config/gh/")) {
-    return "/root/.config/gh";
+    return guestHomePath(".config/gh");
   }
 
   return defaultVaultTargetPath(normalized);

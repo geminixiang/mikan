@@ -314,6 +314,8 @@ describe("DockerContainerManager", () => {
       "mikan.sandbox=image",
       "--label",
       "mikan.vault-id=slack-u123",
+      "--label",
+      "mikan.layout=1",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -370,6 +372,8 @@ describe("DockerContainerManager", () => {
       "--label",
       "mikan.vault-id=alice",
       "--label",
+      "mikan.layout=1",
+      "--label",
       "mikan.conversation-id=D123",
       "--label",
       expect.stringMatching(/^mikan\.mount-signature=[a-f0-9]{64}$/),
@@ -415,9 +419,14 @@ describe("DockerContainerManager", () => {
       binds: ["/state/shared/data:/opt/shared/data"],
     });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
 
     await manager.provision("alice", { mounts, conversationId: "C1" });
 
+    expect(logInfo).toHaveBeenCalledWith(
+      "Container mikan-sandbox-alice configuration changed (binds); recreating container",
+    );
+    logInfo.mockRestore();
     const commit = calls.find((args) => args[0] === "commit");
     expect(commit).toContain(
       `LABEL mikan.migrate-binds=${JSON.stringify(JSON.stringify(["/state/shared/data:/opt/shared/data:ro"]))}`,
@@ -544,8 +553,14 @@ describe("DockerContainerManager", () => {
   test("recreates existing containers preserving contents when network isolation is missing", async () => {
     const { exec, calls } = routerMock({ status: "running", binds: [], networkMode: "bridge" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
 
     await manager.provision("slack-u123");
+
+    expect(logInfo).toHaveBeenCalledWith(
+      "Container mikan-sandbox-slack-u123 configuration changed (network); recreating container",
+    );
+    logInfo.mockRestore();
 
     expect(calls.some((args) => args[0] === "commit")).toBe(true);
     expect(calls.some((args) => args[0] === "rm" && args[2] === "mikan-sandbox-slack-u123")).toBe(
@@ -607,7 +622,12 @@ describe("DockerContainerManager", () => {
       const replacedManager = new DockerContainerManager("ubuntu:24.04", {
         execFileImpl: replaced.exec as any,
       });
+      const replacedLog = vi.spyOn(log, "logInfo").mockImplementation(() => {});
       await replacedManager.provision("alice", { mounts });
+      expect(replacedLog).toHaveBeenCalledWith(
+        "Container mikan-sandbox-alice configuration changed (mount-content); recreating container",
+      );
+      replacedLog.mockRestore();
       expect(replaced.calls.some((args) => args[0] === "commit")).toBe(true);
       expect(replaced.calls.some((args) => args[0] === "start")).toBe(true);
     } finally {
@@ -772,6 +792,8 @@ describe("DockerContainerManager", () => {
       "mikan.sandbox=image",
       "--label",
       "mikan.vault-id=slack-u123",
+      "--label",
+      "mikan.layout=1",
       "--cpus",
       "0.5",
       "--memory",
@@ -899,6 +921,8 @@ describe("DockerContainerManager", () => {
       "mikan.sandbox=image",
       "--label",
       "mikan.vault-id=slack-u123",
+      "--label",
+      "mikan.layout=1",
       "--cpus",
       "2",
       "--memory",

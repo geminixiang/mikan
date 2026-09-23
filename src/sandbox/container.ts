@@ -19,6 +19,7 @@ import {
   shellEscape,
 } from "./utils.js";
 import { HostExecutor } from "./host.js";
+import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -75,7 +76,7 @@ function buildContainerExecCommand(
   cwd?: string,
 ): string {
   const envPart = envFilePath ? `--env-file ${shellEscape(envFilePath)} ` : "";
-  const workdir = cwd === undefined ? "/workspace" : shellEscape(cwd);
+  const workdir = cwd === undefined ? GUEST_WORKSPACE_ROOT : shellEscape(cwd);
   return `docker exec ${envPart}-w ${workdir} ${container} sh -c ${shellEscape(command)}`;
 }
 
@@ -138,11 +139,11 @@ export class ContainerExecutor implements Executor {
   }
 
   getWorkspacePath(_hostPath: string): string {
-    return "/workspace";
+    return GUEST_WORKSPACE_ROOT;
   }
 
   getPathContext(hostWorkspaceRoot: string): RuntimePathContext {
-    return createMountedRuntimePathContext(hostWorkspaceRoot, "/workspace");
+    return createMountedRuntimePathContext(hostWorkspaceRoot, GUEST_WORKSPACE_ROOT);
   }
 
   getSandboxConfig(): ContainerSandboxConfig {
