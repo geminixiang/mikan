@@ -113,7 +113,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 來源：`src/runtime/types.ts` 與 `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` 回傳公開的 `ConversationRuntime` 協調介面。在 `src/runtime/` 內，`SessionLifecycle` 是 runner 資源的單一 authority：它擁有 per-session serialization、materialization、lease、settlement、invalidation、disposal、idle eviction 與 shutdown；runtime 協調器則擁有 command、stop/reset、rotation 與平台工作流程。
+`createConversationRuntime(options)` 回傳公開的 `ConversationRuntime` 協調介面。在 `src/runtime/` 內，`SessionLifecycle` 是 runner 資源的單一 authority：它擁有 per-session serialization、materialization、lease、settlement、invalidation、disposal、idle eviction 與 shutdown；runtime 協調器則擁有 command、stop/reset 與平台工作流程。
 
 ### 輸入方法
 

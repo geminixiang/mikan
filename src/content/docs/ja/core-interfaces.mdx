@@ -113,7 +113,7 @@ host に面した platform port です。次を組み合わせます:
 
 ソース: `src/runtime/types.ts` と `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` は公開の `ConversationRuntime` オーケストレーターを返します。`src/runtime/` 内では `SessionLifecycle` が runner resource の単一 authority であり、per-session の直列化、materialization、lease、settlement、invalidation、disposal、idle eviction、shutdown を所有します。runtime オーケストレーターは command、stop/reset、rotation、platform-facing workflow を所有します。
+`createConversationRuntime(options)` は公開の `ConversationRuntime` オーケストレーターを返します。`src/runtime/` 内では `SessionLifecycle` が runner resource の単一 authority であり、per-session の直列化、materialization、lease、settlement、invalidation、disposal、idle eviction、shutdown を所有します。runtime オーケストレーターは command、stop/reset、platform-facing workflow を所有します。
 
 ### Input メソッド
 

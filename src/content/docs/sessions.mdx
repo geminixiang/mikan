@@ -69,13 +69,13 @@ session files and rewrites them to the current Pi 0.85 v4 format. Use
 `--state-dir`, `--workspace`, or `--dry-run` as needed; `--dry-run` leaves files
 untouched. Originals remain as `*.v3.bak` or `*.pi-084.bak`.
 
-## Bootstrap, rotation, Clean sessions, and Dream
+## Bootstrap, Clean sessions, and Dream
 
-A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Shared top-level channel sessions rotate on biweekly Sunday boundaries. Rotation is lazy rather than cron-driven: mikan checks the current session timestamp when the first applicable message arrives after a boundary.
+A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Top-level sessions are long-lived: mikan keeps using the current session file until `/new` replaces it, and Pi's automatic compaction keeps the model context within the window.
 
-`/new` immediately creates a **Clean session**. Biweekly rotation also changes only the active session file. Neither operation summarizes the predecessor, invokes Dream, waits for memory processing, or deletes older JSONL files. The existing conversation `MEMORY.md` remains available independently.
+`/new` immediately creates a **Clean session**. It does not summarize the predecessor, invokes Dream, waits for memory processing, or deletes older JSONL files. The existing conversation `MEMORY.md` remains available independently.
 
-**Dream** is system-scheduled office maintenance. During Taiwan time 02:00–05:00, mikan checks each registered Conversation office and processes all newly accumulated settled entries across its top-level, rotated, thread, and event sessions once the newest evidence has been idle for five hours. A successful run replaces the complete conversation `MEMORY.md` and then advances a host-private per-session checkpoint; without new evidence, no model is called.
+**Dream** is system-scheduled office maintenance. During Taiwan time 02:00–05:00, mikan checks each registered Conversation office and processes all newly accumulated settled entries across its current and earlier top-level, thread, and event sessions once the newest evidence has been idle for five hours. A successful run replaces the complete conversation `MEMORY.md` and then advances a host-private per-session checkpoint; without new evidence, no model is called.
 
 The resulting **Memory anchor** is compact, revisable orientation rather than final truth. Newer conversation evidence takes precedence. Mutable external state must be verified from its Live source or current API in the answering run; if that source is unavailable, mikan should report that it cannot verify the current value rather than treating memory as current truth.
 

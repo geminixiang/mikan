@@ -152,7 +152,7 @@ interface ConversationContext {
 
 来源：`src/runtime/types.ts` 与 `src/runtime/conversation-runtime.ts`。
 
-`createConversationRuntime(options)` 返回公开的 `ConversationRuntime` 编排接口。在 `src/runtime/` 内，`SessionLifecycle` 是 runner 资源的单一 authority：它拥有 per-session 串行化、materialization、lease、settlement、invalidation、disposal、闲置回收和关闭；runtime 编排器负责命令、stop/reset、rotation 与平台工作流。
+`createConversationRuntime(options)` 返回公开的 `ConversationRuntime` 编排接口。在 `src/runtime/` 内，`SessionLifecycle` 是 runner 资源的单一 authority：它拥有 per-session 串行化、materialization、lease、settlement、invalidation、disposal、闲置回收和关闭；runtime 编排器负责命令、stop/reset 与平台工作流。
 
 ### 输入方法
 

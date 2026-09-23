@@ -34,7 +34,6 @@ import {
 import {
   getThreadSessionFile,
   resolveChannelSessionFile,
-  shouldRotateTopLevelSession,
   tryResolveThreadSession,
 } from "../sessions/store.js";
 import {
@@ -242,51 +241,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     });
   }
 
-  private scheduleSharedSessionRotation(
-    { event, bot, context }: RunSessionOptions,
-    sessionKey: string,
-  ): boolean {
-    const { address } = event;
-    const conversationId = address.conversationId;
-    if (context.message.conversationKind !== "shared" || sessionKey !== conversationId)
-      return false;
-
-    const conversationDir = this.options.workspace.office(address).dir;
-    const currentSession = resolveChannelSessionFile(conversationDir);
-    if (!currentSession || !shouldRotateTopLevelSession(currentSession, new Date())) return false;
-
-    void this.sessions
-      .runConversationMaintenance(address, async () => {
-        const session = resolveChannelSessionFile(conversationDir);
-        if (!session || !shouldRotateTopLevelSession(session, new Date())) {
-          await this.runSession({ event, bot, context }, true);
-          return;
-        }
-
-        const runtimeCwd = runtimeCwdForSandbox(
-          this.options.sandbox,
-          this.options.workspace,
-          address,
-        );
-        await this.chatSessionManager.resetSession({
-          conversationDir,
-          sessionKey,
-          cwd: runtimeCwd,
-        });
-        await this.sessions.discardAndWait(address, sessionKey);
-        log.logInfo(`[${conversationId}] Rotated session: ${sessionKey}`);
-        await this.runSession({ event, bot, context }, true);
-      })
-      .catch((err) => {
-        reportUserFacingError(err, {
-          domain: "mikan",
-          surface: "session_rotation",
-          operation: "rotate_shared_session_in_background",
-        });
-      });
-    return true;
-  }
-
   private async resetSession(
     address: OfficeAddress,
     sessionKey: string,
@@ -314,7 +268,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  async runSession(options: RunSessionOptions, skipRotation = false): Promise<void> {
+  async runSession(options: RunSessionOptions): Promise<void> {
     const { event } = options;
     const conversationId = event.address.conversationId;
     if (this.isShuttingDown) {
@@ -325,12 +279,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
 
     const sessionKey = deriveSessionKey(event);
-    if (await this.handledBeforeRun(options, sessionKey, skipRotation)) return;
+    if (await this.handledBeforeRun(options, sessionKey)) return;
 
     const address = event.address;
-    const releaseConversationWork = skipRotation
-      ? () => {}
-      : await this.sessions.acquireConversationWork(address);
+    const releaseConversationWork = await this.sessions.acquireConversationWork(address);
     try {
       const conversationDir = this.options.workspace.office(address).dir;
       await this.waitForParentSession(address, sessionKey, conversationDir);
@@ -349,22 +301,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  private async handledBeforeRun(
-    options: RunSessionOptions,
-    sessionKey: string,
-    skipRotation: boolean,
-  ): Promise<boolean> {
+  private async handledBeforeRun(options: RunSessionOptions, sessionKey: string): Promise<boolean> {
     const { event } = options;
-    if (!skipRotation && (await this.dispatchSessionCommand(options, sessionKey))) return true;
+    if (await this.dispatchSessionCommand(options, sessionKey)) return true;
 
     const activeSettlement = this.sessions.get(event.address, sessionKey)?.runSettlement;
     if (activeSettlement) await activeSettlement;
-
-    return (
-      !skipRotation &&
-      sessionKey === event.address.conversationId &&
-      this.scheduleSharedSessionRotation(options, sessionKey)
-    );
+    return false;
   }
 
   private async acquireRunLease(

@@ -636,28 +636,18 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.getRunningSessions()).toEqual([]);
   });
 
-  test("automatic biweekly rotation creates a clean session", async () => {
-    const { models, faux } = createFauxModels();
-    faux.setResponses([fauxAssistantMessage("new session reply")]);
-    const runtime = makeRuntime(models);
+  test("an old shared top-level session keeps serving new messages", async () => {
+    const runtime = makeRuntime();
     const runner = seedRunnerState(runtime);
     const originalSession = resolveChannelSessionFile(conversationDir)!;
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
 
     const { event, context } = makeEventAndContext("3");
     await runtime.handleEvent(event, bot, context);
-    await vi.waitFor(() =>
-      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession),
-    );
-    await vi.waitFor(() => expect(runner.dispose).toHaveBeenCalledOnce());
-    expect(runner.syncChatHistory).not.toHaveBeenCalled();
 
-    await vi.waitFor(() =>
-      expect(context.responder.replaceResponse).toHaveBeenCalledWith(
-        expect.stringContaining("new session reply"),
-        expect.anything(),
-      ),
-    );
+    expect(runner.run).toHaveBeenCalledOnce();
+    expect(runner.dispose).not.toHaveBeenCalled();
+    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
   });
 
   test("reset boundary survives recreation without disabling later incremental sync", async () => {

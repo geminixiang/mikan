@@ -66,13 +66,13 @@ mikan sessions migrate
 Pi 0.85 v4 格式。可按需使用 `--state-dir`、`--workspace` 或 `--dry-run`；
 `--dry-run` 不会修改文件。原文件会保留为 `*.v3.bak` 或 `*.pi-084.bak`。
 
-## 初始化、轮换、Clean session 与 Dream
+## 初始化、Clean session 与 Dream
 
-新的限定范围会话会从过去 14 天内最多 200 条适用的平台消息初始化。共享频道的顶层会话以每两周一次的星期日边界轮换。轮换采用惰性机制，而不是由 cron 驱动：跨过边界后，第一条符合条件的消息到达时，mikan 才会检查当前会话的时间戳。
+新的限定范围会话会从过去 14 天内最多 200 条适用的平台消息初始化。顶层会话会长期沿用：mikan 会持续使用当前会话文件，直到 `/new` 替换它；Pi 的自动 compaction 会让模型上下文保持在上限内。
 
-`/new` 会立即创建 **Clean session**。双周轮换也只切换活动会话文件。两者都不会总结前一个会话、运行 Dream、等待记忆处理或删除旧 JSONL 文件；现有对话 `MEMORY.md` 仍可独立使用。
+`/new` 会立即创建 **Clean session**。它不会总结前一个会话、运行 Dream、等待记忆处理或删除旧 JSONL 文件；现有对话 `MEMORY.md` 仍可独立使用。
 
-**Dream** 是由系统调度的 office maintenance。在台湾时间 02:00–05:00 期间，mikan 会检查每个已登记的 Conversation office；当最新 evidence 已闲置五小时后，Dream 会一次处理该 office 的所有顶层、轮换、线程及事件会话中新累积的 settled entries。成功后会先完整替换对话 `MEMORY.md`，再推进 host-private 的 per-session checkpoint；没有新 evidence 时不会调用模型。
+**Dream** 是由系统调度的 office maintenance。在台湾时间 02:00–05:00 期间，mikan 会检查每个已登记的 Conversation office；当最新 evidence 已闲置五小时后，Dream 会一次处理该 office 的当前与先前的顶层、线程及事件会话中新累积的 settled entries。成功后会先完整替换对话 `MEMORY.md`，再推进 host-private 的 per-session checkpoint；没有新 evidence 时不会调用模型。
 
 生成的 **Memory anchor** 是精简且可修订的导向信息，不是最终真相。较新的对话 evidence 优先。可变的外部状态必须在回答当次从 Live source 或当前 API 验证；如果来源不可用，mikan 应说明目前无法验证，而不是把 memory 当作当前真相。
 

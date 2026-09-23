@@ -70,13 +70,13 @@ files を扱い、current Pi 0.85 v4 format に書き換えます。必要に応
 `--state-dir`、`--workspace`、`--dry-run` を使えます。`--dry-run` は files を
 変更しません。Originals は `*.v3.bak` または `*.pi-084.bak` として残ります。
 
-## Bootstrap、ローテーション、Clean session、Dream
+## Bootstrap、Clean session、Dream
 
-新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Shared channel の top-level session は隔週の日曜日の境界でローテーションします。ローテーションは cron ではなく遅延実行です。境界を越えた後、最初の該当メッセージが届いた時点で、mikan が現在の session timestamp を確認します。
+新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Top-level session は長期間使い続けられます。mikan は `/new` で置き換えられるまで現在の session file を使い続け、Pi の自動 compaction が model context を上限内に保ちます。
 
-`/new` は直ちに **Clean session** を作成します。隔週ローテーションも active session file を切り替えるだけです。どちらも前の session の要約、Dream の実行、memory 処理の待機、古い JSONL files の削除は行いません。既存の conversation `MEMORY.md` は独立して利用できます。
+`/new` は直ちに **Clean session** を作成します。前の session の要約、Dream の実行、memory 処理の待機、古い JSONL files の削除は行いません。既存の conversation `MEMORY.md` は独立して利用できます。
 
-**Dream** はシステムがスケジュールする office maintenance です。台湾時間 02:00–05:00 に、mikan は登録済みの各 Conversation office を確認します。最新 evidence が 5 時間 idle になった office では、top-level、rotated、thread、event sessions に新しく蓄積された settled entries をまとめて一度処理します。成功時は conversation `MEMORY.md` 全体を先に置き換え、その後 host-private の per-session checkpoint を進めます。新しい evidence がなければ model は呼び出されません。
+**Dream** はシステムがスケジュールする office maintenance です。台湾時間 02:00–05:00 に、mikan は登録済みの各 Conversation office を確認します。最新 evidence が 5 時間 idle になった office では、現在および以前の top-level、thread、event sessions に新しく蓄積された settled entries をまとめて一度処理します。成功時は conversation `MEMORY.md` 全体を先に置き換え、その後 host-private の per-session checkpoint を進めます。新しい evidence がなければ model は呼び出されません。
 
 生成される **Memory anchor** は、簡潔で修正可能な案内情報であり、最終的な真実ではありません。より新しい conversation evidence が優先されます。変更可能な外部状態は、その回答の実行中に Live source または現在の API から確認する必要があります。利用できない場合、mikan は memory を現在の真実として扱わず、確認できないことを伝えます。
 

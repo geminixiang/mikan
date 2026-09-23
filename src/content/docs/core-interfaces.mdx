@@ -152,7 +152,7 @@ The host-facing platform port. It combines:
 
 Source: `src/runtime/types.ts` and `src/runtime/conversation-runtime.ts`.
 
-`createConversationRuntime(options)` returns the public `ConversationRuntime` orchestrator. Inside `src/runtime/`, `SessionLifecycle` is the runner resource authority: it owns per-session serialization, materialization, leases, settlement, invalidation, disposal, idle eviction, and shutdown. The orchestrator owns command, stop/reset, rotation, and platform-facing run workflow.
+`createConversationRuntime(options)` returns the public `ConversationRuntime` orchestrator. Inside `src/runtime/`, `SessionLifecycle` is the runner resource authority: it owns per-session serialization, materialization, leases, settlement, invalidation, disposal, idle eviction, and shutdown. The orchestrator owns command, stop/reset, and platform-facing run workflow.
 
 ### Input methods
 

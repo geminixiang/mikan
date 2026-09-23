@@ -67,13 +67,13 @@ mikan sessions migrate
 `--dry-run`；`--dry-run` 不會修改檔案。原檔案會保留為 `*.v3.bak` 或
 `*.pi-084.bak`。
 
-## Bootstrap、rotation、Clean session 與 Dream
+## Bootstrap、Clean session 與 Dream
 
-新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Shared channel 的 top-level session 以每兩週一次的星期日邊界輪替。Rotation 採 lazy 機制而非 cron：跨過邊界後，第一則符合條件的訊息抵達時，mikan 才會檢查目前 session 的 timestamp。
+新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Top-level session 會長期沿用：mikan 會持續使用目前的 session file，直到 `/new` 取代它；Pi 的自動 compaction 會讓模型 context 維持在上限內。
 
-`/new` 會立即建立 **Clean session**。Biweekly rotation 也只切換 active session file。兩者都不會摘要前一個 session、執行 Dream、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
+`/new` 會立即建立 **Clean session**。它不會摘要前一個 session、執行 Dream、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
 
-**Dream** 是由系統排程的 office maintenance。台灣時間 02:00–05:00 期間，mikan 會檢查每個已登錄的 Conversation office；當最新 evidence 已閒置五小時後，Dream 會一次處理該 office 所有 top-level、rotated、thread 與 event sessions 新累積的 settled entries。成功後會先完整取代 conversation `MEMORY.md`，再推進 host-private 的 per-session checkpoint；沒有新 evidence 時不會呼叫 model。
+**Dream** 是由系統排程的 office maintenance。台灣時間 02:00–05:00 期間，mikan 會檢查每個已登錄的 Conversation office；當最新 evidence 已閒置五小時後，Dream 會一次處理該 office 目前與先前的 top-level、thread 與 event sessions 新累積的 settled entries。成功後會先完整取代 conversation `MEMORY.md`，再推進 host-private 的 per-session checkpoint；沒有新 evidence 時不會呼叫 model。
 
 產生的 **Memory anchor** 是精簡且可修訂的導向資訊，不是最終真相。較新的 conversation evidence 優先。可變的外部狀態必須在回答當次從 Live source 或 current API 驗證；若來源無法使用，mikan 應說明目前無法驗證，而不是把 memory 當成當前真相。
 

@@ -126,7 +126,7 @@ Every platform feeds the same intake and runtime model:
 2. Conversation intake applies the fixed order: magic word, trigger policy, attachments, platform log, busy policy, queue, dispatch.
 3. The runtime serializes events by office and session key.
 4. Built-in commands run before runner creation; unmatched slash-prefixed text remains an agent prompt.
-5. Session policy resolves history, rotation, thread lineage, and the active session file.
+5. Session policy resolves history, thread lineage, and the active session file.
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
 7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips default provisioning, while `membership` first fills in the deployment's default `open-connector` entry for a Slack office that has not declared one (minting that office's runtime token and saving it as an ordinary conversation `mcpServers` entry), then loads the merged settings map like any other MCP configuration.
 8. The sessions-owned `SessionStore` owns MCP connections alongside the session writer. If runner construction fails, the runner closes that owner; it disposes MCP connections before releasing the writer, preserves the original construction failure, and allows the same session to be reconstructed immediately.
@@ -180,11 +180,11 @@ by `mikan office migrate-events`. Event text must never contain secrets.
 
 ### Dream maintenance
 
-Dream is a host-scheduled, per-office maintenance flow, not a chat command or a session-rotation hook. Every ten minutes during Taiwan time 02:00–05:00, the scheduler visits registered offices. The Conversation runtime places each attempt behind the office maintenance barrier, so collection begins only after active session work settles and new work waits until maintenance finishes.
+Dream is a host-scheduled, per-office maintenance flow, not a chat command or a session-reset hook. Every ten minutes during Taiwan time 02:00–05:00, the scheduler visits registered offices. The Conversation runtime places each attempt behind the office maintenance barrier, so collection begins only after active session work settles and new work waits until maintenance finishes.
 
 The Dream authority reads every office session file and compares its stable session UUID with the host-private `dream.json` checkpoint. It calls the model only when at least one entry follows a saved `throughEntryId` and the newest settled entry in the office is at least five hours old. Evidence is admitted in bounded batches, with explicitly marked bounded head/tail representations for oversized individual entries and checkpoints advancing only through entries included in the successful batch, so a large backlog drains over later eligible sweeps instead of producing an unbounded prompt. The model runs against an in-memory harness session, combines the batch with the existing Memory anchor, and returns the complete replacement `MEMORY.md`; an absolute 120-second deadline aborts the session and propagates its abort signal to the provider, while the caller rejects generation and prevents a commit even if the provider completes late. Its own prompt and response never become office evidence.
 
-Commit ordering is deliberate: atomically replace `MEMORY.md`, then atomically replace `dream.json`. A generation, model, or memory-write failure leaves the checkpoint unchanged, so evidence is retried rather than silently skipped. `/new` and biweekly rotation only create Clean sessions; neither invokes Dream. Resetting a fixed-path scoped session archives its prior JSONL first, so scheduled Dream can still inspect evidence from before the reset.
+Commit ordering is deliberate: atomically replace `MEMORY.md`, then atomically replace `dream.json`. A generation, model, or memory-write failure leaves the checkpoint unchanged, so evidence is retried rather than silently skipped. `/new` only creates a Clean session and never invokes Dream. Resetting a fixed-path scoped session archives its prior JSONL first, so scheduled Dream can still inspect evidence from before the reset.
 
 The Memory anchor is revisable orientation rather than final truth. Newer conversation evidence outranks it, and mutable external facts require a fresh Live-source or current-API read in the answering run.
 
@@ -383,7 +383,7 @@ Evidence: `src/settings/apply.ts`.
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. Legacy mikan v3 and Pi 0.84-generation v4 files are converted offline with `mikan sessions migrate` while the daemon is stopped; originals remain as `*.v3.bak` or `*.pi-084.bak`. Thread lineage remains stable across top-level rotation.
+**`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. Legacy mikan v3 and Pi 0.84-generation v4 files are converted offline with `mikan sessions migrate` while the daemon is stopped; originals remain as `*.v3.bak` or `*.pi-084.bak`. Thread lineage remains stable across top-level `/new` resets.
 
 Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/sessions/migrate-v3.ts`, `src/sessions/migrate-pi-084.ts`.
 

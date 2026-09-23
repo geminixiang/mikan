@@ -12,4 +12,4 @@ This module is the authority for scheduled Conversation-office Dream maintenance
 
 `dream.json` has version 1 and contains only per-session `throughEntryId` checkpoints. It is host-private State-dir data, not part of any Workspace projection.
 
-`/new` and automatic session rotation create Clean sessions independently and never invoke Dream.
+`/new` creates Clean sessions independently and never invokes Dream.

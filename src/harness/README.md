@@ -89,7 +89,7 @@ interrupted operation. A normal new `prompt()` preserves Pi's busy-lane rejectio
 while an earlier operation is open. Compaction belongs to Pi; `SessionStore`
 does not expose a second structural compaction writer.
 
-Runner reuse, conversation identity, rotation, eviction, and Sandbox topology
+Runner reuse, conversation identity, eviction, and Sandbox topology
 remain in `src/runtime/` and `src/sessions/`.
 
 ## Host MCP capabilities
@@ -209,7 +209,7 @@ runtimes must use distinct names where separate browsers are desired.
   interface; Sandbox owns container provisioning while the harness resolver
   supplies the authorized execution plan and readiness callback.
 - Scheduled-event payload schema, parsing and building belong to `src/events/index.ts`.
-- Session file naming, chat synchronization, rotation, and thread lineage stay
+- Session file naming, chat synchronization, and thread lineage stay
   in `src/sessions/`.
 
 ## DM task handoff

@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Shared top-level channel sessions no longer rotate every two weeks; they stay current until `/new`, and Pi's automatic compaction bounds the model context (ADR 0010).
+
 ## [1.0.0-beta.77]
 
 ### Added
