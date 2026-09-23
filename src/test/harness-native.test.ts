@@ -208,6 +208,78 @@ test("tool progress retains arguments and each committed message is presented on
   expect(persisted).toHaveLength(4);
 });
 
+test("large tool progress snapshots stay out of persisted messages and later provider context", async () => {
+  const { faux, file, wrap } = setup();
+  const sentinel = "progress-only-dom-sentinel-7f4b2e";
+  const finalResult = "final compact tool result";
+  const snapshots = Array.from(
+    { length: 3 },
+    (_, index) =>
+      `<main data-snapshot="${index}" data-marker="${sentinel}">${"<section>DOM node</section>".repeat(2000)}</main>`,
+  );
+  const tool: AgentTool = {
+    name: "snapshot",
+    label: "snapshot",
+    description: "Report DOM snapshots while working",
+    parameters: { type: "object", properties: {} },
+    execute: async (_id, _args, _signal, onUpdate) => {
+      for (const snapshot of snapshots) {
+        onUpdate?.({ content: [{ type: "text", text: snapshot }], details: {} });
+      }
+      return { content: [{ type: "text", text: finalResult }], details: {} };
+    },
+  };
+  const store = await SessionStore.create(file, dir);
+  const session = wrap(store, [tool]);
+  const updates: string[] = [];
+  session.subscribe((event) => {
+    if (event.type === "tool_execution_update") updates.push(JSON.stringify(event.partialResult));
+  });
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("snapshot", {})),
+    (context) => {
+      const messages = JSON.stringify(context.messages);
+      expect(messages).not.toContain(sentinel);
+      expect(messages).toContain(finalResult);
+      return fauxAssistantMessage("first answer");
+    },
+    (context) => {
+      const messages = JSON.stringify(context.messages);
+      expect(messages).not.toContain(sentinel);
+      expect(messages).toContain(finalResult);
+      expect(messages).toContain("first answer");
+      return fauxAssistantMessage("second answer");
+    },
+  ]);
+  await session.prompt("capture page");
+  expect(updates).toHaveLength(snapshots.length);
+  for (const snapshot of snapshots) {
+    expect(updates).toContain(
+      JSON.stringify({ content: [{ type: "text", text: snapshot }], details: {} }),
+    );
+  }
+  const persisted = (await store.getEntries()).filter((entry) => entry.type === "message");
+  expect(persisted).toHaveLength(4);
+  expect(JSON.stringify(persisted)).not.toContain(sentinel);
+  expect(JSON.stringify(persisted)).toContain(finalResult);
+  expect(JSON.stringify(session.messages)).not.toContain(sentinel);
+
+  await store.close();
+  const reopened = await SessionStore.open(file);
+  const reopenedMessages = (await reopened.getEntries()).filter(
+    (entry) => entry.type === "message",
+  );
+  expect(reopenedMessages).toHaveLength(4);
+  expect(JSON.stringify(reopenedMessages)).not.toContain(sentinel);
+  expect(JSON.stringify(reopenedMessages)).toContain(finalResult);
+  await wrap(reopened, [tool]).prompt("use the captured result");
+  expect(faux.state.callCount).toBe(3);
+  const finalMessages = (await reopened.getEntries()).filter((entry) => entry.type === "message");
+  expect(finalMessages).toHaveLength(6);
+  expect(JSON.stringify(finalMessages)).not.toContain(sentinel);
+  expect(JSON.stringify(finalMessages)).toContain(finalResult);
+});
+
 test("persisted provider thinking level survives close/reopen", async () => {
   const { faux, file, wrap } = setup();
   const store = await SessionStore.create(file, dir);
