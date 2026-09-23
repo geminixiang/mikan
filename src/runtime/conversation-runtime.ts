@@ -12,6 +12,7 @@ import type { Workspace } from "../office/index.js";
 import { createRunner } from "../harness/runner.js";
 import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
 import type { PiAgentWrapper } from "../types.js";
+import type { RunMemoryCapture } from "../memory-capture/index.js";
 import { MikanModels } from "../harness/index.js";
 import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
 import type { CommandHandler, CommandServices } from "../adapters/commands/types.js";
@@ -65,6 +66,8 @@ import type {
   ConversationRuntimeOptions,
   SessionStateOptions,
 } from "./types.js";
+
+type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
 
 function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
   return {
@@ -127,10 +130,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private readonly resolvedModels: MikanModels;
+  private readonly memoryCapture: RunMemoryCapture | undefined;
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
     this.resolvedModels = options.models ?? MikanModels.create();
+    this.memoryCapture = options.memoryCapture?.(this.resolvedModels);
     this.commandServices = {
       ...options,
       resourceController: options.resourceController ?? options.provisioner,
@@ -369,6 +374,14 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       if (result?.stopReason === "aborted") {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
       }
+      if (result) {
+        this.memoryCapture?.capture({
+          office: this.options.workspace.office(event.address),
+          message: context.message,
+          stopReason: result.stopReason,
+          reply: result.finalText ?? "",
+        });
+      }
     } finally {
       recordGauge("agent.sessions.active", this.sessions.settlementCount() - 1);
     }
@@ -420,8 +433,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey: string;
       startedAt: number;
     },
-    body: () => Promise<{ stopReason: string; errorMessage?: string }>,
-  ): Promise<{ stopReason: string; errorMessage?: string } | undefined> {
+    body: () => Promise<RunResult>,
+  ): Promise<RunResult | undefined> {
     const { conversationId, sessionKey, startedAt } = meta;
     const { message, platform } = context;
 

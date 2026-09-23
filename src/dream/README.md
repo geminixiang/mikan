@@ -13,3 +13,5 @@ This module is the authority for scheduled Conversation-office Dream maintenance
 `dream.json` has version 1 and contains only per-session `throughEntryId` checkpoints. It is host-private State-dir data, not part of any Workspace projection.
 
 `/new` creates Clean sessions independently and never invokes Dream.
+
+Memory capture (`src/memory-capture/`) also writes the conversation `MEMORY.md`, one stamped line at a time under `## Captured knowledge`. The Dream prompt keeps those lines unless evidence dated after their stamp contradicts them.

@@ -263,7 +263,7 @@ export interface PiAgentWrapper {
     message: ConversationMessage,
     responder: ConversationResponder,
     platform: MessagingInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string }>;
+  ): Promise<{ stopReason: string; errorMessage?: string; finalText?: string }>;
   abort(): void;
   getCurrentStep(): { toolName?: string; label?: string } | undefined;
   dispose(): Promise<void>;

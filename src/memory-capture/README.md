@@ -1,0 +1,24 @@
+# src/memory-capture
+
+This module records durable knowledge from finished human runs into the office's conversation `MEMORY.md` ([ADR 0011](../../docs/adr/0011-capture-durable-knowledge-after-runs.md)).
+
+## Contract
+
+- `ConversationRuntime` builds a `RunMemoryCapture` from the optional `memoryCapture` factory and calls `capture()` after every run returns. `main.ts` enables `MemoryCapture`; embedders and tests that omit the factory capture nothing.
+- `capture()` never blocks conversation work. It skips runs whose stop reason is not `stop`, runs with an empty message or reply, and scheduled-event runs (`event:` message ids or `[EVENT:` payloads).
+- Captures for one office run strictly in order, so each extraction sees the memory written by the previous one. Different offices proceed independently. A failed capture is logged and does not affect later ones.
+- The gate is Jev (`caller: "memory_capture"`) on the user message (first 4,000 characters) and the final assistant reply (last 2,000 characters). Tool results are never sent. Runs scoring below 0.4 end here. `JevNotConfiguredError` disables capture for the rest of the process.
+- Extraction uses the office's configured model through `MikanModels.completeSimple` with a 60-second timeout. It receives the current `MEMORY.md` and the same exchange, and returns at most six `add`/`update` operations as JSON. Secrets, transient state, one-off parameters, and assistant-only claims are excluded by the prompt.
+- `applyMemoryOps` works on a fresh read of the file just before an atomic replace. Each entry is one line stamped `(captured YYYY-MM-DD from <message id>)`. An `update` replaces the line containing its `replaces` text, or is appended when that line is gone. Additions go at the end of the `## Captured knowledge` section, which is created at the end of the file when missing. Text already present is skipped. Nothing else in the file is rewritten.
+- Only the office's own `MEMORY.md` is written; workspace-global memory is never touched. The host log records counts per capture, not entry text.
+
+## Limits
+
+- An agent write to `MEMORY.md` landing between the fresh read and the atomic replace can be lost. Captures deliberately do not take the office maintenance barrier, which would hold new work behind unrelated active runs.
+- Captures in flight at shutdown are abandoned. Writes are atomic, so the file is never partially written.
+- Dream still rewrites the whole anchor nightly and is told to keep stamped entries unless evidence dated after the stamp contradicts them.
+
+## Files
+
+- `index.ts`: `MemoryCapture`, the Jev gate, office-model extraction, and the pure `isCapturableRun`, `parseMemoryOps`, and `applyMemoryOps` helpers.
+- `types.ts`: `CapturedRun`, `RunMemoryCapture`, `MemoryCaptureOp`, and the injectable `MemoryCaptureDeps`.

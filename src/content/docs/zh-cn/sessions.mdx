@@ -74,6 +74,8 @@ Pi 0.85 v4 格式。可按需使用 `--state-dir`、`--workspace` 或 `--dry-run
 
 **Dream** 是由系统调度的 office maintenance。在台湾时间 02:00–05:00 期间，mikan 会检查每个已登记的 Conversation office；当最新 evidence 已闲置五小时后，Dream 会一次处理该 office 的当前与先前的顶层、线程及事件会话中新累积的 settled entries。成功后会先完整替换对话 `MEMORY.md`，再推进 host-private 的 per-session checkpoint；没有新 evidence 时不会调用模型。
 
+**Memory capture** 会在知识被说出的当下就记录。每次由真人触发的 run 结束后，mikan 会请 Jev 判断用户是否建立了长期知识，例如长期规则、交付偏好、关于系统或流程的持久事实，或是一项更正。若是，对话所用的模型会在对话 `MEMORY.md` 的 `## Captured knowledge` 下新增或更新单独条目，并标注捕获日期与来源消息。计划 event 的 run 会被跳过，从不写入 workspace 共享记忆；未配置 Jev（`OPENROUTER_API_KEY`）时此功能停用。要更正或删除捕获的条目，和其他记忆一样请 agent 修改即可。
+
 生成的 **Memory anchor** 是精简且可修订的导向信息，不是最终真相。较新的对话 evidence 优先。可变的外部状态必须在回答当次从 Live source 或当前 API 验证；如果来源不可用，mikan 应说明目前无法验证，而不是把 memory 当作当前真相。
 
 <Aside type="tip" title="保留审计记录">

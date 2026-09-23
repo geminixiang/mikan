@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                                               |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
-| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
-| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
-| Identity and data       | Office, Sessions, Dream, Configuration                | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md)                                     |
-| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
-| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
-| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
-| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
+| Group                   | Modules                                                | Detailed documentation                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform edge           | Platform adapters, Conversation intake                 | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                               |
+| Orchestration           | Composition root, Conversation runtime                 | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                                                  |
+| Agent core              | Harness and generic agent tools                        | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                 |
+| Identity and data       | Office, Sessions, Dream, Memory capture, Configuration | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md) |
+| Execution and authority | Harness execution resolution, Sandbox, Vault           | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                                                 |
+| External/control edges  | Platform/Web adapters and Commands                     | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                             |
+| Scheduling              | Scheduled-event protocol, office store, and scheduler  | [`src/events/README.md`](src/events/README.md)                                                                                                                                                                   |
+| Observability           | OpenTelemetry pipeline and Sentry adapter              | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                                                           |
 
 ## Main flows
 
@@ -187,6 +187,10 @@ The Dream authority reads every office session file and compares its stable sess
 Commit ordering is deliberate: atomically replace `MEMORY.md`, then atomically replace `dream.json`. A generation, model, or memory-write failure leaves the checkpoint unchanged, so evidence is retried rather than silently skipped. `/new` only creates a Clean session and never invokes Dream. Resetting a fixed-path scoped session archives its prior JSONL first, so scheduled Dream can still inspect evidence from before the reset.
 
 The Memory anchor is revisable orientation rather than final truth. Newer conversation evidence outranks it, and mutable external facts require a fresh Live-source or current-API read in the answering run.
+
+### Memory capture
+
+Memory capture records knowledge when it is stated instead of waiting for Dream ([ADR 0011](docs/adr/0011-capture-durable-knowledge-after-runs.md)). After each run returns, the Conversation runtime hands the office, the user message, the stop reason, and the final reply to the capture authority, which works in the background and never holds the office barrier. Settled human runs are gated by Jev on the exchange text alone; runs that clear the threshold go to the office's own model, which proposes line-level additions and updates against the current `MEMORY.md`. Captures for one office are serialized and applied to a fresh read of the file before an atomic replace, so only the proposed lines change and workspace-global memory is never written. Dream later consolidates the anchor and keeps stamped captured lines unless newer evidence contradicts them.
 
 ## Storage and authority map
 

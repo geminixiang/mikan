@@ -18,6 +18,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
 - `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
+- `memory-capture/`: Post-run capture of durable knowledge into the conversation `MEMORY.md`, gated by Jev.
 - `events/`: Scheduled-event wire protocol, host store, and watcher lifecycle.
 - `harness/`: Agent execution — `createRunner`, prompt and presentation, actor/executor resolution, native Pi session integration, generic agent tools, models, MCP capabilities, skills, and bounded subagents.
 - `observability/`: Vendor-neutral tracing, metrics, error reporting, privacy filtering, OTLP/HTTP protobuf export, optional Sentry issue integration, and startup/shutdown instrumentation.

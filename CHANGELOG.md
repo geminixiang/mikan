@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Added
+
+- Capture durable knowledge after each settled human run: Jev gates the exchange, and the conversation's model adds or updates stamped lines under `## Captured knowledge` in the conversation `MEMORY.md` (ADR 0011).
+
 ### Changed
 
 - Shared top-level channel sessions no longer rotate every two weeks; they stay current until `/new`, and Pi's automatic compaction bounds the model context (ADR 0010).

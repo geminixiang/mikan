@@ -78,6 +78,8 @@ files を扱い、current Pi 0.85 v4 format に書き換えます。必要に応
 
 **Dream** はシステムがスケジュールする office maintenance です。台湾時間 02:00–05:00 に、mikan は登録済みの各 Conversation office を確認します。最新 evidence が 5 時間 idle になった office では、現在および以前の top-level、thread、event sessions に新しく蓄積された settled entries をまとめて一度処理します。成功時は conversation `MEMORY.md` 全体を先に置き換え、その後 host-private の per-session checkpoint を進めます。新しい evidence がなければ model は呼び出されません。
 
+**Memory capture** は、知識が述べられた時点で記録します。人が起点の run が終わるたびに、mikan は Jev にユーザーが永続的な知識（継続的なルール、納品の好み、システムやワークフローに関する永続的な事実、訂正など）を確立したかを判定させます。確立していれば、会話のモデルが conversation `MEMORY.md` の `## Captured knowledge` に個別の行を追加または更新し、取得日と元メッセージを付記します。スケジュールされた event の run は対象外で、workspace 共有メモリには書き込みません。Jev（`OPENROUTER_API_KEY`）が未設定の場合は無効です。取得した行の訂正や削除は、他のメモリと同じく agent に依頼してください。
+
 生成される **Memory anchor** は、簡潔で修正可能な案内情報であり、最終的な真実ではありません。より新しい conversation evidence が優先されます。変更可能な外部状態は、その回答の実行中に Live source または現在の API から確認する必要があります。利用できない場合、mikan は memory を現在の真実として扱わず、確認できないことを伝えます。
 
 <Aside type="tip" title="監査可能な記録を保持">

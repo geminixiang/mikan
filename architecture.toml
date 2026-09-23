@@ -85,6 +85,13 @@ docs = "src/dream/README.md"
 sources = ["src/dream/"]
 
 [[modules]]
+id = "memory-capture"
+name = "Post-run memory capture"
+kind = "authority"
+docs = "src/memory-capture/README.md"
+sources = ["src/memory-capture/"]
+
+[[modules]]
 id = "vault"
 name = "Credential vault"
 kind = "authority"
@@ -236,6 +243,14 @@ owner = "dream"
 consumers = ["composition-root", "conversation-runtime"]
 interface = "DreamScheduler, prepareOfficeDream, generateMemoryAnchor, commitOfficeDream"
 docs = "src/dream/README.md"
+
+[[seams]]
+id = "memory-capture"
+owner = "memory-capture"
+consumers = ["composition-root", "conversation-runtime"]
+interface = "MemoryCapture, RunMemoryCapture"
+docs = "src/memory-capture/README.md"
+adr = "docs/adr/0011-capture-durable-knowledge-after-runs.md"
 
 [[seams]]
 id = "vault-resolution"
@@ -391,6 +406,11 @@ docs = "ARCHITECTURE.md#scheduled-execution"
 id = "office-dream"
 path = ["composition-root", "dream", "conversation-runtime", "dream", "harness"]
 docs = "ARCHITECTURE.md#dream-maintenance"
+
+[[flows]]
+id = "run-memory-capture"
+path = ["conversation-runtime", "memory-capture", "harness"]
+docs = "ARCHITECTURE.md#memory-capture"
 
 [[invariants]]
 id = "identity-office-address"

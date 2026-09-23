@@ -23,6 +23,7 @@ import {
   resolveChannelSessionFile,
 } from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
+import type { RunMemoryCapture } from "../memory-capture/index.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
 import type { SlackMessagingBot, SlackEvent } from "../adapters/slack/bot.js";
 import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
@@ -53,10 +54,13 @@ afterEach(() => {
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 
-function makeRuntime(models?: MikanModels) {
+function makeRuntime(
+  models?: MikanModels,
+  memoryCapture?: (models: MikanModels) => RunMemoryCapture,
+) {
   const sandbox: SandboxConfig = { type: "host" };
   const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-  return createConversationRuntime({ workspace, sandbox, models });
+  return createConversationRuntime({ workspace, sandbox, models, memoryCapture });
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
@@ -648,6 +652,29 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.run).toHaveBeenCalledOnce();
     expect(runner.dispose).not.toHaveBeenCalled();
     expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+  });
+
+  test("hands each settled run and its final reply to memory capture", async () => {
+    const capture = vi.fn();
+    const factory = vi.fn(() => ({ capture }));
+    const { models } = createFauxModels();
+    const runtime = makeRuntime(models, factory);
+    const runner = seedRunnerState(runtime);
+    vi.mocked(runner.run).mockResolvedValue({ stopReason: "stop", finalText: "Noted." });
+
+    const { event, context } = makeEventAndContext("4");
+    await runtime.handleEvent(event, bot, context);
+
+    expect(factory).toHaveBeenCalledWith(models);
+    expect(capture).toHaveBeenCalledOnce();
+    expect(capture).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: context.message,
+        stopReason: "stop",
+        reply: "Noted.",
+        office: expect.objectContaining({ dir: conversationDir }),
+      }),
+    );
   });
 
   test("reset boundary survives recreation without disabling later incremental sync", async () => {

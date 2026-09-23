@@ -65,6 +65,7 @@ import {
   activateRunPresentation,
   createRunState,
   finalizeRunResponse,
+  getFinalAssistantText,
   isEventTriggerAttribution,
   reportUsageSummary,
 } from "./presenter.js";
@@ -490,6 +491,7 @@ type PreparedTurnParams = {
 async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   stopReason: string;
   errorMessage?: string;
+  finalText: string;
 }> {
   const {
     prepared,
@@ -582,7 +584,11 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     sessionUuid,
     waitForQueue: presentation.wait,
   });
-  return { stopReason: runState.stopReason, errorMessage: runState.errorMessage };
+  return {
+    stopReason: runState.stopReason,
+    errorMessage: runState.errorMessage,
+    finalText: getFinalAssistantText(session),
+  };
 }
 
 type MikanToolBindings = ReturnType<typeof createMikanTools>;

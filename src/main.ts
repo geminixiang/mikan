@@ -52,6 +52,7 @@ import {
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
+import { MemoryCapture } from "./memory-capture/index.js";
 
 function getVersion(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -438,6 +439,7 @@ const handler = createConversationRuntime({
   openConnector,
   portalBaseUrl: portalBaseUrl(),
   platformToolPackFactories: buildPlatformToolPackFactories(),
+  memoryCapture: (models) => new MemoryCapture(models),
 });
 
 const sandboxDesc =

@@ -10,7 +10,7 @@ Shared top-level channel sessions no longer rotate on a biweekly clock. A top-le
 
 Rotation started a Clean session with no platform history (`messageCount: 0`), so continuity after a boundary depended entirely on `MEMORY.md`. The Memory anchor is produced by Dream, which runs nightly, only after five idle hours, and in bounded batches. The two mechanisms were never synchronized: rotation did not wait for Dream, and Dream did not know which session was about to be cut.
 
-Production evidence (clanker-002, 2026-09-05 to 2026-09-22, 185 offices):
+Production evidence (2026-09-05 to 2026-09-22, 185 offices):
 
 - 21 rotations happened. For 16 of them the replaced session was still not fully read by Dream at the end of the period; 13 had never been read at all.
 - 82.9% of all session entries had not been read by Dream. Among 50 offices active in the last week, only 9 were within a day of their latest evidence; the median age of the newest evidence Dream had read was 27 days.
