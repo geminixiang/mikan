@@ -1,5 +1,3 @@
-export const SANDBOX_LAYOUT_VERSION = "1";
-
 export const GUEST_WORKSPACE_ROOT = "/workspace";
 export const GUEST_PUBLIC_OFFICES_DIR = `${GUEST_WORKSPACE_ROOT}/public`;
 const GUEST_HOME = "/root";

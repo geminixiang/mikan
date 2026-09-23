@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { legacyConversationResourceKey, sanitizeIdentitySegment } from "./identity.js";
-import { GUEST_PUBLIC_OFFICES_DIR, SANDBOX_LAYOUT_VERSION } from "./layout.js";
+import { GUEST_PUBLIC_OFFICES_DIR } from "./layout.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -74,7 +74,6 @@ export class DockerContainerManager {
   private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
   private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
   private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
-  private static readonly LAYOUT_LABEL = `mikan.layout=${SANDBOX_LAYOUT_VERSION}`;
   private static readonly MIGRATE_IMAGE_PREFIX = "mikan-migrate";
   private static readonly MIGRATE_BINDS_LABEL_KEY = "mikan.migrate-binds";
 
@@ -608,8 +607,6 @@ export class DockerContainerManager {
       DockerContainerManager.IMAGE_MODE_LABEL,
       "--label",
       `${DockerContainerManager.VAULT_ID_LABEL_KEY}=${containerKey}`,
-      "--label",
-      DockerContainerManager.LAYOUT_LABEL,
     ];
     if (options.conversationId) {
       labels.push(

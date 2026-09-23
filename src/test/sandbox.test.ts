@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import * as log from "../log.js";
 import {
   CloudflareSandboxExecutor,
@@ -128,10 +129,13 @@ describe("ContainerExecutor", () => {
     });
   });
 
-  test("bootstraps git credential helper when GitHub token env is injected", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+  test("configures the gh git credential helper through env without writing git config", async () => {
+    let envFile = "";
+    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
+      const path = /--env-file '([^']+)'/.exec(command)?.[1];
+      envFile = path ? readFileSync(path, "utf8") : "";
+      return { stdout: "", stderr: "", code: 0 };
+    });
     const executor = new ContainerExecutor(
       "mikan-sandbox",
       { GH_TOKEN: "gho_test" },
@@ -140,11 +144,29 @@ describe("ContainerExecutor", () => {
 
     await executor.exec("git clone https://github.com/livingbio/skills.git");
 
-    const [[dockerCommand]] = exec.mock.calls;
-    expect(dockerCommand).toContain("docker exec --env-file ");
-    expect(dockerCommand).toContain("mikan-sandbox sh -c");
-    expect(dockerCommand).toContain("gh auth setup-git");
-    expect(dockerCommand).toContain("git clone https://github.com/livingbio/skills.git");
+    expect(envFile.split("\n")).toEqual([
+      "GH_TOKEN=gho_test",
+      "GIT_CONFIG_COUNT=2",
+      "GIT_CONFIG_KEY_0=credential.https://github.com.helper",
+      "GIT_CONFIG_VALUE_0=",
+      "GIT_CONFIG_KEY_1=credential.https://github.com.helper",
+      "GIT_CONFIG_VALUE_1=!gh auth git-credential",
+      "",
+    ]);
+  });
+
+  test("leaves env untouched without a GitHub token", async () => {
+    let envFile = "";
+    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
+      const path = /--env-file '([^']+)'/.exec(command)?.[1];
+      envFile = path ? readFileSync(path, "utf8") : "";
+      return { stdout: "", stderr: "", code: 0 };
+    });
+    const executor = new ContainerExecutor("mikan-sandbox", { FOO: "bar" }, async () => {});
+
+    await executor.exec("true");
+
+    expect(envFile).toBe("FOO=bar\n");
   });
 });
 

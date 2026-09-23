@@ -81,9 +81,7 @@ The recreate log names the first drift found: `binds`, `mount-content`, or
 `network`.
 
 Guest paths (`/workspace`, `/workspace/public`, `/root`) come from
-`layout.ts`. Containers created fresh carry `mikan.layout=<version>`;
-recreated containers inherit the label from their snapshot, so containers
-without it predate the label.
+`layout.ts`.
 
 Consequences to keep in mind:
 

@@ -80,19 +80,26 @@ function buildContainerExecCommand(
   return `docker exec ${envPart}-w ${workdir} ${container} sh -c ${shellEscape(command)}`;
 }
 
-function withRuntimeBootstrap(command: string, env?: Record<string, string>): string {
-  if (!hasGitHubToken(env)) {
-    return command;
-  }
+const GITHUB_CREDENTIAL_KEY = "credential.https://github.com.helper";
 
-  return [
-    "if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then gh auth setup-git >/dev/null 2>&1 || true; fi",
-    command,
-  ].join("\n");
+function withGitHubCredentialHelper(
+  env?: Record<string, string>,
+): Record<string, string> | undefined {
+  if (!env || !hasGitHubToken(env) || env.GIT_CONFIG_COUNT !== undefined) {
+    return env;
+  }
+  return {
+    ...env,
+    GIT_CONFIG_COUNT: "2",
+    GIT_CONFIG_KEY_0: GITHUB_CREDENTIAL_KEY,
+    GIT_CONFIG_VALUE_0: "",
+    GIT_CONFIG_KEY_1: GITHUB_CREDENTIAL_KEY,
+    GIT_CONFIG_VALUE_1: "!gh auth git-credential",
+  };
 }
 
-function hasGitHubToken(env?: Record<string, string>): boolean {
-  return Boolean(env?.GH_TOKEN || env?.GITHUB_TOKEN || env?.GITHUB_OAUTH_ACCESS_TOKEN);
+function hasGitHubToken(env: Record<string, string>): boolean {
+  return Boolean(env.GH_TOKEN || env.GITHUB_TOKEN);
 }
 
 export class ContainerExecutor implements Executor {
@@ -111,11 +118,12 @@ export class ContainerExecutor implements Executor {
       await ensureContainerRunning(this.container);
     }
 
-    const temp = this.env ? createSecureEnvFile(this.env) : undefined;
+    const env = withGitHubCredentialHelper(this.env);
+    const temp = env ? createSecureEnvFile(env) : undefined;
     try {
       const dockerCmd = buildContainerExecCommand(
         this.container,
-        withRuntimeBootstrap(command, this.env),
+        command,
         temp?.envFilePath,
         options?.cwd,
       );
