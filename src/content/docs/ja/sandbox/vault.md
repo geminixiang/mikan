@@ -75,7 +75,7 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 - **Daemon の token は guest に届きません。** プラットフォームの bot token（`SLACK_BOT_TOKEN`、GitHub App の private key など）は mikan の host プロセスが読み取るもので、vault 注入の対象ではありません。
 - **Legacy extension secrets は無効のままです。** `vaults/extensions/` は古いファイルを user vault と誤認しないための予約 namespace です。mikan は load、mount、inject しません。
 
-これはデータの境界であって、実行の境界ではありません。その conversation 自身の認証情報でできることは、その agent にもできます。保存する認証情報の範囲は、それを踏まえて絞ってください。
+これはデータの境界であって、実行の境界ではありません。その conversation 自身の認証情報でできることは、その agent にもできます。保存する認証情報の範囲は、それを踏まえて絞ってください。認証情報が sandbox に入るのは開発に必要だからにすぎないため、mikan はその範囲をできるだけ小さく保ちます。短命またはスコープの狭い token を優先し、home 内のファイルよりもツール自身の環境変数を優先してください。
 
 ## Sandbox の挙動
 

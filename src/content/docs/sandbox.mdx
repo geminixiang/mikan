@@ -15,6 +15,13 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   </Card>
 </CardGrid>
 
+<Aside type="note" title="What the sandbox is for">
+  `image:*` targets a team sharing one VM. Each office gets resource limits, an isolated filesystem,
+  and its own environment. It is not a hostile multi-tenant boundary like E2B or a SaaS sandbox:
+  containers share the host kernel and everyone on the VM is trusted. Credentials enter the sandbox
+  only because development work (`gh`, `gcloud`, `gws`) needs them.
+</Aside>
+
 <Aside type="caution" title="Mode names">
   `docker:*` is not a supported mode; use `container:*` or `image:*` instead.
 </Aside>

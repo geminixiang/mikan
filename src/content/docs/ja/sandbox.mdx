@@ -14,6 +14,14 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   </Card>
 </CardGrid>
 
+<Aside type="note" title="sandbox の位置づけ">
+  `image:*` は 1 台の VM を共有するチーム向けです。office
+  ごとにリソース制限、ファイルシステムの隔離、独立した環境を 提供します。E2B や SaaS sandbox
+  のような悪意あるテナントを想定した強い隔離ではありません。container は host kernel を共有し、VM
+  上の利用者は互いに信頼されています。認証情報が sandbox に入るのは、開発作業（`gh`、
+  `gcloud`、`gws`）に必要だからにすぎません。
+</Aside>
+
 <Aside type="caution" title="モード名">
   `docker:*` は利用可能なモードではありません。`container:*` または `image:*` を使ってください。
 </Aside>

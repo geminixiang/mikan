@@ -14,6 +14,8 @@ Users treat the sandbox as a VM, and existing containers never pick up a new ima
 
 Today mikan keeps user state by running `docker commit` on the container and recreating it from that snapshot whenever mounts or networks drift. The snapshot preserves the old base image, so the runtime never updates. Every re-login also causes a full recreate: vault credentials are bind-mounted as single files, an atomic-rename update leaves the container holding the old inode, and mikan therefore hashes file contents into a `mikan.mount-signature` label to detect the change.
 
+The sandbox serves a team sharing one VM. Its job is resource limits, filesystem isolation, and environment isolation between offices. It is not a hostile multi-tenant boundary like E2B or a SaaS sandbox: containers share the host kernel and the people on the VM trust each other. Credentials enter the sandbox only because development work needs them, so the design keeps that surface small rather than building a secret-management layer.
+
 ## Decision
 
 | Path                           | Mechanism                       | On upgrade                                      |

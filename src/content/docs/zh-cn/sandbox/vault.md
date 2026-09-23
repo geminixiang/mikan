@@ -75,7 +75,7 @@ Vault 中的材料并不是同一类无差别的 secret：
 - **Daemon token 绝不会进入 guest。** 平台 bot token（`SLACK_BOT_TOKEN`、GitHub App private key 等）由 mikan 主机进程读取，不属于任何 vault 注入。
 - **旧版扩展 secret 保持停用。** `vaults/extensions/` 仍是保留 namespace，避免旧文件被误认为用户 vault；mikan 不再加载、挂载或注入它们。
 
-这是数据边界，而不是执行边界。凡是该对话自己的凭证能做的事，它的代理都能做——请据此限定你所存储的凭证权限范围。
+这是数据边界，而不是执行边界。凡是该对话自己的凭证能做的事，它的代理都能做——请据此限定你所存储的凭证权限范围。凭证进入 sandbox 只是因为开发需要，所以 mikan 让这个集合尽量小：优先使用短效或权限范围窄的 token，并优先使用工具自己的环境变量，而不是放在 home 里的文件。
 
 ## 沙箱行为
 

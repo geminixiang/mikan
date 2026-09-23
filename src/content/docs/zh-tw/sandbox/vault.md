@@ -75,7 +75,7 @@ Vault 裡的內容並不是同一類的祕密：
 - **Daemon token 絕不會進到 guest。** 平台 bot token（`SLACK_BOT_TOKEN`、GitHub App private key 等）由 mikan host process 讀取，不屬於任何 vault injection。
 - **舊版 extension secret 保持停用。** `vaults/extensions/` 仍是保留 namespace，避免舊檔案被誤認為使用者 vault；mikan 不再載入、掛載或注入它們。
 
-這是資料邊界，不是執行邊界。對話自己的憑證能做的任何事，它的 agent 都能做——請據此決定你存進去的憑證要有多大權限。
+這是資料邊界，不是執行邊界。對話自己的憑證能做的任何事，它的 agent 都能做——請據此決定你存進去的憑證要有多大權限。憑證會進到 sandbox 只是因為開發需要，所以 mikan 讓這個集合盡量小：優先用短效或權限範圍窄的 token，並優先用工具自己的環境變數，而不是放在 home 裡的檔案。
 
 ## Sandbox 行為
 

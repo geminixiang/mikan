@@ -14,6 +14,12 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
   </Card>
 </CardGrid>
 
+<Aside type="note" title="sandbox 的定位">
+  `image:*` 的對象是共用一台 VM 的團隊。每個 office 有自己的資源限制、檔案系統隔離與獨立環境。它不是
+  E2B 或 SaaS sandbox 那種對抗惡意租戶的強隔離：container 共用宿主機 kernel，VM
+  上的人彼此互信。憑證會進到 sandbox，只是因為開發工作（`gh`、`gcloud`、`gws`）需要它們。
+</Aside>
+
 <Aside type="caution" title="模式名稱">
   `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
 </Aside>

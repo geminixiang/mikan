@@ -77,7 +77,7 @@ Vault material is not one undifferentiated class of secret:
 - **Daemon tokens never reach the guest.** Platform bot tokens (`SLACK_BOT_TOKEN`, the GitHub App private key, and friends) are read by the mikan host process and are not part of any vault injection.
 - **Legacy extension secrets stay inert.** `vaults/extensions/` remains reserved so old files are not mistaken for user vaults; mikan no longer loads them and never mounts or injects them.
 
-This is a data boundary, not an execution boundary. Anything the conversation's own credentials can do, its agent can do — scope the credentials you store accordingly.
+This is a data boundary, not an execution boundary. Anything the conversation's own credentials can do, its agent can do — scope the credentials you store accordingly. Credentials reach the sandbox only because development needs them, so mikan keeps that set small: prefer short-lived or narrowly scoped tokens, and prefer a tool's own environment variable over a file in home.
 
 ## Sandbox behavior
 
