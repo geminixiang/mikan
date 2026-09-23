@@ -5,8 +5,7 @@ description: Use mikan-managed per-conversation Docker containers and vault isol
 
 ```bash
 # Pull the prebuilt image from GHCR
-# Release builds publish :tools, :<version>, and :latest / :beta
-# Pushes to main also publish :edge
+# Only mikan releases publish the image: :<version>, :latest, :tools, and :beta for prereleases
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers

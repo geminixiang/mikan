@@ -1,4 +1,4 @@
-name: Publish sandbox image
+name: Sandbox image
 
 on:
   release:
@@ -7,7 +7,11 @@ on:
     branches: [main]
     paths:
       - deploy/docker/mikan-sandbox.Dockerfile
-      - package.json
+      - scripts/smoke-sandbox-image.sh
+      - .github/workflows/sandbox-image.yml
+  pull_request:
+    paths:
+      - deploy/docker/mikan-sandbox.Dockerfile
       - scripts/smoke-sandbox-image.sh
       - .github/workflows/sandbox-image.yml
   workflow_dispatch:
@@ -37,19 +41,12 @@ jobs:
           tags=(
             "${image}:sha-${short_sha}"
             "${image}:latest"
+            "${image}:${version}"
+            "${image}:tools"
           )
 
-          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
-            tags+=(
-              "${image}:${version}"
-              "${image}:tools"
-            )
-
-            if [[ "${version}" == *-* ]]; then
-              tags+=("${image}:beta")
-            fi
-          else
-            tags+=("${image}:edge")
+          if [[ "${version}" == *-* ]]; then
+            tags+=("${image}:beta")
           fi
 
           {
@@ -67,6 +64,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: github.event_name == 'release'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -87,6 +85,7 @@ jobs:
         run: scripts/smoke-sandbox-image.sh mikan-sandbox:smoke
 
       - name: Build and push sandbox image
+        if: github.event_name == 'release'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -104,6 +103,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Summarize published tags
+        if: github.event_name == 'release'
         env:
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
