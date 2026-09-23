@@ -9,7 +9,6 @@ import {
   CAPTURED_KNOWLEDGE_HEADING,
   isCapturableRun,
   MemoryCapture,
-  parseMemoryOps,
 } from "../memory-capture/index.js";
 import type { CapturedRun, MemoryCaptureOp } from "../memory-capture/index.js";
 import { JevNotConfiguredError, MikanModels } from "../harness/index.js";
@@ -75,38 +74,6 @@ describe("isCapturableRun", () => {
   });
 });
 
-describe("parseMemoryOps", () => {
-  test("reads ops from a fenced JSON reply and normalizes whitespace", () => {
-    const ops = parseMemoryOps(
-      '```json\n{"ops":[{"op":"add","text":"Reply in\\nTraditional Chinese."},{"op":"update","replaces":"Use the old dashboard.","text":"Use the new dashboard."}]}\n```',
-    );
-    expect(ops).toEqual([
-      { op: "add", text: "Reply in Traditional Chinese." },
-      { op: "update", replaces: "Use the old dashboard.", text: "Use the new dashboard." },
-    ]);
-  });
-
-  test("drops malformed ops, downgrades vague updates, and caps the batch", () => {
-    const ops = parseMemoryOps(
-      JSON.stringify({
-        ops: [
-          { op: "delete", text: "x" },
-          { op: "add", text: "" },
-          { op: "update", replaces: "x", text: "Short target becomes an add." },
-          ...Array.from({ length: 8 }, (_, index) => ({ op: "add", text: `Entry ${index}` })),
-        ],
-      }),
-    );
-    expect(ops).toHaveLength(6);
-    expect(ops[0]).toEqual({ op: "add", text: "Short target becomes an add." });
-  });
-
-  test("rejects replies without an ops array", () => {
-    expect(() => parseMemoryOps("nothing to add")).toThrow("no JSON object");
-    expect(() => parseMemoryOps('{"entries":[]}')).toThrow("no ops array");
-  });
-});
-
 describe("applyMemoryOps", () => {
   test("creates the captured section at the end of an existing anchor", () => {
     const result = applyMemoryOps(
@@ -119,6 +86,17 @@ describe("applyMemoryOps", () => {
       added: 1,
       updated: 0,
     });
+  });
+
+  test("keeps each entry on one line", () => {
+    const { content } = applyMemoryOps(
+      "",
+      [{ op: "add", text: "Reply in\nTraditional  Chinese." }],
+      STAMP,
+    );
+    expect(content).toBe(
+      `${CAPTURED_KNOWLEDGE_HEADING}\n\n- Reply in Traditional Chinese. (${STAMP})\n`,
+    );
   });
 
   test("appends inside the captured section before the next heading", () => {
@@ -246,18 +224,21 @@ describe("MemoryCapture", () => {
     expect(readMemory()).toContain("- Recovered rule. (captured 2026-09-23 from 1.0002)");
   });
 
-  test("extracts with the office model from the exchange and current memory", async () => {
+  function officeModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
     process.env.MIKAN_STATE_DIR = workspace.stateDir;
     mkdirSync(workspace.stateDir, { recursive: true });
     writeFileSync(
       join(workspace.stateDir, "settings.json"),
       JSON.stringify({ llm: { provider: "faux", model: "faux-1", thinkingLevel: "off" } }),
     );
-    const officeModels = MikanModels.create({
-      modelsJsonPath: join(workspace.stateDir, "models.json"),
-    });
+    const created = MikanModels.create({ modelsJsonPath: join(workspace.stateDir, "models.json") });
     const faux = fauxProvider();
-    (officeModels.models as MutableModels).setProvider(faux.provider);
+    (created.models as MutableModels).setProvider(faux.provider);
+    return { models: created, faux };
+  }
+
+  test("extracts with the office model from the exchange and current memory", async () => {
+    const { models: withFaux, faux } = officeModels();
     writeFileSync(office.memoryPath, "# Memory\n\n- Existing anchor line.\n");
     faux.setResponses([
       (context) => {
@@ -271,10 +252,22 @@ describe("MemoryCapture", () => {
       },
     ]);
 
-    const capture = new MemoryCapture(officeModels, { gate: async () => 0.9, now: () => NOW });
+    const capture = new MemoryCapture(withFaux, { gate: async () => 0.9, now: () => NOW });
     capture.capture(run());
     await capture.idle();
 
     expect(readMemory()).toContain(`- Reply in Traditional Chinese. (${STAMP})`);
+  });
+
+  test("writes nothing when the extraction does not match the output schema", async () => {
+    const { models: withFaux, faux } = officeModels();
+    writeFileSync(office.memoryPath, "# Memory\n");
+    faux.setResponses([fauxAssistantMessage('{"ops":[{"op":"delete","text":"Old rule."}]}')]);
+
+    const capture = new MemoryCapture(withFaux, { gate: async () => 0.9, now: () => NOW });
+    capture.capture(run());
+    await capture.idle();
+
+    expect(readMemory()).toBe("# Memory\n");
   });
 });

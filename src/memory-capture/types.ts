@@ -12,9 +12,11 @@ export interface RunMemoryCapture {
   capture(run: CapturedRun): void;
 }
 
-export type MemoryCaptureOp =
-  | { op: "add"; text: string }
-  | { op: "update"; replaces: string; text: string };
+export interface MemoryCaptureOp {
+  op: "add" | "update";
+  text: string;
+  replaces?: string;
+}
 
 export interface MemoryCaptureDeps {
   gate(run: CapturedRun): Promise<number>;

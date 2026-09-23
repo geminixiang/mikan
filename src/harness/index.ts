@@ -26,6 +26,9 @@ export type {
 } from "../sessions/types.js";
 export { CURRENT_SESSION_VERSION } from "../sessions/types.js";
 export { MikanAgentSession } from "./session.js";
+export { runSubagent } from "./subagent.js";
+export { resolveTriggerAttribution } from "./prompt.js";
+export { isEventTriggerAttribution } from "./presenter.js";
 export type {
   CompactionReason,
   HarnessEvent,
