@@ -83,8 +83,6 @@ const GITHUB_APP_PRIVATE_KEY_PATH = readEnv("GITHUB_APP_PRIVATE_KEY_PATH");
 const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
-const GITHUB_AGENT_LOGIN = readEnv("GITHUB_AGENT_LOGIN");
-const GITHUB_AGENT_TOKEN = readEnv("GITHUB_AGENT_TOKEN");
 const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
@@ -420,8 +418,6 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
         commentId,
         body,
       ),
-    submitReview: (conversationId, body) =>
-      requireGithubBot("github_submit_review").ops.submitReview(conversationId, body),
     syncRepo: (conversationId, branch) =>
       requireGithubBot("github_sync").ops.syncRepo(conversationId, branch),
     readGithub: (conversationId, request) =>
@@ -518,11 +514,6 @@ if (hasDiscord) {
   log.logInfo("Platform: Discord");
 }
 if (hasGithub) {
-  if (GITHUB_AGENT_LOGIN && (!GITHUB_AGENT_TOKEN || !GITHUB_WEBHOOK_SECRET || !LINK_PORT)) {
-    throw new Error(
-      "GITHUB_AGENT_LOGIN requires GITHUB_AGENT_TOKEN, GITHUB_WEBHOOK_SECRET, and LINK_PORT",
-    );
-  }
   if (!GITHUB_APP_ID || !GITHUB_INSTALLATION_ID) {
     throw new Error("GitHub startup requires GITHUB_APP_ID and GITHUB_INSTALLATION_ID");
   }
@@ -549,8 +540,6 @@ if (hasGithub) {
       1000,
     workspace,
     syncStatePath: join(stateDir, "github-sync.json"),
-    agentLogin: GITHUB_AGENT_LOGIN,
-    agentToken: GITHUB_AGENT_TOKEN,
   });
   botsByPlatform.github = githubMessagingBot;
   log.logInfo("Platform: GitHub");
@@ -589,8 +578,6 @@ const webServer = LINK_PORT
           ? {
               secret: GITHUB_WEBHOOK_SECRET,
               onPoke: () => githubBotForWebhook.requestPoll(),
-              onNativeRequest: (event, deliveryId, payload) =>
-                githubBotForWebhook.handleNativeRequest(event, deliveryId, payload),
             }
           : undefined,
     })

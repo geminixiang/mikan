@@ -44,7 +44,6 @@ function makeReq(options: {
   body?: string | Buffer;
   signature?: string;
   event?: string;
-  delivery?: string;
 }): { req: IncomingMessage; url: URL } {
   const body = options.body ?? "{}";
   const req = Readable.from([Buffer.from(body)]) as unknown as IncomingMessage;
@@ -52,7 +51,6 @@ function makeReq(options: {
   req.headers = {};
   if (options.signature) req.headers["x-hub-signature-256"] = options.signature;
   if (options.event) req.headers["x-github-event"] = options.event;
-  if (options.delivery) req.headers["x-github-delivery"] = options.delivery;
   return { req, url: new URL(`http://localhost${GITHUB_WEBHOOK_PATH}`) };
 }
 
@@ -148,30 +146,6 @@ describe("handleGithubWebhookRequest", () => {
     expect(await handleGithubWebhookRequest(req, out.res, url, opts)).toBe(true);
     expect(out.status()).toBe(202);
     expect(opts.onPoke).not.toHaveBeenCalled();
-  });
-
-  test("sends verified assignment and review requests to native intake", async () => {
-    for (const [event, action] of [
-      ["issues", "assigned"],
-      ["pull_request", "review_requested"],
-    ]) {
-      const payload = JSON.stringify({ action });
-      const onNativeRequest = vi.fn().mockResolvedValue(undefined);
-      const { req, url } = makeReq({
-        body: payload,
-        signature: sign(payload),
-        event,
-        delivery: "delivery-123",
-      });
-      const out = makeRes();
-      await handleGithubWebhookRequest(req, out.res, url, {
-        secret: SECRET,
-        onPoke: vi.fn(),
-        onNativeRequest,
-      });
-      expect(out.status()).toBe(202);
-      expect(onNativeRequest).toHaveBeenCalledWith(event, "delivery-123", { action });
-    }
   });
 });
 

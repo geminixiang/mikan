@@ -53,13 +53,9 @@ Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 
 ### Optional webhook (lower latency)
 
-Without a webhook, a mention waits up to one poll interval. To respond in seconds instead, enable the App webhook: set the webhook URL to `<link-server base URL>/github/webhook`, choose a secret, subscribe to **Issues**, **Issue comment**, and **Pull request review comment** events, and set the same secret as `GITHUB_WEBHOOK_SECRET` (requires the link server, `LINK_PORT`). Verified comment deliveries ask the poll loop to run immediately; polling remains the backstop. When `GITHUB_AGENT_LOGIN` is set, signed issue assignment and PR review request deliveries are handled directly after permission checks and delivery deduplication.
+Without a webhook, a mention waits up to one poll interval. To respond in seconds instead, enable the App webhook: set the webhook URL to `<link-server base URL>/github/webhook`, choose a secret, subscribe to **Issues**, **Issue comment**, and **Pull request review comment** events, and set the same secret as `GITHUB_WEBHOOK_SECRET` (requires the link server, `LINK_PORT`). A verified delivery only asks the poll loop to run immediately — payloads are never parsed into events, so ordering, dedup, and permission checks are unchanged, and polling remains the backstop for missed deliveries.
 
 ## Triggering
-
-For an organization account that should appear in GitHub's mention, issue Assignees, and PR Reviewers pickers, set `GITHUB_AGENT_LOGIN` to its GitHub login. Give the account access to the repositories and install the existing GitHub App. Set `GITHUB_AGENT_TOKEN` to a token for that account with pull request write permission. The host uses it to submit formal COMMENT reviews through `github_submit_review`; it never enters the sandbox. Other API calls, git access, and ordinary replies continue under the App identity.
-
-Mentions of that login are picked up by polling. Issue assignment and PR review requests require `GITHUB_WEBHOOK_SECRET`, `LINK_PORT`, and the **Issues** and **Pull request** webhook events. Only signed events targeting the configured login, sent by a user with repository write permission, start a run. Delivery IDs are persisted to avoid duplicate runs. A requested PR review is submitted as the account when the agent uses `github_submit_review`; ordinary replies appear as the App bot.
 
 A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session; the magic word uses one grammar across all platforms.
 

@@ -228,7 +228,6 @@ describe("GithubMessagingBot", () => {
     overrides: {
       handler?: MessagingEventHandler;
       repos?: string[];
-      agentLogin?: string;
     } = {},
   ) {
     return new GithubMessagingBot(
@@ -241,7 +240,6 @@ describe("GithubMessagingBot", () => {
         pollIntervalMs: 60_000,
         workspace: createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") }),
         syncStatePath: join(workingDir, "state", "github-sync.json"),
-        agentLogin: overrides.agentLogin,
       },
       client as unknown as GithubClient,
     );
@@ -301,61 +299,6 @@ describe("GithubMessagingBot", () => {
     expect(event.ts).toBe("9001");
     expect(event.user).toBe("alice");
     expect(event.text).toBe("please fix this");
-  });
-
-  test("mentioning the configured account enters the same conversation", async () => {
-    const bot = makeBot({ agentLogin: "mikan-agent" });
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({ body: "@mikan-agent please fix this" }),
-    ]);
-    await bot.poll();
-    await settleQueues();
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
-    expect(event.text).toBe("please fix this");
-  });
-
-  test("native issue assignment starts a conversation once and survives restart", async () => {
-    const bot = makeBot({ agentLogin: "mikan-agent" });
-    await bot.start();
-    const payload = {
-      repository: { owner: { login: "octo" }, name: "widgets" },
-      sender: { login: "alice" },
-      assignee: { login: "mikan-agent" },
-      issue: { number: 5, title: "Fix widget", body: "Please investigate" },
-    };
-    await bot.handleNativeRequest("issues", "delivery-1", payload);
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0][0].text).toContain("Assigned issue");
-    await bot.handleNativeRequest("issues", "delivery-1", payload);
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    await bot.stop();
-    const restarted = makeBot({ agentLogin: "mikan-agent" });
-    await restarted.start();
-    await restarted.handleNativeRequest("issues", "delivery-1", payload);
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-  });
-
-  test("native PR review request requires the target account and write permission", async () => {
-    const bot = makeBot({ agentLogin: "mikan-agent" });
-    await bot.start();
-    const payload = {
-      repository: { owner: { login: "octo" }, name: "widgets" },
-      sender: { login: "alice" },
-      requested_reviewer: { login: "mikan-agent" },
-      pull_request: { number: 5, title: "Update widget", body: "Check the change" },
-    };
-    client.getCollaboratorPermission.mockResolvedValueOnce({ permission: "read" });
-    await bot.handleNativeRequest("pull_request", "delivery-2", payload);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-    await bot.handleNativeRequest("pull_request", "delivery-2", {
-      ...payload,
-      sender: { login: "bob" },
-    });
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0][0].text).toContain("Requested PR review");
   });
 
   test("first contact via comment logs the issue body before the comment", async () => {

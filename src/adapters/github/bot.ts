@@ -4,7 +4,7 @@ import { Type } from "@sinclair/typebox";
 import type { MessagingBot, MessagingEventHandler, MessagingInfo } from "../index.js";
 import { createConversationEvent, type ConversationEvent } from "../index.js";
 import * as log from "../../log.js";
-import { ensureDirExists, isRecord, readJsonSchemaFileIfExists } from "../../file-guards.js";
+import { ensureDirExists, readJsonSchemaFileIfExists } from "../../file-guards.js";
 import { atomicWritePrivateFile } from "../../file-guards.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
@@ -37,7 +37,6 @@ import type {
 } from "./types.js";
 
 const SyncStateSchema = Type.Object({
-  seenDeliveries: Type.Optional(Type.Array(Type.String())),
   repos: Type.Record(
     Type.String(),
     Type.Object({
@@ -163,8 +162,6 @@ export class GithubMessagingBot implements MessagingBot {
   private watchedRepos: GithubRepoRef[] = [];
   private queues = new Map<string, MessagingEventQueue>();
   private repoState = new Map<string, RepoWatermark>();
-  private seenDeliveries = new Set<string>();
-  private pendingDeliveries = new Set<string>();
   private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
   private stopped = true;
   private stopping = false;
@@ -183,16 +180,10 @@ export class GithubMessagingBot implements MessagingBot {
         privateKey: config.privateKey,
         installationId: config.installationId,
       });
-    this.ops = new GithubOps(this.client, {
-      workspace: config.workspace,
-      agentToken: config.agentToken,
-    });
+    this.ops = new GithubOps(this.client, { workspace: config.workspace });
   }
 
   async start(): Promise<void> {
-    if (this.config.agentLogin && !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,38}$/.test(this.config.agentLogin)) {
-      throw new Error("GITHUB_AGENT_LOGIN must be a GitHub username");
-    }
     this.stopped = false;
     this.stopping = false;
     this.appSlug = await this.client.getAppSlug();
@@ -214,7 +205,6 @@ export class GithubMessagingBot implements MessagingBot {
     }
 
     const persisted = this.loadSyncState();
-    this.seenDeliveries = new Set(persisted?.seenDeliveries ?? []);
     const now = new Date().toISOString();
     for (const repo of this.watchedRepos) {
       const repoKey = `${repo.owner}/${repo.repo}`;
@@ -512,7 +502,7 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   syncStateSnapshot(): GithubSyncState {
-    const state: GithubSyncState = { repos: {}, seenDeliveries: [...this.seenDeliveries] };
+    const state: GithubSyncState = { repos: {} };
     for (const [repoKey, watermark] of this.repoState) {
       state.repos[repoKey] = {
         baseline: watermark.baseline,
@@ -531,62 +521,7 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   private mentionPattern(): RegExp | null {
-    const names = [this.appSlug, this.config.agentLogin].filter(Boolean);
-    return names.length ? new RegExp(`@(?:${names.join("|")})(?![\\w-])`, "gi") : null;
-  }
-
-  async handleNativeRequest(event: string, deliveryId: string, payload: unknown): Promise<void> {
-    if (event !== "issues" && event !== "pull_request") return;
-    const login = this.config.agentLogin?.toLowerCase();
-    if (!login || this.stopped || this.seenDeliveries.has(deliveryId)) return;
-    if (this.pendingDeliveries.has(deliveryId)) return;
-    if (!isRecord(payload) || !isRecord(payload.repository) || !isRecord(payload.repository.owner))
-      return;
-    const repository = payload.repository;
-    const owner = (repository.owner as Record<string, unknown>).login;
-    const repo = repository.name;
-    const sender = isRecord(payload.sender) ? payload.sender.login : undefined;
-    const target = event === "issues" ? payload.assignee : payload.requested_reviewer;
-    const issue = event === "issues" ? payload.issue : payload.pull_request;
-    if (
-      typeof owner !== "string" ||
-      typeof repo !== "string" ||
-      typeof sender !== "string" ||
-      !isRecord(target) ||
-      !isRecord(issue) ||
-      typeof target.login !== "string" ||
-      typeof issue.number !== "number" ||
-      target.login.toLowerCase() !== login ||
-      sender.toLowerCase() === login
-    )
-      return;
-    const ref = { owner: owner.toLowerCase(), repo: repo.toLowerCase(), number: issue.number };
-    if (!this.repoState.has(`${ref.owner}/${ref.repo}`)) return;
-    this.pendingDeliveries.add(deliveryId);
-    try {
-      if (!(await this.hasTriggerPermission(ref, sender))) return;
-      const title = typeof issue.title === "string" ? issue.title : "";
-      const body = typeof issue.body === "string" ? issue.body : "";
-      await this.handleIncoming(
-        {
-          ref,
-          ts: `native-${deliveryId}`,
-          user: sender,
-          text: `${event === "issues" ? "Assigned issue" : "Requested PR review"}: ${title}\n\n${body}`.trim(),
-          createdAt: new Date().toISOString(),
-          isPr: event === "pull_request",
-        },
-        true,
-      );
-      this.seenDeliveries.add(deliveryId);
-      if (this.seenDeliveries.size > MAX_SEEN_IDS) {
-        const oldest = this.seenDeliveries.values().next().value;
-        if (oldest) this.seenDeliveries.delete(oldest);
-      }
-      this.persistSyncState();
-    } finally {
-      this.pendingDeliveries.delete(deliveryId);
-    }
+    return this.appSlug ? new RegExp(`@${this.appSlug}(?![\\w-])`, "gi") : null;
   }
 
   private isMentioned(text: string): boolean {
@@ -633,11 +568,11 @@ export class GithubMessagingBot implements MessagingBot {
     return rank >= REQUIRED_TRIGGER_RANK;
   }
 
-  private async handleIncoming(item: IncomingItem, nativeRequest = false): Promise<void> {
+  private async handleIncoming(item: IncomingItem): Promise<void> {
     const conversationId = buildGithubConversationId(item.ref);
     const mentioned = this.isMentioned(item.text);
     const participating = this.isParticipating(conversationId);
-    if (!mentioned && !participating && !nativeRequest) return;
+    if (!mentioned && !participating) return;
 
     if (!(await this.hasTriggerPermission(item.ref, item.user))) {
       log.logInfo(
@@ -673,11 +608,7 @@ export class GithubMessagingBot implements MessagingBot {
     await processMessageIntake({
       eventBase,
       addressed: true,
-      magicWord: {
-        text: cleanedText,
-        addressed: mentioned || nativeRequest,
-        scopeFallback: "never",
-      },
+      magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
       busyPolicy: "queue",
       logEntryBase: {
         date: item.createdAt,

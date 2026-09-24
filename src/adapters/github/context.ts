@@ -46,9 +46,6 @@ export function createGithubAdapters(
       `tagged [PR review comment rc-<id> …] are inline review threads on a diff line: ` +
       `answer those with the github_review_reply tool (comment_id = that id) so the reply ` +
       `lands in-thread — your normal response posts as a plain PR comment.\n\n` +
-      `If this run began with a PR review request, inspect the diff and use ` +
-      `github_submit_review to submit a formal COMMENT review. Your plain response alone ` +
-      `does not complete the requested review.\n\n` +
       `## Repository & pull requests\n` +
       `The repository is cloned at ./repo — a snapshot from this conversation's first ` +
       `trigger; run github_sync when it may be stale to pull the latest PR head or base ` +

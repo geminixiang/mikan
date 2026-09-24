@@ -52,10 +52,6 @@ Poll loop 會使用 ETag conditional requests（304 responses 不計入 rate lim
 
 ## 觸發條件
 
-若已有供組織使用的 GitHub 帳戶，可將 `GITHUB_AGENT_LOGIN` 設成該帳戶 login，作為 mention、issue Assignees 與 PR Reviewers 選單中的入口。帳戶須有目標 repo 的存取權，既有 GitHub App 仍須安裝在 repo。設定 `GITHUB_AGENT_TOKEN` 為該帳戶具有 pull request write 權限的 token；host 只在透過 `github_submit_review` 提交正式 COMMENT review 時使用，不會傳入 sandbox。其他 API 操作、git 存取及一般回覆仍由 App 執行。
-
-Mention 由輪詢讀取。指派 issue 或請求 PR review 則須設定 `GITHUB_WEBHOOK_SECRET` 與 `LINK_PORT`，並訂閱 **Issues** 與 **Pull request** webhook 事件。只有經驗簽、指向設定帳戶且發起者具有 repo write 權限的事件才會開始執行；delivery ID 會持久記錄以避免重複處理。請求 PR review 後，agent 使用 `github_submit_review` 以該帳戶提交正式 review；一般回覆顯示為 App bot。
-
 Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session；這個 magic word 在所有平台上使用同一套文法。
 
 由於任何人都能在 public repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。GitHub 對話預設不會拿到任何憑證，必須由管理員刻意為特定對話佈建 vault。見 [Vault](/zh-tw/sandbox/vault/)。
