@@ -21,6 +21,7 @@ this module.
 | `jev.ts`                | Adapter over `@geminixiang/jev` for Jev (typesafe/jev), a typed-decision evaluation model; not part of the chat model catalog                   |
 | `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
 | `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                           |
+| `mcp-result.ts`         | Model-facing MCP results: content conversion, compact JSON, the output bound with structural digests, and the full-result spill                 |
 | `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                 |
 | `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                         |
 | `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                  |
@@ -102,6 +103,19 @@ lifetime and returns only the tools; the agent runner does not retain a separate
 cleanup handle. The native harness
 system-prompt supplier composes the stored MCP guidance with each refreshed
 base prompt, so later turns cannot discard server instructions.
+
+MCP tools are harness-native tools, so each call receives the turn's execution
+env. `mcp-result.ts` converts a result's content blocks (`structuredContent`
+only when `content` is empty; binary resources and audio become one-line
+descriptions), re-serializes JSON text compactly, and bounds the text by Pi's
+`DEFAULT_MAX_BYTES`/`DEFAULT_MAX_LINES`, the same limits as `read` and `bash`.
+Oversized JSON becomes a structural digest that keeps every key, array counts
+and scalar pagination fields while shortening long strings, arrays and deep
+nesting; other text keeps its head. The full compact result is spilled through
+the execution env to `<runtime cwd>/.mikan/mcp-output/` (image mode: the
+container's `/workspace/.mikan`, outside the office mount), and the notice names
+that path. Error results are bounded the same way. MCP tools are wrapped with
+`withSecretRedaction`, which scrubs only mikan's own manifest secrets.
 
 Per-server connection/discovery failures close that client's transport and
 leave other servers usable. Aborted runner construction closes acquired MCP

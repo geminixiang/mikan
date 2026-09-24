@@ -8,6 +8,7 @@ import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./
 import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools, createSubagentTool } from "./tools/index.js";
 import { adaptAgentTool } from "./tools/pi-tools.js";
+import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { createSandboxExecutionEnv } from "./execution-env.js";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -465,7 +466,7 @@ async function createRunnerAgentSession(params: {
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
-    tools: [...tools, ...mcpTools.map(adaptAgentTool)],
+    tools: [...tools, ...mcpTools.map(withSecretRedaction)],
     toolContext,
     sessionStore: sessionManager,
     models: modelRegistry,

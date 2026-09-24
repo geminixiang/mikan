@@ -11,8 +11,10 @@ import {
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@sinclair/typebox";
+import type { MikanHarnessTool } from "./types.js";
+import { guardMcpToolResult, type McpCallResult } from "./mcp-result.js";
+import { tagHarnessTool } from "./tools/pi-tools.js";
 
 import * as log from "../log.js";
 
@@ -184,45 +186,11 @@ function buildTransport(name: string, config: McpServerConfig) {
   throw new Error(`server "${name}" sets neither command nor url`);
 }
 
-function toAgentToolResult(result: {
-  content?: unknown;
-  isError?: boolean;
-}): AgentToolResult<undefined> {
-  const parts = Array.isArray(result.content) ? result.content : [];
-  const content: AgentToolResult<undefined>["content"] = [];
-  for (const part of parts) {
-    if (part && typeof part === "object" && "type" in part) {
-      if (part.type === "text" && typeof (part as { text?: unknown }).text === "string") {
-        content.push({ type: "text", text: (part as { text: string }).text });
-        continue;
-      }
-      if (
-        part.type === "image" &&
-        typeof (part as { data?: unknown }).data === "string" &&
-        typeof (part as { mimeType?: unknown }).mimeType === "string"
-      ) {
-        const image = part as { data: string; mimeType: string };
-        content.push({ type: "image", data: image.data, mimeType: image.mimeType });
-        continue;
-      }
-      content.push({ type: "text", text: JSON.stringify(part) });
-    }
-  }
-  if (content.length === 0) {
-    content.push({ type: "text", text: "(empty result)" });
-  }
-  const text = content.map((c) => (c.type === "text" ? c.text : "")).join("\n");
-  if (result.isError) {
-    throw new Error(text || "MCP tool call failed");
-  }
-  return { content, details: undefined };
-}
-
 async function connectServer(
   name: string,
   config: McpServerConfig,
   signal?: AbortSignal,
-): Promise<{ client: Client; tools: AgentTool<TSchema>[]; instructions?: string }> {
+): Promise<{ client: Client; tools: MikanHarnessTool[]; instructions?: string }> {
   const client = new Client({ name: "mikan", version: "1.0.0" });
   const transport = buildTransport(name, config);
   try {
@@ -234,20 +202,23 @@ async function connectServer(
       timeout: CONNECT_TIMEOUT_MS,
       ...(signal ? { signal } : {}),
     });
-    const tools: AgentTool<TSchema>[] = listed.tools.map((mcpTool) => ({
-      name: `mcp__${name}__${mcpTool.name}`,
-      label: `${name}: ${mcpTool.name}`,
-      description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-      parameters: mcpTool.inputSchema as unknown as TSchema,
-      execute: async (_toolCallId, params, runSignal) => {
-        const result = await client.callTool(
-          { name: mcpTool.name, arguments: params as Record<string, unknown> },
-          undefined,
-          { timeout: CALL_TIMEOUT_MS, ...(runSignal ? { signal: runSignal } : {}) },
-        );
-        return toAgentToolResult(result as { content?: unknown; isError?: boolean });
-      },
-    }));
+    const tools: MikanHarnessTool[] = listed.tools.map((mcpTool) =>
+      tagHarnessTool({
+        name: `mcp__${name}__${mcpTool.name}`,
+        label: `${name}: ${mcpTool.name}`,
+        description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
+        parameters: mcpTool.inputSchema as unknown as TSchema,
+        execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
+          const [, params, , toolContext, , context] = args;
+          const result = await client.callTool(
+            { name: mcpTool.name, arguments: params as Record<string, unknown> },
+            undefined,
+            { timeout: CALL_TIMEOUT_MS, signal: context.abortSignal },
+          );
+          return guardMcpToolResult(result as McpCallResult, toolContext.env, context);
+        },
+      }),
+    );
     const instructions = client.getInstructions()?.trim();
     return { client, tools, ...(instructions ? { instructions } : {}) };
   } catch (error) {
@@ -274,7 +245,7 @@ export async function loadMcpTools(
   signal?: AbortSignal,
 ): Promise<McpToolsResult> {
   const clients: Client[] = [];
-  const tools: AgentTool<TSchema>[] = [];
+  const tools: MikanHarnessTool[] = [];
   const errors: McpLoadError[] = [];
   const instructions: McpServerInstruction[] = [];
 

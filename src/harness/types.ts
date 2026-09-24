@@ -355,7 +355,7 @@ export interface McpServerInstruction {
 }
 
 export interface McpToolsResult {
-  tools: AgentTool<TSchema>[];
+  tools: MikanHarnessTool[];
   errors: McpLoadError[];
   instructions: McpServerInstruction[];
   dispose: () => Promise<void>;

@@ -1,10 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { afterAll, describe, expect, it } from "vitest";
 import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
+import type { MikanHarnessTool } from "../harness/types.js";
 
 const sdkUrl = (subpath: string) =>
   new URL(`../../node_modules/@modelcontextprotocol/sdk/dist/esm/${subpath}`, import.meta.url).href;
@@ -29,6 +31,34 @@ server.registerTool(
   "boom",
   { description: "Always fails", inputSchema: {} },
   async () => ({ isError: true, content: [{ type: "text", text: "kaboom" }] }),
+);
+server.registerTool(
+  "big",
+  { description: "Return a large pretty-printed page", inputSchema: {} },
+  async () => ({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(
+          {
+            total_count: 691,
+            nextCursor: "cursor-2",
+            items: Array.from({ length: 100 }, (_, index) => ({
+              number: index + 1,
+              body: "x".repeat(2000),
+            })),
+          },
+          null,
+          2,
+        ),
+      },
+    ],
+  }),
+);
+server.registerTool(
+  "structured",
+  { description: "Return only structured content", inputSchema: {} },
+  async () => ({ content: [], structuredContent: { answer: 42 } }),
 );
 await server.connect(new StdioServerTransport());
 `;
@@ -137,6 +167,17 @@ function startHttpMcpServer(): Promise<{ server: Server; url: string }> {
   });
 }
 
+function callTool(tool: MikanHarnessTool, params: Record<string, unknown>, cwd = dir) {
+  return tool.execute(
+    "call",
+    params as never,
+    () => {},
+    { env: new NodeExecutionEnv({ cwd }) },
+    undefined as never,
+    { abortSignal: new AbortController().signal } as never,
+  );
+}
+
 describe("loadMcpTools", () => {
   it("connects over stdio, namespaces tools, and pipes env credentials", async () => {
     const result = await loadMcpTools({
@@ -154,11 +195,11 @@ describe("loadMcpTools", () => {
 
       const echo = result.tools.find((tool) => tool.name === "mcp__test__echo")!;
       expect(echo.parameters).toMatchObject({ type: "object" });
-      const echoed = await echo.execute("call-1", { message: "hi" });
+      const echoed = await callTool(echo, { message: "hi" });
       expect(echoed.content).toEqual([{ type: "text", text: "echo:hi:s3cret" }]);
 
       const boom = result.tools.find((tool) => tool.name === "mcp__test__boom")!;
-      await expect(boom.execute("call-2", {})).rejects.toThrow("kaboom");
+      await expect(callTool(boom, {})).rejects.toThrow("kaboom");
     } finally {
       await result.dispose();
     }
@@ -186,12 +227,12 @@ describe("loadMcpTools", () => {
       const execute = result.tools.find(
         (tool) => tool.name === "mcp__open-connector__execute_action",
       )!;
-      const executed = await execute.execute("call-http", {
+      const executed = await callTool(execute, {
         actionId: "github.create_issue",
       });
       expect(executed.content).toEqual([{ type: "text", text: "executed:github.create_issue:" }]);
 
-      const explicit = await execute.execute("call-explicit", {
+      const explicit = await callTool(execute, {
         actionId: "multi.read",
         connectionName: "account-b",
       });
@@ -201,6 +242,43 @@ describe("loadMcpTools", () => {
       await new Promise<void>((resolve) => http.server.close(() => resolve()));
     }
   });
+
+  it("bounds oversized results and spills the full result into the runtime workspace", async () => {
+    const result = await loadMcpTools({ test: { command: process.execPath, args: [serverPath] } });
+    const cwd = mkdtempSync(join(tmpdir(), "mikan-mcp-spill-"));
+    try {
+      const big = result.tools.find((tool) => tool.name === "mcp__test__big")!;
+      const output = await callTool(big, {}, cwd);
+      const [block] = output.content;
+      const text = block?.type === "text" ? block.text : "";
+      expect(Buffer.byteLength(text)).toBeLessThanOrEqual(50 * 1024);
+      const [digest, notice] = text.split("\n\n");
+      const parsed = JSON.parse(digest!);
+      expect(parsed.total_count).toBe(691);
+      expect(parsed.nextCursor).toBe("cursor-2");
+      expect(parsed.items.at(-1)).toBe("…[+97 more items]");
+      const spillPath = /Full result: (\S+)/.exec(notice!)?.[1];
+      expect(spillPath?.startsWith(join(cwd, ".mikan", "mcp-output"))).toBe(true);
+      const spilled = JSON.parse(readFileSync(spillPath!, "utf-8"));
+      expect(spilled.items).toHaveLength(100);
+      expect(readFileSync(spillPath!, "utf-8")).not.toContain("\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await result.dispose();
+    }
+  }, 30_000);
+
+  it("falls back to structuredContent when a result has no content blocks", async () => {
+    const result = await loadMcpTools({ test: { command: process.execPath, args: [serverPath] } });
+    try {
+      const structured = result.tools.find((tool) => tool.name === "mcp__test__structured")!;
+      expect((await callTool(structured, {})).content).toEqual([
+        { type: "text", text: '{"answer":42}' },
+      ]);
+    } finally {
+      await result.dispose();
+    }
+  }, 30_000);
 
   it("reports unreachable servers as errors without failing the rest", async () => {
     const result = await loadMcpTools({

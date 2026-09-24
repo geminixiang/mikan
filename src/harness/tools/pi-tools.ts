@@ -16,7 +16,7 @@ export function isHarnessTool(tool: unknown): tool is MikanHarnessTool {
   return Boolean(tool && (tool as Record<PropertyKey, unknown>)[HARNESS_TOOL]);
 }
 
-function tagHarnessTool(tool: MikanHarnessTool): MikanHarnessTool {
+export function tagHarnessTool(tool: MikanHarnessTool): MikanHarnessTool {
   Object.defineProperty(tool, HARNESS_TOOL, { value: true });
   return tool;
 }

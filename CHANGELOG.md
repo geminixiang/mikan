@@ -20,6 +20,8 @@ any release.
 
 ### Changed
 
+- Bound MCP tool results like `bash`: JSON is re-serialized compactly, oversized results become a structural digest (keys, counts, and pagination kept) within Pi's 50KB/2000-line limit, and the full result is spilled to `.mikan/mcp-output/` in the runtime workspace. `structuredContent` is used when `content` is empty, binary resources are no longer inlined, error text is bounded, and MCP results pass through secret redaction.
+
 - Shared top-level channel sessions no longer rotate every two weeks; they stay current until `/new`, and Pi's automatic compaction bounds the model context (ADR 0010).
 
 ## [1.0.0-beta.77]

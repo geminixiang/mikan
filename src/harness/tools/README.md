@@ -35,20 +35,20 @@ error result in the session. Platform tools are present only when their pack is
 configured, `generate_image` only when image generation is configured, and MCP
 tools depend on the connected server's `listTools()` response.
 
-| Tool                    | Arguments | Final text/data | Image in result | `details` in session |                        Live progress                        | Data carried by the call/result                                               |
-| ----------------------- | :-------: | :-------------: | :-------------: | :------------------: | :---------------------------------------------------------: | ----------------------------------------------------------------------------- |
-| `read`                  |     ✓     |        ◇        |        ◇        |          ◇           |                              —                              | Path/range; file text or supported image content.                             |
-| `write`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Full text to write in arguments; write confirmation.                          |
-| `edit`                  |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Original/replacement text in arguments; diff/patch in result.                 |
-| `bash`                  |     ✓     |        ✓        |        —        |          ◇           |                              ✓                              | Command in arguments; stdout/stderr and exit information.                     |
-| `event`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Event payload in arguments; list/read data or write/delete confirmation.      |
-| `sandbox`               |     ✓     |        ✓        |        —        |          —           |                              —                              | CPU/memory limits and status (supported on managed image sandboxes).          |
-| `attach`                |     ✓     |        ✓        |        —        |          —           |                              —                              | Path/title and attached filename; not the file bytes as a result.             |
-| `generate_image`        |     ✓     |        ✓        |        —        |          —           |                              —                              | Generation request and attached filename; image stored/uploaded elsewhere.    |
-| `react`                 |     ✓     |        ✓        |        —        |          ◇           |                              —                              | Emoji and reaction confirmation.                                              |
-| `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.             |
-| `jev_browser`           |     ✓     |        ✓        |        —        |          —           |                              —                              | URL/commands in arguments; status, history, snapshot and raw command results. |
-| `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                       |
+| Tool                    | Arguments | Final text/data | Image in result | `details` in session |                        Live progress                        | Data carried by the call/result                                                    |
+| ----------------------- | :-------: | :-------------: | :-------------: | :------------------: | :---------------------------------------------------------: | ---------------------------------------------------------------------------------- |
+| `read`                  |     ✓     |        ◇        |        ◇        |          ◇           |                              —                              | Path/range; file text or supported image content.                                  |
+| `write`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Full text to write in arguments; write confirmation.                               |
+| `edit`                  |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Original/replacement text in arguments; diff/patch in result.                      |
+| `bash`                  |     ✓     |        ✓        |        —        |          ◇           |                              ✓                              | Command in arguments; stdout/stderr and exit information.                          |
+| `event`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Event payload in arguments; list/read data or write/delete confirmation.           |
+| `sandbox`               |     ✓     |        ✓        |        —        |          —           |                              —                              | CPU/memory limits and status (supported on managed image sandboxes).               |
+| `attach`                |     ✓     |        ✓        |        —        |          —           |                              —                              | Path/title and attached filename; not the file bytes as a result.                  |
+| `generate_image`        |     ✓     |        ✓        |        —        |          —           |                              —                              | Generation request and attached filename; image stored/uploaded elsewhere.         |
+| `react`                 |     ✓     |        ✓        |        —        |          ◇           |                              —                              | Emoji and reaction confirmation.                                                   |
+| `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.                  |
+| `jev_browser`           |     ✓     |        ✓        |        —        |          —           |                              —                              | URL/commands in arguments; status, history, snapshot and raw command results.      |
+| `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                            |
 | `task_status`           |     ✓     |        ✓        |        —        |          —           |              Session key and task status JSON.              |
 | `slack_blockkit`        |     ✓     |        ✓        |        —        |          —           | Blocks/text in arguments; posted/updated message timestamp. |
 | `github_pr`             |     ✓     |        ✓        |        —        |          —           |     PR request in arguments; operation status and URL.      |
@@ -57,18 +57,18 @@ tools depend on the connected server's `listTools()` response.
 | `github_sync`           |     ✓     |        ✓        |        —        |          —           |                   Branch and sync report.                   |
 | `github_read`           |     ✓     |        ✓        |        —        |          —           |          Query and formatted PR/issue/review data.          |
 | `github_issue`          |     ✓     |        ✓        |        —        |          —           |             Issue request and operation report.             |
-| `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                   |
-| `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          ◇           |                              —                              | Dynamic tool arguments; server text, image, or serialized other content.      |
+| `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                        |
+| `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images. |
 
 This is a **data-flow inventory**, not a guarantee that every result is small
 or safe. `jev_browser` bounds the goal-loop snapshot but does not impose one
 aggregate limit on raw command results; native file/command output, subagent
-outcomes, GitHub check logs, and MCP responses can also be large. Image bytes
+outcomes and GitHub check logs can also be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
-only scrubs final text `content` for tools assembled by `createMikanTools`;
-it does not scrub arguments, `details`, images or progress, and the runner adds
-`subagent` and MCP tools separately. Do not treat this as a universal secret
+only scrubs final text `content` for tools assembled by `createMikanTools` and
+for MCP tools; it does not scrub arguments, `details`, images or progress, and
+the runner adds `subagent` separately. Do not treat this as a universal secret
 filter.
 
 ## Browser reliability
