@@ -68,8 +68,9 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.boost?.cpus).toBe("2");
     expect(config.sandbox?.boost?.memory).toBe("4g");
     expect(config.sandbox?.workspace).toBeUndefined();
-    expect(config.sandbox?.defaultSharedVault).toBeUndefined();
-    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox).not.toHaveProperty(
+      "defaultSharedVault",
+    );
   });
 
   test("reads provider and model from settings.json", () => {
@@ -372,7 +373,6 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },
     });
@@ -394,7 +394,6 @@ describe("updateGlobalSettings", () => {
         cpus: "0.5",
         memory: "1g",
         boost: { cpus: "2", memory: "4g" },
-        defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },
     });
@@ -407,13 +406,18 @@ describe("updateGlobalSettings", () => {
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });
 
-  test("saves global shared vault settings", () => {
-    updateGlobalSettings({ sandbox: { defaultSharedVault: "shared-team" } });
+  test("ignores a retired defaultSharedVault and drops it on the next write", () => {
+    const settingsPath = join(stateDir, "settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "m", thinkingLevel: "off" },
+        sandbox: { cpus: "1", defaultSharedVault: "shared-team" },
+      }),
+    );
 
-    const config = loadGlobalSettings();
-    expect(config.sandbox?.defaultSharedVault).toBe("shared-team");
-    expect(
-      JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8")).sandbox,
-    ).toMatchObject({ defaultSharedVault: "shared-team" });
+    expect(loadGlobalSettings().sandbox).toEqual({ cpus: "1" });
+    updateGlobalSettings({ model: "m2" });
+    expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox).toEqual({ cpus: "1" });
   });
 });

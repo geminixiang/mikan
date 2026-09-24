@@ -67,7 +67,7 @@ Visibility 跟随 Slack 对话类型（ADR 0008）：公开频道是 public offi
 | `/login shared delete <name>` | 删除共享配置文件。                                     |
 | `/login copy <name>`          | 将共享配置文件复制到当前对话 vault。匹配的值会被覆盖。 |
 
-共享配置文件是由运维人员管理的凭证。通过 `sandbox.defaultSharedVault` 自动继承仅限符合条件、基于成员身份信任的 image/Cloudflare 对话；GitHub 等开放触发表面不会继承它。
+共享配置文件是由运维人员管理的凭证，只能通过显式的 `/login copy <name>` 套用；已停用的 `sandbox.defaultSharedVault` 不再把它复制进新对话。
 
 ## Web portals
 

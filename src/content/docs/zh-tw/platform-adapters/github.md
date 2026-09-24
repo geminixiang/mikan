@@ -54,7 +54,7 @@ Poll loop 會使用 ETag conditional requests（304 responses 不計入 rate lim
 
 Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session；這個 magic word 在所有平台上使用同一套文法。
 
-由於任何人都能在 public repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。這會關閉 GitHub 對話的環境式 `sandbox.defaultSharedVault` 複製：它們預設不會拿到任何憑證，必須由管理員刻意為特定對話佈建 vault。見 [Vault](/zh-tw/sandbox/vault/)。
+由於任何人都能在 public repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。GitHub 對話預設不會拿到任何憑證，必須由管理員刻意為特定對話佈建 vault。見 [Vault](/zh-tw/sandbox/vault/)。
 
 ## Sessions 與回覆
 

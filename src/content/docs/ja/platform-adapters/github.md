@@ -54,7 +54,7 @@ Dedup は `<state-dir>/github-sync.json` に永続化される watermark です�
 
 comment、inline review comment、または新しい issue body は、App slug を @mention するか、bot がすでにその issue conversation に参加している場合のみ run を起動します。commenter は repo で **write permission 以上**も保持している必要があります。public repos では誰でも comment できるため、write 未満のユーザーによる mentions は完全に無視されます（permission lookups は 5 分間 cache され、失敗時は拒否します）。その他は state を作成せずにすべて無視されます。mention 付きの `stop`（または `/stop`）comment は実行中の session を停止します。この magic word の文法はすべてのプラットフォームで共通です。
 
-public repo では誰でも issue を作成できるため、GitHub は `trustModel: "open-trigger"` を報告します。これにより、GitHub conversation では ambient な `sandbox.defaultSharedVault` のコピーが無効になります。既定では認証情報を一切受け取らず、管理者が特定の conversation に対して意図的に vault をプロビジョニングする必要があります。[Vault](/ja/sandbox/vault/) を参照してください。
+public repo では誰でも issue を作成できるため、GitHub は `trustModel: "open-trigger"` を報告します。GitHub conversation は既定では認証情報を一切受け取らず、管理者が特定の conversation に対して意図的に vault をプロビジョニングする必要があります。[Vault](/ja/sandbox/vault/) を参照してください。
 
 ## Sessions と返信
 

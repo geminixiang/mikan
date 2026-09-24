@@ -11,6 +11,7 @@ any release.
 
 ### Removed
 
+- Retire `sandbox.defaultSharedVault`. New conversations no longer inherit a shared vault automatically; apply one explicitly with `/login copy <name>`, or use OpenConnector for shared machine credentials. A leftover key is ignored with a startup warning and dropped on the next settings write.
 - Remove scheduled Dream memory maintenance. Conversation `MEMORY.md` is written only by the agent and by post-run memory capture; existing `dream.json` checkpoints are no longer read (ADR 0012).
 
 ### Added

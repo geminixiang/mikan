@@ -96,7 +96,7 @@ office key は、platform 名とプラットフォームの生の conversation i
 
 ## 共有 vault
 
-`sandbox.defaultSharedVault` は `vaults/shared/` 配下の profile を指定し、それが新しい conversation の vault に初回利用時にコピーされます。この ambient なコピーが起きるのは、membership でゲートされたプラットフォーム（Slack、Discord、Telegram）で、かつ隔離された `image` と `cloudflare` のトポロジーの場合だけです。GitHub のような open-trigger な面が継承することはありません。管理者が特定の GitHub conversation に対して明示的に vault をプロビジョニングすることは引き続き可能です。
+`vaults/shared/` 配下の共有 profile は、その conversation で `/login copy <name>` を実行したときだけ適用されます。新しい conversation へ自動コピーしていた `sandbox.defaultSharedVault` は廃止され、設定されていても起動時に警告して無視し、次回の設定書き込みで削除されます。共有のマシン認証情報は OpenConnector に移行します。
 
 ## `/pi-login`
 

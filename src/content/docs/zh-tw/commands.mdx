@@ -68,7 +68,7 @@ Visibility 跟隨 Slack 對話類型（ADR 0008）：公開頻道是 public offi
 | `/login shared delete <name>` | 刪除共享 profile。                                        |
 | `/login copy <name>`          | 將共享 profile 複製到目前對話的 vault。相符的值會被覆寫。 |
 
-共享 profiles 是由 operator 管理的憑證。透過 `sandbox.defaultSharedVault` 自動繼承僅限符合資格的 membership-trust image/Cloudflare 對話；GitHub 等 open-trigger surface 不會繼承。
+共享 profiles 是由 operator 管理的憑證，只能透過明確的 `/login copy <name>` 套用；已停用的 `sandbox.defaultSharedVault` 不再把它複製進新對話。
 
 ## Web portals
 

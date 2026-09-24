@@ -16,7 +16,6 @@ import type { OfficeAddress } from "../types.js";
 import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/index.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
-import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
@@ -24,7 +23,7 @@ const LEGACY_MOUNT_TARGETS_FILE = ".mount-targets.json";
 const MOUNT_TARGETS_DIR = "vault-mount-targets";
 const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
-export function normalizeSharedVaultName(name: string): string | undefined {
+function normalizeSharedVaultName(name: string): string | undefined {
   const trimmed = name.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(trimmed)) return undefined;
   return trimmed;
@@ -495,15 +494,6 @@ export function migrateConversationVaultKeys(options: {
     migrated.push(conversationId);
   }
   return { migrated, conflicts };
-}
-
-export function allowsAmbientDefaultSharedVault(options: {
-  trustModel?: PlatformTrustModel;
-  sandboxType: SandboxConfig["type"];
-}): boolean {
-  const trustModel = options.trustModel ?? "membership";
-  if (trustModel === "open-trigger") return false;
-  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
 }
 
 export type { VaultInjection } from "./types.js";

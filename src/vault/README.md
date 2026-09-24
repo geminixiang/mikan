@@ -4,7 +4,7 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 
 ## Files
 
-- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered). Also owns what a run receives: `resolveVaultInjection` (env + file mounts, failing closed when a backend cannot mount vault files), `allowsAmbientDefaultSharedVault` (trust model × sandbox topology), and `disabledVaultManager` — the no-op manager used when an embedder constructs the runtime without a vault (reads report empty/disabled, writes throw).
+- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered). Also owns what a run receives: `resolveVaultInjection` (env + file mounts, failing closed when a backend cannot mount vault files) and `disabledVaultManager` — the no-op manager used when an embedder constructs the runtime without a vault (reads report empty/disabled, writes throw).
 - `types.ts`: The `VaultManager` interface plus `ResolvedVault`, `ResolvedVaultMount`, and `VaultInjection`.
 
 ## Vault keys
@@ -38,13 +38,13 @@ never ambient. Three identity tiers, narrowest first:
 1. **Platform bot identity** (e.g. the GitHub App): host-side, per-operation
    scoped tokens that never enter the sandbox. The default for platforms whose
    trigger surface is wide (`MessagingInfo.trustModel: "open-trigger"`).
-2. **Shared machine identity** (`sandbox.defaultSharedVault`): broad
-   convenience credentials copied into each new conversation's vault. Only
-   appropriate for `trustModel: "membership"` (Slack/Discord/Telegram) on
-   isolated sandboxes (`image` / `cloudflare`). Decided by
-   `allowsAmbientDefaultSharedVault` — not by platform name strings.
+2. **Shared machine identity**: moving to OpenConnector. Shared profiles under
+   `vaults/shared/` still apply, but only through an explicit
+   `/login copy <name>` in a conversation. The ambient `sandbox.defaultSharedVault` copy is
+   retired: the key is ignored with a startup warning and dropped on the next
+   settings write.
 3. **Personal identity** (`/pi-login` OAuth): the agent acts as a specific
    person; granted knowingly by that person, scoped to their vault.
 
 An admin can still explicitly provision a vault for any conversation
-(including open-trigger ones); only the _ambient default_ is trust-gated.
+(including open-trigger ones); nothing is copied into a vault implicitly.

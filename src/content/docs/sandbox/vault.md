@@ -98,7 +98,7 @@ The office key is derived by hashing the platform name together with the platfor
 
 ## Shared vaults
 
-`sandbox.defaultSharedVault` names a profile under `vaults/shared/` that is copied into a new conversation's vault on first use. That ambient copy only happens for membership-gated platforms (Slack, Discord, Telegram) on the isolated `image` and `cloudflare` topologies. Open-trigger surfaces such as GitHub never inherit it — an admin can still provision a vault for a specific GitHub conversation explicitly.
+Shared profiles under `vaults/shared/` are applied to a conversation only when someone runs `/login copy <name>` there. The retired `sandbox.defaultSharedVault` setting, which used to copy a profile into every new conversation automatically, is ignored (with a startup warning) and dropped on the next settings write; shared machine credentials move to OpenConnector.
 
 ## `/pi-login`
 

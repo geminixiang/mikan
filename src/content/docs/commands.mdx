@@ -71,7 +71,7 @@ All vault commands are DM-only:
 | `/login shared delete <name>` | Delete a shared profile.                                                                    |
 | `/login copy <name>`          | Copy a shared profile into the current conversation vault. Matching values are overwritten. |
 
-Shared profiles are operator-managed credentials. Automatic inheritance through `sandbox.defaultSharedVault` is restricted to eligible membership-trust image/Cloudflare conversations; open-trigger surfaces such as GitHub do not inherit it.
+Shared profiles are operator-managed credentials and apply only through an explicit `/login copy <name>`; the retired `sandbox.defaultSharedVault` no longer copies them into new conversations.
 
 ## Web portals
 

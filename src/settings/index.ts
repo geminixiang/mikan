@@ -40,7 +40,6 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
       cpus: "2",
       memory: "4g",
     },
-    defaultSharedVault: "",
   },
 };
 
@@ -150,14 +149,32 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
   };
 }
 
+let reportedRetiredDefaultSharedVault = false;
+
+function reportRetiredDefaultSharedVault(sandbox: SandboxFileSettings): void {
+  if (reportedRetiredDefaultSharedVault || !sandbox.defaultSharedVault?.trim()) return;
+  reportedRetiredDefaultSharedVault = true;
+  log.logWarning(
+    "sandbox.defaultSharedVault is retired and ignored",
+    "Conversations no longer inherit a shared vault automatically. Use /login copy <name> per conversation or OpenConnector; the key is dropped on the next settings write.",
+  );
+}
+
 function normalizeSandboxSettings(sandbox: SandboxFileSettings): SandboxSettings {
-  const defaultSharedVault = sandbox.defaultSharedVault?.trim();
+  reportRetiredDefaultSharedVault(sandbox);
   return {
     ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
     ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
-    ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
+}
+
+function withoutRetiredSandboxKeys(
+  sandbox: SandboxFileSettings | undefined,
+): SandboxFileSettings | undefined {
+  if (!sandbox) return undefined;
+  const { defaultSharedVault: _retired, ...rest } = sandbox;
+  return rest;
 }
 
 function mergeSandboxSettings(
@@ -366,7 +383,8 @@ function patchSettingsConfig(
       ...existing.sentry,
       ...(config.sentryDsn !== undefined ? { dsn: config.sentryDsn } : {}),
     },
-    sandbox: mergeSandboxSettings(existing.sandbox, config.sandbox) ?? {},
+    sandbox:
+      mergeSandboxSettings(withoutRetiredSandboxKeys(existing.sandbox), config.sandbox) ?? {},
     slack: {
       ...existing.slack,
       ...config.slack,

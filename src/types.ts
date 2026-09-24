@@ -275,7 +275,6 @@ export interface SandboxSettings {
   cpus?: string;
   memory?: string;
   boost?: { cpus?: string; memory?: string };
-  defaultSharedVault?: string;
 }
 
 export interface AgentConfig {
