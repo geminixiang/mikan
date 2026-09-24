@@ -1,5 +1,7 @@
 # src/vault
 
+Scope: the Vault holds only the development keys that R&D services need injected into a sandbox container. Other external credentials go through OpenConnector; shared profiles and `/pi-login` OAuth are transitional ([ADR 0013](../../docs/adr/0013-vault-scoped-to-development-keys.md)).
+
 File-backed credential vault for env secrets, secret files, shared profiles, and sandbox mounts.
 
 ## Files
