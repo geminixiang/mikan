@@ -6,7 +6,7 @@ import { cliCommand, defaultStateDir, nonEmptyValue, resolveStateDir } from "./a
 
 export type { BootPlan } from "./types.js";
 
-const SUBCOMMANDS = ["office", "sessions", "env"] as const;
+const SUBCOMMANDS = ["office", "sessions", "sandbox", "env"] as const;
 
 interface BootOptions {
   stateDir?: string;
@@ -65,6 +65,7 @@ function subcommandPlan(args: string[]): BootPlan | undefined {
     mode,
     ...(mode === "office" ? { officeArgs: args.slice(1) } : {}),
     ...(mode === "sessions" ? { sessionsArgs: args.slice(1) } : {}),
+    ...(mode === "sandbox" ? { sandboxArgs: args.slice(1) } : {}),
     stateDir,
     workingDir: join(stateDir, "workspace"),
     workingDirExplicit: false,
@@ -87,6 +88,7 @@ export function helpText(): string {
 Commands:
   mikan office <list|claim|migrate-openconnector|migrate-events|migrate-door-policy>  Inspect offices, claim legacy directories, migrate legacy state.
   mikan sessions migrate     Migrate legacy sessions (stop the daemon first).
+  mikan sandbox <status|diff|migrate> --image <image>  Inspect and upgrade image:* sandboxes (stop the daemon before migrate).
   mikan env                  Show environment-variable inventory.
   mikan onboard              Interactive first-run setup.
 

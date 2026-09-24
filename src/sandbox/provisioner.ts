@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { legacyConversationResourceKey, sanitizeIdentitySegment } from "./identity.js";
-import { GUEST_PUBLIC_OFFICES_DIR } from "./layout.js";
+import { GUEST_HOME, GUEST_PUBLIC_OFFICES_DIR } from "./layout.js";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -11,7 +11,7 @@ const execFileAsync = promisify(execFile);
 type ExecFileAsync = typeof execFileAsync;
 
 type ContainerStatus = "running" | "stopped" | "missing";
-type DriftReason = "binds" | "mount-content" | "network";
+type DriftReason = "binds" | "mount-content" | "network" | "image";
 
 function isDockerNotFoundError(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
@@ -40,6 +40,8 @@ export type {
   ContainerBindTranslator,
   ContainerMount,
   DockerContainerManagerOptions,
+  HomeVolumeMigrationOutcome,
+  ManagedContainerInventoryEntry,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
@@ -48,6 +50,8 @@ import type {
   ContainerBindTranslator,
   ContainerMount,
   DockerContainerManagerOptions,
+  HomeVolumeMigrationOutcome,
+  ManagedContainerInventoryEntry,
   ProvisionOptions,
   ResourceLimits,
   SandboxLimitStatus,
@@ -69,6 +73,7 @@ export class DockerContainerManager {
   private inflight = new Map<string, Promise<string>>();
   private bindTranslator?: ContainerBindTranslator;
   private layoutMigrations = new Map<string, Promise<void>>();
+  private keyQueues = new Map<string, Promise<unknown>>();
   private static readonly MANAGED_LABEL = "mikan.managed=true";
   private static readonly IMAGE_MODE_LABEL = "mikan.sandbox=image";
   private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
@@ -104,11 +109,28 @@ export class DockerContainerManager {
     return `mikan-sandbox-net-${containerKey}`;
   }
 
+  static homeVolumeName(containerKey: string): string {
+    return `mikan-home-${containerKey}`;
+  }
+
+  private serialize<T>(containerKey: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.keyQueues.get(containerKey) ?? Promise.resolve();
+    const next = previous.then(task, task);
+    const settled = next.catch(() => undefined);
+    this.keyQueues.set(containerKey, settled);
+    void settled.then(() => {
+      if (this.keyQueues.get(containerKey) === settled) this.keyQueues.delete(containerKey);
+    });
+    return next;
+  }
+
   async provision(containerKey: string, options: ProvisionOptions = {}): Promise<string> {
     const existing = this.inflight.get(containerKey);
     if (existing) return existing;
 
-    const pending = this.provisionInner(containerKey, options).finally(() => {
+    const pending = this.serialize(containerKey, () =>
+      this.provisionInner(containerKey, options),
+    ).finally(() => {
       this.inflight.delete(containerKey);
     });
     this.inflight.set(containerKey, pending);
@@ -123,11 +145,21 @@ export class DockerContainerManager {
     const status = await this.inspectStatus(containerName);
 
     try {
+      const binds = status === "missing" ? [] : await this.inspectBindMounts(containerName);
+      const homeVolume = this.hasHomeVolumeBind(containerKey, binds);
       const drift =
         status === "missing"
           ? undefined
-          : await this.runtimeDrift(containerKey, containerName, mounts);
-      if (drift) {
+          : await this.runtimeDrift(containerKey, containerName, mounts, {
+              binds,
+              status,
+              homeVolume,
+            });
+      if (drift && homeVolume) {
+        log.logInfo(`Container ${containerName} is out of date (${drift}); replacing container`);
+        await this.replaceHomeVolumeContainer(containerKey, containerName, mounts, options);
+        log.logInfo(`Container ${containerName} replaced from image ${this.image}`);
+      } else if (drift) {
         log.logInfo(
           `Container ${containerName} configuration changed (${drift}); recreating container`,
         );
@@ -187,7 +219,11 @@ export class DockerContainerManager {
     return this.boostLimits;
   }
 
-  async stop(containerKey: string): Promise<void> {
+  stop(containerKey: string): Promise<void> {
+    return this.serialize(containerKey, () => this.stopInner(containerKey));
+  }
+
+  private async stopInner(containerKey: string): Promise<void> {
     const containerName = this.getContainerName(containerKey);
     try {
       await this.execFileImpl("docker", ["stop", containerName]);
@@ -203,7 +239,11 @@ export class DockerContainerManager {
     }
   }
 
-  async remove(containerKey: string): Promise<void> {
+  remove(containerKey: string, options: { purgeHome?: boolean } = {}): Promise<void> {
+    return this.serialize(containerKey, () => this.removeInner(containerKey, options));
+  }
+
+  private async removeInner(containerKey: string, options: { purgeHome?: boolean }): Promise<void> {
     const containerName = this.getContainerName(containerKey);
     const networkName = DockerContainerManager.networkName(containerKey);
 
@@ -227,6 +267,7 @@ export class DockerContainerManager {
     }
 
     await this.removeMigrateSnapshot(containerName);
+    if (options.purgeHome) await this.removeHomeVolume(containerKey);
 
     this.state.delete(containerKey);
     this.boostedKeys.delete(containerKey);
@@ -251,11 +292,13 @@ export class DockerContainerManager {
       names.map(async (containerName) => {
         const details = await this.inspectContainerDetails(containerName);
         if (!details?.conversationId || !conversationIds.has(details.conversationId)) return;
-        await this.forceRemoveContainer(
+        const removed = await this.forceRemoveContainer(
           containerName,
           `Removed container ${containerName} after office migration`,
           `Failed to remove container ${containerName} after office migration`,
         );
+        const containerKey = this.containerKeyFromContainerName(containerName);
+        if (removed && containerKey) await this.removeHomeVolume(containerKey);
       }),
     );
   }
@@ -599,6 +642,7 @@ export class DockerContainerManager {
     options: ProvisionOptions,
   ): Promise<void> {
     const networkName = await this.ensureNetwork(containerKey);
+    const homeVolume = await this.ensureHomeVolume(containerKey);
     log.logInfo(`Creating container ${containerName} from image ${this.image}`);
     const labels = [
       "--label",
@@ -635,6 +679,8 @@ export class DockerContainerManager {
       "1024",
       ...labels,
       ...this.resourceLimitArgs(this.effectiveLimits(containerKey)),
+      "-v",
+      `${homeVolume}:${GUEST_HOME}`,
       ...this.mountArgs(mounts),
       this.image,
       "sleep",
@@ -690,19 +736,21 @@ export class DockerContainerManager {
     containerKey: string,
     containerName: string,
     mounts: ContainerMount[],
+    current: { binds: readonly string[]; status: ContainerStatus; homeVolume: boolean },
   ): Promise<DriftReason | undefined> {
-    if (await this.hasBindMountDrift(containerName, mounts)) return "binds";
+    const { binds, status, homeVolume } = current;
+    if (this.hasBindMountDrift(binds, mounts)) return "binds";
     if (await this.hasMountSignatureDrift(containerName, mounts)) return "mount-content";
     if (await this.hasNetworkModeDrift(containerKey, containerName)) return "network";
+    if (homeVolume && status === "stopped" && (await this.hasImageDrift(containerName))) {
+      return "image";
+    }
     return undefined;
   }
 
-  private async hasBindMountDrift(
-    containerName: string,
-    mounts: ContainerMount[],
-  ): Promise<boolean> {
+  private hasBindMountDrift(binds: readonly string[], mounts: ContainerMount[]): boolean {
     const expected = this.expectedBinds(mounts);
-    const actual = await this.inspectBindMounts(containerName);
+    const actual = binds.filter((bind) => !this.isHomeVolumeBind(bind));
     return !this.sameBinds(expected, actual);
   }
 
@@ -781,6 +829,175 @@ export class DockerContainerManager {
     }
 
     return [...parsed].toSorted();
+  }
+
+  private isHomeVolumeBind(bind: string): boolean {
+    const separator = bind.indexOf(":");
+    if (separator === -1) return false;
+    const source = bind.slice(0, separator);
+    const target = bind.slice(separator + 1).replace(/:r[ow]$/, "");
+    return source.startsWith(DockerContainerManager.homeVolumeName("")) && target === GUEST_HOME;
+  }
+
+  private hasHomeVolumeBind(containerKey: string, binds: readonly string[]): boolean {
+    const expected = `${DockerContainerManager.homeVolumeName(containerKey)}:${GUEST_HOME}`;
+    return binds.includes(expected);
+  }
+
+  private async hasHomeVolume(containerKey: string, containerName: string): Promise<boolean> {
+    return this.hasHomeVolumeBind(containerKey, await this.inspectBindMounts(containerName));
+  }
+
+  private async hasImageDrift(containerName: string): Promise<boolean> {
+    const desired = await this.localImageId();
+    if (!desired) return false;
+    const { stdout } = await this.execFileImpl("docker", [
+      "inspect",
+      "-f",
+      "{{.Image}}",
+      containerName,
+    ]);
+    return stdout.trim() !== desired;
+  }
+
+  private async localImageId(): Promise<string | undefined> {
+    try {
+      const { stdout } = await this.execFileImpl("docker", [
+        "image",
+        "inspect",
+        "-f",
+        "{{.Id}}",
+        this.image,
+      ]);
+      return this.normalizeDockerValue(stdout.trim());
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async ensureHomeVolume(containerKey: string): Promise<string> {
+    const volumeName = DockerContainerManager.homeVolumeName(containerKey);
+    await this.execFileImpl("docker", [
+      "volume",
+      "create",
+      "--label",
+      DockerContainerManager.MANAGED_LABEL,
+      "--label",
+      `${DockerContainerManager.VAULT_ID_LABEL_KEY}=${containerKey}`,
+      volumeName,
+    ]);
+    return volumeName;
+  }
+
+  private async removeHomeVolume(containerKey: string): Promise<void> {
+    const volumeName = DockerContainerManager.homeVolumeName(containerKey);
+    try {
+      await this.execFileImpl("docker", ["volume", "rm", volumeName]);
+      log.logInfo(`Home volume ${volumeName} removed`);
+    } catch (err) {
+      if (isDockerNotFoundError(err)) return;
+      log.logWarning(
+        `Failed to remove home volume ${volumeName}`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private async replaceHomeVolumeContainer(
+    containerKey: string,
+    containerName: string,
+    mounts: ContainerMount[],
+    options: ProvisionOptions,
+  ): Promise<void> {
+    const removed = await this.forceRemoveContainer(
+      containerName,
+      `Container ${containerName} removed for replacement`,
+      `Failed to remove container ${containerName} for replacement`,
+    );
+    if (!removed) throw new Error(`Failed to remove container ${containerName} for replacement`);
+    await this.runContainer(containerKey, containerName, mounts, options);
+  }
+
+  async inventory(): Promise<ManagedContainerInventoryEntry[]> {
+    const names = await this.listContainerNamesByLabel();
+    const entries: ManagedContainerInventoryEntry[] = [];
+    for (const containerName of names) {
+      const containerKey = this.containerKeyFromContainerName(containerName);
+      const status = await this.inspectStatus(containerName);
+      if (status === "missing") continue;
+      const homeVolume = containerKey
+        ? await this.hasHomeVolume(containerKey, containerName)
+        : false;
+      entries.push({
+        containerName,
+        ...(containerKey ? { containerKey } : {}),
+        running: status === "running",
+        homeVolume,
+        imageStale: await this.hasImageDrift(containerName),
+      });
+    }
+    return entries;
+  }
+
+  async systemChanges(containerName: string): Promise<string[]> {
+    const { stdout } = await this.execFileImpl("docker", ["diff", containerName]);
+    return this.parseNameLines(stdout).filter((line) => {
+      const path = line.slice(2);
+      return !this.isUnderGuestPath(path, GUEST_HOME) && !this.isUnderGuestPath(path, "/workspace");
+    });
+  }
+
+  private isUnderGuestPath(path: string, root: string): boolean {
+    return path === root || path.startsWith(`${root}/`);
+  }
+
+  migrateToHomeVolume(containerKey: string): Promise<HomeVolumeMigrationOutcome> {
+    return this.serialize(containerKey, () => this.migrateToHomeVolumeInner(containerKey));
+  }
+
+  private async migrateToHomeVolumeInner(
+    containerKey: string,
+  ): Promise<HomeVolumeMigrationOutcome> {
+    const containerName = DockerContainerManager.containerName(containerKey);
+    const status = await this.inspectStatus(containerName);
+    if (status === "missing") return "missing";
+    if (await this.hasHomeVolume(containerKey, containerName)) return "already-migrated";
+
+    const details = await this.inspectContainerDetails(containerName);
+    const mounts = (await this.inspectBindMounts(containerName))
+      .filter((bind) => !this.isHomeVolumeBind(bind))
+      .map(bindSpecToMount);
+    const snapshotImage = `${DockerContainerManager.MIGRATE_IMAGE_PREFIX}:${containerName}`;
+    log.logInfo(`Migrating container ${containerName} to a home volume`);
+    await this.execFileImpl("docker", ["commit", containerName, snapshotImage]);
+    const homeVolume = await this.ensureHomeVolume(containerKey);
+    await this.execFileImpl("docker", [
+      "run",
+      "--rm",
+      "--network",
+      "none",
+      "-v",
+      `${homeVolume}:${GUEST_HOME}`,
+      snapshotImage,
+      "true",
+    ]);
+    const removed = await this.forceRemoveContainer(
+      containerName,
+      `Container ${containerName} removed for home-volume migration`,
+      `Failed to remove container ${containerName} for home-volume migration`,
+    );
+    if (!removed) throw new Error(`Failed to remove container ${containerName}`);
+    await this.runContainer(
+      containerKey,
+      containerName,
+      mounts,
+      details?.conversationId ? { conversationId: details.conversationId } : {},
+    );
+    if (status === "stopped") await this.execFileImpl("docker", ["stop", containerName]);
+    await this.removeMigrateSnapshot(containerName);
+    this.setState(containerKey, status === "stopped" ? "stopped" : "running", containerName);
+    log.logInfo(`Container ${containerName} migrated to home volume ${homeVolume}`);
+    return "migrated";
   }
 
   private async hasNetworkModeDrift(containerKey: string, containerName: string): Promise<boolean> {

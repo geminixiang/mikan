@@ -31,6 +31,30 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - vault file credential は、各ファイル名から推定される target に従って自動で container へ bind mount されます（[Vault](/ja/sandbox/vault/) を参照）
 - idle containers は 10 分ごとに確認され、少なくとも 10 分間利用がないと停止します。scan timing により、最後に追跡された利用から約 10〜20 分後に停止します
 
+## サンドボックスイメージの更新
+
+管理コンテナはイメージと、office ごとの home volume `mikan-home-<key>`（`/root` にマウント）で構成されます。
+ワークスペースのマウントと `/root`（npm/uv/pip のキャッシュ、`~/.local`、dotfiles）は更新後も残り、それ以外に
+コンテナのファイルシステムへ書き込んだもの（`apt install`、`/etc` の編集、`/tmp`）は残りません。
+
+1. mikan が使うタグで新しいイメージをホストに pull します（`docker pull …:latest`）。mikan 自身は pull しません。
+   ロールバック用に旧イメージ ID を残してください。
+2. home volume を持つコンテナは自動で新イメージに切り替わります。実行中のコンテナは中断されず、アイドル停止後の
+   次のメッセージで同じ volume を使って `docker rm` + `docker run` で置き換えられます。
+3. home volume 導入前に作られたコンテナは自動では変更されません。daemon を停止し、少しずつ確認・移行します：
+
+```bash
+mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
+```
+
+`status` は各コンテナの `legacy`/`home-volume` と `current-image`/`stale-image` を表示し、`diff` は更新で失われる
+システムパスを列挙し、`migrate` は現在の `/root` で home volume を初期化してから現在のイメージで再作成します。
+
+ロールバック：タグを旧イメージ ID に戻せば再度置き換えられ、home volume はそのまま残ります。`/login` はコンテナを
+再作成しますが home volume は保持します。
+
 ## Mount と conversation office
 
 conversation の office directory は `/workspace/<office-key>` に読み書き可能で bind mount されます。

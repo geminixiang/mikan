@@ -366,6 +366,16 @@ export interface ProvisionOptions {
   conversationId?: string;
 }
 
+export interface ManagedContainerInventoryEntry {
+  containerName: string;
+  containerKey?: string;
+  running: boolean;
+  homeVolume: boolean;
+  imageStale: boolean;
+}
+
+export type HomeVolumeMigrationOutcome = "migrated" | "already-migrated" | "missing";
+
 export interface DockerContainerManagerOptions {
   limits?: ResourceLimits;
   boostLimits?: ResourceLimits;

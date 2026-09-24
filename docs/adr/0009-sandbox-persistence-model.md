@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # A managed sandbox is an image plus a home volume
@@ -43,6 +43,8 @@ The sandbox serves a team sharing one VM. Its job is resource limits, filesystem
 5. Once no containers without a volume remain, delete the commit-based recreate path (`mikan-migrate` images, the `mikan.migrate-binds` label, stale-mountpoint cleanup).
 
 Existing containers are left untouched until step 4.
+
+Progress (2026-09-24): steps 1, 3, and 4 are implemented. Step 4 ships as `mikan sandbox status|diff|migrate`. Steps 2 and 5 are still open. The audit is in `docs/research/sandbox-container-management-2026-09.md`.
 
 ## Considered Options
 

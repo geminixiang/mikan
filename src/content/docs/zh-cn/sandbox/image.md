@@ -31,6 +31,28 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - vault 文件凭证会自动 bind mount 到容器中，目标由每个文件的名称推断（参阅 [Vault](/zh-cn/sandbox/vault/)）
 - 每 10 分钟检查一次空闲容器，并在至少 10 分钟无活动后停止；根据扫描时间，停止大约发生在最后一次跟踪使用后的 10–20 分钟
 
+## 升级沙盒镜像
+
+受管容器由“镜像”加上每个 office 一个的 home volume `mikan-home-<key>`（挂载在 `/root`）组成。工作区挂载与
+`/root`（npm/uv/pip 缓存、`~/.local`、dotfiles）在升级后保留；其他写入容器文件系统的内容（`apt install`、
+`/etc` 修改、`/tmp`）不保留。
+
+1. 在主机上以 mikan 使用的 tag 拉取新镜像（`docker pull …:latest`）。mikan 不会自行 pull；保留旧镜像 ID 以便回滚。
+2. 有 home volume 的容器会自动换上新镜像：运行中的容器不会被中断，闲置停止后，下一条消息会用同一个 volume
+   `docker rm` + `docker run` 替换它。
+3. 在 home volume 之前创建的旧容器不会被自动处理。先停止 daemon，再小批量检查并迁移：
+
+```bash
+mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
+```
+
+`status` 标示每个容器是 `legacy`/`home-volume`、`current-image`/`stale-image`；`diff` 列出升级会丢弃的系统路径；
+`migrate` 先用容器当前的 `/root` 填充 home volume，再用当前镜像重建容器。
+
+回滚：把 tag 指回旧镜像 ID，容器会再次被替换，home volume 原样保留。`/login` 会重建容器但保留 home volume。
+
 ## 挂载与对话办公室
 
 该对话的办公室目录以可读写方式 bind mount 到 `/workspace/<office-key>`，其中 office key 就是在主机上

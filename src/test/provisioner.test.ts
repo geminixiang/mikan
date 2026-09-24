@@ -289,13 +289,14 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
     await manager.provision("slack-u123");
     await manager.provision("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(7, "docker", [
       "run",
       "-d",
       "--name",
@@ -314,6 +315,8 @@ describe("DockerContainerManager", () => {
       "mikan.sandbox=image",
       "--label",
       "mikan.vault-id=slack-u123",
+      "-v",
+      "mikan-home-slack-u123:/root",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -326,6 +329,7 @@ describe("DockerContainerManager", () => {
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(new Error("No such network"))
       .mockResolvedValueOnce({ stdout: "network-id\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
@@ -350,7 +354,7 @@ describe("DockerContainerManager", () => {
       "mikan.vault-id=alice",
       "mikan-sandbox-net-alice",
     ]);
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
       "run",
       "-d",
       "--name",
@@ -374,12 +378,14 @@ describe("DockerContainerManager", () => {
       "--label",
       expect.stringMatching(/^mikan\.mount-signature=[a-f0-9]{64}$/),
       "-v",
+      "mikan-home-alice:/root",
+      "-v",
       "/tmp/vaults/alice/.ssh:/root/.ssh",
       "ubuntu:24.04",
       "sleep",
       "infinity",
     ]);
-    expect(execMock).toHaveBeenNthCalledWith(5, "docker", ["stop", "alice-box"]);
+    expect(execMock).toHaveBeenNthCalledWith(6, "docker", ["stop", "alice-box"]);
   });
 
   test("a read-only mount gets the :ro bind suffix", async () => {
@@ -388,6 +394,7 @@ describe("DockerContainerManager", () => {
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(new Error("No such network"))
       .mockResolvedValueOnce({ stdout: "network-id\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
 
@@ -403,7 +410,7 @@ describe("DockerContainerManager", () => {
       conversationId: "C1",
     });
 
-    const runArgs = execMock.mock.calls[3][1];
+    const runArgs = execMock.mock.calls[4][1];
     expect(runArgs).toContain("/state/shared/data:/opt/shared/data:ro");
     expect(runArgs).toContain("/work/C1:/workspace/C1");
   });
@@ -718,6 +725,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockReturnValueOnce(startDeferred.promise);
 
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
@@ -728,9 +736,9 @@ describe("DockerContainerManager", () => {
     startDeferred.resolve({ stdout: "new-container-id\n" });
     await Promise.all([first, second]);
 
-    expect(execMock).toHaveBeenCalledTimes(3);
+    expect(execMock).toHaveBeenCalledTimes(4);
     expect(execMock.mock.calls[0][1][0]).toBe("inspect");
-    expect(execMock.mock.calls[2][1][0]).toBe("run");
+    expect(execMock.mock.calls[3][1][0]).toBe("run");
   });
 
   test("failed docker start clears cached state and allows re-inspection", async () => {
@@ -760,6 +768,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
@@ -769,7 +778,7 @@ describe("DockerContainerManager", () => {
 
     await manager.provision("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(3, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
       "run",
       "-d",
       "--name",
@@ -794,11 +803,13 @@ describe("DockerContainerManager", () => {
       "512m",
       "--memory-swap",
       "512m",
+      "-v",
+      "mikan-home-slack-u123:/root",
       "ubuntu:24.04",
       "sleep",
       "infinity",
     ]);
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
       "update",
       "--cpus",
       "0.5",
@@ -886,6 +897,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
@@ -896,7 +908,7 @@ describe("DockerContainerManager", () => {
     await manager.setLimits("slack-u123", { cpus: "2" });
     await manager.provision("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(3, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(4, "docker", [
       "run",
       "-d",
       "--name",
@@ -921,6 +933,8 @@ describe("DockerContainerManager", () => {
       "1g",
       "--memory-swap",
       "1g",
+      "-v",
+      "mikan-home-slack-u123:/root",
       "ubuntu:24.04",
       "sleep",
       "infinity",
@@ -987,6 +1001,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockRejectedValueOnce(new Error("docker update unsupported"));
     const manager = new DockerContainerManager("ubuntu:24.04", {
@@ -1002,6 +1017,7 @@ describe("DockerContainerManager", () => {
       .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
+      .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" })
       .mockResolvedValueOnce({ stdout: "network removed\n" });
@@ -1010,8 +1026,8 @@ describe("DockerContainerManager", () => {
     await manager.provision("slack-u123");
     await manager.remove("slack-u123");
 
-    expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
-    expect(execMock).toHaveBeenNthCalledWith(5, "docker", [
+    expect(execMock).toHaveBeenNthCalledWith(5, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
+    expect(execMock).toHaveBeenNthCalledWith(6, "docker", [
       "network",
       "rm",
       "mikan-sandbox-net-slack-u123",

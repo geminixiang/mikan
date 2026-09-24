@@ -31,6 +31,33 @@ Features:
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
 
+## Upgrading the sandbox image
+
+A managed container is the image plus a per-office home volume `mikan-home-<key>` mounted at
+`/root`. Workspace mounts and `/root` (npm/uv/pip caches, `~/.local`, dotfiles) survive an upgrade;
+anything else written to the container filesystem (`apt install`, `/etc` edits, `/tmp`) does not.
+
+1. Pull the new image on the host under the tag mikan runs with (`docker pull …:latest`). mikan never
+   pulls by itself; keep the previous image ID around for rollback.
+2. Containers created with a home volume pick up the new image automatically: a running container
+   is never interrupted, and once it has been stopped for idleness, the next message replaces it
+   (`docker rm` + `docker run` with the same volume).
+3. Containers created before home volumes are left alone. With the daemon stopped, inspect and
+   migrate them in small batches:
+
+```bash
+mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
+mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
+```
+
+`status` lists each container as `legacy`/`home-volume` and `current-image`/`stale-image`. `diff`
+lists the system paths an upgrade will discard. `migrate` seeds the home volume from the
+container's current `/root`, then recreates it from the current image.
+
+Rollback: re-tag the previous image ID and let containers be replaced again; the home volume is
+kept as-is. `/login` recreates the container but keeps its home volume.
+
 ## Mounts and the conversation office
 
 The conversation's office directory is bind-mounted read-write at `/workspace/<office-key>`, where
@@ -42,7 +69,8 @@ whole workspace root at `/workspace`.
 
 Changing the door policy does not reset the container. When the desired mounts no longer match the
 running container, mikan snapshots it, recreates it with the translated mounts, and starts it again,
-so anything installed or written in the container's own filesystem survives the change. The same
+so anything installed or written in the container's own filesystem survives the change. A container
+with a home volume is instead recreated from the current image with the same volume, keeping `/root`. The same
 path covers the office-directory rename performed by the boot-time layout migration.
 
 ## Vault and container keys

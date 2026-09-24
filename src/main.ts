@@ -41,6 +41,7 @@ import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.
 import { FileVaultManager } from "./vault/index.js";
 import { runOfficeCommand } from "./cli/office.js";
 import { runSessionsCommand } from "./cli/sessions.js";
+import { runSandboxCommand } from "./cli/sandbox.js";
 import {
   buildContainerBindTranslator,
   createWorkspace,
@@ -169,6 +170,10 @@ if (plan.mode === "office") {
 
 if (plan.mode === "sessions") {
   process.exit(await runSessionsCommand(plan.sessionsArgs ?? []));
+}
+
+if (plan.mode === "sandbox") {
+  process.exit(await runSandboxCommand(plan.sandboxArgs ?? []));
 }
 
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
