@@ -225,6 +225,21 @@ export class GithubClient {
     return reviews!;
   }
 
+  async submitUserReview(
+    owner: string,
+    repo: string,
+    number: number,
+    body: string,
+    token: string,
+  ): Promise<{ html_url: string }> {
+    const review = await this.rawRequest<{ html_url: string }>(
+      "POST",
+      `/repos/${owner}/${repo}/pulls/${number}/reviews`,
+      { auth: `Bearer ${token}`, body: { body, event: "COMMENT" } },
+    );
+    return review!;
+  }
+
   async listIssueComments(
     owner: string,
     repo: string,

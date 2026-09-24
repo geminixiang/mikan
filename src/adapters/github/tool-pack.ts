@@ -3,6 +3,7 @@ import { createGithubPrTool } from "./tools/pr.js";
 import { createGithubIssueTool } from "./tools/issue.js";
 import { createGithubReadTool } from "./tools/read.js";
 import { createGithubReviewReplyTool } from "./tools/review-reply.js";
+import { createGithubSubmitReviewTool } from "./tools/submit-review.js";
 import { createGithubSyncTool } from "./tools/sync.js";
 import type { PlatformToolPack } from "../../harness/tools/types.js";
 import type { PlatformGithubOps } from "./types.js";
@@ -12,6 +13,8 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
   const { tool: githubChecksTool, setGithubChecksFunction } = createGithubChecksTool();
   const { tool: githubReviewReplyTool, setGithubReviewReplyFunction } =
     createGithubReviewReplyTool();
+  const { tool: githubSubmitReviewTool, setGithubSubmitReviewFunction } =
+    createGithubSubmitReviewTool();
   const { tool: githubSyncTool, setGithubSyncFunction } = createGithubSyncTool();
   const { tool: githubReadTool, setGithubReadFunction } = createGithubReadTool();
   const { tool: githubIssueTool, setGithubIssueFunction } = createGithubIssueTool();
@@ -21,6 +24,7 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
       githubPrTool,
       githubChecksTool,
       githubReviewReplyTool,
+      githubSubmitReviewTool,
       githubSyncTool,
       githubReadTool,
       githubIssueTool,
@@ -30,6 +34,7 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
         setGithubPrFunction(null);
         setGithubChecksFunction(null);
         setGithubReviewReplyFunction(null);
+        setGithubSubmitReviewFunction(null);
         setGithubSyncFunction(null);
         setGithubReadFunction(null);
         setGithubIssueFunction(null);
@@ -43,6 +48,7 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
       setGithubReviewReplyFunction((commentId, body) =>
         ops.replyToReviewThread(conversationId, commentId, body),
       );
+      setGithubSubmitReviewFunction((body) => ops.submitReview(conversationId, body));
       setGithubSyncFunction((branch) => ops.syncRepo(conversationId, branch));
       setGithubReadFunction((request) => ops.readGithub(conversationId, request));
       setGithubIssueFunction((request) => ops.manageIssue(conversationId, request));

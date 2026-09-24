@@ -14,6 +14,8 @@ export interface GithubBotConfig {
   pollIntervalMs: number;
   workspace: Workspace;
   syncStatePath: string;
+  agentLogin?: string;
+  agentToken?: string;
 }
 
 interface GithubRepoSyncState {
@@ -26,6 +28,7 @@ interface GithubRepoSyncState {
 
 export interface GithubSyncState {
   repos: Record<string, GithubRepoSyncState>;
+  seenDeliveries?: string[];
 }
 
 export interface GithubRepoRef {
@@ -247,6 +250,7 @@ export interface GithubIssueRequest {
 export type GithubSyncFn = (branch?: string) => Promise<string>;
 
 export type GithubReviewReplyFn = (commentId: number, body: string) => Promise<{ url: string }>;
+export type GithubSubmitReviewFn = (body: string) => Promise<{ url: string }>;
 
 export type GithubReadFn = (request: GithubReadRequest) => Promise<GithubReadResult>;
 
@@ -261,6 +265,7 @@ export interface PlatformGithubOps {
     commentId: number,
     body: string,
   ): Promise<{ url: string }>;
+  submitReview(conversationId: string, body: string): Promise<{ url: string }>;
   syncRepo(conversationId: string, branch?: string): Promise<string>;
   readGithub(conversationId: string, request: GithubReadRequest): Promise<GithubReadResult>;
   manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string>;
@@ -269,4 +274,5 @@ export interface PlatformGithubOps {
 export interface GithubWebhookOptions {
   secret: string;
   onPoke: () => void;
+  onNativeRequest?: (event: string, deliveryId: string, payload: unknown) => Promise<void>;
 }

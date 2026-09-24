@@ -76,6 +76,36 @@ export async function handleGithubWebhookRequest(
     res.end(JSON.stringify({ ok: true }));
     return true;
   }
+  if ((event === "issues" || event === "pull_request") && options.onNativeRequest) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(body.toString("utf-8"));
+    } catch {
+      res.writeHead(400).end();
+      return true;
+    }
+    const action =
+      typeof payload === "object" && payload !== null && "action" in payload
+        ? payload.action
+        : undefined;
+    if (action !== (event === "issues" ? "assigned" : "review_requested")) {
+      res.writeHead(202).end();
+      options.onPoke();
+      return true;
+    }
+    const deliveryId = req.headers["x-github-delivery"];
+    if (typeof deliveryId !== "string" || !/^[a-zA-Z0-9-]{1,100}$/.test(deliveryId)) {
+      res.writeHead(400).end();
+      return true;
+    }
+    try {
+      await options.onNativeRequest(event, deliveryId, payload);
+    } catch (error) {
+      log.logWarning("GitHub webhook: native request processing failed", String(error));
+      res.writeHead(500).end();
+      return true;
+    }
+  }
   res.writeHead(202).end();
   if (typeof event === "string" && POKE_EVENTS.has(event)) {
     options.onPoke();

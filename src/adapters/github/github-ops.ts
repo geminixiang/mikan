@@ -48,7 +48,7 @@ export async function fetchPrHeadBranch(
 export class GithubOps implements PlatformGithubOps {
   constructor(
     private readonly client: GithubClient,
-    private readonly config: { workspace: Workspace },
+    private readonly config: { workspace: Workspace; agentToken?: string },
   ) {}
 
   private repoDir(conversationId: string): string {
@@ -329,6 +329,17 @@ export class GithubOps implements PlatformGithubOps {
       }
       throw err;
     }
+  }
+
+  async submitReview(conversationId: string, body: string): Promise<{ url: string }> {
+    if (!this.config.agentToken)
+      throw new Error("GITHUB_AGENT_TOKEN is required to submit a review as the assigned account.");
+    if (!body.trim()) throw new Error("Review body must not be empty.");
+    const ref = parseGithubConversationId(conversationId);
+    const review = await githubRetry(() =>
+      this.client.submitUserReview(ref.owner, ref.repo, ref.number, body, this.config.agentToken!),
+    );
+    return { url: review.html_url };
   }
 
   async getJobLog(conversationId: string, jobId: number): Promise<string> {

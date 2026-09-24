@@ -45,12 +45,19 @@ full rationale and decisions).
 - `GITHUB_REPOS` — optional comma-separated `owner/repo` list; defaults to
   every repository the installation can access.
 - `GITHUB_POLL_INTERVAL` — optional poll interval in seconds (default 60).
+- `GITHUB_AGENT_LOGIN` — optional GitHub user account login shown in mention, Assignees, and Reviewers pickers. The account needs repository access. Requires `GITHUB_AGENT_TOKEN`, `GITHUB_WEBHOOK_SECRET`, and `LINK_PORT`.
+- `GITHUB_AGENT_TOKEN` — token for that account, held only by the host and used to submit formal COMMENT reviews when the agent calls `github_submit_review`. Give it pull request write permission on the target repositories. Other API calls, git access, and ordinary replies continue under the GitHub App identity.
 - `GITHUB_WEBHOOK_SECRET` — optional; when set (and the link server is
   running, `LINK_PORT`), signed GitHub App webhook deliveries to
   `/github/webhook` trigger an immediate poll, cutting mention latency from
   the poll interval to seconds. Configure the App webhook with the same
   secret and subscribe to Issues, Issue comment, and Pull request review
   comment events. Polling continues regardless as the delivery backstop.
+  With `GITHUB_AGENT_LOGIN`, subscribe to **Pull request** as well. Signed
+  `issues.assigned` and `pull_request.review_requested` deliveries addressed
+  to that login enter the existing conversation after the sender's write
+  permission is checked. Assignment and review requests require the webhook;
+  polling still handles mentions and comments.
 
 ## Behavior notes
 
