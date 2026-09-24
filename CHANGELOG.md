@@ -9,19 +9,24 @@ any release.
 
 ## [Unreleased]
 
-### Removed
-
-- Remove scheduled Dream memory maintenance. Conversation `MEMORY.md` is written only by the agent and by post-run memory capture; existing `dream.json` checkpoints are no longer read (ADR 0012).
+## [1.0.0-beta.78]
 
 ### Added
 
-- Capture durable knowledge after each settled human run: Jev gates the exchange, and the conversation's model adds or updates stamped lines under `## Captured knowledge` in the conversation `MEMORY.md` (ADR 0011).
+- Capture durable knowledge after each settled human run: Jev gates the exchange, and the conversation's model adds or updates stamped lines under `## Captured knowledge` in the conversation `MEMORY.md`; configured secrets are redacted from captured entries (ADR 0011).
+- Give each new managed image container a per-office home volume (`mikan-home-<key>`) at `/root`. A stopped container whose image or mounts are stale is recreated from the current image with the same volume, so `/root` survives image upgrades; running containers are never interrupted (ADR 0009).
+- Add `mikan sandbox status|diff|migrate` to inspect managed containers and move legacy containers onto a home volume with the daemon stopped.
 
 ### Changed
 
 - Bound MCP tool results like `bash`: JSON is re-serialized compactly, oversized results become a structural digest (keys, counts, and pagination kept) within Pi's 50KB/2000-line limit, and the full result is spilled to `.mikan/mcp-output/` in the runtime workspace. `structuredContent` is used when `content` is empty, binary resources are no longer inlined, error text is bounded, and MCP results pass through secret redaction.
-
 - Shared top-level channel sessions no longer rotate every two weeks; they stay current until `/new`, and Pi's automatic compaction bounds the model context (ADR 0010).
+- The sandbox image installs its runtime outside `/root` and is published only with mikan releases.
+- Document the Vault as the store for development credentials that sandbox programs read directly; OpenConnector is the path for third-party service access (ADR 0013).
+
+### Removed
+
+- Remove scheduled Dream memory maintenance. Conversation `MEMORY.md` is written only by the agent and by post-run memory capture; existing `dream.json` checkpoints are no longer read (ADR 0012).
 
 ## [1.0.0-beta.77]
 
