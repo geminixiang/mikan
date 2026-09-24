@@ -78,13 +78,6 @@ docs = "src/sessions/README.md"
 sources = ["src/sessions/"]
 
 [[modules]]
-id = "dream"
-name = "Office Dream maintenance"
-kind = "authority"
-docs = "src/dream/README.md"
-sources = ["src/dream/"]
-
-[[modules]]
 id = "memory-capture"
 name = "Post-run memory capture"
 kind = "authority"
@@ -181,10 +174,10 @@ interface = "loadMcpTools"
 docs = "src/harness/README.md"
 
 [[seams]]
-id = "harness-session"
+id = "harness-model-calls"
 owner = "harness"
-consumers = ["dream"]
-interface = "MikanAgentSession"
+consumers = ["memory-capture"]
+interface = "runSubagent, evaluateWithJev"
 docs = "src/harness/README.md"
 
 [[seams]]
@@ -233,16 +226,9 @@ docs = "src/sandbox/README.md"
 [[seams]]
 id = "session-store"
 owner = "sessions"
-consumers = ["conversation-runtime", "harness", "dream"]
+consumers = ["conversation-runtime", "harness"]
 interface = "session-key policy, managed session store"
 docs = "src/sessions/README.md"
-
-[[seams]]
-id = "dream-maintenance"
-owner = "dream"
-consumers = ["composition-root", "conversation-runtime"]
-interface = "DreamScheduler, prepareOfficeDream, generateMemoryAnchor, commitOfficeDream"
-docs = "src/dream/README.md"
 
 [[seams]]
 id = "memory-capture"
@@ -317,13 +303,6 @@ authority = "sessions"
 scope = "session"
 classification = "conversation-data"
 docs = "src/sessions/README.md"
-
-[[resources]]
-id = "dream-checkpoint"
-authority = "dream"
-scope = "conversation"
-classification = "host-private"
-docs = "src/dream/README.md"
 
 [[resources]]
 id = "platform-log"
@@ -403,11 +382,6 @@ path = ["events", "platform-adapters", "conversation-runtime", "harness", "platf
 docs = "ARCHITECTURE.md#scheduled-execution"
 
 [[flows]]
-id = "office-dream"
-path = ["composition-root", "dream", "conversation-runtime", "dream", "harness"]
-docs = "ARCHITECTURE.md#dream-maintenance"
-
-[[flows]]
 id = "run-memory-capture"
 path = ["conversation-runtime", "memory-capture", "harness"]
 docs = "ARCHITECTURE.md#memory-capture"
@@ -477,14 +451,8 @@ docs = "ARCHITECTURE.md#inv-projection-coherence"
 [[invariants]]
 id = "state-dir-host-only"
 owners = ["configuration"]
-applies_to = ["state-dir", "workspace-projection", "vault-store", "dream-checkpoint"]
+applies_to = ["state-dir", "workspace-projection", "vault-store"]
 docs = "ARCHITECTURE.md#inv-state-dir-host-only"
-
-[[invariants]]
-id = "dream-commit-order"
-owners = ["dream"]
-applies_to = ["dream", "dream-checkpoint", "office-directory", "session-files"]
-docs = "ARCHITECTURE.md#inv-dream-commit-order"
 
 [[invariants]]
 id = "execution-policy-enforcement"

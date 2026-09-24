@@ -69,17 +69,15 @@ session files and rewrites them to the current Pi 0.85 v4 format. Use
 `--state-dir`, `--workspace`, or `--dry-run` as needed; `--dry-run` leaves files
 untouched. Originals remain as `*.v3.bak` or `*.pi-084.bak`.
 
-## Bootstrap, Clean sessions, and Dream
+## Bootstrap, Clean sessions, and memory
 
 A new scoped session is seeded from at most 200 applicable platform messages from the previous 14 days. Top-level sessions are long-lived: mikan keeps using the current session file until `/new` replaces it, and Pi's automatic compaction keeps the model context within the window.
 
-`/new` immediately creates a **Clean session**. It does not summarize the predecessor, invoke Dream, wait for memory processing, or delete older JSONL files. The existing conversation `MEMORY.md` remains available independently.
-
-**Dream** is system-scheduled office maintenance. During Taiwan time 02:00–05:00, mikan checks each registered Conversation office and processes all newly accumulated settled entries across its current and earlier top-level, thread, and event sessions once the newest evidence has been idle for five hours. A successful run replaces the complete conversation `MEMORY.md` and then advances a host-private per-session checkpoint; without new evidence, no model is called.
+`/new` immediately creates a **Clean session**. It does not summarize the predecessor, wait for memory processing, or delete older JSONL files. The existing conversation `MEMORY.md` remains available independently.
 
 **Memory capture** records knowledge as soon as it is stated. After a human-initiated run finishes, mikan asks Jev whether the user established durable knowledge, such as a standing rule, a delivery preference, a durable fact about a system or workflow, or a correction. When it did, the conversation's model adds or updates individual lines under `## Captured knowledge` in the conversation `MEMORY.md`, stamped with the capture date and source message. Scheduled-event runs are skipped, workspace-wide memory is never written, and capture is disabled when Jev (`OPENROUTER_API_KEY`) is not configured. Ask the agent to correct or remove a captured line as with any other memory.
 
-The resulting **Memory anchor** is compact, revisable orientation rather than final truth. Newer conversation evidence takes precedence. Mutable external state must be verified from its Live source or current API in the answering run; if that source is unavailable, mikan should report that it cannot verify the current value rather than treating memory as current truth.
+The conversation `MEMORY.md`, the **Memory anchor**, is written by the agent during runs and by Memory capture after them. Nothing rewrites or consolidates it on a schedule. It is compact, revisable orientation rather than final truth. Newer conversation evidence takes precedence. Mutable external state must be verified from its Live source or current API in the answering run; if that source is unavailable, mikan should report that it cannot verify the current value rather than treating memory as current truth.
 
 <Aside type="tip" title="Keep an audit trail">
   Use `new` / `/new` in a private chat to start fresh immediately. Previous session files stay on

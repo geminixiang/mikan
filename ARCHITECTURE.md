@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                                | Detailed documentation                                                                                                                                                                                           |
-| ----------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform edge           | Platform adapters, Conversation intake                 | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                               |
-| Orchestration           | Composition root, Conversation runtime                 | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                                                  |
-| Agent core              | Harness and generic agent tools                        | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                 |
-| Identity and data       | Office, Sessions, Dream, Memory capture, Configuration | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/dream/README.md`](src/dream/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md) |
-| Execution and authority | Harness execution resolution, Sandbox, Vault           | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                                                 |
-| External/control edges  | Platform/Web adapters and Commands                     | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                             |
-| Scheduling              | Scheduled-event protocol, office store, and scheduler  | [`src/events/README.md`](src/events/README.md)                                                                                                                                                                   |
-| Observability           | OpenTelemetry pipeline and Sentry adapter              | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                                                           |
+| Group                   | Modules                                               | Detailed documentation                                                                                                                                                               |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
+| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
+| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
+| Identity and data       | Office, Sessions, Memory capture, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md)                   |
+| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
+| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
+| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
+| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
 
 ## Main flows
 
@@ -112,8 +112,8 @@ Daemon boot proceeds conceptually as follows:
 5. Complete crash-resumable legacy office migration before accepting events.
 6. Configure sandbox, vault, portal, and platform facilities.
 7. Construct the Conversation runtime with capability factories.
-8. Start platform bots, web services, the event watcher, and the Dream scheduler.
-9. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work plus the active Dream sweep up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
+8. Start platform bots, web services, and the event watcher.
+9. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
 10. Force-flush and shut down the OpenTelemetry providers, then close Sentry issue reporting, whether graceful application shutdown succeeds or fails. Attempt every configured backend and exit non-zero on any failure or timeout. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
 
 A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
@@ -178,19 +178,11 @@ the explicit actor-to-target grants defined in `docs/office-policy.md`, which
 are not implemented yet. Legacy `<workspace>/events/*.json` records are drained
 by `mikan office migrate-events`. Event text must never contain secrets.
 
-### Dream maintenance
-
-Dream is a host-scheduled, per-office maintenance flow, not a chat command or a session-reset hook. Every ten minutes during Taiwan time 02:00–05:00, the scheduler visits registered offices. The Conversation runtime places each attempt behind the office maintenance barrier, so collection begins only after active session work settles and new work waits until maintenance finishes.
-
-The Dream authority reads every office session file and compares its stable session UUID with the host-private `dream.json` checkpoint. It calls the model only when at least one entry follows a saved `throughEntryId` and the newest settled entry in the office is at least five hours old. Evidence is admitted in bounded batches, with explicitly marked bounded head/tail representations for oversized individual entries and checkpoints advancing only through entries included in the successful batch, so a large backlog drains over later eligible sweeps instead of producing an unbounded prompt. The model runs against an in-memory harness session, combines the batch with the existing Memory anchor, and returns the complete replacement `MEMORY.md`; an absolute 120-second deadline aborts the session and propagates its abort signal to the provider, while the caller rejects generation and prevents a commit even if the provider completes late. Its own prompt and response never become office evidence.
-
-Commit ordering is deliberate: atomically replace `MEMORY.md`, then atomically replace `dream.json`. A generation, model, or memory-write failure leaves the checkpoint unchanged, so evidence is retried rather than silently skipped. `/new` only creates a Clean session and never invokes Dream. Resetting a fixed-path scoped session archives its prior JSONL first, so scheduled Dream can still inspect evidence from before the reset.
-
-The Memory anchor is revisable orientation rather than final truth. Newer conversation evidence outranks it, and mutable external facts require a fresh Live-source or current-API read in the answering run.
-
 ### Memory capture
 
-Memory capture records knowledge when it is stated instead of waiting for Dream ([ADR 0011](docs/adr/0011-capture-durable-knowledge-after-runs.md)). After each run returns, the Conversation runtime hands the office, the user message, the stop reason, and the final reply to the capture authority, which works in the background and never holds the office barrier. Settled human runs are gated by Jev on the exchange text alone; runs that clear the threshold go to the office's own model, which proposes line-level additions and updates against the current `MEMORY.md`. Captures for one office are serialized and applied to a fresh read of the file before an atomic replace, so only the proposed lines change and workspace-global memory is never written. Dream later consolidates the anchor and keeps stamped captured lines unless newer evidence contradicts them.
+Memory capture records knowledge when it is stated ([ADR 0011](docs/adr/0011-capture-durable-knowledge-after-runs.md)); there is no scheduled memory maintenance ([ADR 0012](docs/adr/0012-remove-dream.md)). After each run returns, the Conversation runtime hands the office, the user message, the stop reason, and the final reply to the capture authority, which works in the background and never holds the office barrier. Settled human runs are gated by Jev on the exchange text alone; runs that clear the threshold go to the office's own model, which proposes line-level additions and updates against the current `MEMORY.md`. Captures for one office are serialized and applied to a fresh read of the file before an atomic replace, so only the proposed lines change and workspace-global memory is never written.
+
+The conversation `MEMORY.md` is revisable orientation rather than final truth. Newer conversation evidence outranks it, and mutable external facts require a fresh Live-source or current-API read in the answering run. `/new` only creates a Clean session and does not summarize the previous one.
 
 ## Storage and authority map
 
@@ -211,8 +203,7 @@ Memory capture records knowledge when it is stated instead of waiting for Dream 
 ├── office-registry.json
 ├── vaults/
 └── conversations/<office-key>/
-    ├── settings.json
-    └── dream.json                        per-session Dream checkpoints
+    └── settings.json
 ```
 
 The exact paths are owned by the relevant modules, not by this diagram. Code must derive conversation paths from an `Office` value where one is available.
@@ -307,7 +298,7 @@ Evidence: `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.
 
 <a id="inv-process-shutdown-order"></a>
 
-**`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work plus Dream a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter/Dream promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
+**`process-shutdown-order`** — Graceful shutdown is single-flight. It begins closing external platform/Web intake, stops the event watcher, and gives already-accepted adapter work a bounded 30-second drain window. Conversation runtime closes after a successful drain; after a drain timeout, unresolved adapter promises cannot block exit, runtime aborts stuck work immediately, and the process exits non-zero after bounded cleanup. Every phase is attempted even after an earlier failure. Diagnostics flush last, and a second OS signal forces a non-zero exit without starting another shutdown.
 
 Evidence: `src/main.ts`, `src/cli/process-lifecycle.ts`, `src/adapters/`, `src/adapters/web/server.ts`, `src/events/scheduler.ts`, `src/runtime/conversation-runtime.ts`.
 
@@ -342,14 +333,6 @@ Evidence: `src/office/projection.ts`.
 **`state-dir-host-only`** — The State dir is host-private, outside the Workspace root, and never projected into a Sandbox. Important state writes are private and atomic where readers must not observe partial content.
 
 Evidence: `src/settings/index.ts`, `src/file-guards.ts`, `src/office/index.ts`, `src/vault/index.ts`.
-
-### INV Dream commit order
-
-<a id="inv-dream-commit-order"></a>
-
-**`dream-commit-order`** — Dream runs only after office session work settles, processes entries strictly after each session UUID's durable `throughEntryId`, and invokes no model when there is no eligible new evidence. Generation has a 120-second absolute deadline that aborts the session, propagates its abort signal to the provider, and fails the caller closed, including on a late provider completion. A successful update atomically writes the office Memory anchor before atomically advancing the host-private checkpoint. Dream generation uses an in-memory session so maintenance output cannot recursively become new evidence.
-
-Evidence: `src/dream/`, `src/runtime/session-lifecycle.ts`, `src/runtime/conversation-runtime.ts`.
 
 ### INV execution policy enforcement
 

@@ -10,7 +10,6 @@ import type {
 } from "../types.js";
 import type { Workspace } from "../office/index.js";
 import { createRunner } from "../harness/runner.js";
-import { commitOfficeDream, generateMemoryAnchor, prepareOfficeDream } from "../dream/index.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { RunMemoryCapture } from "../memory-capture/index.js";
 import { MikanModels } from "../harness/index.js";
@@ -169,18 +168,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
     }
     return sessions;
-  }
-
-  async runDream(address: OfficeAddress, now = new Date()): Promise<boolean> {
-    return this.sessions.runConversationMaintenance(address, async () => {
-      const office = this.options.workspace.office(address);
-      const plan = await prepareOfficeDream(office, now);
-      if (!plan) return false;
-      const memory = await generateMemoryAnchor(office, plan, this.resolvedModels);
-      commitOfficeDream(office, plan, memory);
-      log.logInfo(`[${address.conversationId}] Dream updated the Memory anchor`);
-      return true;
-    });
   }
 
   async steer(message: ConversationMessage): Promise<boolean> {

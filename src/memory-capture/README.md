@@ -22,7 +22,7 @@ This module records durable knowledge from finished human runs into the office's
 
 - An agent write to `MEMORY.md` landing between the fresh read and the atomic replace can be lost. Captures deliberately do not take the office maintenance barrier, which would hold new work behind unrelated active runs.
 - Captures in flight at shutdown are abandoned. Writes are atomic, so the file is never partially written.
-- Dream still rewrites the whole anchor nightly and is told to keep stamped entries unless evidence dated after the stamp contradicts them.
+- Nothing consolidates or shortens `MEMORY.md` automatically ([ADR 0012](../../docs/adr/0012-remove-dream.md)). Entries accumulate until the agent or a user edits them.
 
 ## Files
 

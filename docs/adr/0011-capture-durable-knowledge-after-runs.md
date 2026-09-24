@@ -39,7 +39,7 @@ A proof of concept measured Jev as the gate against labels from a stronger model
 ## Consequences
 
 - Conversation `MEMORY.md` grows by roughly one to three lines per active day in busy offices; the replay produced about 150 entries in two months, comparable to current Dream output. A size-triggered consolidation is still required and remains Dream's job until it is redesigned.
-- Dream still rewrites the whole anchor nightly. Its prompt now keeps captured entries unless newer evidence contradicts them, because its evidence is often older than the capture.
+- Dream still rewrites the whole anchor nightly. Its prompt now keeps captured entries unless newer evidence contradicts them, because its evidence is often older than the capture. Superseded by [ADR 0012](0012-remove-dream.md), which removes Dream.
 - An agent edit to `MEMORY.md` that lands in the few milliseconds between the capture's fresh read and its atomic replace can be lost. This window is accepted; captures do not use the office maintenance barrier because that would block new work behind unrelated active runs.
 - Captures in flight during shutdown are abandoned. Writes are atomic, so the file is never partially written, and the knowledge can be captured again when restated.
 - Extraction adds model calls on the office's own provider for about a third of human runs, each carrying the current `MEMORY.md` as input.

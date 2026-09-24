@@ -67,17 +67,15 @@ mikan sessions migrate
 `--dry-run`；`--dry-run` 不會修改檔案。原檔案會保留為 `*.v3.bak` 或
 `*.pi-084.bak`。
 
-## Bootstrap、Clean session 與 Dream
+## Bootstrap、Clean session 與記憶
 
 新的 scoped session 最多會以過去 14 天內、符合條件的 200 則平台訊息初始化。Top-level session 會長期沿用：mikan 會持續使用目前的 session file，直到 `/new` 取代它；Pi 的自動 compaction 會讓模型 context 維持在上限內。
 
-`/new` 會立即建立 **Clean session**。它不會摘要前一個 session、執行 Dream、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
-
-**Dream** 是由系統排程的 office maintenance。台灣時間 02:00–05:00 期間，mikan 會檢查每個已登錄的 Conversation office；當最新 evidence 已閒置五小時後，Dream 會一次處理該 office 目前與先前的 top-level、thread 與 event sessions 新累積的 settled entries。成功後會先完整取代 conversation `MEMORY.md`，再推進 host-private 的 per-session checkpoint；沒有新 evidence 時不會呼叫 model。
+`/new` 會立即建立 **Clean session**。它不會摘要前一個 session、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
 
 **Memory capture** 會在知識被說出來的當下就記錄。每次由真人觸發的 run 結束後，mikan 會請 Jev 判斷使用者是否建立了長期知識，例如長期規則、交付偏好、關於系統或流程的持久事實，或是一項更正。若是，對話所用的模型會在 conversation `MEMORY.md` 的 `## Captured knowledge` 底下新增或更新個別條目，並標註擷取日期與來源訊息。排程 event 的 run 會略過，永遠不寫入 workspace 共用記憶；未設定 Jev（`OPENROUTER_API_KEY`）時此功能停用。要更正或移除擷取的條目，和其他記憶一樣請 agent 修改即可。
 
-產生的 **Memory anchor** 是精簡且可修訂的導向資訊，不是最終真相。較新的 conversation evidence 優先。可變的外部狀態必須在回答當次從 Live source 或 current API 驗證；若來源無法使用，mikan 應說明目前無法驗證，而不是把 memory 當成當前真相。
+conversation `MEMORY.md`（**Memory anchor**）由 agent 在 run 中寫入，以及由 Memory capture 在 run 結束後寫入；沒有任何排程會重寫或整理它。它是精簡且可修訂的導向資訊，不是最終真相。較新的 conversation evidence 優先。可變的外部狀態必須在回答當次從 Live source 或 current API 驗證；若來源無法使用，mikan 應說明目前無法驗證，而不是把 memory 當成當前真相。
 
 <Aside type="tip" title="保留可稽核紀錄">
   在 private chat 中使用 `new` / `/new` 可立即重新開始。除非手動移除，先前的 session files

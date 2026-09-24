@@ -16,7 +16,6 @@ import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { downloadChannel } from "./cli/download.js";
-import { DreamScheduler } from "./dream/index.js";
 import { EventScheduler } from "./events/scheduler.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./cli/process-lifecycle.js";
@@ -610,8 +609,7 @@ async function waitForGracefulDrain(drain: Promise<unknown>): Promise<boolean> {
 }
 
 async function drainConversationWork(intakeStop: Promise<void>): Promise<void> {
-  const dreamStop = dreamScheduler.stop();
-  const gracefulDrain = Promise.allSettled([intakeStop, dreamStop]);
+  const gracefulDrain = Promise.allSettled([intakeStop]);
   if (!(await waitForGracefulDrain(gracefulDrain))) {
     const runtimeResult = await Promise.allSettled([handler.shutdown(0)]);
     const failures: unknown[] = [
@@ -637,8 +635,6 @@ if (slackMessagingBot) {
   slackMessagingBot.setEventScheduler(eventScheduler);
 }
 eventScheduler.start();
-const dreamScheduler = new DreamScheduler(workspace, handler);
-dreamScheduler.start();
 
 const shutdown = createProcessShutdownHandler({
   stop: () => {

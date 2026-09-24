@@ -9,7 +9,7 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `file-guards.ts`: Provides guarded optional text/JSON reads, JSON value parsing, record checks, directory creation, atomic/private file replacement primitives, and the state-dir-outside-workspace placement guard.
 - `index.ts`: Exposes the package public API through barrel exports — commands, harness, sessions, runtime, sandbox, and the office values (`createWorkspace`, `createOfficeAddress`, `officeKey`, `Office`/`Workspace` types).
 - `log.ts`: Centralizes CLI log formatting for messages, tools, responses, usage, startup, and backfill.
-- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, scheduled Dream maintenance, and platform bots.
+- `main.ts`: CLI entrypoint that executes the boot plan from `cli/boot.ts` and starts config, sandbox, vault, runtime, portal, events, memory capture, and platform bots.
 - `types.ts`: Cross-module domain types that no single module owns — office identity aliases, sandbox settings, event payload re-exports, and portal shell options.
 
 ## Subdirectories
@@ -17,7 +17,6 @@ This directory is the TypeScript source root for mikan; the entries below descri
 - `adapters/`: External adapters for chat platforms, Web HTTP/OAuth/admin/session-view surfaces, shared chat commands (`commands/`), and adapter utilities.
 - `cli/`: CLI argv grammar (`boot.ts`) and the non-daemon subcommands (`office`, `env`, `onboard`, `--download`).
 - `content/`: Starlight documentation source (`docs/` plus per-locale translations).
-- `dream/`: Scheduled Conversation-office Dream maintenance, evidence checkpoints, and Memory anchor generation.
 - `memory-capture/`: Post-run capture of durable knowledge into the conversation `MEMORY.md`, gated by Jev.
 - `events/`: Scheduled-event wire protocol, host store, and watcher lifecycle.
 - `harness/`: Agent execution — `createRunner`, prompt and presentation, actor/executor resolution, native Pi session integration, generic agent tools, models, MCP capabilities, skills, and bounded subagents.

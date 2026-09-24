@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Removed
+
+- Remove scheduled Dream memory maintenance. Conversation `MEMORY.md` is written only by the agent and by post-run memory capture; existing `dream.json` checkpoints are no longer read (ADR 0012).
+
 ### Added
 
 - Capture durable knowledge after each settled human run: Jev gates the exchange, and the conversation's model adds or updates stamped lines under `## Captured knowledge` in the conversation `MEMORY.md` (ADR 0011).

@@ -72,7 +72,6 @@ export interface ConversationRuntimeOptions extends Omit<
 
 export interface ConversationRuntime extends MessagingEventHandler {
   runSession(options: RunSessionOptions): Promise<void>;
-  runDream(address: OfficeAddress, now?: Date): Promise<boolean>;
   switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
   refreshConversationEnvironment(address: OfficeAddress): boolean;
   refreshAllConversations(): { busy: OfficeAddress[] };
