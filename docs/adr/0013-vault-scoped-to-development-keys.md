@@ -4,7 +4,7 @@ status: accepted
 
 # Vault is scoped to development keys
 
-The Vault holds only the keys that R&D development services need injected into a conversation's sandbox container. Every other external credential, shared or personal, goes through OpenConnector.
+OpenConnector is the primary path for retrieving information from and acting on third-party services. The Vault holds only development credentials that programs inside a conversation's sandbox must read directly, such as environment variables, private package registry tokens, or Git credentials used by sandbox-side `git` commands. Shared and personal provider integrations belong in OpenConnector.
 
 ## Context
 

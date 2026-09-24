@@ -67,11 +67,11 @@ adds the workspace-global `MEMORY.md`, `skills/`, and `events/`. Private visibil
 memory bind read-only, while public visibility leaves it read-write. `trusted` / `full` mounts the
 whole workspace root at `/workspace`.
 
-Changing the door policy does not reset the container. When the desired mounts no longer match the
-running container, mikan snapshots it, recreates it with the translated mounts, and starts it again,
-so anything installed or written in the container's own filesystem survives the change. A container
-with a home volume is instead recreated from the current image with the same volume, keeping `/root`. The same
-path covers the office-directory rename performed by the boot-time layout migration.
+Changing the door policy updates the mounts on the next message. A container with a home volume
+is recreated from the current image, keeping `/root` and workspace mounts but discarding other
+container filesystem changes. A legacy container without a home volume instead uses a snapshot
+to preserve its writable layer. The same paths cover office-directory renames during boot-time
+layout migration.
 
 ## Vault and container keys
 

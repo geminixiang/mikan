@@ -43,6 +43,8 @@ mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/w
 
 ## Vault 內容
 
+Vault 只用於研發工作必須交給 sandbox 內的程式直接讀取的開發憑證，例如環境變數、私有套件或 Git repository 的存取憑證。查詢第三方服務的資料、執行服務操作與一般使用者授權走 OpenConnector；其 provider OAuth 留在 OpenConnector，mikan 的 runtime token 留在 host-only MCP 設定，不會注入 sandbox。Git 憑證若是供 sandbox 裡的 `git` 指令直接使用，才屬於 Vault 的用途。既有的共享 profile 與個人 OAuth 登入是過渡功能。
+
 每個 vault 是 `vaults/` 下的一個目錄，裡面可包含：
 
 - `env` file：`KEY=value` 形式的環境變數

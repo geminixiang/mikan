@@ -46,7 +46,7 @@ Visibility 跟隨 Slack 對話類型（ADR 0008）：公開頻道是 public offi
 | `default` | 清除覆寫；跟隨 Slack 對話類型。                                                  |
 | `private` | 把這個公開頻道視為 private。對 DM 或私人頻道沒有額外效果，它們本來就是 private。 |
 
-變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；既有的 container 內容會被保留。對話忙碌時切換會被拒絕。底層的 `office.visibility` 欄位請見[設定](/zh-tw/configuration/)。
+變更會在下一則訊息時生效，屆時 sandbox runtime 會以新的 mount 重建；有 home volume 的 container 會保留 `/root` 與 workspace mount，其他可寫層內容不會保留。對話忙碌時切換會被拒絕。底層的 `office.visibility` 欄位請見[設定](/zh-tw/configuration/)。
 
 <Aside type="note" title="平台指令註冊">
   原生 slash commands 也必須向平台註冊。指令清單位於 `src/adapters/commands/manifest.ts`：Discord 的
