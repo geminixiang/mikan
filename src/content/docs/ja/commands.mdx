@@ -69,7 +69,7 @@ visibility は Slack の conversation type に従います（ADR 0008）。publi
 | `/login shared delete <name>` | 共有 profile を削除します。                                                           |
 | `/login copy <name>`          | 共有 profile を現在の conversation vault にコピーします。一致する値は上書きされます。 |
 
-共有 profiles は operator が管理する credentials で、明示的な `/login copy <name>` でのみ適用されます。廃止された `sandbox.defaultSharedVault` が新しい conversation にコピーすることはもうありません。
+共有 profiles は operator が管理する credentials です。`sandbox.defaultSharedVault` による自動継承は、対象となる membership-trust image/Cloudflare conversations に限定されます。GitHub のような open-trigger surfaces は継承しません。
 
 ## Web portals
 

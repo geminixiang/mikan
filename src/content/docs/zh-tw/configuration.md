@@ -58,7 +58,8 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
     "boost": {
       "cpus": "2",
       "memory": "4g"
-    }
+    },
+    "defaultSharedVault": ""
   }
 }
 ```
@@ -67,16 +68,17 @@ Office key 無法反推回原始平台 id，因此 host 會在 `<state-dir>/offi
 
 以下是 onboarding 產生的值。解析後的全域設定必須包含 `llm.provider`、`llm.model` 與 `llm.thinkingLevel`；其他欄位可省略。
 
-| 欄位                   | Onboarding 值       | 說明                                                                     |
-| ---------------------- | ------------------- | ------------------------------------------------------------------------ |
-| `llm.provider`         | `anthropic`         | 主要 AI 供應商                                                           |
-| `llm.model`            | `claude-sonnet-4-6` | 主要模型名稱                                                             |
-| `llm.thinkingLevel`    | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`              |
-| `sentry.dsn`           | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                           |
-| `sandbox.boost.cpus`   | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                  |
-| `sandbox.boost.memory` | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                 |
-| `office.visibility`    | 未設定              | 僅限對話的覆寫：`private` 把 Slack 公開頻道縮為 private office；不能放寬 |
-| `slack.replyMode`      | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                  |
+| 欄位                         | Onboarding 值       | 說明                                                                     |
+| ---------------------------- | ------------------- | ------------------------------------------------------------------------ |
+| `llm.provider`               | `anthropic`         | 主要 AI 供應商                                                           |
+| `llm.model`                  | `claude-sonnet-4-6` | 主要模型名稱                                                             |
+| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`              |
+| `sentry.dsn`                 | 未設定              | Sentry DSN；敏感的 prompt 與 tool 內容會被遮蔽                           |
+| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                  |
+| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                 |
+| `office.visibility`          | 未設定              | 僅限對話的覆寫：`private` 把 Slack 公開頻道縮為 private office；不能放寬 |
+| `sandbox.defaultSharedVault` | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault      |
+| `slack.replyMode`            | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                  |
 
 `/pi-model` 會寫入部分對話覆寫；`/pi-sandbox visibility <private|default>` 會寫入該對話的 `office.visibility` 覆寫；admin portal 提供同一個開關。
 

@@ -418,7 +418,7 @@ describe("ActorExecutionResolver image mode", () => {
     expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
   });
 
-  test("a retired defaultSharedVault setting is ignored", async () => {
+  test("copies the default shared vault for a new image sandbox vault", async () => {
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
     writeFileSync(join(vaultsDir, "shared", "claw", "env"), "ANTHROPIC_API_KEY=sk-test\n");
     writeFileSync(
@@ -444,12 +444,52 @@ describe("ActorExecutionResolver image mode", () => {
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
-    expect(existsSync(join(vaultsDir, officeKey(createOfficeAddress("slack", "D123"))))).toBe(
-      false,
-    );
+    expect(
+      readFileSync(
+        join(vaultsDir, officeKey(createOfficeAddress("slack", "D123")), "env"),
+        "utf-8",
+      ),
+    ).toContain("ANTHROPIC_API_KEY=sk-test");
   });
 
-  test("a retired defaultSharedVault never overwrites an existing image sandbox vault", async () => {
+  test("github conversations never inherit the default shared vault", async () => {
+    mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
+    writeFileSync(join(vaultsDir, "shared", "claw", "env"), "GH_TOKEN=ambient\n");
+    writeFileSync(
+      join(tmpDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "claude-sonnet-4-6", thinkingLevel: "off" },
+        sandbox: { defaultSharedVault: "claw" },
+      }),
+    );
+
+    const mgr = new FileVaultManager(tmpDir);
+    const resolver = new ActorExecutionResolver(
+      { type: "image", image: "ubuntu:24.04" },
+      mgr,
+      undefined,
+      workspace(),
+    );
+    await resolver.resolve({
+      userId: "alice",
+      address: createOfficeAddress("github", "GH_octo_widgets_5"),
+      trustModel: "open-trigger",
+    });
+
+    expect(
+      mgr.resolve(DockerContainerManager.sanitizeSegment("GH_octo_widgets_5")),
+    ).toBeUndefined();
+
+    await resolver.resolve({ userId: "U1", address: createOfficeAddress("slack", "D999") });
+    expect(
+      readFileSync(
+        join(vaultsDir, officeKey(createOfficeAddress("slack", "D999")), "env"),
+        "utf-8",
+      ),
+    ).toContain("GH_TOKEN=ambient");
+  });
+
+  test("does not copy the default shared vault over an existing image sandbox vault", async () => {
     const vaultKey = credentialAuthorizationKey(
       { type: "image", image: "ubuntu:24.04" },
       {

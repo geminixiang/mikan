@@ -58,7 +58,8 @@ conversation を生のプラットフォーム id 配下に保存していたリ
     "boost": {
       "cpus": "2",
       "memory": "4g"
-    }
+    },
+    "defaultSharedVault": ""
   }
 }
 ```
@@ -67,16 +68,17 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 以下の値は onboarding によって生成されます。解決後のグローバル設定では `llm.provider`、`llm.model`、`llm.thinkingLevel` が必須で、その他のフィールドは省略できます。
 
-| フィールド             | Onboarding の値     | 説明                                                                                                              |
-| ---------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `llm.provider`         | `anthropic`         | メイン AI provider                                                                                                |
-| `llm.model`            | `claude-sonnet-4-6` | メイン model 名                                                                                                   |
-| `llm.thinkingLevel`    | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                              |
-| `sentry.dsn`           | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                    |
-| `sandbox.boost.cpus`   | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
-| `sandbox.boost.memory` | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
-| `office.visibility`    | 未設定              | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
-| `slack.replyMode`      | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                     |
+| フィールド                   | Onboarding の値     | 説明                                                                                                              |
+| ---------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `llm.provider`               | `anthropic`         | メイン AI provider                                                                                                |
+| `llm.model`                  | `claude-sonnet-4-6` | メイン model 名                                                                                                   |
+| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                              |
+| `sentry.dsn`                 | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                    |
+| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
+| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
+| `office.visibility`          | 未設定              | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
+| `sandbox.defaultSharedVault` | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault                               |
+| `slack.replyMode`            | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                     |
 
 `/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox visibility <private|default>` は conversation の `office.visibility` の上書きを書き込みます。admin portal にも同じスイッチがあります。
 

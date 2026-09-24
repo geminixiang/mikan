@@ -118,9 +118,10 @@ conversation-dir bind mount:
 - Requires the App to have **Contents: Read & write**, **Checks: Read**, and
   **Actions: Read** for job logs (plus the existing Issues / Pull requests
   read & write).
-- GitHub sets `MessagingInfo.trustModel: "open-trigger"`; its conversations
-  start with no credentials. Admins can explicitly provision a vault for a
-  specific GitHub conversation.
+- GitHub sets `MessagingInfo.trustModel: "open-trigger"`, so
+  `sandbox.defaultSharedVault` is never ambient-copied (see
+  `src/vault/policy.ts`). Admins can still explicitly provision a vault for
+  a specific GitHub conversation.
 - A missing `./repo` is re-attempted on every trigger (no-op once cloned), so
   a first clone that failed — e.g. App permissions granted later — heals on
   the next mention.

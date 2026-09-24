@@ -649,6 +649,7 @@ function serveGlobalSettings(res: ServerResponse): void {
       sandboxMemory: config.sandbox?.memory ?? null,
       sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
       sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
+      defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
       },

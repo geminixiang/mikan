@@ -92,7 +92,7 @@ office key 由平台名称与平台的原始对话 id 一起哈希派生，因�
 
 ## 共享 vault
 
-`vaults/shared/` 下的共享配置文件只有在该对话中执行 `/login copy <name>` 时才会套用。以前会自动复制进每个新对话的 `sandbox.defaultSharedVault` 已停用：若仍设置，启动时会警告并忽略，下一次写入设置时移除。共享的机器凭证改由 OpenConnector 提供。
+`sandbox.defaultSharedVault` 指定 `vaults/shared/` 下的一个配置文件，它会在新对话首次使用时被复制进该对话的 vault。这种环境复制只发生在基于成员身份把关的平台（Slack、Discord、Telegram）上，且仅限隔离的 `image` 和 `cloudflare` 拓扑。GitHub 这类开放触发面绝不会继承它——管理员仍然可以为某个特定的 GitHub 对话显式配置 vault。
 
 ## `/pi-login`
 

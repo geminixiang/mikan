@@ -59,7 +59,7 @@ Without a webhook, a mention waits up to one poll interval. To respond in second
 
 A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session; the magic word uses one grammar across all platforms.
 
-Because anyone can open an issue on a public repo, GitHub reports `trustModel: "open-trigger"`. GitHub conversations get no credentials by default; an admin has to provision a vault for a specific conversation deliberately. See [Vault](/sandbox/vault/).
+Because anyone can open an issue on a public repo, GitHub reports `trustModel: "open-trigger"`. That disables the ambient `sandbox.defaultSharedVault` copy for GitHub conversations: they get no credentials by default, and an admin has to provision a vault for a specific conversation deliberately. See [Vault](/sandbox/vault/).
 
 ## Sessions and replies
 

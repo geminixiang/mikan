@@ -54,7 +54,7 @@ App slug 是用户首次联系时提及的名称。
 
 仅当评论、内联 review 评论或新 issue 正文 @提及 app slug，或 bot 已参与该 issue 的对话时，才会触发运行。评论者还必须对仓库具有**写入权限或更高权限**——在公开仓库中任何人都可以评论，因此所有写入权限以下用户的提及都会被完全忽略（权限查询缓存五分钟，失败时默认拒绝）。其他所有内容都会被忽略，不创建任何状态。提及 bot 的 `stop`（或 `/stop`）评论会停止运行中的会话；该魔法词在所有平台上使用同一套语法。
 
-由于任何人都可以在公开仓库上开 issue，GitHub 报告 `trustModel: "open-trigger"`。GitHub 对话默认不获得任何凭证，管理员必须有意地为某个特定对话配置 vault。参阅 [Vault](/zh-cn/sandbox/vault/)。
+由于任何人都可以在公开仓库上开 issue，GitHub 报告 `trustModel: "open-trigger"`。这会为 GitHub 对话禁用环境 `sandbox.defaultSharedVault` 复制：它们默认不获得任何凭证，管理员必须有意地为某个特定对话配置 vault。参阅 [Vault](/zh-cn/sandbox/vault/)。
 
 ## 会话和回复
 

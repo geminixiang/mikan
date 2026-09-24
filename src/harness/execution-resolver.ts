@@ -1,5 +1,6 @@
 import { posix } from "node:path";
 import type { Workspace } from "../office/index.js";
+import { loadGlobalSettings } from "../settings/index.js";
 import { DockerContainerManager, type ContainerMount } from "../sandbox/provisioner.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
@@ -8,7 +9,8 @@ import {
   type SandboxConfig,
 } from "../sandbox/index.js";
 import { reportUserFacingError } from "../observability/index.js";
-import { resolveVaultInjection, type VaultManager } from "../vault/index.js";
+import { normalizeSharedVaultName, type VaultManager } from "../vault/index.js";
+import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
 import {
   credentialAuthorizationKey,
   legacyExactCredentialAuthorizationKey,
@@ -54,6 +56,7 @@ export class ActorExecutionResolver {
       userId: context.userId,
       address: context.address,
     });
+    this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
 
     const vault =
       this.vaultManager.resolve(credentialKey) ??
@@ -79,6 +82,29 @@ export class ActorExecutionResolver {
       },
       projection,
     };
+  }
+
+  private ensureDefaultSharedVault(
+    credentialKey: string,
+    legacyCredentialKey: string | undefined,
+    trustModel: ActorContext["trustModel"],
+  ): void {
+    if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
+    if (
+      this.vaultManager.hasEntry(credentialKey) ||
+      (legacyCredentialKey && this.vaultManager.hasEntry(legacyCredentialKey))
+    ) {
+      return;
+    }
+
+    let profile: string | undefined;
+    try {
+      profile = loadGlobalSettings().sandbox?.defaultSharedVault;
+    } catch {
+      return;
+    }
+    if (!profile || normalizeSharedVaultName(profile) !== profile) return;
+    this.vaultManager.copySharedVaultTo(profile, credentialKey);
   }
 
   private resolveSandboxConfig(resourceKey: string): SandboxConfig {
