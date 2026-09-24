@@ -29,6 +29,7 @@ export { MikanAgentSession } from "./session.js";
 export { runSubagent } from "./subagent.js";
 export { resolveTriggerAttribution } from "./prompt.js";
 export { isEventTriggerAttribution } from "./presenter.js";
+export { redactSecrets } from "./tools/secret-redaction.js";
 export type {
   CompactionReason,
   HarnessEvent,

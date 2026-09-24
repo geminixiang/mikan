@@ -200,6 +200,25 @@ describe("MemoryCapture", () => {
     expect(readMemory()).toContain("- Captured rule.");
   });
 
+  test("redacts configured secret values before writing", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test-value-123456");
+    try {
+      const capture = new MemoryCapture(models, {
+        gate: async () => 0.9,
+        extract: async () => [
+          { op: "add", text: "Call the API with key sk-ant-test-value-123456." },
+        ],
+        now: () => NOW,
+      });
+      capture.capture(run());
+      await capture.idle();
+      expect(readMemory()).toContain("Call the API with key [SECRET:ANTHROPIC_API_KEY].");
+      expect(readMemory()).not.toContain("sk-ant-test-value-123456");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test("disables itself when Jev is not configured", async () => {
     const gate = vi.fn(async () => {
       throw new JevNotConfiguredError();

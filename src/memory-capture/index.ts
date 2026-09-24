@@ -5,6 +5,7 @@ import {
   isEventTriggerAttribution,
   JevNotConfiguredError,
   resolveTriggerAttribution,
+  redactSecrets,
   runSubagent,
   type MikanModels,
 } from "../harness/index.js";
@@ -179,6 +180,7 @@ export class MemoryCapture implements RunMemoryCapture {
 
     const ops = await this.deps.extract(run, readTextFileIfExists(run.office.memoryPath) ?? "");
     if (ops.length === 0) return;
+    for (const op of ops) op.text = redactSecrets(op.text);
     const latest = readTextFileIfExists(run.office.memoryPath) ?? "";
     const applied = applyMemoryOps(latest, ops, captureStamp(this.deps.now(), run.message.id));
     if (applied.content === latest) return;
