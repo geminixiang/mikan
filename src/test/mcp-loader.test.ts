@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createReadTool } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import { afterAll, describe, expect, it } from "vitest";
 import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
@@ -261,7 +262,18 @@ describe("loadMcpTools", () => {
       expect(spillPath?.startsWith(join(cwd, ".mikan", "mcp-output"))).toBe(true);
       const spilled = JSON.parse(readFileSync(spillPath!, "utf-8"));
       expect(spilled.items).toHaveLength(100);
-      expect(readFileSync(spillPath!, "utf-8")).not.toContain("\n");
+      const readTool = createReadTool() as unknown as MikanHarnessTool;
+      const read = await readTool.execute(
+        "read",
+        { path: spillPath!, limit: 20 } as never,
+        () => {},
+        { env: new NodeExecutionEnv({ cwd }) },
+        undefined as never,
+        { abortSignal: new AbortController().signal } as never,
+      );
+      const readText = read.content[0]?.type === "text" ? read.content[0].text : "";
+      expect(readText).not.toContain("exceeds");
+      expect(readText).toContain('"total_count": 691');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
       await result.dispose();

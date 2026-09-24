@@ -176,12 +176,19 @@ function compactMcpText(text: string): string {
   return parsed ? JSON.stringify(parsed.value) : text;
 }
 
+function readableSpill(text: string): { text: string; extension: "json" | "txt" } {
+  const parsed = parseJson(text);
+  return parsed
+    ? { text: JSON.stringify(parsed.value, null, 2), extension: "json" }
+    : { text, extension: "txt" };
+}
+
 async function spillFullResult(
   env: ExecutionEnv,
-  text: string,
-  extension: "json" | "txt",
+  result: string,
   context: Context,
 ): Promise<string | undefined> {
+  const { text, extension } = readableSpill(result);
   const path = await env.joinPath(
     [env.cwd, ...SPILL_DIR, `${randomBytes(8).toString("hex")}.${extension}`],
     context,
@@ -221,7 +228,7 @@ export async function guardMcpToolResult(
   }
   if (fits(combined, RESULT_LIMITS)) return { content: blocks, details: undefined };
   const bounded = boundMcpText(combined, RESULT_LIMITS);
-  const spillPath = await spillFullResult(env, combined, bounded.digest ? "json" : "txt", context);
+  const spillPath = await spillFullResult(env, combined, context);
   const notice = truncationNotice(bounded, Buffer.byteLength(combined, "utf8"), spillPath);
   return {
     content: [{ type: "text", text: `${bounded.text}\n\n${notice}` }, ...images],

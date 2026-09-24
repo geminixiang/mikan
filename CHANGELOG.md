@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Spill oversized MCP JSON results as indented JSON so `read` and `grep` can inspect them; the compact single-line spill exceeded `read`'s per-line limit.
+
 ## [1.0.0-beta.78]
 
 ### Added
