@@ -21,8 +21,8 @@ export function optionalAnnotations(source: { details?: unknown; usage?: unknown
   usage?: Usage;
 } {
   return {
-    ...(source.details !== undefined ? { details: jsonValue(source.details) } : {}),
-    ...(source.usage !== undefined ? { usage: source.usage as Usage } : {}),
+    details: source.details !== undefined ? jsonValue(source.details) : undefined,
+    usage: source.usage as Usage | undefined,
   };
 }
 

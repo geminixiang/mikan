@@ -642,7 +642,7 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
         const data = await apiPost('/admin/api/mcp-servers/mutate', {
           action: action,
           scope: scope,
-          ...(name ? { name: name } : {}),
+          name: name || undefined,
           ...(extra || {}),
           ...scopeBody(),
         });

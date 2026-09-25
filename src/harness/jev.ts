@@ -167,10 +167,7 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
     result = await models().evaluate(
       model,
       { state: state as GeminixiangEntry, questions: wireQuestions },
-      {
-        ...(options.headers ? { headers: options.headers } : {}),
-        ...(options.abortSignal ? { signal: options.abortSignal } : {}),
-      },
+      { headers: options.headers, signal: options.abortSignal },
     );
   } catch (error) {
     recordJevOutcome({

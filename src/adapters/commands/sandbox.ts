@@ -20,7 +20,7 @@ export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {
   if (action === "visibility" && matched.args.length <= 2) {
     return {
       action,
-      ...(matched.args.length === 2 ? { visibility: matched.args[1]?.toLowerCase() } : {}),
+      visibility: matched.args[1]?.toLowerCase(),
     };
   }
   return {};

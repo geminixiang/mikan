@@ -63,9 +63,9 @@ function subcommandPlan(args: string[]): BootPlan | undefined {
   const stateDir = defaultStateDir();
   return {
     mode,
-    ...(mode === "office" ? { officeArgs: args.slice(1) } : {}),
-    ...(mode === "sessions" ? { sessionsArgs: args.slice(1) } : {}),
-    ...(mode === "sandbox" ? { sandboxArgs: args.slice(1) } : {}),
+    officeArgs: mode === "office" ? args.slice(1) : undefined,
+    sessionsArgs: mode === "sessions" ? args.slice(1) : undefined,
+    sandboxArgs: mode === "sandbox" ? args.slice(1) : undefined,
     stateDir,
     workingDir: join(stateDir, "workspace"),
     workingDirExplicit: false,

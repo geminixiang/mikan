@@ -56,8 +56,8 @@ export function createGenerateImageTool(options: {
             body: JSON.stringify({
               model: options.model.id,
               prompt: params.prompt,
-              ...(params.size ? { size: params.size } : {}),
-              ...(params.quality ? { quality: params.quality } : {}),
+              size: params.size || undefined,
+              quality: params.quality || undefined,
               response_format: "b64_json",
             }),
           },

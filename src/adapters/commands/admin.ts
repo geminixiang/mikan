@@ -29,7 +29,7 @@ export class AdminCommandHandler implements CommandHandler {
       platform: context.platform,
       platformUserId: context.platformUserId,
       conversationId: context.conversationId,
-      ...(platformUserName ? { platformUserName } : {}),
+      platformUserName: platformUserName || undefined,
     });
 
     const url = `${context.services.portalBaseUrl}/admin?token=${token.token}`;

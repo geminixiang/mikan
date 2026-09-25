@@ -80,7 +80,7 @@ export function recordDistribution(
   const safeAttributes = metricAttributes(options.attributes ?? {});
   if (!isOpenTelemetryMetricsEnabled()) {
     recordSentryDistribution(name, value, {
-      ...(options.unit ? { unit: options.unit } : {}),
+      unit: options.unit ? options.unit : undefined,
       attributes: safeAttributes,
     });
     return;
@@ -102,7 +102,7 @@ export function recordGauge(
   const safeAttributes = metricAttributes(options.attributes ?? {});
   if (!isOpenTelemetryMetricsEnabled()) {
     recordSentryGauge(name, value, {
-      ...(options.unit ? { unit: options.unit } : {}),
+      unit: options.unit ? options.unit : undefined,
       attributes: safeAttributes,
     });
     return;

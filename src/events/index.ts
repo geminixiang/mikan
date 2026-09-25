@@ -185,10 +185,10 @@ export function parseEventPayload(content: string, filename: string): EventFileP
   }
 
   const base = {
-    ...(data.platform !== undefined ? { platform: data.platform } : {}),
+    platform: data.platform,
     conversationId,
-    ...(data.conversationKind !== undefined ? { conversationKind: data.conversationKind } : {}),
-    ...(data.userId !== undefined ? { userId: data.userId } : {}),
+    conversationKind: data.conversationKind,
+    userId: data.userId,
     text,
   };
 
@@ -220,10 +220,10 @@ export function parseEventPayload(content: string, filename: string): EventFileP
 
 export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
   const base = {
-    ...(input.platform !== undefined ? { platform: input.platform } : {}),
+    platform: input.platform,
     conversationId: input.conversationId,
-    ...(input.conversationKind !== undefined ? { conversationKind: input.conversationKind } : {}),
-    ...(input.userId !== undefined ? { userId: input.userId } : {}),
+    conversationKind: input.conversationKind,
+    userId: input.userId,
     text: input.text,
   };
 

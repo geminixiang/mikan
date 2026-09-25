@@ -41,7 +41,7 @@ function stripRetiredDoorPolicy(
   const { workspaceMount: _mount, ...imageRest } = image ?? {};
   const sandbox: SandboxFileSettings = {
     ...sandboxRest,
-    ...(hasDefinedValue(imageRest) ? { image: imageRest } : {}),
+    image: hasDefinedValue(imageRest) ? imageRest : undefined,
   };
   const next: SettingsFileConfig = {
     ...existing,
@@ -49,7 +49,7 @@ function stripRetiredDoorPolicy(
     ...(carry ? { office: { ...existing.office, visibility: "private" as const } } : {}),
   };
   atomicWritePrivateFile(settingsPath, JSON.stringify(compactSettingsConfig(next), null, 2));
-  return { removed, ...(carry ? { visibility: "private" as const } : {}) };
+  return { removed, visibility: carry ? ("private" as const) : undefined };
 }
 
 export function migrateLegacyDoorPolicy(workspace: Workspace): DoorPolicyMigrationReport {

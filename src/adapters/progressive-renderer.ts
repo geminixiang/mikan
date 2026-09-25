@@ -90,7 +90,7 @@ class ProgressiveRenderer {
       setTyping: (isTyping) => this.setTyping(isTyping),
       setWorking: (working) => this.setWorking(working),
       uploadFile: (filePath, title) => this.uploadFile(filePath, title),
-      ...(this.platform.react ? { react: this.platform.react } : {}),
+      react: this.platform.react,
       deleteResponse: () => this.deleteResponse(),
     };
   }

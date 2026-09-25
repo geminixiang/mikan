@@ -216,7 +216,7 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         ...base,
         type: "custom",
         customType: entry.customType,
-        ...(entry.data !== undefined ? { data: entry.data as JsonValue } : {}),
+        data: entry.data as JsonValue | undefined,
       };
     default:
       return null;
@@ -338,10 +338,8 @@ function buildV4Header(header: V3SessionHeader): Record<string, unknown> {
     storageVersion: 1,
     createdAt: toEpochMillis(header.timestamp),
     cwd: header.cwd,
-    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
-    ...(header.parentSession !== undefined
-      ? { legacyParentSessionPath: header.parentSession }
-      : {}),
+    parentSessionId: header.parentSessionId,
+    legacyParentSessionPath: header.parentSession,
   };
 }
 

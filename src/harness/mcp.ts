@@ -63,12 +63,12 @@ export function parseStandardMcpServers(text: string): StandardMcpParseResult {
       return { error: `"${name}": ${detail}` };
     }
     servers[name] = {
-      ...(hasCommand ? { command: entry.command as string } : {}),
-      ...(Array.isArray(entry.args) ? { args: entry.args.map(String) } : {}),
-      ...(isRecord(entry.env) ? { env: stringValues(entry.env) } : {}),
-      ...(hasUrl ? { url: entry.url as string } : {}),
-      ...(isRecord(entry.headers) ? { headers: stringValues(entry.headers) } : {}),
-      ...(entry.disabled === true ? { disabled: true } : {}),
+      command: hasCommand ? (entry.command as string) : undefined,
+      args: Array.isArray(entry.args) ? entry.args.map(String) : undefined,
+      env: isRecord(entry.env) ? stringValues(entry.env) : undefined,
+      url: hasUrl ? (entry.url as string) : undefined,
+      headers: isRecord(entry.headers) ? stringValues(entry.headers) : undefined,
+      disabled: entry.disabled === true ? true : undefined,
     };
   }
   return { servers };
@@ -153,8 +153,8 @@ export function materializeMcpPreset(
   }
   return {
     ...preset.server,
-    ...(preset.server.args ? { args: [...preset.server.args] } : {}),
-    ...(url !== undefined ? { url } : {}),
+    args: preset.server.args ? [...preset.server.args] : undefined,
+    url,
     ...(Object.keys(env).length > 0 ? { env } : {}),
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
@@ -196,11 +196,11 @@ async function connectServer(
   try {
     await client.connect(transport, {
       timeout: CONNECT_TIMEOUT_MS,
-      ...(signal ? { signal } : {}),
+      signal,
     });
     const listed = await client.listTools(undefined, {
       timeout: CONNECT_TIMEOUT_MS,
-      ...(signal ? { signal } : {}),
+      signal,
     });
     const tools: MikanHarnessTool[] = listed.tools.map((mcpTool) =>
       tagHarnessTool({
@@ -220,7 +220,7 @@ async function connectServer(
       }),
     );
     const instructions = client.getInstructions()?.trim();
-    return { client, tools, ...(instructions ? { instructions } : {}) };
+    return { client, tools, instructions: instructions || undefined };
   } catch (error) {
     try {
       await client.close();

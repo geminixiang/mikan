@@ -734,7 +734,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
       duration_ms: durationMs,
       ...context.baseAttrs,
     }),
-    ...(event.isError ? { error: operationError("ToolError") } : {}),
+    error: event.isError ? operationError("ToolError") : undefined,
   });
   spansFor(runState).tools.delete(event.toolCallId);
   recordToolMetrics(event, durationMs, context);
@@ -922,7 +922,7 @@ function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext
       stop_reason: message.stopReason,
       ...context.baseAttrs,
     }),
-    ...(message.errorMessage ? { error: operationError("LLMError") } : {}),
+    error: message.errorMessage ? operationError("LLMError") : undefined,
   });
   presentAssistantMessage(message, context);
 }

@@ -163,7 +163,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           startedAt: state.startedAt,
           lastActivityAt: state.lastActivityAt,
           currentTool: currentStep?.label || currentStep?.toolName,
-          ...(state.stopRequested ? { stopping: true } : {}),
+          stopping: state.stopRequested ? true : undefined,
         });
       }
     }

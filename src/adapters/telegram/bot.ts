@@ -326,7 +326,7 @@ export class TelegramMessagingBot implements MessagingBot {
           this.logToFile(mc.chatId, {
             date: new Date(mc.msg.date * 1000).toISOString(),
             ts: mc.msgId,
-            ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+            threadTs: mc.conversationKind === "shared" && mc.threadTs ? mc.threadTs : undefined,
             user: mc.userId,
             userName: mc.userName,
             text: commandText,
@@ -371,7 +371,7 @@ export class TelegramMessagingBot implements MessagingBot {
           logEntryBase: {
             date: new Date(mc.msg.date * 1000).toISOString(),
             ts: mc.msgId,
-            ...(mc.conversationKind === "shared" && mc.threadTs ? { threadTs: mc.threadTs } : {}),
+            threadTs: mc.conversationKind === "shared" && mc.threadTs ? mc.threadTs : undefined,
             user: mc.userId,
             userName: mc.userName,
             text: cleanedText,

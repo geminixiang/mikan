@@ -399,7 +399,7 @@ export class GithubClient {
     stateReason?: string,
   ): Promise<void> {
     await this.request("PATCH", `/repos/${owner}/${repo}/issues/${number}`, {
-      body: { state, ...(stateReason ? { state_reason: stateReason } : {}) },
+      body: { state, state_reason: stateReason || undefined },
     });
   }
 

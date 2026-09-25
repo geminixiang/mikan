@@ -64,7 +64,7 @@ function bindSpecToMount(bindSpec: string): ContainerMount {
   return {
     source: spec.slice(0, separator),
     target: spec.slice(separator + 1),
-    ...(readOnly ? { readOnly: true as const } : {}),
+    readOnly: readOnly ? true : undefined,
   };
 }
 
@@ -930,7 +930,7 @@ export class DockerContainerManager {
         : false;
       entries.push({
         containerName,
-        ...(containerKey ? { containerKey } : {}),
+        containerKey,
         running: status === "running",
         homeVolume,
         imageStale: await this.hasImageDrift(containerName),

@@ -50,7 +50,7 @@ export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionVie
     return this.createRecord(SESSION_VIEW_TOKEN_TTL_MS, {
       platform: options.platform,
       platformUserId: options.platformUserId,
-      ...(options.platformUserName ? { platformUserName: options.platformUserName } : {}),
+      platformUserName: options.platformUserName || undefined,
       conversationId: options.conversationId,
       sessionKey: options.sessionKey,
       sessionFile: options.sessionFile,
@@ -676,9 +676,7 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
     text,
     attachments: [],
     sessionKey: activeSessionKey,
-    ...(isThreadSessionKey(activeSessionKey)
-      ? { thread_ts: threadSuffixOf(activeSessionKey)! }
-      : {}),
+    thread_ts: isThreadSessionKey(activeSessionKey) ? threadSuffixOf(activeSessionKey)! : undefined,
   });
   const message = createConversationMessage({
     platform: entry.platform,

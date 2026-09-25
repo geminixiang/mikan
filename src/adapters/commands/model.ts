@@ -73,9 +73,9 @@ function parseModelThinkingLevel(modelSpec: string): {
     model: modelSpec.slice(0, colon),
     modelCandidate: modelSpec,
     thinkingLevelCandidate: suffix,
-    ...(THINKING_LEVELS.has(suffix as ThinkingLevel)
-      ? { thinkingLevel: suffix as ThinkingLevel }
-      : {}),
+    thinkingLevel: THINKING_LEVELS.has(suffix as ThinkingLevel)
+      ? (suffix as ThinkingLevel)
+      : undefined,
   };
 }
 
@@ -129,7 +129,7 @@ export class ModelCommandHandler implements CommandHandler {
     const result = applyConversationSettings(context.services.runtime, office, {
       provider: parsed.provider,
       model: selection.modelId,
-      ...(selection.thinkingLevel ? { thinkingLevel: selection.thinkingLevel } : {}),
+      thinkingLevel: selection.thinkingLevel,
     });
     if (!result.ok) {
       await replySummary(context, "Model", [
@@ -162,7 +162,7 @@ export class ModelCommandHandler implements CommandHandler {
       if (this.modelRegistry.find(provider, model)) {
         return {
           modelId: model,
-          ...(parsed.thinkingLevel ? { thinkingLevel: parsed.thinkingLevel } : {}),
+          thinkingLevel: parsed.thinkingLevel,
         };
       }
     }

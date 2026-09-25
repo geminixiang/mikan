@@ -207,12 +207,12 @@ function buildRequest(
   const outputSchema = shared.outputSchema as TSchema | undefined;
   return {
     task: task.task,
-    ...(task.profile ? { profile: task.profile } : {}),
-    ...(task.input !== undefined ? { input: task.input } : {}),
-    ...(shared.parentContext ? { parentContext: shared.parentContext } : {}),
-    ...(outputSchema ? { outputSchema } : {}),
-    ...(shared.budget ? { budget: shared.budget } : {}),
-    ...(signal ? { signal } : {}),
+    profile: task.profile || undefined,
+    input: task.input,
+    parentContext: shared.parentContext,
+    outputSchema,
+    budget: shared.budget,
+    signal,
   };
 }
 
@@ -351,7 +351,7 @@ function planRequest(
     item.dependsOn.map((id) => [id, dependencyOutput(outcomes.get(id)!)]),
   );
   const input = {
-    ...(item.task.input !== undefined ? { input: item.task.input } : {}),
+    input: item.task.input,
     dependencies,
   };
   return buildRequest({ ...item.task, input }, shared, signal);
@@ -423,8 +423,8 @@ async function runWaves(
         tokens: result.tokens,
         costUsd: result.costUsd,
         durationMs: result.durationMs,
-        ...(result.error ? { reason: result.error } : {}),
-        ...(result.cleanupPending ? { cleanupPending: true } : {}),
+        reason: result.error || undefined,
+        cleanupPending: result.cleanupPending || undefined,
       });
     });
   }
@@ -577,11 +577,9 @@ export function boundSubagentProgressNode(node: SubagentProgressNode): SubagentP
   return {
     ...node,
     label: clampSubagentLabel(node.label),
-    ...(node.profile !== undefined ? { profile: node.profile.slice(0, MAX_PROFILE_CHARS) } : {}),
-    ...(node.activity !== undefined
-      ? { activity: node.activity.slice(0, MAX_ACTIVITY_CHARS) }
-      : {}),
-    ...(node.reason !== undefined ? { reason: node.reason.slice(0, MAX_REASON_CHARS) } : {}),
+    profile: node.profile?.slice(0, MAX_PROFILE_CHARS),
+    activity: node.activity?.slice(0, MAX_ACTIVITY_CHARS),
+    reason: node.reason?.slice(0, MAX_REASON_CHARS),
   };
 }
 
@@ -600,24 +598,23 @@ function parseNode(value: unknown): SubagentProgressNode | undefined {
     id: item.id,
     label: item.label,
     status: item.status as SubagentProgressStatus,
-    ...(typeof item.profile === "string" ? { profile: item.profile } : {}),
-    ...(typeof item.turns === "number" ? { turns: item.turns } : {}),
-    ...(typeof item.toolCalls === "number" ? { toolCalls: item.toolCalls } : {}),
-    ...(item.toolCallCounts && typeof item.toolCallCounts === "object"
-      ? {
-          toolCallCounts: Object.fromEntries(
+    profile: typeof item.profile === "string" ? item.profile : undefined,
+    turns: typeof item.turns === "number" ? item.turns : undefined,
+    toolCalls: typeof item.toolCalls === "number" ? item.toolCalls : undefined,
+    toolCallCounts:
+      item.toolCallCounts && typeof item.toolCallCounts === "object"
+        ? Object.fromEntries(
             Object.entries(item.toolCallCounts).filter(
               (entry): entry is [string, number] => typeof entry[1] === "number",
             ),
-          ),
-        }
-      : {}),
-    ...(typeof item.tokens === "number" ? { tokens: item.tokens } : {}),
-    ...(typeof item.costUsd === "number" ? { costUsd: item.costUsd } : {}),
-    ...(typeof item.durationMs === "number" ? { durationMs: item.durationMs } : {}),
-    ...(typeof item.activity === "string" ? { activity: item.activity } : {}),
-    ...(typeof item.reason === "string" ? { reason: item.reason } : {}),
-    ...(item.cleanupPending === true ? { cleanupPending: true } : {}),
+          )
+        : undefined,
+    tokens: typeof item.tokens === "number" ? item.tokens : undefined,
+    costUsd: typeof item.costUsd === "number" ? item.costUsd : undefined,
+    durationMs: typeof item.durationMs === "number" ? item.durationMs : undefined,
+    activity: typeof item.activity === "string" ? item.activity : undefined,
+    reason: typeof item.reason === "string" ? item.reason : undefined,
+    cleanupPending: item.cleanupPending === true ? true : undefined,
   });
 }
 

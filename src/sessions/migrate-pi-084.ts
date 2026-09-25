@@ -107,7 +107,7 @@ function convertEntry(record: Record<string, unknown>): Entry {
         ...base,
         type: "custom",
         customType: String(raw.customType ?? "legacy"),
-        ...(raw.data !== undefined ? { data: jsonValue(raw.data) } : {}),
+        data: raw.data !== undefined ? jsonValue(raw.data) : undefined,
       };
     case "model_change":
     case "thinking_level_change":
@@ -223,10 +223,8 @@ function encodeCurrentSession(source: ParsedPi084Session): string {
     storageVersion: 1,
     createdAt: header.createdAt,
     cwd: header.cwd,
-    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
-    ...(header.legacyParentSessionPath !== undefined
-      ? { legacyParentSessionPath: header.legacyParentSessionPath }
-      : {}),
+    parentSessionId: header.parentSessionId,
+    legacyParentSessionPath: header.legacyParentSessionPath,
   });
   for (const entry of source.entries) writer.entry(entry);
   for (const [branch, tip] of source.branchTips) writer.set("pi.branch.tip", branch, tip);

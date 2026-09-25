@@ -490,7 +490,7 @@ export class DiscordMessagingBot implements MessagingBot {
     this.logToFile(conversationId, {
       date: new Date(interaction.createdTimestamp).toISOString(),
       ts: interaction.id,
-      ...(threadTs ? { threadTs } : {}),
+      threadTs: threadTs || undefined,
       user: interaction.user.id,
       userName: interaction.user.username,
       text: commandText,
@@ -612,7 +612,7 @@ export class DiscordMessagingBot implements MessagingBot {
       logEntryBase: {
         date: msg.createdAt.toISOString(),
         ts: msgId,
-        ...(!isDM && threadTs ? { threadTs } : {}),
+        threadTs: !isDM && threadTs ? threadTs : undefined,
         user: userId,
         userName,
         text: cleanedText,

@@ -111,7 +111,7 @@ async function createConfiguredAgentSession(params: {
     (request, hooks) =>
       runSubagent({
         request,
-        ...(hooks?.onActivity ? { onActivity: hooks.onActivity } : {}),
+        onActivity: hooks?.onActivity,
         defaultModel: model,
         thinkingLevel,
         models,
@@ -537,8 +537,8 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   await session.prompt(prepared.userMessage, {
     allowTaskHandoff: responder.startTask !== undefined,
     allowTaskStatus: responder.getTaskStatus !== undefined,
-    ...(prepared.imageAttachments.length > 0 ? { images: prepared.imageAttachments } : {}),
-    ...(isEventRun ? { budget: DEFAULT_EVENT_BUDGET } : {}),
+    images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
+    budget: isEventRun ? DEFAULT_EVENT_BUDGET : undefined,
   });
   await presentation.wait();
 

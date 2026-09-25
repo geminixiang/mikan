@@ -83,7 +83,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
   office.ensure();
   ensureRegularFile(workspace.memoryPath, "Workspace memory");
   ensureDirectoryRoot(workspace.skillsDir, "Workspace skills");
-  const ro = { readOnly: true as const };
   return {
     ...decision,
     mounts: [
@@ -91,12 +90,12 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
       {
         source: workspace.memoryPath,
         target: guestWorkspacePath("MEMORY.md"),
-        ...(readOnlyKnowledge ? ro : {}),
+        readOnly: readOnlyKnowledge ? true : undefined,
       },
       {
         source: workspace.skillsDir,
         target: guestWorkspacePath("skills"),
-        ...(readOnlyKnowledge ? ro : {}),
+        readOnly: readOnlyKnowledge ? true : undefined,
       },
       ...publicOfficeMounts(office),
     ],
@@ -106,7 +105,7 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
       conversationSkillsDir: office.skillsDir,
       globalMemoryPath: workspace.memoryPath,
       globalSkillsDir: workspace.skillsDir,
-      ...(readOnlyKnowledge ? { globalKnowledgeReadOnly: true } : {}),
+      globalKnowledgeReadOnly: readOnlyKnowledge ? true : undefined,
     },
   };
 }

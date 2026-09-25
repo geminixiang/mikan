@@ -221,7 +221,7 @@ export function appendBotResponseLog(
   appendChannelLog(office, {
     date: new Date().toISOString(),
     ts,
-    ...(threadTs ? { threadTs } : {}),
+    threadTs: threadTs || undefined,
     user: "bot",
     text,
     attachments: [],

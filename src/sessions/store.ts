@@ -127,7 +127,8 @@ function writeSessionHeader(
 ): void {
   SessionStore.writeHeaderFile(sessionFile, cwd, {
     id: sessionId,
-    ...(parent ? { parentSession: parent.path, parentSessionId: parent.id } : {}),
+    parentSession: parent?.path,
+    parentSessionId: parent?.id,
   });
 }
 

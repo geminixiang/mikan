@@ -465,9 +465,9 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
     ...request,
     systemPrompt: profile.systemPrompt,
     tools: profile.tools,
-    ...(profile.model ? { model: profile.model } : {}),
-    ...(profile.thinkingLevel ? { thinkingLevel: profile.thinkingLevel } : {}),
-    ...(Object.keys(budget).length > 0 ? { budget } : {}),
+    model: profile.model || undefined,
+    thinkingLevel: profile.thinkingLevel || undefined,
+    budget: Object.keys(budget).length > 0 ? budget : undefined,
   };
 }
 
@@ -535,17 +535,18 @@ function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
   const text = assistant ? contentText(assistant.content, "") : "";
   const base = {
     ...baseRunResult(run.runId, run.modelSpec, run.startedAt, stats),
-    ...(text ? { text } : {}),
-    ...(cleanupPending ? { cleanupPending: true as const } : {}),
+    text: text || undefined,
+    cleanupPending: cleanupPending || undefined,
   };
 
   if (terminalSignal) {
     return {
       ...base,
       status: terminalSignal,
-      ...(terminalSignal === "timeout"
-        ? { error: `Subagent exceeded its ${budget.maxDurationMs}ms duration limit` }
-        : {}),
+      error:
+        terminalSignal === "timeout"
+          ? `Subagent exceeded its ${budget.maxDurationMs}ms duration limit`
+          : undefined,
     };
   }
   if (stats.budgetExceededReason) {

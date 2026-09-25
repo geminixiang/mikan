@@ -551,7 +551,7 @@ export function resolveVaultInjection(options: {
 
   const env =
     capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
-  return { ...(env ? { env } : {}), mounts };
+  return { env, mounts };
 }
 
 export const disabledVaultManager: VaultManager = {

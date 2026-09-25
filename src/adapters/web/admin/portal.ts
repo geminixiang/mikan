@@ -39,7 +39,7 @@ export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
     return this.createRecord(ADMIN_TOKEN_TTL_MS, {
       platform: args.platform,
       platformUserId: args.platformUserId,
-      ...(args.platformUserName ? { platformUserName: args.platformUserName } : {}),
+      platformUserName: args.platformUserName || undefined,
       conversationId: args.conversationId,
     });
   }
@@ -707,7 +707,7 @@ function serveConversationModelUpdate(
     const result = applyConversationSettings(services.runtime, workspace.office(scope.address), {
       provider,
       model,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
+      thinkingLevel,
     });
     if (!result.ok) {
       jsonRes(res, 409, {
@@ -892,7 +892,7 @@ function serveGlobalModelUpdate(
     const result = applyGlobalSettings(services.runtime, {
       provider,
       model,
-      ...(thinkingLevel ? { thinkingLevel } : {}),
+      thinkingLevel,
     });
     return {
       ok: true,
@@ -1061,7 +1061,7 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
       path: rel,
       type: "dir",
       children,
-      ...(truncated ? { truncated: true } : {}),
+      truncated: truncated ? true : undefined,
     };
   };
   const node = walk(startDir, relPrefix, 0);
@@ -1277,10 +1277,10 @@ function redactMcpServers(map: Record<string, McpServerConfig>): Record<string, 
     Object.entries(map).map(([name, config]) => [
       name,
       {
-        ...(config.command !== undefined ? { command: config.command } : {}),
-        ...(config.args !== undefined ? { args: config.args } : {}),
-        ...(config.url !== undefined ? { url: redactMcpUrl(config.url) } : {}),
-        ...(config.disabled !== undefined ? { disabled: config.disabled } : {}),
+        command: config.command,
+        args: config.args,
+        url: config.url !== undefined ? redactMcpUrl(config.url) : undefined,
+        disabled: config.disabled,
         envKeys: Object.keys(config.env ?? {}),
         headerKeys: Object.keys(config.headers ?? {}),
       },

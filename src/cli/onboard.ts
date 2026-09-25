@@ -105,7 +105,7 @@ async function askLlm(
         [provider]: {
           api: "openai-completions",
           baseUrl,
-          ...(apiKey ? { apiKey } : {}),
+          apiKey: apiKey ? apiKey : undefined,
           models: ids.map((id) => ({ id })),
         },
       },

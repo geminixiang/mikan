@@ -172,7 +172,7 @@ export class ChatHistorySync {
         source: "log.jsonl",
         messageCount: 0,
         resetAt: this.now().toISOString(),
-        ...(lastMessageId ? { lastMessageId } : {}),
+        lastMessageId: lastMessageId ? lastMessageId : undefined,
       });
     } finally {
       await sessionManager.close();
@@ -497,7 +497,7 @@ async function syncSessionManagerFromLog(
   });
   return {
     appended: newRecords.length,
-    ...(lastMessageId !== undefined ? { lastMessageId } : {}),
+    lastMessageId,
   };
 }
 
@@ -599,7 +599,7 @@ function buildHistorySessionMessage(message: ConversationLogMessage): SessionApp
     return {
       role: "user",
       content: [{ type: "text", text: formatHistoryMessage(message) }],
-      ...(timestamp !== undefined ? { timestamp } : {}),
+      timestamp,
     } as SessionAppendMessage;
   }
 
@@ -611,7 +611,7 @@ function buildHistorySessionMessage(message: ConversationLogMessage): SessionApp
     model: "platform-history",
     usage: zeroUsage(),
     stopReason: "stop",
-    ...(timestamp !== undefined ? { timestamp } : {}),
+    timestamp,
   } as SessionAppendMessage;
 }
 

@@ -445,8 +445,9 @@ export class SlackMessagingBot implements MessagingBot {
     return slackRetry(async () => {
       const payload = {
         channel,
-        ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
-        ...(identity ? { username: identity.username, icon_emoji: identity.iconEmoji } : {}),
+        thread_ts: threadTs,
+        username: identity?.username,
+        icon_emoji: identity?.iconEmoji,
         ...renderSlackBlocks(this.resolveMentions(text)),
       };
       const result = await this.webClient.chat.postMessage(payload);
@@ -478,8 +479,8 @@ export class SlackMessagingBot implements MessagingBot {
         channel,
         user,
         text,
-        ...(blocks !== undefined ? { blocks: blocks as KnownBlock[] } : {}),
-        ...(threadTs ? { thread_ts: threadTs } : {}),
+        blocks: blocks as KnownBlock[] | undefined,
+        thread_ts: threadTs || undefined,
       });
     });
   }
@@ -505,7 +506,7 @@ export class SlackMessagingBot implements MessagingBot {
         channel,
         text,
         blocks: blocks as KnownBlock[],
-        ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
+        thread_ts: threadTs,
       };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
@@ -566,12 +567,14 @@ export class SlackMessagingBot implements MessagingBot {
         ? await this.webClient.conversations.replies({
             channel,
             ts: threadTs,
-            ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
+            oldest: options?.oldest || undefined,
+            inclusive: options?.oldest ? false : undefined,
             limit,
           })
         : await this.webClient.conversations.history({
             channel,
-            ...(options?.oldest ? { oldest: options.oldest, inclusive: false } : {}),
+            oldest: options?.oldest || undefined,
+            inclusive: options?.oldest ? false : undefined,
             limit,
           });
       const messages = (result.messages ?? []) as Array<{
@@ -639,9 +642,9 @@ export class SlackMessagingBot implements MessagingBot {
       const result = await this.webClient.apiCall("chat.startStream", {
         channel,
         markdown_text: this.resolveMentions(head ?? ""),
-        ...(threadTs ? { thread_ts: threadTs } : {}),
-        ...(this.teamId ? { recipient_team_id: this.teamId } : {}),
-        ...(recipientUserId ? { recipient_user_id: recipientUserId } : {}),
+        thread_ts: threadTs || undefined,
+        recipient_team_id: this.teamId || undefined,
+        recipient_user_id: recipientUserId || undefined,
       });
       const streamTs = (result as { ts?: string }).ts;
       if (!streamTs) throw new Error("Slack chat.startStream did not return ts");
@@ -707,7 +710,7 @@ export class SlackMessagingBot implements MessagingBot {
     return slackRetry(async () => {
       await this.webClient.assistant.threads.setSuggestedPrompts({
         channel_id: channel,
-        ...(threadTs ? { thread_ts: threadTs } : {}),
+        thread_ts: threadTs || undefined,
         prompts,
       });
     });
@@ -828,7 +831,7 @@ export class SlackMessagingBot implements MessagingBot {
       threadTs,
       {
         platform: "slack",
-        ...(slackBlocks ? { slackBlocks } : {}),
+        slackBlocks,
       },
     );
   }
@@ -856,7 +859,7 @@ export class SlackMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "slack",
-      ...(this.teamId ? { workspaceId: this.teamId } : {}),
+      workspaceId: this.teamId || undefined,
       trustModel: "membership",
       formattingGuide:
         "## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.",
@@ -1300,7 +1303,7 @@ export class SlackMessagingBot implements MessagingBot {
       text: commandText,
       attachments: [],
       isMessagingBot: false,
-      ...(threadTs ? { threadTs } : {}),
+      threadTs: threadTs || undefined,
     });
 
     const event = createConversationEvent({
@@ -1312,7 +1315,7 @@ export class SlackMessagingBot implements MessagingBot {
       user: payload.user_id,
       text: commandText,
       attachments: [],
-      ...(threadTs ? { thread_ts: threadTs } : {}),
+      thread_ts: threadTs || undefined,
       sessionKey,
     });
 
@@ -1322,9 +1325,9 @@ export class SlackMessagingBot implements MessagingBot {
       userName,
       text: commandText,
       ts: eventTs,
-      ...(isDirectMessage
-        ? { threadTs, sessionKey }
-        : { ephemeralChannelId: conversationId, threadTs, sessionKey }),
+      ephemeralChannelId: isDirectMessage ? undefined : conversationId,
+      threadTs,
+      sessionKey,
     });
 
     return { event, context };
@@ -1344,13 +1347,11 @@ export class SlackMessagingBot implements MessagingBot {
     const { event, context } = this.buildSlashCommandEvent(payload, {
       includeText: route.includeText,
       thread: route.thread,
-      ...(route.privateCommand
-        ? {
-            type: payload.channel_id.startsWith("D")
-              ? ("dm" as const)
-              : ("private_command" as const),
-          }
-        : {}),
+      type: route.privateCommand
+        ? payload.channel_id.startsWith("D")
+          ? ("dm" as const)
+          : ("private_command" as const)
+        : undefined,
     });
     await this.handler.handleEvent(event, this, context);
   }
@@ -1820,7 +1821,7 @@ export class SlackMessagingBot implements MessagingBot {
     this.logToFile(channelId, {
       date: new Date().toISOString(),
       ts,
-      ...(threadTs ? { threadTs } : {}),
+      threadTs: threadTs || undefined,
       user: userId,
       userName: body.user?.username ?? body.user?.name,
       text,
@@ -1853,7 +1854,7 @@ export class SlackMessagingBot implements MessagingBot {
       user: userId,
       text,
       attachments: [],
-      ...(threadTs ? { thread_ts: threadTs } : {}),
+      thread_ts: threadTs || undefined,
       sessionKey,
     });
 
@@ -2172,8 +2173,8 @@ export class SlackMessagingBot implements MessagingBot {
         this.channels.set(c.id, {
           id: c.id,
           name: c.name,
-          ...(typeof c.is_private === "boolean" ? { isPrivate: c.is_private } : {}),
-          ...(c.is_shared || c.is_ext_shared ? { isExternallyShared: true } : {}),
+          isPrivate: typeof c.is_private === "boolean" ? c.is_private : undefined,
+          isExternallyShared: c.is_shared || c.is_ext_shared ? true : undefined,
         });
       }
       cursor = result.response_metadata?.next_cursor;

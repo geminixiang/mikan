@@ -145,7 +145,7 @@ export class MikanAgentSession {
       toolCallCounts: { ...this.tally.toolCallCounts },
       durationMs:
         this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
-      ...(this.budgetExceededReason ? { budgetExceededReason: this.budgetExceededReason } : {}),
+      budgetExceededReason: this.budgetExceededReason || undefined,
     };
   }
 
@@ -668,16 +668,15 @@ export class MikanAgentSession {
           type: "compaction_end",
           reason: event.reason,
           aborted: event.status === "aborted",
-          ...(event.status === "failed" ? { errorMessage: event.error.message } : {}),
-          ...(entry?.type === "compaction"
-            ? {
-                result: {
+          errorMessage: event.status === "failed" ? event.error.message : undefined,
+          result:
+            entry?.type === "compaction"
+              ? {
                   summary: entry.summary,
                   retainedMessages: entry.retainedTail.length,
                   tokensBefore: entry.tokensBefore,
-                },
-              }
-            : {}),
+                }
+              : undefined,
         });
         return;
       }

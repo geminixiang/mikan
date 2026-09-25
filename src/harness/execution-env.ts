@@ -236,8 +236,8 @@ class ShellExecutionEnv implements ExecutionEnv {
   ): Promise<Result<ShellExecResult, ExecutionError>> {
     try {
       const result = await this.executor.exec(command, {
-        ...(options?.cwd ? { cwd: options.cwd } : {}),
-        ...(options?.timeout ? { timeout: options.timeout } : {}),
+        cwd: options?.cwd || undefined,
+        timeout: options?.timeout || undefined,
         signal: context.abortSignal,
       });
       const combined = [result.stdout, result.stderr].filter((part) => part.length > 0).join("\n");
@@ -327,8 +327,8 @@ function shellOutputMetadata(
   const lastLine = truncation.content.split("\n").at(-1) ?? "";
   return {
     truncation: metadata,
-    ...(spillPath ? { spillPath } : {}),
-    ...(truncation.lastLinePartial ? { lastLineBytes: Buffer.byteLength(lastLine, "utf8") } : {}),
+    spillPath: spillPath || undefined,
+    lastLineBytes: truncation.lastLinePartial ? Buffer.byteLength(lastLine, "utf8") : undefined,
   };
 }
 

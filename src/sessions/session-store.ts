@@ -187,10 +187,8 @@ function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSe
     cwd: header.cwd,
     path,
     modifiedAt: 0,
-    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
-    ...(header.legacyParentSessionPath !== undefined
-      ? { legacyParentSessionPath: header.legacyParentSessionPath }
-      : {}),
+    parentSessionId: header.parentSessionId,
+    legacyParentSessionPath: header.legacyParentSessionPath,
   };
 }
 
@@ -282,14 +280,10 @@ function buildHeader(
       storageVersion: JSONL_STORAGE_VERSION,
       createdAt: Date.now(),
       cwd,
-      ...(options?.parentSessionId !== undefined
-        ? { parentSessionId: options.parentSessionId }
-        : {}),
-      ...(options?.parentSession !== undefined
-        ? { legacyParentSessionPath: options.parentSession }
-        : {}),
+      parentSessionId: options?.parentSessionId,
+      legacyParentSessionPath: options?.parentSession,
     },
-    ...(metadata !== undefined ? { metadata } : {}),
+    metadata,
   };
 }
 
@@ -304,9 +298,9 @@ function headerView(header: CurrentSessionHeader, metadata?: MikanSessionMetadat
     id: header.id,
     timestamp: new Date(header.createdAt).toISOString(),
     cwd: header.cwd,
-    ...(header.parentSessionId !== undefined ? { parentSessionId: header.parentSessionId } : {}),
-    ...(parentSession !== undefined ? { parentSession } : {}),
-    ...(metadata !== undefined ? { metadata } : {}),
+    parentSessionId: header.parentSessionId,
+    parentSession,
+    metadata,
   };
 }
 
@@ -510,7 +504,7 @@ export class SessionStore implements SessionInspection {
       return {
         open: state?.currentOperationId != null,
         started: state?.currentOperationId != null || state?.lastOperationId != null,
-        ...(result ? { result: { status: result.status, endedAt: result.endedAt } } : {}),
+        result: result ? { status: result.status, endedAt: result.endedAt } : undefined,
       };
     });
   }
@@ -773,9 +767,7 @@ export class SessionStore implements SessionInspection {
       const session = await repo.create(
         {
           id: pending.header.id,
-          ...(pending.header.parentSessionId !== undefined
-            ? { parentSessionId: pending.header.parentSessionId }
-            : {}),
+          parentSessionId: pending.header.parentSessionId,
         },
         TODO_CONTEXT,
       );

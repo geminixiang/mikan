@@ -169,7 +169,7 @@ function mergeSandboxSettings(
   return {
     ...base,
     ...override,
-    ...(base.boost || override.boost ? { boost: { ...base.boost, ...override.boost } } : {}),
+    boost: base.boost || override.boost ? { ...base.boost, ...override.boost } : undefined,
   };
 }
 
@@ -301,7 +301,7 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   return toAgentConfig({
     ...globalConfig,
     ...conversationConfig,
-    ...(sandbox ? { sandbox } : {}),
+    sandbox,
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
   });
 }
@@ -341,12 +341,12 @@ export function hasDefinedValue(values: Record<string, unknown> | undefined): bo
 
 export function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
-    ...(hasDefinedValue(config.llm) ? { llm: config.llm } : {}),
-    ...(hasDefinedValue(config.sentry) ? { sentry: config.sentry } : {}),
-    ...(hasDefinedValue(config.sandbox) ? { sandbox: config.sandbox } : {}),
-    ...(hasDefinedValue(config.slack) ? { slack: config.slack } : {}),
-    ...(hasDefinedValue(config.office) ? { office: config.office } : {}),
-    ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
+    llm: hasDefinedValue(config.llm) ? config.llm : undefined,
+    sentry: hasDefinedValue(config.sentry) ? config.sentry : undefined,
+    sandbox: hasDefinedValue(config.sandbox) ? config.sandbox : undefined,
+    slack: hasDefinedValue(config.slack) ? config.slack : undefined,
+    office: hasDefinedValue(config.office) ? config.office : undefined,
+    mcpServers: config.mcpServers,
   };
 }
 
@@ -371,7 +371,7 @@ function patchSettingsConfig(
       ...existing.slack,
       ...config.slack,
     },
-    ...(existing.office !== undefined ? { office: existing.office } : {}),
+    office: existing.office,
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
   return compactSettingsConfig(patched);
@@ -436,7 +436,7 @@ export function setOfficeVisibilityOverride(office: Office, visibility: "private
   atomicWritePrivateFile(
     settingsPath,
     JSON.stringify(
-      compactSettingsConfig({ ...rest, ...(visibility ? { office: { visibility } } : {}) }),
+      compactSettingsConfig({ ...rest, office: visibility ? { visibility } : undefined }),
       null,
       2,
     ),

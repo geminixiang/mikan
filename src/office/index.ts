@@ -504,10 +504,10 @@ function makeRecord(fields: RecordFields): OfficeMigrationRecord {
     rawConversationId: fields.rawConversationId,
     sourceDir: fields.sourceDir,
     workspaceRoot: fields.workspaceRoot,
-    ...(fields.ownerPlatform ? { ownerPlatform: fields.ownerPlatform } : {}),
-    ...(fields.targetDir ? { targetDir: fields.targetDir } : {}),
+    ownerPlatform: fields.ownerPlatform ? fields.ownerPlatform : undefined,
+    targetDir: fields.targetDir ? fields.targetDir : undefined,
     status: fields.status,
-    ...(fields.error ? { error: fields.error } : {}),
+    error: fields.error ? fields.error : undefined,
     updatedAt: fields.updatedAt ?? new Date().toISOString(),
   };
   return Object.freeze(record);
@@ -523,10 +523,10 @@ function transitionRecord(
     rawConversationId: record.rawConversationId,
     sourceDir: record.sourceDir,
     workspaceRoot: record.workspaceRoot,
-    ...(record.ownerPlatform ? { ownerPlatform: record.ownerPlatform } : {}),
-    ...(targetDir ? { targetDir } : {}),
+    ownerPlatform: record.ownerPlatform,
+    targetDir,
     status,
-    ...(error ? { error } : {}),
+    error,
   });
 }
 
@@ -700,10 +700,10 @@ function buildMigrationRecord(
     rawConversationId: fields.rawConversationId,
     sourceDir: fields.sourceDir,
     workspaceRoot: fields.workspaceRoot,
-    ...(ownerPlatform ? { ownerPlatform } : {}),
-    ...(targetDir ? { targetDir } : {}),
+    ownerPlatform,
+    targetDir,
     status: fields.status,
-    ...(error ? { error } : {}),
+    error,
     updatedAt: fields.updatedAt,
   });
 }

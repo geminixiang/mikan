@@ -99,7 +99,7 @@ function spawnShell(command: string, cwd?: string): ChildProcess {
   return spawn(isWindows ? "cmd" : "sh", [isWindows ? "/c" : "-c", command], {
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
-    ...(cwd ? { cwd } : {}),
+    cwd: cwd ? cwd : undefined,
   });
 }
 
