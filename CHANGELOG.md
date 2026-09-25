@@ -15,6 +15,7 @@ any release.
 
 ### Fixed
 
+- Accept `thinking: max` in subagent profiles; they kept their own level list without `max`, while settings and `/pi-model` accepted it.
 - Spill oversized MCP JSON results as indented JSON so `read` and `grep` can inspect them; the compact single-line spill exceeded `read`'s per-line limit.
 
 ## [1.0.0-beta.78]
