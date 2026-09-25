@@ -1,4 +1,4 @@
-import type { FetchFunction, WebClient } from "@slack/web-api";
+import type { WebClient } from "@slack/web-api";
 import type { Attachment, ConversationKind, OfficeAddress } from "../../types.js";
 import type { Workspace } from "../../office/types.js";
 import type { SlackMessagingBot } from "./bot.js";
@@ -35,7 +35,7 @@ export interface SlackMessagingBotOptions {
   workspace: Workspace;
   webApi?: SlackWebApi;
   socket?: SlackSocketConnection;
-  fetch?: FetchFunction;
+  fetch?: typeof fetch;
 }
 
 export type SlackResponderBot = Pick<

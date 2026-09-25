@@ -1,8 +1,8 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
-import { WebAPIRateLimitedError, WebClient, type FetchFunction } from "@slack/web-api";
+import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
   MessagingBot,
@@ -57,7 +57,9 @@ import {
   appendChannelLog,
   MessagingEventQueue,
   MessagingIntakeTracker,
+  AttachmentRejectedError,
   saveIncomingAttachments,
+  writeResponseToFile,
   withRetry,
 } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
@@ -217,15 +219,23 @@ class AttachmentDownloadHttpError extends Error {
 }
 
 function isRetryableAttachmentDownloadError(error: unknown): boolean {
+  if (error instanceof AttachmentRejectedError) return false;
   if (!(error instanceof AttachmentDownloadHttpError)) return true;
   return error.status === 408 || error.status === 429 || error.status >= 500;
+}
+
+function assertSlackFileUrl(url: string): void {
+  const { protocol, hostname } = new URL(url);
+  if (protocol === "https:" && (hostname === "slack.com" || hostname.endsWith(".slack.com")))
+    return;
+  throw new AttachmentRejectedError(`refusing to send the bot token to ${hostname}`);
 }
 
 export class SlackMessagingBot implements MessagingBot {
   private socketClient: SlackSocketConnection;
   private webClient: SlackWebApi;
   private readonly statusClient: WebClient;
-  private readonly fetchFn: FetchFunction;
+  private readonly fetchFn: typeof fetch;
   private readonly statusUpdates = new Map<string, Promise<void>>();
   private handler: MessagingEventHandler;
   private workspace: Workspace;
@@ -363,7 +373,7 @@ export class SlackMessagingBot implements MessagingBot {
     this.handler = handler;
     this.workspace = config.workspace;
     this.botToken = config.botToken;
-    this.fetchFn = config.fetch ?? ((url, init) => fetch(url, init));
+    this.fetchFn = config.fetch ?? ((input, init) => fetch(input, init));
     this.socketClient =
       config.socket ??
       new SocketModeClient({
@@ -1892,6 +1902,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private async downloadSlackFile(url: string, destPath: string): Promise<void> {
+    assertSlackFileUrl(url);
     await withRetry(
       async () => {
         const response = await this.fetchFn(url, {
@@ -1903,8 +1914,7 @@ export class SlackMessagingBot implements MessagingBot {
             response.status,
           );
         }
-        const buffer = await response.arrayBuffer();
-        await writeFile(destPath, Buffer.from(buffer));
+        await writeResponseToFile(response, destPath);
       },
       { maxAttempts: 3, baseDelayMs: 250, isRateLimited: isRetryableAttachmentDownloadError },
     );

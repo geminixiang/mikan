@@ -1,5 +1,8 @@
-import { appendFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFileSync, createWriteStream } from "node:fs";
+import { mkdir, rm } from "node:fs/promises";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { dirname, join } from "node:path";
 import type { MessagingEventHandler, OfficeAddress } from "../types.js";
 import { sameOffice } from "../office/index.js";
@@ -238,14 +241,54 @@ export function resolveOnlyScopedStopTarget(
   return runningScopes.length === 1 ? (runningScopes[0] ?? null) : null;
 }
 
+export const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
+
+export class AttachmentRejectedError extends Error {}
+
+function attachmentLimitError(maxBytes: number): AttachmentRejectedError {
+  return new AttachmentRejectedError(`exceeds the ${maxBytes}-byte attachment limit`);
+}
+
+export async function writeResponseToFile(
+  response: Response,
+  destPath: string,
+  maxBytes: number = MAX_ATTACHMENT_BYTES,
+): Promise<void> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (declaredLength > maxBytes) {
+    await response.body?.cancel();
+    throw attachmentLimitError(maxBytes);
+  }
+  await mkdir(dirname(destPath), { recursive: true });
+  if (!response.body) {
+    await pipeline(Readable.from([]), createWriteStream(destPath));
+    return;
+  }
+  let received = 0;
+  const limit = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      received += chunk.length;
+      callback(received > maxBytes ? attachmentLimitError(maxBytes) : null, chunk);
+    },
+  });
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
+      limit,
+      createWriteStream(destPath),
+    );
+  } catch (error) {
+    await rm(destPath, { force: true });
+    throw error;
+  }
+}
+
 export async function downloadUrlToFile(url: string, destPath: string): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
-  const buffer = await response.arrayBuffer();
-  await mkdir(dirname(destPath), { recursive: true });
-  await writeFile(destPath, Buffer.from(buffer));
+  await writeResponseToFile(response, destPath);
 }
 
 const SHORT_NAME_TO_UNICODE_EMOJI: Record<string, string> = {

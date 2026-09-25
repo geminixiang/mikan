@@ -13,6 +13,10 @@ any release.
 
 - **Breaking (SDK):** `new ChatHistorySync()` now requires `{ isCommandText }`, so sessions no longer import the command inventory from the adapters. Pass the newly exported `isCommandText` to keep filtering command messages out of synced history.
 
+### Security
+
+- Only send the Slack bot token to `https://*.slack.com` file URLs, and stream incoming attachments to disk with a 100 MiB limit instead of buffering whole files in memory; a download over the limit is rejected, not retried, and leaves no partial file.
+
 ### Fixed
 
 - Accept `thinking: max` in subagent profiles; they kept their own level list without `max`, while settings and `/pi-model` accepted it.

@@ -5,7 +5,6 @@ import type { KnownBlock } from "@slack/types";
 import type {
   ConversationsHistoryResponse,
   ConversationsListResponse,
-  FetchFunction,
   UsersListResponse,
 } from "@slack/web-api";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -30,10 +29,11 @@ import { createGlobalSettingsFile } from "../settings/index.js";
 import { readPlatformChannelKind } from "../office/projection.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
 import { isRecord } from "../unknown-values.js";
+import { MAX_ATTACHMENT_BYTES } from "../adapters/shared.js";
 
 type SlackMember = NonNullable<UsersListResponse["members"]>[number];
 type SlackConversation = NonNullable<ConversationsListResponse["channels"]>[number];
-type FetchInit = Parameters<FetchFunction>[1];
+type FetchInit = Parameters<typeof fetch>[1];
 type HistoryBlocks = NonNullable<
   NonNullable<ConversationsHistoryResponse["messages"]>[number]["blocks"]
 >;
@@ -109,7 +109,7 @@ interface SlackHarnessOptions {
   auth?: { user_id: string; bot_id?: string };
   members?: SlackMember[];
   channels?: SlackConversation[];
-  fetch?: FetchFunction;
+  fetch?: typeof globalThis.fetch;
 }
 
 interface SlackHarness {
@@ -177,7 +177,8 @@ function slackResponse(body: object): Response {
   });
 }
 
-function apiMethod(url: string | URL): string {
+function apiMethod(url: string | URL | Request): string {
+  if (url instanceof Request) return url.url.split("/").pop() ?? "";
   return String(url).split("/").pop() ?? "";
 }
 
@@ -223,7 +224,7 @@ describe("Slack status transport", () => {
     try {
       const abort = new AbortController();
       const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(abort.signal);
-      const fetch = vi.fn<FetchFunction>(
+      const fetch = vi.fn<typeof globalThis.fetch>(
         (_url, init) =>
           new Promise((_resolve, reject) => {
             init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
@@ -266,7 +267,7 @@ describe("Slack status transport", () => {
         release = resolve;
       });
       const sent: string[] = [];
-      const fetch = vi.fn<FetchFunction>(async (url, init) => {
+      const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
         if (apiMethod(url) !== "assistant.threads.setStatus") {
           return slackResponse({ ok: true, ts: "2" });
         }
@@ -306,7 +307,7 @@ describe("Slack status transport", () => {
     const timeout = vi.spyOn(AbortSignal, "timeout");
     try {
       const fetch = vi
-        .fn<FetchFunction>()
+        .fn<typeof globalThis.fetch>()
         .mockResolvedValueOnce(new Response("", { status: 429, headers: { "retry-after": "60" } }))
         .mockResolvedValueOnce(slackResponse({ ok: true }))
         .mockResolvedValueOnce(new Response("", { status: 500 }))
@@ -1691,7 +1692,7 @@ describe("SlackMessagingBot attachments", () => {
   test("waits for attachment downloads before invoking the agent", async () => {
     const handler = makeHandler();
     const download = deferred<Response>();
-    const fetch = vi.fn<FetchFunction>(() => download.promise);
+    const fetch = vi.fn<typeof globalThis.fetch>(() => download.promise);
     const { socket } = await startSlackHarness({ handler, workspace, fetch });
 
     const ack = makeAck();
@@ -1701,14 +1702,14 @@ describe("SlackMessagingBot attachments", () => {
         channel: "C123",
         user: "U123",
         ts: "1001.0001",
-        files: [{ name: "clip.mov", url_private: "https://example.com/clip.mov" }],
+        files: [{ name: "clip.mov", url_private: "https://files.slack.com/clip.mov" }],
       },
       ack,
     });
 
     expect(ack).toHaveBeenCalled();
     await vi.waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith("https://example.com/clip.mov", {
+      expect(fetch).toHaveBeenCalledWith("https://files.slack.com/clip.mov", {
         headers: { Authorization: "Bearer xoxb-test" },
       }),
     );
@@ -1723,6 +1724,55 @@ describe("SlackMessagingBot attachments", () => {
       attachments: [{ original: "clip.mov", localPath }],
     });
     expect(readFileSync(join(workingDir, localPath), "utf-8")).toBe("clip");
+  });
+
+  test("never sends the bot token to a host outside Slack", async () => {
+    const handler = makeHandler();
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response("clip"));
+    const { socket } = await startSlackHarness({ handler, workspace, fetch });
+
+    await socket.deliver("app_mention", {
+      event: {
+        text: "<@B123> 看這個檔案",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0002",
+        files: [{ name: "clip.mov", url_private: "https://files.slack.com.evil.test/clip.mov" }],
+      },
+      ack: makeAck(),
+    });
+
+    await vi.waitFor(() => expect(readLogEntries(workspace, "C123").length).toBeGreaterThan(0));
+    expect(fetch).not.toHaveBeenCalled();
+    expect(existsSync(join(workingDir, C123_OFFICE, "attachments", "1001000_clip.mov"))).toBe(
+      false,
+    );
+  });
+
+  test("does not retry a download over the attachment size limit", async () => {
+    const handler = makeHandler();
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      async () =>
+        new Response("x", { headers: { "content-length": String(MAX_ATTACHMENT_BYTES + 1) } }),
+    );
+    const { socket } = await startSlackHarness({ handler, workspace, fetch });
+
+    await socket.deliver("app_mention", {
+      event: {
+        text: "<@B123> 看這個檔案",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0003",
+        files: [{ name: "huge.mov", url_private: "https://files.slack.com/huge.mov" }],
+      },
+      ack: makeAck(),
+    });
+
+    await vi.waitFor(() => expect(readLogEntries(workspace, "C123").length).toBeGreaterThan(0));
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(workingDir, C123_OFFICE, "attachments", "1001000_huge.mov"))).toBe(
+      false,
+    );
   });
 });
 
