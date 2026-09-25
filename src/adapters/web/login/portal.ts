@@ -35,7 +35,7 @@ export class InMemoryLinkTokenStore extends InMemoryTokenStore<LinkToken> {
     });
   }
 }
-import { errorMessage } from "../../../unknown-values.js";
+import { errorMessage, isRecord } from "../../../unknown-values.js";
 
 interface LinkCompleteBody {
   token: string;
@@ -1129,7 +1129,7 @@ function extractEnvUpdates(data: Partial<LinkCompleteBody>): {
   updates?: Record<string, string>;
   error?: string;
 } {
-  if (data.env && typeof data.env === "object" && !Array.isArray(data.env)) {
+  if (isRecord(data.env)) {
     const rawEntries = Object.entries(data.env);
     if (rawEntries.length === 0) return { error: "Missing required field: env" };
 

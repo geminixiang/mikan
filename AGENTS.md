@@ -34,7 +34,8 @@ Choose verification proportional to the change. Behavior changes need relevant t
 ## Project contracts
 
 - Follow nearby code and the lint/TypeScript configuration. Local imports use `.js` specifiers. Shared exported types belong in the module's `types.ts`.
-- Give each fact one owner: a constant, default, schema, or piece of metadata lives in the module that owns it, and other code imports or receives it instead of restating it.
+- Import each symbol from the module that declares it. Only the published entry points in `package.json` `exports` re-export, and code under `src/` does not import through them. Modules outside `src/adapters/` depend on no adapter code except in the composition root (`main.ts`, `cli/`, `runtime/`).
+- Give each fact one owner: a constant, default, schema, or piece of metadata lives in the module that owns it, and other code imports or receives it instead of restating it. `src/test/source-guards.*.test.ts` enforce the owners and boundaries above; when one fails, use the owner it names. When you give a fact an owner, add a guard class with its spelling tables instead of narrowing a pattern or allowlisting a file without a recorded reason.
 - Keep object shapes stable. Write `field: condition ? value : undefined` when an absent field and an `undefined` one are equivalent; keep a conditional spread only where the property must be truly absent, such as for an `in` check or an API that rejects `undefined`.
 - Use a named options interface when a signature spans several lines or crosses a module boundary, and call the underlying function directly instead of adding a pass-through helper.
 - Prefer **LBYL and Early Error Returns**: check preconditions up front, return or throw early for invalid/error cases, and keep the happy path unnested. Use EAFP when check-then-act would race, duplicate expensive work, or make error handling less clear.

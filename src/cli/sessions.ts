@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { findPi084SessionFiles, migratePi084SessionFile } from "../sessions/migrate-pi-084.js";
 import { findV3SessionFiles, migrateSessionFile } from "../sessions/migrate-v3.js";
 import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
+import { errorMessage } from "../unknown-values.js";
 
 interface Candidate {
   file: string;
@@ -85,7 +86,7 @@ async function migrateCandidate(
     return "migrated";
   } catch (error) {
     const cause = error instanceof Error && error.cause ? ` (${String(error.cause)})` : "";
-    console.error(`FAILED     ${file}: ${error instanceof Error ? error.message : error}${cause}`);
+    console.error(`FAILED     ${file}: ${errorMessage(error)}${cause}`);
     return "failed";
   }
 }

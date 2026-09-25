@@ -1,5 +1,6 @@
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import { cliCommand, commandExitCode, nonEmptyValue } from "./arg-grammar.js";
+import { errorMessage } from "../unknown-values.js";
 
 interface SandboxCommandOptions {
   image?: string;
@@ -92,7 +93,7 @@ async function migrateContainers(
       if (outcome === "missing") failed++;
     } catch (error) {
       failed++;
-      console.error(`${containerKey}\tfailed\t${error instanceof Error ? error.message : error}`);
+      console.error(`${containerKey}\tfailed\t${errorMessage(error)}`);
     }
   }
   return failed === 0 ? 0 : 1;
