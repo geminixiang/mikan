@@ -44,22 +44,28 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
   },
 };
 
+const THINKING_LEVEL_KEYS: Record<ThinkingLevel, true> = {
+  off: true,
+  minimal: true,
+  low: true,
+  medium: true,
+  high: true,
+  xhigh: true,
+  max: true,
+};
+
+export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as ThinkingLevel[];
+
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === "string" && Object.hasOwn(THINKING_LEVEL_KEYS, value);
+}
+
 const SettingsFileSchema = Type.Object({
   llm: Type.Optional(
     Type.Object({
       provider: Type.Optional(Type.String()),
       model: Type.Optional(Type.String()),
-      thinkingLevel: Type.Optional(
-        Type.Union([
-          Type.Literal("off"),
-          Type.Literal("minimal"),
-          Type.Literal("low"),
-          Type.Literal("medium"),
-          Type.Literal("high"),
-          Type.Literal("xhigh"),
-          Type.Literal("max"),
-        ]),
-      ),
+      thinkingLevel: Type.Optional(Type.Union(THINKING_LEVELS.map((level) => Type.Literal(level)))),
     }),
   ),
   sentry: Type.Optional(

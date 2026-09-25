@@ -1,20 +1,16 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ThinkingLevel as PiAiThinkingLevel } from "@earendil-works/pi-ai";
-import { resolveConversationSettings } from "../../settings/index.js";
+import {
+  isThinkingLevel,
+  resolveConversationSettings,
+  THINKING_LEVELS,
+} from "../../settings/index.js";
 import { applyConversationSettings } from "../../settings/apply.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ModelRegistry, ParsedModelCommand } from "./types.js";
 import { replySummary } from "./utils.js";
 
-const PI_AI_THINKING_LEVELS = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-] satisfies PiAiThinkingLevel[];
-const THINKING_LEVELS = new Set<ThinkingLevel>(["off", ...PI_AI_THINKING_LEVELS]);
+const QUOTED_THINKING_LEVELS = THINKING_LEVELS.map((level) => `\`${level}\``);
+const THINKING_LEVEL_CHOICES = `${QUOTED_THINKING_LEVELS.slice(0, -1).join("、")} 或 ${QUOTED_THINKING_LEVELS.at(-1)}`;
 
 export type { ParsedModelCommand } from "./types.js";
 
@@ -73,9 +69,7 @@ function parseModelThinkingLevel(modelSpec: string): {
     model: modelSpec.slice(0, colon),
     modelCandidate: modelSpec,
     thinkingLevelCandidate: suffix,
-    thinkingLevel: THINKING_LEVELS.has(suffix as ThinkingLevel)
-      ? (suffix as ThinkingLevel)
-      : undefined,
+    thinkingLevel: isThinkingLevel(suffix) ? suffix : undefined,
   };
 }
 
@@ -151,12 +145,9 @@ export class ModelCommandHandler implements CommandHandler {
 
     if (parsed.modelCandidate) {
       const suffix = parsed.thinkingLevelCandidate;
-      if (suffix && !THINKING_LEVELS.has(suffix as ThinkingLevel)) {
+      if (suffix && !isThinkingLevel(suffix)) {
         return {
-          lines: [
-            "未知的 thinking level，請使用 `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`。",
-            USAGE_EXAMPLE,
-          ],
+          lines: [`未知的 thinking level，請使用 ${THINKING_LEVEL_CHOICES}。`, USAGE_EXAMPLE],
         };
       }
       if (this.modelRegistry.find(provider, model)) {

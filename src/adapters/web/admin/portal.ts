@@ -46,11 +46,11 @@ export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
 }
 
 import {
+  isThinkingLevel,
   loadOfficeVisibilityOverride,
   loadGlobalSettings,
   loadScopeMcpServers,
   resolveConversationSettings,
-  type AgentConfig,
   type SandboxSettings,
 } from "../../../settings/index.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../../harness/mcp.js";
@@ -680,8 +680,6 @@ async function serveModelsList(res: ServerResponse): Promise<void> {
   }
 }
 
-const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
-
 function serveConversationModelUpdate(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -690,10 +688,7 @@ function serveConversationModelUpdate(
 ): void {
   const provider = typeof body.provider === "string" ? body.provider.trim() : "";
   const model = typeof body.model === "string" ? body.model.trim() : "";
-  const thinkingLevel =
-    typeof body.thinkingLevel === "string" && VALID_THINKING_LEVELS.has(body.thinkingLevel)
-      ? (body.thinkingLevel as AgentConfig["thinkingLevel"])
-      : undefined;
+  const thinkingLevel = isThinkingLevel(body.thinkingLevel) ? body.thinkingLevel : undefined;
 
   if (!provider || !model) {
     jsonRes(res, 400, { error: "Missing provider or model" });
@@ -878,10 +873,7 @@ function serveGlobalModelUpdate(
 ): void {
   const provider = typeof body.provider === "string" ? body.provider.trim() : "";
   const model = typeof body.model === "string" ? body.model.trim() : "";
-  const thinkingLevel =
-    typeof body.thinkingLevel === "string" && VALID_THINKING_LEVELS.has(body.thinkingLevel)
-      ? (body.thinkingLevel as AgentConfig["thinkingLevel"])
-      : undefined;
+  const thinkingLevel = isThinkingLevel(body.thinkingLevel) ? body.thinkingLevel : undefined;
 
   if (!provider || !model) {
     jsonRes(res, 400, { error: "Missing provider or model" });

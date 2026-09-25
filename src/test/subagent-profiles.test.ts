@@ -124,6 +124,16 @@ describe("loadSubagentProfiles", () => {
     });
   });
 
+  test("accepts every thinking level pi supports, including max", () => {
+    const dir = workspace();
+    writeProfile(dir, "deep", `---\ntools: read\nthinking: max\n---\nThink hard.\n`);
+
+    const { profiles, diagnostics } = loadSubagentProfiles(dir);
+
+    expect(diagnostics).toEqual([]);
+    expect(profiles.get("deep")).toMatchObject({ thinkingLevel: "max" });
+  });
+
   test("reads `none` as an empty tool grant", () => {
     const dir = workspace();
     writeProfile(dir, "reader", `---\ntools: none\n---\nThink only.\n`);

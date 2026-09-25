@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 
 export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
+import { isThinkingLevel } from "../settings/index.js";
 import { parseFrontmatter } from "./skills.js";
 
 const BUILTIN_PROFILES: SubagentProfile[] = [
@@ -163,15 +164,6 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
   },
 ];
 
-const THINKING_LEVELS = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-]);
-
 function csv(value: string): string[] {
   if (value.trim() === "none") return [];
   return [
@@ -193,10 +185,10 @@ function parseModel(value: string): SubagentModelSpec {
 }
 
 function parseThinking(value: string): ThinkingLevel {
-  if (!THINKING_LEVELS.has(value as ThinkingLevel)) {
+  if (!isThinkingLevel(value)) {
     throw new Error(`unknown thinking level: ${value}`);
   }
-  return value as ThinkingLevel;
+  return value;
 }
 
 function parsePositiveInteger(value: string, field: string): number {

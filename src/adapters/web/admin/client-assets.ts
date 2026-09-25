@@ -1,3 +1,5 @@
+import { THINKING_LEVELS } from "../../../settings/index.js";
+
 export const adminViewFunctionsScript = `    let activeConversationKey = defaultConversationKey;
     function scopeOf(key) {
       const sep = key.indexOf(':');
@@ -246,7 +248,7 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
       ).join('');
     }
     function renderThinkingOptions(value) {
-      return renderOptions(['off','minimal','low','medium','high','xhigh','max'].map((t) => [t, t]), value);
+      return renderOptions(${JSON.stringify(THINKING_LEVELS)}.map((t) => [t, t]), value);
     }
     function renderReplyOptions(slack) {
       return renderOptions(['top-level','thread'].map((m) => [m, m]), (slack && slack.replyMode) || 'top-level');
