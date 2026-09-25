@@ -7,6 +7,18 @@ import {
   createRunState,
 } from "../harness/presenter.js";
 import type { HarnessEvent, HarnessEventListener, MikanAgentSession } from "../harness/index.js";
+import type { PlatformToolRoles } from "../harness/types.js";
+import { startOperationSpan } from "../observability/index.js";
+
+vi.mock("../observability/index.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../observability/index.js")>();
+  return { ...original, startOperationSpan: vi.fn(original.startOperationSpan) };
+});
+
+const NO_PLATFORM_TOOLS: PlatformToolRoles = {
+  platformTools: new Set(),
+  finalResponseTools: new Set(),
+};
 
 function makeResponder(): ConversationResponder & {
   appendResponseDelta: ReturnType<typeof vi.fn>;
@@ -40,7 +52,7 @@ function resettableRunState(state = createRunState()) {
   return resettable;
 }
 
-function attachPresenter() {
+function attachPresenter(platformToolRoles = NO_PLATFORM_TOOLS) {
   let listener: HarnessEventListener | undefined;
   const session = {
     subscribe(next: HarnessEventListener) {
@@ -64,6 +76,7 @@ function attachPresenter() {
     runState,
     model,
     agentConfig: { provider: "faux", model: model.id, thinkingLevel: "off" },
+    platformToolRoles,
   });
 
   async function emit(event: HarnessEvent): Promise<void> {
@@ -217,6 +230,83 @@ describe("presenter event routing", () => {
     expect(responder.replaceResponse.mock.calls.map(([text]) => text)).toEqual([
       "• Inspect file",
       "✓ Inspect file",
+    ]);
+  });
+
+  test("a successful call to a declared final-response tool suppresses the assistant's final text", async () => {
+    const { emit, responder, runQueue, runState } = attachPresenter({
+      platformTools: new Set(["post_card"]),
+      finalResponseTools: new Set(["post_card"]),
+    });
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "card-1",
+      toolName: "post_card",
+      args: { label: "Post card" },
+    });
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "card-1",
+      toolName: "post_card",
+      result: "posted",
+      isError: false,
+    });
+    await emit({ type: "message_end", message: fauxAssistantMessage("do not post this") });
+    await runQueue.wait();
+
+    expect(runState.finalResponseHandledByTool).toBe(true);
+    expect(responder.finishResponse).not.toHaveBeenCalled();
+  });
+
+  test("a failed or undeclared tool call does not claim the final response", async () => {
+    const { emit, runState } = attachPresenter({
+      platformTools: new Set(["post_card"]),
+      finalResponseTools: new Set(["post_card"]),
+    });
+
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "card-1",
+      toolName: "post_card",
+      result: "failed",
+      isError: true,
+    });
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "other-1",
+      toolName: "slack_blockkit",
+      result: "posted",
+      isError: false,
+    });
+
+    expect(runState.finalResponseHandledByTool).toBe(false);
+  });
+
+  test("categorizes declared platform tools as platform tools", async () => {
+    const { emit } = attachPresenter({
+      platformTools: new Set(["post_card"]),
+      finalResponseTools: new Set(),
+    });
+    const startSpan = vi.mocked(startOperationSpan);
+    startSpan.mockClear();
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "card-1",
+      toolName: "post_card",
+      args: { label: "Post card" },
+    });
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "blockkit-1",
+      toolName: "slack_blockkit",
+      args: { label: "Post blocks" },
+    });
+
+    expect(startSpan.mock.calls.map(([, attrs]) => attrs?.["mikan.tool.category"])).toEqual([
+      "platform",
+      "function",
     ]);
   });
 

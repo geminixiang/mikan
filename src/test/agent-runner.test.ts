@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
+import { Type } from "@sinclair/typebox";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../types.js";
 import type { McpServerConfig } from "../harness/types.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
@@ -416,6 +417,44 @@ describe("PiAgentWrapper.run", () => {
     await runner.run(makeMessage(), responder, { ...platform, name: "slack" });
 
     expect(postBlocks).toHaveBeenCalledOnce();
+    const visibleText = [
+      ...responder.respond.mock.calls,
+      ...responder.replaceResponse.mock.calls,
+    ].flatMap((call) => call.map(String));
+    expect(visibleText.join("\n")).not.toContain("This text must not be posted");
+  });
+
+  test("a platform pack's declared final-response tool owns the final visible response", async () => {
+    const execute = vi.fn(async () => ({
+      content: [{ type: "text" as const, text: "card posted" }],
+      details: undefined,
+    }));
+    const { runner, faux } = await createTestRunner({
+      platformToolPackFactories: [
+        () => ({
+          tools: [
+            {
+              name: "post_card",
+              label: "post_card",
+              description: "Post a card",
+              parameters: Type.Object({ label: Type.String() }),
+              execute,
+            },
+          ],
+          finalResponseTools: ["post_card"],
+          bindRun: () => {},
+        }),
+      ],
+    });
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("post_card", { label: "Post the card" })),
+      fauxAssistantMessage("This text must not be posted after the card."),
+    ]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage(), responder, platform);
+
+    expect(execute).toHaveBeenCalledOnce();
     const visibleText = [
       ...responder.respond.mock.calls,
       ...responder.replaceResponse.mock.calls,

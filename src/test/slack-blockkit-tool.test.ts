@@ -120,6 +120,17 @@ describe("slack_blockkit tool", () => {
 });
 
 describe("slack tool pack", () => {
+  test("declares slack_blockkit as a final-response tool", () => {
+    const pack = createSlackToolPack({
+      postBlocks: vi.fn(async () => ({ ts: "1.1" })),
+      updateBlocks: vi.fn(async () => {}),
+      ownsBlockKitMessage: vi.fn(() => false),
+    });
+
+    expect(pack.finalResponseTools).toEqual(["slack_blockkit"]);
+    expect(pack.tools.map((tool) => tool.name)).toEqual(["slack_blockkit"]);
+  });
+
   test("binds conversation-scoped ops for slack runs and disables elsewhere", async () => {
     const postBlocks = vi.fn(async () => ({ ts: "1.1" }));
     const ops: PlatformSlackOps = {

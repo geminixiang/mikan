@@ -13,7 +13,7 @@ import { createJevTool } from "./jev.js";
 import { createJevBrowserTool } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
-import type { PlatformToolPackFactory, PlatformToolRunContext } from "./types.js";
+import type { PlatformToolPack, PlatformToolRunContext } from "./types.js";
 
 export { createSubagentTool } from "./subagent.js";
 
@@ -24,7 +24,7 @@ export function createMikanTools(
     sandbox: SandboxConfig;
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
   },
-  platformToolPackFactories: readonly PlatformToolPackFactory[] = [],
+  platformToolPacks: readonly PlatformToolPack[] = [],
   imageGeneration?: {
     model: Model<Api>;
     getApiKey: () => Promise<string | undefined>;
@@ -55,7 +55,6 @@ export function createMikanTools(
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },
   );
-  const platformToolPacks = platformToolPackFactories.map((createPack) => createPack());
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
   return {
     tools: [

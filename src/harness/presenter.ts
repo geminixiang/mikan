@@ -1,8 +1,12 @@
 import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
 import type {
+  FinalizeRunResponseOptions,
   HarnessEvent,
+  PlatformToolRoles,
   RunPresentation,
+  RunPresentationContext,
   RunnerSessionState,
+  SessionEventHandlerParams,
   UsageReportContext,
 } from "./types.js";
 import type { MikanAgentSession } from "./session.js";
@@ -29,7 +33,6 @@ import { appendTriggerAttribution } from "./prompt.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { JEV_TOOL } from "./tools/jev.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
-import { SLACK_BLOCKKIT_TOOL } from "../adapters/slack/tools/blockkit.js";
 
 import * as log from "../log.js";
 
@@ -122,13 +125,7 @@ export function createRunState(): RunnerSessionState {
 
 export function activateRunPresentation(
   runState: RunnerSessionState,
-  context: {
-    responder: ConversationResponder;
-    sessionConversation: string;
-    userName: string | undefined;
-    sessionUuid: string;
-    triggerAttribution: string | undefined;
-  },
+  context: RunPresentationContext,
 ): RunPresentation {
   endOutstandingOperationSpans(runState);
   if (runState.toolProgressTimer) clearTimeout(runState.toolProgressTimer);
@@ -291,12 +288,7 @@ function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapsh
 async function finalizeErrorResponse(
   responder: ConversationResponder,
   runState: RunnerSessionState,
-  options?: {
-    platform?: string;
-    model?: Model<Api>;
-    sessionConversation?: string;
-    sessionUuid?: string;
-  },
+  options?: FinalizeRunResponseOptions,
 ): Promise<void> {
   if (!runState.reportedLlmError) {
     runState.reportedLlmError = true;
@@ -342,15 +334,7 @@ export async function finalizeRunResponse(
   responder: ConversationResponder,
   session: MikanAgentSession,
   runState: RunnerSessionState,
-  options?: {
-    triggerSessionLink?: string;
-    createOverflowLink?: () => string;
-    platform?: string;
-    model?: Model<Api>;
-    sessionConversation?: string;
-    sessionUuid?: string;
-    initialTask?: boolean;
-  },
+  options?: FinalizeRunResponseOptions,
 ): Promise<void> {
   if (runState.stopReason === "error" && runState.errorMessage) {
     await finalizeErrorResponse(responder, runState, options);
@@ -399,13 +383,7 @@ async function publishFinalResponse(
   responder: ConversationResponder,
   runState: RunnerSessionState,
   finalText: string,
-  options?: {
-    triggerSessionLink?: string;
-    createOverflowLink?: () => string;
-    platform?: string;
-    sessionConversation?: string;
-    sessionUuid?: string;
-  },
+  options?: FinalizeRunResponseOptions,
 ): Promise<boolean> {
   try {
     const finalResponse = appendTriggerAttribution(
@@ -574,12 +552,12 @@ function serializedLength(value: unknown): number {
   }
 }
 
-function toolCategory(name: string): string {
+function toolCategory(name: string, roles: PlatformToolRoles): string {
   if (["read", "write", "edit", "bash"].includes(name)) return "sandbox";
   if (name === "subagent") return "agent";
   if (name.startsWith("mcp__")) return "mcp";
   if (name.startsWith("github_")) return "github";
-  if (name === SLACK_BLOCKKIT_TOOL) return "platform";
+  if (roles.platformTools.has(name)) return "platform";
   return "function";
 }
 
@@ -591,6 +569,7 @@ interface PresenterEventContext {
   baseAttrs: { channel_id: string; session_id: string | undefined };
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
+  platformToolRoles: PlatformToolRoles;
 }
 
 type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
@@ -646,7 +625,7 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
         "gen_ai.operation.name": "execute_tool",
         "gen_ai.tool.name": event.toolName,
         "gen_ai.tool.type": "function",
-        "mikan.tool.category": toolCategory(event.toolName),
+        "mikan.tool.category": toolCategory(event.toolName, context.platformToolRoles),
         "mikan.tool.input.characters": serializedLength(event.args),
         "openinference.span.kind": "TOOL",
         ...baseAttrs,
@@ -732,7 +711,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
     attributes: metricAttributes({
       "gen_ai.tool.name": event.toolName,
       "gen_ai.tool.type": "function",
-      "mikan.tool.category": toolCategory(event.toolName),
+      "mikan.tool.category": toolCategory(event.toolName, context.platformToolRoles),
       "mikan.tool.output.characters": outputCharacters,
       "openinference.span.kind": "TOOL",
       duration_ms: durationMs,
@@ -747,7 +726,9 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
     return;
   }
   log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
-  if (event.toolName === SLACK_BLOCKKIT_TOOL) runState.finalResponseHandledByTool = true;
+  if (context.platformToolRoles.finalResponseTools.has(event.toolName)) {
+    runState.finalResponseHandledByTool = true;
+  }
 }
 
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
@@ -998,13 +979,8 @@ function handlePresenterEvent(event: HarnessEvent, context: PresenterEventContex
   }
 }
 
-export function attachSessionEventHandlers(params: {
-  session: MikanAgentSession;
-  runState: RunnerSessionState;
-  model: Model<Api>;
-  agentConfig: ReturnType<typeof resolveConversationSettings>;
-}): void {
-  const { session, runState, model, agentConfig } = params;
+export function attachSessionEventHandlers(params: SessionEventHandlerParams): void {
+  const { session, runState, model, agentConfig, platformToolRoles } = params;
   session.subscribe((event) => {
     if (!runState.responder || !runState.logCtx || !runState.queue) return;
     handlePresenterEvent(event, {
@@ -1018,6 +994,7 @@ export function attachSessionEventHandlers(params: {
       },
       model,
       agentConfig,
+      platformToolRoles,
     });
   });
 }

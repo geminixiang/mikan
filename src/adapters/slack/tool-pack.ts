@@ -1,5 +1,5 @@
 import type { PlatformToolPack } from "../../harness/tools/types.js";
-import { createSlackBlockKitTool } from "./tools/blockkit.js";
+import { createSlackBlockKitTool, SLACK_BLOCKKIT_TOOL } from "./tools/blockkit.js";
 export type { PlatformSlackOps } from "./types.js";
 import type { PlatformSlackOps } from "./types.js";
 
@@ -10,6 +10,7 @@ export function createSlackToolPack(ops: PlatformSlackOps): PlatformToolPack {
 
   return {
     tools: [blockkitTool],
+    finalResponseTools: [SLACK_BLOCKKIT_TOOL],
     bindRun({ conversationId, platformName, threadTs }) {
       if (platformName !== "slack") {
         setSlackBlockKitOps(null);

@@ -94,7 +94,7 @@ describe("every agent-facing tool requires a label parameter", () => {
       new HostExecutor(),
       mockEventStore(),
       undefined,
-      [() => createGithubToolPack(mockGithubOps())],
+      [createGithubToolPack(mockGithubOps())],
       undefined,
     );
 

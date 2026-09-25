@@ -11,6 +11,8 @@ import type {
 export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
 import { isThinkingLevel } from "../settings/index.js";
 import { parseFrontmatter } from "./skills.js";
+import { JEV_TOOL } from "./tools/jev.js";
+import { GENERATE_IMAGE_TOOL } from "./tools/generate-image.js";
 
 const BUILTIN_PROFILES: SubagentProfile[] = [
   {
@@ -23,7 +25,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "",
       "Keep verbose discovery and command output in this isolated run. Return the completed result, files or artifacts changed, verification performed, and any unresolved blocker.",
     ].join("\n"),
-    tools: ["read", "bash", "edit", "write", "jev"],
+    tools: ["read", "bash", "edit", "write", JEV_TOOL],
     thinkingLevel: "high",
     maxTurns: 100,
     maxTokens: 1_000_000,
@@ -40,7 +42,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "",
       "Keep source discovery, build logs, browser traces, and repetitive diagnostics in this isolated run. Return the implemented or diagnosed outcome, decisive technical evidence, changed artifact paths when applicable, verification results, and remaining engineering risk.",
     ].join("\n"),
-    tools: ["read", "bash", "edit", "write", "jev"],
+    tools: ["read", "bash", "edit", "write", JEV_TOOL],
     thinkingLevel: "high",
     maxTurns: 100,
     maxTokens: 1_000_000,
@@ -74,7 +76,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "",
       "Keep verbose rows and query output in this isolated run. Return the conclusion, key figures with units and scope, methodology and checks, and limitations that affect confidence.",
     ].join("\n"),
-    tools: ["read", "bash", "write", "jev"],
+    tools: ["read", "bash", "write", JEV_TOOL],
     thinkingLevel: "high",
     maxTurns: 100,
     maxTokens: 1_000_000,
@@ -124,7 +126,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "",
       "Keep generation logs, intermediate assets, and provider polling in this isolated run. Return deliverable paths or external identifiers, a concise production summary, verification results, and unresolved creative, quality, or rights constraints.",
     ].join("\n"),
-    tools: ["read", "bash", "write", "generate_image"],
+    tools: ["read", "bash", "write", GENERATE_IMAGE_TOOL],
     thinkingLevel: "high",
     maxTurns: 100,
     maxTokens: 1_000_000,
@@ -156,7 +158,7 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
       "",
       "Do not claim to have inspected files, executed commands, accessed URLs, or verified external state. Clearly distinguish dependency-provided facts from your own analysis. If the supplied evidence is insufficient, state the limitation instead of inventing details. `jev` is your only tool: use it to classify, rank, or check claims against the supplied input when the volume is large or a calibrated probability helps.",
     ].join("\n"),
-    tools: ["jev"],
+    tools: [JEV_TOOL],
     thinkingLevel: "high",
     maxTurns: 100,
     maxTokens: 1_000_000,

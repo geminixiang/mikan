@@ -9,6 +9,7 @@ export interface PlatformToolRunContext {
 
 export interface PlatformToolPack {
   tools: AgentTool<TSchema>[];
+  finalResponseTools?: readonly string[];
   bindRun(ctx: PlatformToolRunContext): void;
 }
 

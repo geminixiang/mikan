@@ -34,6 +34,7 @@ import type { VaultManager } from "../vault/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import type {
   RunnerExecutionContext,
+  PlatformToolRoles,
   PreparedRunContext,
   RunPresentation,
   RunnerSessionState,
@@ -51,7 +52,8 @@ import {
   openManagedSession,
   type ThreadRootMessage,
 } from "../sessions/store.js";
-import type { PlatformToolRunContext } from "./tools/types.js";
+import type { PlatformToolPack, PlatformToolRunContext } from "./tools/types.js";
+import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
 import {
   normalizeAttachRuntimePath,
@@ -117,7 +119,9 @@ async function createConfiguredAgentSession(params: {
         thinkingLevel,
         models,
         workspaceDir,
-        availableTools: tools.filter((tool) => !["start_task", "task_status"].includes(tool.name)),
+        availableTools: tools.filter(
+          (tool) => ![START_TASK_TOOL, TASK_STATUS_TOOL].includes(tool.name),
+        ),
         profiles: runnableProfiles,
         slots: globalSubagentSlots,
         toolContext,
@@ -750,6 +754,7 @@ async function finishRunnerCreation(params: {
   systemPrompt: string;
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   toolBindings: MikanToolBindings;
+  platformToolRoles: PlatformToolRoles;
   toolContext: ExecutionToolContext;
 }): Promise<PiAgentWrapper> {
   const {
@@ -765,6 +770,7 @@ async function finishRunnerCreation(params: {
     systemPrompt,
     sessionManager,
     toolBindings,
+    platformToolRoles,
     toolContext,
   } = params;
   const { sessionKey, office, sessionScope, sessionView } = options;
@@ -787,7 +793,7 @@ async function finishRunnerCreation(params: {
     options.signal?.throwIfAborted();
 
     const runState = createRunState();
-    attachSessionEventHandlers({ session, runState, model, agentConfig });
+    attachSessionEventHandlers({ session, runState, model, agentConfig, platformToolRoles });
 
     return createRunnerInterface({
       conversationId,
@@ -862,11 +868,12 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   }
   const model = modelRegistry.resolve(agentConfig.provider, agentConfig.model);
 
+  const platformToolPacks = (platformToolPackFactories ?? []).map((createPack) => createPack());
   const toolBindings = createMikanTools(
     executor,
     new OfficeEventStore(office, options.eventScheduler),
     { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
-    platformToolPackFactories ?? [],
+    platformToolPacks,
     {
       model,
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
@@ -901,6 +908,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     systemPrompt,
     sessionManager,
     toolBindings,
+    platformToolRoles: collectPlatformToolRoles(platformToolPacks),
     toolContext,
   });
+}
+
+function collectPlatformToolRoles(packs: readonly PlatformToolPack[]): PlatformToolRoles {
+  return {
+    platformTools: new Set(packs.flatMap((pack) => pack.tools.map((tool) => tool.name))),
+    finalResponseTools: new Set(packs.flatMap((pack) => pack.finalResponseTools ?? [])),
+  };
 }

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
-const GENERATE_IMAGE_TOOL = "generate_image";
+export const GENERATE_IMAGE_TOOL = "generate_image";
 
 const schema = Type.Object({
   label: LABEL_PARAMETER,

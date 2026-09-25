@@ -109,6 +109,37 @@ export interface RunPresentation {
   dispose(): void;
 }
 
+export interface RunPresentationContext {
+  responder: ConversationResponder;
+  sessionConversation: string;
+  userName: string | undefined;
+  sessionUuid: string;
+  triggerAttribution: string | undefined;
+}
+
+export interface PlatformToolRoles {
+  platformTools: ReadonlySet<string>;
+  finalResponseTools: ReadonlySet<string>;
+}
+
+export interface SessionEventHandlerParams {
+  session: MikanAgentSession;
+  runState: RunnerSessionState;
+  model: Model<Api>;
+  agentConfig: ReturnType<typeof resolveConversationSettings>;
+  platformToolRoles: PlatformToolRoles;
+}
+
+export interface FinalizeRunResponseOptions {
+  triggerSessionLink?: string;
+  createOverflowLink?: () => string;
+  platform?: string;
+  model?: Model<Api>;
+  sessionConversation?: string;
+  sessionUuid?: string;
+  initialTask?: boolean;
+}
+
 export interface PreparedRunContext {
   sessionConversation: string;
   userMessage: string;
