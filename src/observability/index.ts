@@ -3,6 +3,7 @@ import {
   addSentryBreadcrumb,
   captureSentryError,
   closeSentry,
+  createRunScopeAttributes,
   recordSentryCounter,
   recordSentryDistribution,
   recordSentryGauge,
@@ -17,6 +18,7 @@ import type {
   ReportUserFacingErrorOptions,
   RunScopeContext,
   SubagentOutcomeReport,
+  SubagentOutcomeStatus,
 } from "./types.js";
 
 export type { ObservabilityAttributes, RunScopeContext } from "./types.js";
@@ -37,6 +39,11 @@ const meter = metrics.getMeter("@geminixiang/mikan");
 const counters = new Map<string, ReturnType<typeof meter.createCounter>>();
 const histograms = new Map<string, ReturnType<typeof meter.createHistogram>>();
 const gauges = new Map<string, ReturnType<typeof meter.createGauge>>();
+const MAX_FINGERPRINT_CLASS_LENGTH = 80;
+const UNEXPECTED_SUBAGENT_STATUSES: ReadonlySet<SubagentOutcomeStatus> = new Set([
+  "failed",
+  "invalid_output",
+]);
 
 export function metricAttributes(
   attributes: Record<string, string | number | boolean | undefined>,
@@ -118,16 +125,7 @@ export function recordGauge(
 
 export function createRunAttributionAttributes(context: RunScopeContext): ObservabilityAttributes {
   return metricAttributes({
-    conversation_id: context.conversationId,
-    channel_id: context.conversationId,
-    session_key: context.sessionKey,
-    message_id: context.messageId,
-    platform: context.platform,
-    conversation_kind: context.conversationKind,
-    user_id: context.userId,
-    thread_id: context.threadTs,
-    provider: context.provider,
-    model: context.model,
+    ...createRunScopeAttributes(context),
     "gen_ai.operation.name": "invoke_agent",
     "gen_ai.agent.name": "mikan",
     "gen_ai.conversation.id": context.sessionKey,
@@ -290,10 +288,10 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
     duration_ms: report.durationMs,
     cleanup_pending: report.cleanupPending,
   });
-  if (report.status !== "failed" && report.status !== "invalid_output") return undefined;
+  if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
   const errorClass = sanitizeTelemetryString(
     (report.error ?? report.status).split(":")[0]!.trim(),
-  ).slice(0, 80);
+  ).slice(0, MAX_FINGERPRINT_CLASS_LENGTH);
   return reportUserFacingError(
     new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
     {

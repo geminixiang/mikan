@@ -35,15 +35,18 @@ vi.mock("@sentry/node", async (importOriginal) => {
 });
 
 import {
-  applyRunScope,
-  applySpanAttribution,
   createRunAttributionAttributes,
-  createSentryInitOptions,
   metricAttributes,
   recordJevOutcome,
   recordSubagentOutcome,
-  registerTraceAttribution,
   reportSubagentLaunchError,
+} from "../observability/index.js";
+import {
+  applyRunScope,
+  applySpanAttribution,
+  createRunScopeAttributes,
+  createSentryInitOptions,
+  registerTraceAttribution,
   captureSentryError,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -293,29 +296,41 @@ describe("run attribution", () => {
     sentryMock.spanToJSON.mockClear();
   });
 
-  test("builds consistent discover-friendly attributes", () => {
-    expect(
-      createRunAttributionAttributes({
-        conversationId: "C1",
-        sessionKey: "C1:T1",
-        messageId: "M1",
-        platform: "slack",
-        userId: "U1",
-        userName: undefined,
-        threadTs: "T1",
-        provider: "openai",
-        model: "gpt-5.5",
-      }),
-    ).toEqual({
-      conversation_id: "C1",
-      channel_id: "C1",
-      session_key: "C1:T1",
-      message_id: "M1",
-      platform: "slack",
-      user_id: "U1",
-      thread_id: "T1",
-      provider: "openai",
-      model: "gpt-5.5",
+  const runContext = {
+    conversationId: "C1",
+    sessionKey: "C1:T1",
+    messageId: "M1",
+    platform: "slack",
+    userId: "U1",
+    userName: undefined,
+    threadTs: "T1",
+    provider: "openai",
+    model: "gpt-5.5",
+  };
+  const scopeAttributes = {
+    conversation_id: "C1",
+    channel_id: "C1",
+    session_key: "C1:T1",
+    message_id: "M1",
+    platform: "slack",
+    user_id: "U1",
+    thread_id: "T1",
+    provider: "openai",
+    model: "gpt-5.5",
+  };
+
+  test("builds consistent discover-friendly scope attributes", () => {
+    expect(createRunScopeAttributes(runContext)).toEqual(scopeAttributes);
+  });
+
+  test("extends scope attributes with GenAI and OpenInference run attribution", () => {
+    expect(createRunAttributionAttributes(runContext)).toEqual({
+      ...scopeAttributes,
+      "gen_ai.operation.name": "invoke_agent",
+      "gen_ai.agent.name": "mikan",
+      "gen_ai.conversation.id": "C1:T1",
+      "openinference.span.kind": "AGENT",
+      "session.id": "C1:T1",
     });
   });
 

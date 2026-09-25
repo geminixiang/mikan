@@ -1,4 +1,4 @@
-import type { Breadcrumb, ErrorEvent, Event, EventHint, Scope } from "@sentry/node";
+import type { Breadcrumb, Event, EventHint, Scope } from "@sentry/node";
 import * as Sentry from "@sentry/node";
 import { readEnv } from "../env-manifest.js";
 
@@ -6,7 +6,6 @@ const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";
 const MAX_STRING_LENGTH = 256;
 const MAX_DEPTH = 4;
-const MAX_FINGERPRINT_CLASS_LENGTH = 80;
 const TRACE_ATTRIBUTION_TTL_MS = 5 * 60 * 1000;
 
 const SENSITIVE_KEYS = new Set([
@@ -65,20 +64,14 @@ const TOKEN_PATTERNS = [
 ];
 
 export type {
-  JevOutcomeReport,
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
-  SubagentOutcomeReport,
   SentryRunScopeContext,
   SentrySpanPayload,
-  SentryTransactionPayload,
 } from "./types.js";
 import type {
-  JevOutcomeReport,
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
-  SubagentOutcomeReport,
-  SubagentOutcomeStatus,
   SentryRunScopeContext,
   SentrySpanPayload,
   SentryTransactionPayload,
@@ -117,18 +110,10 @@ export function createSentryInitOptions(dsn?: string, customOpenTelemetry = fals
         Sentry.nativeNodeFetchIntegration({ tracePropagation: false }),
       ];
     },
-    beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent | null {
-      return sanitizeEvent(event, hint);
-    },
-    beforeSendSpan(span: SentrySpanPayload): SentrySpanPayload {
-      return applySpanAttribution(span);
-    },
-    beforeSendTransaction(event: SentryTransactionPayload): SentryTransactionPayload | null {
-      return sanitizeTransactionEvent(event);
-    },
-    beforeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
-      return sanitizeBreadcrumb(breadcrumb);
-    },
+    beforeSend: sanitizeEvent,
+    beforeSendSpan: applySpanAttribution,
+    beforeSendTransaction: sanitizeTransactionEvent,
+    beforeBreadcrumb: sanitizeBreadcrumb,
   };
 }
 
@@ -228,10 +213,10 @@ function setOptionalTag(scope: Scope, key: string, value: string | undefined): v
   if (value !== undefined) scope.setTag(key, value);
 }
 
-export function createRunAttributionAttributes(
+export function createRunScopeAttributes(
   context: SentryRunScopeContext,
 ): SentryAttributionAttributes {
-  return metricAttributes({
+  return definedAttributes({
     conversation_id: context.conversationId,
     channel_id: context.conversationId,
     session_key: context.sessionKey,
@@ -262,7 +247,7 @@ export function registerTraceAttribution(
 }
 
 export function applyRunScope(scope: Scope, context: SentryRunScopeContext): void {
-  const attributes = createRunAttributionAttributes(context);
+  const attributes = createRunScopeAttributes(context);
 
   for (const [key, value] of Object.entries(attributes)) {
     scope.setTag(key, value);
@@ -283,27 +268,14 @@ export function applyRunScope(scope: Scope, context: SentryRunScopeContext): voi
   });
 }
 
-export function metricAttributes(
+function definedAttributes(
   attributes: Record<string, string | number | boolean | undefined>,
-): Record<string, string | number | boolean> {
+): SentryAttributionAttributes {
   return Object.fromEntries(
-    Object.entries(attributes).filter((entry): entry is [string, string | number | boolean] => {
-      const [, value] = entry;
-      return value !== undefined;
-    }),
+    Object.entries(attributes).filter(
+      (entry): entry is [string, string | number | boolean] => entry[1] !== undefined,
+    ),
   );
-}
-
-function addLifecycleBreadcrumb(
-  message: string,
-  data?: Record<string, string | number | boolean | undefined>,
-): void {
-  Sentry.addBreadcrumb({
-    category: "agent.lifecycle",
-    message,
-    level: "info",
-    data: data ? metricAttributes(data) : undefined,
-  });
 }
 
 export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T | null {
@@ -476,105 +448,4 @@ export function sanitizeTelemetryString(value: string): string {
     return `${sanitized.slice(0, MAX_STRING_LENGTH)}… [truncated ${sanitized.length - MAX_STRING_LENGTH} chars]`;
   }
   return sanitized;
-}
-
-const UNEXPECTED_SUBAGENT_STATUSES: ReadonlySet<SubagentOutcomeStatus> = new Set([
-  "failed",
-  "invalid_output",
-]);
-
-export function recordSubagentOutcome(report: SubagentOutcomeReport): string | undefined {
-  const attributes = metricAttributes({
-    status: report.status,
-    profile: report.profile,
-    mode: report.mode,
-  });
-  Sentry.metrics.count("agent.subagent.runs", 1, { attributes });
-  if (report.durationMs !== undefined) {
-    Sentry.metrics.distribution("agent.subagent.duration", report.durationMs, {
-      unit: "millisecond",
-      attributes,
-    });
-  }
-  addLifecycleBreadcrumb("agent.subagent.completed", {
-    item_id: report.itemId,
-    status: report.status,
-    profile: report.profile,
-    mode: report.mode,
-    turns: report.turns,
-    tool_calls: report.toolCalls,
-    tokens: report.tokens,
-    cost_usd: report.costUsd,
-    duration_ms: report.durationMs,
-    cleanup_pending: report.cleanupPending,
-  });
-  if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
-
-  const errorClass = sanitizeTelemetryString(
-    (report.error ?? report.status).split(":")[0]!.trim(),
-  ).slice(0, MAX_FINGERPRINT_CLASS_LENGTH);
-  return captureSentryError(
-    new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
-    {
-      domain: "subagent",
-      surface: "subagent_tool",
-      operation: "run",
-      severity: "error",
-      toolName: "subagent",
-      fingerprint: ["subagent", report.status, errorClass],
-      tags: {
-        subagent_status: report.status,
-        subagent_profile: report.profile,
-        subagent_mode: report.mode,
-        cleanup_pending: report.cleanupPending,
-      },
-      context: {
-        itemId: report.itemId,
-        error: report.error,
-        turns: report.turns,
-        toolCalls: report.toolCalls,
-        tokens: report.tokens,
-        costUsd: report.costUsd,
-        durationMs: report.durationMs,
-      },
-    },
-  );
-}
-
-export function reportSubagentLaunchError(
-  error: unknown,
-  report: Pick<SubagentOutcomeReport, "itemId" | "mode" | "profile">,
-): string | undefined {
-  return captureSentryError(error, {
-    domain: "subagent",
-    surface: "subagent_tool",
-    operation: "launch",
-    severity: "error",
-    toolName: "subagent",
-    tags: { subagent_profile: report.profile, subagent_mode: report.mode },
-    context: { itemId: report.itemId },
-  });
-}
-
-export function recordJevOutcome(report: JevOutcomeReport): void {
-  const attributes = metricAttributes({ caller: report.caller, status: report.status });
-  Sentry.metrics.count("agent.jev.calls", 1, { attributes });
-  if (report.costUsd !== undefined) {
-    Sentry.metrics.distribution("agent.jev.cost", report.costUsd, { attributes });
-  }
-  if (report.durationMs !== undefined) {
-    Sentry.metrics.distribution("agent.jev.duration", report.durationMs, {
-      unit: "millisecond",
-      attributes,
-    });
-  }
-  addLifecycleBreadcrumb("agent.jev.completed", {
-    caller: report.caller,
-    status: report.status,
-    error_type: report.errorType,
-    input_tokens: report.inputTokens,
-    output_tokens: report.outputTokens,
-    cost_usd: report.costUsd,
-    duration_ms: report.durationMs,
-  });
 }
