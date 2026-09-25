@@ -14,6 +14,13 @@ import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
+import { SLACK_BLOCKKIT_TOOL } from "./adapters/slack/tools/blockkit.js";
+import { GITHUB_CHECKS_TOOL } from "./adapters/github/tools/checks.js";
+import { GITHUB_ISSUE_TOOL } from "./adapters/github/tools/issue.js";
+import { GITHUB_PR_TOOL } from "./adapters/github/tools/pr.js";
+import { GITHUB_READ_TOOL } from "./adapters/github/tools/read.js";
+import { GITHUB_REVIEW_REPLY_TOOL } from "./adapters/github/tools/review-reply.js";
+import { GITHUB_SYNC_TOOL } from "./adapters/github/tools/sync.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { EventScheduler } from "./events/scheduler.js";
@@ -387,7 +394,7 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   if (hasSlack) {
     const platformSlackOps: PlatformSlackOps = {
       postBlocks: async (conversationId, { text, blocks, threadTs }) => {
-        const bot = requireSlackBot("slack_blockkit");
+        const bot = requireSlackBot(SLACK_BLOCKKIT_TOOL);
         const ts = threadTs
           ? await bot.postInThreadBlocks(conversationId, threadTs, text, blocks)
           : await bot.postMessageBlocks(conversationId, text, blocks);
@@ -395,35 +402,35 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
         return { ts };
       },
       updateBlocks: async (conversationId, { ts, text, blocks, threadTs }) => {
-        const bot = requireSlackBot("slack_blockkit");
+        const bot = requireSlackBot(SLACK_BLOCKKIT_TOOL);
         await bot.updateMessageBlocks(conversationId, ts, text, blocks);
         bot.logBotResponse(conversationId, text, ts, threadTs, blocks);
       },
       ownsBlockKitMessage: (conversationId, ts, threadTs) =>
-        requireSlackBot("slack_blockkit").ownsBlockKitMessage(conversationId, ts, threadTs),
+        requireSlackBot(SLACK_BLOCKKIT_TOOL).ownsBlockKitMessage(conversationId, ts, threadTs),
     };
     factories.push(() => createSlackToolPack(platformSlackOps));
   }
   if (!hasGithub) return factories;
   const platformGithubOps: PlatformGithubOps = {
     pushAndCreatePr: (conversationId, request) =>
-      requireGithubBot("github_pr").ops.pushAndCreatePr(conversationId, request),
+      requireGithubBot(GITHUB_PR_TOOL).ops.pushAndCreatePr(conversationId, request),
     getChecks: (conversationId, branch) =>
-      requireGithubBot("github_checks").ops.getChecks(conversationId, branch),
+      requireGithubBot(GITHUB_CHECKS_TOOL).ops.getChecks(conversationId, branch),
     getJobLog: (conversationId, jobId) =>
-      requireGithubBot("github_checks").ops.getJobLog(conversationId, jobId),
+      requireGithubBot(GITHUB_CHECKS_TOOL).ops.getJobLog(conversationId, jobId),
     replyToReviewThread: (conversationId, commentId, body) =>
-      requireGithubBot("github_review_reply").ops.replyToReviewThread(
+      requireGithubBot(GITHUB_REVIEW_REPLY_TOOL).ops.replyToReviewThread(
         conversationId,
         commentId,
         body,
       ),
     syncRepo: (conversationId, branch) =>
-      requireGithubBot("github_sync").ops.syncRepo(conversationId, branch),
+      requireGithubBot(GITHUB_SYNC_TOOL).ops.syncRepo(conversationId, branch),
     readGithub: (conversationId, request) =>
-      requireGithubBot("github_read").ops.readGithub(conversationId, request),
+      requireGithubBot(GITHUB_READ_TOOL).ops.readGithub(conversationId, request),
     manageIssue: (conversationId, request) =>
-      requireGithubBot("github_issue").ops.manageIssue(conversationId, request),
+      requireGithubBot(GITHUB_ISSUE_TOOL).ops.manageIssue(conversationId, request),
   };
   factories.push(() => createGithubToolPack(platformGithubOps));
   return factories;

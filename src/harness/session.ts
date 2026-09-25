@@ -34,6 +34,7 @@ import type {
 
 import * as log from "../log.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
+import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 
 export type { CompactionReason } from "./types.js";
 export type { HarnessEvent } from "./types.js";
@@ -242,8 +243,8 @@ export class MikanAgentSession {
       const lane = this.lane!;
       const tools = this.toHarnessTools(options?.tools ?? this.options.tools).filter(
         (tool) =>
-          (tool.name !== "start_task" || options?.allowTaskHandoff === true) &&
-          (tool.name !== "task_status" || options?.allowTaskStatus === true),
+          (tool.name !== START_TASK_TOOL || options?.allowTaskHandoff === true) &&
+          (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
       );
       await harness.setTools(tools, TODO_CONTEXT);
       await lane.setActiveTools(
@@ -490,9 +491,11 @@ export class MikanAgentSession {
         assistant?.role === "assistant"
           ? assistant.content.filter((part) => part.type === "toolCall")
           : [];
-      if (calls.length > 1 && calls.some((call) => call.name === "start_task")) {
+      if (calls.length > 1 && calls.some((call) => call.name === START_TASK_TOOL)) {
         return {
-          block: { reason: "Call start_task alone, without other tools in the same batch." },
+          block: {
+            reason: `Call ${START_TASK_TOOL} alone, without other tools in the same batch.`,
+          },
         };
       }
       return undefined;

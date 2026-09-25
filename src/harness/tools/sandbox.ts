@@ -3,9 +3,10 @@ import { Type } from "@sinclair/typebox";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { OfficeAddress, ResourceLimits, SandboxResourceController } from "../../types.js";
 import { runtimeResourceKey } from "../../sandbox/identity.js";
+import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
 const sandboxSchema = Type.Object({
-  label: Type.String({ description: "Brief description of this action (shown to user)" }),
+  label: LABEL_PARAMETER,
   action: Type.Union([Type.Literal("status"), Type.Literal("set")], {
     description: "Use status to inspect current limits, or set to apply temporary limits.",
   }),

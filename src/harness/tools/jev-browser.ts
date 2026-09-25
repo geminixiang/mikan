@@ -5,6 +5,9 @@ import type { Executor } from "../../sandbox/index.js";
 import { shellEscape } from "../../sandbox/utils.js";
 import { readEnv } from "../../env-manifest.js";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
+import { LABEL_PARAMETER } from "./host-fn-tool.js";
+
+export const JEV_BROWSER_TOOL = "jev_browser";
 
 const AGENT_BROWSER_BIN = "agent-browser";
 const COMMAND_TIMEOUT_SECONDS = 90;
@@ -16,7 +19,7 @@ const MAX_UNCHANGED_ACTIONS = 3;
 const TEXT_MODEL = "openai/gpt-4o-mini";
 
 const jevBrowserSchema = Type.Object({
-  label: Type.String({ description: "Brief description of this action (shown to user)" }),
+  label: LABEL_PARAMETER,
   goal: Type.Optional(
     Type.String({
       description:
@@ -350,7 +353,7 @@ function resolveTarget(
 function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
   const explicitlyClosedSessions = new Set<string>();
   return {
-    name: "jev_browser",
+    name: JEV_BROWSER_TOOL,
     label: "jev browser",
     description: [
       "Control a real Chrome browser inside the current sandbox (not the mikan host): either drive it toward a natural-language goal, deciding each step (click, type, select, scroll, wait) itself using Jev, or run raw agent-browser CLI commands directly (screenshot, record start/stop, network har start/stop, pdf, cookies, eval, and anything else agent-browser supports), or both in one call.",
@@ -536,7 +539,7 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
               history: JSON.parse(JSON.stringify(history.slice(-5))) as JevEntry,
             },
             questions,
-            { abortSignal: signal, caller: "jev_browser" },
+            { abortSignal: signal, caller: JEV_BROWSER_TOOL },
           );
           const operationAnswer = result.answers.operation;
           const operation =

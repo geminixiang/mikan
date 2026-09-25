@@ -1,6 +1,10 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static, type TSchema } from "@sinclair/typebox";
 
+export const LABEL_PARAMETER = Type.String({
+  description: "Brief description of this action (shown to user)",
+});
+
 export function defineHostFnTool<TFn, TParams extends TSchema>(definition: {
   name: string;
   description: string;
@@ -17,7 +21,7 @@ export function defineHostFnTool<TFn, TParams extends TSchema>(definition: {
   const parameters = {
     ...schema,
     properties: {
-      label: Type.String({ description: "Brief description of this action (shown to user)" }),
+      label: LABEL_PARAMETER,
       ...schema.properties,
     },
     required: ["label", ...((schema.required as string[] | undefined) ?? [])],

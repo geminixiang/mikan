@@ -5,8 +5,9 @@ import {
   createWriteTool,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
-import { Type, type TSchema } from "@sinclair/typebox";
+import type { TSchema } from "@sinclair/typebox";
 import type { MikanHarnessTool } from "../types.js";
+import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
 export type { MikanHarnessTool };
 
@@ -27,7 +28,7 @@ function withLabel(tool: MikanHarnessTool): MikanHarnessTool {
     ...schema,
     properties: {
       ...schema.properties,
-      label: Type.String({ description: "Brief description of this action (shown to user)" }),
+      label: LABEL_PARAMETER,
     },
   };
 

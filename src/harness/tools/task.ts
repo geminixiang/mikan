@@ -2,6 +2,9 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { ConversationResponder } from "../../types.js";
 
+export const START_TASK_TOOL = "start_task";
+export const TASK_STATUS_TOOL = "task_status";
+
 export function createTaskTool() {
   let start: ConversationResponder["startTask"];
   const parameters = Type.Object({
@@ -17,8 +20,8 @@ export function createTaskTool() {
     }),
   });
   const tool: AgentTool<typeof parameters> = {
-    name: "start_task",
-    label: "start_task",
+    name: START_TASK_TOOL,
+    label: START_TASK_TOOL,
     parameters,
     description:
       "Hand off multi-step or time-consuming work to an independent task thread so the user can keep chatting. Call ALONE, before doing that work. Ends this turn on success. Only available in top-level Slack DMs.",
@@ -47,13 +50,13 @@ function createTaskStatusTool() {
   const parameters = Type.Object({
     sessionKey: Type.Optional(
       Type.String({
-        description: "Task session reference from start_task. Omit to list recent tasks.",
+        description: `Task session reference from ${START_TASK_TOOL}. Omit to list recent tasks.`,
       }),
     ),
   });
   const tool: AgentTool<typeof parameters> = {
-    name: "task_status",
-    label: "task_status",
+    name: TASK_STATUS_TOOL,
+    label: TASK_STATUS_TOOL,
     parameters,
     description:
       "Read actual background task execution status. ALWAYS use this before answering task progress questions; do not infer progress or ETA from elapsed time or your previous promises. Completed means execution ended, not verified domain success. Read-only; does not steer or restart work.",

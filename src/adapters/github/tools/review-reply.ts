@@ -2,6 +2,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 
+export const GITHUB_REVIEW_REPLY_TOOL = "github_review_reply";
+
 const githubReviewReplySchema = Type.Object({
   comment_id: Type.Number({
     description:
@@ -20,13 +22,13 @@ export function createGithubReviewReplyTool(): {
   setGithubReviewReplyFunction: (fn: GithubReviewReplyFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubReviewReplyFn, typeof githubReviewReplySchema>({
-    name: "github_review_reply",
+    name: GITHUB_REVIEW_REPLY_TOOL,
     description:
       "Reply inside a specific PR review thread. Use the numeric id from an " +
       "[PR review comment rc-<id> …] message as comment_id; a plain response would post " +
       "as a normal PR comment instead of in-thread. Only available in GitHub PR conversations.",
     parameters: githubReviewReplySchema,
-    unavailable: "github_review_reply is only available in GitHub conversations.",
+    unavailable: `${GITHUB_REVIEW_REPLY_TOOL} is only available in GitHub conversations.`,
     run: async (replyFn, args) => {
       const result = await replyFn(args.comment_id, args.body);
       return {

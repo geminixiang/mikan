@@ -5,6 +5,8 @@ import type { GithubIssueFn, GithubIssueRequest } from "../types.js";
 
 export type { GithubIssueFn } from "../types.js";
 
+export const GITHUB_ISSUE_TOOL = "github_issue";
+
 const githubIssueSchema = Type.Object({
   action: Type.Union(
     [
@@ -43,14 +45,14 @@ export function createGithubIssueTool(): {
   setGithubIssueFunction: (fn: GithubIssueFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubIssueFn, typeof githubIssueSchema>({
-    name: "github_issue",
+    name: GITHUB_ISSUE_TOOL,
     description:
       "Manage issues in this repo: add/remove labels, add/remove assignees, close " +
       "(optionally with state_reason) or reopen. number defaults to this conversation's " +
       "issue; any issue number in this repo works for triage. Only available in GitHub " +
       "conversations.",
     parameters: githubIssueSchema,
-    unavailable: "github_issue is only available in GitHub conversations.",
+    unavailable: `${GITHUB_ISSUE_TOOL} is only available in GitHub conversations.`,
     run: async (issueFn, args) => {
       const report = await issueFn(args as GithubIssueRequest);
       return {

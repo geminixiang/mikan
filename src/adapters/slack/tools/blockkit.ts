@@ -2,12 +2,15 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 export type { SlackBlockKitOps } from "../types.js";
 import type { SlackBlockKitOps } from "../types.js";
+import { LABEL_PARAMETER } from "../../../harness/tools/host-fn-tool.js";
+
+export const SLACK_BLOCKKIT_TOOL = "slack_blockkit";
 
 const MAX_BLOCKS = 50;
 const MAX_ARGUMENT_BYTES = 64 * 1024;
 
 const blockkitSchema = Type.Object({
-  label: Type.String({ description: "Brief description of this action (shown to user)" }),
+  label: LABEL_PARAMETER,
   blocks: Type.Array(Type.Unknown(), {
     maxItems: MAX_BLOCKS,
     description: `Slack Block Kit blocks (max ${MAX_BLOCKS}). Use {type:'markdown', text} for prose, {type:'table'} for tables, and actions/section blocks for buttons and select menus.`,
@@ -65,8 +68,8 @@ export function createSlackBlockKitTool(): {
   let boundOps: SlackBlockKitOps | null = null;
 
   const tool: AgentTool<typeof blockkitSchema> = {
-    name: "slack_blockkit",
-    label: "slack_blockkit",
+    name: SLACK_BLOCKKIT_TOOL,
+    label: SLACK_BLOCKKIT_TOOL,
     description:
       "Post an interactive Slack Block Kit message (buttons, select menus, custom layouts) to the current conversation, or update one previously posted with this tool. Normal replies already render Markdown — use this only when you need interactive elements or a layout Markdown cannot express. When a user clicks a button or picks an option, you receive a new message '[Slack action] <action_id>: <value>' — choose descriptive action_ids and values so the interaction tells you what to do. Returns the message ts; pass it back as update_ts to edit the message later (e.g. refreshing vote tallies). After handling an interaction, update the message via update_ts to replace the buttons with the outcome (e.g. '✅ approved') — buttons stay clickable otherwise and repeated clicks re-trigger the action. If Slack rejects the blocks, the error includes its validation messages — fix the JSON and retry.",
     parameters: blockkitSchema,

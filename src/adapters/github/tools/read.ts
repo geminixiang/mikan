@@ -10,6 +10,8 @@ import type {
 
 export type { GithubReadFn } from "../types.js";
 
+export const GITHUB_READ_TOOL = "github_read";
+
 const githubReadSchema = Type.Object({
   action: Type.Union(
     [
@@ -153,14 +155,14 @@ export function createGithubReadTool(): {
   setGithubReadFunction: (fn: GithubReadFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubReadFn, typeof githubReadSchema>({
-    name: "github_read",
+    name: GITHUB_READ_TOOL,
     description:
       "Read GitHub metadata for this repo: PR state/diff stats (pr), changed files " +
       "(pr_files), reviews and open inline threads (pr_reviews), issue metadata (issue), " +
       "recent comments (comments), or a filtered issue/PR listing (list). number defaults " +
       "to this conversation's issue/PR. Only available in GitHub conversations.",
     parameters: githubReadSchema,
-    unavailable: "github_read is only available in GitHub conversations.",
+    unavailable: `${GITHUB_READ_TOOL} is only available in GitHub conversations.`,
     run: async (readFn, args) => {
       const result = await readFn(args as GithubReadRequest);
       return {

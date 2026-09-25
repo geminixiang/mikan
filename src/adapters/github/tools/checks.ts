@@ -4,6 +4,8 @@ import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 export type { GithubChecksFns } from "../types.js";
 import type { GithubCheckSummary, GithubChecksFns } from "../types.js";
 
+export const GITHUB_CHECKS_TOOL = "github_checks";
+
 const githubChecksSchema = Type.Object({
   branch: Type.Optional(
     Type.String({
@@ -49,7 +51,7 @@ export function createGithubChecksTool(): {
   setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubChecksFns, typeof githubChecksSchema>({
-    name: "github_checks",
+    name: GITHUB_CHECKS_TOOL,
     description:
       "Read CI status (check runs) for a branch you pushed with github_pr, or for this " +
       "conversation's pull request when branch is omitted. Pass job_id (a [job …] id, " +
@@ -58,7 +60,7 @@ export function createGithubChecksTool(): {
       "their summary/url, or reproduce the failure locally in ./repo. Only available in " +
       "GitHub conversations.",
     parameters: githubChecksSchema,
-    unavailable: "github_checks is only available in GitHub conversations.",
+    unavailable: `${GITHUB_CHECKS_TOOL} is only available in GitHub conversations.`,
     run: async (checksFns, args) => {
       if (args.job_id !== undefined) {
         const logText = await checksFns.getJobLog(args.job_id);

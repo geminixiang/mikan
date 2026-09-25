@@ -8,6 +8,8 @@ import {
   type JevQuestions,
 } from "../jev.js";
 
+export const JEV_TOOL = "jev";
+
 const entrySchema = Type.Any({
   description: "Text, or a JSON object or array. Jev reads structure, so labelled keys help.",
 });
@@ -77,8 +79,8 @@ function toJevQuestion(id: string, question: QuestionArg): JevQuestion {
 
 export function createJevTool(): AgentTool<typeof jevSchema> {
   return {
-    name: "jev",
-    label: "jev",
+    name: JEV_TOOL,
+    label: JEV_TOOL,
     description: [
       "Ask Jev, a fast calibrated decision model, typed questions about a state. Jev never generates text; it returns probabilities.",
       "state: the material to judge — text, or a JSON object/array (prefer labelled keys). questions: any number of boolean / choice / score questions, all evaluated against that state in one request.",

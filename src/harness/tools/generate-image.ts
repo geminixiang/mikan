@@ -4,9 +4,12 @@ import { Type } from "@sinclair/typebox";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { LABEL_PARAMETER } from "./host-fn-tool.js";
+
+const GENERATE_IMAGE_TOOL = "generate_image";
 
 const schema = Type.Object({
-  label: Type.String({ description: "Brief description of this action (shown to user)" }),
+  label: LABEL_PARAMETER,
   prompt: Type.String({ description: "Description of the image to generate" }),
   size: Type.Optional(Type.String({ description: "Requested image size, for example 1024x1024" })),
   quality: Type.Optional(
@@ -31,7 +34,7 @@ export function createGenerateImageTool(options: {
 
   return {
     tool: {
-      name: "generate_image",
+      name: GENERATE_IMAGE_TOOL,
       label: "generate image",
       description:
         "Generate an image with the configured model provider and attach it to the response.",

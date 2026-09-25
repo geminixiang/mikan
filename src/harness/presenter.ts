@@ -26,6 +26,10 @@ import {
   type ObservabilitySpan,
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
+import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { JEV_TOOL } from "./tools/jev.js";
+import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
+import { SLACK_BLOCKKIT_TOOL } from "../adapters/slack/tools/blockkit.js";
 
 import * as log from "../log.js";
 
@@ -182,7 +186,7 @@ export function isEventTriggerAttribution(triggerAttribution: string | undefined
 function extractToolLabel(toolName: string, args: unknown): string {
   const label = (args as { label?: unknown } | undefined)?.label;
   const text = typeof label === "string" ? label.trim() || toolName : toolName;
-  if ((toolName === "jev" || toolName === "jev_browser") && text !== toolName) {
+  if ((toolName === JEV_TOOL || toolName === JEV_BROWSER_TOOL) && text !== toolName) {
     return `${toolName} · ${text}`;
   }
   return text;
@@ -365,7 +369,7 @@ export async function finalizeRunResponse(
   if (!finalText.trim()) return;
   const published = await publishFinalResponse(responder, runState, finalText, options);
   const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
-    (name) => !["task_status", "start_task", "react"].includes(name),
+    (name) => ![TASK_STATUS_TOOL, START_TASK_TOOL, "react"].includes(name),
   );
   if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
     await responder.notifyCompletion?.();
@@ -532,7 +536,7 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     contextWindow,
   );
   const toolNames = Object.keys(session.getLastRunStats().toolCallCounts);
-  const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === "task_status");
+  const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === TASK_STATUS_TOOL);
   if (
     platform.diagnostics?.showUsageSummary === true &&
     !runState.finalResponseHandledByTool &&
@@ -575,7 +579,7 @@ function toolCategory(name: string): string {
   if (name === "subagent") return "agent";
   if (name.startsWith("mcp__")) return "mcp";
   if (name.startsWith("github_")) return "github";
-  if (name === "slack_blockkit") return "platform";
+  if (name === SLACK_BLOCKKIT_TOOL) return "platform";
   return "function";
 }
 
@@ -619,8 +623,8 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
     args: event.args,
     startTime: Date.now(),
   });
-  if (event.toolName === "start_task") return;
-  if (event.toolName !== "task_status") {
+  if (event.toolName === START_TASK_TOOL) return;
+  if (event.toolName !== TASK_STATUS_TOOL) {
     runState.toolProgress.set(event.toolCallId, {
       label: extractToolLabel(event.toolName, event.args),
       status: "running",
@@ -628,7 +632,7 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
   }
   if (event.toolName === "subagent") {
     runState.subagentToolCalls.add(event.toolCallId);
-  } else if (event.toolName !== "task_status") {
+  } else if (event.toolName !== TASK_STATUS_TOOL) {
     queue.enqueue(
       () => replaceResponseWithToolProgress(responder, runState),
       "tool progress update",
@@ -695,7 +699,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   runState.toolOutputCharacters += outputCharacters;
   if (event.isError) runState.toolErrorCount += 1;
   const pending = runState.pendingTools.get(event.toolCallId);
-  if (event.toolName === "start_task") {
+  if (event.toolName === START_TASK_TOOL) {
     runState.pendingTools.delete(event.toolCallId);
     if (!event.isError) runState.finalResponseHandledByTool = true;
     else
@@ -717,7 +721,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
       settleSubagentProgress(subagentProgress, event.isError),
     );
   }
-  if (event.toolName !== "task_status") flushToolProgressUpdate(responder, runState);
+  if (event.toolName !== TASK_STATUS_TOOL) flushToolProgressUpdate(responder, runState);
   const completedProgress = runState.subagentProgress.get(event.toolCallId);
   if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
   runState.subagentProgress.delete(event.toolCallId);
@@ -743,7 +747,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
     return;
   }
   log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
-  if (event.toolName === "slack_blockkit") runState.finalResponseHandledByTool = true;
+  if (event.toolName === SLACK_BLOCKKIT_TOOL) runState.finalResponseHandledByTool = true;
 }
 
 function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {

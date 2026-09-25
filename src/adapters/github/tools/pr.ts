@@ -3,6 +3,8 @@ import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubPrRequest, GithubPrResult } from "../types.js";
 
+export const GITHUB_PR_TOOL = "github_pr";
+
 const githubPrSchema = Type.Object({
   branch: Type.String({
     description:
@@ -28,7 +30,7 @@ export function createGithubPrTool(): {
     (request: GithubPrRequest) => Promise<GithubPrResult>,
     typeof githubPrSchema
   >({
-    name: "github_pr",
+    name: GITHUB_PR_TOOL,
     description:
       "Push a pi/<name> branch you committed inside ./repo and open a GitHub pull request " +
       "(or draft) for it. Pushing a branch that already has an open PR — including this " +
@@ -36,7 +38,7 @@ export function createGithubPrTool(): {
       "available in GitHub issue/PR conversations. You cannot push to the default branch " +
       "and you cannot merge — humans review and merge the PR.",
     parameters: githubPrSchema,
-    unavailable: "github_pr is only available in GitHub conversations.",
+    unavailable: `${GITHUB_PR_TOOL} is only available in GitHub conversations.`,
     run: async (prFn, args: GithubPrArgs) => {
       const result = await prFn(args);
       return {
