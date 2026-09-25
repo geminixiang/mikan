@@ -29,6 +29,20 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+interface JevBrowserRequestBody {
+  state: { page: string };
+  questions: { operation: { instructions: string; criteria: Record<string, string> } };
+}
+
+function requestBody(
+  fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
+  index: number,
+): JevBrowserRequestBody {
+  const body = fetchMock.mock.calls[index]?.[1]?.body;
+  if (typeof body !== "string") throw new Error(`fetch call ${index} has no string body`);
+  return JSON.parse(body);
+}
+
 function mockAgentBrowser(
   responses: Array<{ success: boolean; data?: unknown; error?: string | null }>,
 ) {
@@ -165,12 +179,12 @@ describe("truncate", () => {
 describe("jev_browser tool", () => {
   const originalKey = process.env.OPENROUTER_API_KEY;
   const originalFetch = global.fetch;
-  const fetchMock = vi.fn();
+  const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
     execMock.mockReset();
     fetchMock.mockReset();
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
     process.env.OPENROUTER_API_KEY = "test-key";
   });
 
@@ -311,7 +325,7 @@ describe("jev_browser tool", () => {
       },
       undefined,
     );
-    const request = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    const request = requestBody(fetchMock, 0);
     expect(request.state).toMatchObject({
       page: length > 12000 ? "x".repeat(12000) + "…" : snapshot,
       pageTruncated: length > 12000,
@@ -352,7 +366,7 @@ describe("jev_browser tool", () => {
       },
       undefined,
     );
-    const request = JSON.parse(fetchMock.mock.calls[1]![1].body);
+    const request = requestBody(fetchMock, 1);
     expect(request.state).toMatchObject({
       page: "Active: 0 items left",
       url: "https://example.com/#/active",
@@ -652,7 +666,7 @@ describe("jev_browser tool", () => {
       [prefix + " 'close' '--json'", { timeout: 90, signal: undefined }],
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const request = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    const request = requestBody(fetchMock, 0);
     expect(request.state.page).toBe(snapshot);
     expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
       status: "done",

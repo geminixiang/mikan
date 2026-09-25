@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
-import type { TelegramEvent } from "../adapters/telegram/types.js";
+import type { TelegramEvent, TelegramResponseBot } from "../adapters/telegram/types.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
 import { createOfficeAddress } from "../office/index.js";
 
@@ -11,8 +11,8 @@ function firstCall<T>(calls: T[], name: string): T {
 }
 
 function makeTelegramMessagingBot(
-  overrides: Partial<TelegramMessagingBot> = {},
-): TelegramMessagingBot {
+  overrides: Partial<TelegramResponseBot> = {},
+): TelegramResponseBot {
   return {
     postMessageRaw: vi.fn().mockResolvedValue(1001),
     postReply: vi.fn().mockResolvedValue(1002),
@@ -23,12 +23,9 @@ function makeTelegramMessagingBot(
     uploadFile: vi.fn().mockResolvedValue(undefined),
     addReaction: vi.fn().mockResolvedValue(undefined),
     logBotResponse: vi.fn(),
-    start: vi.fn(),
-    postMessage: vi.fn().mockResolvedValue("1001"),
-    enqueueEvent: vi.fn().mockReturnValue(true),
     getMessagingInfo: TelegramMessagingBot.prototype.getMessagingInfo,
     ...overrides,
-  } as unknown as TelegramMessagingBot;
+  };
 }
 
 function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {

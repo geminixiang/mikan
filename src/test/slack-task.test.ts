@@ -30,6 +30,11 @@ import {
   readTaskRoots,
 } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
+import type {
+  SlackSocketConnection,
+  SlackSocketEventArgs,
+  SlackWebApi,
+} from "../adapters/slack/types.js";
 
 const jev = vi.fn();
 vi.mock("../harness/jev.js", async (importOriginal) => {
@@ -38,6 +43,54 @@ vi.mock("../harness/jev.js", async (importOriginal) => {
 });
 const jevChoice = (choice: string) =>
   jev.mockResolvedValueOnce({ answers: { intent: { type: "choice", choice } } });
+
+class FakeSlackSocket implements SlackSocketConnection {
+  private readonly listeners = new Map<string, Array<(args: SlackSocketEventArgs) => unknown>>();
+
+  on(event: string, listener: (args: SlackSocketEventArgs) => unknown): this {
+    this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
+    return this;
+  }
+
+  async start(): Promise<void> {}
+
+  async disconnect(): Promise<void> {}
+
+  async deliver(event: string, payload: unknown): Promise<void> {
+    const args: SlackSocketEventArgs = { event: payload, ack: async () => {} };
+    await Promise.all((this.listeners.get(event) ?? []).map((listener) => listener(args)));
+  }
+}
+
+const ok = async () => ({ ok: true });
+
+function fakeSlackWebApi(): SlackWebApi {
+  return {
+    auth: { test: async () => ({ ok: true, user_id: "BOT" }) },
+    chat: { postMessage: ok, postEphemeral: ok, update: ok, delete: ok },
+    conversations: {
+      open: ok,
+      history: async () => ({ ok: true, messages: [] }),
+      replies: async () => ({ ok: true, messages: [] }),
+      list: async () => ({ ok: true, channels: [] }),
+    },
+    users: { list: async () => ({ ok: true, members: [] }) },
+    reactions: { add: ok },
+    views: { publish: ok },
+    files: { uploadV2: async () => ({ ok: true, files: [] }) },
+    assistant: { threads: { setSuggestedPrompts: ok, setTitle: ok } },
+    apiCall: ok,
+  };
+}
+
+async function startAfterEpoch(slack: SlackMessagingBot): Promise<void> {
+  const now = vi.spyOn(Date, "now").mockReturnValue(0);
+  try {
+    await slack.start();
+  } finally {
+    now.mockRestore();
+  }
+}
 
 function deferred() {
   let resolve!: () => void;
@@ -53,7 +106,7 @@ let faux: ReturnType<typeof fauxProvider>;
 let workspace: ReturnType<typeof createWorkspace>;
 let runtime: ReturnType<typeof createConversationRuntime>;
 let bot: SlackMessagingBot;
-let internals: any;
+let socket: FakeSlackSocket;
 let hold: ReturnType<typeof deferred>;
 let started: ReturnType<typeof deferred>;
 let aborted: boolean;
@@ -62,7 +115,7 @@ let id: number;
 const address = createOfficeAddress("slack", "C123");
 const eventTs = () => `${Math.floor(Date.now() / 1000)}.${String(++id).padStart(6, "0")}`;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "mikan-task-simulation-"));
   envBefore = process.env.MIKAN_STATE_DIR;
   const stateDir = join(dir, "state");
@@ -117,11 +170,15 @@ beforeEach(() => {
     models,
     platformToolPackFactories: [() => ({ tools: [tool], bindRun: () => {} })],
   });
-  bot = new SlackMessagingBot(runtime, { appToken: "test", botToken: "test", workspace });
-  internals = bot;
-  internals.startupTs = "0";
-  internals.botUserId = "BOT";
-  internals.socketClient = { disconnect: vi.fn().mockResolvedValue(undefined) };
+  socket = new FakeSlackSocket();
+  bot = new SlackMessagingBot(runtime, {
+    appToken: "test",
+    botToken: "test",
+    workspace,
+    webApi: fakeSlackWebApi(),
+    socket,
+  });
+  await startAfterEpoch(bot);
   vi.spyOn(bot, "postMessage").mockImplementation(async (_c, text, thread) => {
     trace.push(`post:${thread ?? "channel"}:${text}`);
     return eventTs();
@@ -145,9 +202,13 @@ afterEach(async () => {
 const callHold = () => fauxAssistantMessage(fauxToolCall("hold", {}));
 
 async function dm(text: string, thread_ts?: string) {
-  await internals.handleMessageEvent({
-    event: { text, channel: "D123", user: "U1", ts: eventTs(), thread_ts, channel_type: "im" },
-    ack() {},
+  await socket.deliver("message", {
+    text,
+    channel: "D123",
+    user: "U1",
+    ts: eventTs(),
+    thread_ts,
+    channel_type: "im",
   });
 }
 async function startTask() {
@@ -318,21 +379,21 @@ test("completed task posts exactly one new requester mention; cancelled task doe
 
 test("shared-channel bare thread stop reaches control intake and never replies top-level", async () => {
   faux.setResponses([callHold()]);
-  await internals.handleAppMention({
-    event: { text: "<@BOT> wait", channel: "C123", user: "U1", ts: eventTs(), thread_ts: "100.1" },
-    ack() {},
+  await socket.deliver("app_mention", {
+    text: "<@BOT> wait",
+    channel: "C123",
+    user: "U1",
+    ts: eventTs(),
+    thread_ts: "100.1",
   });
   await vi.waitFor(() => expect(trace).toContain("tool:start"));
-  await internals.handleMessageEvent({
-    event: {
-      text: "stop",
-      channel: "C123",
-      user: "U1",
-      ts: eventTs(),
-      thread_ts: "100.1",
-      channel_type: "channel",
-    },
-    ack() {},
+  await socket.deliver("message", {
+    text: "stop",
+    channel: "C123",
+    user: "U1",
+    ts: eventTs(),
+    thread_ts: "100.1",
+    channel_type: "channel",
   });
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   expect(aborted).toBe(true);

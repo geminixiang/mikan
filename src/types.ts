@@ -1,20 +1,15 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { SubagentRunStatus } from "./harness/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
-import type { SandboxConfig } from "./sandbox/types.js";
+import type { DockerExecFile, SandboxConfig } from "./sandbox/types.js";
 import type { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import type { VaultManager } from "./vault/types.js";
-
-const execFileAsync = promisify(execFile);
-type ExecFileAsync = typeof execFileAsync;
 
 export type ConversationKind = "direct" | "shared";
 
@@ -379,7 +374,7 @@ export type HomeVolumeMigrationOutcome = "migrated" | "already-migrated" | "miss
 export interface DockerContainerManagerOptions {
   limits?: ResourceLimits;
   boostLimits?: ResourceLimits;
-  execFileImpl?: ExecFileAsync;
+  execFileImpl?: DockerExecFile;
 }
 
 export interface ExecutionPlan {

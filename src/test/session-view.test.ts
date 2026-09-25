@@ -197,7 +197,7 @@ describe("loadSessionViewModel", () => {
       cancelled: false,
       truncated: false,
       timestamp: nextTimestamp++,
-    } as any);
+    });
 
     const model = await loadSessionViewModel(sessionFile);
 
@@ -219,7 +219,7 @@ describe("loadSessionViewModel", () => {
       role: "assistant",
       content: [
         { type: "text", text: "before" },
-        { type: "toolCall", name: "search", arguments: { q: "raw" } },
+        { type: "toolCall", id: "call-1", name: "search", arguments: { q: "raw" } },
         { type: "text", text: "after" },
       ],
       api: "openai-responses",
@@ -235,7 +235,7 @@ describe("loadSessionViewModel", () => {
       },
       stopReason: "stop",
       timestamp: nextTimestamp++,
-    } as any);
+    });
     await sessionManager.appendMessage({
       role: "bashExecution",
       command: "npm test",
@@ -244,7 +244,7 @@ describe("loadSessionViewModel", () => {
       cancelled: true,
       truncated: true,
       timestamp: nextTimestamp++,
-    } as any);
+    });
 
     const model = await loadSessionViewModel(sessionFile);
 

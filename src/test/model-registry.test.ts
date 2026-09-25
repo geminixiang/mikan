@@ -1,7 +1,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { MutableModels } from "@earendil-works/pi-ai";
 import { MikanModels } from "../harness/models.js";
 import { describe, expect, test, vi } from "vitest";
 
@@ -108,7 +107,7 @@ describe("MikanModels.getApiKeyForProvider", () => {
         },
       },
     });
-    const models = (registry as unknown as { models: MutableModels }).models;
+    const models = registry.models;
     const getModels = vi.spyOn(models, "getModels");
     const getAuth = vi.spyOn(models, "getAuth");
 
@@ -168,7 +167,7 @@ describe("MikanModels.getAvailable", () => {
         },
       },
     });
-    const models = (registry as unknown as { models: MutableModels }).models;
+    const models = registry.models;
     const availableModel = registry.resolve("available", "available-model");
     const getAvailable = vi.spyOn(models, "getAvailable").mockImplementation((providerId) => {
       if (providerId === "broken") return Promise.reject(new Error("auth check failed"));

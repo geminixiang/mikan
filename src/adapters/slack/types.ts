@@ -1,4 +1,61 @@
+import type { FetchFunction, WebClient } from "@slack/web-api";
 import type { Attachment, ConversationKind, OfficeAddress } from "../../types.js";
+import type { Workspace } from "../../office/types.js";
+import type { SlackMessagingBot } from "./bot.js";
+
+export interface SlackWebApi {
+  auth: Pick<WebClient["auth"], "test">;
+  chat: Pick<WebClient["chat"], "postMessage" | "postEphemeral" | "update" | "delete">;
+  conversations: Pick<WebClient["conversations"], "open" | "history" | "replies" | "list">;
+  users: Pick<WebClient["users"], "list">;
+  reactions: Pick<WebClient["reactions"], "add">;
+  views: Pick<WebClient["views"], "publish">;
+  files: Pick<WebClient["files"], "uploadV2">;
+  assistant: {
+    threads: Pick<WebClient["assistant"]["threads"], "setSuggestedPrompts" | "setTitle">;
+  };
+  apiCall: WebClient["apiCall"];
+}
+
+export interface SlackSocketEventArgs {
+  ack: () => Promise<void>;
+  event?: unknown;
+  body?: unknown;
+}
+
+export interface SlackSocketConnection {
+  on(event: string, listener: (args: SlackSocketEventArgs) => unknown): unknown;
+  start(): Promise<unknown>;
+  disconnect(): Promise<void>;
+}
+
+export interface SlackMessagingBotOptions {
+  appToken: string;
+  botToken: string;
+  workspace: Workspace;
+  webApi?: SlackWebApi;
+  socket?: SlackSocketConnection;
+  fetch?: FetchFunction;
+}
+
+export type SlackResponderBot = Pick<
+  SlackMessagingBot,
+  | "getUser"
+  | "getMessagingInfo"
+  | "postMessage"
+  | "postInThread"
+  | "postInThreadBlocks"
+  | "updateMessage"
+  | "deleteMessage"
+  | "logBotResponse"
+  | "tryReserveStreamStart"
+  | "startMessageStream"
+  | "appendMessageStream"
+  | "stopMessageStream"
+  | "uploadFile"
+  | "addReaction"
+  | "setAssistantStatus"
+>;
 
 export interface SlackEvent {
   address: OfficeAddress;

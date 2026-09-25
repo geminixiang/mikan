@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs";
 import * as log from "../../log.js";
-import type { GithubClient } from "./client.js";
 import { GithubApiError, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
 import { createOfficeAddress, parseGithubConversationId } from "../../office/index.js";
 
 import type { GithubConversationRef, Workspace } from "../../office/types.js";
 import type {
+  GithubApi,
   GithubCheckSummary,
   GithubIssueRequest,
   GithubPrRequest,
@@ -18,10 +18,7 @@ import type {
 
 const MAX_LOG_CHARS = 20000;
 
-export async function fetchIsPr(
-  client: GithubClient,
-  ref: GithubConversationRef,
-): Promise<boolean> {
+export async function fetchIsPr(client: GithubApi, ref: GithubConversationRef): Promise<boolean> {
   try {
     const issue = await githubRetry(() => client.getIssue(ref.owner, ref.repo, ref.number));
     return Boolean(issue.pull_request);
@@ -31,7 +28,7 @@ export async function fetchIsPr(
 }
 
 export async function fetchPrHeadBranch(
-  client: GithubClient,
+  client: GithubApi,
   ref: GithubConversationRef,
 ): Promise<string | undefined> {
   try {
@@ -46,7 +43,7 @@ export async function fetchPrHeadBranch(
 
 export class GithubOps implements PlatformGithubOps {
   constructor(
-    private readonly client: GithubClient,
+    private readonly client: GithubApi,
     private readonly config: { workspace: Workspace },
   ) {}
 

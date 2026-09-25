@@ -558,14 +558,16 @@ describe("ActorExecutionResolver image mode", () => {
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
+    const provision = vi
+      .fn<DockerContainerManager["provision"]>()
+      .mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
-      { provision } as any,
+      { provision },
       workspace(),
     );
 
@@ -599,14 +601,16 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const mgr = new FileVaultManager(tmpDir);
-    const provision = vi.fn().mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
+    const provision = vi
+      .fn<DockerContainerManager["provision"]>()
+      .mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
     const exec = vi
       .spyOn(HostExecutor.prototype, "exec")
       .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
-      { provision } as any,
+      { provision },
       workspace(),
     );
 

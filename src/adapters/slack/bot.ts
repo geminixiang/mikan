@@ -1,6 +1,6 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
-import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
+import { WebAPIRateLimitedError, WebClient, type FetchFunction } from "@slack/web-api";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -40,7 +40,11 @@ import type {
   SlackBlockActionBody,
   SlackChannel,
   SlackEvent,
+  SlackMessagingBotOptions,
+  SlackSocketConnection,
+  SlackSocketEventArgs,
   SlackUser,
+  SlackWebApi,
   AgentContext,
   AssistantSurfaceOps,
   AssistantThreadPayload,
@@ -218,9 +222,10 @@ function isRetryableAttachmentDownloadError(error: unknown): boolean {
 }
 
 export class SlackMessagingBot implements MessagingBot {
-  private socketClient: SocketModeClient;
-  private webClient: WebClient;
+  private socketClient: SlackSocketConnection;
+  private webClient: SlackWebApi;
   private readonly statusClient: WebClient;
+  private readonly fetchFn: FetchFunction;
   private readonly statusUpdates = new Map<string, Promise<void>>();
   private handler: MessagingEventHandler;
   private workspace: Workspace;
@@ -354,22 +359,23 @@ export class SlackMessagingBot implements MessagingBot {
     return context;
   }
 
-  constructor(
-    handler: MessagingEventHandler,
-    config: { appToken: string; botToken: string; workspace: Workspace },
-  ) {
+  constructor(handler: MessagingEventHandler, config: SlackMessagingBotOptions) {
     this.handler = handler;
     this.workspace = config.workspace;
     this.botToken = config.botToken;
-    this.socketClient = new SocketModeClient({
-      appToken: config.appToken,
-      clientPingTimeout: 12_000,
-    });
-    this.webClient = new WebClient(config.botToken);
+    this.fetchFn = config.fetch ?? ((url, init) => fetch(url, init));
+    this.socketClient =
+      config.socket ??
+      new SocketModeClient({
+        appToken: config.appToken,
+        clientPingTimeout: 12_000,
+      });
+    this.webClient = config.webApi ?? new WebClient(config.botToken, { fetch: config.fetch });
     this.statusClient = new WebClient(config.botToken, {
       timeout: 3000,
       retryConfig: { retries: 0 },
       rejectRateLimitedCalls: true,
+      fetch: config.fetch,
     });
   }
 
@@ -740,7 +746,7 @@ export class SlackMessagingBot implements MessagingBot {
     };
   }
 
-  private handleAssistantThreadStarted({ event, ack }: { event: unknown; ack: () => void }): void {
+  private handleAssistantThreadStarted({ event, ack }: SlackSocketEventArgs): void {
     ack();
     const payload = event as { assistant_thread?: AssistantThreadPayload };
     if (!payload.assistant_thread) return;
@@ -751,13 +757,7 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
-  private handleAgentContextChangedEvent({
-    event,
-    ack,
-  }: {
-    event: unknown;
-    ack: () => void;
-  }): void {
+  private handleAgentContextChangedEvent({ event, ack }: SlackSocketEventArgs): void {
     ack();
     const payload = event as {
       assistant_thread?: AssistantThreadPayload;
@@ -813,7 +813,7 @@ export class SlackMessagingBot implements MessagingBot {
         filename: fileName,
         title: fileName,
         ...(threadTs ? { thread_ts: threadTs } : {}),
-      } as Parameters<typeof this.webClient.files.uploadV2>[0]);
+      } as Parameters<SlackWebApi["files"]["uploadV2"]>[0]);
     });
   }
 
@@ -1371,44 +1371,34 @@ export class SlackMessagingBot implements MessagingBot {
       log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
     });
 
-    this.socketClient.on("app_mention", (payload) => {
-      void this.intake.run(() => this.handleAppMention(payload));
-    });
-    this.socketClient.on("message", (payload) => {
-      void this.intake.run(() => this.handleMessageEvent(payload));
-    });
-    this.socketClient.on("slash_commands", (payload) => {
-      void this.intake.run(() => this.handleSlashCommand(payload));
-    });
-    this.socketClient.on("app_home_opened", (payload) => {
-      void this.intake.run(() => this.handleAppHomeOpened(payload));
-    });
-    this.socketClient.on("assistant_thread_started", (payload) => {
-      void this.intake.run(() => this.handleAssistantThreadStarted(payload));
-    });
-    this.socketClient.on("assistant_thread_context_changed", (payload) => {
-      void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
-    });
-    this.socketClient.on("app_context_changed", (payload) => {
-      void this.intake.run(() => this.handleAgentContextChangedEvent(payload));
-    });
-    this.socketClient.on("block_actions", (payload) => {
-      void this.intake.run(() => this.handleBlockAction(payload));
-    });
-    this.socketClient.on("interactive", (payload) => {
-      void this.intake.run(() =>
-        this.handleBlockAction(payload as { body: SlackBlockActionBody; ack: () => void }),
-      );
-    });
+    this.socketClient.on("app_mention", (payload) =>
+      this.intake.run(() => this.handleAppMention(payload)),
+    );
+    this.socketClient.on("message", (payload) =>
+      this.intake.run(() => this.handleMessageEvent(payload)),
+    );
+    this.socketClient.on("slash_commands", (payload) =>
+      this.intake.run(() => this.handleSlashCommand(payload)),
+    );
+    this.socketClient.on("app_home_opened", (payload) =>
+      this.intake.run(() => this.handleAppHomeOpened(payload)),
+    );
+    this.socketClient.on("assistant_thread_started", (payload) =>
+      this.intake.run(() => this.handleAssistantThreadStarted(payload)),
+    );
+    this.socketClient.on("assistant_thread_context_changed", (payload) =>
+      this.intake.run(() => this.handleAgentContextChangedEvent(payload)),
+    );
+    this.socketClient.on("app_context_changed", (payload) =>
+      this.intake.run(() => this.handleAgentContextChangedEvent(payload)),
+    );
+    const blockAction = ({ body, ack }: SlackSocketEventArgs) =>
+      this.intake.run(() => this.handleBlockAction({ body: body as SlackBlockActionBody, ack }));
+    this.socketClient.on("block_actions", blockAction);
+    this.socketClient.on("interactive", blockAction);
   }
 
-  private async handleAppMention({
-    event,
-    ack,
-  }: {
-    event: unknown;
-    ack: () => void;
-  }): Promise<void> {
+  private async handleAppMention({ event, ack }: SlackSocketEventArgs): Promise<void> {
     const e = event as {
       text: string;
       channel: string;
@@ -1602,13 +1592,7 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private async handleMessageEvent({
-    event,
-    ack,
-  }: {
-    event: unknown;
-    ack: () => void;
-  }): Promise<void> {
+  private async handleMessageEvent({ event, ack }: SlackSocketEventArgs): Promise<void> {
     const e = event as SlackIncomingMessage;
     if (!this.admitHumanMessage(e, ack)) return;
 
@@ -1693,13 +1677,7 @@ export class SlackMessagingBot implements MessagingBot {
     await intake;
   }
 
-  private async handleSlashCommand({
-    body,
-    ack,
-  }: {
-    body: unknown;
-    ack: () => Promise<void>;
-  }): Promise<void> {
+  private async handleSlashCommand({ body, ack }: SlackSocketEventArgs): Promise<void> {
     const payload = body as {
       command?: string;
       text?: string;
@@ -1734,7 +1712,7 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private handleAppHomeOpened({ event, ack }: { event: unknown; ack: () => void }): void {
+  private handleAppHomeOpened({ event, ack }: SlackSocketEventArgs): void {
     const e = event as { user: string; tab: string; channel?: string; context?: AgentContext };
     ack();
 
@@ -1916,7 +1894,7 @@ export class SlackMessagingBot implements MessagingBot {
   private async downloadSlackFile(url: string, destPath: string): Promise<void> {
     await withRetry(
       async () => {
-        const response = await fetch(url, {
+        const response = await this.fetchFn(url, {
           headers: { Authorization: `Bearer ${this.botToken}` },
         });
         if (!response.ok) {

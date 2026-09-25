@@ -535,7 +535,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     sessionScope: Awaited<ReturnType<ChatHistorySync["resolveSessionScope"]>>,
     signal: AbortSignal,
   ): Promise<PiAgentWrapper> {
-    return createRunner({
+    const runnerFactory = this.options.runnerFactory ?? createRunner;
+    return runnerFactory({
       sandboxConfig: this.options.sandbox,
       sessionKey: options.sessionKey,
       office: this.options.workspace.office(options.address),

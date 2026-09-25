@@ -18,7 +18,7 @@ function mockGithubOps(): PlatformGithubOps {
     syncRepo: vi.fn(),
     readGithub: vi.fn(),
     manageIssue: vi.fn(),
-  } as unknown as PlatformGithubOps;
+  };
 }
 
 function mockEventStore(): EventStore {

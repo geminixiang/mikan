@@ -9,7 +9,7 @@ import type {
   MessagingInfo,
   MessagingBot,
 } from "../../types.js";
-import type { TelegramEvent } from "./types.js";
+import type { TelegramClient, TelegramEvent, TelegramMessagingBotOptions } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
@@ -55,7 +55,7 @@ function richMessage(markdown: string): { markdown: string } {
 }
 
 export class TelegramMessagingBot implements MessagingBot {
-  private client: GrammyMessagingBot;
+  private client: TelegramClient;
   private handler: MessagingEventHandler;
   private botToken: string;
   private workspace: Workspace;
@@ -66,11 +66,11 @@ export class TelegramMessagingBot implements MessagingBot {
   private intake = new MessagingIntakeTracker("Telegram");
   private startupTime: number = 0;
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workspace: Workspace }) {
+  constructor(handler: MessagingEventHandler, options: TelegramMessagingBotOptions) {
     this.handler = handler;
-    this.botToken = config.token;
-    this.workspace = config.workspace;
-    this.client = new GrammyMessagingBot(config.token);
+    this.botToken = options.token;
+    this.workspace = options.workspace;
+    this.client = options.client ?? new GrammyMessagingBot(options.token);
     this.client.catch((err) => {
       log.logWarning("Telegram error", errorMessage(err));
     });

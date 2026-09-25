@@ -1,13 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
-import type { DiscordEvent } from "../adapters/discord/types.js";
+import type { DiscordEvent, DiscordResponseBot } from "../adapters/discord/types.js";
 import { createDiscordAdapters } from "../adapters/discord/context.js";
 import { DISCORD_V2_TEXT_LIMIT } from "../adapters/discord/components.js";
 import { createOfficeAddress } from "../office/index.js";
 
-function makeDiscordMessagingBot(
-  overrides: Partial<DiscordMessagingBot> = {},
-): DiscordMessagingBot {
+type FakeDiscordBot = DiscordResponseBot &
+  Pick<DiscordMessagingBot, "getAllChannels" | "getAllUsers">;
+
+function makeDiscordMessagingBot(overrides: Partial<FakeDiscordBot> = {}): FakeDiscordBot {
   return {
     postReply: vi.fn().mockResolvedValue("MSG002"),
     postInThread: vi.fn().mockResolvedValue("MSG003"),
@@ -19,13 +20,10 @@ function makeDiscordMessagingBot(
     logBotResponse: vi.fn(),
     getAllChannels: vi.fn().mockReturnValue([]),
     getAllUsers: vi.fn().mockReturnValue([]),
-    start: vi.fn(),
     postMessage: vi.fn().mockResolvedValue("MSG001"),
-    updateMessage: vi.fn().mockResolvedValue(undefined),
-    enqueueEvent: vi.fn().mockReturnValue(true),
     getMessagingInfo: DiscordMessagingBot.prototype.getMessagingInfo,
     ...overrides,
-  } as unknown as DiscordMessagingBot;
+  };
 }
 
 function firstCall<T>(calls: T[], name: string): T {

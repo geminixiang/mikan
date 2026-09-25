@@ -37,23 +37,61 @@ function startServer(services: AdminServices): Promise<{ server: Server; origin:
   });
 }
 
-async function get(path: string): Promise<{ status: number; body: any }> {
+interface ErrorBody {
+  error: string;
+}
+
+interface McpServerSummary {
+  url?: string;
+  envKeys: string[];
+  headerKeys: string[];
+}
+
+interface McpListBody {
+  presets: { id: string }[];
+  global: Record<string, McpServerSummary>;
+  conversation: Record<string, McpServerSummary>;
+}
+
+interface McpVerifyBody {
+  results: { name: string; tools?: number; error?: string }[];
+}
+
+interface McpServerSetting {
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+interface GlobalSettingsFile {
+  mcpServers?: Record<string, McpServerSetting>;
+}
+
+interface JsonResponse<T> {
+  status: number;
+  body: T;
+}
+
+async function readJsonResponse<T>(response: Response): Promise<JsonResponse<T>> {
+  return { status: response.status, body: JSON.parse(await response.text()) };
+}
+
+async function get<T>(path: string): Promise<JsonResponse<T>> {
   const response = await fetch(
     `${origin}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`,
   );
-  return { status: response.status, body: await response.json() };
+  return readJsonResponse<T>(response);
 }
 
-async function post(path: string, body: object): Promise<{ status: number; body: any }> {
+async function post<T = ErrorBody>(path: string, body: object): Promise<JsonResponse<T>> {
   const response = await fetch(`${origin}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, ...body }),
   });
-  return { status: response.status, body: await response.json() };
+  return readJsonResponse<T>(response);
 }
 
-function globalSettings(): any {
+function globalSettings(): GlobalSettingsFile {
   return JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"));
 }
 
@@ -80,7 +118,7 @@ beforeEach(async () => {
   }).token;
   const started = await startServer({
     vaultManager: new FileVaultManager(stateDir),
-    linkTokenStore: { create: () => ({ token: "x", expiresAt: 0 }) } as never,
+    linkTokenStore: { create: () => ({ token: "x" }) },
     adminTokenStore,
     workspace,
   });
@@ -134,10 +172,12 @@ describe("MCP preset catalog", () => {
 
 describe("Admin MCP preset API", () => {
   test("lists presets with the two settings scopes", async () => {
-    const response = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
+    const response = await get<McpListBody>(
+      `/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`,
+    );
 
     expect(response.status).toBe(200);
-    expect(response.body.presets.map((preset: { id: string }) => preset.id)).toEqual(["metabase"]);
+    expect(response.body.presets.map((preset) => preset.id)).toEqual(["metabase"]);
     expect(response.body.global).toEqual({});
     expect(response.body.conversation).toEqual({});
   });
@@ -155,12 +195,14 @@ describe("Admin MCP preset API", () => {
     });
 
     expect(installed.status).toBe(200);
-    expect(globalSettings().mcpServers.metabase).toEqual({
+    expect(globalSettings().mcpServers?.metabase).toEqual({
       url: "https://metabase.example.com/api/metabase-mcp",
       headers: { "x-api-key": "mb_key_123" },
     });
 
-    const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
+    const listed = await get<McpListBody>(
+      `/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`,
+    );
     expect(listed.body.global.metabase).toEqual({
       url: "https://metabase.example.com/api/metabase-mcp",
       envKeys: [],
@@ -249,7 +291,7 @@ describe("Admin MCP import API", () => {
   test("imports a pasted mcpServers block, stores the normalized shape, and reports tools", async () => {
     const fake = await startFakeHttpMcpServer();
     try {
-      const imported = await post("/admin/api/mcp-servers/mutate", {
+      const imported = await post<McpVerifyBody>("/admin/api/mcp-servers/mutate", {
         action: "import",
         scope: "global",
         json: JSON.stringify({
@@ -266,12 +308,12 @@ describe("Admin MCP import API", () => {
 
       expect(imported.status).toBe(200);
       expect(imported.body.results).toEqual([{ name: "browser", tools: 2 }]);
-      expect(globalSettings().mcpServers.browser).toEqual({
+      expect(globalSettings().mcpServers?.browser).toEqual({
         url: fake.url,
         headers: { Authorization: "Bearer good-token" },
       });
 
-      const tested = await post("/admin/api/mcp-servers/mutate", {
+      const tested = await post<McpVerifyBody>("/admin/api/mcp-servers/mutate", {
         action: "test",
         scope: "global",
         name: "browser",
@@ -286,7 +328,7 @@ describe("Admin MCP import API", () => {
   test("keeps a bad entry on disk but surfaces the server's auth error, redacting the URL", async () => {
     const fake = await startFakeHttpMcpServer();
     try {
-      const imported = await post("/admin/api/mcp-servers/mutate", {
+      const imported = await post<McpVerifyBody>("/admin/api/mcp-servers/mutate", {
         action: "import",
         scope: "global",
         json: JSON.stringify({
@@ -297,13 +339,15 @@ describe("Admin MCP import API", () => {
 
       expect(imported.status).toBe(200);
       expect(imported.body.results).toHaveLength(1);
-      expect(imported.body.results[0].name).toBe("browser");
-      expect(imported.body.results[0].error).toContain("No API token provided");
+      expect(imported.body.results[0]?.name).toBe("browser");
+      expect(imported.body.results[0]?.error).toContain("No API token provided");
       expect(JSON.stringify(imported.body)).not.toContain("wrong-secret");
-      expect(globalSettings().mcpServers.browser.url).toBe(`${fake.url}?token=wrong-secret`);
+      expect(globalSettings().mcpServers?.browser?.url).toBe(`${fake.url}?token=wrong-secret`);
 
-      const listed = await get(`/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`);
-      expect(listed.body.global.browser.url).toBe(`${fake.url}?token=<redacted>`);
+      const listed = await get<McpListBody>(
+        `/admin/api/mcp-servers?conversationId=${CONVERSATION_ID}`,
+      );
+      expect(listed.body.global.browser?.url).toBe(`${fake.url}?token=<redacted>`);
     } finally {
       await new Promise<void>((resolve) => fake.server.close(() => resolve()));
     }

@@ -25,8 +25,8 @@ import type { WorkspaceProjection, Workspace } from "../office/types.js";
 export class ActorExecutionResolver {
   constructor(
     private baseConfig: SandboxConfig,
-    private vaultManager: VaultManager,
-    private provisioner: DockerContainerManager | undefined,
+    private vaultManager: Pick<VaultManager, "hasEntry" | "resolve" | "copySharedVaultTo">,
+    private provisioner: Pick<DockerContainerManager, "provision"> | undefined,
     private workspace: Workspace,
   ) {}
 

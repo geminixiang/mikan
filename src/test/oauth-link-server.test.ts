@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { startWebServer } from "../adapters/web/server.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
+import type { NotifyFn } from "../adapters/web/login/types.js";
 import { FileVaultManager } from "../vault/index.js";
 
 const originalFetch = globalThis.fetch;
@@ -56,9 +57,7 @@ async function createFlow(
   servers: Server[],
   stateDir: string,
   userId: string,
-  notify: typeof Promise.resolve extends (...args: any[]) => any
-    ? () => Promise<void>
-    : never = async () => {},
+  notify: NotifyFn = async () => {},
 ): Promise<{
   server: Server;
   url: string;
@@ -92,11 +91,13 @@ async function startOAuth(url: string, token: string, serviceId: string): Promis
 }
 
 function mockTokenExchange(options: { ok?: boolean; contentType?: string; body: string }): void {
-  globalThis.fetch = vi.fn().mockResolvedValue({
-    ok: options.ok ?? true,
-    headers: { get: () => options.contentType ?? "application/json" },
-    text: async () => options.body,
-  }) as typeof fetch;
+  globalThis.fetch = vi.fn<typeof fetch>(
+    async () =>
+      new Response(options.body, {
+        status: (options.ok ?? true) ? 200 : 400,
+        headers: { "content-type": options.contentType ?? "application/json" },
+      }),
+  );
 }
 
 describe("OAuth link server flows", () => {
@@ -284,7 +285,7 @@ describe("OAuth link server flows", () => {
     expect(state).toBeTruthy();
 
     mockTokenExchange({ body: JSON.stringify({ access_token: "gho_ok" }) });
-    (vaultManager as any).upsertEnv = vi.fn(() => {
+    vi.spyOn(vaultManager, "upsertEnv").mockImplementation(() => {
       throw new Error("disk full");
     });
 

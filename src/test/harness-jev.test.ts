@@ -17,15 +17,29 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+interface JevRequestBody {
+  model: string;
+  questions: Record<string, unknown>;
+}
+
+function requestBody(
+  fetchMock: ReturnType<typeof vi.fn<typeof fetch>>,
+  index: number,
+): JevRequestBody {
+  const body = fetchMock.mock.calls[index]?.[1]?.body;
+  if (typeof body !== "string") throw new Error(`fetch call ${index} has no string body`);
+  return JSON.parse(body);
+}
+
 describe("evaluateWithJev", () => {
   const originalKey = process.env.OPENROUTER_API_KEY;
   const originalFetch = global.fetch;
-  const fetchMock = vi.fn();
+  const fetchMock = vi.fn<typeof fetch>();
 
   beforeEach(() => {
     fetchMock.mockReset();
     recordJevOutcomeMock.mockReset();
-    global.fetch = fetchMock as unknown as typeof fetch;
+    global.fetch = fetchMock;
   });
 
   afterEach(() => {
@@ -67,10 +81,9 @@ describe("evaluateWithJev", () => {
         headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
       }),
     );
-    const call = fetchMock.mock.calls[0] as [string, { body: string }];
-    const requestBody = JSON.parse(call[1].body);
-    expect(requestBody.model).toBe(JEV_MODEL_ID);
-    expect(requestBody.questions.q).toEqual({
+    const sent = requestBody(fetchMock, 0);
+    expect(sent.model).toBe(JEV_MODEL_ID);
+    expect(sent.questions.q).toEqual({
       type: "noul",
       instructions: "is it urgent?",
       criteria: { true: "Yes", false: "No" },
@@ -141,8 +154,7 @@ describe("evaluateWithJev", () => {
       { model: "~typesafe/jev-preview", caller: "jev_tool" },
     );
 
-    const call = fetchMock.mock.calls[0] as [string, { body: string }];
-    expect(JSON.parse(call[1].body).model).toBe("~typesafe/jev-preview");
+    expect(requestBody(fetchMock, 0).model).toBe("~typesafe/jev-preview");
   });
 
   test("throws JevRequestError on a non-ok response", async () => {

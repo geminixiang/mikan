@@ -38,14 +38,39 @@ function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   };
 }
 
-function makeBot(): MessagingBot & { postMessage: ReturnType<typeof vi.fn> } {
+function makeBot(): MessagingBot {
   return {
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
     postMessage: vi.fn().mockResolvedValue("TS1"),
-    getMessagingInfo: () => ({ name: "slack" }),
-  } as unknown as MessagingBot & { postMessage: ReturnType<typeof vi.fn> };
+    updateMessage: vi.fn(async () => {}),
+    enqueueEvent: vi.fn(() => true),
+    getMessagingInfo: () => ({ name: "slack", formattingGuide: "", channels: [], users: [] }),
+  };
 }
 
-const context = {} as ConversationContext;
+const context: ConversationContext = {
+  address,
+  message: {
+    id: "M1",
+    address,
+    sessionKey: "C1",
+    conversationKind: "shared",
+    userId: "U1",
+    text: "hello",
+  },
+  responder: {
+    respond: vi.fn(async () => {}),
+    replaceResponse: vi.fn(async () => {}),
+    respondDiagnostic: vi.fn(async () => {}),
+    respondToolResult: vi.fn(async () => {}),
+    setTyping: vi.fn(async () => {}),
+    setWorking: vi.fn(async () => {}),
+    uploadFile: vi.fn(async () => {}),
+    deleteResponse: vi.fn(async () => {}),
+  },
+  platform: { name: "slack", formattingGuide: "", channels: [], users: [] },
+};
 
 function makeOptions(
   overrides: Partial<MessageIntakeOptions<ConversationEvent>> = {},

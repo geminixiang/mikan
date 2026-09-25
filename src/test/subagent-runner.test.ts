@@ -619,11 +619,13 @@ describe("runSubagent", () => {
   });
 
   test("rejects output that fails a plain JSON Schema instead of throwing", async () => {
-    const plainSchema = {
-      type: "object",
-      properties: { ok: { type: "boolean" } },
-      required: ["ok"],
-    } as unknown as TSchema;
+    const plainSchema: TSchema = JSON.parse(
+      JSON.stringify({
+        type: "object",
+        properties: { ok: { type: "boolean" } },
+        required: ["ok"],
+      }),
+    );
 
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage('{"ok":"not-a-boolean"}')]);

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Type } from "@sinclair/typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
@@ -33,12 +34,15 @@ function createFauxSetup(): {
   return { models, faux, model: faux.getModel() as Model<Api> };
 }
 
-const echoTool: AgentTool = {
+const echoParameters = Type.Object({ text: Type.Optional(Type.String()) });
+
+const echoTool: AgentTool<typeof echoParameters> = {
   name: "echo",
+  label: "echo",
   description: "Echo the input",
-  parameters: { type: "object", properties: { text: { type: "string" } } },
-  execute: async (_toolCallId: string, args: unknown) => ({
-    content: [{ type: "text", text: `echo: ${(args as { text?: string }).text ?? ""}` }],
+  parameters: echoParameters,
+  execute: async (_toolCallId, args) => ({
+    content: [{ type: "text", text: `echo: ${args.text ?? ""}` }],
     details: { source: "echo" },
     usage: {
       input: 1,
@@ -49,7 +53,7 @@ const echoTool: AgentTool = {
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
   }),
-} as unknown as AgentTool;
+};
 
 describe("MikanAgentSession", () => {
   test("runs a prompt, persists messages, and reports the final text", async () => {
@@ -195,7 +199,8 @@ describe("MikanAgentSession", () => {
     const delegateTool: AgentTool = {
       name: "delegate",
       description: "Simulate a subagent run folding its spend into the parent",
-      parameters: { type: "object", properties: {} },
+      label: "test",
+      parameters: Type.Object({}),
       execute: async () => {
         expect(session.isActiveRun).toBe(true);
         await session.foldExternalUsage({
@@ -214,9 +219,9 @@ describe("MikanAgentSession", () => {
             total: 1.25,
           },
         });
-        return { content: [{ type: "text", text: "delegated" }] };
+        return { content: [{ type: "text", text: "delegated" }], details: undefined };
       },
-    } as unknown as AgentTool;
+    };
     session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -272,22 +277,24 @@ describe("MikanAgentSession", () => {
     const captureTool: AgentTool = {
       name: "capture",
       description: "Capture this prompt's external usage sink",
-      parameters: { type: "object", properties: {} },
+      label: "test",
+      parameters: Type.Object({}),
       execute: async () => {
         firstRunSink = session.captureExternalUsageSink();
-        return { content: [{ type: "text", text: "captured" }] };
+        return { content: [{ type: "text", text: "captured" }], details: undefined };
       },
-    } as unknown as AgentTool;
+    };
     const holdTool: AgentTool = {
       name: "hold",
       description: "Keep the second prompt active",
-      parameters: { type: "object", properties: {} },
+      label: "test",
+      parameters: Type.Object({}),
       execute: async () => {
         secondRunStarted!();
         await secondRunGate;
-        return { content: [{ type: "text", text: "released" }] };
+        return { content: [{ type: "text", text: "released" }], details: undefined };
       },
-    } as unknown as AgentTool;
+    };
     session = new MikanAgentSession({
       systemPrompt: "test",
       model,

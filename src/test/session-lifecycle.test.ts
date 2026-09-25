@@ -1,10 +1,21 @@
 import { describe, expect, test, vi } from "vitest";
-import type { OfficeAddress } from "../types.js";
+import type { OfficeAddress, PiAgentWrapper } from "../types.js";
 import { createOfficeAddress } from "../office/index.js";
 import { SessionLifecycle } from "../runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../runtime/types.js";
 
 const slack = createOfficeAddress("slack", "C1");
+
+function fakeRunner(overrides: Partial<PiAgentWrapper> = {}): PiAgentWrapper {
+  return {
+    syncChatHistory: vi.fn().mockResolvedValue(undefined),
+    run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
+    abort: vi.fn(),
+    getCurrentStep: vi.fn().mockReturnValue(undefined),
+    dispose: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
 
 function state(
   sessionKey: string,
@@ -14,9 +25,7 @@ function state(
     address: options.address ?? slack,
     sessionKey,
     running: false,
-    runner: {
-      dispose: vi.fn().mockResolvedValue(undefined),
-    } as unknown as ConversationRuntimeState["runner"],
+    runner: fakeRunner(),
     stopRequested: false,
     lastAccessedAt: options.lastAccessedAt ?? 0,
     sessionFile: "/session.jsonl",
@@ -369,10 +378,7 @@ describe("SessionLifecycle shutdown deadline", () => {
     const gate = new Promise<void>((resolve) => (finish = resolve));
     const running = state("C1");
     running.running = true;
-    running.runner = {
-      dispose: vi.fn().mockResolvedValue(undefined),
-      abort: vi.fn(() => finish()),
-    } as unknown as ConversationRuntimeState["runner"];
+    running.runner = fakeRunner({ abort: vi.fn(() => finish()) });
     lifecycle.set(running);
     const settlement = lifecycle.settle(running, () => gate);
 
@@ -387,10 +393,7 @@ describe("SessionLifecycle shutdown deadline", () => {
     const lifecycle = new SessionLifecycle();
     const running = state("C1");
     running.running = true;
-    running.runner = {
-      dispose: vi.fn().mockResolvedValue(undefined),
-      abort: vi.fn(),
-    } as unknown as ConversationRuntimeState["runner"];
+    running.runner = fakeRunner();
     lifecycle.set(running);
     const settlement = lifecycle.settle(running, async () => {
       await new Promise((resolve) => setTimeout(resolve, 50));

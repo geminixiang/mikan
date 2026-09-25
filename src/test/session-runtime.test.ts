@@ -25,10 +25,9 @@ import {
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
-import type { SlackMessagingBot } from "../adapters/slack/bot.js";
-import type { SlackEvent } from "../adapters/slack/types.js";
-import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
-import type { ConversationRuntime, ConversationRuntimeState } from "../runtime/types.js";
+import type { SlackEvent, SlackResponderBot } from "../adapters/slack/types.js";
+import { createRunner } from "../harness/runner.js";
+import type { RunnerFactory } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -56,13 +55,20 @@ afterEach(() => {
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 
-function makeRuntime(
-  models?: MikanModels,
-  memoryCapture?: (models: MikanModels) => RunMemoryCapture,
-) {
+interface MakeRuntimeOptions {
+  models?: MikanModels;
+  memoryCapture?: (models: MikanModels) => RunMemoryCapture;
+  runnerFactory?: RunnerFactory;
+}
+
+function makeRuntime(options: MakeRuntimeOptions = {}) {
   const sandbox: SandboxConfig = { type: "host" };
   const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-  return createConversationRuntime({ workspace, sandbox, models, memoryCapture });
+  return createConversationRuntime({ workspace, sandbox, ...options });
+}
+
+function fakeRunnerFactory(runner: PiAgentWrapper) {
+  return vi.fn<RunnerFactory>(async () => runner);
 }
 
 function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
@@ -150,32 +156,23 @@ function makeEventAndContext(ts: string): {
   };
 }
 
-const bot = {
+const bot: MessagingBot = {
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
   postMessage: vi.fn().mockResolvedValue("TS"),
   updateMessage: vi.fn().mockResolvedValue(undefined),
+  enqueueEvent: vi.fn().mockReturnValue(true),
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
-} as unknown as MessagingBot;
+};
 
-function seedRunnerState(runtime: ConversationRuntime): PiAgentWrapper {
-  const runner = {
+function fakeRunner(): PiAgentWrapper {
+  return {
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     syncChatHistory: vi.fn(),
     abort: vi.fn(),
     dispose: vi.fn().mockResolvedValue(undefined),
     getCurrentStep: vi.fn(),
-  } as unknown as PiAgentWrapper;
-  const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
-  sessions.set({
-    address: testAddress,
-    sessionKey: "C123",
-    running: false,
-    runner,
-    stopRequested: false,
-    lastAccessedAt: Date.now(),
-    sessionFile: createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir),
-    startedAt: 0,
-  });
-  return runner;
+  };
 }
 
 function newCommandOptions() {
@@ -195,63 +192,36 @@ function newCommandOptions() {
 
 describe("ConversationRuntime handleEvent", () => {
   test("single-flights concurrent runner creation for one runtime key", async () => {
-    const { models } = createFauxModels();
-    writeFileSync(
-      join(conversationDir, "log.jsonl"),
-      `${JSON.stringify({ date: new Date().toISOString(), ts: "1", user: "U2", text: "seed" })}\n`,
-    );
-    const runtime = makeRuntime(models);
-    const internal = runtime as unknown as {
-      acquireState(options: {
-        address: typeof testAddress;
-        conversationId: string;
-        sessionKey: string;
-        conversationKind: "shared";
-        trustModel: "membership" | "open-trigger";
-      }): Promise<{ state: ConversationRuntimeState; release: () => void }>;
-      createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
-    };
-    const originalCreate = internal.createCurrentRunner.bind(internal);
+    const runner = fakeRunner();
     let releaseCreate!: () => void;
     const gate = new Promise<void>((resolve) => (releaseCreate = resolve));
-    const create = vi.spyOn(internal, "createCurrentRunner").mockImplementation(async (...args) => {
+    const create = vi.fn<RunnerFactory>(async () => {
       await gate;
-      return originalCreate(...args);
+      return runner;
     });
-    const options = {
-      address: testAddress,
-      conversationId: "C123",
-      sessionKey: "C123",
-      conversationKind: "shared" as const,
-      trustModel: "open-trigger" as const,
-    };
+    const runtime = makeRuntime({ runnerFactory: create });
+    const first = makeEventAndContext("1000.001");
+    const second = makeEventAndContext("1000.002");
+    first.context.platform = { ...testPlatform, trustModel: "open-trigger" };
+    second.context.platform = { ...testPlatform, trustModel: "open-trigger" };
 
-    const first = internal.acquireState(options);
-    const second = internal.acquireState(options);
+    const left = runtime.runSession({ event: first.event, bot, context: first.context });
+    const right = runtime.runSession({ event: second.event, bot, context: second.context });
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
     releaseCreate();
-    const [left, right] = await Promise.all([first, second]);
+    await Promise.all([left, right]);
 
-    expect(left.state).toBe(right.state);
+    expect(runner.run).toHaveBeenCalledTimes(2);
     expect(create).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ trustModel: "open-trigger" }),
-      expect.anything(),
-      expect.any(AbortSignal),
+      expect.objectContaining({ trustModel: "open-trigger", signal: expect.any(AbortSignal) }),
     );
-    left.release();
-    right.release();
     await runtime.shutdown();
   });
 
   test("normalizes omitted platform trust before runner materialization", async () => {
-    const { models, faux } = createFauxModels();
-    faux.setResponses([fauxAssistantMessage("ok")]);
-    const runtime = makeRuntime(models);
-    const internal = runtime as unknown as {
-      createCurrentRunner: (...args: unknown[]) => Promise<PiAgentWrapper>;
-    };
-    const create = vi.spyOn(internal, "createCurrentRunner");
+    const create = fakeRunnerFactory(fakeRunner());
+    const runtime = makeRuntime({ runnerFactory: create });
     const { event, context } = makeEventAndContext("1000.01");
     const platformWithoutTrust = { ...context.platform };
     delete platformWithoutTrust.trustModel;
@@ -260,9 +230,7 @@ describe("ConversationRuntime handleEvent", () => {
     await runtime.handleEvent(event, bot, context);
 
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ trustModel: "membership" }),
-      expect.anything(),
-      expect.any(AbortSignal),
+      expect.objectContaining({ trustModel: "membership", signal: expect.any(AbortSignal) }),
     );
     await runtime.shutdown();
   });
@@ -287,7 +255,7 @@ describe("ConversationRuntime handleEvent", () => {
     const models = MikanModels.create({
       modelsJsonPath,
     });
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     const { event, context } = makeEventAndContext("1000.0");
     event.text = "/model custom-provider/custom-model";
     context.message.text = event.text;
@@ -301,19 +269,29 @@ describe("ConversationRuntime handleEvent", () => {
   });
 
   test("Slack status pending does not delay actual runtime runner or settlement", async () => {
-    const runtime = makeRuntime();
-    const runner = seedRunnerState(runtime);
+    const runner = fakeRunner();
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
     let release!: () => void;
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
     const status = vi.fn().mockReturnValue(pending);
-    const slack = {
+    const slack: SlackResponderBot & MessagingBot = {
+      ...bot,
       getUser: () => undefined,
       getMessagingInfo: () => testPlatform,
       setAssistantStatus: status,
-      getChannel: () => undefined,
-    } as unknown as SlackMessagingBot;
+      postInThread: vi.fn(),
+      postInThreadBlocks: vi.fn(),
+      deleteMessage: vi.fn(),
+      logBotResponse: vi.fn(),
+      tryReserveStreamStart: vi.fn(),
+      startMessageStream: vi.fn(),
+      appendMessageStream: vi.fn(),
+      stopMessageStream: vi.fn(),
+      uploadFile: vi.fn(),
+      addReaction: vi.fn(),
+    };
     const { event } = makeEventAndContext("1000.05");
     const context = createSlackAdapters({ ...event, channel: "C123" } as SlackEvent, slack);
     const done = runtime.handleEvent(event, slack, context);
@@ -328,8 +306,8 @@ describe("ConversationRuntime handleEvent", () => {
   });
 
   test("waits for chat history persistence before the agent run", async () => {
-    const runtime = makeRuntime();
-    const runner = seedRunnerState(runtime);
+    const runner = fakeRunner();
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
     let releaseSync!: () => void;
     const syncGate = new Promise<void>((resolve) => {
       releaseSync = resolve;
@@ -358,7 +336,7 @@ describe("ConversationRuntime handleEvent", () => {
 
   test("two events on one session key run serially, not concurrently", async () => {
     const { models, faux } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
 
     const order: string[] = [];
     let releaseFirst!: () => void;
@@ -406,7 +384,7 @@ describe("ConversationRuntime handleEvent", () => {
   test("reuses the cached session writer across incremental history sync", async () => {
     const { models, faux } = createFauxModels();
     faux.setResponses([fauxAssistantMessage("first reply"), fauxAssistantMessage("second reply")]);
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     const logPath = join(conversationDir, "log.jsonl");
     writeFileSync(
       logPath,
@@ -449,7 +427,15 @@ describe("ConversationRuntime handleEvent", () => {
 describe("ConversationRuntime lifecycle", () => {
   test("global refresh defers invalidation until the busy conversation settles", async () => {
     const { models, faux } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const created: PiAgentWrapper[] = [];
+    const runtime = makeRuntime({
+      models,
+      runnerFactory: async (options) => {
+        const runner = await createRunner(options);
+        created.push(runner);
+        return runner;
+      },
+    });
     let started = false;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -466,10 +452,8 @@ describe("ConversationRuntime lifecycle", () => {
     const firstDone = runtime.handleEvent(first.event, bot, first.context);
     await vi.waitFor(() => expect(started).toBe(true));
 
-    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
-    const oldState = sessions.get(testAddress, "C123");
-    expect(oldState).toBeDefined();
-    const oldRunner = oldState!.runner;
+    expect(created).toHaveLength(1);
+    const oldRunner = created[0]!;
     const dispose = vi.spyOn(oldRunner, "dispose");
 
     expect(runtime.refreshAllConversations()).toEqual({ busy: [testAddress] });
@@ -479,19 +463,18 @@ describe("ConversationRuntime lifecycle", () => {
     release();
     await firstDone;
     expect(dispose).toHaveBeenCalledOnce();
-    expect(sessions.get(testAddress, "C123")).toBeUndefined();
+    expect(created).toHaveLength(1);
 
     const second = makeEventAndContext("1000.1");
     await runtime.handleEvent(second.event, bot, second.context);
 
-    const newState = sessions.get(testAddress, "C123");
-    expect(newState).toBeDefined();
-    expect(newState!.runner).not.toBe(oldRunner);
+    expect(created).toHaveLength(2);
+    expect(created[1]).not.toBe(oldRunner);
   });
 
   test("new dispatched inside the session queue does not deadlock", async () => {
     const { models } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     const originalSession = createManagedSessionFile(
       officeSessionsDir(conversationDir),
       conversationDir,
@@ -514,29 +497,19 @@ describe("ConversationRuntime lifecycle", () => {
   });
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
-    const runtime = makeRuntime();
     const sessionDir = officeSessionsDir(conversationDir);
     const originalSession = createManagedSessionFile(sessionDir, conversationDir);
     let settle!: () => void;
-    const runSettlement = new Promise<void>((resolve) => (settle = resolve));
-    const runner = {
-      abort: vi.fn(),
-      dispose: vi.fn().mockResolvedValue(undefined),
-      syncChatHistory: vi.fn(),
-    } as unknown as PiAgentWrapper;
-    const state: ConversationRuntimeState = {
-      address: testAddress,
-      sessionKey: "C123",
-      running: true,
-      runSettlement,
-      runner,
-      stopRequested: false,
-      lastAccessedAt: Date.now(),
-      sessionFile: originalSession,
-      startedAt: Date.now(),
-    };
-    const sessions = (runtime as unknown as { sessions: SessionLifecycle }).sessions;
-    sessions.set(state);
+    const runGate = new Promise<void>((resolve) => (settle = resolve));
+    const runner = fakeRunner();
+    vi.mocked(runner.run).mockImplementation(async () => {
+      await runGate;
+      return { stopReason: "stop" };
+    });
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
+    const { event, context } = makeEventAndContext("1000.2");
+    const run = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(runner.run).toHaveBeenCalledOnce());
 
     const reset = runtime.handleNewCommand(newCommandOptions());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
@@ -548,8 +521,8 @@ describe("ConversationRuntime lifecycle", () => {
       "Conversation reset. Send a new message to start fresh.",
     );
 
-    state.running = false;
     settle();
+    await run;
     await reset;
 
     await vi.waitFor(() => {
@@ -564,7 +537,7 @@ describe("ConversationRuntime lifecycle", () => {
 
   test("force stop keeps a session running until its run settles", async () => {
     const { models, faux } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     let started = false;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -589,7 +562,7 @@ describe("ConversationRuntime lifecycle", () => {
 
   test("shutdown deadline aborts the run and posts a restart notice", async () => {
     const { models, faux } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     let started = false;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -617,8 +590,10 @@ describe("ConversationRuntime lifecycle", () => {
   });
 
   test("new creates a clean session immediately without changing memory", async () => {
-    const runtime = makeRuntime();
-    const runner = seedRunnerState(runtime);
+    const runner = fakeRunner();
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
+    const materialize = makeEventAndContext("2");
+    await runtime.handleEvent(materialize.event, bot, materialize.context);
     const originalSession = resolveChannelSessionFile(conversationDir)!;
     const memoryPath = join(conversationDir, "MEMORY.md");
     writeFileSync(memoryPath, "stable anchor\n");
@@ -644,9 +619,12 @@ describe("ConversationRuntime lifecycle", () => {
   });
 
   test("an old shared top-level session keeps serving new messages", async () => {
-    const runtime = makeRuntime();
-    const runner = seedRunnerState(runtime);
-    const originalSession = resolveChannelSessionFile(conversationDir)!;
+    const runner = fakeRunner();
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
+    const originalSession = createManagedSessionFile(
+      officeSessionsDir(conversationDir),
+      conversationDir,
+    );
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
 
     const { event, context } = makeEventAndContext("3");
@@ -661,8 +639,12 @@ describe("ConversationRuntime lifecycle", () => {
     const capture = vi.fn();
     const factory = vi.fn(() => ({ capture }));
     const { models } = createFauxModels();
-    const runtime = makeRuntime(models, factory);
-    const runner = seedRunnerState(runtime);
+    const runner = fakeRunner();
+    const runtime = makeRuntime({
+      models,
+      memoryCapture: factory,
+      runnerFactory: fakeRunnerFactory(runner),
+    });
     vi.mocked(runner.run).mockResolvedValue({ stopReason: "stop", finalText: "Noted." });
 
     const { event, context } = makeEventAndContext("4");
@@ -725,7 +707,7 @@ describe("ConversationRuntime lifecycle", () => {
 
   test("new resets an idle session immediately", async () => {
     const { models } = createFauxModels();
-    const runtime = makeRuntime(models);
+    const runtime = makeRuntime({ models });
     const originalSession = createManagedSessionFile(
       officeSessionsDir(conversationDir),
       conversationDir,

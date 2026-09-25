@@ -4,8 +4,7 @@ import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
-import type { DiscordMessagingBot } from "./bot.js";
-import type { DiscordEvent } from "./types.js";
+import type { DiscordEvent, DiscordResponseBot } from "./types.js";
 
 const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 
@@ -17,7 +16,7 @@ function isDiscordMessageReference(id: string | undefined): id is string {
 
 export function createDiscordAdapters(
   event: DiscordEvent,
-  bot: DiscordMessagingBot,
+  bot: DiscordResponseBot,
 ): ConversationContext {
   const conversationId = event.address.conversationId;
   const channelId = conversationId;

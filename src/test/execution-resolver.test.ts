@@ -12,6 +12,17 @@ import { recordPlatformChannelKind } from "../office/projection.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 
+type ResolverVault = ConstructorParameters<typeof ActorExecutionResolver>[1];
+
+function fakeVault(lookup: Pick<ResolverVault, "hasEntry" | "resolve">): ResolverVault {
+  return {
+    ...lookup,
+    copySharedVaultTo: () => {
+      throw new Error("unexpected shared vault copy");
+    },
+  };
+}
+
 describe("ActorExecutionResolver", () => {
   let stateDir: string;
   let workspaceDir: string;
@@ -158,7 +169,7 @@ describe("ActorExecutionResolver", () => {
     );
     const source = join(stateDir, "secret");
     writeFileSync(source, "value");
-    const vault = {
+    const vault = fakeVault({
       hasEntry: () => true,
       resolve: () => ({
         userId: "key",
@@ -167,7 +178,7 @@ describe("ActorExecutionResolver", () => {
         env: {},
         mounts: [{ source, target: "/workspace/MEMORY.md/../skills/secret" }],
       }),
-    } as unknown as FileVaultManager;
+    });
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       vault,
@@ -183,13 +194,13 @@ describe("ActorExecutionResolver", () => {
   test("does not resolve ambiguous legacy credential keys", async () => {
     createGlobalSettingsFile(stateDir);
     const resolvedKeys: string[] = [];
-    const vault = {
+    const vault = fakeVault({
       hasEntry: () => false,
       resolve: (key: string) => {
         resolvedKeys.push(key);
         return undefined;
       },
-    } as unknown as FileVaultManager;
+    });
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       vault,
@@ -250,13 +261,13 @@ describe("ActorExecutionResolver", () => {
   test("host mode resolves an unknown-kind office after preserving legacy credential lookup", async () => {
     createGlobalSettingsFile(stateDir);
     const resolvedKeys: string[] = [];
-    const vault = {
+    const vault = fakeVault({
       hasEntry: () => true,
       resolve: (key: string) => {
         resolvedKeys.push(key);
         return undefined;
       },
-    } as unknown as FileVaultManager;
+    });
     const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
     vi.spyOn(log, "logWarning").mockImplementation(() => {});
 
@@ -273,7 +284,7 @@ describe("ActorExecutionResolver", () => {
     const secondSource = join(stateDir, "second-secret");
     writeFileSync(firstSource, "first");
     writeFileSync(secondSource, "second");
-    const vault = {
+    const vault = fakeVault({
       hasEntry: () => true,
       resolve: () => ({
         userId: "key",
@@ -285,7 +296,7 @@ describe("ActorExecutionResolver", () => {
           { source: secondSource, target: "/root/.config/gh" },
         ],
       }),
-    } as unknown as FileVaultManager;
+    });
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       vault,

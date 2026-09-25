@@ -4,8 +4,8 @@ import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { splitText } from "../shared.js";
 import { formatToolArgs } from "../../harness/tool-args.js";
 import type { HandleTooLongInput } from "../types.js";
-import { buildMrkdwnContextBlock, type SlackMessagingBot } from "./bot.js";
-import type { SlackEvent, SlackAdapterSessionPlan } from "./types.js";
+import { buildMrkdwnContextBlock } from "./bot.js";
+import type { SlackEvent, SlackAdapterSessionPlan, SlackResponderBot } from "./types.js";
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
 import { slackPersonaForProfile } from "./persona.js";
@@ -93,7 +93,7 @@ function needsCanonicalRender(text: string): boolean {
 
 interface SlackResponseLifecycleOptions {
   event: SlackEvent;
-  slack: SlackMessagingBot;
+  slack: SlackResponderBot;
   sessionPlan: SlackAdapterSessionPlan;
   replyInThread: boolean;
   eventFilename: string | undefined;
@@ -257,7 +257,7 @@ export function createSlackResponseContext({
   message,
 }: {
   event: SlackEvent;
-  slack: SlackMessagingBot;
+  slack: SlackResponderBot;
   sessionPlan: SlackAdapterSessionPlan;
   replyMode: "top-level" | "thread";
   message: ConversationMessage;

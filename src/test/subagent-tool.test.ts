@@ -177,17 +177,13 @@ describe("subagent tool", () => {
   });
 
   test("offers no systemPrompt, tools, or model escape hatch", () => {
-    const properties = (
-      makeTool(completedRun("ok")).parameters as unknown as {
-        properties: Record<string, { properties?: Record<string, { minimum?: number }> }>;
-      }
-    ).properties;
+    const properties = makeTool(completedRun("ok")).parameters.properties;
 
-    expect(properties.systemPrompt).toBeUndefined();
-    expect(properties.tools).toBeUndefined();
-    expect(properties.model).toBeUndefined();
+    expect(Object.keys(properties)).not.toContain("systemPrompt");
+    expect(Object.keys(properties)).not.toContain("tools");
+    expect(Object.keys(properties)).not.toContain("model");
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
-    expect(properties.budget?.properties).toEqual({
+    expect(properties.budget.properties).toEqual({
       maxTokens: expect.objectContaining({ minimum: 1 }),
     });
   });

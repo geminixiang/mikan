@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingBot, ConversationResponder } from "../types.js";
+import type { MessagingBot, ConversationResponder, SandboxResourceController } from "../types.js";
 import { MikanModels } from "../harness/models.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";
@@ -29,6 +29,7 @@ import type {
 } from "../adapters/commands/types.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
+import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import type { VaultManager } from "../vault/types.js";
 
@@ -126,6 +127,25 @@ function fakeSessionViewTokenStore() {
       created.push({ sessionFile: options.sessionFile });
       return { token: "tok-sv" };
     },
+  };
+}
+
+function fakeProvisioner() {
+  const provisioner = new DockerContainerManager("ubuntu:24.04");
+  const remove = vi.spyOn(provisioner, "remove").mockResolvedValue();
+  return { provisioner, remove };
+}
+
+function fakeResourceController(
+  overrides: Partial<SandboxResourceController> = {},
+): SandboxResourceController {
+  return {
+    boost: vi.fn(async () => ({ limits: undefined, boosted: true })),
+    setLimits: vi.fn(async () => ({ limits: undefined, boosted: false })),
+    getLimitStatus: () => ({ limits: undefined, boosted: false }),
+    getDefaultLimits: () => undefined,
+    getBoostLimits: () => undefined,
+    ...overrides,
   };
 }
 
@@ -485,13 +505,13 @@ describe("LoginCommandHandler", () => {
   test("copies shared login profile into the conversation vault", async () => {
     const vaultManager = fakeVaultManager();
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
-    const remove = vi.fn(async () => {});
+    const { provisioner, remove } = fakeProvisioner();
     const ctx = buildContext({
       commandText: "/pi-login copy gliaclaw",
       privateConversation: true,
       services: {
         vaultManager,
-        provisioner: { remove } as any,
+        provisioner,
         sandbox: { type: "image", image: "ubuntu:24.04" },
       },
     });
@@ -517,25 +537,18 @@ describe("LoginCommandHandler", () => {
   test("does not restart an image sandbox while the target conversation is running", async () => {
     const vaultManager = fakeVaultManager();
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
-    const remove = vi.fn(async () => {});
+    const { provisioner, remove } = fakeProvisioner();
     const ctx = buildContext({
       commandText: "/pi-login copy gliaclaw",
       privateConversation: true,
       services: {
         vaultManager,
-        provisioner: { remove } as any,
+        provisioner,
         runtime: {
-          forceStop: vi.fn(),
-          getRunningSessions: vi.fn().mockReturnValue([{ sessionKey: "C123:thread-1" }]),
-          handleEvent: vi.fn(),
           handleNewCommand: vi.fn(),
-          handleStop: vi.fn(),
-          isRunning: vi.fn().mockReturnValue(true),
           refreshConversationEnvironment: vi.fn().mockReturnValue(false),
-          runSession: vi.fn(),
-          shutdown: vi.fn(),
           switchConversationModel: vi.fn(),
-        } as any,
+        },
         sandbox: { type: "image", image: "ubuntu:24.04" },
       },
     });
@@ -606,11 +619,11 @@ describe("SandboxCommandHandler", () => {
       services: {
         workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        resourceController: {
+        resourceController: fakeResourceController({
           getLimitStatus: () => ({ limits: { cpus: "0.5", memory: "1g" }, boosted: false }),
           getDefaultLimits: () => ({ cpus: "0.5", memory: "1g" }),
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
-        } as any,
+        }),
       },
     });
 
@@ -627,11 +640,7 @@ describe("SandboxCommandHandler", () => {
       services: {
         workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        resourceController: {
-          getLimitStatus: () => ({ limits: undefined, boosted: false }),
-          getDefaultLimits: () => undefined,
-          getBoostLimits: () => undefined,
-        } as any,
+        resourceController: fakeResourceController(),
       },
     });
 
@@ -649,14 +658,11 @@ describe("SandboxCommandHandler", () => {
         workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
         runtime: {
+          handleNewCommand: vi.fn(),
           refreshConversationEnvironment: vi.fn().mockReturnValue(refreshResult),
           switchConversationModel: vi.fn(),
-        } as any,
-        resourceController: {
-          getLimitStatus: () => ({ limits: undefined, boosted: false }),
-          getDefaultLimits: () => undefined,
-          getBoostLimits: () => undefined,
-        } as any,
+        },
+        resourceController: fakeResourceController(),
       },
     });
   }
@@ -730,10 +736,10 @@ describe("SandboxCommandHandler", () => {
       services: {
         workspace: testWorkspace(workingDir),
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        resourceController: {
+        resourceController: fakeResourceController({
           boost,
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
-        } as any,
+        }),
       },
     });
 

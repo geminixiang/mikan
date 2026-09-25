@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
+import type { DockerExecFile } from "../sandbox/types.js";
 
 const KEY = "v1-slack-c123-k";
 const NAME = `mikan-sandbox-${KEY}`;
@@ -53,8 +54,8 @@ function dockerMock(state: {
   return { exec, calls };
 }
 
-function manager(exec: unknown): DockerContainerManager {
-  return new DockerContainerManager("mikan-sandbox:latest", { execFileImpl: exec as any });
+function manager(exec: DockerExecFile): DockerContainerManager {
+  return new DockerContainerManager("mikan-sandbox:latest", { execFileImpl: exec });
 }
 
 const MOUNTS: never[] = [];

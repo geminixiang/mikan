@@ -53,6 +53,8 @@ export interface ExecOptions {
   signal?: AbortSignal;
 }
 
+export type DockerExecFile = (file: string, args: string[]) => Promise<{ stdout: string }>;
+
 export interface ExecResult {
   stdout: string;
   stderr: string;

@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi, type Mock } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../types.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
-import type { GithubClient } from "../adapters/github/client.js";
 import {
   buildGithubConversationId,
   createOfficeAddress,
@@ -20,6 +19,7 @@ import {
 } from "../adapters/github/ids.js";
 import { cloneRepo, pushBranch, syncRepo } from "../adapters/github/repo.js";
 import type {
+  GithubApi,
   GithubIssue,
   GithubIssueComment,
   GithubReviewComment,
@@ -113,79 +113,66 @@ function makeReviewComment(overrides: Partial<GithubReviewComment> = {}): Github
   };
 }
 
-interface FakeClient {
-  getAppSlug: ReturnType<typeof vi.fn>;
-  getUserId: ReturnType<typeof vi.fn>;
-  listInstallationRepositories: ReturnType<typeof vi.fn>;
-  listIssuesSince: ReturnType<typeof vi.fn>;
-  listIssueCommentsSince: ReturnType<typeof vi.fn>;
-  listPullReviewCommentsSince: ReturnType<typeof vi.fn>;
-  listPullReviewComments: ReturnType<typeof vi.fn>;
-  createReviewCommentReaction: ReturnType<typeof vi.fn>;
-  getIssue: ReturnType<typeof vi.fn>;
-  createIssueComment: ReturnType<typeof vi.fn>;
-  updateIssueComment: ReturnType<typeof vi.fn>;
-  deleteIssueComment: ReturnType<typeof vi.fn>;
-  createCommentReaction: ReturnType<typeof vi.fn>;
-  createIssueReaction: ReturnType<typeof vi.fn>;
-  createScopedInstallationToken: ReturnType<typeof vi.fn>;
-  getRepository: ReturnType<typeof vi.fn>;
-  createPullRequest: ReturnType<typeof vi.fn>;
-  getPullRequest: ReturnType<typeof vi.fn>;
-  getCollaboratorPermission: ReturnType<typeof vi.fn>;
-  findOpenPullRequestByBranch: ReturnType<typeof vi.fn>;
-  listCheckRuns: ReturnType<typeof vi.fn>;
-  getJobLog: ReturnType<typeof vi.fn>;
-  listPullRequestFiles: ReturnType<typeof vi.fn>;
-  listIssues: ReturnType<typeof vi.fn>;
-  listPullRequestReviews: ReturnType<typeof vi.fn>;
-  addIssueLabels: ReturnType<typeof vi.fn>;
-  removeIssueLabel: ReturnType<typeof vi.fn>;
-  addIssueAssignees: ReturnType<typeof vi.fn>;
-  removeIssueAssignees: ReturnType<typeof vi.fn>;
-  updateIssueState: ReturnType<typeof vi.fn>;
-  replyToReviewComment: ReturnType<typeof vi.fn>;
-}
+type FakeClient = { [Method in keyof GithubApi]: Mock<GithubApi[Method]> };
 
 function makeFakeClient(): FakeClient {
   return {
-    getAppSlug: vi.fn().mockResolvedValue("mikan"),
-    getUserId: vi.fn().mockResolvedValue(999),
-    listInstallationRepositories: vi.fn().mockResolvedValue([]),
-    listIssuesSince: vi.fn().mockResolvedValue([]),
-    listIssueCommentsSince: vi.fn().mockResolvedValue([]),
-    listPullReviewCommentsSince: vi.fn().mockResolvedValue([]),
-    listPullReviewComments: vi.fn().mockResolvedValue([]),
-    createReviewCommentReaction: vi.fn().mockResolvedValue(undefined),
-    getIssue: vi.fn().mockResolvedValue(makeIssue()),
-    createIssueComment: vi.fn().mockResolvedValue(makeComment({ id: 555 })),
-    updateIssueComment: vi.fn().mockResolvedValue(undefined),
-    deleteIssueComment: vi.fn().mockResolvedValue(undefined),
-    createCommentReaction: vi.fn().mockResolvedValue(undefined),
-    createIssueReaction: vi.fn().mockResolvedValue(undefined),
-    createScopedInstallationToken: vi.fn().mockResolvedValue("scoped-token"),
-    getRepository: vi.fn().mockResolvedValue({ default_branch: "main" }),
-    getCollaboratorPermission: vi.fn().mockResolvedValue({ permission: "write" }),
+    getAppSlug: vi.fn<GithubApi["getAppSlug"]>().mockResolvedValue("mikan"),
+    getUserId: vi.fn<GithubApi["getUserId"]>().mockResolvedValue(999),
+    listInstallationRepositories: vi
+      .fn<GithubApi["listInstallationRepositories"]>()
+      .mockResolvedValue([]),
+    listIssuesSince: vi.fn<GithubApi["listIssuesSince"]>().mockResolvedValue([]),
+    listIssueCommentsSince: vi.fn<GithubApi["listIssueCommentsSince"]>().mockResolvedValue([]),
+    listPullReviewCommentsSince: vi
+      .fn<GithubApi["listPullReviewCommentsSince"]>()
+      .mockResolvedValue([]),
+    listPullReviewComments: vi.fn<GithubApi["listPullReviewComments"]>().mockResolvedValue([]),
+    listIssueComments: vi.fn<GithubApi["listIssueComments"]>().mockResolvedValue([]),
+    createReviewCommentReaction: vi
+      .fn<GithubApi["createReviewCommentReaction"]>()
+      .mockResolvedValue(undefined),
+    getIssue: vi.fn<GithubApi["getIssue"]>().mockResolvedValue(makeIssue()),
+    createIssueComment: vi
+      .fn<GithubApi["createIssueComment"]>()
+      .mockResolvedValue(makeComment({ id: 555 })),
+    updateIssueComment: vi.fn<GithubApi["updateIssueComment"]>().mockResolvedValue(undefined),
+    deleteIssueComment: vi.fn<GithubApi["deleteIssueComment"]>().mockResolvedValue(undefined),
+    createCommentReaction: vi.fn<GithubApi["createCommentReaction"]>().mockResolvedValue(undefined),
+    createIssueReaction: vi.fn<GithubApi["createIssueReaction"]>().mockResolvedValue(undefined),
+    createScopedInstallationToken: vi
+      .fn<GithubApi["createScopedInstallationToken"]>()
+      .mockResolvedValue("scoped-token"),
+    getRepository: vi
+      .fn<GithubApi["getRepository"]>()
+      .mockResolvedValue({ default_branch: "main" }),
+    getCollaboratorPermission: vi
+      .fn<GithubApi["getCollaboratorPermission"]>()
+      .mockResolvedValue({ permission: "write" }),
     createPullRequest: vi
-      .fn()
+      .fn<GithubApi["createPullRequest"]>()
       .mockResolvedValue({ number: 7, html_url: "https://github.com/octo/widgets/pull/7" }),
-    getPullRequest: vi.fn().mockResolvedValue({
+    getPullRequest: vi.fn<GithubApi["getPullRequest"]>().mockResolvedValue({
       number: 5,
       html_url: "https://github.com/octo/widgets/pull/5",
       head: { ref: "pi/fix-widget", sha: "headsha", repo: { full_name: "octo/widgets" } },
     }),
-    findOpenPullRequestByBranch: vi.fn().mockResolvedValue(null),
-    listCheckRuns: vi.fn().mockResolvedValue([]),
-    getJobLog: vi.fn().mockResolvedValue(""),
-    listPullRequestFiles: vi.fn().mockResolvedValue([]),
-    listIssues: vi.fn().mockResolvedValue([]),
-    listPullRequestReviews: vi.fn().mockResolvedValue([]),
-    addIssueLabels: vi.fn().mockResolvedValue(undefined),
-    removeIssueLabel: vi.fn().mockResolvedValue(undefined),
-    addIssueAssignees: vi.fn().mockResolvedValue(undefined),
-    removeIssueAssignees: vi.fn().mockResolvedValue(undefined),
-    updateIssueState: vi.fn().mockResolvedValue(undefined),
-    replyToReviewComment: vi.fn().mockResolvedValue(makeReviewComment()),
+    findOpenPullRequestByBranch: vi
+      .fn<GithubApi["findOpenPullRequestByBranch"]>()
+      .mockResolvedValue(null),
+    listCheckRuns: vi.fn<GithubApi["listCheckRuns"]>().mockResolvedValue([]),
+    getJobLog: vi.fn<GithubApi["getJobLog"]>().mockResolvedValue(""),
+    listPullRequestFiles: vi.fn<GithubApi["listPullRequestFiles"]>().mockResolvedValue([]),
+    listIssues: vi.fn<GithubApi["listIssues"]>().mockResolvedValue([]),
+    listPullRequestReviews: vi.fn<GithubApi["listPullRequestReviews"]>().mockResolvedValue([]),
+    addIssueLabels: vi.fn<GithubApi["addIssueLabels"]>().mockResolvedValue(undefined),
+    removeIssueLabel: vi.fn<GithubApi["removeIssueLabel"]>().mockResolvedValue(undefined),
+    addIssueAssignees: vi.fn<GithubApi["addIssueAssignees"]>().mockResolvedValue(undefined),
+    removeIssueAssignees: vi.fn<GithubApi["removeIssueAssignees"]>().mockResolvedValue(undefined),
+    updateIssueState: vi.fn<GithubApi["updateIssueState"]>().mockResolvedValue(undefined),
+    replyToReviewComment: vi
+      .fn<GithubApi["replyToReviewComment"]>()
+      .mockResolvedValue(makeReviewComment()),
   };
 }
 
@@ -275,7 +262,7 @@ describe("GithubMessagingBot", () => {
         workspace: createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") }),
         syncStatePath: join(workingDir, "state", "github-sync.json"),
       },
-      client as unknown as GithubClient,
+      client,
     );
   }
 
@@ -537,7 +524,7 @@ describe("GithubMessagingBot", () => {
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const sinceCall = client.listIssueCommentsSince.mock.calls[0];
     if (!sinceCall) throw new Error("listIssueCommentsSince was not called");
-    const since = sinceCall[2] as string;
+    const since = sinceCall[2];
     expect(Date.parse(since)).toBeLessThan(Date.parse(cursor));
   });
 

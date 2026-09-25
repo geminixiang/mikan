@@ -1,10 +1,20 @@
-import { describe, expect, test, vi } from "vitest";
-import { createConversationEvent } from "../office/index.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Collection, type Guild } from "discord.js";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createConversationEvent, createWorkspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
+import type { DiscordClient } from "../adapters/discord/types.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
+import type { GithubApi } from "../adapters/github/types.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
+import type { SlackSocketConnection } from "../adapters/slack/types.js";
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
+import type { TelegramClient } from "../adapters/telegram/types.js";
 import { MessagingEventQueue, MessagingIntakeTracker } from "../adapters/shared.js";
+import type { MessagingEventHandler } from "../types.js";
 
 function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve!: () => void;
@@ -14,8 +24,143 @@ function createDeferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve };
 }
 
-function uninitializedBot<T>(prototype: object, fields: Record<string, unknown>): T {
-  return Object.assign(Object.create(prototype) as object, fields) as T;
+const unexpectedCall = async (): Promise<never> => {
+  throw new Error("unexpected platform client call");
+};
+
+function fakeHandler(): MessagingEventHandler {
+  return {
+    isRunning: () => false,
+    getRunningSessions: () => [],
+    handleEvent: vi.fn(async () => {}),
+    handleStop: vi.fn(async () => {}),
+    forceStop: vi.fn(),
+    handleNewCommand: vi.fn(async () => {}),
+  };
+}
+
+function fakeSlackSocket(
+  disconnect: SlackSocketConnection["disconnect"] = async () => {},
+): SlackSocketConnection {
+  return { on: () => undefined, start: async () => {}, disconnect };
+}
+
+function fakeDiscordClient(destroy: DiscordClient["destroy"] = async () => {}): DiscordClient {
+  return {
+    channels: { fetch: unexpectedCall },
+    users: { fetch: unexpectedCall },
+    guilds: { cache: new Collection<string, Guild>() },
+    once: () => undefined,
+    on: () => undefined,
+    login: unexpectedCall,
+    destroy,
+  };
+}
+
+function fakeTelegramClient(stop: TelegramClient["stop"] = async () => {}): TelegramClient {
+  return {
+    api: {
+      getMe: unexpectedCall,
+      setMyCommands: unexpectedCall,
+      setMessageReaction: unexpectedCall,
+      editMessageText: unexpectedCall,
+      sendRichMessage: unexpectedCall,
+      sendMessage: unexpectedCall,
+      deleteMessage: unexpectedCall,
+      sendChatAction: unexpectedCall,
+      sendDocument: unexpectedCall,
+      getFile: unexpectedCall,
+    },
+    catch: () => {},
+    start: async () => {},
+    stop,
+    command: () => undefined,
+    on: () => undefined,
+  };
+}
+
+function fakeGithubApi(overrides: Partial<GithubApi> = {}): GithubApi {
+  return {
+    getAppSlug: unexpectedCall,
+    getUserId: unexpectedCall,
+    createScopedInstallationToken: unexpectedCall,
+    getRepository: unexpectedCall,
+    getCollaboratorPermission: unexpectedCall,
+    createPullRequest: unexpectedCall,
+    getPullRequest: unexpectedCall,
+    listPullRequestFiles: unexpectedCall,
+    listPullRequestReviews: unexpectedCall,
+    listIssueComments: unexpectedCall,
+    listIssues: unexpectedCall,
+    findOpenPullRequestByBranch: unexpectedCall,
+    listCheckRuns: unexpectedCall,
+    getJobLog: unexpectedCall,
+    listInstallationRepositories: unexpectedCall,
+    listIssueCommentsSince: unexpectedCall,
+    listPullReviewCommentsSince: unexpectedCall,
+    listPullReviewComments: unexpectedCall,
+    listIssuesSince: unexpectedCall,
+    getIssue: unexpectedCall,
+    addIssueLabels: unexpectedCall,
+    removeIssueLabel: unexpectedCall,
+    addIssueAssignees: unexpectedCall,
+    removeIssueAssignees: unexpectedCall,
+    updateIssueState: unexpectedCall,
+    createIssueComment: unexpectedCall,
+    updateIssueComment: unexpectedCall,
+    deleteIssueComment: unexpectedCall,
+    createCommentReaction: unexpectedCall,
+    replyToReviewComment: unexpectedCall,
+    createReviewCommentReaction: unexpectedCall,
+    createIssueReaction: unexpectedCall,
+    ...overrides,
+  };
+}
+
+let root: string;
+let workspace: Workspace;
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), "mikan-platform-stop-"));
+  workspace = createWorkspace({ root, stateDir: join(root, "state") });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  rmSync(root, { recursive: true, force: true });
+});
+
+function slackBot(socket: SlackSocketConnection = fakeSlackSocket()): SlackMessagingBot {
+  return new SlackMessagingBot(fakeHandler(), {
+    appToken: "xapp-test",
+    botToken: "xoxb-test",
+    workspace,
+    socket,
+  });
+}
+
+function discordBot(client: DiscordClient = fakeDiscordClient()): DiscordMessagingBot {
+  return new DiscordMessagingBot(fakeHandler(), { token: "discord-test", workspace, client });
+}
+
+function telegramBot(client: TelegramClient = fakeTelegramClient()): TelegramMessagingBot {
+  return new TelegramMessagingBot(fakeHandler(), { token: "telegram-test", workspace, client });
+}
+
+function githubBot(client: GithubApi = fakeGithubApi()): GithubMessagingBot {
+  return new GithubMessagingBot(
+    fakeHandler(),
+    {
+      appId: "1",
+      privateKey: "unused",
+      installationId: "2",
+      repos: ["octo/widgets"],
+      pollIntervalMs: 60_000,
+      workspace,
+      syncStatePath: join(root, "github-sync.json"),
+    },
+    client,
+  );
 }
 
 describe("MessagingIntakeTracker.close", () => {
@@ -67,7 +212,7 @@ describe("MessagingEventQueue.close", () => {
 });
 
 describe("platform stop intake", () => {
-  test("rejects scheduled events after every adapter is stopped", () => {
+  test("rejects scheduled events after every adapter is stopped", async () => {
     const event = createConversationEvent({
       platform: "slack",
       type: "mention",
@@ -77,22 +222,16 @@ describe("platform stop intake", () => {
       text: "late event",
       ts: "event:late",
     });
-    const bots = [
-      uninitializedBot<SlackMessagingBot>(SlackMessagingBot.prototype, { stopped: true }),
-      uninitializedBot<DiscordMessagingBot>(DiscordMessagingBot.prototype, { stopped: true }),
-      uninitializedBot<TelegramMessagingBot>(TelegramMessagingBot.prototype, { stopped: true }),
-      uninitializedBot<GithubMessagingBot>(GithubMessagingBot.prototype, { stopped: true }),
-    ];
+    const bots = [slackBot(), discordBot(), telegramBot(), githubBot()];
+
+    for (const bot of bots) await bot.stop();
 
     for (const bot of bots) expect(bot.enqueueEvent(event)).toBe(false);
   });
+
   test("disconnects Slack Socket Mode", async () => {
-    const disconnect = vi.fn().mockResolvedValue(undefined);
-    const bot = uninitializedBot<SlackMessagingBot>(SlackMessagingBot.prototype, {
-      socketClient: { disconnect },
-      intake: new MessagingIntakeTracker("Slack"),
-      queues: new Map(),
-    });
+    const disconnect = vi.fn(async () => {});
+    const bot = slackBot(fakeSlackSocket(disconnect));
 
     await bot.stop();
 
@@ -100,12 +239,8 @@ describe("platform stop intake", () => {
   });
 
   test("destroys the Discord client", async () => {
-    const destroy = vi.fn();
-    const bot = uninitializedBot<DiscordMessagingBot>(DiscordMessagingBot.prototype, {
-      client: { destroy },
-      intake: new MessagingIntakeTracker("Discord"),
-      queues: new Map(),
-    });
+    const destroy = vi.fn(async () => {});
+    const bot = discordBot(fakeDiscordClient(destroy));
 
     await bot.stop();
 
@@ -113,12 +248,8 @@ describe("platform stop intake", () => {
   });
 
   test("stops Telegram polling", async () => {
-    const stop = vi.fn().mockResolvedValue(undefined);
-    const bot = uninitializedBot<TelegramMessagingBot>(TelegramMessagingBot.prototype, {
-      client: { stop },
-      intake: new MessagingIntakeTracker("Telegram"),
-      queues: new Map(),
-    });
+    const stop = vi.fn(async () => {});
+    const bot = telegramBot(fakeTelegramClient(stop));
 
     await bot.stop();
 
@@ -127,20 +258,37 @@ describe("platform stop intake", () => {
 
   test("clears GitHub timers and waits for an active poll", async () => {
     const gate = createDeferred();
-    const interval = setInterval(() => {}, 60_000);
-    const requestTimer = setTimeout(() => {}, 60_000);
+    const listIssuesSince = vi.fn<GithubApi["listIssuesSince"]>(async () => {
+      await gate.promise;
+      return [];
+    });
+    const bot = githubBot(
+      fakeGithubApi({
+        getAppSlug: async () => "mikan",
+        getUserId: async () => 1,
+        listIssuesSince,
+        listIssueCommentsSince: async () => [],
+        listPullReviewCommentsSince: async () => [],
+      }),
+    );
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+    await bot.start();
+    expect(setIntervalSpy).toHaveBeenCalledOnce();
+    const interval = setIntervalSpy.mock.results[0]!.value;
+
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    bot.requestPoll(60_000);
+    expect(setTimeoutSpy).toHaveBeenCalledOnce();
+    const requestTimer = setTimeoutSpy.mock.results[0]!.value;
+    setTimeoutSpy.mockClear();
+
+    const polling = bot.poll();
+    await vi.waitFor(() => expect(listIssuesSince).toHaveBeenCalledOnce());
+    bot.requestPoll(0);
+
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
     const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-    const bot = uninitializedBot<GithubMessagingBot>(GithubMessagingBot.prototype, {
-      stopped: false,
-      activePoll: gate.promise,
-      pollPending: true,
-      pollIntervalTimer: interval,
-      requestPollTimer: requestTimer,
-      queues: new Map(),
-    });
     let settled = false;
-
     const stopping = bot.stop().then(() => {
       settled = true;
     });
@@ -151,15 +299,11 @@ describe("platform stop intake", () => {
     expect(clearTimeoutSpy).toHaveBeenCalledWith(requestTimer);
 
     gate.resolve();
-    await stopping;
+    await Promise.all([polling, stopping]);
     expect(settled).toBe(true);
 
+    setTimeoutSpy.mockClear();
     bot.requestPoll(0);
-    expect(
-      (bot as unknown as { requestPollTimer: NodeJS.Timeout | null }).requestPollTimer,
-    ).toBeNull();
-
-    clearIntervalSpy.mockRestore();
-    clearTimeoutSpy.mockRestore();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 });

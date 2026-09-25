@@ -1,15 +1,37 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebClient } from "@slack/web-api";
 import { describe, expect, it } from "vitest";
 import { SlackMessagingBot } from "../../src/adapters/slack/bot.js";
 import { createSlackAdapters } from "../../src/adapters/slack/context.js";
-import { createOfficeAddress } from "../../src/office/index.js";
+import type { SlackResponderBot } from "../../src/adapters/slack/types.js";
+import { createOfficeAddress, createWorkspace } from "../../src/office/index.js";
+import type { MessagingEventHandler } from "../../src/types.js";
 import { assertBotTokenShape } from "./helpers/env.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import { fetchThreadMessages, postMessage } from "./helpers/slack.js";
 
 const ctx = loadContextOrSkip();
 
-function createRealSlackResponderBot(botClient: WebClient): SlackMessagingBot {
+const unusedHandler: MessagingEventHandler = {
+  isRunning: () => false,
+  getRunningSessions: () => [],
+  handleEvent: async () => {},
+  handleStop: async () => {},
+  forceStop: () => {},
+  handleNewCommand: async () => {},
+};
+
+const unused = () => Promise.reject(new Error("not used by the long-message E2E"));
+
+function createRealSlackResponderBot(botClient: WebClient): SlackResponderBot {
+  const stateDir = join(tmpdir(), "mikan-slack-long-message-e2e");
+  const realBot = new SlackMessagingBot(unusedHandler, {
+    appToken: "xapp-unused",
+    botToken: "xoxb-unused",
+    workspace: createWorkspace({ root: stateDir, stateDir }),
+    webApi: botClient,
+  });
   let rejectNextPost = true;
   return {
     getUser: () => undefined,
@@ -30,18 +52,20 @@ function createRealSlackResponderBot(botClient: WebClient): SlackMessagingBot {
         error.data = { error: "msg_too_long" };
         return Promise.reject(error);
       }
-      const receiver = Object.assign(Object.create(SlackMessagingBot.prototype) as object, {
-        webClient: botClient,
-        users: new Map(),
-      });
-      return Reflect.apply(SlackMessagingBot.prototype.postInThread, receiver, [
-        channel,
-        threadTs,
-        text,
-      ]) as Promise<string>;
+      return realBot.postInThread(channel, threadTs, text);
     },
     logBotResponse: () => undefined,
-  } as unknown as SlackMessagingBot;
+    postMessage: unused,
+    postInThreadBlocks: unused,
+    updateMessage: unused,
+    deleteMessage: unused,
+    startMessageStream: unused,
+    appendMessageStream: unused,
+    stopMessageStream: unused,
+    uploadFile: unused,
+    addReaction: unused,
+    setAssistantStatus: unused,
+  };
 }
 
 describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack long-message continuation", () => {

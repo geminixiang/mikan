@@ -31,6 +31,7 @@ import {
 import type { Office, GithubConversationRef } from "../../office/types.js";
 import { GITHUB_ISSUE_BODY_TS, githubReviewCommentTs, parseReviewCommentTs } from "./ids.js";
 import type {
+  GithubApi,
   GithubBotConfig,
   GithubEvent,
   GithubIssue,
@@ -157,7 +158,7 @@ const MAX_THREAD_TURNS = 10;
 const MAX_THREAD_TURN_CHARS = 500;
 
 export class GithubMessagingBot implements MessagingBot {
-  private readonly client: GithubClient;
+  private readonly client: GithubApi;
   private readonly handler: MessagingEventHandler;
   private readonly config: GithubBotConfig;
   readonly ops: GithubOps;
@@ -174,7 +175,7 @@ export class GithubMessagingBot implements MessagingBot {
   private pollIntervalTimer: NodeJS.Timeout | null = null;
   private requestPollTimer: NodeJS.Timeout | null = null;
 
-  constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubClient) {
+  constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubApi) {
     this.handler = handler;
     this.config = config;
     this.client =

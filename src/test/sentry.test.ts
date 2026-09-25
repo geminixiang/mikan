@@ -1,22 +1,12 @@
-import type { Breadcrumb, Event, Scope } from "@sentry/node";
+import { Scope, type Breadcrumb, type Event } from "@sentry/node";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const sentryMock = vi.hoisted(() => {
-  const scope = {
-    setLevel: vi.fn(),
-    setTag: vi.fn(),
-    setFingerprint: vi.fn(),
-    setContext: vi.fn(),
-    setAttributes: vi.fn(),
-    setUser: vi.fn(),
-    setConversationId: vi.fn(),
-  };
   return {
     captureException: vi.fn(() => "event-id"),
     spanToJSON: vi.fn(() => ({ trace_id: "trace-1" })),
     addBreadcrumb: vi.fn(),
     metrics: { count: vi.fn(), distribution: vi.fn() },
-    scope,
   };
 });
 
@@ -28,9 +18,7 @@ vi.mock("@sentry/node", async (importOriginal) => {
     spanToJSON: sentryMock.spanToJSON,
     addBreadcrumb: sentryMock.addBreadcrumb,
     metrics: sentryMock.metrics,
-    withScope: vi.fn((callback: (scope: Scope) => unknown) =>
-      callback(sentryMock.scope as unknown as Scope),
-    ),
+    withScope: vi.fn((callback: (scope: Scope) => unknown) => callback(testScope)),
   };
 });
 
@@ -52,6 +40,17 @@ import {
   sanitizeEvent,
   sanitizeValue,
 } from "../observability/sentry.js";
+
+const testScope = new Scope();
+const scopeSpies = {
+  setLevel: vi.spyOn(testScope, "setLevel"),
+  setTag: vi.spyOn(testScope, "setTag"),
+  setFingerprint: vi.spyOn(testScope, "setFingerprint"),
+  setContext: vi.spyOn(testScope, "setContext"),
+  setAttributes: vi.spyOn(testScope, "setAttributes"),
+  setUser: vi.spyOn(testScope, "setUser"),
+  setConversationId: vi.spyOn(testScope, "setConversationId"),
+};
 
 describe("Sentry initialization", () => {
   test("keeps gen_ai inputs and outputs off by never declaring dataCollection", () => {
@@ -94,12 +93,12 @@ describe("Sentry initialization", () => {
 describe("captureSentryError", () => {
   beforeEach(() => {
     sentryMock.captureException.mockClear();
-    sentryMock.scope.setLevel.mockClear();
-    sentryMock.scope.setTag.mockClear();
-    sentryMock.scope.setFingerprint.mockClear();
-    sentryMock.scope.setContext.mockClear();
-    sentryMock.scope.setAttributes.mockClear();
-    sentryMock.scope.setUser.mockClear();
+    scopeSpies.setLevel.mockClear();
+    scopeSpies.setTag.mockClear();
+    scopeSpies.setFingerprint.mockClear();
+    scopeSpies.setContext.mockClear();
+    scopeSpies.setAttributes.mockClear();
+    scopeSpies.setUser.mockClear();
   });
 
   test("captures with user-facing tags and sanitized context", () => {
@@ -118,14 +117,14 @@ describe("captureSentryError", () => {
     });
 
     expect(id).toBe("event-id");
-    expect(sentryMock.scope.setLevel).toHaveBeenCalledWith("warning");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("user_facing", "true");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "chat_platform");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "respond");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("platform", "slack");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("retryable", "true");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("status", "500");
-    expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
+    expect(scopeSpies.setLevel).toHaveBeenCalledWith("warning");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("user_facing", "true");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("error_domain", "chat_platform");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("operation", "respond");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("platform", "slack");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("retryable", "true");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("status", "500");
+    expect(scopeSpies.setContext).toHaveBeenCalledWith(
       "user_facing_error",
       expect.objectContaining({
         domain: "chat_platform",
@@ -152,11 +151,11 @@ describe("captureSentryError", () => {
       fingerprint: ["llm", "anthropic", "error"],
     });
 
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("provider", "anthropic");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("model", "claude-sonnet-4-6");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("tool", "bash");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("stop_reason", "error");
-    expect(sentryMock.scope.setFingerprint).toHaveBeenCalledWith(["llm", "anthropic", "error"]);
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("provider", "anthropic");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("model", "claude-sonnet-4-6");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("tool", "bash");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("stop_reason", "error");
+    expect(scopeSpies.setFingerprint).toHaveBeenCalledWith(["llm", "anthropic", "error"]);
   });
 
   test("does not capture expected errors", () => {
@@ -289,10 +288,10 @@ describe("metricAttributes", () => {
 
 describe("run attribution", () => {
   beforeEach(() => {
-    sentryMock.scope.setTag.mockClear();
-    sentryMock.scope.setAttributes.mockClear();
-    sentryMock.scope.setUser.mockClear();
-    sentryMock.scope.setContext.mockClear();
+    scopeSpies.setTag.mockClear();
+    scopeSpies.setAttributes.mockClear();
+    scopeSpies.setUser.mockClear();
+    scopeSpies.setContext.mockClear();
     sentryMock.spanToJSON.mockClear();
   });
 
@@ -335,7 +334,7 @@ describe("run attribution", () => {
   });
 
   test("applies attribution to scope tags and attributes", () => {
-    applyRunScope(sentryMock.scope as unknown as Scope, {
+    applyRunScope(testScope, {
       conversationId: "C1",
       sessionKey: "C1:T1",
       messageId: "M1",
@@ -344,13 +343,13 @@ describe("run attribution", () => {
       userName: "alice",
     });
 
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("conversation_id", "C1");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("session_key", "C1:T1");
-    expect(sentryMock.scope.setAttributes).toHaveBeenCalledWith(
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("conversation_id", "C1");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("session_key", "C1:T1");
+    expect(scopeSpies.setAttributes).toHaveBeenCalledWith(
       expect.objectContaining({ conversation_id: "C1", channel_id: "C1", user_id: "U1" }),
     );
-    expect(sentryMock.scope.setUser).toHaveBeenCalledWith({ id: "U1" });
-    expect(sentryMock.scope.setConversationId).toHaveBeenCalledWith("C1:T1");
+    expect(scopeSpies.setUser).toHaveBeenCalledWith({ id: "U1" });
+    expect(scopeSpies.setConversationId).toHaveBeenCalledWith("C1:T1");
   });
 
   test("propagates root attribution onto child spans", () => {
@@ -406,9 +405,9 @@ describe("recordSubagentOutcome", () => {
     sentryMock.addBreadcrumb.mockClear();
     sentryMock.metrics.count.mockClear();
     sentryMock.metrics.distribution.mockClear();
-    sentryMock.scope.setTag.mockClear();
-    sentryMock.scope.setFingerprint.mockClear();
-    sentryMock.scope.setContext.mockClear();
+    scopeSpies.setTag.mockClear();
+    scopeSpies.setFingerprint.mockClear();
+    scopeSpies.setContext.mockClear();
   });
 
   const base = {
@@ -431,18 +430,18 @@ describe("recordSubagentOutcome", () => {
 
     expect(id).toBe("event-id");
     expect(sentryMock.captureException).toHaveBeenCalledWith(expect.any(Error));
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "subagent");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "run");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("tool", "subagent");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_status", "failed");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "software-engineer");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_mode", "dag");
-    expect(sentryMock.scope.setFingerprint).toHaveBeenCalledWith([
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("error_domain", "subagent");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("operation", "run");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("tool", "subagent");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("subagent_status", "failed");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("subagent_profile", "software-engineer");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("subagent_mode", "dag");
+    expect(scopeSpies.setFingerprint).toHaveBeenCalledWith([
       "subagent",
       "failed",
       "Required tool not used",
     ]);
-    expect(sentryMock.scope.setContext).toHaveBeenCalledWith(
+    expect(scopeSpies.setContext).toHaveBeenCalledWith(
       "user_facing_error",
       expect.objectContaining({
         itemId: "root",
@@ -472,7 +471,7 @@ describe("recordSubagentOutcome", () => {
     });
 
     expect(sentryMock.captureException).toHaveBeenCalledTimes(1);
-    expect(sentryMock.scope.setFingerprint).toHaveBeenCalledWith([
+    expect(scopeSpies.setFingerprint).toHaveBeenCalledWith([
       "subagent",
       "invalid_output",
       "Subagent output is not valid JSON",
@@ -515,9 +514,9 @@ describe("recordSubagentOutcome", () => {
     reportSubagentLaunchError(error, { itemId: "task", mode: "single", profile: "nope" });
 
     expect(sentryMock.captureException).toHaveBeenCalledWith(error);
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("error_domain", "subagent");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("operation", "launch");
-    expect(sentryMock.scope.setTag).toHaveBeenCalledWith("subagent_profile", "nope");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("error_domain", "subagent");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("operation", "launch");
+    expect(scopeSpies.setTag).toHaveBeenCalledWith("subagent_profile", "nope");
   });
 });
 
@@ -607,7 +606,7 @@ describe("recordJevOutcome", () => {
 
 describe("recordSubagentOutcome fingerprint", () => {
   beforeEach(() => {
-    sentryMock.scope.setFingerprint.mockClear();
+    scopeSpies.setFingerprint.mockClear();
   });
 
   test("redacts paths and caps the error class before it becomes a fingerprint", () => {
@@ -618,7 +617,7 @@ describe("recordSubagentOutcome fingerprint", () => {
       error: `ENOENT /workspace/acme/secret.json ${"x".repeat(200)}: no such file`,
     });
 
-    const [fingerprint] = sentryMock.scope.setFingerprint.mock.calls[0]!;
+    const [fingerprint] = scopeSpies.setFingerprint.mock.calls[0]!;
     expect(fingerprint[0]).toBe("subagent");
     expect(fingerprint[1]).toBe("failed");
     expect(fingerprint[2]).toContain("[REDACTED_PATH]");

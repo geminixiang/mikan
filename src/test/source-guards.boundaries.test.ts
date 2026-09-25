@@ -111,6 +111,25 @@ function reExportPositions(source: ts.SourceFile): number[] {
     .map((statement) => statement.getStart());
 }
 
+function doubleAssertionPositions(source: ts.SourceFile): number[] {
+  const positions: number[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) {
+      let inner = node.expression;
+      while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+      if (
+        (ts.isAsExpression(inner) || ts.isTypeAssertionExpression(inner)) &&
+        inner.type.kind === ts.SyntaxKind.UnknownKeyword
+      ) {
+        positions.push(node.getStart(source));
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return positions;
+}
+
 const rules: BoundaryRule[] = [
   {
     id: "re-export-only-in-entry-points",
@@ -243,6 +262,26 @@ const rules: BoundaryRule[] = [
         violates: false,
       },
       { file: "src/harness/x.ts", code: 'import { a } from "./adapters.js";', violates: false },
+    ],
+  },
+  {
+    id: "no-double-assertion-in-tests",
+    rule: "Tests must not bypass the type checker with a double assertion through unknown; build typed fakes, narrow the production parameter type, or inject the dependency through the class options",
+    appliesTo: (file) => file.startsWith("src/test/"),
+    violates: (_file, source) => doubleAssertionPositions(source),
+    spellings: [
+      { file: "src/test/x.test.ts", code: "const a = b as unknown as A;", violates: true },
+      { file: "src/test/x.test.ts", code: "const a = (b as unknown) as A;", violates: true },
+      { file: "src/test/x.test.ts", code: "const a = <A>(<unknown>b);", violates: true },
+      {
+        file: "src/test/x.test.ts",
+        code: "const a = (\n  b as unknown\n) as A;",
+        violates: true,
+      },
+      { file: "src/test/x.test.ts", code: "const a = b as A;", violates: false },
+      { file: "src/test/x.test.ts", code: "const a = b as unknown;", violates: false },
+      { file: "src/test/x.test.ts", code: 'const a = "as unknown as A";', violates: false },
+      { file: "src/runtime/x.ts", code: "const a = b as unknown as A;", violates: false },
     ],
   },
 ];

@@ -36,20 +36,37 @@ function startServer(services: AdminServices): Promise<{ server: Server; origin:
   });
 }
 
-async function get(path: string): Promise<{ status: number; body: any }> {
+interface ErrorBody {
+  error: string;
+}
+
+interface SkillsListBody {
+  skills: { name: string; description: string; directory: string }[];
+}
+
+interface JsonResponse<T> {
+  status: number;
+  body: T;
+}
+
+async function readJsonResponse<T>(response: Response): Promise<JsonResponse<T>> {
+  return { status: response.status, body: JSON.parse(await response.text()) };
+}
+
+async function get<T>(path: string): Promise<JsonResponse<T>> {
   const response = await fetch(
     `${origin}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`,
   );
-  return { status: response.status, body: await response.json() };
+  return readJsonResponse<T>(response);
 }
 
-async function post(path: string, body: object): Promise<{ status: number; body: any }> {
+async function post<T = ErrorBody>(path: string, body: object): Promise<JsonResponse<T>> {
   const response = await fetch(`${origin}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token, ...body }),
   });
-  return { status: response.status, body: await response.json() };
+  return readJsonResponse<T>(response);
 }
 
 beforeEach(async () => {
@@ -68,7 +85,7 @@ beforeEach(async () => {
   }).token;
   const started = await startServer({
     vaultManager: new FileVaultManager(stateDir),
-    linkTokenStore: { create: () => ({ token: "x", expiresAt: 0 }) } as never,
+    linkTokenStore: { create: () => ({ token: "x" }) },
     adminTokenStore,
     workspace,
   });
@@ -101,7 +118,7 @@ describe("Admin skills mutation API", () => {
 
     const skillPath = join(workspaceDir, officeKey(ADDRESS), "skills", "deploy-prod", "SKILL.md");
     expect(existsSync(skillPath)).toBe(true);
-    const listed = await get(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
+    const listed = await get<SkillsListBody>(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
     expect(listed.body.skills).toContainEqual(
       expect.objectContaining({ name: "deploy-prod", description: "Ship to production" }),
     );
@@ -147,7 +164,7 @@ describe("Admin skills mutation API", () => {
     });
     expect(updated.status).toBe(200);
 
-    const listed = await get(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
+    const listed = await get<SkillsListBody>(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
     expect(listed.body.skills).toContainEqual(
       expect.objectContaining({ name: "runbook", description: "Second version" }),
     );
@@ -172,10 +189,8 @@ describe("Admin skills mutation API", () => {
     });
     expect(deleted).toMatchObject({ status: 200, body: { ok: true } });
 
-    const listed = await get(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
-    expect(listed.body.skills.map((s: { directory: string }) => s.directory)).not.toContain(
-      "throwaway",
-    );
+    const listed = await get<SkillsListBody>(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
+    expect(listed.body.skills.map((s) => s.directory)).not.toContain("throwaway");
   });
 
   test("rejects a delete for a skill that does not exist", async () => {

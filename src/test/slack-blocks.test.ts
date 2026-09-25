@@ -1,15 +1,13 @@
+import type { KnownBlock, MarkdownBlock } from "@slack/types";
 import { describe, expect, test } from "vitest";
 import { renderSlackBlocks, resolveSlackMentions } from "../adapters/slack/blocks.js";
 
-interface MarkdownBlockShape {
-  type: "markdown";
-  text: string;
+function isMarkdownBlock(block: KnownBlock): block is MarkdownBlock {
+  return block.type === "markdown";
 }
 
-function markdownTexts(blocks: ReturnType<typeof renderSlackBlocks>["blocks"]): string[] {
-  return blocks.flatMap((block) =>
-    block.type === "markdown" ? [(block as unknown as MarkdownBlockShape).text] : [],
-  );
+function markdownTexts(blocks: KnownBlock[]): string[] {
+  return blocks.filter(isMarkdownBlock).map((block) => block.text);
 }
 
 describe("renderSlackBlocks", () => {

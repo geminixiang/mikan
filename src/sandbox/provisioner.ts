@@ -8,7 +8,6 @@ import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";
 
 const execFileAsync = promisify(execFile);
-type ExecFileAsync = typeof execFileAsync;
 
 type ContainerStatus = "running" | "stopped" | "missing";
 type DriftReason = "binds" | "mount-content" | "network" | "image";
@@ -47,6 +46,7 @@ import type {
   SandboxLimitStatus,
 } from "../types.js";
 import { errorMessage } from "../unknown-values.js";
+import type { DockerExecFile } from "./types.js";
 
 function bindSpecToMount(bindSpec: string): ContainerMount {
   const readOnly = bindSpec.endsWith(":ro");
@@ -77,7 +77,7 @@ export class DockerContainerManager {
   private readonly boostLimits?: ResourceLimits;
   private readonly boostedKeys = new Set<string>();
   private readonly overrideLimits = new Map<string, ResourceLimits>();
-  private readonly execFileImpl: ExecFileAsync;
+  private readonly execFileImpl: DockerExecFile;
 
   constructor(
     private readonly image: string,

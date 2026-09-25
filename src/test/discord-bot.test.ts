@@ -1,12 +1,21 @@
+import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Collection } from "discord.js";
+import { ChannelType, Collection, Events, type Guild } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import type { Workspace } from "../office/types.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
+import type {
+  DiscordAttachmentSource,
+  DiscordClient,
+  DiscordCommandInteraction,
+  DiscordIncomingChannel,
+  DiscordIncomingMessage,
+  DiscordReadyClient,
+} from "../adapters/discord/types.js";
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -19,31 +28,90 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
-function installMessageHandler(bot: DiscordMessagingBot): (msg: any) => Promise<void> {
-  let messageHandler: ((msg: any) => Promise<void>) | undefined;
-  (bot as any).startupTime = 0;
-  (bot as any).botUserId = "BOT";
-  (bot as any).processAttachments = vi.fn().mockResolvedValue([]);
-  (bot as any).client = {
-    on: vi.fn((event: string, handlerFn: (msg: any) => Promise<void>) => {
-      if (event === "messageCreate") messageHandler = handlerFn;
-    }),
+const READY_CLIENT: DiscordReadyClient = {
+  user: { id: "BOT", tag: "mikan#0001" },
+  application: { commands: { set: async () => undefined } },
+};
+
+class FakeDiscordClient extends EventEmitter implements DiscordClient {
+  readonly channels = { fetch: vi.fn(async (_channelId: string) => null) };
+  readonly users = {
+    fetch: async (): Promise<never> => {
+      throw new Error("unexpected Discord user fetch");
+    },
   };
-  (bot as any).setupEventHandlers();
-  if (!messageHandler) throw new Error("message handler not installed");
-  return messageHandler;
+  readonly guilds = { cache: new Collection<string, Guild>() };
+
+  async login(): Promise<string> {
+    this.emit(Events.ClientReady, READY_CLIENT);
+    return "logged-in";
+  }
+
+  async destroy(): Promise<void> {}
+
+  deliverMessage(message: DiscordIncomingMessage): void {
+    this.emit(Events.MessageCreate, message);
+  }
+
+  deliverInteraction(interaction: DiscordCommandInteraction): void {
+    this.emit(Events.InteractionCreate, interaction);
+  }
 }
 
-function installInteractionHandler(bot: DiscordMessagingBot): (interaction: any) => Promise<void> {
-  let interactionHandler: ((interaction: any) => Promise<void>) | undefined;
-  (bot as any).client = {
-    on: vi.fn((event: string, handlerFn: (payload: any) => Promise<void>) => {
-      if (event === "interactionCreate") interactionHandler = handlerFn;
-    }),
-  };
-  (bot as any).setupEventHandlers();
-  if (!interactionHandler) throw new Error("interaction handler not installed");
-  return interactionHandler;
+interface FakeCommandInteractionFields {
+  id: string;
+  commandName: string;
+  channelId: string;
+  inGuild: boolean;
+  channel: DiscordIncomingChannel | null;
+}
+
+class FakeCommandInteraction implements DiscordCommandInteraction {
+  readonly id: string;
+  readonly commandName: string;
+  readonly channelId: string;
+  readonly channel: DiscordIncomingChannel | null;
+  readonly createdTimestamp = Date.now();
+  readonly user = { id: "U1", username: "alice" };
+  readonly options = { getString: (_name: string): string | null => null };
+  readonly replied = false;
+  readonly deferred = false;
+  readonly reply = vi.fn<DiscordCommandInteraction["reply"]>(async () => undefined);
+  readonly followUp = vi.fn<DiscordCommandInteraction["followUp"]>(async () => undefined);
+  readonly editReply = vi.fn<DiscordCommandInteraction["editReply"]>(async () => undefined);
+  readonly deferReply = vi.fn<DiscordCommandInteraction["deferReply"]>(async () => undefined);
+  private readonly guild: boolean;
+
+  constructor(fields: FakeCommandInteractionFields) {
+    this.id = fields.id;
+    this.commandName = fields.commandName;
+    this.channelId = fields.channelId;
+    this.channel = fields.channel;
+    this.guild = fields.inGuild;
+  }
+
+  isChatInputCommand(): this is DiscordCommandInteraction {
+    return true;
+  }
+
+  inGuild(): boolean {
+    return this.guild;
+  }
+}
+
+interface StartedDiscordBot {
+  bot: DiscordMessagingBot;
+  client: FakeDiscordClient;
+}
+
+async function startBot(
+  handler: MessagingEventHandler,
+  workspace: Workspace,
+): Promise<StartedDiscordBot> {
+  const client = new FakeDiscordClient();
+  const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace, client });
+  await bot.start();
+  return { bot, client };
 }
 
 function firstHandledEvent(handler: MessagingEventHandler) {
@@ -58,7 +126,32 @@ function requireFirstLine(lines: string[]): string {
   return line;
 }
 
-function makeDiscordMessage(overrides: Record<string, any> = {}) {
+function readOfficeLog(workingDir: string, conversationId: string): string[] {
+  return readFileSync(
+    join(workingDir, officeKey(createOfficeAddress("discord", conversationId)), "log.jsonl"),
+    "utf-8",
+  )
+    .trim()
+    .split("\n");
+}
+
+const guildTextChannel: DiscordIncomingChannel = {
+  type: ChannelType.GuildText,
+  isThread: () => false,
+  name: "general",
+};
+
+const dmChannel: DiscordIncomingChannel = { type: ChannelType.DM, isThread: () => false };
+
+function threadChannel(parentId: string, name: string): DiscordIncomingChannel {
+  return { type: ChannelType.PublicThread, isThread: () => true, parentId, name };
+}
+
+const noMentions = { users: { has: () => false } };
+
+function makeDiscordMessage(
+  overrides: Partial<DiscordIncomingMessage> = {},
+): DiscordIncomingMessage {
   return {
     id: "M1",
     channelId: "C1",
@@ -67,10 +160,10 @@ function makeDiscordMessage(overrides: Record<string, any> = {}) {
     content: "<@BOT> hello",
     author: { id: "U1", username: "alice", bot: false },
     member: { displayName: "Alice" },
-    channel: { type: 0, isThread: () => false, name: "general" },
+    channel: guildTextChannel,
     mentions: { users: { has: (id: string) => id === "BOT" } },
-    reference: undefined,
-    attachments: new Collection(),
+    reference: null,
+    attachments: new Map<string, DiscordAttachmentSource>(),
     ...overrides,
   };
 }
@@ -86,46 +179,43 @@ describe("DiscordMessagingBot attachments", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
   test("processAttachments waits for downloads and filters failures", async () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
-    const originalFetch = globalThis.fetch;
-    const fetchMock = vi.fn(async (url: string | URL | Request) => {
-      if (String(url).endsWith("clip.mov")) {
-        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
-      }
-      return { ok: false, status: 404, statusText: "Not Found" };
+    const bot = new DiscordMessagingBot(makeHandler(), {
+      token: "TEST_TOKEN",
+      workspace,
+      client: new FakeDiscordClient(),
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      if (String(url).endsWith("clip.mov")) return new Response(new Uint8Array([1, 2, 3]));
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    });
 
-    try {
-      const attachments = new Collection<string, any>([
-        ["a", { name: "clip.mov", url: "https://example.com/clip.mov" }],
-        ["b", { name: "broken.mov", url: "https://example.com/broken.mov" }],
-      ]);
+    const attachments = new Map<string, DiscordAttachmentSource>([
+      ["a", { name: "clip.mov", url: "https://example.com/clip.mov" }],
+      ["b", { name: "broken.mov", url: "https://example.com/broken.mov" }],
+    ]);
 
-      const result = await bot.processAttachments("C123", attachments as any);
+    const result = await bot.processAttachments("C123", attachments);
 
-      expect(fetchMock).toHaveBeenCalledWith("https://example.com/clip.mov");
-      expect(fetchMock).toHaveBeenCalledWith("https://example.com/broken.mov");
-      expect(result).toEqual([
-        {
-          name: "clip.mov",
-          localPath: expect.stringMatching(
-            new RegExp(
-              `^${officeKey(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
-            ),
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/clip.mov");
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/broken.mov");
+    expect(result).toEqual([
+      {
+        name: "clip.mov",
+        localPath: expect.stringMatching(
+          new RegExp(
+            `^${officeKey(createOfficeAddress("discord", "C123"))}/attachments/\\d+_clip\\.mov$`,
           ),
-        },
-      ]);
-      const [downloaded] = result;
-      if (!downloaded) throw new Error("expected one downloaded attachment");
-      expect(existsSync(join(workingDir, downloaded.localPath))).toBe(true);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
+        ),
+      },
+    ]);
+    const [downloaded] = result;
+    if (!downloaded) throw new Error("expected one downloaded attachment");
+    expect(existsSync(join(workingDir, downloaded.localPath))).toBe(true);
   });
 });
 
@@ -145,16 +235,15 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses a persistent session key for DMs", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "DMMSG1",
         channelId: "DM1",
         content: "hello",
-        channel: { type: 1, isThread: () => false },
-        mentions: { users: { has: () => false } },
+        channel: dmChannel,
+        mentions: noMentions,
       }),
     );
 
@@ -167,10 +256,9 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses a persistent top-level session key for shared channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M1",
         channelId: "C1",
@@ -186,10 +274,9 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses reply target as the scoped session key in shared channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "C1",
@@ -206,21 +293,15 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("uses parent channel as conversationId for Discord thread channels", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "THREAD1",
         content: "thread message",
-        mentions: { users: { has: () => false } },
-        channel: {
-          type: 11,
-          isThread: () => true,
-          parentId: "C1",
-          name: "thread-topic",
-        },
+        mentions: noMentions,
+        channel: threadChannel("C1", "thread-topic"),
       }),
     );
 
@@ -237,15 +318,14 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("shared-channel replies trigger without a mention", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "C1",
         content: "reply without mention",
-        mentions: { users: { has: () => false } },
+        mentions: noMentions,
         reference: { messageId: "M1" },
       }),
     );
@@ -263,17 +343,17 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("shared-channel top-level messages still require a mention", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { bot, client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "C1",
         content: "top-level without mention",
-        mentions: { users: { has: () => false } },
+        mentions: noMentions,
       }),
     );
+    await bot.stop();
 
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
@@ -281,31 +361,38 @@ describe("DiscordMessagingBot message routing", () => {
   test("queues shared top-level follow-up messages instead of posting already-working", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
-
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
-
-    const queue = (bot as any).getQueue("C1");
-    queue.processing = true;
-    (bot as any).postMessage = vi.fn().mockResolvedValue("BOT_MSG");
-
-    await messageHandler(
-      makeDiscordMessage({
-        id: "M2",
-        channelId: "C1",
-        content: "<@BOT> second request",
-      }),
+    let finishFirstRun: (() => void) | undefined;
+    vi.mocked(handler.handleEvent).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFirstRun = resolve;
+        }),
     );
 
-    expect((bot as any).postMessage).not.toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+    const { bot, client } = await startBot(handler, workspace);
 
-    queue.processing = false;
-    await queue.processNext();
+    client.deliverMessage(
+      makeDiscordMessage({ id: "M1", channelId: "C1", content: "<@BOT> first request" }),
+    );
+    await vi.waitFor(() => {
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
 
+    client.deliverMessage(
+      makeDiscordMessage({ id: "M2", channelId: "C1", content: "<@BOT> second request" }),
+    );
+    await vi.waitFor(() => {
+      expect(readOfficeLog(workingDir, "C1")).toHaveLength(2);
+    });
+
+    expect(client.channels.fetch).not.toHaveBeenCalled();
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+
+    finishFirstRun?.();
+    await bot.stop();
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]?.[0]).toMatchObject({
       address: { conversationId: "C1" },
       sessionKey: "C1",
       text: "second request",
@@ -316,10 +403,9 @@ describe("DiscordMessagingBot message routing", () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation((_address, sessionKey) => sessionKey === "C1");
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { bot, client } = await startBot(handler, workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "C1",
@@ -327,6 +413,7 @@ describe("DiscordMessagingBot message routing", () => {
         reference: { messageId: "M1" },
       }),
     );
+    await bot.stop();
 
     expect(handler.handleStop).toHaveBeenCalledWith(
       createOfficeAddress("discord", "C1"),
@@ -337,29 +424,27 @@ describe("DiscordMessagingBot message routing", () => {
   });
 
   test("logs threadTs for shared channel replies", async () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
-    const messageHandler = installMessageHandler(bot);
+    const { bot, client } = await startBot(makeHandler(), workspace);
 
-    await messageHandler(
+    client.deliverMessage(
       makeDiscordMessage({
         id: "M2",
         channelId: "C1",
         reference: { messageId: "M1" },
       }),
     );
+    await bot.stop();
 
-    const lines = readFileSync(
-      join(workingDir, officeKey(createOfficeAddress("discord", "C1")), "log.jsonl"),
-      "utf-8",
-    )
-      .trim()
-      .split("\n");
-    const entry = JSON.parse(requireFirstLine(lines));
+    const entry = JSON.parse(requireFirstLine(readOfficeLog(workingDir, "C1")));
     expect(entry.threadTs).toBe("M1");
   });
 
   test("platform info defaults to hiding usage summary", () => {
-    const bot = new DiscordMessagingBot(makeHandler(), { token: "TEST_TOKEN", workspace });
+    const bot = new DiscordMessagingBot(makeHandler(), {
+      token: "TEST_TOKEN",
+      workspace,
+      client: new FakeDiscordClient(),
+    });
 
     expect(bot.getMessagingInfo().diagnostics?.showUsageSummary).toBe(false);
   });
@@ -370,26 +455,17 @@ describe("DiscordMessagingBot message routing", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const interactionHandler = installInteractionHandler(bot);
-
-    const reply = vi.fn().mockResolvedValue(undefined);
-
-    await interactionHandler({
-      isChatInputCommand: () => true,
+    const { bot, client } = await startBot(handler, workspace);
+    const interaction = new FakeCommandInteraction({
+      id: "I1",
       commandName: "session",
       channelId: "C1",
-      inGuild: () => true,
-      channel: { isThread: () => false },
-      id: "I1",
-      createdTimestamp: Date.now(),
-      user: { id: "U1", username: "alice" },
-      replied: false,
-      deferred: false,
-      reply,
-      followUp: vi.fn(),
-      editReply: vi.fn(),
+      inGuild: true,
+      channel: guildTextChannel,
     });
+
+    client.deliverInteraction(interaction);
+    await bot.stop();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
@@ -399,7 +475,7 @@ describe("DiscordMessagingBot message routing", () => {
       sessionKey: "C1",
       text: "/session",
     });
-    expect(reply).toHaveBeenCalledWith({
+    expect(interaction.reply).toHaveBeenCalledWith({
       content: "session link",
       ephemeral: true,
     });
@@ -411,24 +487,18 @@ describe("DiscordMessagingBot message routing", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const interactionHandler = installInteractionHandler(bot);
+    const { bot, client } = await startBot(handler, workspace);
 
-    await interactionHandler({
-      isChatInputCommand: () => true,
-      commandName: "session",
-      channelId: "THREAD1",
-      inGuild: () => true,
-      channel: { isThread: () => true, parentId: "C1" },
-      id: "I2",
-      createdTimestamp: Date.now(),
-      user: { id: "U1", username: "alice" },
-      replied: false,
-      deferred: false,
-      reply: vi.fn().mockResolvedValue(undefined),
-      followUp: vi.fn(),
-      editReply: vi.fn(),
-    });
+    client.deliverInteraction(
+      new FakeCommandInteraction({
+        id: "I2",
+        commandName: "session",
+        channelId: "THREAD1",
+        inGuild: true,
+        channel: threadChannel("C1", "thread-topic"),
+      }),
+    );
+    await bot.stop();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
@@ -441,25 +511,17 @@ describe("DiscordMessagingBot message routing", () => {
 
   test("/new slash command resets the resolved session and acknowledges", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const interactionHandler = installInteractionHandler(bot);
-    const reply = vi.fn().mockResolvedValue(undefined);
-
-    await interactionHandler({
-      isChatInputCommand: () => true,
+    const { bot, client } = await startBot(handler, workspace);
+    const interaction = new FakeCommandInteraction({
+      id: "I3",
       commandName: "new",
       channelId: "DM1",
-      inGuild: () => false,
-      channel: { isThread: () => false },
-      id: "I3",
-      createdTimestamp: Date.now(),
-      user: { id: "U1", username: "alice" },
-      replied: false,
-      deferred: false,
-      reply,
-      followUp: vi.fn(),
-      editReply: vi.fn(),
+      inGuild: false,
+      channel: dmChannel,
     });
+
+    client.deliverInteraction(interaction);
+    await bot.stop();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
@@ -468,29 +530,23 @@ describe("DiscordMessagingBot message routing", () => {
       sessionKey: "DM1",
       text: "/new",
     });
-    expect(reply).not.toHaveBeenCalled();
+    expect(interaction.reply).not.toHaveBeenCalled();
   });
 
   test("/new slash command in a guild routes through the command DM gate", async () => {
     const handler = makeHandler();
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const interactionHandler = installInteractionHandler(bot);
+    const { bot, client } = await startBot(handler, workspace);
 
-    await interactionHandler({
-      isChatInputCommand: () => true,
-      commandName: "new",
-      channelId: "C1",
-      inGuild: () => true,
-      channel: { isThread: () => false },
-      id: "I3-GUILD",
-      createdTimestamp: Date.now(),
-      user: { id: "U1", username: "alice" },
-      replied: false,
-      deferred: false,
-      reply: vi.fn(),
-      followUp: vi.fn(),
-      editReply: vi.fn(),
-    });
+    client.deliverInteraction(
+      new FakeCommandInteraction({
+        id: "I3-GUILD",
+        commandName: "new",
+        channelId: "C1",
+        inGuild: true,
+        channel: guildTextChannel,
+      }),
+    );
+    await bot.stop();
 
     expect(handler.handleNewCommand).not.toHaveBeenCalled();
     expect(handler.handleEvent).toHaveBeenCalledWith(
@@ -505,32 +561,24 @@ describe("DiscordMessagingBot message routing", () => {
     vi.mocked(handler.isRunning).mockImplementation(
       (_address, sessionKey) => sessionKey === "C1:THREAD1",
     );
-    const bot = new DiscordMessagingBot(handler, { token: "TEST_TOKEN", workspace });
-    const interactionHandler = installInteractionHandler(bot);
-    const reply = vi.fn().mockResolvedValue(undefined);
-
-    await interactionHandler({
-      isChatInputCommand: () => true,
+    const { bot, client } = await startBot(handler, workspace);
+    const interaction = new FakeCommandInteraction({
+      id: "I4",
       commandName: "stop",
       channelId: "THREAD1",
-      inGuild: () => true,
-      channel: { isThread: () => true, parentId: "C1" },
-      id: "I4",
-      createdTimestamp: Date.now(),
-      user: { id: "U1", username: "alice" },
-      replied: false,
-      deferred: false,
-      reply,
-      followUp: vi.fn(),
-      editReply: vi.fn(),
+      inGuild: true,
+      channel: threadChannel("C1", "thread-topic"),
     });
+
+    client.deliverInteraction(interaction);
+    await bot.stop();
 
     expect(handler.handleStop).toHaveBeenCalledWith(
       createOfficeAddress("discord", "C1"),
       "C1:THREAD1",
       bot,
     );
-    expect(reply).toHaveBeenCalledWith({
+    expect(interaction.reply).toHaveBeenCalledWith({
       content: "Stopped the current conversation.",
       ephemeral: true,
     });

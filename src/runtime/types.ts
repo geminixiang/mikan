@@ -1,6 +1,6 @@
 import type { McpServerConfig } from "../harness/types.js";
 import type { EventScheduleSink } from "../events/index.js";
-import type { PiAgentWrapper, PlatformTrustModel } from "../types.js";
+import type { CreateRunnerOptions, PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,
   ConversationContext,
@@ -19,6 +19,8 @@ import type { MikanModels } from "../harness/models.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { VaultManager } from "../vault/types.js";
+
+export type RunnerFactory = (options: CreateRunnerOptions) => Promise<PiAgentWrapper>;
 
 export interface SessionLifecycleOptions {
   maxSessions?: number;
@@ -68,6 +70,7 @@ export interface ConversationRuntimeOptions extends Omit<
   eventScheduler?: () => EventScheduleSink | undefined;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   memoryCapture?: (models: MikanModels) => RunMemoryCapture;
+  runnerFactory?: RunnerFactory;
 }
 
 export interface ConversationRuntime extends MessagingEventHandler {

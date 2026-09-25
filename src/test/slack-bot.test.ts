@@ -1,6 +1,13 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { KnownBlock } from "@slack/types";
+import type {
+  ConversationsHistoryResponse,
+  ConversationsListResponse,
+  FetchFunction,
+  UsersListResponse,
+} from "@slack/web-api";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const evaluateWithJevMock = vi.fn();
@@ -14,10 +21,26 @@ import type { Workspace } from "../office/types.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
-import { commandManifestEntry } from "../adapters/commands/manifest.js";
+import type {
+  SlackSocketConnection,
+  SlackSocketEventArgs,
+  SlackWebApi,
+} from "../adapters/slack/types.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
 import { readPlatformChannelKind } from "../office/projection.js";
 import { createManagedSessionFileAtPath, getThreadSessionFile } from "../sessions/store.js";
+import { isRecord } from "../unknown-values.js";
+
+type SlackMember = NonNullable<UsersListResponse["members"]>[number];
+type SlackConversation = NonNullable<ConversationsListResponse["channels"]>[number];
+type FetchInit = Parameters<FetchFunction>[1];
+type HistoryBlocks = NonNullable<
+  NonNullable<ConversationsHistoryResponse["messages"]>[number]["blocks"]
+>;
+
+function sdkHistoryBlocks(blocks: KnownBlock[]): HistoryBlocks {
+  return blocks as HistoryBlocks;
+}
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -30,8 +53,140 @@ function makeHandler(): MessagingEventHandler {
   };
 }
 
+class FakeSlackSocket implements SlackSocketConnection {
+  private readonly listeners = new Map<string, Array<(args: SlackSocketEventArgs) => unknown>>();
+
+  on(event: string, listener: (args: SlackSocketEventArgs) => unknown): this {
+    this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]);
+    return this;
+  }
+
+  async start(): Promise<void> {}
+
+  async disconnect(): Promise<void> {}
+
+  async deliver(event: string, args: SlackSocketEventArgs): Promise<void> {
+    await Promise.all((this.listeners.get(event) ?? []).map((listener) => listener(args)));
+  }
+}
+
+function makeAck() {
+  return vi.fn(async () => {});
+}
+
+function createFakeWebApi(): SlackWebApi {
+  return {
+    auth: { test: vi.fn(async () => ({ ok: true, user_id: "B123" })) },
+    chat: {
+      postMessage: vi.fn(async () => ({ ok: true, ts: "2000.0001" })),
+      postEphemeral: vi.fn(async () => ({ ok: true })),
+      update: vi.fn(async () => ({ ok: true })),
+      delete: vi.fn(async () => ({ ok: true })),
+    },
+    conversations: {
+      open: vi.fn(async () => ({ ok: true, channel: { id: "D123" } })),
+      history: vi.fn(async () => ({ ok: true, messages: [] })),
+      replies: vi.fn(async () => ({ ok: true, messages: [] })),
+      list: vi.fn(async () => ({ ok: true, channels: [] })),
+    },
+    users: { list: vi.fn(async () => ({ ok: true, members: [] })) },
+    reactions: { add: vi.fn(async () => ({ ok: true })) },
+    views: { publish: vi.fn(async () => ({ ok: true })) },
+    files: { uploadV2: vi.fn(async () => ({ ok: true, files: [] })) },
+    assistant: {
+      threads: {
+        setSuggestedPrompts: vi.fn(async () => ({ ok: true })),
+        setTitle: vi.fn(async () => ({ ok: true })),
+      },
+    },
+    apiCall: vi.fn(async () => ({ ok: true })),
+  };
+}
+
+interface SlackHarnessOptions {
+  handler: MessagingEventHandler;
+  workspace: Workspace;
+  auth?: { user_id: string; bot_id?: string };
+  members?: SlackMember[];
+  channels?: SlackConversation[];
+  fetch?: FetchFunction;
+}
+
+interface SlackHarness {
+  bot: SlackMessagingBot;
+  web: SlackWebApi;
+  socket: FakeSlackSocket;
+}
+
+function createSlackHarness(options: SlackHarnessOptions): SlackHarness {
+  const web = createFakeWebApi();
+  vi.mocked(web.auth.test).mockResolvedValue({
+    ok: true,
+    ...(options.auth ?? { user_id: "B123" }),
+  });
+  vi.mocked(web.users.list).mockResolvedValue({ ok: true, members: options.members ?? [] });
+  vi.mocked(web.conversations.list).mockImplementation(async (args) => ({
+    ok: true,
+    channels: args?.types === "im" ? [] : (options.channels ?? []),
+  }));
+  const socket = new FakeSlackSocket();
+  const bot = new SlackMessagingBot(options.handler, {
+    appToken: "xapp-test",
+    botToken: "xoxb-test",
+    workspace: options.workspace,
+    webApi: web,
+    socket,
+    fetch: options.fetch,
+  });
+  return { bot, web, socket };
+}
+
+async function startSlackHarness(options: SlackHarnessOptions): Promise<SlackHarness> {
+  const harness = createSlackHarness(options);
+  const now = vi.spyOn(Date, "now").mockReturnValue(0);
+  try {
+    await harness.bot.start();
+  } finally {
+    now.mockRestore();
+  }
+  return harness;
+}
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+function readLogEntries(workspace: Workspace, channel: string): Array<Record<string, unknown>> {
+  const { logPath } = workspace.office(createOfficeAddress("slack", channel));
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath, "utf-8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line): unknown => JSON.parse(line))
+    .filter(isRecord);
+}
+
+function slackResponse(body: object): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function apiMethod(url: string | URL): string {
+  return String(url).split("/").pop() ?? "";
+}
+
+function formBody(init: FetchInit): URLSearchParams {
+  return new URLSearchParams(typeof init?.body === "string" ? init.body : "");
+}
+
 describe("Slack channel kind backfill", () => {
-  test("records kinds for registered offices from the loaded channel list", () => {
+  test("records kinds for registered offices from the loaded channel list", async () => {
     const dir = mkdtempSync(join(tmpdir(), "slack-kind-backfill-"));
     try {
       const workspace = createWorkspace({ root: join(dir, "ws"), stateDir: join(dir, "state") });
@@ -42,14 +197,15 @@ describe("Slack channel kind backfill", () => {
       const unknown = workspace.office(createOfficeAddress("slack", "CGONE"));
       for (const office of [publicOffice, privateOffice, dm, unknown]) office.ensure();
 
-      const bot = new SlackMessagingBot(makeHandler(), {
-        appToken: "test",
-        botToken: "test",
+      const { bot } = await startSlackHarness({
+        handler: makeHandler(),
         workspace,
+        channels: [
+          { id: "CPUB", name: "pub", is_member: true, is_private: false },
+          { id: "CPRIV", name: "priv", is_member: true, is_private: true },
+        ],
       });
-      (bot as any).channels.set("CPUB", { id: "CPUB", name: "pub", isPrivate: false });
-      (bot as any).channels.set("CPRIV", { id: "CPRIV", name: "priv", isPrivate: true });
-      (bot as any).backfillChannelKinds();
+      await bot.stop();
 
       expect(readPlatformChannelKind(publicOffice)).toBe("public_channel");
       expect(readPlatformChannelKind(privateOffice)).toBe("private_channel");
@@ -65,23 +221,22 @@ describe("Slack status transport", () => {
   test("status timeout uses an abort signal, rejects once, and releases its queue", async () => {
     const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
     try {
-      const bot = new SlackMessagingBot(makeHandler(), {
-        appToken: "test",
-        botToken: "test",
-        workspace: createWorkspace({ root: dir, stateDir: dir }),
-      });
-      const statusClient = (bot as any).statusClient;
       const abort = new AbortController();
       const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(abort.signal);
-      const fetch = vi.fn(
-        (_url, options) =>
+      const fetch = vi.fn<FetchFunction>(
+        (_url, init) =>
           new Promise((_resolve, reject) => {
-            options.signal.addEventListener("abort", () => reject(options.signal.reason), {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
               once: true,
             });
           }),
       );
-      statusClient.fetchFn = fetch;
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace: createWorkspace({ root: dir, stateDir: dir }),
+        fetch,
+      });
       try {
         const result = bot.setAssistantStatus("C1", "1", "Thinking");
         const rejected = expect(result).rejects.toThrow();
@@ -90,7 +245,11 @@ describe("Slack status transport", () => {
         abort.abort(new Error("test timeout"));
         await rejected;
         expect(fetch).toHaveBeenCalledTimes(1);
-        expect((bot as any).statusUpdates.size).toBe(0);
+
+        timeout.mockReturnValue(new AbortController().signal);
+        fetch.mockResolvedValueOnce(slackResponse({ ok: true }));
+        await bot.setAssistantStatus("C1", "1", "");
+        expect(fetch).toHaveBeenCalledTimes(2);
       } finally {
         timeout.mockRestore();
       }
@@ -102,23 +261,28 @@ describe("Slack status transport", () => {
   test("serializes late Thinking and clear across callers without blocking chat or other threads", async () => {
     const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
     try {
-      const bot = new SlackMessagingBot(makeHandler(), {
-        appToken: "test",
-        botToken: "test",
-        workspace: createWorkspace({ root: dir, stateDir: dir }),
-      });
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
         release = resolve;
       });
       const sent: string[] = [];
-      const statusClient = (bot as any).statusClient;
-      statusClient.assistant.threads.setStatus = vi.fn(async ({ thread_ts, status }) => {
-        sent.push(`${thread_ts}:${status}`);
+      const fetch = vi.fn<FetchFunction>(async (url, init) => {
+        if (apiMethod(url) !== "assistant.threads.setStatus") {
+          return slackResponse({ ok: true, ts: "2" });
+        }
+        const params = formBody(init);
+        const status = params.get("status") ?? "";
+        sent.push(`${params.get("thread_ts")}:${status}`);
         if (status === "Thinking") await gate;
+        return slackResponse({ ok: true });
       });
-      const post = vi.fn().mockResolvedValue({ ts: "2" });
-      (bot as any).webClient.chat.postMessage = post;
+      const posts = () => fetch.mock.calls.filter(([url]) => apiMethod(url) === "chat.postMessage");
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "test",
+        botToken: "test",
+        workspace: createWorkspace({ root: dir, stateDir: dir }),
+        fetch,
+      });
       const thinking = bot.setAssistantStatus("C1", "1", "Thinking");
       const clear = bot.setAssistantStatus("C1", "1", "");
       const next = bot.setAssistantStatus("C1", "1", "Next run");
@@ -126,13 +290,12 @@ describe("Slack status transport", () => {
         await bot.setAssistantStatus("C1", "other", "");
         await bot.postMessage("C1", "answer");
         expect(sent).toEqual(["1:Thinking", "other:"]);
-        expect(post).toHaveBeenCalledTimes(1);
+        expect(posts()).toHaveLength(1);
       } finally {
         release();
       }
       await Promise.all([thinking, clear, next]);
       expect(sent).toEqual(["1:Thinking", "other:", "1:", "1:Next run"]);
-      expect((bot as any).statusUpdates.size).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -140,21 +303,20 @@ describe("Slack status transport", () => {
 
   test("real SDK status client rejects 429 without retry/pause and continues with clear", async () => {
     const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
+    const timeout = vi.spyOn(AbortSignal, "timeout");
     try {
+      const fetch = vi
+        .fn<FetchFunction>()
+        .mockResolvedValueOnce(new Response("", { status: 429, headers: { "retry-after": "60" } }))
+        .mockResolvedValueOnce(slackResponse({ ok: true }))
+        .mockResolvedValueOnce(new Response("", { status: 500 }))
+        .mockResolvedValueOnce(slackResponse({ ok: true, ts: "2" }));
       const bot = new SlackMessagingBot(makeHandler(), {
         appToken: "test",
         botToken: "test",
         workspace: createWorkspace({ root: dir, stateDir: dir }),
+        fetch,
       });
-      const statusClient = (bot as any).statusClient;
-      expect(statusClient).not.toBe((bot as any).webClient);
-      expect(statusClient.timeout).toBe(3000);
-      expect(statusClient.retryConfig.retries).toBe(0);
-      const fetch = vi
-        .fn()
-        .mockResolvedValueOnce(new Response("", { status: 429, headers: { "retry-after": "60" } }))
-        .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
-      statusClient.fetchFn = fetch;
       const thinking = bot.setAssistantStatus("C1", "1", "Thinking");
       const clear = bot.setAssistantStatus("C1", "1", "");
       await expect(thinking).rejects.toMatchObject({
@@ -162,8 +324,18 @@ describe("Slack status transport", () => {
       });
       await clear;
       expect(fetch).toHaveBeenCalledTimes(2);
-      expect((bot as any).statusUpdates.size).toBe(0);
+      expect(timeout.mock.calls).toEqual([[3000], [3000]]);
+
+      await expect(bot.setAssistantStatus("C1", "1", "Retry")).rejects.toMatchObject({
+        code: "slack_webapi_http_error",
+      });
+      expect(fetch).toHaveBeenCalledTimes(3);
+
+      await bot.postMessage("C1", "answer");
+      expect(fetch).toHaveBeenCalledTimes(4);
+      expect(timeout).toHaveBeenCalledTimes(3);
     } finally {
+      timeout.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -185,40 +357,28 @@ describe("SlackMessagingBot slash commands", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
+  const alice: SlackMember = { id: "U123", name: "alice", real_name: "Alice" };
+
   test("/pi-login in a shared channel responds ephemerally without opening a DM", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { bot, web, socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [alice],
     });
 
-    const open = vi.fn().mockResolvedValue({ channel: { id: "D123" } });
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    const postMessage = vi.fn().mockResolvedValue({ ts: "2000.0001" });
-
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-    (bot as any).webClient = {
-      conversations: { open },
-      chat: {
-        postEphemeral,
-        postMessage,
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
+    await socket.deliver("slash_commands", {
+      body: {
+        command: "/pi-login",
+        text: "github",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
       },
-    };
-
-    await (bot as any).routeSlashCommand(commandManifestEntry("login").slackRoute, {
-      command: "/pi-login",
-      text: "github",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
+      ack: makeAck(),
     });
 
-    expect(open).not.toHaveBeenCalled();
+    expect(web.conversations.open).not.toHaveBeenCalled();
 
     const firstCall = vi.mocked(handler.handleEvent).mock.calls[0];
     if (!firstCall) throw new Error("expected /pi-login to dispatch an event");
@@ -234,34 +394,26 @@ describe("SlackMessagingBot slash commands", () => {
     expect(calledMessagingBot).toBe(bot);
 
     await context.responder.respond("login link");
-    expect(postEphemeral).toHaveBeenLastCalledWith({
+    expect(web.chat.postEphemeral).toHaveBeenLastCalledWith({
       channel: "C123",
       user: "U123",
       text: "login link",
     });
-    expect(postMessage).not.toHaveBeenCalled();
+    expect(web.chat.postMessage).not.toHaveBeenCalled();
   });
 
   test("/pi-new routes through the generic dispatch like any other command", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-    (bot as any).webClient = {
-      chat: {
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0001" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
-      },
-    };
+    const { socket } = await startSlackHarness({ handler, workspace });
 
-    await (bot as any).routeSlashCommand(commandManifestEntry("new").slackRoute, {
-      command: "/pi-new",
-      channel_id: "D123",
-      user_id: "U123",
-      user_name: "alice",
+    await socket.deliver("slash_commands", {
+      body: {
+        command: "/pi-new",
+        channel_id: "D123",
+        user_id: "U123",
+        user_name: "alice",
+      },
+      ack: makeAck(),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -279,26 +431,13 @@ describe("SlackMessagingBot slash commands", () => {
       await context.responder.respond("sandbox status");
     });
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { web, socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [alice],
     });
 
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    (bot as any).webClient = {
-      chat: {
-        postEphemeral,
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0003" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
-      },
-    };
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-
-    await (bot as any).handleSlashCommand({
+    await socket.deliver("slash_commands", {
       body: {
         command: "/pi-sandbox",
         text: "boost",
@@ -306,7 +445,7 @@ describe("SlackMessagingBot slash commands", () => {
         user_id: "U123",
         user_name: "alice",
       },
-      ack: vi.fn().mockResolvedValue(undefined),
+      ack: makeAck(),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -317,7 +456,7 @@ describe("SlackMessagingBot slash commands", () => {
       sessionKey: "C123",
       text: "/pi-sandbox boost",
     });
-    expect(postEphemeral).toHaveBeenCalledWith({
+    expect(web.chat.postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",
       text: "sandbox status",
@@ -330,30 +469,20 @@ describe("SlackMessagingBot slash commands", () => {
       await context.responder.respond("session link");
     });
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { web, socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [alice],
     });
 
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    (bot as any).webClient = {
-      chat: {
-        postEphemeral,
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0002" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
+    await socket.deliver("slash_commands", {
+      body: {
+        command: "/pi-session",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
       },
-    };
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-
-    await (bot as any).routeSlashCommand(commandManifestEntry("session").slackRoute, {
-      command: "/pi-session",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
+      ack: makeAck(),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -364,7 +493,7 @@ describe("SlackMessagingBot slash commands", () => {
       sessionKey: "C123",
       text: "/pi-session",
     });
-    expect(postEphemeral).toHaveBeenCalledWith({
+    expect(web.chat.postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",
       text: "session link",
@@ -377,28 +506,17 @@ describe("SlackMessagingBot slash commands", () => {
       await context.responder.respond("thread session link");
     });
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { web, socket } = await startSlackHarness({ handler, workspace });
 
-    const postEphemeral = vi.fn().mockResolvedValue(undefined);
-    (bot as any).webClient = {
-      chat: {
-        postEphemeral,
-        postMessage: vi.fn().mockResolvedValue({ ts: "3000.0002" }),
-        update: vi.fn().mockResolvedValue(undefined),
-        delete: vi.fn().mockResolvedValue(undefined),
+    await socket.deliver("slash_commands", {
+      body: {
+        command: "/pi-session",
+        channel_id: "C123",
+        user_id: "U123",
+        user_name: "alice",
+        thread_ts: "1000.0001",
       },
-    };
-
-    await (bot as any).routeSlashCommand(commandManifestEntry("session").slackRoute, {
-      command: "/pi-session",
-      channel_id: "C123",
-      user_id: "U123",
-      user_name: "alice",
-      thread_ts: "1000.0001",
+      ack: makeAck(),
     });
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
@@ -412,7 +530,7 @@ describe("SlackMessagingBot slash commands", () => {
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[2]?.message).toMatchObject({
       sessionKey: "C123:1000.0001",
     });
-    expect(postEphemeral).toHaveBeenCalledWith({
+    expect(web.chat.postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",
       text: "thread session link",
@@ -437,48 +555,34 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
+  async function occupyQueue(
+    harness: SlackHarness,
+    handler: MessagingEventHandler,
+    message: { eventName: "app_mention" | "message"; event: Record<string, string> },
+  ): Promise<() => void> {
+    const run = deferred();
+    const calls = vi.mocked(handler.handleEvent).mock.calls.length;
+    vi.mocked(handler.handleEvent).mockImplementationOnce(() => run.promise);
+    await harness.socket.deliver(message.eventName, { event: message.event, ack: makeAck() });
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(calls + 1));
+    return () => run.resolve();
+  }
+
   test("shared channel mentions are queued while the session is running", async () => {
     const handler = makeHandler();
     vi.mocked(handler.isRunning).mockImplementation(
       (_address, sessionKey) => sessionKey === "C123",
     );
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
+    const harness = await startSlackHarness({ handler, workspace });
+    const { web, socket } = harness;
+    const release = await occupyQueue(harness, handler, {
+      eventName: "app_mention",
+      event: { text: "<@B123> first request", channel: "C123", user: "U123", ts: "1001.0000" },
     });
+    const ack = makeAck();
 
-    let mentionHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            thread_ts?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("C123");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    mentionHandler?.({
+    await socket.deliver("app_mention", {
       event: {
         text: "<@B123> second request",
         channel: "C123",
@@ -489,15 +593,13 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).postMessage).not.toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-
-    queue.processing = false;
-    await queue.processNext();
-
+    expect(web.chat.postMessage).not.toHaveBeenCalled();
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+
+    release();
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]?.[0]).toMatchObject({
       address: { conversationId: "C123" },
       sessionKey: "C123",
       text: "second request",
@@ -509,41 +611,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("C123");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "deployment failed",
         channel: "C123",
@@ -554,49 +625,21 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       ack,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+      address: { conversationId: "C123" },
+      text: "deployment failed",
+    });
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
 
   test("shared channel messages trigger only when auto-reply is enabled", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "deployment failed",
         channel: "C123",
@@ -607,15 +650,12 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       ack,
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).getQueue("C123").size()).toBe(0);
     expect(handler.handleEvent).not.toHaveBeenCalled();
 
     mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "try the deployment again",
         channel: "C123",
@@ -623,7 +663,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         ts: "1002.0001",
         channel_type: "channel",
       },
-      ack: vi.fn(),
+      ack: makeAck(),
     });
 
     await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
@@ -640,38 +680,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply.jev"), "");
 
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
+    const { socket } = await startSlackHarness({ handler, workspace });
 
     evaluateWithJevMock.mockRejectedValueOnce(new Error("gateway down"));
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "anyone around?",
         channel: "C123",
@@ -679,15 +691,14 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         ts: "1001.0001",
         channel_type: "channel",
       },
-      ack: vi.fn(),
+      ack: makeAck(),
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(handler.handleEvent).not.toHaveBeenCalled();
 
     evaluateWithJevMock.mockResolvedValueOnce({
       answers: { addressed: { type: "boolean", probability: 0.92 } },
     });
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "mikan can you redeploy the service",
         channel: "C123",
@@ -695,7 +706,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         ts: "1002.0001",
         channel_type: "channel",
       },
-      ack: vi.fn(),
+      ack: makeAck(),
     });
 
     await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
@@ -739,42 +750,17 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     );
 
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [{ id: "U999", name: "bob", real_name: "Bob" }],
     });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).users.set("U999", { id: "U999", userName: "bob", displayName: "Bob" });
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-    (bot as any).setupEventHandlers();
 
     evaluateWithJevMock.mockResolvedValueOnce({
       answers: { addressed: { type: "boolean", probability: 0.8 } },
     });
-    const ack = vi.fn();
-    messageHandler?.({
+    const ack = makeAck();
+    await socket.deliver("message", {
       event: {
         text: "<@U999> then roll it back please <@UNKNOWN>",
         channel: "C123",
@@ -806,39 +792,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     vi.mocked(handler.isRunning).mockImplementation(
       (_address, sessionKey) => sessionKey === "D123",
     );
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "stop",
         channel: "D123",
@@ -855,7 +812,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       "D123",
       bot,
     );
-    expect((bot as any).getQueue("D123").size()).toBe(0);
+    await bot.stop();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
@@ -864,40 +821,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
 
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { bot, web, socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "stop",
         channel: "C123",
@@ -910,46 +837,17 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(ack).toHaveBeenCalled();
     expect(handler.handleStop).not.toHaveBeenCalled();
-    expect((bot as any).postMessage).not.toHaveBeenCalled();
-    expect((bot as any).getQueue("C123").size()).toBe(0);
+    await bot.stop();
+    expect(web.chat.postMessage).not.toHaveBeenCalled();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
   test("bare shared channel mentions ask the agent to use recent context", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let mentionHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            thread_ts?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    mentionHandler?.({
+    await socket.deliver("app_mention", {
       event: {
         text: "<@B123>",
         channel: "C123",
@@ -961,10 +859,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(ack).toHaveBeenCalled();
 
-    const queue = (bot as any).getQueue("C123");
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       text: "Please respond to the recent conversation context.",
     });
@@ -972,39 +867,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("shared channel mentions preserve mentions of other users", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let mentionHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            thread_ts?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    mentionHandler?.({
+    await socket.deliver("app_mention", {
       event: {
         text: "<@B123> ask <@U999> about this",
         channel: "C123",
@@ -1016,10 +882,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(ack).toHaveBeenCalled();
 
-    const queue = (bot as any).getQueue("C123");
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       text: "ask <@U999> about this",
     });
@@ -1027,43 +890,14 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("first shared-channel thread reply waits behind the channel queue until the thread session exists", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
+    const harness = await startSlackHarness({ handler, workspace });
+    const release = await occupyQueue(harness, handler, {
+      eventName: "app_mention",
+      event: { text: "<@B123> top-level request", channel: "C123", user: "U123", ts: "1001.0" },
     });
+    const ack = makeAck();
 
-    let mentionHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            thread_ts?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("C123");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    mentionHandler?.({
+    await harness.socket.deliver("app_mention", {
       event: {
         text: "<@B123> thread request",
         channel: "C123",
@@ -1075,43 +909,19 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+
+    release();
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]?.[0]).toMatchObject({
+      sessionKey: "C123:1000.0001",
+      text: "thread request",
+    });
   });
 
   test("shared-channel bare thread replies do not trigger after the thread session exists", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
 
     const conversationDir = join(workingDir, C123_OFFICE);
     createManagedSessionFileAtPath(join(conversationDir, "session.jsonl"), conversationDir);
@@ -1120,9 +930,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       conversationDir,
     );
 
-    const ack = vi.fn();
+    const ack = makeAck();
 
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "thread follow-up",
         channel: "C123",
@@ -1135,7 +945,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).getQueue("C123:1000.0001").size()).toBe(0);
+    await bot.stop();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
@@ -1158,14 +968,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       });
     });
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
-    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+    const { bot } = createSlackHarness({ handler, workspace });
+    const postMessage = vi.spyOn(bot, "postMessage").mockResolvedValue("2000.0001");
+    const updateMessage = vi.spyOn(bot, "updateMessage").mockResolvedValue(undefined);
 
     expect(
       bot.enqueueEvent({
@@ -1185,9 +990,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       }),
     ]);
 
-    expect((bot as any).postMessage).toHaveBeenCalledTimes(1);
-    expect((bot as any).postMessage).toHaveBeenCalledWith("C123", "Working on it...");
-    expect((bot as any).updateMessage).toHaveBeenCalledWith(
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledWith("C123", "Working on it...");
+    expect(updateMessage).toHaveBeenCalledWith(
       "C123",
       "2000.0001",
       expect.stringContaining("event done"),
@@ -1198,17 +1003,11 @@ describe("SlackMessagingBot queues follow-up messages", () => {
   });
 
   test("postInThread wraps text in a markdown block", async () => {
-    const bot = new SlackMessagingBot(makeHandler(), {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-    const postMessage = vi.fn().mockResolvedValue({ ts: "2000.0001" });
-    (bot as any).webClient = { chat: { postMessage } };
+    const { bot, web } = createSlackHarness({ handler: makeHandler(), workspace });
 
     await bot.postInThread("C123", "1000.0001", "x".repeat(600));
 
-    expect(postMessage).toHaveBeenCalledWith({
+    expect(web.chat.postMessage).toHaveBeenCalledWith({
       channel: "C123",
       thread_ts: "1000.0001",
       text: "x".repeat(600),
@@ -1218,15 +1017,12 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("Slack events report anchor failures instead of creating legacy event sessions", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { bot } = createSlackHarness({ handler, workspace });
 
-    const postMessage = vi.fn().mockRejectedValueOnce(new Error("anchor failed"));
-    (bot as any).postMessage = postMessage;
-    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+    const postMessage = vi
+      .spyOn(bot, "postMessage")
+      .mockRejectedValueOnce(new Error("anchor failed"));
+    const updateMessage = vi.spyOn(bot, "updateMessage").mockResolvedValue(undefined);
 
     expect(
       bot.enqueueEvent({
@@ -1245,7 +1041,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
     expect(postMessage).toHaveBeenNthCalledWith(1, "C123", "Working on it...");
     expect(handler.handleEvent).not.toHaveBeenCalled();
-    expect((bot as any).updateMessage).not.toHaveBeenCalled();
+    expect(updateMessage).not.toHaveBeenCalled();
     expect(existsSync(join(workingDir, "C123", "sessions"))).toBe(false);
   });
 
@@ -1261,6 +1057,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       resolveEventHandled = resolve;
       rejectEventHandled = reject;
     });
+    let eventRunFinished = false;
     handler.handleEvent = vi.fn(async (event, _calledMessagingBot, context) => {
       try {
         expect(event).toMatchObject({
@@ -1270,19 +1067,15 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         expect(context.message.sessionKey).toBe("C123:2000.0001");
         resolveEventHandled();
         await eventRunCanFinish;
+        eventRunFinished = true;
       } catch (err) {
         rejectEventHandled(err);
       }
     });
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
-    (bot as any).updateMessage = vi.fn().mockResolvedValue(undefined);
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
+    vi.spyOn(bot, "postMessage").mockResolvedValue("2000.0001");
+    vi.spyOn(bot, "updateMessage").mockResolvedValue(undefined);
 
     expect(
       bot.enqueueEvent({
@@ -1302,37 +1095,13 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       }),
     ]);
 
-    expect((bot as any).resolveQueueKey("C123", "C123:2000.0001")).toBe("C123:2000.0001");
+    expect(existsSync(getThreadSessionFile(join(workingDir, C123_OFFICE), "C123:2000.0001"))).toBe(
+      true,
+    );
+    expect(eventRunFinished).toBe(false);
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("C123:2000.0001");
-    expect(queue.processing).toBe(true);
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "thread follow-up",
         channel: "C123",
@@ -1345,55 +1114,26 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(0);
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
 
     releaseEventRun();
     await eventHandled;
+    await bot.stop();
 
+    expect(eventRunFinished).toBe(true);
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
   test("external Slack app bot messages are logged but do not trigger mikan", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { bot, socket } = await startSlackHarness({
+      handler,
       workspace,
+      auth: { user_id: "U_MIKAN", bot_id: "B_MIKAN" },
     });
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            subtype?: string;
-            bot_id?: string;
-            app_id?: string;
-            username?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "U_MIKAN";
-    (bot as any).botId = "B_MIKAN";
-    (bot as any).logExternalMessagingBotMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-    messageHandler?.({
+    const ack = makeAck();
+    await socket.deliver("message", {
       event: {
         text: "Test Issue\nProject: pi-agent",
         channel: "C123",
@@ -1408,49 +1148,21 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).logExternalMessagingBotMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ bot_id: "B_SENTRY", username: "Sentry" }),
+    await vi.waitFor(() =>
+      expect(readLogEntries(workspace, "C123")).toEqual([
+        expect.objectContaining({ ts: "1001.0003", botId: "B_SENTRY", userName: "Sentry" }),
+      ]),
     );
+    await bot.stop();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
   test("shared-channel bare thread replies do not trigger for unrelated threads", async () => {
     const handler = makeHandler();
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "unrelated thread follow-up",
         channel: "C123",
@@ -1463,7 +1175,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).getQueue("C123").size()).toBe(0);
+    await bot.stop();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
@@ -1473,42 +1185,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       (_address, sessionKey) => sessionKey === "C123:1000.0001",
     );
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("C123:1000.0001");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "thread follow-up",
         channel: "C123",
@@ -1521,7 +1201,7 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(0);
+    await bot.stop();
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
@@ -1531,42 +1211,20 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       (_address, sessionKey) => sessionKey === "D123",
     );
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
+    const harness = await startSlackHarness({ handler, workspace });
+    const release = await occupyQueue(harness, handler, {
+      eventName: "message",
+      event: {
+        text: "first request",
+        channel: "D123",
+        user: "U123",
+        ts: "2001.0000",
+        channel_type: "im",
+      },
     });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("D123");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await harness.socket.deliver("message", {
       event: {
         text: "second request",
         channel: "D123",
@@ -1578,15 +1236,13 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).postMessage).not.toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-
-    queue.processing = false;
-    await queue.processNext();
-
+    expect(harness.web.chat.postMessage).not.toHaveBeenCalled();
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+
+    release();
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]?.[0]).toMatchObject({
       address: { conversationId: "D123" },
       sessionKey: "D123",
       text: "second request",
@@ -1595,44 +1251,20 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("first DM thread reply waits behind the top-level DM queue until the thread session exists", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
+    const harness = await startSlackHarness({ handler, workspace });
+    const release = await occupyQueue(harness, handler, {
+      eventName: "message",
+      event: {
+        text: "top-level request",
+        channel: "D123",
+        user: "U123",
+        ts: "2001.0000",
+        channel_type: "im",
+      },
     });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("D123");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await harness.socket.deliver("message", {
       event: {
         text: "thread request",
         channel: "D123",
@@ -1645,49 +1277,22 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+
+    release();
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]?.[0]).toMatchObject({
+      sessionKey: "D123:2000.0001",
+      text: "thread request",
+    });
   });
 
   test("DM message without channel_type still routes as a direct message", async () => {
     const handler = makeHandler();
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("D999");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "dm without channel_type",
         channel: "D999",
@@ -1698,12 +1303,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
 
-    queue.processing = false;
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       address: { conversationId: "D999" },
       conversationKind: "direct",
@@ -1714,51 +1315,14 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("DM posted via a user token (human user plus bot_id) routes as a user message", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [{ id: "UHUMAN", name: "qa-human", real_name: "QA Human", is_bot: false }],
     });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            channel_type?: string;
-            bot_id?: string;
-            app_id?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).users.set("UHUMAN", {
-      id: "UHUMAN",
-      userName: "qa-human",
-      displayName: "QA Human",
-      isBot: false,
-    });
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const queue = (bot as any).getQueue("D999");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "dm posted with a user token",
         channel: "D999",
@@ -1772,12 +1336,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
 
-    queue.processing = false;
-    await queue.processNext();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
       address: { conversationId: "D999" },
       user: "UHUMAN",
@@ -1787,48 +1347,14 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   test("DM from a bot user keeps the external-bot ignore path", async () => {
     const handler = makeHandler();
-
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { bot, socket } = await startSlackHarness({
+      handler,
       workspace,
+      members: [{ id: "UOTHERBOT", name: "other-bot", real_name: "Other Bot", is_bot: true }],
     });
+    const ack = makeAck();
 
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            channel_type?: string;
-            bot_id?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).users.set("UOTHERBOT", {
-      id: "UOTHERBOT",
-      userName: "other-bot",
-      displayName: "Other Bot",
-      isBot: true,
-    });
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).logExternalMessagingBotMessage = vi.fn().mockResolvedValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await socket.deliver("message", {
       event: {
         text: "bot dm",
         channel: "D999",
@@ -1841,9 +1367,11 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect((bot as any).logExternalMessagingBotMessage).toHaveBeenCalledTimes(1);
+    await bot.stop();
+    expect(readLogEntries(workspace, "D999")).toEqual([
+      expect.objectContaining({ ts: "2001.0001", botId: "BOTHERBOT", isMessagingBot: true }),
+    ]);
     expect(handler.handleEvent).not.toHaveBeenCalled();
-    expect((bot as any).getQueue("D999").size()).toBe(0);
   });
 
   test("DM thread follow-up messages are queued on the thread session key once the thread session exists", async () => {
@@ -1852,48 +1380,36 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       (_address, sessionKey) => sessionKey === "D123:2000.0001",
     );
 
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    let messageHandler:
-      | ((payload: {
-          event: {
-            text?: string;
-            channel: string;
-            user?: string;
-            ts: string;
-            thread_ts?: string;
-            channel_type?: string;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue([]);
-    (bot as any).postMessage = vi.fn().mockResolvedValue("3000.0001");
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "message") messageHandler = fn as typeof messageHandler;
-      }),
-    };
-
     createManagedSessionFileAtPath(
       getThreadSessionFile(join(workingDir, "D123"), "D123:2000.0001"),
       join(workingDir, "D123"),
     );
 
-    (bot as any).setupEventHandlers();
+    const harness = await startSlackHarness({ handler, workspace });
+    const releaseTopLevel = await occupyQueue(harness, handler, {
+      eventName: "message",
+      event: {
+        text: "top-level request",
+        channel: "D123",
+        user: "U123",
+        ts: "2000.9999",
+        channel_type: "im",
+      },
+    });
+    const releaseThread = await occupyQueue(harness, handler, {
+      eventName: "message",
+      event: {
+        text: "earlier thread request",
+        channel: "D123",
+        user: "U123",
+        ts: "2001.0000",
+        thread_ts: "2000.0001",
+        channel_type: "im",
+      },
+    });
+    const ack = makeAck();
 
-    const queue = (bot as any).getQueue("D123:2000.0001");
-    queue.processing = true;
-    const ack = vi.fn();
-
-    messageHandler?.({
+    await harness.socket.deliver("message", {
       event: {
         text: "thread request",
         channel: "D123",
@@ -1906,19 +1422,18 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
 
     expect(ack).toHaveBeenCalled();
-    expect(queue.size()).toBe(1);
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
 
-    queue.processing = false;
-    await queue.processNext();
+    releaseThread();
 
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(3));
+    expect(vi.mocked(handler.handleEvent).mock.calls[2]?.[0]).toMatchObject({
       address: { conversationId: "D123" },
       sessionKey: "D123:2000.0001",
       text: "thread request",
       thread_ts: "2000.0001",
     });
+    releaseTopLevel();
   });
 });
 
@@ -1938,14 +1453,36 @@ describe("SlackMessagingBot backfill", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
+  const c123: SlackConversation = { id: "C123", name: "general", is_member: true };
+
+  function prepareBackfilledChannel(): void {
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    office.ensure();
+    writeFileSync(office.logPath, "");
+  }
+
+  async function backfillC123(
+    options: Omit<SlackHarnessOptions, "workspace" | "channels">,
+    history: SlackWebApi["conversations"]["history"],
+    expectedEntries: number,
+  ): Promise<Array<Record<string, unknown>>> {
+    prepareBackfilledChannel();
+    const harness = createSlackHarness({ ...options, workspace, channels: [c123] });
+    vi.mocked(harness.web.conversations.history).mockImplementation(history);
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      await harness.bot.start();
+    } finally {
+      now.mockRestore();
+    }
+    await vi.waitFor(() => expect(harness.web.conversations.history).toHaveBeenCalled());
+    await vi.waitFor(() => expect(readLogEntries(workspace, "C123")).toHaveLength(expectedEntries));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await harness.bot.stop();
+    return readLogEntries(workspace, "C123");
+  }
+
   test("backfill keeps distinct human, external-bot, and own-message admission rules", async () => {
-    const bot = new SlackMessagingBot(makeHandler(), {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-    (bot as any).botUserId = "U_SELF";
-    (bot as any).botId = "B_SELF";
     const messages = [
       { user: "U_SELF", subtype: "message_changed" },
       { bot_id: "B_SELF", text: "own bot identity" },
@@ -1958,50 +1495,43 @@ describe("SlackMessagingBot backfill", () => {
       { user: "U1", files: [] },
       { text: "no author" },
     ].map((message, index) => Object.assign(message, { ts: `1000.${index}` }));
-    (bot as any).webClient = {
-      conversations: { history: vi.fn().mockResolvedValue({ messages }) },
-    };
-    const logMessage = vi.spyOn(bot as any, "logToFile").mockImplementation(() => {});
-    const logExternal = vi
-      .spyOn(bot as any, "logExternalMessagingBotMessage")
-      .mockResolvedValue(undefined);
 
-    expect(await (bot as any).backfillChannel("C123")).toBe(4);
-    expect(logMessage.mock.calls.map((call) => (call[1] as any).ts)).toEqual(["1000.3", "1000.0"]);
-    expect(logExternal.mock.calls.map((call) => (call[0] as any).ts)).toEqual(["1000.5", "1000.4"]);
+    const entries = await backfillC123(
+      { handler: makeHandler(), auth: { user_id: "U_SELF", bot_id: "B_SELF" } },
+      async () => ({ ok: true, messages }),
+      4,
+    );
+
+    expect(entries.map((entry) => [entry.ts, entry.user])).toEqual([
+      ["1000.5", "external-bot"],
+      ["1000.4", "bot:B_OTHER"],
+      ["1000.3", "U1"],
+      ["1000.0", "bot"],
+    ]);
   });
 
   test("backfill preserves threadTs for thread replies", async () => {
-    const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    (bot as any).botUserId = "B123";
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-    (bot as any).webClient = {
-      conversations: {
-        history: vi.fn().mockResolvedValue({
-          messages: [
-            {
-              user: "U123",
-              text: "reply in thread",
-              ts: "1000.0002",
-              thread_ts: "1000.0001",
-            },
-          ],
-          response_metadata: {},
-        }),
+    const entries = await backfillC123(
+      {
+        handler: makeHandler(),
+        members: [{ id: "U123", name: "alice", real_name: "Alice" }],
       },
-    };
+      async () => ({
+        ok: true,
+        messages: [
+          {
+            user: "U123",
+            text: "reply in thread",
+            ts: "1000.0002",
+            thread_ts: "1000.0001",
+          },
+        ],
+        response_metadata: {},
+      }),
+      1,
+    );
 
-    const count = await (bot as any).backfillChannel("C123");
-
-    expect(count).toBe(1);
+    expect(entries).toHaveLength(1);
     const logContent = readFileSync(
       join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
@@ -2010,27 +1540,24 @@ describe("SlackMessagingBot backfill", () => {
   });
 
   test("fetchHistory reads top-level messages oldest-first", async () => {
-    const bot = new SlackMessagingBot(makeHandler(), {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { bot, web } = createSlackHarness({
+      handler: makeHandler(),
       workspace,
+      members: [{ id: "U123", name: "alice", real_name: "Alice", is_bot: false }],
     });
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
-    ]);
-    const history = vi.fn().mockResolvedValue({
+    await bot.listUsers();
+    vi.mocked(web.conversations.history).mockResolvedValue({
+      ok: true,
       messages: [
         { user: "U123", text: "second", ts: "1000.0002" },
         { user: "U123", text: "first", ts: "1000.0001" },
       ],
     });
-    const replies = vi.fn();
-    (bot as any).webClient = { conversations: { history, replies } };
 
     const result = await bot.fetchHistory("C123", { oldest: "999.0", limit: 50 });
 
-    expect(replies).not.toHaveBeenCalled();
-    expect(history).toHaveBeenCalledWith({
+    expect(web.conversations.replies).not.toHaveBeenCalled();
+    expect(web.conversations.history).toHaveBeenCalledWith({
       channel: "C123",
       oldest: "999.0",
       inclusive: false,
@@ -2041,28 +1568,29 @@ describe("SlackMessagingBot backfill", () => {
   });
 
   test("fetchHistory with threadTs reads the thread's replies and drops the parent", async () => {
-    const bot = new SlackMessagingBot(makeHandler(), {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
+    const { bot, web } = createSlackHarness({
+      handler: makeHandler(),
       workspace,
+      members: [{ id: "U123", name: "alice", real_name: "Alice", is_bot: false }],
     });
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
-    ]);
-    const history = vi.fn();
-    const replies = vi.fn().mockResolvedValue({
+    await bot.listUsers();
+    vi.mocked(web.conversations.replies).mockResolvedValue({
+      ok: true,
       messages: [
         { bot_id: "B_MIKAN", text: "follow-up request", ts: "1000.0001" },
         { user: "U123", text: "done, shipped it", ts: "1000.0002", thread_ts: "1000.0001" },
         { user: "U123", text: "and closed the issue", ts: "1000.0003", thread_ts: "1000.0001" },
       ],
     });
-    (bot as any).webClient = { conversations: { history, replies } };
 
     const result = await bot.fetchHistory("C123", { threadTs: "1000.0001" });
 
-    expect(history).not.toHaveBeenCalled();
-    expect(replies).toHaveBeenCalledWith({ channel: "C123", ts: "1000.0001", limit: 200 });
+    expect(web.conversations.history).not.toHaveBeenCalled();
+    expect(web.conversations.replies).toHaveBeenCalledWith({
+      channel: "C123",
+      ts: "1000.0001",
+      limit: 200,
+    });
     expect(result.map((message) => message.text)).toEqual([
       "done, shipped it",
       "and closed the issue",
@@ -2071,49 +1599,39 @@ describe("SlackMessagingBot backfill", () => {
   });
 
   test("backfill logs external app bot messages", async () => {
-    const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const entries = await backfillC123(
+      { handler: makeHandler(), auth: { user_id: "U_MIKAN", bot_id: "B_MIKAN" } },
+      async () => ({
+        ok: true,
+        messages: [
+          {
+            bot_id: "B_SENTRY",
+            app_id: "A_SENTRY",
+            username: "Sentry",
+            subtype: "bot_message",
+            text: "[pi-agent] Test Issue",
+            blocks: sdkHistoryBlocks([
+              {
+                type: "section",
+                text: { type: "mrkdwn", text: "*Test Issue*\npoll(.../sentry/scripts/views.js)" },
+              },
+              {
+                type: "section",
+                fields: [
+                  { type: "mrkdwn", text: "*State:* New" },
+                  { type: "mrkdwn", text: "*Short ID:* PI-AGENT-A" },
+                ],
+              },
+            ]),
+            ts: "1000.0002",
+          },
+        ],
+        response_metadata: {},
+      }),
+      1,
+    );
 
-    (bot as any).botUserId = "U_MIKAN";
-    (bot as any).botId = "B_MIKAN";
-    (bot as any).webClient = {
-      conversations: {
-        history: vi.fn().mockResolvedValue({
-          messages: [
-            {
-              bot_id: "B_SENTRY",
-              app_id: "A_SENTRY",
-              username: "Sentry",
-              subtype: "bot_message",
-              text: "[pi-agent] Test Issue",
-              blocks: [
-                {
-                  type: "section",
-                  text: { type: "mrkdwn", text: "*Test Issue*\npoll(.../sentry/scripts/views.js)" },
-                },
-                {
-                  type: "section",
-                  fields: [
-                    { type: "mrkdwn", text: "*State:* New" },
-                    { type: "mrkdwn", text: "*Short ID:* PI-AGENT-A" },
-                  ],
-                },
-              ],
-              ts: "1000.0002",
-            },
-          ],
-          response_metadata: {},
-        }),
-      },
-    };
-
-    const count = await (bot as any).backfillChannel("C123");
-
-    expect(count).toBe(1);
+    expect(entries).toHaveLength(1);
     const logContent = readFileSync(
       join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
@@ -2126,35 +1644,26 @@ describe("SlackMessagingBot backfill", () => {
   });
 
   test("backfill preserves mentions of other users while stripping mikan", async () => {
-    const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-
-    (bot as any).botUserId = "B123";
-    (bot as any).users = new Map([
-      ["U123", { id: "U123", userName: "alice", displayName: "Alice" }],
-    ]);
-    (bot as any).webClient = {
-      conversations: {
-        history: vi.fn().mockResolvedValue({
-          messages: [
-            {
-              user: "U123",
-              text: "<@B123> ask <@U999> about this",
-              ts: "1000.0002",
-            },
-          ],
-          response_metadata: {},
-        }),
+    const entries = await backfillC123(
+      {
+        handler: makeHandler(),
+        members: [{ id: "U123", name: "alice", real_name: "Alice" }],
       },
-    };
+      async () => ({
+        ok: true,
+        messages: [
+          {
+            user: "U123",
+            text: "<@B123> ask <@U999> about this",
+            ts: "1000.0002",
+          },
+        ],
+        response_metadata: {},
+      }),
+      1,
+    );
 
-    const count = await (bot as any).backfillChannel("C123");
-
-    expect(count).toBe(1);
+    expect(entries).toHaveLength(1);
     const logContent = readFileSync(
       join(workingDir, officeKey(createOfficeAddress("slack", "C123")), "log.jsonl"),
       "utf-8",
@@ -2181,45 +1690,12 @@ describe("SlackMessagingBot attachments", () => {
 
   test("waits for attachment downloads before invoking the agent", async () => {
     const handler = makeHandler();
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
+    const download = deferred<Response>();
+    const fetch = vi.fn<FetchFunction>(() => download.promise);
+    const { socket } = await startSlackHarness({ handler, workspace, fetch });
 
-    let mentionHandler:
-      | ((payload: {
-          event: {
-            text: string;
-            channel: string;
-            user: string;
-            ts: string;
-            files?: Array<{ name: string; url_private: string }>;
-          };
-          ack: () => void;
-        }) => void)
-      | undefined;
-
-    let resolveAttachments!: (attachments: Array<{ original: string; localPath: string }>) => void;
-    const attachmentsPromise = new Promise<Array<{ original: string; localPath: string }>>(
-      (resolve) => {
-        resolveAttachments = resolve;
-      },
-    );
-
-    (bot as any).startupTs = "0";
-    (bot as any).botUserId = "B123";
-    (bot as any).logUserMessage = vi.fn().mockReturnValue(attachmentsPromise);
-    (bot as any).socketClient = {
-      on: vi.fn((event: string, fn: unknown) => {
-        if (event === "app_mention") mentionHandler = fn as typeof mentionHandler;
-      }),
-    };
-
-    (bot as any).setupEventHandlers();
-
-    const ack = vi.fn();
-    mentionHandler?.({
+    const ack = makeAck();
+    await socket.deliver("app_mention", {
       event: {
         text: "<@B123> 看這個檔案",
         channel: "C123",
@@ -2231,17 +1707,22 @@ describe("SlackMessagingBot attachments", () => {
     });
 
     expect(ack).toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith("https://example.com/clip.mov", {
+        headers: { Authorization: "Bearer xoxb-test" },
+      }),
+    );
     await Promise.resolve();
     expect(handler.handleEvent).not.toHaveBeenCalled();
 
-    resolveAttachments([{ original: "clip.mov", localPath: "C123/attachments/1_clip.mov" }]);
-    await Promise.resolve();
-    await Promise.resolve();
+    download.resolve(new Response("clip"));
 
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    const localPath = `${C123_OFFICE}/attachments/1001000_clip.mov`;
     expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({
-      attachments: [{ original: "clip.mov", localPath: "C123/attachments/1_clip.mov" }],
+      attachments: [{ original: "clip.mov", localPath }],
     });
+    expect(readFileSync(join(workingDir, localPath), "utf-8")).toBe("clip");
   });
 });
 
@@ -2261,25 +1742,12 @@ describe("SlackMessagingBot force-stop block action", () => {
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
-  function makeForceStopBot(handler: MessagingEventHandler) {
-    const bot = new SlackMessagingBot(handler, {
-      appToken: "xapp-test",
-      botToken: "xoxb-test",
-      workspace,
-    });
-    (bot as any).webClient = {
-      chat: { postMessage: vi.fn().mockResolvedValue({ ts: "9000.0001" }) },
-      views: { publish: vi.fn().mockResolvedValue(undefined) },
-    };
-    return bot;
-  }
-
   test("session keys with underscored conversation ids survive via the button value", async () => {
     const handler = makeHandler();
-    const bot = makeForceStopBot(handler);
+    const { socket } = await startSlackHarness({ handler, workspace });
     const sessionKey = "GH_owner_repo_42:1000.0001";
 
-    await (bot as any).handleBlockAction({
+    await socket.deliver("block_actions", {
       body: {
         actions: [
           {
@@ -2290,7 +1758,7 @@ describe("SlackMessagingBot force-stop block action", () => {
         user: { id: "U123" },
         container: {},
       },
-      ack: vi.fn(),
+      ack: makeAck(),
     });
 
     expect(handler.forceStop).toHaveBeenCalledWith(
@@ -2301,15 +1769,15 @@ describe("SlackMessagingBot force-stop block action", () => {
 
   test("legacy buttons without a value fall back to action_id decoding", async () => {
     const handler = makeHandler();
-    const bot = makeForceStopBot(handler);
+    const { socket } = await startSlackHarness({ handler, workspace });
 
-    await (bot as any).handleBlockAction({
+    await socket.deliver("block_actions", {
       body: {
         actions: [{ action_id: "force_stop_C123_1000.0001" }],
         user: { id: "U123" },
         container: { channel_id: "C123" },
       },
-      ack: vi.fn(),
+      ack: makeAck(),
     });
 
     expect(handler.forceStop).toHaveBeenCalledWith(

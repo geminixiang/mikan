@@ -1,14 +1,10 @@
 import {
   ApplicationCommandOptionType,
+  ChannelType,
   Client,
   Events,
   GatewayIntentBits,
   Partials,
-  type ChatInputCommandInteraction,
-  type Collection,
-  type Interaction,
-  type Message,
-  type Attachment,
   type TextChannel,
   type DMChannel,
   type NewsChannel,
@@ -27,7 +23,15 @@ import type {
   MessagingInfo,
 } from "../../types.js";
 import { discordTextPayload } from "./components.js";
-import type { DiscordEvent } from "./types.js";
+import type {
+  DiscordAttachmentSource,
+  DiscordClient,
+  DiscordCommandInteraction,
+  DiscordEvent,
+  DiscordIncomingInteraction,
+  DiscordIncomingMessage,
+  DiscordMessagingBotOptions,
+} from "./types.js";
 import * as log from "../../log.js";
 import {
   createConversationEvent,
@@ -66,7 +70,7 @@ const discordRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: discordIsRateLimited });
 
 export class DiscordMessagingBot implements MessagingBot {
-  private client: Client;
+  private client: DiscordClient;
   private handler: MessagingEventHandler;
   private token: string;
   private workspace: Workspace;
@@ -78,19 +82,21 @@ export class DiscordMessagingBot implements MessagingBot {
   private channels = new Map<string, { id: string; name: string }>();
   private users = new Map<string, { id: string; userName: string; displayName: string }>();
 
-  constructor(handler: MessagingEventHandler, config: { token: string; workspace: Workspace }) {
+  constructor(handler: MessagingEventHandler, options: DiscordMessagingBotOptions) {
     this.handler = handler;
-    this.token = config.token;
-    this.workspace = config.workspace;
-    this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
-      ],
-      partials: [Partials.Channel, Partials.Message],
-    });
+    this.token = options.token;
+    this.workspace = options.workspace;
+    this.client =
+      options.client ??
+      new Client({
+        intents: [
+          GatewayIntentBits.Guilds,
+          GatewayIntentBits.GuildMessages,
+          GatewayIntentBits.MessageContent,
+          GatewayIntentBits.DirectMessages,
+        ],
+        partials: [Partials.Channel, Partials.Message],
+      });
   }
 
   async start(): Promise<void> {
@@ -289,7 +295,7 @@ export class DiscordMessagingBot implements MessagingBot {
 
   async processAttachments(
     channelId: string,
-    attachments: Collection<string, Attachment>,
+    attachments: ReadonlyMap<string, DiscordAttachmentSource>,
   ): Promise<{ name: string; localPath: string }[]> {
     const items: IncomingAttachment[] = [];
     for (const attachment of attachments.values()) {
@@ -378,7 +384,7 @@ export class DiscordMessagingBot implements MessagingBot {
   }
 
   private createSlashCommandAdapters(
-    interaction: ChatInputCommandInteraction,
+    interaction: DiscordCommandInteraction,
     commandText: string,
     sessionKey: string,
     conversationId: string,
@@ -453,7 +459,7 @@ export class DiscordMessagingBot implements MessagingBot {
     });
   }
 
-  private async handleInteractionCreate(interaction: Interaction): Promise<void> {
+  private async handleInteractionCreate(interaction: DiscordIncomingInteraction): Promise<void> {
     if (!interaction.isChatInputCommand()) return;
     const manifestEntry = COMMAND_MANIFEST.find(
       (entry) => entry.discord && entry.name === interaction.commandName,
@@ -542,10 +548,10 @@ export class DiscordMessagingBot implements MessagingBot {
     }
   }
 
-  private async handleMessageCreate(msg: Message): Promise<void> {
+  private async handleMessageCreate(msg: DiscordIncomingMessage): Promise<void> {
     if (msg.createdTimestamp < this.startupTime) return;
     if (msg.author.bot) return;
-    const isDM = msg.channel.type === 1;
+    const isDM = msg.channel.type === ChannelType.DM;
     const isInThread = msg.channel.isThread();
     const referencedMsgId = msg.reference?.messageId;
     const isThreadReply = isInThread || !!referencedMsgId;
@@ -570,8 +576,10 @@ export class DiscordMessagingBot implements MessagingBot {
     });
 
     if (!this.channels.has(conversationId) && "name" in msg.channel) {
-      const ch = msg.channel as TextChannel | NewsChannel;
-      this.channels.set(conversationId, { id: conversationId, name: ch.name });
+      this.channels.set(conversationId, {
+        id: conversationId,
+        name: msg.channel.name ?? conversationId,
+      });
     }
 
     const conversationKind = isDM ? "direct" : "shared";

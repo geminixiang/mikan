@@ -48,7 +48,6 @@
         "**/.pi/**"
       ],
       "rules": {
-        "typescript/no-explicit-any": "off",
         "typescript/consistent-type-imports": "off",
         "eslint/max-lines-per-function": "off",
         "eslint/max-params": "off",

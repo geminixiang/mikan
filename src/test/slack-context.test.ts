@@ -1,10 +1,15 @@
 import { describe, expect, test, vi } from "vitest";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
-import type { SlackEvent } from "../adapters/slack/types.js";
+import type { SlackEvent, SlackResponderBot } from "../adapters/slack/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
 import { createOfficeAddress } from "../office/index.js";
 
-function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): SlackMessagingBot {
+type FakeSlackMessagingBot = SlackResponderBot &
+  Pick<SlackMessagingBot, "getAllChannels" | "getAllUsers">;
+
+function makeSlackMessagingBot(
+  overrides: Partial<FakeSlackMessagingBot> = {},
+): FakeSlackMessagingBot {
   return {
     getUser: vi.fn().mockReturnValue(undefined),
     getAllChannels: vi.fn().mockReturnValue([]),
@@ -20,13 +25,11 @@ function makeSlackMessagingBot(overrides: Partial<SlackMessagingBot> = {}): Slac
     logBotResponse: vi.fn(),
     setAssistantStatus: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
-    start: vi.fn(),
-    getChannel: vi.fn().mockReturnValue(undefined),
-    enqueueEvent: vi.fn().mockReturnValue(true),
-    logToFile: vi.fn(),
+    postInThreadBlocks: vi.fn().mockRejectedValue(new Error("postInThreadBlocks not stubbed")),
+    addReaction: vi.fn().mockRejectedValue(new Error("addReaction not stubbed")),
     getMessagingInfo: SlackMessagingBot.prototype.getMessagingInfo,
     ...overrides,
-  } as unknown as SlackMessagingBot;
+  };
 }
 
 function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {

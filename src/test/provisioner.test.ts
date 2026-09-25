@@ -1,10 +1,11 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi, type Mock } from "vitest";
 import * as log from "../log.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import { legacyConversationResourceKey } from "../sandbox/identity.js";
+import type { DockerExecFile } from "../sandbox/types.js";
 
 function createDeferred<T>(): {
   promise: Promise<T>;
@@ -66,6 +67,16 @@ function routerMock(overrides: {
   return { exec, calls };
 }
 
+const DOCKER_READS = new Set(["inspect", "ps", "images"]);
+
+function stopCallsOf(exec: Mock<DockerExecFile>): string[][] {
+  return exec.mock.calls.flatMap(([, args]) => (args[0] === "stop" ? [args] : []));
+}
+
+function dockerWrites(calls: string[][]): string[][] {
+  return calls.filter((args) => !DOCKER_READS.has(args[0] ?? ""));
+}
+
 describe("DockerContainerManager", () => {
   describe("container layout migration", () => {
     const LEGACY_BINDS = [
@@ -87,11 +98,15 @@ describe("DockerContainerManager", () => {
     };
 
     test("moves a legacy container: commit with binds label, rm, create translated", async () => {
-      const { exec, calls } = routerMock({ status: "stopped", binds: LEGACY_BINDS });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const { exec, calls } = routerMock({
+        status: "stopped",
+        binds: LEGACY_BINDS,
+        names: ["mikan-sandbox-c123-k"],
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
-      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+      await manager.sweepContainerLayoutMigration(0);
 
       const commit = calls.find((args) => args[0] === "commit");
       expect(commit?.[2]).toContain("mikan.migrate-binds=");
@@ -110,21 +125,29 @@ describe("DockerContainerManager", () => {
     });
 
     test("a container already on the office layout is untouched", async () => {
-      const { exec, calls } = routerMock({ status: "stopped", binds: NEW_BINDS });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const { exec, calls } = routerMock({
+        status: "stopped",
+        binds: NEW_BINDS,
+        names: ["mikan-sandbox-c123-k"],
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
-      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+      await manager.sweepContainerLayoutMigration(0);
 
-      expect(calls.filter((args) => args[0] !== "inspect")).toEqual([]);
+      expect(dockerWrites(calls)).toEqual([]);
     });
 
     test("resumes from the snapshot when the container vanished mid-migration", async () => {
-      const { exec, calls } = routerMock({ status: "missing", imageBinds: LEGACY_BINDS });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const { exec, calls } = routerMock({
+        status: "missing",
+        imageBinds: LEGACY_BINDS,
+        names: ["mikan-sandbox-c123-k"],
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
-      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+      await manager.sweepContainerLayoutMigration(0);
 
       expect(calls.find((args) => args[0] === "commit")).toBeUndefined();
       const create = calls.find((args) => args[0] === "create");
@@ -138,7 +161,7 @@ describe("DockerContainerManager", () => {
         images: ["mikan-migrate:mikan-sandbox-c123-k"],
         imageBinds: LEGACY_BINDS,
       });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
       await manager.sweepContainerLayoutMigration(0);
@@ -153,22 +176,26 @@ describe("DockerContainerManager", () => {
     });
 
     test("a missing container without a snapshot is left alone", async () => {
-      const { exec, calls } = routerMock({ status: "missing" });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const { exec, calls } = routerMock({ status: "missing", names: ["mikan-sandbox-c123-k"] });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
-      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+      await manager.sweepContainerLayoutMigration(0);
 
-      expect(calls.filter((args) => args[0] !== "inspect")).toEqual([]);
+      expect(dockerWrites(calls)).toEqual([]);
     });
 
     test("unarmed manager performs no layout work", async () => {
-      const { exec, calls } = routerMock({ status: "stopped", binds: LEGACY_BINDS });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const { exec, calls } = routerMock({ status: "missing" });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
 
-      await (manager as any).migrateContainerLayout("mikan-sandbox-c123-k");
+      await manager.provision("c123-k");
 
-      expect(calls).toEqual([]);
+      expect(calls.some((args) => args.some((arg) => arg.includes("mikan.migrate-binds")))).toBe(
+        false,
+      );
+      expect(calls.some((args) => args[0] === "commit" || args[0] === "create")).toBe(false);
+      expect(calls.some((args) => args[0] === "run")).toBe(true);
     });
 
     test("sweep resumes a crash-orphaned snapshot instead of reclaiming it", async () => {
@@ -178,7 +205,7 @@ describe("DockerContainerManager", () => {
         images: ["mikan-migrate:mikan-sandbox-c123-k"],
         imageBinds: LEGACY_BINDS,
       });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
       await manager.sweepContainerLayoutMigration(0);
@@ -197,7 +224,7 @@ describe("DockerContainerManager", () => {
         images: ["mikan-migrate:mikan-sandbox-gone"],
         imageBinds: [],
       });
-      const manager = new DockerContainerManager("base", { execFileImpl: exec as any });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
       manager.armContainerLayoutMigration(translator);
 
       await manager.sweepContainerLayoutMigration(0);
@@ -222,7 +249,7 @@ describe("DockerContainerManager", () => {
       }
       return { stdout: "" };
     });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.removeContainersForConversations(new Set(["C123"]));
 
@@ -232,7 +259,7 @@ describe("DockerContainerManager", () => {
 
   test("re-checks a cached container and starts it when it was stopped", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
@@ -240,7 +267,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "started\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("slack-u123");
     await manager.provision("slack-u123");
@@ -286,7 +313,7 @@ describe("DockerContainerManager", () => {
 
   test("re-checks a cached container and recreates it when it was deleted", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
@@ -294,7 +321,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("slack-u123");
     await manager.provision("slack-u123");
@@ -328,14 +355,14 @@ describe("DockerContainerManager", () => {
 
   test("provisions custom container names with extra vault mounts", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(new Error("No such network"))
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("alice", {
       containerName: "alice-box",
@@ -393,13 +420,13 @@ describe("DockerContainerManager", () => {
 
   test("a read-only mount gets the :ro bind suffix", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(new Error("No such network"))
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("alice", {
       mounts: [
@@ -424,7 +451,7 @@ describe("DockerContainerManager", () => {
       status: "running",
       binds: ["/state/shared/data:/opt/shared/data"],
     });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec });
     const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
 
     await manager.provision("alice", { mounts, conversationId: "C1" });
@@ -455,7 +482,7 @@ describe("DockerContainerManager", () => {
       status: "running",
       binds: ["/ws/a:/workspace/a", "/ws/b:/workspace/public/b:ro", "/ws/c:/workspace/public/c:ro"],
     });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec });
 
     await manager.provision("alice", { mounts, conversationId: "C1" });
 
@@ -468,7 +495,7 @@ describe("DockerContainerManager", () => {
 
   test("creates the network when docker reports '<name> not found'", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockRejectedValueOnce(
         new Error(
@@ -477,7 +504,7 @@ describe("DockerContainerManager", () => {
       )
       .mockResolvedValueOnce({ stdout: "network-id\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("slack-u123-d123", {
       conversationId: "D123",
@@ -508,7 +535,7 @@ describe("DockerContainerManager", () => {
       status: "running",
       binds: ["/tmp/vaults/alice/.ssh:/root/.ssh"],
     });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec });
 
     await manager.provision("alice", {
       containerName: "alice-box",
@@ -558,7 +585,7 @@ describe("DockerContainerManager", () => {
 
   test("recreates existing containers preserving contents when network isolation is missing", async () => {
     const { exec, calls } = routerMock({ status: "running", binds: [], networkMode: "bridge" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: exec });
     const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
 
     await manager.provision("slack-u123");
@@ -587,7 +614,7 @@ describe("DockerContainerManager", () => {
 
       const fresh = routerMock({ status: "missing" });
       const freshManager = new DockerContainerManager("ubuntu:24.04", {
-        execFileImpl: fresh.exec as any,
+        execFileImpl: fresh.exec,
       });
       await freshManager.provision("alice", { mounts });
       const runArgs = fresh.calls.find((args) => args[0] === "run");
@@ -614,7 +641,7 @@ describe("DockerContainerManager", () => {
       };
       const stable = withLabel(signature!);
       const stableManager = new DockerContainerManager("ubuntu:24.04", {
-        execFileImpl: stable.exec as any,
+        execFileImpl: stable.exec,
       });
       const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
       await stableManager.provision("alice", { mounts });
@@ -626,7 +653,7 @@ describe("DockerContainerManager", () => {
       mkdirSync(source);
       const replaced = withLabel(signature!);
       const replacedManager = new DockerContainerManager("ubuntu:24.04", {
-        execFileImpl: replaced.exec as any,
+        execFileImpl: replaced.exec,
       });
       const replacedLog = vi.spyOn(log, "logInfo").mockImplementation(() => {});
       await replacedManager.provision("alice", { mounts });
@@ -643,23 +670,27 @@ describe("DockerContainerManager", () => {
 
   test("stopIdle stops only containers idle longer than threshold", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u111\n" })
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u222\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
+    const provisionedAt = Date.parse("2026-04-22T00:00:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"], now: provisionedAt });
 
-    await manager.provision("slack-u111");
-    await manager.provision("slack-u222");
+    try {
+      await manager.provision("slack-u111");
+      vi.setSystemTime(provisionedAt + 7200000);
+      await manager.provision("slack-u222");
 
-    const stateField = (manager as any).state as Map<string, { status: string; lastUsed: number }>;
-    stateField.get("slack-u111")!.lastUsed = Date.now() - 7200000;
-
-    execMock.mockResolvedValue({ stdout: "" });
-    await manager.stopIdle(3600000);
+      execMock.mockResolvedValue({ stdout: "" });
+      await manager.stopIdle(3600000);
+    } finally {
+      vi.useRealTimers();
+    }
 
     const stopCalls = execMock.mock.calls.filter((c) => c[0] === "docker" && c[1][0] === "stop");
     expect(stopCalls).toHaveLength(1);
@@ -668,48 +699,56 @@ describe("DockerContainerManager", () => {
 
   test("reconcile discovers labeled containers and restores state", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-slack-u123-d123\n" })
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({
         stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\n",
       });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
-    await manager.reconcile();
+    const startedAt = Date.parse("2026-04-22T00:00:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"], now: startedAt + 1000 });
 
-    const stateField = (manager as any).state as Map<string, { status: string; lastUsed: number }>;
-    expect(stateField.get("slack-u123-d123")?.status).toBe("running");
-    expect(stateField.get("slack-u123-d123")?.lastUsed).toBe(
-      Date.parse("2026-04-22T00:00:00.000Z"),
-    );
+    try {
+      await manager.reconcile();
+      execMock.mockResolvedValue({ stdout: "" });
+
+      await manager.stopIdle(1000);
+      expect(stopCallsOf(execMock)).toEqual([]);
+
+      await manager.stopIdle(999);
+      expect(stopCallsOf(execMock)).toEqual([["stop", "mikan-sandbox-slack-u123-d123"]]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("reconcile removes legacy containers without conversation labels", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({ stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\t\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.reconcile();
 
     expect(execMock).toHaveBeenNthCalledWith(4, "docker", ["rm", "-f", "mikan-sandbox-slack-u123"]);
-    const stateField = (manager as any).state as Map<string, { status: string; lastUsed: number }>;
-    expect(stateField.size).toBe(0);
+    await manager.stopIdle(-1);
+    expect(stopCallsOf(execMock)).toEqual([]);
   });
 
   test("reconcile reaps containers keyed by the pre-office raw-conversation identity", async () => {
     const legacyKey = legacyConversationResourceKey("D123");
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: `mikan-sandbox-${legacyKey}\n` })
       .mockResolvedValueOnce({ stdout: "" })
       .mockResolvedValueOnce({ stdout: "true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.reconcile();
 
@@ -718,20 +757,20 @@ describe("DockerContainerManager", () => {
       "-f",
       `mikan-sandbox-${legacyKey}`,
     ]);
-    const stateField = (manager as any).state as Map<string, { status: string }>;
-    expect(stateField.size).toBe(0);
+    await manager.stopIdle(-1);
+    expect(stopCallsOf(execMock)).toEqual([]);
   });
 
   test("concurrent provision calls for the same vaultId share one docker run", async () => {
     const startDeferred = createDeferred<{ stdout: string }>();
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockReturnValueOnce(startDeferred.promise);
 
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     const first = manager.provision("slack-u123");
     const second = manager.provision("slack-u123");
@@ -746,7 +785,7 @@ describe("DockerContainerManager", () => {
 
   test("failed docker start clears cached state and allows re-inspection", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "false\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
@@ -755,12 +794,12 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "new-id\n" });
 
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await expect(manager.provision("slack-u123")).rejects.toThrow(/start failed/);
 
-    const stateField = (manager as any).state as Map<string, unknown>;
-    expect(stateField.has("slack-u123")).toBe(false);
+    await manager.stopIdle(-1);
+    expect(stopCallsOf(execMock)).toEqual([]);
 
     await expect(manager.provision("slack-u123")).resolves.toBe("mikan-sandbox-slack-u123");
     expect(execMock.mock.calls[4]?.[1][0]).toBe("inspect");
@@ -768,7 +807,7 @@ describe("DockerContainerManager", () => {
 
   test("passes --cpus, --memory, and --memory-swap to docker run when limits are configured", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
@@ -776,7 +815,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "512m" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.provision("slack-u123");
@@ -826,14 +865,14 @@ describe("DockerContainerManager", () => {
 
   test("applies limits to already-running containers via docker update", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "1", memory: "1g" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.provision("slack-u123");
@@ -852,11 +891,11 @@ describe("DockerContainerManager", () => {
 
   test("skips docker update when no limits configured", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("slack-u123");
 
@@ -866,14 +905,14 @@ describe("DockerContainerManager", () => {
 
   test("setLimits applies temporary limits to a running container", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
       .mockResolvedValue({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "1g" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.provision("slack-u123");
@@ -897,7 +936,7 @@ describe("DockerContainerManager", () => {
 
   test("setLimits affects the next docker run before a container exists", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
@@ -905,7 +944,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { memory: "1g" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.setLimits("slack-u123", { cpus: "2" });
@@ -946,7 +985,7 @@ describe("DockerContainerManager", () => {
 
   test("boost applies boost limits to a running container", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
@@ -954,7 +993,7 @@ describe("DockerContainerManager", () => {
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "1g" },
       boostLimits: { cpus: "2", memory: "4g" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.provision("slack-u123");
@@ -978,7 +1017,7 @@ describe("DockerContainerManager", () => {
 
   test("stopping a container clears boost state", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockResolvedValueOnce({ stdout: "true\n" })
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-net-slack-u123\n" })
@@ -986,7 +1025,7 @@ describe("DockerContainerManager", () => {
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { cpus: "0.5", memory: "1g" },
       boostLimits: { cpus: "2", memory: "4g" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await manager.provision("slack-u123");
@@ -1001,7 +1040,7 @@ describe("DockerContainerManager", () => {
 
   test("provision succeeds even when docker update fails", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
@@ -1009,7 +1048,7 @@ describe("DockerContainerManager", () => {
       .mockRejectedValueOnce(new Error("docker update unsupported"));
     const manager = new DockerContainerManager("ubuntu:24.04", {
       limits: { memory: "256m" },
-      execFileImpl: execMock as any,
+      execFileImpl: execMock,
     });
 
     await expect(manager.provision("slack-u123")).resolves.toBe("mikan-sandbox-slack-u123");
@@ -1017,14 +1056,14 @@ describe("DockerContainerManager", () => {
 
   test("remove also deletes the per-vault network", async () => {
     const execMock = vi
-      .fn<(file: string, args: string[]) => Promise<{ stdout: string; stderr?: string }>>()
+      .fn<DockerExecFile>()
       .mockRejectedValueOnce(new Error("No such object"))
       .mockResolvedValueOnce({ stdout: "[]\n" })
       .mockResolvedValueOnce({ stdout: "volume\n" })
       .mockResolvedValueOnce({ stdout: "new-container-id\n" })
       .mockResolvedValueOnce({ stdout: "removed\n" })
       .mockResolvedValueOnce({ stdout: "network removed\n" });
-    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock as any });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
     await manager.provision("slack-u123");
     await manager.remove("slack-u123");

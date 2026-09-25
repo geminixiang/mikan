@@ -1,10 +1,24 @@
 import type { ConversationEvent } from "../../types.js";
 import type { Workspace } from "../../office/types.js";
+import type { GithubMessagingBot } from "./bot.js";
+import type { GithubClient } from "./client.js";
 
 export interface GithubEvent extends ConversationEvent {
   type: "message" | "issue";
   userName?: string;
 }
+
+export type GithubApi = Pick<GithubClient, keyof GithubClient>;
+
+export type GithubConversationBot = Pick<
+  GithubMessagingBot,
+  | "postComment"
+  | "updateMessage"
+  | "deleteComment"
+  | "addReaction"
+  | "logBotResponse"
+  | "getMessagingInfo"
+>;
 
 export interface GithubBotConfig {
   appId: string;

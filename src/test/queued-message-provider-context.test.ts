@@ -50,11 +50,14 @@ const testPlatform: MessagingInfo = {
   trustModel: "membership",
 };
 
-const bot = {
+const bot: MessagingBot = {
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
   postMessage: vi.fn().mockResolvedValue("TS"),
   updateMessage: vi.fn().mockResolvedValue(undefined),
+  enqueueEvent: vi.fn().mockReturnValue(true),
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
-} as unknown as MessagingBot;
+};
 
 function logMessage(entry: {
   ts: string;

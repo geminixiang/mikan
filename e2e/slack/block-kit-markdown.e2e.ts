@@ -22,7 +22,13 @@ function findRichTextLinks(
     }
     if (!node || typeof node !== "object") return;
     const record = node as Record<string, unknown>;
-    if (record.type === "link") links.push(record as unknown as RichTextLink);
+    if (record.type === "link") {
+      links.push({
+        type: record.type,
+        url: typeof record.url === "string" ? record.url : undefined,
+        text: typeof record.text === "string" ? record.text : undefined,
+      });
+    }
     if (Array.isArray(record.elements)) walk(record.elements);
   };
   walk(blocks);
