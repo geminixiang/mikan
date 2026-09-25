@@ -24,7 +24,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
   delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
   delete process.env.MIKAN_OPENCONNECTOR_ADMIN_TOKEN;
   delete process.env.STATE_DIR;
@@ -50,7 +49,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 function stubProvisioning(tokens = ["oct_conversation-secret"]) {
   let created = 0;
-  const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
+  const fetchMock = vi.fn<typeof globalThis.fetch>(async (_url, init) => {
     if (init?.method !== "POST") {
       return jsonResponse({
         deployment: {
@@ -65,7 +64,6 @@ function stubProvisioning(tokens = ["oct_conversation-secret"]) {
     created++;
     return jsonResponse({ token, record: { id: `token-${created}`, name: body.name } });
   });
-  vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }
 
@@ -80,7 +78,12 @@ describe("ensureDefaultOpenConnector", () => {
       JSON.stringify({ llm: { model: "conversation-model" } }),
     );
 
-    await ensureDefaultOpenConnector(office, "T123", defaultServer);
+    await ensureDefaultOpenConnector({
+      office,
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
 
     expect(fetchMock.mock.calls[0]?.[0].toString()).toBe(
       "http://127.0.0.1:3737/api/runtime-policy",
@@ -120,7 +123,12 @@ describe("ensureDefaultOpenConnector", () => {
     };
     writeFileSync(join(office.stateDir, "settings.json"), JSON.stringify({ mcpServers: own }));
 
-    await ensureDefaultOpenConnector(office, "T123", defaultServer);
+    await ensureDefaultOpenConnector({
+      office,
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(loadScopeMcpServers(office).conversation).toEqual(own);
@@ -133,7 +141,12 @@ describe("ensureDefaultOpenConnector", () => {
       join(stateDir, "settings.json"),
       JSON.stringify({ mcpServers: { "open-connector": { url: "https://global.example/mcp" } } }),
     );
-    await ensureDefaultOpenConnector(testOffice("C1"), "T123", defaultServer);
+    await ensureDefaultOpenConnector({
+      office: testOffice("C1"),
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
 
     const disabled = testOffice("C2");
     mkdirSync(disabled.stateDir, { recursive: true });
@@ -142,7 +155,12 @@ describe("ensureDefaultOpenConnector", () => {
       JSON.stringify({ mcpServers: { "open-connector": { disabled: true } } }),
     );
     writeFileSync(join(stateDir, "settings.json"), JSON.stringify({}));
-    await ensureDefaultOpenConnector(disabled, "T123", defaultServer);
+    await ensureDefaultOpenConnector({
+      office: disabled,
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(loadScopeMcpServers(disabled).conversation).toEqual({
@@ -152,15 +170,25 @@ describe("ensureDefaultOpenConnector", () => {
 
   test("does nothing without a default server, admin token, or Slack workspace", async () => {
     const fetchMock = stubProvisioning();
-    await ensureDefaultOpenConnector(testOffice(), "T123", undefined);
-    await ensureDefaultOpenConnector(testOffice(), "T123", defaultServer);
-    process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    await ensureDefaultOpenConnector(testOffice(), undefined, defaultServer);
-    await ensureDefaultOpenConnector(
-      workspace().office(createOfficeAddress("discord", "C123")),
-      "T123",
+    await ensureDefaultOpenConnector({
+      office: testOffice(),
+      platformWorkspaceId: "T123",
+      fetch: fetchMock,
+    });
+    await ensureDefaultOpenConnector({
+      office: testOffice(),
+      platformWorkspaceId: "T123",
       defaultServer,
-    );
+      fetch: fetchMock,
+    });
+    process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
+    await ensureDefaultOpenConnector({ office: testOffice(), defaultServer, fetch: fetchMock });
+    await ensureDefaultOpenConnector({
+      office: workspace().office(createOfficeAddress("discord", "C123")),
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(loadScopeMcpServers(testOffice()).conversation).toEqual({});
   });
@@ -170,20 +198,42 @@ describe("ensureDefaultOpenConnector", () => {
     const fetchMock = stubProvisioning();
     const office = testOffice();
     await Promise.all([
-      ensureDefaultOpenConnector(office, "T123", defaultServer),
-      ensureDefaultOpenConnector(office, "T123", defaultServer),
+      ensureDefaultOpenConnector({
+        office,
+        platformWorkspaceId: "T123",
+        defaultServer,
+        fetch: fetchMock,
+      }),
+      ensureDefaultOpenConnector({
+        office,
+        platformWorkspaceId: "T123",
+        defaultServer,
+        fetch: fetchMock,
+      }),
     ]);
-    await ensureDefaultOpenConnector(office, "T123", defaultServer);
+    await ensureDefaultOpenConnector({
+      office,
+      platformWorkspaceId: "T123",
+      defaultServer,
+      fetch: fetchMock,
+    });
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   });
 
   test("reports provisioning failure without writing settings", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ error: "down" }, 503)));
+    const fetchMock = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(jsonResponse({ error: "down" }, 503));
     const office = testOffice();
-    await expect(ensureDefaultOpenConnector(office, "T123", defaultServer)).rejects.toThrow(
-      /HTTP 503/,
-    );
+    await expect(
+      ensureDefaultOpenConnector({
+        office,
+        platformWorkspaceId: "T123",
+        defaultServer,
+        fetch: fetchMock,
+      }),
+    ).rejects.toThrow(/HTTP 503/);
     expect(loadScopeMcpServers(office).conversation).toEqual({});
   });
 });

@@ -13,6 +13,7 @@ export function execSimple(cmd: string, args: string[]): Promise<string> {
     child.stderr?.on("data", (d) => {
       stderr += d;
     });
+    child.on("error", reject);
     child.on("close", (code) => {
       if (code === 0) resolve(stdout);
       else reject(new Error(stderr || `Exit code ${code}`));

@@ -22,6 +22,14 @@ import type { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
 import type { Static, TSchema } from "typebox";
 
+export interface EnsureDefaultOpenConnectorOptions {
+  office: Office;
+  platformWorkspaceId?: string;
+  defaultServer?: McpServerConfig;
+  signal?: AbortSignal;
+  fetch?: typeof globalThis.fetch;
+}
+
 export interface BuildSystemPromptOptions {
   workspacePath: string;
   office: Office;

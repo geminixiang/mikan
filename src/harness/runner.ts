@@ -219,12 +219,12 @@ async function ensureDefaultMcpServers(options: {
 }): Promise<void> {
   if (options.trustModel === "open-trigger") return;
   try {
-    await ensureDefaultOpenConnector(
-      options.office,
-      options.platformWorkspaceId,
-      options.openConnector,
-      options.signal,
-    );
+    await ensureDefaultOpenConnector({
+      office: options.office,
+      platformWorkspaceId: options.platformWorkspaceId,
+      defaultServer: options.openConnector,
+      signal: options.signal,
+    });
   } catch (error) {
     options.signal?.throwIfAborted();
     log.logWarning(

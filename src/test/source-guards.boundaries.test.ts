@@ -39,6 +39,14 @@ const adapterImportAllowlist = ["src/main.ts", "src/index.ts", "src/cli/", "src/
 
 const sources = scanSourceTree();
 const productionFiles = sources.filter((source) => isProductionFile(source.file));
+const productionDoubleAssertionBudget: Record<string, number> = {
+  "src/adapters/slack/bot.ts": 1,
+  "src/adapters/web/admin/portal.ts": 2,
+  "src/adapters/web/session-view/portal.ts": 1,
+  "src/sessions/migrate-pi-084.ts": 2,
+  "src/sessions/migrate-v3.ts": 4,
+  "src/sessions/session-store.ts": 1,
+};
 
 function publishedEntryPoints(): Map<string, string> {
   const manifest = JSON.parse(readRepositoryFile("package.json")) as {
@@ -325,6 +333,33 @@ describe("boundary guard patterns", () => {
         !rule.spellings.some((spelling) => !spelling.violates),
     );
     expect(thin.map((rule) => rule.id)).toEqual([]);
+  });
+});
+
+describe("production double-assertion ratchet", () => {
+  test("recognizes nested assertions, not strings or single assertions", () => {
+    expect(
+      doubleAssertionPositions(parseSource("x.ts", "const x = (value as unknown) as X;")),
+    ).toHaveLength(1);
+    expect(
+      doubleAssertionPositions(parseSource("x.ts", 'const x = "as unknown as X";')),
+    ).toHaveLength(0);
+    expect(doubleAssertionPositions(parseSource("x.ts", "const x = value as X;"))).toHaveLength(0);
+  });
+
+  test("allows existing production assertions only within their per-file budgets", () => {
+    const offenders = productionFiles.flatMap(({ file, ast }) =>
+      doubleAssertionPositions(ast)
+        .slice(productionDoubleAssertionBudget[file] ?? 0)
+        .map((position) => describeLocation(ast, position)),
+    );
+    expect(offenders).toEqual([]);
+    expect(
+      Object.keys(productionDoubleAssertionBudget).filter((file) => !knownFiles.has(file)),
+    ).toEqual([]);
+    expect(
+      Object.values(productionDoubleAssertionBudget).reduce((total, count) => total + count, 0),
+    ).toBeLessThanOrEqual(11);
   });
 });
 

@@ -134,6 +134,10 @@ describe("execSimple", () => {
   test("rejects with the exit code when stderr is empty", async () => {
     await expect(execSimple("sh", ["-c", "exit 7"])).rejects.toThrow(/Exit code 7/);
   });
+
+  test("rejects when the executable cannot be started", async () => {
+    await expect(execSimple("mikan-command-that-does-not-exist", [])).rejects.toThrow(/ENOENT/);
+  });
 });
 
 describe("killProcessTree", () => {

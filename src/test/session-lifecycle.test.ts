@@ -395,13 +395,18 @@ describe("SessionLifecycle shutdown deadline", () => {
     running.running = true;
     running.runner = fakeRunner();
     lifecycle.set(running);
+    let finish!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
     const settlement = lifecycle.settle(running, async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await finished;
       running.running = false;
     });
 
-    await lifecycle.shutdown(5_000);
-    await settlement;
+    const shutdown = lifecycle.shutdown(5_000);
+    finish();
+    await Promise.all([shutdown, settlement]);
 
     expect(running.runner.abort).not.toHaveBeenCalled();
     expect(running.shutdownAborted).toBeUndefined();

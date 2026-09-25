@@ -8,7 +8,7 @@ import { readJsonSchemaFileIfExists } from "../file-guards.js";
 import { createWorkspace, isOfficeKey, listRegisteredOffices, officeKey } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import type { OfficeKey } from "../types.js";
-import type { McpServerConfig } from "./types.js";
+import type { EnsureDefaultOpenConnectorOptions, McpServerConfig } from "./types.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 
 const OPEN_CONNECTOR_SERVER = "open-connector";
@@ -54,11 +54,15 @@ async function createRuntimeToken(
   origin: string,
   adminToken: string,
   name: string,
+  fetchFn: typeof globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<string> {
   const headers = { Authorization: `Bearer ${adminToken}` };
   const policyValue = await readJson(
-    await fetch(new URL("/api/runtime-policy", origin), { headers, signal: requestSignal(signal) }),
+    await fetchFn(new URL("/api/runtime-policy", origin), {
+      headers,
+      signal: requestSignal(signal),
+    }),
     "runtime policy request",
   );
   if (!isRecord(policyValue) || !isRecord(policyValue.deployment)) {
@@ -66,7 +70,7 @@ async function createRuntimeToken(
   }
   const deployment = policyValue.deployment;
   const responseValue = await readJson(
-    await fetch(new URL("/api/runtime-tokens", origin), {
+    await fetchFn(new URL("/api/runtime-tokens", origin), {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -102,12 +106,13 @@ function isDeclared(office: Office): boolean {
   );
 }
 
-export async function ensureDefaultOpenConnector(
-  office: Office,
-  platformWorkspaceId: string | undefined,
-  defaultServer: McpServerConfig | undefined,
-  signal?: AbortSignal,
-): Promise<void> {
+export async function ensureDefaultOpenConnector({
+  office,
+  platformWorkspaceId,
+  defaultServer,
+  signal,
+  fetch: fetchFn = globalThis.fetch,
+}: EnsureDefaultOpenConnectorOptions): Promise<void> {
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
   if (!defaultServer?.url || !adminToken || office.address.platform !== "slack") return;
   if (!platformWorkspaceId) {
@@ -124,7 +129,7 @@ export async function ensureDefaultOpenConnector(
   const url = defaultServer.url;
   const task = (async () => {
     const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
-    const token = await createRuntimeToken(new URL(url).origin, adminToken, name, signal);
+    const token = await createRuntimeToken(new URL(url).origin, adminToken, name, fetchFn, signal);
     if (isDeclared(office)) return;
     const current = loadScopeMcpServers(office).conversation;
     updateConversationSettings(office, {
