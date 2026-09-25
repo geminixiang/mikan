@@ -29,16 +29,16 @@ import { appendTriggerAttribution } from "./prompt.js";
 
 import * as log from "../log.js";
 
-type LlmOperationSpan = {
+interface LlmOperationSpan {
   span: ObservabilitySpan;
   startedAt: number;
   firstTokenAt?: number;
-};
+}
 
-type RunOperationSpans = {
+interface RunOperationSpans {
   llm: LlmOperationSpan[];
   tools: Map<string, ObservabilitySpan>;
-};
+}
 
 const operationSpans = new WeakMap<RunnerSessionState, RunOperationSpans>();
 
@@ -579,7 +579,7 @@ function toolCategory(name: string): string {
   return "function";
 }
 
-type PresenterEventContext = {
+interface PresenterEventContext {
   runState: RunnerSessionState;
   responder: ConversationResponder;
   logCtx: NonNullable<RunnerSessionState["logCtx"]>;
@@ -587,7 +587,7 @@ type PresenterEventContext = {
   baseAttrs: { channel_id: string; session_id: string | undefined };
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
-};
+}
 
 type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
 

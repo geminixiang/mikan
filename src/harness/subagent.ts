@@ -377,10 +377,10 @@ async function reportSubagentUsage(
   }
 }
 
-type BoundedSubagentExecution<TOutput> = {
+interface BoundedSubagentExecution<TOutput> {
   result: SubagentRunResult<TOutput>;
   cleanup?: Promise<SubagentRunResult<TOutput>>;
-};
+}
 
 async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
   options: RunSubagentOptions<TOutputSchema>,
@@ -473,7 +473,7 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
 
 type TerminalSignal = "cancelled" | "timeout";
 
-type PreparedSubagentRun<TOutputSchema extends TSchema | undefined> = {
+interface PreparedSubagentRun<TOutputSchema extends TSchema | undefined> {
   request: SubagentRunRequest<TOutputSchema>;
   runId: string;
   startedAt: number;
@@ -481,7 +481,7 @@ type PreparedSubagentRun<TOutputSchema extends TSchema | undefined> = {
   session: MikanAgentSession;
   budget: ReturnType<typeof resolveBudget>;
   task: string;
-};
+}
 
 function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
   options: RunSubagentOptions<TOutputSchema>,

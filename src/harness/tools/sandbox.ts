@@ -21,12 +21,12 @@ const sandboxSchema = Type.Object({
   ),
 });
 
-type SandboxToolParams = {
+interface SandboxToolParams {
   label: string;
   action: "status" | "set";
   cpus?: string;
   memory?: string;
-};
+}
 
 interface SandboxToolContext {
   userId: string;

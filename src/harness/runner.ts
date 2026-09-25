@@ -233,7 +233,7 @@ async function ensureDefaultMcpServers(options: {
   }
 }
 
-type PrepareRunParams = {
+interface PrepareRunParams {
   message: ConversationMessage;
   responder: ConversationResponder;
   platform: MessagingInfo;
@@ -253,14 +253,14 @@ type PrepareRunParams = {
   bindTasks: ReturnType<typeof createMikanTools>["bindTasks"];
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
   bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
-};
+}
 
-type RunPromptContext = {
+interface RunPromptContext {
   pathContext: RuntimePathContext;
   memory: string;
   systemPrompt: string;
   triggerAttribution: string | undefined;
-};
+}
 
 async function preparePromptContext(params: PrepareRunParams): Promise<RunPromptContext> {
   const { message, platform, office, executor, resolveForRun, session } = params;
@@ -473,7 +473,7 @@ async function createRunnerAgentSession(params: {
   });
 }
 
-type PreparedTurnParams = {
+interface PreparedTurnParams {
   prepared: PreparedRunContext;
   presentation: RunPresentation;
   message: ConversationMessage;
@@ -487,7 +487,7 @@ type PreparedTurnParams = {
   conversationId: string;
   contextFile: string;
   sessionView: CreateRunnerOptions["sessionView"];
-};
+}
 
 async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   stopReason: string;
@@ -594,7 +594,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 
 type MikanToolBindings = ReturnType<typeof createMikanTools>;
 
-type RunnerInterfaceParams = {
+interface RunnerInterfaceParams {
   conversationId: string;
   conversationDir: string;
   sessionKey: string;
@@ -611,7 +611,7 @@ type RunnerInterfaceParams = {
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   chatSessionManager: ChatHistorySync;
   toolBindings: MikanToolBindings;
-};
+}
 
 async function steerRun(
   session: MikanAgentSession,

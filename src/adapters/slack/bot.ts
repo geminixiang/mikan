@@ -92,7 +92,7 @@ import { StreamStartLimiter } from "./stream-limits.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
-type SlackIncomingMessage = {
+interface SlackIncomingMessage {
   text?: string;
   channel: string;
   user?: string;
@@ -107,7 +107,7 @@ type SlackIncomingMessage = {
   blocks?: unknown[];
   attachments?: unknown[];
   files?: Array<{ name: string; url_private_download?: string; url_private?: string }>;
-};
+}
 
 type SlackHistoryMessage = Omit<SlackIncomingMessage, "channel" | "ts"> & { ts?: string };
 
@@ -124,7 +124,7 @@ function hasBotIdentity(message: SlackHistoryMessage): boolean {
 const USER_MESSAGE_SUBTYPES = new Set([undefined, "file_share"]);
 const BOT_MESSAGE_SUBTYPES = new Set([...USER_MESSAGE_SUBTYPES, "bot_message"]);
 
-type CommandAdapterInput = {
+interface CommandAdapterInput {
   conversationId: string;
   userId: string;
   userName: string | undefined;
@@ -133,7 +133,7 @@ type CommandAdapterInput = {
   ephemeralChannelId?: string;
   threadTs?: string;
   sessionKey?: string;
-};
+}
 
 const MAX_STREAM_TEXT_CHARS = 12_000;
 

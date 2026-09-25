@@ -84,10 +84,10 @@ import type {
   SentryTransactionPayload,
 } from "./types.js";
 
-type TraceAttributionEntry = {
+interface TraceAttributionEntry {
   attributes: SentryAttributionAttributes;
   expiresAt: number;
-};
+}
 
 const traceAttribution = new Map<string, TraceAttributionEntry>();
 

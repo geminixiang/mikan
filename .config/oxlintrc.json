@@ -32,6 +32,7 @@
     ],
     "typescript/no-explicit-any": "error",
     "typescript/consistent-type-imports": "error",
+    "typescript/consistent-type-definitions": ["error", "interface"],
     "unicorn/require-post-message-target-origin": "off",
     "eslint/no-await-in-loop": "off",
     "node/no-process-env": "error"
