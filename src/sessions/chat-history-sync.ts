@@ -1,5 +1,5 @@
-import type { SessionEntry } from "./types.js";
-import { officeSessionsDir } from "../office/index.js";
+import { CONTROL_INPUT_CUSTOM_TYPE, type SessionEntry } from "./types.js";
+import { OFFICE_LOG_FILENAME, officeSessionsDir } from "../office/index.js";
 import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
@@ -169,7 +169,7 @@ export class ChatHistorySync {
     const sessionManager = await openManagedSession(sessionFile, cwd);
     try {
       await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-        source: "log.jsonl",
+        source: OFFICE_LOG_FILENAME,
         messageCount: 0,
         resetAt: this.now().toISOString(),
         lastMessageId: lastMessageId ? lastMessageId : undefined,
@@ -433,7 +433,7 @@ async function bootstrapSessionFromLog(
   try {
     await appendLogRecordsToSession(sessionManager, records);
     await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-      source: "log.jsonl",
+      source: OFFICE_LOG_FILENAME,
       messageCount: records.length,
       lastMessageId,
     });
@@ -461,7 +461,7 @@ async function syncSessionManagerFromLog(
     existingEntries.flatMap((entry) => {
       if (
         entry.type !== "custom" ||
-        entry.customType !== "mikan.control_input" ||
+        entry.customType !== CONTROL_INPUT_CUSTOM_TYPE ||
         !isRecord(entry.data)
       )
         return [];
@@ -491,7 +491,7 @@ async function syncSessionManagerFromLog(
   const lastMessageId = syncCandidates.at(-1)?.message.ts;
   await appendLogRecordsToSession(sessionManager, newRecords);
   await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-    source: "log.jsonl",
+    source: OFFICE_LOG_FILENAME,
     messageCount: newRecords.length,
     lastMessageId,
   });
@@ -662,7 +662,7 @@ function zeroUsage(): object {
 }
 
 function readConversationLog(conversationDir: string): LogRecord[] {
-  const logFile = join(conversationDir, "log.jsonl");
+  const logFile = join(conversationDir, OFFICE_LOG_FILENAME);
   const raw = readTextFileIfExists(logFile);
   if (raw === undefined) return [];
 

@@ -3,7 +3,7 @@ import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import {
   createConversationEvent,
   createConversationMessage,
@@ -20,7 +20,12 @@ import {
   type PlatformHistoryOptions,
   type PlatformUserInfo,
 } from "../index.js";
-import { createOfficeAddress, listRegisteredOffices, type Workspace } from "../../office/index.js";
+import {
+  createOfficeAddress,
+  listRegisteredOffices,
+  type Office,
+  type Workspace,
+} from "../../office/index.js";
 import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
 import {
   slackConversationAutoReplyMode,
@@ -240,8 +245,12 @@ export class SlackMessagingBot implements MessagingBot {
   private intake = new MessagingIntakeTracker("Slack");
   private eventScheduler: EventScheduler | null = null;
 
+  private office(channelId: string): Office {
+    return this.workspace.office(createOfficeAddress("slack", channelId));
+  }
+
   private conversationDir(channelId: string): string {
-    return this.workspace.office(createOfficeAddress("slack", channelId)).dir;
+    return this.office(channelId).dir;
   }
 
   private resolveReplyMode(address: OfficeAddress): "top-level" | "thread" {
@@ -837,7 +846,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   ownsBlockKitMessage(channel: string, ts: string, threadTs?: string): boolean {
-    const content = readTextFileIfExists(join(this.conversationDir(channel), "log.jsonl"));
+    const content = readTextFileIfExists(this.office(channel).logPath);
     if (content === undefined) return false;
     for (const line of content.trim().split("\n").toReversed()) {
       try {
@@ -1991,7 +2000,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private async getExistingTimestamps(channelId: string): Promise<Set<string>> {
-    const logPath = join(this.conversationDir(channelId), "log.jsonl");
+    const { logPath } = this.office(channelId);
     const timestamps = new Set<string>();
     if (!existsSync(logPath)) return timestamps;
 
@@ -2096,8 +2105,7 @@ export class SlackMessagingBot implements MessagingBot {
 
     const channelsToBackfill: Array<[string, SlackChannel]> = [];
     for (const [channelId, channel] of this.channels) {
-      const logPath = join(this.conversationDir(channelId), "log.jsonl");
-      if (existsSync(logPath)) {
+      if (existsSync(this.office(channelId).logPath)) {
         channelsToBackfill.push([channelId, channel]);
       }
     }

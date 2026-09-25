@@ -433,6 +433,17 @@ function normalizeVaultTargetPath(targetPath?: string): string | undefined {
   return normalized.startsWith("/") ? normalized : undefined;
 }
 
+export const GOOGLE_VAULT_CREDENTIAL_FILES = Object.freeze({
+  workspaceCli: Object.freeze({
+    relativePath: "gws.json",
+    targetPath: guestHomePath(".config/gws/credentials.json"),
+  }),
+  cloudSdk: Object.freeze({
+    relativePath: "gcloud-adc.json",
+    targetPath: guestHomePath(".config/gcloud/application_default_credentials.json"),
+  }),
+});
+
 export function defaultVaultTargetPath(relativePath: string): string {
   const normalized = normalizeVaultRelativePath(relativePath) ?? relativePath.replace(/^\/+/, "");
   return guestHomePath(normalized);
@@ -442,11 +453,8 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   const normalized = normalizeVaultRelativePath(relativePath);
   if (!normalized) return undefined;
 
-  if (normalized === "gws.json") {
-    return guestHomePath(".config/gws/credentials.json");
-  }
-  if (normalized === "gcloud-adc.json") {
-    return guestHomePath(".config/gcloud/application_default_credentials.json");
+  for (const file of Object.values(GOOGLE_VAULT_CREDENTIAL_FILES)) {
+    if (normalized === file.relativePath) return file.targetPath;
   }
   if (normalized === ".ssh" || normalized.startsWith(".ssh/")) {
     return guestHomePath(".ssh");

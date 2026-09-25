@@ -31,6 +31,7 @@ import { guestWorkspacePath } from "../sandbox/layout.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
 import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
 
+export const OFFICE_LOG_FILENAME = "log.jsonl";
 const OFFICE_KEY_VERSION = "v1";
 const OFFICE_KEY_DOMAIN = "office-address-v1";
 const OFFICE_KEY_DIGEST_LENGTH = 16;
@@ -164,7 +165,7 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
         skillsDir: join(dir, "skills"),
         sessionsDir: officeSessionsDir(dir),
         attachmentsDir: join(dir, "attachments"),
-        logPath: join(dir, "log.jsonl"),
+        logPath: join(dir, OFFICE_LOG_FILENAME),
         stateDir: join(stateDir, "conversations", key),
         workspace,
         ensure(): string {
@@ -1059,13 +1060,13 @@ function isLegacyOfficeDir(workspaceRoot: string, entry: Dirent): boolean {
   if (!entry.isDirectory()) return false;
   if (looksLikeConversationOffice(join(workspaceRoot, entry.name))) return true;
   log.logInfo(
-    `[office] Skipping non-office workspace directory (no log.jsonl or sessions/): ${entry.name}`,
+    `[office] Skipping non-office workspace directory (no ${OFFICE_LOG_FILENAME} or sessions/): ${entry.name}`,
   );
   return false;
 }
 
 function looksLikeConversationOffice(dir: string): boolean {
-  return existsSync(join(dir, "log.jsonl")) || existsSync(join(dir, "sessions"));
+  return existsSync(join(dir, OFFICE_LOG_FILENAME)) || existsSync(join(dir, "sessions"));
 }
 
 export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary): string {

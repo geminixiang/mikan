@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { isRecord, readTextFileIfExists } from "../../file-guards.js";
+import { OFFICE_LOG_FILENAME } from "../../office/index.js";
 
 export interface RecentLine {
   ts: string;
@@ -29,7 +30,7 @@ export function readRecentScope(
 ): RecentLine[] {
   const limit = options.limit ?? 12;
   const humanize = options.humanize ?? ((text: string) => text);
-  const raw = readTextFileIfExists(join(conversationDir, "log.jsonl"));
+  const raw = readTextFileIfExists(join(conversationDir, OFFICE_LOG_FILENAME));
   if (raw === undefined) return [];
   const lines: RecentLine[] = [];
   for (const line of raw.split("\n")) {

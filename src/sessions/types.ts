@@ -36,6 +36,8 @@ export type SessionEntry = Entry;
 
 export const CURRENT_SESSION_VERSION = 4;
 
+export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
+
 export interface SessionCreateInfo {
   id?: string;
   parentSession?: string;

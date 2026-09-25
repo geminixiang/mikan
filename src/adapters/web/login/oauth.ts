@@ -1,7 +1,7 @@
 import { readEnv } from "../../../env-manifest.js";
 import { isRecord, parseJsonValue } from "../../../file-guards.js";
 import * as log from "../../../log.js";
-import { guestHomePath } from "../../../sandbox/layout.js";
+import { GOOGLE_VAULT_CREDENTIAL_FILES } from "../../../vault/index.js";
 
 export type { LoginCredentialKind, OAuthService } from "./types.js";
 import type { OAuthService } from "./types.js";
@@ -65,8 +65,8 @@ function getBuiltinOAuthServices(): OAuthService[] {
       },
       fileOutput: {
         type: "authorized_user",
-        relativePath: "gws.json",
-        targetPath: guestHomePath(".config/gws/credentials.json"),
+        relativePath: GOOGLE_VAULT_CREDENTIAL_FILES.workspaceCli.relativePath,
+        targetPath: GOOGLE_VAULT_CREDENTIAL_FILES.workspaceCli.targetPath,
       },
     },
     {
@@ -88,8 +88,8 @@ function getBuiltinOAuthServices(): OAuthService[] {
       },
       fileOutput: {
         type: "authorized_user",
-        relativePath: "gcloud-adc.json",
-        targetPath: guestHomePath(".config/gcloud/application_default_credentials.json"),
+        relativePath: GOOGLE_VAULT_CREDENTIAL_FILES.cloudSdk.relativePath,
+        targetPath: GOOGLE_VAULT_CREDENTIAL_FILES.cloudSdk.targetPath,
         envKey: "GOOGLE_APPLICATION_CREDENTIALS",
         additionalEnvKeys: ["CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"],
       },

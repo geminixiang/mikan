@@ -3,6 +3,7 @@ import type { ExecutionToolContext, ThinkingLevel } from "@earendil-works/pi-age
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
+import { CONTROL_INPUT_CUSTOM_TYPE } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
@@ -619,7 +620,9 @@ async function steerRun(
   message: ConversationMessage,
 ): Promise<boolean> {
   if (!activeMessage) return false;
-  await session.sessionStore.appendCustomEntry("mikan.control_input", { messageId: message.id });
+  await session.sessionStore.appendCustomEntry(CONTROL_INPUT_CUSTOM_TYPE, {
+    messageId: message.id,
+  });
   if (!session.isActiveRun)
     throw new Error("Task is preparing or settling. Please retry this update shortly.");
   if (message.userId !== activeMessage.userId)

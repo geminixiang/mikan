@@ -1,5 +1,6 @@
 import { readTextFileIfExists } from "../../file-guards.js";
 import { join } from "node:path";
+import { OFFICE_LOG_FILENAME } from "../../office/index.js";
 import { resolveSlackSessionKey } from "./session.js";
 import { getThreadSessionFile } from "../../sessions/store.js";
 import { reportUserFacingError } from "../../observability/index.js";
@@ -13,7 +14,7 @@ export function isTaskStatusQuestion(text: string): boolean {
 }
 
 export function readTaskRoots(conversationDir: string): Map<string, string> {
-  const raw = readTextFileIfExists(join(conversationDir, "log.jsonl")) ?? "";
+  const raw = readTextFileIfExists(join(conversationDir, OFFICE_LOG_FILENAME)) ?? "";
   const roots = new Map<string, string>();
   for (const line of raw.split("\n")) {
     try {
