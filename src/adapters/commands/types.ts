@@ -12,6 +12,7 @@ import type { DockerContainerManager } from "../../sandbox/provisioner.js";
 import type { SandboxConfig } from "../../sandbox/index.js";
 import type { SandboxResourceController } from "../../types.js";
 import type { VaultManager } from "../../vault/index.js";
+import type { AdminTokenCreateOptions } from "../web/admin/types.js";
 import type { SessionViewTokenCreateOptions } from "../web/session-view/types.js";
 
 interface CommandArgSpec {
@@ -55,12 +56,7 @@ export interface SessionViewTokenStoreLike {
 }
 
 export interface AdminTokenStoreLike {
-  create(args: {
-    platform: PlatformName;
-    platformUserId: string;
-    conversationId: string;
-    platformUserName?: string;
-  }): { token: string };
+  create(options: AdminTokenCreateOptions): { token: string };
 }
 
 interface CommandRuntimeBridge {

@@ -43,6 +43,13 @@ export interface EventSummary {
   timezone: string | null;
 }
 
+export interface AdminTokenCreateOptions {
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+  platformUserName?: string;
+}
+
 export interface AdminToken extends TokenRecord {
   platform: PlatformName;
   platformUserId: string;

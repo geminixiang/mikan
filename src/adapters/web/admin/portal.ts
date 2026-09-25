@@ -14,9 +14,8 @@ import { atomicWritePrivateFile } from "../../../file-guards.js";
 import { MikanModels, parseFrontmatter, validateSkill } from "../../../harness/index.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { EventStore } from "../../../events/index.js";
-import type { PlatformName } from "../../index.js";
 import { InMemoryTokenStore } from "../token-store.js";
-import type { AdminToken } from "./types.js";
+import type { AdminToken, AdminTokenCreateOptions } from "./types.js";
 import {
   adminViewFunctionsScript,
   adminViewStartupScript,
@@ -27,12 +26,7 @@ export type { AdminToken } from "./types.js";
 const ADMIN_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
-  create(args: {
-    platform: PlatformName;
-    platformUserId: string;
-    conversationId: string;
-    platformUserName?: string;
-  }): AdminToken {
+  create(args: AdminTokenCreateOptions): AdminToken {
     this.deleteWhere(
       (token) => token.platform === args.platform && token.platformUserId === args.platformUserId,
     );

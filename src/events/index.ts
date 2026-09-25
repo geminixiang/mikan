@@ -167,8 +167,8 @@ function isValidIsoTimestampWithOffset(value: string): boolean {
 }
 
 export function parseEventPayload(content: string, filename: string): EventFilePayload {
-  const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail) =>
-    detail === "unexpected JSON shape"
+  const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail, kind) =>
+    kind === "shape"
       ? `Expected top-level JSON object in ${filename}`
       : `Malformed event file ${filename}: ${detail}`,
   );

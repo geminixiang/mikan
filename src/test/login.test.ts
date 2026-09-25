@@ -28,6 +28,26 @@ function configuredService(overrides: Record<string, unknown>) {
 }
 
 describe("OAuth services", () => {
+  test("warns about a non-array OAUTH_SERVICES_JSON and keeps the builtins", () => {
+    const warning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    process.env.OAUTH_SERVICES_JSON = "{}";
+    expect(getOAuthServices().some((service) => service.id === "custom")).toBe(false);
+    expect(warning).toHaveBeenCalledWith(
+      "Ignoring OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions",
+      "expected a JSON array of OAuth service definitions",
+    );
+  });
+
+  test("warns about unparsable OAUTH_SERVICES_JSON as invalid JSON", () => {
+    const warning = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    process.env.OAUTH_SERVICES_JSON = "not json";
+    getOAuthServices();
+    expect(warning).toHaveBeenCalledWith(
+      "Ignoring OAUTH_SERVICES_JSON: invalid JSON",
+      expect.any(String),
+    );
+  });
+
   test("normalizes scalar fields and token keys without normalizing aliases or scopes", () => {
     expect(
       configuredService({

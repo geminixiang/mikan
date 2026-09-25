@@ -177,7 +177,7 @@ function parseSessionEntry(line: string): { type?: string; kind?: string } {
   return parseJsonValue(
     line,
     (value): value is { type?: string; kind?: string } => isRecord(value),
-    (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
+    (detail, kind) => (kind === "shape" ? "expected a JSON object" : detail),
   );
 }
 

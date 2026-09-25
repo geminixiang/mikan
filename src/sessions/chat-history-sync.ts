@@ -683,7 +683,7 @@ function parseLogLine(
     return parseJsonValue(
       line,
       (value): value is ConversationLogMessage => isRecord(value),
-      (detail) => (detail === "unexpected JSON shape" ? "expected a JSON object" : detail),
+      (detail, kind) => (kind === "shape" ? "expected a JSON object" : detail),
     );
   } catch (err) {
     log.logWarning(

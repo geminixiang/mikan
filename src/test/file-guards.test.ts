@@ -211,6 +211,36 @@ describe("parseJsonValue", () => {
   });
 });
 
+function describeFailure(detail: string, kind: string): string {
+  return `${kind}|${detail}`;
+}
+
+describe("malformed JSON failure kinds", () => {
+  test("reports syntax failures", () => {
+    expect(() => parseJsonValue("not json", isRecord, describeFailure)).toThrow(/^syntax\|/);
+  });
+
+  test("reports top-level shape failures from a validator", () => {
+    expect(() => parseJsonValue("[]", isRecord, describeFailure)).toThrow(
+      "shape|unexpected JSON shape",
+    );
+  });
+
+  test("reports top-level shape failures from a schema", () => {
+    const schema = Type.Object({ x: Type.Number() });
+    expect(() => parseJsonSchemaValue("[]", schema, describeFailure)).toThrow(
+      "shape|unexpected JSON shape",
+    );
+  });
+
+  test("reports nested field failures with their path", () => {
+    const schema = Type.Object({ x: Type.Number() });
+    expect(() => parseJsonSchemaValue('{"x": "string"}', schema, describeFailure)).toThrow(
+      /^field\|\/x: /,
+    );
+  });
+});
+
 describe("isRecord", () => {
   test("returns true for plain object", () => {
     expect(isRecord({})).toBe(true);

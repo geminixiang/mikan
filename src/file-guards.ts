@@ -15,6 +15,12 @@ import * as log from "./log.js";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 
+type JsonFailureKind = "syntax" | "shape" | "field";
+
+type MalformedJsonMessage = (detail: string, kind: JsonFailureKind) => string;
+
+const UNEXPECTED_JSON_SHAPE = "unexpected JSON shape";
+
 export function ensureDirExists(dir: string): void {
   mkdirSync(dir, { recursive: true });
 }
@@ -33,7 +39,7 @@ export function readTextFileIfExists(path: string): string | undefined {
 export function readJsonFileIfExists<T>(
   path: string,
   validate: (value: unknown) => value is T,
-  malformedMessage: (detail: string) => string,
+  malformedMessage: MalformedJsonMessage,
 ): T | undefined {
   const raw = readTextFileIfExists(path);
   return raw === undefined ? undefined : parseJsonValue(raw, validate, malformedMessage);
@@ -42,29 +48,29 @@ export function readJsonFileIfExists<T>(
 export function readJsonSchemaFileIfExists<T extends TSchema>(
   path: string,
   schema: T,
-  malformedMessage: (detail: string) => string,
+  malformedMessage: MalformedJsonMessage,
 ): Static<T> | undefined {
   const raw = readTextFileIfExists(path);
   return raw === undefined ? undefined : parseJsonSchemaValue(raw, schema, malformedMessage);
 }
 
-function parseJson(raw: string, malformedMessage: (detail: string) => string): unknown {
+function parseJson(raw: string, malformedMessage: MalformedJsonMessage): unknown {
   try {
     return JSON.parse(raw);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    throw new Error(malformedMessage(detail), { cause: err });
+    throw new Error(malformedMessage(detail, "syntax"), { cause: err });
   }
 }
 
 export function parseJsonValue<T>(
   raw: string,
   validate: (value: unknown) => value is T,
-  malformedMessage: (detail: string) => string,
+  malformedMessage: MalformedJsonMessage,
 ): T {
   const parsed = parseJson(raw, malformedMessage);
   if (!validate(parsed)) {
-    throw new Error(malformedMessage("unexpected JSON shape"));
+    throw new Error(malformedMessage(UNEXPECTED_JSON_SHAPE, "shape"));
   }
   return parsed;
 }
@@ -72,7 +78,7 @@ export function parseJsonValue<T>(
 export function parseJsonSchemaValue<T extends TSchema>(
   raw: string,
   schema: T,
-  malformedMessage: (detail: string) => string,
+  malformedMessage: MalformedJsonMessage,
 ): Static<T> {
   const parsed = parseJson(raw, malformedMessage);
   if (!Value.Check(schema, parsed)) {
@@ -81,11 +87,10 @@ export function parseJsonSchemaValue<T extends TSchema>(
       firstError = err;
       break;
     }
-    const detail =
-      !firstError || firstError.path === "" || firstError.path === "/"
-        ? "unexpected JSON shape"
-        : `${firstError.path}: ${firstError.message}`;
-    throw new Error(malformedMessage(detail));
+    if (!firstError || firstError.path === "" || firstError.path === "/") {
+      throw new Error(malformedMessage(UNEXPECTED_JSON_SHAPE, "shape"));
+    }
+    throw new Error(malformedMessage(`${firstError.path}: ${firstError.message}`, "field"));
   }
   return parsed;
 }

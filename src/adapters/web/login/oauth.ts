@@ -6,6 +6,8 @@ import { GOOGLE_VAULT_CREDENTIAL_FILES } from "../../../vault/index.js";
 export type { LoginCredentialKind, OAuthService } from "./types.js";
 import type { OAuthService } from "./types.js";
 
+const OAUTH_SERVICES_SHAPE_MESSAGE = "expected a JSON array of OAuth service definitions";
+
 const DEFAULT_GOOGLE_WORKSPACE_CLI_SCOPES = [
   "https://www.googleapis.com/auth/drive",
   "https://mail.google.com/",
@@ -239,16 +241,14 @@ export function getOAuthServices(): OAuthService[] {
 
   let parsed: unknown[];
   try {
-    parsed = parseJsonValue(raw, Array.isArray, (detail) =>
-      detail === "unexpected JSON shape"
-        ? "expected a JSON array of OAuth service definitions"
-        : detail,
+    parsed = parseJsonValue(raw, Array.isArray, (detail, kind) =>
+      kind === "shape" ? OAUTH_SERVICES_SHAPE_MESSAGE : detail,
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     log.logWarning(
-      detail === "expected a JSON array of OAuth service definitions"
-        ? "Ignoring OAUTH_SERVICES_JSON: expected a JSON array of OAuth service definitions"
+      detail === OAUTH_SERVICES_SHAPE_MESSAGE
+        ? `Ignoring OAUTH_SERVICES_JSON: ${OAUTH_SERVICES_SHAPE_MESSAGE}`
         : "Ignoring OAUTH_SERVICES_JSON: invalid JSON",
       detail,
     );

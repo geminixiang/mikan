@@ -137,8 +137,8 @@ export type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 export type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
 
 export function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
-  return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail) =>
-    detail === "unexpected JSON shape"
+  return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail, kind) =>
+    kind === "shape"
       ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
       : `Malformed settings file at ${settingsPath}: ${detail}`,
   );
