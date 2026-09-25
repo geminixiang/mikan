@@ -47,7 +47,7 @@ export async function postMessage(
   threadTs?: string,
 ): Promise<string> {
   const res = await client.chat.postMessage({ channel, text, thread_ts: threadTs });
-  if (!res.ok || !res.ts) throw new Error(`chat.postMessage failed: ${res.error ?? "missing ts"}`);
+  if (!res.ts) throw new Error("chat.postMessage returned no ts");
   console.log(
     JSON.stringify({
       kind: "qa_post",
@@ -145,14 +145,13 @@ export async function uploadTextFile(
   content: string,
   initialComment: string,
 ): Promise<void> {
-  const res = await client.files.uploadV2({
+  await client.files.uploadV2({
     channel_id: channel,
     file: Buffer.from(content),
     filename,
     title: filename,
     initial_comment: initialComment,
   });
-  if (!res.ok) throw new Error("files.uploadV2 failed");
 }
 
 export interface FileUploadSpec {
@@ -175,7 +174,6 @@ export async function uploadFiles(
       title: spec.filename,
     })),
   });
-  if (!res.ok) throw new Error("files.uploadV2 failed");
   console.log(
     JSON.stringify({
       kind: "qa_multi_upload",
@@ -198,9 +196,7 @@ export async function uploadFiles(
 export async function openDmChannel(client: WebClient, userId: string): Promise<string> {
   const res = await client.conversations.open({ users: userId });
   const channelId = res.channel?.id;
-  if (!res.ok || !channelId) {
-    throw new Error(`conversations.open failed: ${res.error ?? "missing channel id"}`);
-  }
+  if (!channelId) throw new Error("conversations.open returned no channel id");
   return channelId;
 }
 
@@ -210,7 +206,6 @@ export async function fetchThreadMessages(
   threadTs: string,
 ): Promise<SlackMessage[]> {
   const res = await client.conversations.replies({ channel, ts: threadTs, limit: 50 });
-  if (!res.ok) throw new Error(`conversations.replies failed: ${res.error ?? "unknown"}`);
   return (res.messages ?? []) as SlackMessage[];
 }
 
@@ -225,7 +220,6 @@ async function fetchRecentMessages(
     inclusive: false,
     limit: 50,
   });
-  if (!res.ok) throw new Error(`conversations.history failed: ${res.error ?? "unknown"}`);
   return (res.messages ?? []) as SlackMessage[];
 }
 
