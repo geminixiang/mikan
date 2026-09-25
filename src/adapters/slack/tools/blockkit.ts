@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import type { SlackBlockKitOps } from "../types.js";
 import { LABEL_PARAMETER } from "../../../harness/tools/host-fn-tool.js";
 
@@ -72,7 +72,7 @@ export function createSlackBlockKitTool(): {
     description:
       "Post an interactive Slack Block Kit message (buttons, select menus, custom layouts) to the current conversation, or update one previously posted with this tool. Normal replies already render Markdown — use this only when you need interactive elements or a layout Markdown cannot express. When a user clicks a button or picks an option, you receive a new message '[Slack action] <action_id>: <value>' — choose descriptive action_ids and values so the interaction tells you what to do. Returns the message ts; pass it back as update_ts to edit the message later (e.g. refreshing vote tallies). After handling an interaction, update the message via update_ts to replace the buttons with the outcome (e.g. '✅ approved') — buttons stay clickable otherwise and repeated clicks re-trigger the action. If Slack rejects the blocks, the error includes its validation messages — fix the JSON and retry.",
     parameters: blockkitSchema,
-    prepareArguments: guardBlockKitArguments as (args: unknown) => typeof blockkitSchema.static,
+    prepareArguments: guardBlockKitArguments as (args: unknown) => Static<typeof blockkitSchema>,
     execute: async (
       _toolCallId: string,
       {

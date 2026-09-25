@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubIssueFn, GithubIssueRequest } from "../types.js";
 

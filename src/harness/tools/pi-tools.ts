@@ -5,7 +5,7 @@ import {
   createWriteTool,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
-import type { TSchema } from "@sinclair/typebox";
+import type { TObject } from "typebox";
 import type { MikanHarnessTool } from "../types.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
@@ -23,7 +23,7 @@ export function tagHarnessTool(tool: MikanHarnessTool): MikanHarnessTool {
 }
 
 function withLabel(tool: MikanHarnessTool): MikanHarnessTool {
-  const schema = tool.parameters as TSchema;
+  const schema = tool.parameters as TObject;
   const parameters = {
     ...schema,
     properties: {

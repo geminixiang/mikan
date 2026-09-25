@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { basename, extname } from "node:path";
 
 const attachSchema = Type.Object({

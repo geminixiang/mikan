@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { effectiveStateDir } from "../cli/arg-grammar.js";
@@ -65,7 +65,7 @@ const SettingsFileSchema = Type.Object({
     Type.Object({
       provider: Type.Optional(Type.String()),
       model: Type.Optional(Type.String()),
-      thinkingLevel: Type.Optional(Type.Union(THINKING_LEVELS.map((level) => Type.Literal(level)))),
+      thinkingLevel: Type.Optional(Type.Enum(THINKING_LEVELS)),
     }),
   ),
   sentry: Type.Optional(

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type {
   MessagingBot,
   MessagingEventHandler,

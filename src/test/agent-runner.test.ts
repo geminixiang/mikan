@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../types.js";
 import type { McpServerConfig } from "../harness/types.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";

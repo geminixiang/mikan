@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";

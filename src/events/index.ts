@@ -85,7 +85,7 @@ export interface PeriodicEventInfo {
   nextRun: string | null;
 }
 
-import { type Static, Type } from "@sinclair/typebox";
+import { type Static, Type } from "typebox";
 import { parseJsonSchemaValue } from "../file-guards.js";
 
 export const EventTypeSchema = Type.Union([

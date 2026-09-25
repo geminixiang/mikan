@@ -11,7 +11,6 @@ import {
   getDefaultEnvironment,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { TSchema } from "@sinclair/typebox";
 import type { MikanHarnessTool } from "./types.js";
 import { guardMcpToolResult, type McpCallResult } from "./mcp-result.js";
 import { tagHarnessTool } from "./tools/pi-tools.js";
@@ -202,7 +201,7 @@ async function connectServer(
         name: `mcp__${name}__${mcpTool.name}`,
         label: `${name}: ${mcpTool.name}`,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-        parameters: mcpTool.inputSchema as unknown as TSchema,
+        parameters: mcpTool.inputSchema,
         execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
           const [, params, , toolContext, , context] = args;
           const result = await client.callTool(

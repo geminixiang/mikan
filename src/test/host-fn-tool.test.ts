@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
+import { Value } from "typebox/value";
 import { defineHostFnTool } from "../harness/tools/host-fn-tool.js";
 
 describe("defineHostFnTool", () => {
@@ -16,6 +17,8 @@ describe("defineHostFnTool", () => {
     expect(schema.required).toContain("label");
     expect(schema.properties).toHaveProperty("label");
     expect(schema.required).toContain("foo");
+    expect(Value.Check(tool.parameters, { foo: "bar", label: "Working" })).toBe(true);
+    expect(Value.Check(tool.parameters, { foo: "bar" })).toBe(false);
   });
 
   test("strips label before the run body sees the arguments", async () => {

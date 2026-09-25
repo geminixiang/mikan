@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import { randomUUID } from "node:crypto";
 import type { Executor } from "../../sandbox/types.js";
 import { shellEscape } from "../../sandbox/utils.js";

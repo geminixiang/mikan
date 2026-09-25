@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, test, expect, vi } from "vitest";
-import { Type, type TSchema } from "@sinclair/typebox";
+import { Type, type TSchema } from "typebox";
 import { type AgentTool } from "@earendil-works/pi-agent-core";
 import {
   fauxProvider,

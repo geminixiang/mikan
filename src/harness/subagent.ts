@@ -6,8 +6,8 @@ import type {
   ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
-import { Kind, Type, type TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import { Type, type TSchema } from "typebox";
+import { Value } from "typebox/value";
 import type { MikanModels } from "./models.js";
 import type {
   MikanHarnessTool,
@@ -77,7 +77,7 @@ function hydrateObject(schema: Record<string, unknown>, options: Record<string, 
 }
 
 function hydrateSchema(schema: unknown): TSchema {
-  if (isRecord(schema) && Kind in schema) return schema as TSchema;
+  if (isRecord(schema) && "~kind" in schema) return schema;
   if (!isRecord(schema)) return Type.Unknown();
 
   if (Array.isArray(schema.enum)) {

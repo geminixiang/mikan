@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
 import { isEventTriggerAttribution } from "../harness/presenter.js";

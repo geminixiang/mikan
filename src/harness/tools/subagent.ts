@@ -1,5 +1,5 @@
 import type { AgentTool, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
-import { Type, type Static, type TSchema } from "@sinclair/typebox";
+import { Type, type Static, type TSchema } from "typebox";
 import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "../types.js";
 import type {
   SubagentProgressNode,

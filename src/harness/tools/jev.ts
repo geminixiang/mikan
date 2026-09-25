@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 import {
   evaluateWithJev,
   JevNotConfiguredError,

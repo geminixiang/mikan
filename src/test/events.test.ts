@@ -71,7 +71,7 @@ describe("event payload parsing", () => {
         JSON.stringify({ type: "immediate", conversationId: "C123", text: ["not", "a", "string"] }),
         "invalid-field.json",
       ),
-    ).toThrow(/Malformed event file invalid-field\.json.*text.*Expected string/);
+    ).toThrow(/Malformed event file invalid-field\.json.*text.*must be string/);
   });
 
   test("rejects event files whose top-level JSON is not an object", () => {

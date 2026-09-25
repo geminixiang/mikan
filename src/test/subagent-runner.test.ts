@@ -11,7 +11,7 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
-import { Type, type TSchema } from "@sinclair/typebox";
+import { Type, type TSchema } from "typebox";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   DEFAULT_SUBAGENT_BUDGET,

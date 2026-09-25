@@ -20,7 +20,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
-import type { Static, TSchema } from "@sinclair/typebox";
+import type { Static, TSchema } from "typebox";
 
 export interface BuildSystemPromptOptions {
   workspacePath: string;

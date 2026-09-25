@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { SandboxConfig } from "../../sandbox/types.js";
 import type { OfficeAddress, ResourceLimits, SandboxResourceController } from "../../types.js";
 import { runtimeResourceKey } from "../../sandbox/identity.js";

@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { TSchema } from "@sinclair/typebox";
+import type { TSchema } from "typebox";
 
 export interface PlatformToolRunContext {
   conversationId: string;

@@ -1,5 +1,5 @@
-import type { Static, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 import {
   closeSync,
   constants as fsConstants,
@@ -83,15 +83,11 @@ export function parseJsonSchemaValue<T extends TSchema>(
 ): Static<T> {
   const parsed = parseJson(raw, malformedMessage);
   if (!Value.Check(schema, parsed)) {
-    let firstError: { path: string; message: string } | undefined;
-    for (const err of Value.Errors(schema, parsed)) {
-      firstError = err;
-      break;
-    }
-    if (!firstError || firstError.path === "" || firstError.path === "/") {
+    const firstError = Value.Errors(schema, parsed)[0];
+    if (!firstError || firstError.instancePath === "" || firstError.instancePath === "/") {
       throw new Error(malformedMessage(UNEXPECTED_JSON_SHAPE, "shape"));
     }
-    throw new Error(malformedMessage(`${firstError.path}: ${firstError.message}`, "field"));
+    throw new Error(malformedMessage(`${firstError.instancePath}: ${firstError.message}`, "field"));
   }
   return parsed;
 }

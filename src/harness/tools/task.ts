@@ -1,5 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import type { ConversationResponder } from "../../types.js";
 
 export const START_TASK_TOOL = "start_task";

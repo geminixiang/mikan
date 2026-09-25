@@ -164,7 +164,7 @@ describe("loadGlobalSettings", () => {
     );
 
     expect(() => loadGlobalSettings()).toThrow(
-      /Malformed settings file.*sandbox.*cpus.*Expected string/,
+      /Malformed settings file.*sandbox.*cpus.*must be string/,
     );
   });
 
@@ -178,7 +178,7 @@ describe("loadGlobalSettings", () => {
     );
 
     expect(() => loadGlobalSettings()).toThrow(
-      /Malformed settings file.*thinkingLevel.*Expected union value/,
+      /Malformed settings file.*thinkingLevel.*must be equal to one of the allowed values/,
     );
   });
 

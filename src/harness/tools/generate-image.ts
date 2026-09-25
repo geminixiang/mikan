@@ -1,6 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
