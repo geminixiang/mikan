@@ -3,12 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadOfficeVisibilityOverride } from "../settings/index.js";
-import {
-  createOfficeAddress,
-  createWorkspace,
-  officeStateDir,
-  type Office,
-} from "../office/index.js";
+import { createOfficeAddress, createWorkspace, officeStateDir } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import {
   applyConversationSettings,
   applyOfficeVisibility,

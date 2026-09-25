@@ -5,8 +5,6 @@ import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedSandboxCommand } from "./types.js";
 import { replySummary } from "./utils.js";
 
-export type { ParsedSandboxCommand } from "./types.js";
-
 const SANDBOX_COMMANDS = slashForms("sandbox");
 
 export function parseSandboxCommand(text: string): ParsedSandboxCommand | null {

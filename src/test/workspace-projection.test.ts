@@ -9,13 +9,8 @@ import {
   recordPlatformChannelKind,
   resolveWorkspaceProjection,
 } from "../office/projection.js";
-import {
-  createOfficeAddress,
-  createWorkspace,
-  officeKey,
-  type Office,
-  type Workspace,
-} from "../office/index.js";
+import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import type { Office, Workspace } from "../office/types.js";
 
 const address = createOfficeAddress("slack", "C123");
 const officeSegment = officeKey(address);

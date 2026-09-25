@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
-import { HostExecutor } from "../sandbox/index.js";
+import { HostExecutor } from "../sandbox/host.js";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";

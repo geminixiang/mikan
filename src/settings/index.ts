@@ -18,11 +18,10 @@ export class MissingGlobalSettingsError extends Error {
   }
 }
 
-export type { AgentConfig, SandboxSettings } from "../types.js";
 import type { AgentConfig, SandboxSettings } from "../types.js";
 import type { McpServerConfig } from "../harness/types.js";
 import type { OnboardLlmChoice } from "../types.js";
-import type { Office } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import { errorMessage } from "../unknown-values.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {

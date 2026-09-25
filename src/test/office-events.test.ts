@@ -14,7 +14,8 @@ import type { ConversationEvent, MessagingBot } from "../types.js";
 import { OfficeEventStore, migrateLegacyWorkspaceEvents } from "../events/index.js";
 import { EventScheduler } from "../events/scheduler.js";
 import { createEventTool } from "../harness/tools/event.js";
-import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 vi.mock("../observability/index.js", () => ({ reportUserFacingError: vi.fn() }));
 

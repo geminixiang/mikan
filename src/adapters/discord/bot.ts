@@ -23,17 +23,18 @@ import type {
   MessagingEventHandler,
   ConversationResponder,
   ChatToolResult,
-} from "../index.js";
+  MessagingBot,
+  MessagingInfo,
+} from "../../types.js";
 import { discordTextPayload } from "./components.js";
+import type { DiscordEvent } from "./types.js";
+import * as log from "../../log.js";
 import {
   createConversationEvent,
   createConversationMessage,
-  type MessagingBot,
-  type MessagingInfo,
-} from "../index.js";
-import type { DiscordEvent } from "./types.js";
-import * as log from "../../log.js";
-import { createOfficeAddress, type Workspace } from "../../office/index.js";
+  createOfficeAddress,
+} from "../../office/index.js";
+import type { Workspace } from "../../office/types.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { formatNothingRunning } from "../messages.js";
 import {
@@ -47,8 +48,8 @@ import {
   saveIncomingAttachments,
   shortNameToUnicodeEmoji,
   withRetry,
-  type IncomingAttachment,
 } from "../shared.js";
+import type { IncomingAttachment } from "../types.js";
 import { COMMAND_MANIFEST } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
@@ -63,8 +64,6 @@ function discordIsRateLimited(err: Error): boolean {
 
 const discordRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: discordIsRateLimited });
-
-export type { DiscordEvent } from "./types.js";
 
 export class DiscordMessagingBot implements MessagingBot {
   private client: Client;

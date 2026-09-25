@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import type { Workspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 
 const officeOf = (sessionKey: string) =>

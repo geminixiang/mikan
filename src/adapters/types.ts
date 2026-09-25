@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   ChatToolResult,
   MessagingBot,
   ConversationContext,
@@ -6,8 +7,7 @@ import type {
   MessagingEventHandler,
   OfficeAddress,
   SubagentProgressSnapshot,
-} from "./index.js";
-import type { Attachment } from "../types.js";
+} from "../types.js";
 
 export type ChatResponseErrorOperation =
   | "respond"

@@ -191,8 +191,9 @@ consumers = [
   "configuration",
   "web-adapter",
   "harness",
+  "events",
 ]
-interface = "Workspace.office, Office"
+interface = "Workspace.office, Office, createConversationEvent, createConversationMessage, parseGithubConversationId"
 docs = "src/office/README.md"
 
 [[seams]]

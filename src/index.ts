@@ -19,24 +19,17 @@ export {
   resolveHarnessSettings,
 } from "./harness/session.js";
 export { buildEventPayload, EventTypeSchema, parseEventPayload } from "./events/index.js";
-export type { CreateMikanModelsOptions } from "./harness/models.js";
+export type { CreateMikanModelsOptions } from "./harness/types.js";
 export type {
   CompactionReason,
   HarnessEvent,
   HarnessEventListener,
   MikanAgentSessionOptions,
-} from "./harness/session.js";
-export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./harness/skills.js";
-export type {
-  LoadSubagentProfilesResult,
-  SubagentProfileDiagnostic,
-} from "./harness/subagent-profiles.js";
-export type {
-  BudgetSettings,
-  CompactionSettings,
-  HarnessSettings,
-  RetrySettings,
-} from "./harness/session.js";
+} from "./harness/types.js";
+export type { LoadSkillsResult, MikanSkill, SkillDiagnostic } from "./harness/types.js";
+export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./harness/types.js";
+export type { CompactionSettings } from "./harness/session.js";
+export type { BudgetSettings, HarnessSettings, RetrySettings } from "./harness/types.js";
 export type {
   EventConversationKind,
   EventFilePayload,
@@ -69,6 +62,7 @@ export type {
 } from "./sessions/types.js";
 export { CURRENT_SESSION_VERSION } from "./sessions/types.js";
 
+export { isCommandText } from "./adapters/commands/manifest.js";
 export {
   ChatHistorySync,
   hasMaterializedChatSession,
@@ -84,11 +78,11 @@ export type {
   ResolveChatSessionScopeOptions,
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
-} from "./sessions/chat-history-sync.js";
+} from "./sessions/types.js";
 export { isPlatformHistorySession } from "./sessions/store.js";
-export type { MikanSessionHeader } from "./sessions/store.js";
+export type { MikanSessionHeader } from "./sessions/types.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
-export type { ResolveSessionKeyOptions } from "./sessions/session-key.js";
+export type { ResolveSessionKeyOptions } from "./sessions/types.js";
 export {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
@@ -103,21 +97,21 @@ export {
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "./sessions/store.js";
-export type { ResolvedSessionScope, ThreadRootMessage } from "./sessions/store.js";
-export {
-  createConversationRuntime,
-  type ConversationRuntime,
-  type ConversationRuntimeOptions,
-  type RunSessionOptions,
-} from "./runtime/conversation-runtime.js";
-export { createConversationEvent, createConversationMessage } from "./adapters/index.js";
+export type { ResolvedSessionScope, ThreadRootMessage } from "./sessions/types.js";
+export { createConversationRuntime } from "./runtime/conversation-runtime.js";
+export type {
+  ConversationRuntime,
+  ConversationRuntimeOptions,
+  RunSessionOptions,
+} from "./runtime/types.js";
+export { createConversationEvent, createConversationMessage } from "./office/index.js";
 export {
   createOfficeAddress,
   createWorkspace,
   officeKey,
   officeSessionsDir,
 } from "./office/index.js";
-export type { Office, Workspace } from "./office/index.js";
+export type { Office, Workspace } from "./office/types.js";
 export type {
   ChatToolResult,
   ConversationContext,
@@ -133,7 +127,7 @@ export type {
   MessagingInfo,
   PlatformName,
   RunningSession,
-} from "./adapters/index.js";
+} from "./types.js";
 export {
   SandboxError,
   createExecutor,

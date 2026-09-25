@@ -5,9 +5,11 @@ import { expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 
 test("the run after a busy tool receives and answers the queued token, not the previous prompt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mikan-slack-busy-regression-"));
@@ -43,7 +45,7 @@ test("the run after a busy tool receives and answers the queued token, not the p
       models,
       sessionStore: store,
     });
-    const sync = new ChatHistorySync();
+    const sync = new ChatHistorySync({ isCommandText });
     const entries = [
       {
         date: new Date().toISOString(),

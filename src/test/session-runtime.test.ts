@@ -13,7 +13,7 @@ import type {
   ConversationResponder,
   MessagingInfo,
 } from "../types.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import {
@@ -23,13 +23,15 @@ import {
   resolveChannelSessionFile,
 } from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
-import type { RunMemoryCapture } from "../memory-capture/index.js";
+import type { RunMemoryCapture } from "../memory-capture/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
-import type { SlackMessagingBot, SlackEvent } from "../adapters/slack/bot.js";
+import type { SlackMessagingBot } from "../adapters/slack/bot.js";
+import type { SlackEvent } from "../adapters/slack/types.js";
 import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
 import type { ConversationRuntimeState } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
-import type { SandboxConfig } from "../sandbox/index.js";
+import type { SandboxConfig } from "../sandbox/types.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 
 const testAddress = createOfficeAddress("slack", "C123");
 
@@ -690,7 +692,7 @@ describe("ConversationRuntime lifecycle", () => {
         }),
       ].join("\n") + "\n",
     );
-    const sync = new ChatHistorySync();
+    const sync = new ChatHistorySync({ isCommandText });
     await sync.resetSession({ conversationDir, sessionKey: "C123" });
 
     const syncOnce = async (file: string) => {
@@ -756,7 +758,7 @@ describe("ChatHistorySync session scope", () => {
       cwd: conversationDir,
     });
 
-    const sessionScope = await new ChatHistorySync().resolveSessionScope({
+    const sessionScope = await new ChatHistorySync({ isCommandText }).resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,

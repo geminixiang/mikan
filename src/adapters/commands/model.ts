@@ -12,8 +12,6 @@ import { replySummary } from "./utils.js";
 const QUOTED_THINKING_LEVELS = THINKING_LEVELS.map((level) => `\`${level}\``);
 const THINKING_LEVEL_CHOICES = `${QUOTED_THINKING_LEVELS.slice(0, -1).join("、")} 或 ${QUOTED_THINKING_LEVELS.at(-1)}`;
 
-export type { ParsedModelCommand } from "./types.js";
-
 const MODEL_COMMANDS = slashForms("model");
 
 export function parseModelCommand(text: string): ParsedModelCommand | null {

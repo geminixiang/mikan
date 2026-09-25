@@ -340,7 +340,7 @@ Evidence: `src/settings/index.ts`, `src/file-guards.ts`, `src/office/index.ts`, 
 
 **`execution-policy-enforcement`** — Only `image:*` enforces office visibility (read-only global knowledge, no reach into other private offices). Host, shared-container, and remote backends are operator-selected trusted modes: a private office there is served with a one-time logged warning per office rather than a wider projection being silently presented as enforced.
 
-Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/index.ts`.
+Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/registry.ts`.
 
 ### INV credential least authority
 

@@ -156,8 +156,6 @@ export function materializeMcpPreset(
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
 }
-export type { McpServerConfig } from "./types.js";
-export type { McpToolsResult } from "./types.js";
 
 const CONNECT_TIMEOUT_MS = 15_000;
 

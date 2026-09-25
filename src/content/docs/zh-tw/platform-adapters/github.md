@@ -16,7 +16,7 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 | `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、有防護的 branch push、保留工作的 sync。                                                        |
 | `src/adapters/github/client.ts`     | 以 GitHub App 驗證的最小 REST client（RS256 JWT → installation tokens）。                                                  |
 | `src/adapters/github/context.ts`    | 建立 GitHub `ConversationResponder`；將完成的回應作為單一 comment 發布（不做 streaming edits）。                           |
-| `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id 編碼／解析；`rc-<id>` review-comment ts。                                     |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` conversation id 語法位於 `src/office/index.ts`。                 |
 | `src/adapters/github/tool-pack.ts`  | 把 host 端的 tools 打包成由 main 注入的 platform tool pack。                                                               |
 | `src/adapters/github/tools/`        | 提供給 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub adapter 專用型別與 REST payload shapes。                                                                            |

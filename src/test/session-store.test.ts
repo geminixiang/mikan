@@ -26,6 +26,7 @@ import {
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../sessions/store.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 
 let channelDir: string;
 let nextTimestamp = 1;
@@ -405,7 +406,10 @@ describe("long-lived session scopes", () => {
     const currentFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(currentFile, "2026-01-05T12:00:00.000Z");
 
-    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-03-01T12:00:00.000Z"),
+    });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123",
@@ -422,7 +426,10 @@ describe("long-lived session scopes", () => {
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
     rewriteSessionTimestamp(threadFile, "2026-01-05T12:00:00.000Z");
 
-    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-03-01T12:00:00.000Z"),
+    });
     const scope = await manager.resolveSessionScope({
       conversationDir: channelDir,
       sessionKey: "C123:1000.0001",
@@ -434,7 +441,10 @@ describe("long-lived session scopes", () => {
   });
 
   test("keeps old top-level context out of thread sessions after bootstrap", async () => {
-    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-03-01T12:00:00.000Z"),
+    });
     appendLogMessage({
       ts: "1770163200.000000",
       date: "2026-02-04T00:00:00.000Z",
@@ -480,7 +490,10 @@ describe("long-lived session scopes", () => {
       text: "old log only",
     });
 
-    const manager = new ChatHistorySync({ now: () => new Date("2026-03-01T12:00:00.000Z") });
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-03-01T12:00:00.000Z"),
+    });
     const resetFile = await manager.resetSession({
       conversationDir: channelDir,
       sessionKey: "C123",
@@ -526,7 +539,7 @@ describe("session-scoped /new reset", () => {
     mkdirSync(officeSessionsDir(channelDir), { recursive: true });
     writeFileSync(threadFile, "not a session\n");
 
-    const sync = new ChatHistorySync();
+    const sync = new ChatHistorySync({ isCommandText });
     await sync.resetSession({
       conversationDir: channelDir,
       sessionKey: "C123:1000.0001",
@@ -557,7 +570,7 @@ describe("session-scoped /new reset", () => {
     await seedManagedSession(thread2File, sessionDir, channelDir, "thread2");
     const oldThreadId = SessionStore.readHeader(thread1File)!.id;
 
-    const sync = new ChatHistorySync();
+    const sync = new ChatHistorySync({ isCommandText });
     await sync.resetSession({
       conversationDir: channelDir,
       sessionKey: "C123:1000.0001",

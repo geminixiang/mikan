@@ -37,6 +37,7 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "getThreadSessionFile",
   "hasMaterializedChatSession",
   "inferConversationKind",
+  "isCommandText",
   "isPlatformHistorySession",
   "isV3SessionFile",
   "loadSkillsFromDir",

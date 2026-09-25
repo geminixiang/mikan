@@ -1,12 +1,13 @@
-import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../index.js";
+import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../types.js";
 import * as log from "../../log.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
-import { formatToolArgs, splitText } from "../shared.js";
+import { splitText } from "../shared.js";
+import { formatToolArgs } from "../../harness/tool-args.js";
 import type { HandleTooLongInput } from "../types.js";
-import { buildMrkdwnContextBlock, type SlackMessagingBot, type SlackEvent } from "./bot.js";
+import { buildMrkdwnContextBlock, type SlackMessagingBot } from "./bot.js";
+import type { SlackEvent, SlackAdapterSessionPlan } from "./types.js";
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
-import type { SlackAdapterSessionPlan } from "./types.js";
 import { slackPersonaForProfile } from "./persona.js";
 import { errorMessage } from "../../unknown-values.js";
 

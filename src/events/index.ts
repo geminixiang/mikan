@@ -256,7 +256,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } fr
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
-import type { Office, Workspace } from "../office/index.js";
+import type { Office, Workspace } from "../office/types.js";
 import { createOfficeAddress, listRegisteredOffices, officeKey } from "../office/index.js";
 import { errorMessage } from "../unknown-values.js";
 

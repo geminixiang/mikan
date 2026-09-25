@@ -1,4 +1,4 @@
-import type { ConversationEvent } from "../index.js";
+import type { ConversationEvent } from "../../types.js";
 
 export interface TelegramEvent extends ConversationEvent {
   type: "message" | "command";

@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../types.js";
 import {
-  formatToolArgs,
   MessagingEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -9,6 +8,7 @@ import {
   splitText,
   withRetry,
 } from "../adapters/shared.js";
+import { formatToolArgs } from "../harness/tool-args.js";
 import { createOfficeAddress, officeKey, sameOffice } from "../office/index.js";
 
 const slack = createOfficeAddress("slack", "C123");

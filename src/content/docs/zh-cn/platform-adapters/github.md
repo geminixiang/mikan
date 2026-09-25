@@ -16,7 +16,7 @@ description: GitHub 适配器的 GitHub App 轮询、issue/PR 对话、水位线
 | `src/adapters/github/repo.ts`       | 主机侧 git：浅克隆、受保护的分支推送、保留工作的同步。                                                              |
 | `src/adapters/github/client.ts`     | 以 GitHub App 身份验证的最小 REST 客户端（RS256 JWT → installation tokens）。                                       |
 | `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为一条评论发布（不进行流式编辑）。                               |
-| `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` 对话 ID 编码/解析；`rc-<id>` review 评论 ts。                                          |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review 评论 ts。`GH_<owner>_<repo>_<number>` 对话 ID 语法位于 `src/office/index.ts`。                     |
 | `src/adapters/github/tool-pack.ts`  | 把主机侧工具打包为由 main 注入的平台工具包。                                                                        |
 | `src/adapters/github/tools/`        | 面向代理的工具：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub 适配器专用类型和 REST payload 结构。                                                                         |

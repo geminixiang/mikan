@@ -9,7 +9,7 @@ import {
   resolveTriggerAttribution,
 } from "../harness/prompt.js";
 import { translateAttachPathToHost } from "../harness/prompt.js";
-import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
+import { getUnresolvedSandboxPathContext } from "../sandbox/registry.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../settings/index.js";

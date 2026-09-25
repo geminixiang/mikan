@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import { createConversationEvent, createConversationMessage } from "../adapters/index.js";
+import { createConversationEvent, createConversationMessage } from "../office/index.js";
 import { officeDir } from "../office/index.js";
 import {
   assertConversationId,

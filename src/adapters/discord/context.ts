@@ -1,9 +1,11 @@
-import { createConversationMessage, type ConversationContext } from "../index.js";
+import type { ConversationContext } from "../../types.js";
+import { createConversationMessage } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
-import type { DiscordMessagingBot, DiscordEvent } from "./bot.js";
+import type { DiscordMessagingBot } from "./bot.js";
+import type { DiscordEvent } from "./types.js";
 
 const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 

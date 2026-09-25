@@ -8,12 +8,8 @@ import {
   resolveOfficeVisibility,
   resolveWorkspaceProjection,
 } from "../office/projection.js";
-import {
-  createOfficeAddress,
-  createWorkspace,
-  type Office,
-  type Workspace,
-} from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office, Workspace } from "../office/types.js";
 
 let stateDir: string;
 let workspace: Workspace;

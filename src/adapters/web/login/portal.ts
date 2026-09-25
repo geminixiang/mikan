@@ -3,22 +3,15 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../../env-manifest.js";
 import { readEnv } from "../../../env-manifest.js";
-import type { PlatformName } from "../../index.js";
+import type { PlatformName } from "../../../types.js";
 import { InMemoryTokenStore } from "../token-store.js";
-import type { LinkToken } from "./types.js";
-export type { LinkToken } from "./types.js";
-import {
-  getOAuthServices,
-  resolveOAuthService,
-  type LoginCredentialKind,
-  type OAuthService,
-} from "./oauth.js";
+import type { LinkToken, LoginCredentialKind, OAuthService, NotifyFn } from "./types.js";
+import { getOAuthServices, resolveOAuthService } from "./oauth.js";
 import * as log from "../../../log.js";
 import { reportUserFacingError } from "../../../observability/index.js";
 import { PRODUCT_NAME } from "../../messages.js";
-import { defaultVaultTargetPath, type VaultManager } from "../../../vault/index.js";
-
-export type { NotifyFn } from "./types.js";
+import { defaultVaultTargetPath } from "../../../vault/index.js";
+import type { VaultManager } from "../../../vault/types.js";
 
 const TTL_MS = 15 * 60 * 1000;
 
@@ -42,7 +35,6 @@ export class InMemoryLinkTokenStore extends InMemoryTokenStore<LinkToken> {
     });
   }
 }
-import type { NotifyFn } from "./types.js";
 import { errorMessage } from "../../../unknown-values.js";
 
 interface LinkCompleteBody {

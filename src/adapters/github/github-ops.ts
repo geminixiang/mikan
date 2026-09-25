@@ -2,13 +2,12 @@ import { existsSync } from "node:fs";
 import * as log from "../../log.js";
 import type { GithubClient } from "./client.js";
 import { GithubApiError, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
-import { parseGithubConversationId } from "./ids.js";
 import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
-import { createOfficeAddress } from "../../office/index.js";
-import type { Workspace } from "../../office/index.js";
+import { createOfficeAddress, parseGithubConversationId } from "../../office/index.js";
+
+import type { GithubConversationRef, Workspace } from "../../office/types.js";
 import type {
   GithubCheckSummary,
-  GithubConversationRef,
   GithubIssueRequest,
   GithubPrRequest,
   GithubPrResult,

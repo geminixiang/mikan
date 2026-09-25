@@ -1,4 +1,4 @@
-import type { MessagingBot, MessagingInfo } from "./index.js";
+import type { MessagingBot, MessagingInfo } from "../types.js";
 
 export const PRODUCT_NAME = "mikan";
 

@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (SDK):** `new ChatHistorySync()` now requires `{ isCommandText }`, so sessions no longer import the command inventory from the adapters. Pass the newly exported `isCommandText` to keep filtering command messages out of synced history.
+
 ### Fixed
 
 - Spill oversized MCP JSON results as indented JSON so `read` and `grep` can inspect them; the compact single-line spill exceeded `read`'s per-line limit.

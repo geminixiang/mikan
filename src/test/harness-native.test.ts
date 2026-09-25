@@ -6,9 +6,10 @@ import { TODO_CONTEXT, getOrThrow, type AgentTool } from "@earendil-works/pi-age
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
-import { MikanAgentSession, MikanModels, type HarnessEvent } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
+import type { HarnessEvent, MikanAgentSessionOptions } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
-import type { MikanAgentSessionOptions } from "../harness/types.js";
 
 test("plain AgentTool integrations do not require an execution context", () => {
   expectTypeOf<

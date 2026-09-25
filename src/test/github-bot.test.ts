@@ -3,15 +3,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../types.js";
-import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
 import type { GithubClient } from "../adapters/github/client.js";
 import {
   buildGithubConversationId,
+  createOfficeAddress,
+  createWorkspace,
+  officeKey,
+  parseGithubConversationId,
+} from "../office/index.js";
+import {
   GITHUB_ISSUE_BODY_TS,
   githubReviewCommentTs,
-  parseGithubConversationId,
   parseReviewCommentTs,
 } from "../adapters/github/ids.js";
 import { cloneRepo, pushBranch, syncRepo } from "../adapters/github/repo.js";

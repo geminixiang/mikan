@@ -16,7 +16,7 @@ The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercas
 | `src/adapters/github/repo.ts`       | Host-side git: shallow clone, guarded branch push, work-preserving sync.                                                   |
 | `src/adapters/github/client.ts`     | Minimal REST client authenticated as a GitHub App (RS256 JWT → installation tokens).                                       |
 | `src/adapters/github/context.ts`    | Creates the GitHub `ConversationResponder`; posts the finished response as one comment (no streaming edits).               |
-| `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id encode/parse; `rc-<id>` review-comment ts.                                    |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts. The `GH_<owner>_<repo>_<number>` conversation id grammar lives in `src/office/index.ts`.      |
 | `src/adapters/github/tool-pack.ts`  | Bundles the host-side tools as a platform tool pack injected from main.                                                    |
 | `src/adapters/github/tools/`        | The agent-facing tools: `github_pr`, `github_checks`, `github_review_reply`, `github_sync`, `github_read`, `github_issue`. |
 | `src/adapters/github/types.ts`      | GitHub adapter-specific types and REST payload shapes.                                                                     |

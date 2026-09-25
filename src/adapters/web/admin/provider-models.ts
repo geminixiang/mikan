@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { MikanModels } from "../../../harness/index.js";
+import type { MikanModels } from "../../../harness/models.js";
 
 type AdminModelStatus = "available" | "unverified";
 

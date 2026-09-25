@@ -12,10 +12,10 @@ import type {
   MessagingBot,
   MessagingInfo,
 } from "../types.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
-import type { SandboxConfig } from "../sandbox/index.js";
+import type { SandboxConfig } from "../sandbox/types.js";
 
 const BUSY_TEXT = "busy-queue e2e: run `sleep 10`, then reply with this token: QA_BUSY_TOKEN";
 const QUEUED_TEXT = "queue test: reply with this token directly: QA_QUEUED_TOKEN";

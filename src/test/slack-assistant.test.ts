@@ -6,8 +6,8 @@ import {
   handleAssistantThreadStarted,
   summarizeTitle,
   titleAssistantThread,
-  type AssistantSurfaceOps,
 } from "../adapters/slack/assistant.js";
+import type { AssistantSurfaceOps } from "../adapters/slack/types.js";
 
 function createOps(overrides: Partial<AssistantSurfaceOps> = {}) {
   const posts: Array<{ channel: string; threadTs: string; text: string }> = [];

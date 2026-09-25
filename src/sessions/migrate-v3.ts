@@ -15,7 +15,6 @@ import {
   V4FileWriter,
 } from "./migrate-common.js";
 import type { MigrateResult } from "./types.js";
-export type { MigrateResult } from "./types.js";
 
 interface V3EntryBase {
   type: string;

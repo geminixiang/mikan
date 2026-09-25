@@ -3,8 +3,6 @@ import { officeKey } from "../office/index.js";
 import type { OfficeAddress } from "../types.js";
 import type { CredentialScope, SandboxConfig } from "./types.js";
 
-export type { CredentialScope } from "./types.js";
-
 const IDENTITY_HASH_LENGTH = 12;
 
 export function credentialAuthorizationKey(

@@ -11,7 +11,6 @@ import {
 } from "./migrate-common.js";
 import type { Pi084MigrationResult } from "./types.js";
 import { isRecord } from "../unknown-values.js";
-export type { Pi084MigrationResult } from "./types.js";
 
 interface Pi084Header {
   kind: "header";

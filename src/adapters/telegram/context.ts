@@ -1,9 +1,10 @@
-import { createConversationMessage } from "../index.js";
-import type { ChatToolResult, ConversationContext } from "../index.js";
+import { createConversationMessage } from "../../office/index.js";
+import type { ChatToolResult, ConversationContext } from "../../types.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
-import { formatToolArgs } from "../shared.js";
-import type { TelegramMessagingBot, TelegramEvent } from "./bot.js";
+import { formatToolArgs } from "../../harness/tool-args.js";
+import type { TelegramMessagingBot } from "./bot.js";
+import type { TelegramEvent } from "./types.js";
 
 const MAX_LENGTH = 30000;
 

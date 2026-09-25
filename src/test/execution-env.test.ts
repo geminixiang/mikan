@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { HostExecutor } from "../sandbox/host.js";
-import type { Executor } from "../sandbox/index.js";
+import type { Executor } from "../sandbox/types.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "../sandbox/utils.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 

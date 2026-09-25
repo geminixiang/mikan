@@ -35,7 +35,6 @@ export function sharedVaultKey(name: string): string | undefined {
   return normalized ? `${SHARED_VAULT_DIR}/${normalized}` : undefined;
 }
 
-export type { ResolvedVault, VaultManager } from "./types.js";
 import type { ResolvedVault, ResolvedVaultMount, VaultManager } from "./types.js";
 
 export function parseEnvFile(content: string): Record<string, string> {
@@ -514,7 +513,6 @@ export function allowsAmbientDefaultSharedVault(options: {
   return options.sandboxType === "image" || options.sandboxType === "cloudflare";
 }
 
-export type { VaultInjection } from "./types.js";
 import type { VaultInjection } from "./types.js";
 import { isRecord } from "../unknown-values.js";
 

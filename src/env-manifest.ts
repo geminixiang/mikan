@@ -17,8 +17,6 @@ export function setEnvAliases(name: string, value: string): void {
   process.env[`MIKAN_${name}`] = value;
 }
 
-export type { EnvGroup } from "./types.js";
-
 export const ENV_MANIFEST: readonly EnvGroup[] = [
   {
     key: "slack",

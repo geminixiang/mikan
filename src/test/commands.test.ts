@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingBot, ConversationResponder } from "../types.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";
 import {
@@ -29,8 +29,8 @@ import type {
 } from "../adapters/commands/types.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
-import type { SandboxConfig } from "../sandbox/index.js";
-import type { VaultManager } from "../vault/index.js";
+import type { SandboxConfig } from "../sandbox/types.js";
+import type { VaultManager } from "../vault/types.js";
 
 interface RecordingResponseCtx extends ConversationResponder {
   responses: string[];

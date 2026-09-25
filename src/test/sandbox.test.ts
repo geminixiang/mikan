@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import * as log from "../log.js";
+import { CloudflareSandboxExecutor } from "../sandbox/cloudflare.js";
+import { ContainerExecutor } from "../sandbox/container.js";
+import { HostExecutor } from "../sandbox/host.js";
+import { SandboxError } from "../sandbox/utils.js";
 import {
-  CloudflareSandboxExecutor,
-  ContainerExecutor,
-  HostExecutor,
-  SandboxError,
   assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   parseSandboxArg,
-} from "../sandbox/index.js";
+} from "../sandbox/registry.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {

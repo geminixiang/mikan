@@ -1,19 +1,11 @@
 import { appendFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { MessagingEventHandler, OfficeAddress } from "./index.js";
-import { sameOffice, type Office } from "../office/index.js";
+import type { MessagingEventHandler, OfficeAddress } from "../types.js";
+import { sameOffice } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";
-export type {
-  ChatResponseErrorContext,
-  ChatResponseErrorOperation,
-  ChatResponseErrorReporter,
-  IncomingAttachment,
-  ResolveStopTargetInput,
-  RetryOptions,
-  SavedAttachments,
-} from "./types.js";
 import type {
   ChatResponseErrorContext,
   ChatResponseErrorReporter,
@@ -244,30 +236,6 @@ export function resolveOnlyScopedStopTarget(
     .filter((key) => key.startsWith(`${address.conversationId}:`));
 
   return runningScopes.length === 1 ? (runningScopes[0] ?? null) : null;
-}
-
-export function formatToolArgs(args: Record<string, unknown> | undefined): string {
-  if (!args) return "";
-  const lines: string[] = [];
-
-  for (const [key, value] of Object.entries(args)) {
-    if (key === "label" || key === "offset" || key === "limit") continue;
-
-    if (key === "path" && typeof value === "string") {
-      const offset = args.offset as number | undefined;
-      const limit = args.limit as number | undefined;
-      lines.push(
-        offset !== undefined && limit !== undefined
-          ? `${value}:${offset}-${offset + limit}`
-          : value,
-      );
-      continue;
-    }
-
-    lines.push(typeof value === "string" ? value : JSON.stringify(value));
-  }
-
-  return lines.join("\n");
 }
 
 export async function downloadUrlToFile(url: string, destPath: string): Promise<void> {

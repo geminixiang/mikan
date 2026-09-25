@@ -12,7 +12,8 @@ import {
 } from "@geminixiang/jev";
 import type { AuthContext } from "@earendil-works/pi-ai";
 import { readEnv } from "../env-manifest.js";
-import { recordJevOutcome, type JevCaller } from "../observability/index.js";
+import { recordJevOutcome } from "../observability/index.js";
+import type { JevCaller } from "../observability/types.js";
 
 export const JEV_MODEL_ID = "~typesafe/jev-latest";
 

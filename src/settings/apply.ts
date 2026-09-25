@@ -3,17 +3,11 @@ import {
   updateConversationSettings,
   updateGlobalSettings,
 } from "./index.js";
-import type { Office } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import type {
   AgentConfig,
   GlobalRunnerCacheControl,
   OfficeAddress,
-  RunnerCacheControl,
-  SettingsApplyResult,
-} from "../types.js";
-
-export type {
-  GlobalRunnerCacheControl,
   RunnerCacheControl,
   SettingsApplyResult,
 } from "../types.js";

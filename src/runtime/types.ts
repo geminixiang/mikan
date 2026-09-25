@@ -13,12 +13,12 @@ import type {
   CommandHandler,
   CommandServices,
   LinkTokenStoreLike,
-  SessionViewTokenStoreLike,
 } from "../adapters/commands/types.js";
-import type { MikanModels } from "../harness/index.js";
-import type { RunMemoryCapture } from "../memory-capture/index.js";
+import type { SessionViewTokenStoreLike } from "../types.js";
+import type { MikanModels } from "../harness/models.js";
+import type { RunMemoryCapture } from "../memory-capture/types.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
-import type { VaultManager } from "../vault/index.js";
+import type { VaultManager } from "../vault/types.js";
 
 export interface SessionLifecycleOptions {
   maxSessions?: number;

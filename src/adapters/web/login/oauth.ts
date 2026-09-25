@@ -3,7 +3,6 @@ import { parseJsonValue } from "../../../file-guards.js";
 import * as log from "../../../log.js";
 import { GOOGLE_VAULT_CREDENTIAL_FILES } from "../../../vault/index.js";
 
-export type { LoginCredentialKind, OAuthService } from "./types.js";
 import type { OAuthService } from "./types.js";
 import { errorMessage, isRecord } from "../../../unknown-values.js";
 

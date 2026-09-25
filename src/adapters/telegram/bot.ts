@@ -7,8 +7,8 @@ import type {
   MessagingEventHandler,
   ConversationKind,
   MessagingInfo,
-} from "../index.js";
-import { createConversationEvent, type MessagingBot } from "../index.js";
+  MessagingBot,
+} from "../../types.js";
 import type { TelegramEvent } from "./types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
@@ -21,12 +21,13 @@ import {
   withRetry,
   saveIncomingAttachments,
   shortNameToUnicodeEmoji,
-  type IncomingAttachment,
 } from "../shared.js";
+import type { IncomingAttachment } from "../types.js";
 import { COMMAND_MANIFEST, telegramCommandMenu } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
-import { createOfficeAddress, type Workspace } from "../../office/index.js";
+import { createConversationEvent, createOfficeAddress } from "../../office/index.js";
+import type { Workspace } from "../../office/types.js";
 import { errorMessage } from "../../unknown-values.js";
 
 function telegramIsRateLimited(err: Error): boolean {
@@ -35,8 +36,6 @@ function telegramIsRateLimited(err: Error): boolean {
 
 const telegramRetry = <T>(fn: () => Promise<T>): Promise<T> =>
   withRetry(fn, { isRateLimited: telegramIsRateLimited });
-
-export type { TelegramEvent } from "./types.js";
 
 interface MessageContext {
   msg: Message;

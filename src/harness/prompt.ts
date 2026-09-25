@@ -1,13 +1,12 @@
-import type { Office } from "../office/index.js";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { existsSync, lstatSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import type { ConversationMessage } from "../types.js";
-import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/index.js";
+import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
-import type { WorkspaceProjection } from "../office/types.js";
+import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import type { BuildSystemPromptOptions } from "./types.js";
 
@@ -143,7 +142,6 @@ function buildRuntimePaths(runtimeWorkspaceRoot: string, office: Office) {
     scratchPath: posix.join(conversationPath, "scratch"),
   };
 }
-export type { BuildSystemPromptOptions } from "./types.js";
 
 export async function buildPromptPayload(
   message: ConversationMessage,

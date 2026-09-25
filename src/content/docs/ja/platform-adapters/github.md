@@ -16,7 +16,7 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 | `src/adapters/github/repo.ts`       | host 側の git：shallow clone、ガード付きの branch push、作業を保持する sync。                                           |
 | `src/adapters/github/client.ts`     | GitHub App として認証する最小 REST client（RS256 JWT → installation tokens）。                                          |
 | `src/adapters/github/context.ts`    | GitHub 版 `ConversationResponder` を作成し、完成した response を 1 つの comment として投稿（streaming edits なし）。    |
-| `src/adapters/github/ids.ts`        | `GH_<owner>_<repo>_<number>` conversation id の encode/parse。`rc-<id>` review-comment ts。                             |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` conversation id の文法は `src/office/index.ts` にあります。   |
 | `src/adapters/github/tool-pack.ts`  | host 側 tools を、main から注入される platform tool pack としてまとめる。                                               |
 | `src/adapters/github/tools/`        | agent 向けの tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 | `src/adapters/github/types.ts`      | GitHub adapter 固有の types と REST payload shapes。                                                                    |

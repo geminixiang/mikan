@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from "node:fs";
 import type {
   BranchSummaryEntry as SessionBranchSummaryEntry,
   CompactionEntry,
-} from "../../../harness/index.js";
+} from "../../../harness/types.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { SessionEntry, SessionMessageEntry } from "../../../sessions/types.js";
 import {
@@ -19,19 +19,20 @@ import type {
   SessionViewRelation,
   SessionViewModel,
   SessionViewToken,
-  SessionViewTokenCreateOptions,
 } from "./types.js";
-export type { SessionViewModel, SessionViewToken, SessionViewTokenCreateOptions } from "./types.js";
 import { basename } from "node:path";
 import { InMemoryTokenStore } from "../token-store.js";
 import MarkdownIt from "markdown-it";
-import type { ConversationResponder } from "../../index.js";
+import type {
+  ConversationResponder,
+  ConversationContext,
+  SessionViewTokenCreateOptions,
+} from "../../../types.js";
 import {
   createConversationEvent,
   createConversationMessage,
-  type ConversationContext,
-} from "../../index.js";
-import { createOfficeAddress } from "../../../office/index.js";
+  createOfficeAddress,
+} from "../../../office/index.js";
 import * as log from "../../../log.js";
 import {
   escapeHtml,
@@ -116,7 +117,6 @@ class SessionViewStreamHub {
 
 const sessionViewStreamHub = new SessionViewStreamHub();
 
-export type { SessionViewInteractiveOptions } from "./types.js";
 import type { SessionViewInteractiveOptions } from "./types.js";
 import { errorMessage } from "../../../unknown-values.js";
 

@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const evaluateWithJevMock = vi.fn();
-vi.mock("../harness/index.js", async () => {
-  const actual = await vi.importActual<typeof import("../harness/index.js")>("../harness/index.js");
+vi.mock("../harness/jev.js", async () => {
+  const actual = await vi.importActual<typeof import("../harness/jev.js")>("../harness/jev.js");
   return { ...actual, evaluateWithJev: (...args: unknown[]) => evaluateWithJevMock(...args) };
 });
 import type { MessagingEventHandler } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import type { Workspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 import { SlackMessagingBot } from "../adapters/slack/bot.js";

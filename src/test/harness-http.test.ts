@@ -11,7 +11,7 @@ import {
   DEFAULT_HTTP_IDLE_TIMEOUT_MS,
   configureHttpDispatcher,
   parseHttpIdleTimeoutMs,
-} from "../harness/index.js";
+} from "../harness/http.js";
 
 describe("parseHttpIdleTimeoutMs", () => {
   test("accepts non-negative numbers, flooring fractions", () => {

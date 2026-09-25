@@ -21,8 +21,6 @@ import { readJsonFileIfExists } from "../file-guards.js";
 import type { CreateMikanModelsOptions } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
 
-export type { CreateMikanModelsOptions } from "./types.js";
-
 const CUSTOM_API_STREAMS: Record<string, () => ProviderStreams> = {
   "anthropic-messages": anthropicMessagesApi,
   "azure-openai-responses": azureOpenAIResponsesApi,

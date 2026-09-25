@@ -1,13 +1,14 @@
-import type { Office, Workspace } from "../office/index.js";
+import type { Office, Workspace } from "../office/types.js";
 import type { ExecutionToolContext, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
-import { CONTROL_INPUT_CUSTOM_TYPE } from "../sessions/types.js";
+import { CONTROL_INPUT_CUSTOM_TYPE, type ThreadRootMessage } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
-import { createMikanTools, createSubagentTool } from "./tools/index.js";
+import { createMikanTools } from "./tools/index.js";
+import { createSubagentTool } from "./tools/subagent.js";
 import { adaptAgentTool } from "./tools/pi-tools.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { createSandboxExecutionEnv } from "./execution-env.js";
@@ -25,12 +26,10 @@ import type { DockerContainerManager } from "../sandbox/provisioner.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   createExecutor,
-  type Executor,
-  type RuntimePathContext,
-  type SandboxConfig,
   getUnresolvedSandboxPathContext,
-} from "../sandbox/index.js";
-import type { VaultManager } from "../vault/index.js";
+} from "../sandbox/registry.js";
+import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { VaultManager } from "../vault/types.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import type {
   RunnerExecutionContext,
@@ -45,13 +44,9 @@ import { resolveConversationSettings } from "../settings/index.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
 import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
-import { ChatHistorySync } from "../sessions/chat-history-sync.js";
+import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import {
-  extractSessionUuid,
-  openManagedSession,
-  type ThreadRootMessage,
-} from "../sessions/store.js";
+import { extractSessionUuid, openManagedSession } from "../sessions/store.js";
 import type { PlatformToolPack, PlatformToolRunContext } from "./tools/types.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
@@ -774,11 +769,10 @@ async function finishRunnerCreation(params: {
     platformToolRoles,
     toolContext,
   } = params;
-  const { sessionKey, office, sessionScope, sessionView } = options;
+  const { sessionKey, office, sessionScope, sessionView, chatHistory } = options;
   const { contextFile } = sessionScope;
   try {
     const sessionUuid = extractSessionUuid(contextFile);
-    const chatSessionManager = new ChatHistorySync();
     const session = await createRunnerAgentSession({
       workspaceDir,
       systemPrompt,
@@ -811,7 +805,7 @@ async function finishRunnerCreation(params: {
       model,
       agentConfig,
       sessionManager,
-      chatSessionManager,
+      chatSessionManager: chatHistory,
       toolBindings,
     });
   } catch (error) {

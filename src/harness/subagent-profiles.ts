@@ -8,7 +8,6 @@ import type {
   SubagentProfileDiagnostic,
 } from "./types.js";
 
-export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./types.js";
 import { isThinkingLevel } from "../settings/index.js";
 import { parseFrontmatter } from "./skills.js";
 import { JEV_TOOL } from "./tools/jev.js";

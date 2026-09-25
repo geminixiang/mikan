@@ -1,12 +1,8 @@
-import type { ChatToolResult, ConversationResponder, SubagentProgressSnapshot } from "./index.js";
+import type { ChatToolResult, ConversationResponder, SubagentProgressSnapshot } from "../types.js";
 import * as log from "../log.js";
-import {
-  createChatResponseErrorReporter,
-  formatToolArgs,
-  splitText,
-  type ChatResponseErrorOperation,
-} from "./shared.js";
-import type { ProgressiveRendererPlatform } from "./types.js";
+import { createChatResponseErrorReporter, splitText } from "./shared.js";
+import type { ChatResponseErrorOperation, ProgressiveRendererPlatform } from "./types.js";
+import { formatToolArgs } from "../harness/tool-args.js";
 import { errorMessage } from "../unknown-values.js";
 
 export function formatMarkdownToolResult(result: ChatToolResult): string {

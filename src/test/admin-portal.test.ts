@@ -9,7 +9,7 @@ import {
   resolveConversationScope,
 } from "../adapters/web/admin/portal.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import type { AdminToken } from "../adapters/web/admin/portal.js";
+import type { AdminToken } from "../adapters/web/admin/types.js";
 
 const tempDirs: string[] = [];
 

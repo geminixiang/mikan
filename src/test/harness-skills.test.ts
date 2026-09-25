@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "../harness/index.js";
+import { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "../harness/skills.js";
 
 let dir: string;
 

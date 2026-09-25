@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
-import type { DiscordEvent } from "../adapters/discord/bot.js";
+import type { DiscordEvent } from "../adapters/discord/types.js";
 import { createDiscordAdapters } from "../adapters/discord/context.js";
 import { DISCORD_V2_TEXT_LIMIT } from "../adapters/discord/components.js";
 import { createOfficeAddress } from "../office/index.js";

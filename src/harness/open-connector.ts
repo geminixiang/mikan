@@ -5,13 +5,8 @@ import { readEnv } from "../env-manifest.js";
 import * as log from "../log.js";
 import { loadScopeMcpServers, updateConversationSettings } from "../settings/index.js";
 import { readJsonSchemaFileIfExists } from "../file-guards.js";
-import {
-  createWorkspace,
-  isOfficeKey,
-  listRegisteredOffices,
-  officeKey,
-  type Office,
-} from "../office/index.js";
+import { createWorkspace, isOfficeKey, listRegisteredOffices, officeKey } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import type { OfficeKey } from "../types.js";
 import type { McpServerConfig } from "./types.js";
 import { errorMessage, isRecord } from "../unknown-values.js";

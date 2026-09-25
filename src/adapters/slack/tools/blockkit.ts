@@ -1,6 +1,5 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
-export type { SlackBlockKitOps } from "../types.js";
 import type { SlackBlockKitOps } from "../types.js";
 import { LABEL_PARAMETER } from "../../../harness/tools/host-fn-tool.js";
 

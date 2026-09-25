@@ -1,4 +1,4 @@
-import type { Office } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import type { ConversationMessage } from "../types.js";
 
 export interface CapturedRun {

@@ -4,43 +4,47 @@ import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { basename } from "node:path";
+import type {
+  MessagingBot,
+  ConversationContext,
+  ConversationEvent,
+  MessagingEventHandler,
+  ConversationResponder,
+  ChatToolResult,
+  ConversationKind,
+  MessagingInfo,
+  OfficeAddress,
+  PlatformHistoryMessage,
+  PlatformHistoryOptions,
+  PlatformUserInfo,
+  Attachment,
+} from "../../types.js";
 import {
   createConversationEvent,
   createConversationMessage,
-  type MessagingBot,
-  type ConversationContext,
-  type ConversationEvent,
-  type MessagingEventHandler,
-  type ConversationResponder,
-  type ChatToolResult,
-  type ConversationKind,
-  type MessagingInfo,
-  type OfficeAddress,
-  type PlatformHistoryMessage,
-  type PlatformHistoryOptions,
-  type PlatformUserInfo,
-} from "../index.js";
-import {
   createOfficeAddress,
   listRegisteredOffices,
-  type Office,
-  type Workspace,
 } from "../../office/index.js";
-import { COMMAND_MANIFEST, type SlackSlashRoute } from "../commands/manifest.js";
+import type { Office, Workspace, PlatformChannelKind } from "../../office/types.js";
+import { COMMAND_MANIFEST } from "../commands/manifest.js";
+import type { SlackSlashRoute } from "../commands/types.js";
 import {
   slackConversationAutoReplyMode,
   resolveConversationSettings,
 } from "../../settings/index.js";
-import { evaluateWithJev, JevNotConfiguredError } from "../../harness/index.js";
+import { evaluateWithJev, JevNotConfiguredError } from "../../harness/jev.js";
 import type { EventScheduler } from "../../events/scheduler.js";
 import * as log from "../../log.js";
-import type { Attachment } from "../../types.js";
 import type {
   SlackBlockAction,
   SlackBlockActionBody,
   SlackChannel,
   SlackEvent,
   SlackUser,
+  AgentContext,
+  AssistantSurfaceOps,
+  AssistantThreadPayload,
+  SuggestedPrompt,
 } from "./types.js";
 import { readTextFileIfExists } from "../../file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
@@ -53,21 +57,13 @@ import {
   withRetry,
 } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
-import {
-  readPlatformChannelKind,
-  recordPlatformChannelKind,
-  type PlatformChannelKind,
-} from "../../office/projection.js";
+import { readPlatformChannelKind, recordPlatformChannelKind } from "../../office/projection.js";
 import {
   AssistantThreadRegistry,
   handleAgentContextChanged,
   handleAgentDmOpened,
   handleAssistantThreadStarted,
   titleAssistantThread,
-  type AgentContext,
-  type AssistantSurfaceOps,
-  type AssistantThreadPayload,
-  type SuggestedPrompt,
 } from "./assistant.js";
 import { createSlackAdapters } from "./context.js";
 import {
@@ -206,8 +202,6 @@ export function buildMrkdwnContextBlock(text: string): object {
       : text;
   return { type: "context", elements: [{ type: "mrkdwn", text: blockText }] };
 }
-
-export type { SlackChannel, SlackEvent, SlackUser } from "./types.js";
 
 class AttachmentDownloadHttpError extends Error {
   constructor(

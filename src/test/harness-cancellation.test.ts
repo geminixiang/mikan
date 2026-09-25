@@ -10,7 +10,9 @@ import {
   TODO_CONTEXT,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
-import { MikanAgentSession, MikanModels, type HarnessEvent } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
+import type { HarnessEvent } from "../harness/types.js";
 import * as log from "../log.js";
 import { SessionStore } from "../sessions/session-store.js";
 

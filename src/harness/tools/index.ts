@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ConversationKind } from "../../types.js";
 import { createAttachTool } from "./attach.js";
-import type { Executor, SandboxConfig } from "../../sandbox/index.js";
+import type { Executor, SandboxConfig } from "../../sandbox/types.js";
 import type { OfficeAddress, SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
@@ -14,8 +14,6 @@ import { createJevBrowserTool } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { PlatformToolPack, PlatformToolRunContext } from "./types.js";
-
-export { createSubagentTool } from "./subagent.js";
 
 export function createMikanTools(
   executor: Executor,

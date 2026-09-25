@@ -8,11 +8,12 @@ import type {
   PlatformName,
   RunningSession,
 } from "../types.js";
-import type { Workspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
-import type { RunMemoryCapture } from "../memory-capture/index.js";
-import { MikanModels } from "../harness/index.js";
+import type { RunMemoryCapture } from "../memory-capture/types.js";
+import { MikanModels } from "../harness/models.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
 import type { CommandHandler, CommandServices } from "../adapters/commands/types.js";
 import { isPrivateConversation } from "../adapters/commands/utils.js";
@@ -47,18 +48,13 @@ import {
   formatStopped,
   formatStopping,
 } from "../adapters/messages.js";
-import { getUnresolvedSandboxPathContext } from "../sandbox/index.js";
+import { getUnresolvedSandboxPathContext } from "../sandbox/registry.js";
 import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
 
 type ConversationState = ConversationRuntimeState;
 
-export type {
-  RunSessionOptions,
-  ConversationRuntime,
-  ConversationRuntimeOptions,
-} from "./types.js";
 import type {
   RunSessionOptions,
   ConversationRuntime,
@@ -126,7 +122,7 @@ export function createConversationRuntime(
 
 class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly sessions = new SessionLifecycle();
-  private readonly chatSessionManager = new ChatHistorySync();
+  private readonly chatSessionManager = new ChatHistorySync({ isCommandText });
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private readonly resolvedModels: MikanModels;
@@ -548,6 +544,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       openConnector: this.options.openConnector,
       eventScheduler: this.options.eventScheduler?.(),
       sessionScope,
+      chatHistory: this.chatSessionManager,
       signal,
       vaultManager: this.options.vaultManager,
       provisioner: this.options.provisioner,

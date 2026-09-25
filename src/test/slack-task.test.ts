@@ -19,7 +19,9 @@ import {
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
-import { MikanAgentSession, MikanModels, JevNotConfiguredError } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
+import { JevNotConfiguredError } from "../harness/jev.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import * as observability from "../observability/index.js";
 import {

@@ -1,23 +1,23 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import type { MessagingBot, PlatformName } from "../index.js";
+import type { MessagingBot, PlatformName } from "../../types.js";
 import { resolveLinkBaseUrl } from "../../env-manifest.js";
 import * as log from "../../log.js";
-import type { SandboxConfig } from "../../sandbox/index.js";
+import type { SandboxConfig } from "../../sandbox/types.js";
 import { OfficeEventStore, type EventScheduleSink } from "../../events/index.js";
-import type { VaultManager } from "../../vault/index.js";
-import { handleAdminRequest, type AdminRuntimeBridge } from "./admin/portal.js";
+import type { VaultManager } from "../../vault/types.js";
+import { handleAdminRequest } from "./admin/portal.js";
+import type { AdminRuntimeBridge } from "./admin/types.js";
 import type { InMemoryAdminTokenStore } from "./admin/portal.js";
 import { createLoginRequestHandler } from "./login/portal.js";
 import { requestBaseUrl } from "./portal-shell.js";
 import type { InMemoryLinkTokenStore } from "./login/portal.js";
 import type { NotifyFn } from "./login/types.js";
-import {
-  handleSessionViewRequest,
-  type SessionViewInteractiveOptions,
-} from "./session-view/portal.js";
+import { handleSessionViewRequest } from "./session-view/portal.js";
+import type { SessionViewInteractiveOptions } from "./session-view/types.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/portal.js";
 import type { Office, Workspace } from "../../office/types.js";
-import { handleGithubWebhookRequest, type GithubWebhookOptions } from "../github/webhook.js";
+import { handleGithubWebhookRequest } from "../github/webhook.js";
+import type { GithubWebhookOptions } from "../github/types.js";
 import { errorMessage } from "../../unknown-values.js";
 
 interface StartWebServerOptions {

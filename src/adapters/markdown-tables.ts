@@ -2,8 +2,6 @@ import MarkdownIt from "markdown-it";
 import type Token from "markdown-it/lib/token.mjs";
 import type { MarkdownTable } from "./types.js";
 
-export type { MarkdownTable } from "./types.js";
-
 const markdown = new MarkdownIt({ html: false });
 
 export function normalizeMarkdownTables(source: string): string {

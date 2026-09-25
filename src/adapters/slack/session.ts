@@ -4,7 +4,6 @@ import {
   makeThreadSessionKey,
   threadSuffixOf,
 } from "../../sessions/session-key.js";
-export type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 import type { OfficeAddress } from "../../types.js";
 import type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 

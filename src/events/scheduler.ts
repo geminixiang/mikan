@@ -1,10 +1,10 @@
 import { Cron } from "croner";
 import { existsSync, readdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { createConversationEvent } from "../adapters/index.js";
 import type { ConversationKind, MessagingBot, PlatformName } from "../types.js";
 import * as log from "../log.js";
-import { listRegisteredOffices, officeKey, type Workspace } from "../office/index.js";
+import { createConversationEvent, listRegisteredOffices, officeKey } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import { reportUserFacingError } from "../observability/index.js";
 import { inferConversationKind } from "../sessions/session-key.js";
 import type { OfficeAddress } from "../types.js";
@@ -17,8 +17,6 @@ import {
   type PeriodicEventInfo,
 } from "./index.js";
 import { errorMessage } from "../unknown-values.js";
-
-export type { MikanEvent, PeriodicEventInfo } from "./index.js";
 
 interface Scheduled {
   address: OfficeAddress;

@@ -1,19 +1,20 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
+
+import type { Workspace } from "../../office/types.js";
+import type { DockerContainerManager } from "../../sandbox/provisioner.js";
+import type { SandboxConfig } from "../../sandbox/types.js";
 import type {
+  SandboxResourceController,
   ConversationContext,
   HandleNewCommandOptions,
   MessagingBot,
   OfficeAddress,
   PlatformName,
-} from "../index.js";
-import type { Workspace } from "../../office/index.js";
-import type { DockerContainerManager } from "../../sandbox/provisioner.js";
-import type { SandboxConfig } from "../../sandbox/index.js";
-import type { SandboxResourceController } from "../../types.js";
-import type { VaultManager } from "../../vault/index.js";
+  SessionViewTokenStoreLike,
+} from "../../types.js";
+import type { VaultManager } from "../../vault/types.js";
 import type { AdminTokenCreateOptions } from "../web/admin/types.js";
-import type { SessionViewTokenCreateOptions } from "../web/session-view/types.js";
 
 interface CommandArgSpec {
   name: string;
@@ -49,10 +50,6 @@ export interface LinkTokenStoreLike {
     vaultId: string,
     providerId: string,
   ): { token: string };
-}
-
-export interface SessionViewTokenStoreLike {
-  create(options: SessionViewTokenCreateOptions): { token: string };
 }
 
 export interface AdminTokenStoreLike {

@@ -5,12 +5,6 @@ import { SessionStore } from "./session-store.js";
 import { atomicWritePrivateFile, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
-export type {
-  MikanSessionHeader,
-  ParentSessionRef,
-  ResolvedSessionScope,
-  ThreadRootMessage,
-} from "./types.js";
 import type { MikanSessionHeader, ParentSessionRef } from "./types.js";
 import { isRecord } from "../unknown-values.js";
 

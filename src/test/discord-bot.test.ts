@@ -5,7 +5,7 @@ import { Collection } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import type { Workspace } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 
 function makeHandler(): MessagingEventHandler {

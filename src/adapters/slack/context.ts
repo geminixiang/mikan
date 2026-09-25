@@ -1,9 +1,9 @@
-import { createConversationMessage, type ConversationContext } from "../index.js";
-import { type SlackMessagingBot, type SlackEvent } from "./bot.js";
+import type { ConversationContext } from "../../types.js";
+import { createConversationMessage } from "../../office/index.js";
+import { type SlackMessagingBot } from "./bot.js";
+import type { SlackEvent, SlackAdapterOptions } from "./types.js";
 import { createSlackResponseContext } from "./response-lifecycle.js";
 import { planSlackAdapterSession } from "./session.js";
-export type { SlackAdapterOptions } from "./types.js";
-import type { SlackAdapterOptions } from "./types.js";
 
 export function createSlackAdapters(
   event: SlackEvent,

@@ -21,18 +21,9 @@ import type {
   SubagentOutcomeStatus,
 } from "./types.js";
 
-export type { ObservabilityAttributes, RunScopeContext } from "./types.js";
-
 export interface ObservabilitySpan {
   end(options?: { attributes?: ObservabilityAttributes; error?: unknown }): void;
 }
-export type {
-  JevCaller,
-  JevOutcomeReport,
-  ReportUserFacingErrorOptions,
-  SubagentOutcomeReport,
-} from "./types.js";
-export { sanitizeBreadcrumb } from "./sentry.js";
 
 const tracer = trace.getTracer("@geminixiang/mikan");
 const meter = metrics.getMeter("@geminixiang/mikan");

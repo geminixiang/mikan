@@ -8,8 +8,6 @@ import type {
   GithubReadResult,
 } from "../types.js";
 
-export type { GithubReadFn } from "../types.js";
-
 export const GITHUB_READ_TOOL = "github_read";
 
 const githubReadSchema = Type.Object({

@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { OfficeEventStore, officeEventsDir } from "../events/index.js";
 import type { EventPayload, EventStore } from "../events/index.js";
 import { createEventTool } from "../harness/tools/event.js";
-import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 let dir: string;
 

@@ -17,6 +17,7 @@ this module.
 | `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                     |
 | `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                  |
 | `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                     |
+| `tool-args.ts`          | Display formatting of tool-call arguments for logs and platform progress lines                                                                  |
 | `models.ts`             | Model catalog and authentication resolution                                                                                                     |
 | `jev.ts`                | Adapter over `@geminixiang/jev` for Jev (typesafe/jev), a typed-decision evaluation model; not part of the chat model catalog                   |
 | `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
@@ -28,7 +29,7 @@ this module.
 | `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                       |
 | `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                            |
 | `types.ts`              | Shared harness, runner and subagent contracts                                                                                                   |
-| `index.ts`              | Harness module exports                                                                                                                          |
+| `index.ts`              | Published `./harness` entry point: re-exports only; code inside `src/` imports the owning module instead                                        |
 
 ## Run lifecycle
 

@@ -11,7 +11,8 @@ import {
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
 import { atomicWritePrivateFile } from "../../../file-guards.js";
-import { MikanModels, parseFrontmatter, validateSkill } from "../../../harness/index.js";
+import { MikanModels } from "../../../harness/models.js";
+import { parseFrontmatter, validateSkill } from "../../../harness/skills.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { EventStore } from "../../../events/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
@@ -21,7 +22,6 @@ import {
   adminViewStartupScript,
   adminViewStyles,
 } from "./client-assets.js";
-export type { AdminToken } from "./types.js";
 
 const ADMIN_TOKEN_TTL_MS = 30 * 60 * 1000;
 
@@ -45,8 +45,8 @@ import {
   loadGlobalSettings,
   loadScopeMcpServers,
   resolveConversationSettings,
-  type SandboxSettings,
 } from "../../../settings/index.js";
+import type { SandboxSettings, OfficeAddress } from "../../../types.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../../harness/mcp.js";
 import { loadMcpTools } from "../../../harness/mcp.js";
 import {
@@ -73,17 +73,14 @@ import { resolveWorkspaceProjection } from "../../../office/projection.js";
 import { sharedVaultKey } from "../../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
 
-export type { AdminRuntimeBridge, AdminServices, EventSummary } from "./types.js";
 import type { AdminServices, EventSummary } from "./types.js";
-import type { OfficeAddress } from "../../index.js";
 import {
   assertPlatformName,
   createOfficeAddress,
   listRegisteredOffices,
   sameOffice,
-  type Office,
-  type Workspace,
 } from "../../../office/index.js";
+import type { Office, Workspace } from "../../../office/types.js";
 import { errorMessage } from "../../../unknown-values.js";
 
 export async function handleAdminRequest(

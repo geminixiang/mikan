@@ -16,8 +16,6 @@ const githubSyncSchema = Type.Object({
 
 import type { GithubSyncFn } from "../types.js";
 
-export type { GithubSyncFn } from "../types.js";
-
 export function createGithubSyncTool(): {
   tool: AgentTool<typeof githubSyncSchema>;
   setGithubSyncFunction: (fn: GithubSyncFn | null) => void;

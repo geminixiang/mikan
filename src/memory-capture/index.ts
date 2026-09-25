@@ -1,14 +1,11 @@
 import { Type } from "@sinclair/typebox";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
-import {
-  evaluateWithJev,
-  isEventTriggerAttribution,
-  JevNotConfiguredError,
-  resolveTriggerAttribution,
-  redactSecrets,
-  runSubagent,
-  type MikanModels,
-} from "../harness/index.js";
+import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
+import { isEventTriggerAttribution } from "../harness/presenter.js";
+import { resolveTriggerAttribution } from "../harness/prompt.js";
+import { redactSecrets } from "../harness/tools/secret-redaction.js";
+import { runSubagent } from "../harness/subagent.js";
+import type { MikanModels } from "../harness/models.js";
 import { resolveConversationSettings } from "../settings/index.js";
 import * as log from "../log.js";
 import type {
@@ -19,8 +16,6 @@ import type {
   RunMemoryCapture,
 } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
-
-export type { CapturedRun, MemoryCaptureOp, RunMemoryCapture } from "./types.js";
 
 const MEMORY_CAPTURE_THRESHOLD = 0.4;
 export const CAPTURED_KNOWLEDGE_HEADING = "## Captured knowledge";

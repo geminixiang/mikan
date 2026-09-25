@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import { createOfficeAddress } from "../office/index.js";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { createEmbedder } from "../../deploy/examples/embedder/index.js";
 
 let workingDir: string;

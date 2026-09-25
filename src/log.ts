@@ -1,7 +1,6 @@
 import chalk from "chalk";
-import { formatToolArgs } from "./adapters/shared.js";
+import { formatToolArgs } from "./harness/tool-args.js";
 
-export type { LogContext } from "./types.js";
 import type { LogContext } from "./types.js";
 
 function timestamp(): string {

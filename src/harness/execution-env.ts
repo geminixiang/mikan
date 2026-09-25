@@ -20,7 +20,7 @@ import {
   type TruncationResult,
 } from "@earendil-works/pi-agent-core";
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import type { Executor, SandboxConfig } from "../sandbox/index.js";
+import type { Executor, SandboxConfig } from "../sandbox/types.js";
 import { execAppendFile, execWriteFile, shellEscape } from "../sandbox/utils.js";
 import { errorMessage } from "../unknown-values.js";
 

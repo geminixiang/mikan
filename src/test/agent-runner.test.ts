@@ -19,12 +19,15 @@ import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
+import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { CreateRunnerOptions } from "../types.js";
-import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 let dir: string;
 
@@ -98,6 +101,7 @@ async function createTestRunner(
     platformWorkspaceId: options.platformWorkspaceId,
     openConnector: options.openConnector,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
+    chatHistory: new ChatHistorySync({ isCommandText }),
     models,
     sessionView: options.sessionView,
     platformToolPackFactories: options.platformToolPackFactories ?? [],

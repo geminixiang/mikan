@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { saveIncomingAttachments } from "../adapters/shared.js";
-import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 const temporaryDirectories: string[] = [];
 

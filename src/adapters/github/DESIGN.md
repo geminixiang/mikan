@@ -58,7 +58,7 @@ back to a unique (owner, repo) — two real repos would collide onto one
 conversation. `_` is unambiguous under GitHub's name grammar: owners never
 contain `_` and the trailing number is pure digits, so the first `_` and the
 last `_` are always the real boundaries even when the repo name itself
-contains `_` (see `ids.ts`).
+contains `_` (see `parseGithubConversationId` in `src/office/index.ts`).
 
 ### Conversation directory
 

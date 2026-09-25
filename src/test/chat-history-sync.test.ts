@@ -12,6 +12,7 @@ import { SessionStore } from "../sessions/session-store.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import { getThreadSessionFile, openManagedSession } from "../sessions/store.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 
 let conversationDir: string;
 
@@ -100,6 +101,7 @@ describe("ChatHistorySync", () => {
       },
     ]);
     const manager = new ChatHistorySync({
+      isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
     const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
@@ -148,6 +150,7 @@ describe("ChatHistorySync", () => {
   test("reset does not replay late records without a trustworthy event date", async () => {
     writeLog([]);
     const manager = new ChatHistorySync({
+      isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
     const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
@@ -224,6 +227,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -272,6 +276,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const scope = await new ChatHistorySync({
+      isCommandText,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     }).resolveSessionScope({
       conversationDir,
@@ -298,6 +303,7 @@ describe("ChatHistorySync", () => {
       },
     ]);
     const manager = new ChatHistorySync({
+      isCommandText,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
     const scope = await manager.resolveSessionScope({
@@ -390,6 +396,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -445,6 +452,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:01:03.000Z"),
@@ -527,6 +535,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:07.000Z"),
@@ -617,6 +626,7 @@ describe("ChatHistorySync", () => {
     writeLog(logEntries.slice(0, 3));
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:08.000Z"),
@@ -696,6 +706,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:04.000Z"),
@@ -769,6 +780,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -846,6 +858,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -921,6 +934,7 @@ describe("ChatHistorySync", () => {
     ]);
 
     const manager = new ChatHistorySync({
+      isCommandText,
       recentDays: 7,
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
@@ -963,7 +977,7 @@ describe("ChatHistorySync", () => {
 
     registerThreadSession({ conversationDir, sessionKey: "C123:2000.0001", cwd: conversationDir });
 
-    const manager = new ChatHistorySync();
+    const manager = new ChatHistorySync({ isCommandText });
     const scope = await manager.resolveSessionScope({
       conversationDir,
       sessionKey: "C123:2000.0001",

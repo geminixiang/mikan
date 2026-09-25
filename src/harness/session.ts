@@ -37,11 +37,6 @@ import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { errorMessage } from "../unknown-values.js";
 
-export type { CompactionReason } from "./types.js";
-export type { HarnessEvent } from "./types.js";
-export type { HarnessEventListener } from "./types.js";
-export type { MikanAgentSessionOptions } from "./types.js";
-
 interface RunTally {
   usage: SubagentUsage;
   llmCalls: number;
@@ -759,9 +754,6 @@ export class MikanAgentSession {
 }
 
 export type { CompactionSettings };
-export type { BudgetSettings } from "./types.js";
-export type { HarnessSettings } from "./types.js";
-export type { RetrySettings } from "./types.js";
 
 export const DEFAULT_RETRY_SETTINGS: RetrySettings = {
   enabled: true,

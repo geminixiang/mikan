@@ -1,4 +1,4 @@
-import type { PlatformName } from "../../index.js";
+import type { PlatformName } from "../../../types.js";
 import type { TokenRecord } from "../types.js";
 
 export type LoginCredentialKind = "api_key" | "oauth";

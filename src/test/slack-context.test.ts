@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
-import type { SlackEvent } from "../adapters/slack/bot.js";
+import type { SlackEvent } from "../adapters/slack/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
 import { createOfficeAddress } from "../office/index.js";
 

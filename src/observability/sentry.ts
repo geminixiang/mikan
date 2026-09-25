@@ -63,12 +63,6 @@ const TOKEN_PATTERNS = [
   /\bgh[pousr]_[A-Za-z0-9]{20,}\b/,
 ];
 
-export type {
-  ReportUserFacingErrorOptions,
-  SentryAttributionAttributes,
-  SentryRunScopeContext,
-  SentrySpanPayload,
-} from "./types.js";
 import type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,

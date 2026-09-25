@@ -1,8 +1,12 @@
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { Type } from "@sinclair/typebox";
-import type { MessagingBot, MessagingEventHandler, MessagingInfo } from "../index.js";
-import { createConversationEvent, type ConversationEvent } from "../index.js";
+import type {
+  MessagingBot,
+  MessagingEventHandler,
+  MessagingInfo,
+  ConversationEvent,
+} from "../../types.js";
 import * as log from "../../log.js";
 import { ensureDirExists, readJsonSchemaFileIfExists } from "../../file-guards.js";
 import { atomicWritePrivateFile } from "../../file-guards.js";
@@ -18,17 +22,16 @@ import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.j
 import { createGithubAdapters } from "./context.js";
 import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
 import { cloneRepo, conversationRepoDir } from "./repo.js";
-import { createOfficeAddress, type Office } from "../../office/index.js";
 import {
   buildGithubConversationId,
-  GITHUB_ISSUE_BODY_TS,
-  githubReviewCommentTs,
+  createConversationEvent,
+  createOfficeAddress,
   parseGithubConversationId,
-  parseReviewCommentTs,
-} from "./ids.js";
+} from "../../office/index.js";
+import type { Office, GithubConversationRef } from "../../office/types.js";
+import { GITHUB_ISSUE_BODY_TS, githubReviewCommentTs, parseReviewCommentTs } from "./ids.js";
 import type {
   GithubBotConfig,
-  GithubConversationRef,
   GithubEvent,
   GithubIssue,
   GithubReactionContent,

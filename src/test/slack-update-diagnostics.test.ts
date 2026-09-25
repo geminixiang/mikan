@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/node";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { renderSlackBlocks } from "../adapters/slack/blocks.js";
 import { recordSlackUpdate } from "../adapters/slack/update-diagnostics.js";
-import { sanitizeBreadcrumb } from "../observability/index.js";
+import { sanitizeBreadcrumb } from "../observability/sentry.js";
 
 vi.mock("@sentry/node", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@sentry/node")>()),

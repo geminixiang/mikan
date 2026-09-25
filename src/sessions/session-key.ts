@@ -1,5 +1,4 @@
 import type { ConversationKind, OfficeAddress } from "../types.js";
-export type { ResolveSessionKeyOptions } from "./types.js";
 import type { ResolveSessionKeyOptions } from "./types.js";
 
 const PATH_SEPARATOR_PATTERN = /[\\/]/;

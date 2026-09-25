@@ -1,7 +1,5 @@
 import type { CommandManifestEntry } from "./types.js";
 
-export type { CommandManifestEntry, SlackSlashRoute } from "./types.js";
-
 export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
   {
     name: "login",

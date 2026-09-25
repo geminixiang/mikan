@@ -1,7 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "@sinclair/typebox";
 import { randomUUID } from "node:crypto";
-import type { Executor } from "../../sandbox/index.js";
+import type { Executor } from "../../sandbox/types.js";
 import { shellEscape } from "../../sandbox/utils.js";
 import { readEnv } from "../../env-manifest.js";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";

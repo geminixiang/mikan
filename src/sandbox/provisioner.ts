@@ -36,16 +36,6 @@ interface ContainerState {
   containerName: string;
 }
 
-export type {
-  ContainerBindTranslator,
-  ContainerMount,
-  DockerContainerManagerOptions,
-  HomeVolumeMigrationOutcome,
-  ManagedContainerInventoryEntry,
-  ProvisionOptions,
-  ResourceLimits,
-  SandboxLimitStatus,
-} from "../types.js";
 import type {
   ContainerBindTranslator,
   ContainerMount,

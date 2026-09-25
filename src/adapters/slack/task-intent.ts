@@ -1,4 +1,4 @@
-import { evaluateWithJev, JevNotConfiguredError } from "../../harness/index.js";
+import { evaluateWithJev, JevNotConfiguredError } from "../../harness/jev.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import * as log from "../../log.js";
 import type { TaskStatus } from "../../types.js";

@@ -10,10 +10,11 @@ import {
   isCapturableRun,
   MemoryCapture,
 } from "../memory-capture/index.js";
-import type { CapturedRun, MemoryCaptureOp } from "../memory-capture/index.js";
-import { JevNotConfiguredError, MikanModels } from "../harness/index.js";
+import type { CapturedRun, MemoryCaptureOp } from "../memory-capture/types.js";
+import { JevNotConfiguredError } from "../harness/jev.js";
+import { MikanModels } from "../harness/models.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import type { Office, Workspace } from "../office/index.js";
+import type { Office, Workspace } from "../office/types.js";
 
 const NOW = new Date("2026-09-23T10:00:00.000Z");
 const STAMP = "captured 2026-09-23 from 1.0001";

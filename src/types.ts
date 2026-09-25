@@ -2,13 +2,13 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { SubagentRunStatus } from "./harness/types.js";
-import type { SessionViewTokenStoreLike } from "./adapters/commands/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
 import type { SandboxConfig } from "./sandbox/types.js";
+import type { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import type { VaultManager } from "./vault/types.js";
@@ -439,6 +439,7 @@ export interface CreateRunnerOptions {
   openConnector?: McpServerConfig;
   eventScheduler?: EventScheduleSink;
   sessionScope: ResolvedSessionScope;
+  chatHistory: ChatHistorySync;
   signal?: AbortSignal;
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;
@@ -449,4 +450,17 @@ export interface CreateRunnerOptions {
   };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models?: MikanModels;
+}
+
+export interface SessionViewTokenCreateOptions {
+  platform: PlatformName;
+  platformUserId: string;
+  conversationId: string;
+  sessionKey: string;
+  sessionFile: string;
+  platformUserName?: string;
+}
+
+export interface SessionViewTokenStoreLike {
+  create(options: SessionViewTokenCreateOptions): { token: string };
 }

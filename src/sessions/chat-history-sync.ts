@@ -5,7 +5,6 @@ import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
 import { parseJsonValue, readTextFileIfExists } from "../file-guards.js";
-import { isCommandText } from "../adapters/commands/manifest.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
 import { isThreadSessionKey } from "./session-key.js";
@@ -28,16 +27,6 @@ const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 
 type SessionAppendMessage = Parameters<SessionStore["appendMessage"]>[0];
 
-export type {
-  ChatHistorySyncOptions,
-  HasMaterializedSessionOptions,
-  RegisterThreadSessionOptions,
-  ResetChatSessionOptions,
-  ResolveChatSessionScopeOptions,
-  SyncChatSessionOptions,
-  ThreadBootstrapWaitOptions,
-  ChatSyncReport,
-} from "./types.js";
 import type {
   ChatHistorySyncOptions,
   HasMaterializedSessionOptions,
@@ -110,8 +99,10 @@ export class ChatHistorySync {
   private readonly recentDays: number;
   private readonly maxTopLevelMessages: number;
   private readonly now: () => Date;
+  private readonly isCommandText: (text: string) => boolean;
 
-  constructor(options: ChatHistorySyncOptions = {}) {
+  constructor(options: ChatHistorySyncOptions) {
+    this.isCommandText = options.isCommandText;
     this.recentDays = options.recentDays ?? DEFAULT_RECENT_DAYS;
     this.maxTopLevelMessages = options.maxTopLevelMessages ?? DEFAULT_MAX_TOP_LEVEL_MESSAGES;
     this.now = options.now ?? (() => new Date());
@@ -149,6 +140,7 @@ export class ChatHistorySync {
       selectExistingSessionSyncMessages(records, {
         sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
         excludeMessageId: options.currentMessageId,
+        isCommandText: this.isCommandText,
       }),
       {
         recentDays: this.recentDays,
@@ -166,6 +158,7 @@ export class ChatHistorySync {
     const records = readConversationLog(options.conversationDir);
     const lastMessageId = latestSyncMessageId(records, {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
+      isCommandText: this.isCommandText,
     });
     const sessionManager = await openManagedSession(sessionFile, cwd);
     try {
@@ -197,6 +190,7 @@ export class ChatHistorySync {
       maxMessages: this.maxTopLevelMessages,
       now: this.now(),
       excludeMessageId: options.currentMessageId,
+      isCommandText: this.isCommandText,
     });
     await bootstrapSessionFromLog(
       sessionFile,
@@ -205,6 +199,7 @@ export class ChatHistorySync {
       latestSyncMessageId(records, {
         sessionKey: null,
         excludeMessageId: options.currentMessageId,
+        isCommandText: this.isCommandText,
       }),
     );
     return sessionFile;
@@ -236,6 +231,7 @@ export class ChatHistorySync {
       maxTopLevelMessages: this.maxTopLevelMessages,
       now: this.now(),
       excludeMessageId: options.currentMessageId,
+      isCommandText: this.isCommandText,
     });
     await bootstrapSessionFromLog(
       threadFile,
@@ -244,6 +240,7 @@ export class ChatHistorySync {
       latestSyncMessageId(records, {
         sessionKey: options.sessionKey,
         excludeMessageId: options.currentMessageId,
+        isCommandText: this.isCommandText,
       }),
     );
 
@@ -296,11 +293,12 @@ function selectRecentTopLevelMessages(
     maxMessages: number;
     now: Date;
     excludeMessageId?: string;
+    isCommandText: (text: string) => boolean;
   },
 ): LogRecord[] {
   return selectRecentMessages(
     recordsBeforeCurrentMessage(records, options.excludeMessageId).filter((record) =>
-      isTopLevelHistoryMessage(record.message, options.excludeMessageId),
+      isTopLevelHistoryMessage(record.message, options),
     ),
     options,
   );
@@ -321,6 +319,7 @@ function selectThreadBootstrapMessages(
     maxTopLevelMessages: number;
     now: Date;
     excludeMessageId?: string;
+    isCommandText: (text: string) => boolean;
   },
 ): LogRecord[] {
   const scopedRecords = recordsBeforeCurrentMessage(records, options.excludeMessageId);
@@ -333,10 +332,11 @@ function selectThreadBootstrapMessages(
     maxMessages: options.maxTopLevelMessages,
     now: options.now,
     excludeMessageId: options.excludeMessageId,
+    isCommandText: options.isCommandText,
   });
   const threadRecords = scopedRecords.filter(
     (record) =>
-      isRenderableConversationMessage(record.message, options.excludeMessageId) &&
+      isRenderableConversationMessage(record.message, options) &&
       (record.message.ts === threadId || record.message.threadTs === threadId),
   );
 
@@ -345,9 +345,9 @@ function selectThreadBootstrapMessages(
 
 function isTopLevelHistoryMessage(
   message: ConversationLogMessage,
-  excludeMessageId?: string,
+  filter: RenderableMessageFilter,
 ): boolean {
-  if (!isRenderableConversationMessage(message, excludeMessageId)) return false;
+  if (!isRenderableConversationMessage(message, filter)) return false;
   return !message.threadTs;
 }
 
@@ -359,12 +359,12 @@ function isRecentHistoryMessage(message: ConversationLogMessage, sinceMs: number
 
 function selectExistingSessionSyncMessages(
   records: LogRecord[],
-  options: { sessionKey: string | null; excludeMessageId?: string },
+  options: RenderableMessageFilter & { sessionKey: string | null },
 ): LogRecord[] {
   const threadId = options.sessionKey ? extractSessionSuffix(options.sessionKey) : null;
   return dedupeAndSortRecords(
     recordsBeforeCurrentMessage(records, options.excludeMessageId).filter((record) => {
-      if (!isRenderableConversationMessage(record.message, options.excludeMessageId)) return false;
+      if (!isRenderableConversationMessage(record.message, options)) return false;
       if (!threadId) return !record.message.threadTs;
       return record.message.ts === threadId || record.message.threadTs === threadId;
     }),
@@ -380,17 +380,22 @@ function recordsBeforeCurrentMessage(records: LogRecord[], currentMessageId?: st
 
 function latestSyncMessageId(
   records: LogRecord[],
-  options: { sessionKey: string | null; excludeMessageId?: string },
+  options: RenderableMessageFilter & { sessionKey: string | null },
 ): string | undefined {
   return selectExistingSessionSyncMessages(records, options).at(-1)?.message.ts;
 }
 
+interface RenderableMessageFilter {
+  excludeMessageId?: string;
+  isCommandText: (text: string) => boolean;
+}
+
 function isRenderableConversationMessage(
   message: ConversationLogMessage,
-  excludeMessageId?: string,
+  filter: RenderableMessageFilter,
 ): boolean {
-  if (excludeMessageId && message.ts === excludeMessageId) return false;
-  if (!message.isMessagingBot && isCommandText(message.text ?? "")) return false;
+  if (filter.excludeMessageId && message.ts === filter.excludeMessageId) return false;
+  if (!message.isMessagingBot && filter.isCommandText(message.text ?? "")) return false;
   return !!message.text?.trim();
 }
 

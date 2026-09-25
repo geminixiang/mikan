@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { TODO_CONTEXT, type AgentHarnessToolInvocation } from "@earendil-works/pi-agent-core";
-import type { SandboxConfig } from "../sandbox/index.js";
+import type { SandboxConfig } from "../sandbox/types.js";
 import { createMikanTools } from "../harness/tools/index.js";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "../adapters/github/types.js";

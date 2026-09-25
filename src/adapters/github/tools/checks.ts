@@ -1,7 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
-export type { GithubChecksFns } from "../types.js";
 import type { GithubCheckSummary, GithubChecksFns } from "../types.js";
 
 export const GITHUB_CHECKS_TOOL = "github_checks";

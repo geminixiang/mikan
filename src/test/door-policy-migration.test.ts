@@ -8,7 +8,8 @@ import {
   resolveConversationSettings,
 } from "../settings/index.js";
 import { migrateLegacyDoorPolicy } from "../settings/migrate.js";
-import { createOfficeAddress, createWorkspace, type Office } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 let stateDir: string;
 

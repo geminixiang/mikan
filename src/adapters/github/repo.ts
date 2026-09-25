@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { join } from "node:path";
-import type { Office } from "../../office/index.js";
+import type { Office } from "../../office/types.js";
 import { promisify } from "node:util";
 import type {
   CloneRepoOptions,

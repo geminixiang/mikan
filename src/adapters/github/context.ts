@@ -1,9 +1,9 @@
-import { createConversationMessage, type ConversationContext } from "../index.js";
+import type { ConversationContext } from "../../types.js";
+import { createConversationMessage, parseGithubConversationId } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation, type GithubMessagingBot } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
-import { parseGithubConversationId } from "./ids.js";
 import type { GithubEvent } from "./types.js";
 
 export function createGithubAdapters(

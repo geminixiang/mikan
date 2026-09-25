@@ -1,6 +1,4 @@
-import type { MessagingEventHandler } from "../../index.js";
-import type { MessagingBot } from "../../index.js";
-import type { PlatformName } from "../../index.js";
+import type { MessagingEventHandler, MessagingBot, PlatformName } from "../../../types.js";
 import type { TokenRecord } from "../types.js";
 
 export interface SessionViewInteractiveOptions {
@@ -39,15 +37,6 @@ export interface SessionViewModel {
   items: SessionViewItem[];
   parent?: SessionViewRelation;
   threads: SessionViewRelation[];
-}
-
-export interface SessionViewTokenCreateOptions {
-  platform: PlatformName;
-  platformUserId: string;
-  conversationId: string;
-  sessionKey: string;
-  sessionFile: string;
-  platformUserName?: string;
 }
 
 export interface SessionViewToken extends TokenRecord {

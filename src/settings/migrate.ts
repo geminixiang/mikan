@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
-import { listRegisteredOffices, type Workspace } from "../office/index.js";
+import { listRegisteredOffices } from "../office/index.js";
+import type { Workspace } from "../office/types.js";
 import type { OfficeKey } from "../types.js";
 import {
   compactSettingsConfig,

@@ -7,13 +7,6 @@ import type {
 } from "./types.js";
 import { errorMessage } from "../../unknown-values.js";
 
-export type {
-  AgentContext,
-  AssistantSurfaceOps,
-  AssistantThreadPayload,
-  SuggestedPrompt,
-} from "./types.js";
-
 const GREETING = "有什麼我可以幫忙的？";
 const GREETING_WITH_CHANNEL = (channel: string) =>
   `有什麼我可以幫忙的？我看得到你正在 #${channel}。`;

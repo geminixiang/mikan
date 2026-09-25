@@ -19,8 +19,9 @@ full rationale and decisions).
 - `context.ts`: per-event `ConversationMessage` / `ConversationResponder`;
   no streaming — the finished response is posted as one comment (per-delta
   edits would churn the API and mark every reply "edited").
-- `ids.ts`: `GH_<owner>_<repo>_<number>` conversation id encode/parse, plus
-  the `rc-<id>` message ts for inline review comments.
+- `ids.ts`: the `rc-<id>` message ts for inline review comments. The
+  `GH_<owner>_<repo>_<number>` conversation id grammar is office-owned
+  (`src/office/index.ts`).
 - `repo.ts`: host-side git operations — shallow clone into the conversation
   dir, guarded branch push (`pi/*` only, non-force, tokens per-invocation and
   never persisted), and work-preserving sync (`github_sync`).
@@ -34,8 +35,8 @@ full rationale and decisions).
   verifies `X-Hub-Signature-256` and pokes `requestPoll()`; deliveries are
   never parsed into events.
 - `types.ts`: adapter config, REST payloads, and host tool contracts
-  (`GithubPrRequest`, `PlatformGithubOps`, …) — not re-exported from root
-  `adapters/index.ts` / `types.ts`.
+  (`GithubPrRequest`, `PlatformGithubOps`, …) — GitHub-only, not part of the
+  root `src/types.ts` contract.
 
 ## Configuration (env)
 

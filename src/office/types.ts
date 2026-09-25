@@ -11,6 +11,12 @@ export interface OfficeMigrationRunSummary {
   stateDirConflicts: string[];
 }
 
+export interface GithubConversationRef {
+  owner: string;
+  repo: string;
+  number: number;
+}
+
 export interface Workspace {
   readonly root: string;
   readonly stateDir: string;

@@ -6,6 +6,7 @@ import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { openManagedSession } from "../sessions/store.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
 
 const BUSY_TEXT = "busy-queue e2e: run `sleep 10`, then reply with this token: QA_BUSY_TOKEN";
 const QUEUED_TEXT = "queue test: reply with this token directly: QA_QUEUED_TOKEN";
@@ -85,6 +86,7 @@ function writeLog(entries: object[]): void {
 
 function newManager(): ChatHistorySync {
   return new ChatHistorySync({
+    isCommandText,
     recentDays: 7,
     maxTopLevelMessages: 20,
     now: () => new Date("2026-05-01T00:00:13.000Z"),

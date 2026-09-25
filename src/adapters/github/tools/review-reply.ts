@@ -15,8 +15,6 @@ const githubReviewReplySchema = Type.Object({
 
 import type { GithubReviewReplyFn } from "../types.js";
 
-export type { GithubReviewReplyFn } from "../types.js";
-
 export function createGithubReviewReplyTool(): {
   tool: AgentTool<typeof githubReviewReplySchema>;
   setGithubReviewReplyFunction: (fn: GithubReviewReplyFn | null) => void;

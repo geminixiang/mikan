@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { MikanModels } from "../harness/index.js";
+import { MikanModels } from "../harness/models.js";
 import { describe, expect, test, vi } from "vitest";
 
 function withTempRegistry(config: unknown): MikanModels {

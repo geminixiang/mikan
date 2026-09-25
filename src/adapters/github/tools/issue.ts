@@ -3,8 +3,6 @@ import { Type } from "@sinclair/typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubIssueFn, GithubIssueRequest } from "../types.js";
 
-export type { GithubIssueFn } from "../types.js";
-
 export const GITHUB_ISSUE_TOOL = "github_issue";
 
 const githubIssueSchema = Type.Object({

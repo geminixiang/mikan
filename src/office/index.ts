@@ -14,6 +14,8 @@ import {
 import { isAbsolute, join, resolve } from "node:path";
 import * as log from "../log.js";
 import type {
+  ConversationEvent,
+  ConversationMessage,
   OfficeAddress,
   OfficeKey,
   OfficeMigrationPreparation,
@@ -23,9 +25,12 @@ import type {
   OfficeRegistryState,
   PlatformName,
 } from "../types.js";
-import type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
-export type { Office, OfficeMigrationRunSummary, Workspace } from "./types.js";
-import { parseGithubConversationId } from "../adapters/github/ids.js";
+import type {
+  GithubConversationRef,
+  Office,
+  OfficeMigrationRunSummary,
+  Workspace,
+} from "./types.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { guestWorkspacePath } from "../sandbox/layout.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
@@ -107,6 +112,72 @@ export function sameOffice(left: OfficeAddress, right: OfficeAddress): boolean {
     leftAddress.platform === rightAddress.platform &&
     leftAddress.conversationId === rightAddress.conversationId
   );
+}
+
+interface ConversationIdentityInput {
+  platform: PlatformName;
+  conversationId: string;
+  address?: OfficeAddress;
+}
+
+function resolveConversationAddress(input: ConversationIdentityInput): OfficeAddress {
+  const address = createOfficeAddress(input.platform, input.conversationId);
+  if (input.address && !sameOffice(address, input.address)) {
+    throw new Error(
+      `Conversation address mismatch for ${JSON.stringify(input.conversationId)} on ${input.platform}`,
+    );
+  }
+  return address;
+}
+
+type CanonicalConversation<T, Shape> = Omit<T, keyof ConversationIdentityInput> & Shape;
+
+export function createConversationEvent<T extends Omit<ConversationEvent, "address">>(
+  input: T & ConversationIdentityInput,
+): CanonicalConversation<T, ConversationEvent> {
+  const address = resolveConversationAddress(input);
+  const {
+    platform: _platform,
+    conversationId: _conversationId,
+    address: _suppliedAddress,
+    ...event
+  } = input;
+  return { ...event, address } as CanonicalConversation<T, ConversationEvent>;
+}
+
+export function createConversationMessage<T extends Omit<ConversationMessage, "address">>(
+  input: T & ConversationIdentityInput,
+): CanonicalConversation<T, ConversationMessage> {
+  const address = resolveConversationAddress(input);
+  const {
+    platform: _platform,
+    conversationId: _conversationId,
+    address: _suppliedAddress,
+    ...message
+  } = input;
+  return { ...message, address } as CanonicalConversation<T, ConversationMessage>;
+}
+
+export function buildGithubConversationId(ref: GithubConversationRef): string {
+  return `GH_${ref.owner.toLowerCase()}_${ref.repo.toLowerCase()}_${ref.number}`;
+}
+
+const GITHUB_CONVERSATION_ID_PATTERN = /^GH_([A-Za-z0-9-]+)_(.+)_(\d+)$/;
+
+export function parseGithubConversationId(conversationId: string): GithubConversationRef {
+  const match = GITHUB_CONVERSATION_ID_PATTERN.exec(conversationId);
+  if (!match) {
+    throw new Error(`Not a GitHub conversation id: ${conversationId}`);
+  }
+  const [, owner, repo, number] = match;
+  if (owner === undefined || repo === undefined || number === undefined) {
+    throw new Error(`Not a GitHub conversation id: ${conversationId}`);
+  }
+  return {
+    owner: owner.toLowerCase(),
+    repo: repo.toLowerCase(),
+    number: Number(number),
+  };
 }
 
 export function assertOfficeKey(value: string): OfficeKey {

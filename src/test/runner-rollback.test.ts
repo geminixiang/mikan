@@ -17,11 +17,14 @@ vi.mock("../harness/mcp.js", async (importOriginal) => {
 });
 
 import { createRunner } from "../harness/runner.js";
-import { MikanAgentSession, MikanModels } from "../harness/index.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
+import { isCommandText } from "../adapters/commands/manifest.js";
+import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 
 let dir: string;
 
@@ -72,6 +75,7 @@ function createOptions() {
     office,
     trustModel: "membership" as const,
     sessionScope: { sessionDir, contextFile, threadRootMessage: null },
+    chatHistory: new ChatHistorySync({ isCommandText }),
     models,
   };
 }

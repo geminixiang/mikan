@@ -80,7 +80,6 @@ export function readRawBody(
   });
 }
 
-export type { PortalShellOptions } from "../../types.js";
 import type { PortalShellOptions } from "../../types.js";
 
 type PortalView = "admin" | "session" | "vault";

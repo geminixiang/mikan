@@ -3,8 +3,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import * as log from "../../log.js";
 import type { GithubWebhookOptions } from "./types.js";
 
-export type { GithubWebhookOptions } from "./types.js";
-
 export const GITHUB_WEBHOOK_PATH = "/github/webhook";
 
 const POKE_EVENTS = new Set(["issues", "issue_comment", "pull_request_review_comment"]);

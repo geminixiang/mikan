@@ -1,10 +1,8 @@
 import { join, resolve } from "node:path";
 import { envSummaryLines } from "../env-manifest.js";
-import { parseSandboxArg } from "../sandbox/index.js";
+import { parseSandboxArg } from "../sandbox/registry.js";
 import type { BootPlan } from "./types.js";
 import { cliCommand, defaultStateDir, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
-
-export type { BootPlan } from "./types.js";
 
 const SUBCOMMANDS = ["office", "sessions", "sandbox", "env"] as const;
 

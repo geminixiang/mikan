@@ -6,8 +6,8 @@ import {
   attachSessionEventHandlers,
   createRunState,
 } from "../harness/presenter.js";
-import type { HarnessEvent, HarnessEventListener, MikanAgentSession } from "../harness/index.js";
-import type { PlatformToolRoles } from "../harness/types.js";
+import type { MikanAgentSession } from "../harness/session.js";
+import type { PlatformToolRoles, HarnessEvent, HarnessEventListener } from "../harness/types.js";
 import { startOperationSpan } from "../observability/index.js";
 
 vi.mock("../observability/index.js", async (importOriginal) => {

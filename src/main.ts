@@ -34,15 +34,14 @@ import { DockerContainerManager } from "./sandbox/provisioner.js";
 import { loadGlobalSettings, MissingGlobalSettingsError } from "./settings/index.js";
 import { assertStateDirOutsideWorkspace } from "./file-guards.js";
 import { resolveLinkBaseUrl } from "./env-manifest.js";
-import {
-  configureHttpDispatcher,
-  defaultModelsJsonPath,
-  parseHttpIdleTimeoutMs,
-} from "./harness/index.js";
+import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
+import { defaultModelsJsonPath } from "./harness/models.js";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
-import { SandboxError, validateSandbox } from "./sandbox/index.js";
-import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
+import { SandboxError } from "./sandbox/utils.js";
+import { validateSandbox } from "./sandbox/registry.js";
+import { helpText, resolveBoot } from "./cli/boot.js";
+import type { BootPlan } from "./cli/types.js";
 import { runOnboardCommand } from "./cli/onboard.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import { FileVaultManager } from "./vault/index.js";

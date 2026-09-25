@@ -1,4 +1,4 @@
-import type { ConversationEvent } from "../index.js";
+import type { ConversationEvent } from "../../types.js";
 import type { Workspace } from "../../office/types.js";
 
 export interface GithubEvent extends ConversationEvent {
@@ -31,10 +31,6 @@ export interface GithubSyncState {
 export interface GithubRepoRef {
   owner: string;
   repo: string;
-}
-
-export interface GithubConversationRef extends GithubRepoRef {
-  number: number;
 }
 
 interface GithubUser {

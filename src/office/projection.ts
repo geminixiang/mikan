@@ -2,14 +2,12 @@ import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
 import { loadOfficeVisibilityOverride } from "../settings/index.js";
-import { listRegisteredOffices, type Office } from "./index.js";
+import { listRegisteredOffices } from "./index.js";
+import type { Office, PlatformChannelKind, WorkspaceProjection } from "./types.js";
 import * as log from "../log.js";
 import { guestPublicOfficePath, guestWorkspacePath } from "../sandbox/layout.js";
 import type { ContainerMount, WorkspaceVisibility } from "../types.js";
-import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
-
-export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
 const CHANNEL_KIND_FILE = "channel-kind";
 const CHANNEL_KINDS: readonly PlatformChannelKind[] = [

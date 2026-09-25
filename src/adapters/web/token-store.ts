@@ -1,5 +1,4 @@
 import { randomBytes } from "node:crypto";
-export type { TokenRecord } from "./types.js";
 import type { TokenRecord } from "./types.js";
 
 export class InMemoryTokenStore<T extends TokenRecord> {

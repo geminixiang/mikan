@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
-import type { TelegramEvent } from "../adapters/telegram/bot.js";
+import type { TelegramEvent } from "../adapters/telegram/types.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
 import { createOfficeAddress } from "../office/index.js";
 

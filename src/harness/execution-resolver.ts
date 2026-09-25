@@ -1,15 +1,17 @@
 import { posix } from "node:path";
-import type { Workspace } from "../office/index.js";
+
 import { loadGlobalSettings } from "../settings/index.js";
-import { DockerContainerManager, type ContainerMount } from "../sandbox/provisioner.js";
+import { DockerContainerManager } from "../sandbox/provisioner.js";
+import type { ContainerMount, ActorContext, ExecutionPlan } from "../types.js";
 import {
   assertSandboxSupportsWorkspacePolicy,
   createExecutor,
   getSandboxCredentialCapabilities,
-  type SandboxConfig,
-} from "../sandbox/index.js";
+} from "../sandbox/registry.js";
+import type { SandboxConfig } from "../sandbox/types.js";
 import { reportUserFacingError } from "../observability/index.js";
-import { normalizeSharedVaultName, type VaultManager } from "../vault/index.js";
+import { normalizeSharedVaultName } from "../vault/index.js";
+import type { VaultManager } from "../vault/types.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
 import {
   credentialAuthorizationKey,
@@ -18,10 +20,7 @@ import {
   scopeCloudflareSandboxId,
 } from "../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
-import type { WorkspaceProjection } from "../office/types.js";
-
-export type { ActorContext } from "../types.js";
-import type { ActorContext, ExecutionPlan } from "../types.js";
+import type { WorkspaceProjection, Workspace } from "../office/types.js";
 
 export class ActorExecutionResolver {
   constructor(

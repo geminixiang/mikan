@@ -93,6 +93,7 @@ export interface ChatSyncReport {
 }
 
 export interface ChatHistorySyncOptions {
+  isCommandText: (text: string) => boolean;
   recentDays?: number;
   maxTopLevelMessages?: number;
   now?: () => Date;
