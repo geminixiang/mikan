@@ -1,10 +1,11 @@
 import { readEnv } from "../../../env-manifest.js";
-import { isRecord, parseJsonValue } from "../../../file-guards.js";
+import { parseJsonValue } from "../../../file-guards.js";
 import * as log from "../../../log.js";
 import { GOOGLE_VAULT_CREDENTIAL_FILES } from "../../../vault/index.js";
 
 export type { LoginCredentialKind, OAuthService } from "./types.js";
 import type { OAuthService } from "./types.js";
+import { errorMessage, isRecord } from "../../../unknown-values.js";
 
 const OAUTH_SERVICES_SHAPE_MESSAGE = "expected a JSON array of OAuth service definitions";
 
@@ -245,7 +246,7 @@ export function getOAuthServices(): OAuthService[] {
       kind === "shape" ? OAUTH_SERVICES_SHAPE_MESSAGE : detail,
     );
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorMessage(err);
     log.logWarning(
       detail === OAUTH_SERVICES_SHAPE_MESSAGE
         ? `Ignoring OAUTH_SERVICES_JSON: ${OAUTH_SERVICES_SHAPE_MESSAGE}`

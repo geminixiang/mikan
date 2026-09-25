@@ -10,6 +10,7 @@ import {
   type SandboxFileSettings,
   type SettingsFileConfig,
 } from "./index.js";
+import { errorMessage } from "../unknown-values.js";
 
 export interface DoorPolicyMigrationReport {
   global: string[];
@@ -62,7 +63,7 @@ export function migrateLegacyDoorPolicy(workspace: Workspace): DoorPolicyMigrati
   } catch (error) {
     report.skipped.push({
       key: "global",
-      reason: error instanceof Error ? error.message : String(error),
+      reason: errorMessage(error),
     });
   }
   for (const record of listRegisteredOffices(workspace.stateDir)) {
@@ -75,7 +76,7 @@ export function migrateLegacyDoorPolicy(workspace: Workspace): DoorPolicyMigrati
     } catch (error) {
       report.skipped.push({
         key: office.key,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorMessage(error),
       });
     }
   }

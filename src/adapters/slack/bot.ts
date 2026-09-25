@@ -42,7 +42,7 @@ import type {
   SlackEvent,
   SlackUser,
 } from "./types.js";
-import { isRecord, readTextFileIfExists } from "../../file-guards.js";
+import { readTextFileIfExists } from "../../file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
 import {
   appendBotResponseLog,
@@ -94,6 +94,7 @@ import {
 import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
 import { buildTaskIntentState, classifyTaskIntent, type TaskIntent } from "./task-intent.js";
 import { StreamStartLimiter } from "./stream-limits.js";
+import { errorMessage, isRecord } from "../../unknown-values.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 
@@ -903,7 +904,7 @@ export class SlackMessagingBot implements MessagingBot {
         } catch (err) {
           log.logWarning(
             `Failed to post Slack event anchor for ${conversationId}`,
-            err instanceof Error ? err.message : String(err),
+            errorMessage(err),
           );
           reportUserFacingError(err, {
             domain: "events",
@@ -1735,7 +1736,7 @@ export class SlackMessagingBot implements MessagingBot {
         thread_ts,
       });
     } catch (err) {
-      log.logWarning("Slack slash command error", err instanceof Error ? err.message : String(err));
+      log.logWarning("Slack slash command error", errorMessage(err));
     }
   }
 
@@ -1912,7 +1913,7 @@ export class SlackMessagingBot implements MessagingBot {
     const firstFailure = failed[0];
     if (firstFailure) {
       const { name, error } = firstFailure;
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = errorMessage(error);
       throw new Error(`Failed to download attachment ${name}: ${errorMsg}`, { cause: error });
     }
     return saved;
@@ -2011,10 +2012,7 @@ export class SlackMessagingBot implements MessagingBot {
         const entry = JSON.parse(lines[i] ?? "");
         if (entry.ts) timestamps.add(entry.ts);
       } catch (err) {
-        log.logWarning(
-          `Skipping malformed log entry at ${logPath}:${i + 1}`,
-          err instanceof Error ? err.message : String(err),
-        );
+        log.logWarning(`Skipping malformed log entry at ${logPath}:${i + 1}`, errorMessage(err));
       }
     }
     return timestamps;

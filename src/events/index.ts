@@ -258,6 +258,7 @@ import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
 import type { Office, Workspace } from "../office/index.js";
 import { createOfficeAddress, listRegisteredOffices, officeKey } from "../office/index.js";
+import { errorMessage } from "../unknown-values.js";
 
 export function officeEventsDir(office: Office): string {
   return join(office.stateDir, "events");
@@ -397,7 +398,7 @@ export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventM
     } catch (error) {
       report.skipped.push({
         filename,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorMessage(error),
       });
       continue;
     }
@@ -414,7 +415,7 @@ export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventM
     } catch (error) {
       report.skipped.push({
         filename,
-        reason: error instanceof Error ? error.message : String(error),
+        reason: errorMessage(error),
       });
       continue;
     }

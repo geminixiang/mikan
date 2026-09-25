@@ -22,6 +22,7 @@ import {
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Executor, SandboxConfig } from "../sandbox/index.js";
 import { execAppendFile, execWriteFile, shellEscape } from "../sandbox/utils.js";
+import { errorMessage } from "../unknown-values.js";
 
 const SPILL_DIR = ".mikan/bash-output";
 
@@ -333,7 +334,7 @@ function shellOutputMetadata(
 }
 
 function toFileError(error: unknown): FileError {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   if (/aborted/i.test(message)) return new FileError("aborted", message);
   if (/no such file|not found/i.test(message)) return new FileError("not_found", message);
   if (/permission denied/i.test(message)) return new FileError("permission_denied", message);
@@ -343,7 +344,7 @@ function toFileError(error: unknown): FileError {
 }
 
 function toExecutionError(error: unknown, context: Context): ExecutionError {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = errorMessage(error);
   if (context.abortSignal?.aborted || /aborted/i.test(message)) {
     return new ExecutionError("aborted", message);
   }

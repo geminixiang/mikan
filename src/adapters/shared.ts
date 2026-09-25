@@ -22,6 +22,7 @@ import type {
   ResolveStopTargetInput,
   SavedAttachments,
 } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 export function createChatResponseErrorReporter(
   resolve: () => Omit<ChatResponseErrorContext, "operation" | "extra">,
@@ -70,10 +71,7 @@ export class MessagingIntakeTracker {
       result = Promise.reject(error);
     }
     const task = Promise.resolve(result).catch((error) => {
-      log.logWarning(
-        `${this.name} intake error`,
-        error instanceof Error ? error.message : String(error),
-      );
+      log.logWarning(`${this.name} intake error`, errorMessage(error));
     });
     this.active.add(task);
     return task.finally(() => this.active.delete(task));
@@ -117,10 +115,7 @@ export class MessagingEventQueue {
     try {
       await work();
     } catch (err) {
-      log.logWarning(
-        `${this.name ? this.name + " " : ""}queue error`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`${this.name ? this.name + " " : ""}queue error`, errorMessage(err));
     }
     this.processing = false;
     if (this.queue.length > 0) {

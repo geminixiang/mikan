@@ -7,6 +7,7 @@ import * as log from "../log.js";
 import { guestPublicOfficePath, guestWorkspacePath } from "../sandbox/layout.js";
 import type { ContainerMount, WorkspaceVisibility } from "../types.js";
 import type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 export type { PlatformChannelKind, WorkspaceProjection } from "./types.js";
 
@@ -33,7 +34,7 @@ export function readPlatformChannelKind(office: Office): PlatformChannelKind | u
     if ((err as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     log.logWarning(
       "Could not read platform channel kind; treating the office as private",
-      `${path}: ${err instanceof Error ? err.message : String(err)}`,
+      `${path}: ${errorMessage(err)}`,
     );
     return undefined;
   }

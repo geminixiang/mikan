@@ -53,6 +53,7 @@ import { CURRENT_SESSION_VERSION } from "./types.js";
 import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
+import { isRecord } from "../unknown-values.js";
 
 interface CurrentSessionHeader extends SessionMetadata {
   v: typeof CURRENT_SESSION_VERSION;
@@ -204,7 +205,7 @@ function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined 
 }
 
 function isMetadataRecord(input: unknown): input is MikanSessionMetadata {
-  return typeof input === "object" && input !== null && !Array.isArray(input);
+  return isRecord(input);
 }
 
 function parseMetadataWrites(line: string): MikanSessionMetadata[] {

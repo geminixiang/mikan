@@ -23,6 +23,7 @@ import type { AgentConfig, SandboxSettings } from "../types.js";
 import type { McpServerConfig } from "../harness/types.js";
 import type { OnboardLlmChoice } from "../types.js";
 import type { Office } from "../office/index.js";
+import { errorMessage } from "../unknown-values.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -391,7 +392,7 @@ function loadSettingsFileForUpdate(
   try {
     return loadSettingsFile(settingsPath) ?? {};
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorMessage(err);
     const message = detail.startsWith("Malformed settings file")
       ? detail.replace("Malformed settings file", "Refusing to overwrite malformed settings file")
       : detail;

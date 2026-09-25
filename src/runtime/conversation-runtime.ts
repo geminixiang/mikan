@@ -65,6 +65,7 @@ import type {
   ConversationRuntimeOptions,
   SessionStateOptions,
 } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
 
@@ -492,10 +493,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             },
           });
           recordCounter("agent.run.errors", 1, attribution);
-          log.logWarning(
-            `[${conversationId}] Run error`,
-            err instanceof Error ? err.message : String(err),
-          );
+          log.logWarning(`[${conversationId}] Run error`, errorMessage(err));
           await context.responder
             .replaceResponse("Could not complete the request. Please reply to retry or revise it.")
             .catch(() => {});

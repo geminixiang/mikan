@@ -7,6 +7,7 @@ import {
   type JevQuestion,
   type JevQuestions,
 } from "../jev.js";
+import { isRecord } from "../../unknown-values.js";
 
 export const JEV_TOOL = "jev";
 
@@ -39,10 +40,6 @@ const jevSchema = Type.Object({
 });
 
 type QuestionArg = Static<typeof questionSchema>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function toJevQuestion(id: string, question: QuestionArg): JevQuestion {
   const instructions = question.instructions as JevEntry;

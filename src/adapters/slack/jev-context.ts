@@ -1,6 +1,7 @@
 import { join } from "node:path";
-import { isRecord, readTextFileIfExists } from "../../file-guards.js";
+import { readTextFileIfExists } from "../../file-guards.js";
 import { OFFICE_LOG_FILENAME } from "../../office/index.js";
+import { isRecord } from "../../unknown-values.js";
 
 export interface RecentLine {
   ts: string;

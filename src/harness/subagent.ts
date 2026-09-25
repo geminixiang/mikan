@@ -23,6 +23,7 @@ import { MikanAgentSession, copyUsage, createEmptyUsage } from "./session.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 import * as log from "../log.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 const subagentRunDepth = new AsyncLocalStorage<number>();
 
@@ -48,10 +49,6 @@ const SCHEMA_STRUCTURAL_KEYS = new Set([
   "oneOf",
   "allOf",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function schemaOptions(node: Record<string, unknown>): Record<string, unknown> {
   const options: Record<string, unknown> = {};
@@ -233,10 +230,9 @@ function formatTask(task: string, input: unknown, parentContext?: string): strin
     try {
       serialized = JSON.stringify(input, null, 2);
     } catch (err) {
-      throw new Error(
-        `api.subagent.run input must be JSON-serializable: ${err instanceof Error ? err.message : String(err)}`,
-        { cause: err },
-      );
+      throw new Error(`api.subagent.run input must be JSON-serializable: ${errorMessage(err)}`, {
+        cause: err,
+      });
     }
     if (serialized === undefined)
       throw new Error("api.subagent.run input must be JSON-serializable");
@@ -592,7 +588,7 @@ function buildSubagentFailure<TOutputSchema extends TSchema | undefined>(
   return {
     ...baseRunResult(run.runId, run.modelSpec, run.startedAt, run.session.getLastRunStats()),
     status: terminalSignal ?? "failed",
-    error: err instanceof Error ? err.message : String(err),
+    error: errorMessage(err),
   };
 }
 
@@ -690,7 +686,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
         : {
             ...baseRunResult(runId, initialModelSpec, startedAt),
             status: terminalSignal ?? "failed",
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           },
     };
   } finally {

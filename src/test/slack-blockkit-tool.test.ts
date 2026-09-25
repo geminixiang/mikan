@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createSlackBlockKitTool } from "../adapters/slack/tools/blockkit.js";
 import type { PlatformSlackOps, SlackBlockKitOps } from "../adapters/slack/types.js";
+import { errorMessage } from "../unknown-values.js";
 
 const BLOCKS = [
   { type: "markdown", text: "Vote:" },
@@ -40,7 +41,7 @@ describe("slack_blockkit tool", () => {
     try {
       tool.prepareArguments?.(huge);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       expect(message.length).toBeLessThan(300);
       expect(message).not.toContain("xxxx");
     }

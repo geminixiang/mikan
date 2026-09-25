@@ -118,6 +118,7 @@ const sessionViewStreamHub = new SessionViewStreamHub();
 
 export type { SessionViewInteractiveOptions } from "./types.js";
 import type { SessionViewInteractiveOptions } from "./types.js";
+import { errorMessage } from "../../../unknown-values.js";
 
 export async function handleSessionViewRequest(
   req: IncomingMessage,
@@ -177,7 +178,7 @@ export async function handleSessionViewRequest(
   } catch (error) {
     log.logWarning(
       `[${entry.conversationId}] Failed to render session ${entry.sessionFile}`,
-      error instanceof Error ? error.message : String(error),
+      errorMessage(error),
     );
     reportUserFacingError(error, {
       domain: "session_view",
@@ -231,7 +232,7 @@ async function resolveSessionRequestTarget(
   } catch (error) {
     log.logWarning(
       `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
-      error instanceof Error ? error.message : String(error),
+      errorMessage(error),
     );
     reportUserFacingError(error, {
       domain: "session_view",
@@ -716,10 +717,7 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
       });
     })
     .catch((error) => {
-      log.logWarning(
-        `[${entry.conversationId}] Session view message failed`,
-        error instanceof Error ? error.message : String(error),
-      );
+      log.logWarning(`[${entry.conversationId}] Session view message failed`, errorMessage(error));
       reportUserFacingError(error, {
         domain: "session_view",
         surface: "session_view",
@@ -735,7 +733,7 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
       });
       sessionViewStreamHub.publish(streamKey, {
         type: "error",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
       });
       sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
     });
@@ -1924,12 +1922,9 @@ async function resolveRequestedSessionFile(
   try {
     if (!SessionStore.readHeader(candidate)) throw new Error("Invalid session header");
   } catch (err) {
-    throw new Error(
-      `Session file is corrupted: ${candidate}: ${
-        err instanceof Error ? err.message : String(err)
-      }`,
-      { cause: err },
-    );
+    throw new Error(`Session file is corrupted: ${candidate}: ${errorMessage(err)}`, {
+      cause: err,
+    });
   }
   return candidate;
 }
@@ -1956,7 +1951,7 @@ async function buildSessionRelation(
   } catch (err) {
     log.logWarning(
       `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
-      err instanceof Error ? err.message : String(err),
+      errorMessage(err),
     );
     return null;
   }

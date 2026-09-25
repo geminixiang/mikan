@@ -6,6 +6,7 @@ import { migrateLegacyOpenConnectorTokens } from "../harness/open-connector.js";
 import { migrateLegacyWorkspaceEvents } from "../events/index.js";
 import { migrateLegacyDoorPolicy } from "../settings/migrate.js";
 import { createWorkspace } from "../office/index.js";
+import { errorMessage } from "../unknown-values.js";
 
 export function runOfficeCommand(argv: string[]): number {
   const command = cliCommand("mikan office")
@@ -116,7 +117,7 @@ function migrateEvents(stateDir: string, workspaceRoot: string): number {
     for (const entry of report.skipped) console.log(`  skipped ${entry.filename}: ${entry.reason}`);
     return 0;
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     return 1;
   }
 }
@@ -135,7 +136,7 @@ function migrateOpenConnector(stateDir: string, workspaceRoot: string): number {
     }
     return 0;
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     return 1;
   }
 }
@@ -156,7 +157,7 @@ function claimOffice(stateDir: string, workspaceRoot: string, rest: string[]): n
     );
     return 0;
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     return 1;
   }
 }

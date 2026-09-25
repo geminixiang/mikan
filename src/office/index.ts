@@ -29,7 +29,8 @@ import { parseGithubConversationId } from "../adapters/github/ids.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { guestWorkspacePath } from "../sandbox/layout.js";
 import { migrateConversationVaultKeys } from "../vault/index.js";
-import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
+import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
+import { isRecord } from "../unknown-values.js";
 
 export const OFFICE_LOG_FILENAME = "log.jsonl";
 const OFFICE_KEY_VERSION = "v1";

@@ -20,6 +20,7 @@ import {
 } from "./utils.js";
 import { HostExecutor } from "./host.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
+import { errorMessage } from "../unknown-values.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -177,7 +178,7 @@ async function ensureContainerRunning(container: string): Promise<void> {
     }
     await execSimple("docker", ["start", container]);
   } catch (error) {
-    const details = error instanceof Error ? error.message : String(error);
+    const details = errorMessage(error);
     throw new Error(
       `Container "${container}" is not available. ` +
         `Expected a pre-existing container or image provisioning to keep it running.\n${details}`.trim(),

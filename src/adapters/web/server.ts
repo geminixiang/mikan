@@ -18,6 +18,7 @@ import {
 import type { InMemorySessionViewTokenStore } from "./session-view/portal.js";
 import type { Office, Workspace } from "../../office/types.js";
 import { handleGithubWebhookRequest, type GithubWebhookOptions } from "../github/webhook.js";
+import { errorMessage } from "../../unknown-values.js";
 
 interface StartWebServerOptions {
   port: number;
@@ -100,7 +101,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
       res.writeHead(404);
       res.end();
     } catch (err) {
-      log.logWarning("Web server request error", err instanceof Error ? err.message : String(err));
+      log.logWarning("Web server request error", errorMessage(err));
       if (!res.headersSent) {
         res.writeHead(500, { "Content-Type": "application/json" });
       }

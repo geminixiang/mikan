@@ -52,6 +52,7 @@ import {
 import { COMMAND_MANIFEST } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createDiscordAdapters } from "./context.js";
+import { errorMessage } from "../../unknown-values.js";
 
 function discordIsRateLimited(err: Error): boolean {
   if ((err as { status?: number }).status === 429) return true;
@@ -131,10 +132,7 @@ export class DiscordMessagingBot implements MessagingBot {
             ),
           );
         } catch (err) {
-          log.logWarning(
-            "Failed to register Discord slash commands",
-            err instanceof Error ? err.message : String(err),
-          );
+          log.logWarning("Failed to register Discord slash commands", errorMessage(err));
         }
         resolve();
       });
@@ -535,10 +533,7 @@ export class DiscordMessagingBot implements MessagingBot {
 
       await this.handler.handleEvent(event, this, context);
     } catch (err) {
-      log.logWarning(
-        "Discord slash command error",
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning("Discord slash command error", errorMessage(err));
       if (!interaction.replied && !interaction.deferred) {
         await interaction.reply({
           content: `${interaction.commandName} command failed. Please try again later.`,

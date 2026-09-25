@@ -4,7 +4,7 @@ import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
-import { isRecord, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
+import { parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
@@ -52,6 +52,7 @@ import type {
   ResolvedSessionScope,
   ThreadRootMessage,
 } from "./types.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
   if (!isThreadSessionKey(options.sessionKey)) {
@@ -686,10 +687,7 @@ function parseLogLine(
       (detail, kind) => (kind === "shape" ? "expected a JSON object" : detail),
     );
   } catch (err) {
-    log.logWarning(
-      `Skipping malformed log entry at ${logFile}:${lineNumber}`,
-      err instanceof Error ? err.message : String(err),
-    );
+    log.logWarning(`Skipping malformed log entry at ${logFile}:${lineNumber}`, errorMessage(err));
     return undefined;
   }
 }

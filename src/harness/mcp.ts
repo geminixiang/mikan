@@ -17,6 +17,7 @@ import { guardMcpToolResult, type McpCallResult } from "./mcp-result.js";
 import { tagHarnessTool } from "./tools/pi-tools.js";
 
 import * as log from "../log.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 const SERVER_NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
@@ -28,16 +29,12 @@ export type StandardMcpParseResult =
   | { servers: Record<string, McpServerConfig>; error?: undefined }
   | { servers?: undefined; error: string };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 export function parseStandardMcpServers(text: string): StandardMcpParseResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch (err) {
-    return { error: `not valid JSON: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `not valid JSON: ${errorMessage(err)}` };
   }
   if (!isRecord(parsed)) return { error: "expected a JSON object at the top level" };
   const map = "mcpServers" in parsed ? parsed.mcpServers : parsed;

@@ -35,6 +35,7 @@ import type {
   GithubRepoRef,
   GithubSyncState,
 } from "./types.js";
+import { errorMessage } from "../../unknown-values.js";
 
 const SyncStateSchema = Type.Object({
   repos: Type.Record(
@@ -395,10 +396,7 @@ export class GithubMessagingBot implements MessagingBot {
       try {
         changed = (await this.pollRepo(repo)) || changed;
       } catch (err) {
-        log.logWarning(
-          `GitHub poll failed for ${repo.owner}/${repo.repo}`,
-          err instanceof Error ? err.message : String(err),
-        );
+        log.logWarning(`GitHub poll failed for ${repo.owner}/${repo.repo}`, errorMessage(err));
       }
     }
     if (changed) this.persistSyncState();
@@ -493,10 +491,7 @@ export class GithubMessagingBot implements MessagingBot {
         (detail) => `Malformed GitHub sync state at ${this.config.syncStatePath}: ${detail}`,
       );
     } catch (err) {
-      log.logWarning(
-        "GitHub: ignoring unreadable sync state",
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning("GitHub: ignoring unreadable sync state", errorMessage(err));
       return undefined;
     }
   }
@@ -557,7 +552,7 @@ export class GithubMessagingBot implements MessagingBot {
     } catch (err) {
       log.logWarning(
         `GitHub: permission lookup failed for ${user} on ${ref.owner}/${ref.repo}; denying trigger`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       return false;
     }
@@ -696,7 +691,7 @@ export class GithubMessagingBot implements MessagingBot {
     } catch (err) {
       log.logWarning(
         `GitHub: could not fetch review thread context for ${ref.owner}/${ref.repo}#${ref.number}`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       return [];
     }
@@ -713,7 +708,7 @@ export class GithubMessagingBot implements MessagingBot {
     } catch (err) {
       log.logWarning(
         `GitHub: could not fetch issue context for ${conversationId}`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       return null;
     }
@@ -758,10 +753,7 @@ export class GithubMessagingBot implements MessagingBot {
         `[${conversationId}] Cloned ${ref.owner}/${ref.repo}${isPr ? ` and checked out PR #${ref.number} head as ${prHeadBranch ?? `pr-${ref.number}`}` : ""}`,
       );
     } catch (err) {
-      log.logWarning(
-        `GitHub: repo clone failed for ${conversationId}`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`GitHub: repo clone failed for ${conversationId}`, errorMessage(err));
     }
   }
 }

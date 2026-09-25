@@ -16,6 +16,7 @@ import {
   type MikanEvent,
   type PeriodicEventInfo,
 } from "./index.js";
+import { errorMessage } from "../unknown-values.js";
 
 export type { MikanEvent, PeriodicEventInfo } from "./index.js";
 
@@ -52,7 +53,7 @@ export class EventScheduler implements EventScheduleSink {
         } catch (error) {
           log.logWarning(
             `Removing unparseable event file ${filename} for ${office.key}`,
-            error instanceof Error ? error.message : String(error),
+            errorMessage(error),
           );
           this.removeFile(office.address, filename);
         }
@@ -100,10 +101,7 @@ export class EventScheduler implements EventScheduleSink {
     try {
       event = this.resolve(record, address);
     } catch (error) {
-      log.logWarning(
-        `Rejecting event ${record.filename}`,
-        error instanceof Error ? error.message : String(error),
-      );
+      log.logWarning(`Rejecting event ${record.filename}`, errorMessage(error));
       this.removeFile(address, record.filename);
       return;
     }

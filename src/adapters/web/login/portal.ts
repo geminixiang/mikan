@@ -43,6 +43,7 @@ export class InMemoryLinkTokenStore extends InMemoryTokenStore<LinkToken> {
   }
 }
 import type { NotifyFn } from "./types.js";
+import { errorMessage } from "../../../unknown-values.js";
 
 interface LinkCompleteBody {
   token: string;
@@ -1226,7 +1227,7 @@ async function handleLinkComplete(
   } catch (persistError) {
     log.logWarning(
       `Failed to persist [${envKeys.join(", ")}] for ${linkToken.platform}/${linkToken.platformUserId}`,
-      persistError instanceof Error ? persistError.message : String(persistError),
+      errorMessage(persistError),
     );
     reportUserFacingError(persistError, {
       domain: "login",
@@ -1486,7 +1487,7 @@ function storeOAuthCredentials(options: StoreOAuthCredentialsOptions): string[] 
   } catch (persistError) {
     log.logWarning(
       `Failed to persist OAuth credentials for ${linkToken.platform}/${linkToken.platformUserId}`,
-      persistError instanceof Error ? persistError.message : String(persistError),
+      errorMessage(persistError),
     );
     reportUserFacingError(persistError, {
       domain: "login",

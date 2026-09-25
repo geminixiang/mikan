@@ -8,6 +8,7 @@ import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
 import type { SlackAdapterSessionPlan } from "./types.js";
 import { slackPersonaForProfile } from "./persona.js";
+import { errorMessage } from "../../unknown-values.js";
 
 const MAX_MAIN_LENGTH = 35000;
 const STREAM_MIN_DELTA_CHARS = 256;
@@ -21,7 +22,7 @@ const formatSlackContinuation = (partNum: number): string => `_(continued ${part
 
 function isSlackMsgTooLong(err: unknown): boolean {
   const data = (err as { data?: { error?: string } } | undefined)?.data;
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   return data?.error === "msg_too_long" || message.includes("msg_too_long");
 }
 
@@ -112,7 +113,7 @@ class SlackResponseLifecycle {
     this.assistantStatusFailureWarned = true;
     log.logWarning(
       `Slack setAssistantStatus failed (${label}; further occurrences suppressed for this session)`,
-      err instanceof Error ? err.message : String(err),
+      errorMessage(err),
     );
   }
 

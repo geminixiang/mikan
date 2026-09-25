@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import * as log from "./log.js";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
+import { errorMessage } from "./unknown-values.js";
 
 type JsonFailureKind = "syntax" | "shape" | "field";
 
@@ -58,7 +59,7 @@ function parseJson(raw: string, malformedMessage: MalformedJsonMessage): unknown
   try {
     return JSON.parse(raw);
   } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+    const detail = errorMessage(err);
     throw new Error(malformedMessage(detail, "syntax"), { cause: err });
   }
 }
@@ -93,10 +94,6 @@ export function parseJsonSchemaValue<T extends TSchema>(
     throw new Error(malformedMessage(`${firstError.path}: ${firstError.message}`, "field"));
   }
   return parsed;
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 const PRIVATE_FILE_MODE = 0o600;

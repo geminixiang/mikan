@@ -13,7 +13,7 @@ import { officeKey } from "../office/index.js";
 import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { guestHomePath } from "../sandbox/layout.js";
 import type { OfficeAddress } from "../types.js";
-import { atomicWritePrivateFile, isRecord, readTextFileIfExists } from "../file-guards.js";
+import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/index.js";
 import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
 import type { PlatformTrustModel } from "../types.js";
@@ -516,6 +516,7 @@ export function allowsAmbientDefaultSharedVault(options: {
 
 export type { VaultInjection } from "./types.js";
 import type { VaultInjection } from "./types.js";
+import { isRecord } from "../unknown-values.js";
 
 function resolveExistingMounts(
   vault: ResolvedVault | undefined,

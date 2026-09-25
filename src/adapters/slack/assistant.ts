@@ -5,6 +5,7 @@ import type {
   AssistantThreadPayload,
   SuggestedPrompt,
 } from "./types.js";
+import { errorMessage } from "../../unknown-values.js";
 
 export type {
   AgentContext,
@@ -151,9 +152,6 @@ async function swallow(label: string, run: () => Promise<unknown>): Promise<void
   try {
     await run();
   } catch (err) {
-    log.logWarning(
-      `Slack agent surface ${label} failed`,
-      err instanceof Error ? err.message : String(err),
-    );
+    log.logWarning(`Slack agent surface ${label} failed`, errorMessage(err));
   }
 }

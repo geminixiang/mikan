@@ -18,6 +18,7 @@ import type {
   MemoryCaptureOp,
   RunMemoryCapture,
 } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 export type { CapturedRun, MemoryCaptureOp, RunMemoryCapture } from "./types.js";
 
@@ -152,7 +153,7 @@ export class MemoryCapture implements RunMemoryCapture {
       .catch((error: unknown) => {
         log.logWarning(
           `[${run.office.address.conversationId}] Memory capture failed`,
-          error instanceof Error ? error.message : String(error),
+          errorMessage(error),
         );
       });
     this.queues.set(key, next);

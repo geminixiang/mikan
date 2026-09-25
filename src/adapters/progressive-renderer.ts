@@ -7,6 +7,7 @@ import {
   type ChatResponseErrorOperation,
 } from "./shared.js";
 import type { ProgressiveRendererPlatform } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 export function formatMarkdownToolResult(result: ChatToolResult): string {
   const argsFormatted = formatToolArgs(result.args);
@@ -221,7 +222,7 @@ class ProgressiveRenderer {
       this.state.streamUnavailable = true;
       log.logWarning(
         "Native response streaming unavailable; falling back to message updates",
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       await this.abandonNativeStream();
       await this.renderRaw(display, "render", undefined, prepared);
@@ -244,7 +245,7 @@ class ProgressiveRenderer {
         this.state.streamUnavailable = true;
         log.logWarning(
           "Native response streaming unavailable; falling back to message updates",
-          err instanceof Error ? err.message : String(err),
+          errorMessage(err),
         );
       }
       this.state.streamActive = false;
@@ -267,7 +268,7 @@ class ProgressiveRenderer {
   ): Promise<void> {
     const operationPromise = this.queueTail.then(work);
     const handled = operationPromise.catch(async (err) => {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       log.logWarning(`${this.platform.label} ${label} error`, message);
       this.reportResponseError?.(err, operation, extra());
       if (this.platform.notifySendFailure) {
@@ -424,7 +425,7 @@ class ProgressiveRenderer {
           this.state.typingFailureWarned = true;
           log.logWarning(
             `${this.platform.label} sendTyping failed (further occurrences suppressed for this session)`,
-            err instanceof Error ? err.message : String(err),
+            errorMessage(err),
           );
         };
         if (isTyping && this.state.typingInterval === null) {

@@ -2,6 +2,7 @@ import type { OfficeAddress } from "../types.js";
 import * as log from "../log.js";
 import { officeKey } from "../office/index.js";
 import type { ConversationRuntimeState, SessionLifecycleOptions } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
@@ -372,10 +373,7 @@ export class SessionLifecycle {
     const close = state.runner.dispose();
     this.trackClosing(id, close);
     close.catch((err: unknown) => {
-      log.logWarning(
-        `Runner dispose failed: ${sessionKey}`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`Runner dispose failed: ${sessionKey}`, errorMessage(err));
     });
   }
 

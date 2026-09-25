@@ -40,7 +40,7 @@ import {
   parseHttpIdleTimeoutMs,
 } from "./harness/index.js";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
-import { ensureDirExists, isRecord, readJsonFileIfExists } from "./file-guards.js";
+import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
 import { SandboxError, validateSandbox } from "./sandbox/index.js";
 import { helpText, resolveBoot, type BootPlan } from "./cli/boot.js";
 import { runOnboardCommand } from "./cli/onboard.js";
@@ -60,6 +60,7 @@ import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
 import { MemoryCapture } from "./memory-capture/index.js";
+import { errorMessage, isRecord } from "./unknown-values.js";
 
 function getVersion(): string {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -208,7 +209,7 @@ if (plan.mode === "onboard") {
   try {
     process.exit(await runOnboardCommand(stateDir));
   } catch (err) {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     process.exit(1);
   }
 }
@@ -673,7 +674,7 @@ process.on("SIGTERM", () => void shutdown("SIGTERM"));
 await Promise.all(
   Object.values(botsByPlatform).map((bot) =>
     bot.start().catch((err) => {
-      log.logWarning("Failed to start bot", err instanceof Error ? err.message : String(err));
+      log.logWarning("Failed to start bot", errorMessage(err));
       process.exit(1);
     }),
   ),
@@ -681,9 +682,6 @@ await Promise.all(
 
 if (provisioner) {
   void provisioner.sweepContainerLayoutMigration().catch((err) => {
-    log.logWarning(
-      "Container layout sweep failed",
-      err instanceof Error ? err.message : String(err),
-    );
+    log.logWarning("Container layout sweep failed", errorMessage(err));
   });
 }

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { readEnv } from "../env-manifest.js";
 import * as log from "../log.js";
 import { loadScopeMcpServers, updateConversationSettings } from "../settings/index.js";
-import { isRecord, readJsonSchemaFileIfExists } from "../file-guards.js";
+import { readJsonSchemaFileIfExists } from "../file-guards.js";
 import {
   createWorkspace,
   isOfficeKey,
@@ -14,6 +14,7 @@ import {
 } from "../office/index.js";
 import type { OfficeKey } from "../types.js";
 import type { McpServerConfig } from "./types.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 const OPEN_CONNECTOR_SERVER = "open-connector";
 const LEGACY_TOKEN_FILE = "open-connector-runtime-token.json";
@@ -185,7 +186,7 @@ export function migrateLegacyOpenConnectorTokens(
         (detail) => `Malformed legacy token file: ${detail}`,
       );
     } catch (error) {
-      report.skipped.push({ key, reason: error instanceof Error ? error.message : String(error) });
+      report.skipped.push({ key, reason: errorMessage(error) });
       continue;
     }
     if (!state) continue;

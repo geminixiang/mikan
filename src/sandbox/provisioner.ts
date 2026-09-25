@@ -56,6 +56,7 @@ import type {
   ResourceLimits,
   SandboxLimitStatus,
 } from "../types.js";
+import { errorMessage } from "../unknown-values.js";
 
 function bindSpecToMount(bindSpec: string): ContainerMount {
   const readOnly = bindSpec.endsWith(":ro");
@@ -232,10 +233,7 @@ export class DockerContainerManager {
       this.overrideLimits.delete(containerKey);
       log.logInfo(`Container ${containerName} stopped (idle)`);
     } catch (err) {
-      log.logWarning(
-        `Failed to stop container ${containerName}`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`Failed to stop container ${containerName}`, errorMessage(err));
     }
   }
 
@@ -260,10 +258,7 @@ export class DockerContainerManager {
       await this.execFileImpl("docker", ["network", "rm", networkName]);
       log.logInfo(`Network ${networkName} removed`);
     } catch (err) {
-      log.logWarning(
-        `Failed to remove network ${networkName}`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`Failed to remove network ${networkName}`, errorMessage(err));
     }
 
     await this.removeMigrateSnapshot(containerName);
@@ -324,7 +319,7 @@ export class DockerContainerManager {
       } catch (err) {
         log.logWarning(
           `Container layout migration failed for ${containerName}; leaving it in place`,
-          err instanceof Error ? err.message : String(err),
+          errorMessage(err),
         );
       }
       await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -714,7 +709,7 @@ export class DockerContainerManager {
     } catch (err) {
       log.logWarning(
         `Failed to apply resource limits to container ${containerName}`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       reportUserFacingError(err, {
         domain: "sandbox",
@@ -896,10 +891,7 @@ export class DockerContainerManager {
       log.logInfo(`Home volume ${volumeName} removed`);
     } catch (err) {
       if (isDockerNotFoundError(err)) return;
-      log.logWarning(
-        `Failed to remove home volume ${volumeName}`,
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning(`Failed to remove home volume ${volumeName}`, errorMessage(err));
     }
   }
 
@@ -1064,10 +1056,7 @@ export class DockerContainerManager {
       ]);
       return this.parseNameLines(stdout);
     } catch (err) {
-      log.logWarning(
-        "Failed to list labeled managed containers",
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning("Failed to list labeled managed containers", errorMessage(err));
       return [];
     }
   }
@@ -1084,10 +1073,7 @@ export class DockerContainerManager {
       ]);
       return this.parseNameLines(stdout);
     } catch (err) {
-      log.logWarning(
-        "Failed to list legacy managed containers",
-        err instanceof Error ? err.message : String(err),
-      );
+      log.logWarning("Failed to list legacy managed containers", errorMessage(err));
       return [];
     }
   }
@@ -1117,7 +1103,7 @@ export class DockerContainerManager {
     } catch (err) {
       log.logWarning(
         `Failed to inspect container ${containerName} during reconcile`,
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
       return undefined;
     }
@@ -1153,7 +1139,7 @@ export class DockerContainerManager {
       log.logInfo(successLog);
       return true;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       if (/no such container/i.test(message)) return true;
       log.logWarning(failureLog, message);
       return false;

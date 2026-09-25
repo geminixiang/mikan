@@ -27,6 +27,7 @@ import { COMMAND_MANIFEST, telegramCommandMenu } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
 import { createOfficeAddress, type Workspace } from "../../office/index.js";
+import { errorMessage } from "../../unknown-values.js";
 
 function telegramIsRateLimited(err: Error): boolean {
   return (err as { error_code?: number }).error_code === 429;
@@ -72,7 +73,7 @@ export class TelegramMessagingBot implements MessagingBot {
     this.workspace = config.workspace;
     this.client = new GrammyMessagingBot(config.token);
     this.client.catch((err) => {
-      log.logWarning("Telegram error", err instanceof Error ? err.message : String(err));
+      log.logWarning("Telegram error", errorMessage(err));
     });
   }
 
@@ -89,7 +90,7 @@ export class TelegramMessagingBot implements MessagingBot {
     this.setupEventHandlers();
 
     this.client.start().catch((err) => {
-      log.logWarning("Telegram polling error", err instanceof Error ? err.message : String(err));
+      log.logWarning("Telegram polling error", errorMessage(err));
     });
 
     log.logConnected("Telegram");
@@ -124,7 +125,7 @@ export class TelegramMessagingBot implements MessagingBot {
       try {
         await this.client.api.editMessageText(parseInt(channel), parseInt(ts), richMessage(text));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         if (msg.includes("message is not modified")) return;
         throw err;
       }

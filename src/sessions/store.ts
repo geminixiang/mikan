@@ -2,12 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "./session-store.js";
-import {
-  atomicWritePrivateFile,
-  isRecord,
-  parseJsonValue,
-  readTextFileIfExists,
-} from "../file-guards.js";
+import { atomicWritePrivateFile, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 export type {
@@ -17,6 +12,7 @@ export type {
   ThreadRootMessage,
 } from "./types.js";
 import type { MikanSessionHeader, ParentSessionRef } from "./types.js";
+import { isRecord } from "../unknown-values.js";
 
 export function isPlatformHistorySession(sessionFile: string): boolean {
   try {

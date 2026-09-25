@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { AgentMessage, Entry, JsonValue } from "@earendil-works/pi-agent-core";
 import { SessionStore } from "./session-store.js";
-import { isRecord } from "../file-guards.js";
+
 import {
   commitMigration,
   findSessionFiles,
@@ -10,6 +10,7 @@ import {
   V4FileWriter,
 } from "./migrate-common.js";
 import type { Pi084MigrationResult } from "./types.js";
+import { isRecord } from "../unknown-values.js";
 export type { Pi084MigrationResult } from "./types.js";
 
 interface Pi084Header {

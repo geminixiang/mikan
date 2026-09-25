@@ -19,6 +19,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { readJsonFileIfExists } from "../file-guards.js";
 import type { CreateMikanModelsOptions } from "./types.js";
+import { errorMessage } from "../unknown-values.js";
 
 export type { CreateMikanModelsOptions } from "./types.js";
 
@@ -129,7 +130,7 @@ function applyModelsJson(
     }
     return undefined;
   } catch (err) {
-    return `Failed to load ${modelsJsonPath}: ${err instanceof Error ? err.message : String(err)}`;
+    return `Failed to load ${modelsJsonPath}: ${errorMessage(err)}`;
   }
 }
 

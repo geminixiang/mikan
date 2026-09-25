@@ -75,6 +75,7 @@ import {
 } from "./presenter.js";
 
 import * as log from "../log.js";
+import { errorMessage } from "../unknown-values.js";
 
 const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
 
@@ -233,7 +234,7 @@ async function ensureDefaultMcpServers(options: {
     options.signal?.throwIfAborted();
     log.logWarning(
       `[${options.office.address.conversationId}] OpenConnector default provisioning failed`,
-      error instanceof Error ? error.message : String(error),
+      errorMessage(error),
     );
   }
 }

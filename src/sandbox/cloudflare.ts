@@ -15,6 +15,7 @@ import {
 } from "./utils.js";
 import { readEnv } from "../env-manifest.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
+import { errorMessage } from "../unknown-values.js";
 
 const DEFAULT_CLOUDFLARE_CWD = GUEST_WORKSPACE_ROOT;
 
@@ -63,7 +64,7 @@ async function validateCloudflareSandbox(_config: CloudflareSandboxConfig): Prom
     if (error instanceof SandboxError) {
       throw error;
     }
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     throw new SandboxError(`Error: Cloudflare sandbox bridge is not reachable: ${detail}`);
   }
 
@@ -192,7 +193,7 @@ function resolveCloudflareSandboxUrl(): URL {
   try {
     return new URL(raw);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorMessage(error);
     throw new SandboxError(`Error: invalid CLOUDFLARE_SANDBOX_URL: ${detail}`);
   }
 }

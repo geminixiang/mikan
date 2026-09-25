@@ -5,6 +5,7 @@ import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { portalNotConfiguredLines, replySummary } from "./utils.js";
 import { createOfficeAddress } from "../../office/index.js";
+import { errorMessage } from "../../unknown-values.js";
 
 const LOGIN_COMMANDS = slashForms("login");
 
@@ -88,7 +89,7 @@ export class LoginCommandHandler implements CommandHandler {
 }
 
 async function replyVaultError(context: CommandContext, error: unknown): Promise<void> {
-  await replySummary(context, "Vault", [error instanceof Error ? error.message : String(error)]);
+  await replySummary(context, "Vault", [errorMessage(error)]);
 }
 
 async function listSharedProfiles(context: CommandContext): Promise<void> {
@@ -143,7 +144,7 @@ async function startLoginSetup(context: CommandContext, parsed: ParsedLoginComma
   } catch (error) {
     log.logWarning(
       `[${context.conversationId}] Failed to prepare login vault for ${context.platform}/${context.platformUserId}`,
-      error instanceof Error ? error.message : String(error),
+      errorMessage(error),
     );
     await replySummary(context, "Vault", [
       "Login setup failed on the server.",

@@ -13,6 +13,7 @@ import { isThinkingLevel } from "../settings/index.js";
 import { parseFrontmatter } from "./skills.js";
 import { JEV_TOOL } from "./tools/jev.js";
 import { GENERATE_IMAGE_TOOL } from "./tools/generate-image.js";
+import { errorMessage } from "../unknown-values.js";
 
 const BUILTIN_PROFILES: SubagentProfile[] = [
   {
@@ -272,7 +273,7 @@ export function loadSubagentProfiles(workspaceDir: string): LoadSubagentProfiles
   } catch (error) {
     diagnostics.push({
       type: "warning",
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
       path: dir,
     });
     return { profiles, diagnostics };
@@ -287,7 +288,7 @@ export function loadSubagentProfiles(workspaceDir: string): LoadSubagentProfiles
     } catch (error) {
       diagnostics.push({
         type: "warning",
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
         path: filePath,
       });
     }

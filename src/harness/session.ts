@@ -35,6 +35,7 @@ import type {
 import * as log from "../log.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { errorMessage } from "../unknown-values.js";
 
 export type { CompactionReason } from "./types.js";
 export type { HarnessEvent } from "./types.js";
@@ -510,10 +511,7 @@ export class MikanAgentSession {
       try {
         await listener(event);
       } catch (error) {
-        log.logWarning(
-          "Harness event listener failed",
-          error instanceof Error ? error.message : String(error),
-        );
+        log.logWarning("Harness event listener failed", errorMessage(error));
       }
     }
   }

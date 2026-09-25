@@ -35,6 +35,7 @@ import { JEV_TOOL } from "./tools/jev.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
 
 import * as log from "../log.js";
+import { errorMessage } from "../unknown-values.js";
 
 interface LlmOperationSpan {
   span: ObservabilitySpan;
@@ -149,7 +150,7 @@ export function activateRunPresentation(
         try {
           await fn();
         } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
+          const errMsg = errorMessage(err);
           log.logWarning(`API error (${errorContext})`, errMsg);
           try {
             await responder.respondDiagnostic(`Error: ${errMsg}`, { style: "error" });
@@ -313,7 +314,7 @@ async function finalizeErrorResponse(
     await responder.replaceResponse("_Sorry, something went wrong_");
     await responder.respondDiagnostic(`Error: ${runState.errorMessage}`, { style: "error" });
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = errorMessage(err);
     log.logWarning("Failed to post error message", errMsg);
     reportUserFacingError(err, {
       domain: "chat_platform",
@@ -364,7 +365,7 @@ async function deleteForSilentResponse(responder: ConversationResponder): Promis
     await responder.deleteResponse();
     log.logInfo("Silent response - deleted message and thread");
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = errorMessage(err);
     log.logWarning("Failed to delete message for silent response", errMsg);
   }
 }
@@ -411,7 +412,7 @@ async function publishFinalResponse(
     });
     return true;
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = errorMessage(err);
     log.logWarning("Failed to replace message with final text", errMsg);
     reportUserFacingError(err, {
       domain: "chat_platform",

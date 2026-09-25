@@ -84,6 +84,7 @@ import {
   type Office,
   type Workspace,
 } from "../../../office/index.js";
+import { errorMessage } from "../../../unknown-values.js";
 
 export async function handleAdminRequest(
   req: IncomingMessage,
@@ -649,7 +650,7 @@ function serveGlobalSettings(res: ServerResponse): void {
       },
     });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -670,7 +671,7 @@ async function serveModelsList(res: ServerResponse): Promise<void> {
     }));
     jsonRes(res, 200, { models });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -706,7 +707,7 @@ function serveConversationModelUpdate(
     }
     jsonRes(res, 200, { ok: true, runtimeSwitched: result.runtimeSwitched });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -735,7 +736,7 @@ function serveConversationVisibilityUpdate(
     }
     jsonRes(res, 200, { ok: true });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -802,7 +803,7 @@ function serveConversationSessionLink(
     const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;
     jsonRes(res, 200, { ok: true, url });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -841,7 +842,7 @@ function serveConversationLoginLink(
         address: scope.address,
       });
     } catch (err) {
-      jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      jsonRes(res, 500, { error: errorMessage(err) });
       return;
     }
   }
@@ -856,7 +857,7 @@ function serveConversationLoginLink(
     const url = `${services.portalBaseUrl}/link?token=${encodeURIComponent(linkToken)}`;
     jsonRes(res, 200, { ok: true, url, vaultId });
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -943,7 +944,7 @@ function respondWithSettingsUpdate(res: ServerResponse, update: () => object): v
   try {
     jsonRes(res, 200, update());
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -1133,7 +1134,7 @@ function servePreviewFile(
   try {
     buf = readFileSync(absolutePath);
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
     return;
   }
   if (!looksTextual(buf)) {
@@ -1341,7 +1342,7 @@ function planMcpMutation(
     try {
       next[name] = materializeMcpPreset(preset!, mcpStringMap(body.credentials) ?? {});
     } catch (err) {
-      return { status: 400, error: err instanceof Error ? err.message : String(err) };
+      return { status: 400, error: errorMessage(err) };
     }
     return { next, touched: { [name]: next[name] } };
   }
@@ -1538,7 +1539,7 @@ async function serveSkillMutation(
     try {
       rmSync(safe.absolute, { recursive: true, force: true });
     } catch (err) {
-      jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+      jsonRes(res, 500, { error: errorMessage(err) });
       return;
     }
     jsonRes(res, 200, { ok: true });
@@ -1568,7 +1569,7 @@ async function serveSkillMutation(
     );
     atomicWritePrivateFile(join(safe.absolute, "SKILL.md"), frontmatter + content.trim() + "\n");
   } catch (err) {
-    jsonRes(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    jsonRes(res, 500, { error: errorMessage(err) });
     return;
   }
   jsonRes(res, 200, { ok: true, name, directory, source: resolved.source });
@@ -1668,7 +1669,7 @@ async function serveConversationEventDelete(
     await store.delete(name);
     jsonRes(res, 200, { ok: true });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     jsonRes(res, /not found/.test(message) ? 404 : 500, { error: message });
   }
 }

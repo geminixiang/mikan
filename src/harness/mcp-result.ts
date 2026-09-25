@@ -10,6 +10,7 @@ import {
   type ExecutionEnv,
 } from "@earendil-works/pi-agent-core";
 import { redactSecrets } from "./tools/secret-redaction.js";
+import { isRecord } from "../unknown-values.js";
 
 export interface McpTextLimits {
   maxBytes: number;
@@ -51,8 +52,8 @@ const DIGEST_LEVELS: readonly DigestLevel[] = [
 
 type RawBlock = Record<string, unknown>;
 
-function isRecord(value: unknown): value is RawBlock {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isRawBlock(value: unknown): value is RawBlock {
+  return isRecord(value);
 }
 
 function stringField(block: RawBlock, key: string): string | undefined {
@@ -78,7 +79,7 @@ function blockContent(block: RawBlock): TextContent | ImageContent {
   if (block.type === "image" && data !== undefined && mimeType !== undefined) {
     return { type: "image", data, mimeType };
   }
-  if (block.type === "resource" && isRecord(block.resource)) {
+  if (block.type === "resource" && isRawBlock(block.resource)) {
     return { type: "text", text: describeResource(block.resource) };
   }
   if (block.type === "resource_link") {
@@ -93,7 +94,7 @@ function blockContent(block: RawBlock): TextContent | ImageContent {
 
 export function mcpResultContent(result: McpCallResult): (TextContent | ImageContent)[] {
   const blocks = (Array.isArray(result.content) ? result.content : [])
-    .filter(isRecord)
+    .filter(isRawBlock)
     .map(blockContent);
   if (blocks.length > 0) return blocks;
   if (result.structuredContent !== undefined && result.structuredContent !== null) {
@@ -124,7 +125,7 @@ function digest(value: unknown, level: DigestLevel, depth = 0): unknown {
     const hidden = value.length - kept.length;
     return hidden > 0 ? [...kept, `…[+${hidden} more items]`] : kept;
   }
-  if (isRecord(value)) {
+  if (isRawBlock(value)) {
     if (depth >= level.depth) return `{…${Object.keys(value).length} keys}`;
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, digest(item, level, depth + 1)]),

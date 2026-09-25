@@ -6,13 +6,13 @@ import { Type } from "@sinclair/typebox";
 import {
   assertStateDirOutsideWorkspace,
   ensureDirExists,
-  isRecord,
   parseJsonSchemaValue,
   parseJsonValue,
   readJsonFileIfExists,
   readJsonSchemaFileIfExists,
   readTextFileIfExists,
 } from "../file-guards.js";
+import { isRecord } from "../unknown-values.js";
 
 describe("ensureDirExists", () => {
   let dir: string;
