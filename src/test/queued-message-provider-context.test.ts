@@ -90,7 +90,6 @@ function makeEventAndContext(
   const event: ConversationEvent = {
     address: testAddress,
     type: "message",
-    conversationId: "C123",
     conversationKind: "shared",
     ts,
     user: "U1",

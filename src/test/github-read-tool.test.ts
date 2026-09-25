@@ -264,7 +264,7 @@ describe("github_read tool", () => {
             body: null,
             pull_request: {},
             labels: [{ name: "bug" }, { name: "help" }],
-            assignees: [{ login: "b", type: "User" }],
+            assignees: [{ login: "b" }],
           },
         }).tool,
         { action: "issue" },

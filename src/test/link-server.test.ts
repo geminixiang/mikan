@@ -136,10 +136,7 @@ describe("link server", () => {
       async () => {},
       undefined,
       undefined,
-      {
-        adminTokenStore,
-        workingDir: stateDir,
-      },
+      { adminTokenStore },
     );
     servers.push(server);
     await waitForListening(server);

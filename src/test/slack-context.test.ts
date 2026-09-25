@@ -522,8 +522,8 @@ describe("text accumulation", () => {
     await responder.respond("line1");
     await responder.respond("line2");
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
-    expect(updateCall[2]).toContain("line1");
-    expect(updateCall[2]).toContain("line2");
+    expect(updateCall?.[2]).toContain("line1");
+    expect(updateCall?.[2]).toContain("line2");
   });
 
   test("replaceResponse() replaces accumulated text entirely", async () => {
@@ -533,8 +533,8 @@ describe("text accumulation", () => {
     await responder.respond("original text");
     await responder.replaceResponse("replacement");
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
-    expect(updateCall[2]).not.toContain("original text");
-    expect(updateCall[2]).toContain("replacement");
+    expect(updateCall?.[2]).not.toContain("original text");
+    expect(updateCall?.[2]).toContain("replacement");
   });
 
   test("text is truncated at 35K chars with truncation note", async () => {
@@ -543,7 +543,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
     const longText = "x".repeat(36000);
     await responder.respond(longText);
-    const postedText = vi.mocked(bot.postMessage).mock.calls[0][1] as string;
+    const postedText = vi.mocked(bot.postMessage).mock.calls[0]?.[1] as string;
     expect(postedText.length).toBeLessThan(36000);
     expect(postedText).toContain("message truncated");
   });
@@ -554,7 +554,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
     const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
     await responder.replaceResponse("x".repeat(6000), { createOverflowLink });
-    const mainText = vi.mocked(bot.postMessage).mock.calls[0][1] as string;
+    const mainText = vi.mocked(bot.postMessage).mock.calls[0]?.[1] as string;
     expect(mainText).toContain("x".repeat(6000));
     expect(mainText).not.toContain("portal.example");
     expect(createOverflowLink).not.toHaveBeenCalled();
@@ -575,7 +575,7 @@ describe("text accumulation", () => {
     await responder.replaceResponse(longText, { createOverflowLink });
     expect(bot.postMessage).toHaveBeenCalledTimes(2);
     expect(createOverflowLink).toHaveBeenCalledTimes(1);
-    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1][1] as string;
+    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1]?.[1] as string;
     expect(fallbackText).toContain("message too long for Slack");
     expect(fallbackText).toContain("<https://portal.example/session?token=abc|open>");
     expect(fallbackText).not.toContain("END");
@@ -622,7 +622,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
     await responder.respond(`${"x".repeat(6000)}END`);
     expect(bot.postMessage).toHaveBeenCalledTimes(2);
-    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1][1] as string;
+    const fallbackText = vi.mocked(bot.postMessage).mock.calls[1]?.[1] as string;
     expect(fallbackText).toContain("message too long for Slack");
     expect(fallbackText).not.toContain("END");
   });

@@ -68,7 +68,6 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox?.memory).toBe("1g");
     expect(config.sandbox?.boost?.cpus).toBe("2");
     expect(config.sandbox?.boost?.memory).toBe("4g");
-    expect(config.sandbox?.workspace).toBeUndefined();
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
@@ -304,15 +303,13 @@ describe("loadGlobalSettings", () => {
     const conversation = office();
     mkdirSync(conversation.dir, { recursive: true });
 
-    expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
-    expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
+    expect(resolveConversationSettings(conversation).sandbox?.memory).toBe("1g");
 
     writeFileSync(
       join(conversation.dir, "settings.json"),
-      JSON.stringify({ sandbox: { image: { workspaceMount: "full" } } }),
+      JSON.stringify({ sandbox: { memory: "9g" } }),
     );
-    expect(resolveConversationSettings(conversation).sandbox?.workspace).toBeUndefined();
-    expect(resolveConversationSettings(conversation).sandbox?.image).toBeUndefined();
+    expect(resolveConversationSettings(conversation).sandbox?.memory).toBe("1g");
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
   });
 });

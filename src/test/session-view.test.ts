@@ -203,10 +203,10 @@ describe("loadSessionViewModel", () => {
 
     expect(model.title).toContain("Session");
     expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant", "Bash execution"]);
-    expect(model.items[0].body).toContain("請幫我看一下測試結果");
-    expect(model.items[1].body).toContain("好的，我正在查看");
-    expect(model.items[2].body).toContain("npm test");
-    expect(model.items[2].body).toContain("1 passed");
+    expect(model.items[0]?.body).toContain("請幫我看一下測試結果");
+    expect(model.items[1]?.body).toContain("好的，我正在查看");
+    expect(model.items[2]?.body).toContain("npm test");
+    expect(model.items[2]?.body).toContain("1 passed");
     expect(model.threads).toEqual([]);
   });
 

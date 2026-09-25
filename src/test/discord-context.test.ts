@@ -28,6 +28,12 @@ function makeDiscordMessagingBot(
   } as unknown as DiscordMessagingBot;
 }
 
+function firstCall<T>(calls: T[], name: string): T {
+  const call = calls[0];
+  if (!call) throw new Error(`${name} was not called`);
+  return call;
+}
+
 function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
   return {
     type: "mention",
@@ -136,7 +142,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("line1");
     await responder.respond("line2");
-    const updateCall = vi.mocked(bot.updateMessageRaw).mock.calls[0];
+    const updateCall = firstCall(vi.mocked(bot.updateMessageRaw).mock.calls, "updateMessageRaw");
     expect(updateCall[2]).toContain("line1");
     expect(updateCall[2]).toContain("line2");
   });
@@ -148,7 +154,7 @@ describe("respond() — non-threaded (replies to trigger message)", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("hello");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", expect.stringContaining("hello"));
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -244,7 +250,7 @@ describe("respondDiagnostic()", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("main");
     vi.clearAllMocks();
     await responder.respondDiagnostic("detail");
@@ -259,7 +265,7 @@ describe("respondDiagnostic()", () => {
       thread_ts: undefined,
       text: "run",
     });
-    const { responder } = createDiscordAdapters(event, bot, true);
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.respondDiagnostic("detail");
     expect(bot.postMessage).toHaveBeenCalledWith("CH001", "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -344,8 +350,12 @@ describe("setTyping()", () => {
 
   test("event: sends typing indicator", async () => {
     const bot = makeDiscordMessagingBot();
-    const event = makeEvent({ text: "run deploy" });
-    const { responder } = createDiscordAdapters(event, bot, true);
+    const event = makeEvent({
+      ts: "event:one-shot-1777454334068.json",
+      thread_ts: undefined,
+      text: "run deploy",
+    });
+    const { responder } = createDiscordAdapters(event, bot);
     await responder.setTyping(true);
     expect(bot.sendTyping).toHaveBeenCalledWith("CH001");
     expect(bot.postReply).not.toHaveBeenCalled();
@@ -358,7 +368,7 @@ describe("setWorking()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("content");
-    const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
+    const posted = firstCall(vi.mocked(bot.postReply).mock.calls, "postReply")[2];
     expect(posted).toContain(" ...");
   });
 
@@ -368,7 +378,7 @@ describe("setWorking()", () => {
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("content");
     await responder.setWorking(false);
-    const updateCall = vi.mocked(bot.updateMessageRaw).mock.calls[0];
+    const updateCall = firstCall(vi.mocked(bot.updateMessageRaw).mock.calls, "updateMessageRaw");
     expect(updateCall[2]).not.toContain(" ...");
     expect(updateCall[2]).toContain("content");
   });
@@ -381,7 +391,7 @@ describe("replaceResponse()", () => {
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("original text");
     await responder.replaceResponse("replacement");
-    const updateCall = vi.mocked(bot.updateMessageRaw).mock.calls[0];
+    const updateCall = firstCall(vi.mocked(bot.updateMessageRaw).mock.calls, "updateMessageRaw");
     expect(updateCall[2]).not.toContain("original text");
     expect(updateCall[2]).toContain("replacement");
   });
@@ -393,7 +403,7 @@ describe("text splitting", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("x".repeat(DISCORD_V2_TEXT_LIMIT + 200));
-    const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
+    const posted = firstCall(vi.mocked(bot.postReply).mock.calls, "postReply")[2];
     expect(posted.length).toBeLessThanOrEqual(DISCORD_V2_TEXT_LIMIT);
     expect(posted).toContain("continued");
     expect(bot.postReply).toHaveBeenCalledTimes(2);
@@ -405,7 +415,7 @@ describe("text splitting", () => {
     const { responder } = createDiscordAdapters(event, bot);
     await responder.setWorking(false);
     await responder.respond("x".repeat(1900));
-    const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
+    const posted = firstCall(vi.mocked(bot.postReply).mock.calls, "postReply")[2];
     expect(posted.length).toBe(1900);
     expect(posted).not.toContain("continued");
     expect(bot.postReply).toHaveBeenCalledTimes(1);
@@ -416,7 +426,7 @@ describe("text splitting", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("x".repeat(DISCORD_V2_TEXT_LIMIT - 99));
-    const posted = vi.mocked(bot.postReply).mock.calls[0][2] as string;
+    const posted = firstCall(vi.mocked(bot.postReply).mock.calls, "postReply")[2];
     expect(posted.length).toBeLessThanOrEqual(DISCORD_V2_TEXT_LIMIT);
     expect(posted).toContain("continued");
     expect(bot.postReply).toHaveBeenCalledTimes(2);

@@ -1,11 +1,5 @@
-import type { TSchema } from "@sinclair/typebox";
-import { describe, expect, test, vi } from "vitest";
-import type {
-  SubagentRunOutput,
-  SubagentRunRequest,
-  SubagentRunResult,
-  SubagentUsage,
-} from "../harness/types.js";
+import { describe, expect, test, vi, type Mock } from "vitest";
+import type { SubagentRunRequest, SubagentUsage } from "../harness/types.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
 import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/index.js";
@@ -18,9 +12,7 @@ vi.mock("../observability/index.js", () => ({
 const mockRecordSubagentOutcome = vi.mocked(recordSubagentOutcome);
 const mockReportSubagentLaunchError = vi.mocked(reportSubagentLaunchError);
 
-type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
-  request: SubagentRunRequest<TOutputSchema>,
-) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
+type RunSubagent = Parameters<typeof createSubagentTool>[0];
 
 function testUsage(tokens: number, costUsd = 0): SubagentUsage {
   return {
@@ -42,10 +34,10 @@ function testUsage(tokens: number, costUsd = 0): SubagentUsage {
 const TEST_PROFILES = new Map([["explorer", { description: "Evidence explorer" }]]);
 
 function makeTool(
-  runSubagent: RunSubagent,
+  runSubagent: RunSubagent | Mock<RunSubagent>,
   profiles: ReadonlyMap<string, { description: string }> = TEST_PROFILES,
 ) {
-  return createSubagentTool(runSubagent, profiles);
+  return createSubagentTool(runSubagent as RunSubagent, profiles);
 }
 
 function completedRun(output: unknown): RunSubagent {
@@ -178,9 +170,9 @@ describe("subagent tool", () => {
 
     const nodes = (seen as { details: { progress: { nodes: { label: string }[] } } }).details
       .progress.nodes;
-    expect(nodes[0].label).toBe(titleLabel);
-    expect(nodes[1].label).toBe(`${"x".repeat(99)}…`);
-    expect(nodes[1].label).toHaveLength(100);
+    expect(nodes[0]?.label).toBe(titleLabel);
+    expect(nodes[1]?.label).toBe(`${"x".repeat(99)}…`);
+    expect(nodes[1]?.label).toHaveLength(100);
     expect(runSubagent).toHaveBeenCalledTimes(2);
   });
 
@@ -195,7 +187,7 @@ describe("subagent tool", () => {
     expect(properties.tools).toBeUndefined();
     expect(properties.model).toBeUndefined();
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
-    expect(properties.budget.properties).toEqual({
+    expect(properties.budget?.properties).toEqual({
       maxTokens: expect.objectContaining({ minimum: 1 }),
     });
   });
@@ -601,16 +593,17 @@ describe("subagent tool", () => {
         runId: "subagent-1",
         status: "completed",
         model: { provider: "faux", id: "faux" },
-        startedAt: 0,
         durationMs: 1,
         turns: 1,
         toolCalls: 0,
+        toolCallCounts: {},
+        usage: testUsage(0),
         tokens: 0,
         costUsd: 0,
         output: "done",
         text: "done",
       };
-    }) as any;
+    }) as RunSubagent;
     const tool = makeTool(runSubagent);
 
     await tool.execute(
@@ -641,7 +634,7 @@ describe("subagent tool", () => {
       }),
       expect.objectContaining({ onActivity: expect.any(Function) }),
     );
-    expect(runSubagent.mock.calls[0][0]).not.toHaveProperty("tools");
+    expect(runSubagent.mock.calls[0]![0]).not.toHaveProperty("tools");
     expect(result.content).toEqual([{ type: "text", text: "focused answer" }]);
     expect(result.details).toMatchObject({ status: "completed", runId: "subagent-1" });
   });
@@ -839,9 +832,9 @@ describe("subagent observability", () => {
     mockReportSubagentLaunchError.mockClear();
     mockRecordSubagentOutcome.mockClear();
     const launchError = new Error("Unknown subagent profile: explorer");
-    const runSubagent = vi.fn(async () => {
+    const runSubagent = vi.fn<RunSubagent>(async () => {
       throw launchError;
-    }) as unknown as RunSubagent;
+    });
     const tool = makeTool(runSubagent);
 
     await expect(

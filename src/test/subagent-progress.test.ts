@@ -55,10 +55,10 @@ describe("parseSubagentProgressSnapshot", () => {
         },
       ],
     });
-    expect(parsed?.nodes[0].label).toHaveLength(MAX_SUBAGENT_LABEL_CHARS);
-    expect(parsed?.nodes[0].label?.endsWith("…")).toBe(true);
-    expect(parsed?.nodes[0].profile).toHaveLength(64);
-    expect(parsed?.nodes[0].reason).toHaveLength(240);
+    expect(parsed?.nodes[0]?.label).toHaveLength(MAX_SUBAGENT_LABEL_CHARS);
+    expect(parsed?.nodes[0]?.label?.endsWith("…")).toBe(true);
+    expect(parsed?.nodes[0]?.profile).toHaveLength(64);
+    expect(parsed?.nodes[0]?.reason).toHaveLength(240);
   });
 });
 
@@ -104,14 +104,14 @@ describe("settleSubagentProgress", () => {
       "completed",
       "completed",
     ]);
-    expect(settled.nodes[0].turns).toBe(3);
-    expect(settled.nodes[1].profile).toBe("worker");
+    expect(settled.nodes[0]?.turns).toBe(3);
+    expect(settled.nodes[1]?.profile).toBe("worker");
   });
 
   test("marks unsettled nodes failed when the tool call errored", () => {
     const settled = settleSubagentProgress(snapshot(), true);
-    expect(settled.nodes[1].status).toBe("failed");
-    expect(settled.nodes[0].status).toBe("completed");
+    expect(settled.nodes[1]?.status).toBe("failed");
+    expect(settled.nodes[0]?.status).toBe("completed");
   });
 });
 

@@ -9,8 +9,9 @@ const ctx = loadContextOrSkip();
 describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack streaming API", () => {
   if (!ctx || !ctx.env.streamingBotToken) return;
   const { client, env } = ctx;
-  assertBotTokenShape(env.streamingBotToken);
-  const botClient = new WebClient(env.streamingBotToken);
+  const streamingBotToken = ctx.env.streamingBotToken;
+  assertBotTokenShape(streamingBotToken);
+  const botClient = new WebClient(streamingBotToken);
 
   it("S-011 appendStream appends only deltas without duplicating prior text", async () => {
     const token = `STREAM_E2E_${Date.now()}`;

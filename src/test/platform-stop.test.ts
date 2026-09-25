@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { ConversationEvent } from "../types.js";
+import { createConversationEvent } from "../office/index.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
@@ -68,10 +68,15 @@ describe("MessagingEventQueue.close", () => {
 
 describe("platform stop intake", () => {
   test("rejects scheduled events after every adapter is stopped", () => {
-    const event = {
+    const event = createConversationEvent({
+      platform: "slack",
+      type: "mention",
       conversationId: "C1",
+      conversationKind: "shared",
+      user: "EVENT",
       text: "late event",
-    } as ConversationEvent;
+      ts: "event:late",
+    });
     const bots = [
       uninitializedBot<SlackMessagingBot>(SlackMessagingBot.prototype, { stopped: true }),
       uninitializedBot<DiscordMessagingBot>(DiscordMessagingBot.prototype, { stopped: true }),

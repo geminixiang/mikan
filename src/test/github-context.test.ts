@@ -69,15 +69,17 @@ describe("createGithubAdapters", () => {
       expect(text.length).toBeLessThanOrEqual(GITHUB_MAX_COMMENT_LENGTH);
       return text as string;
     });
-    expect(parts[0]).toMatch(/\n\*\(continued 1\)\*$/);
-    expect(parts[0].replace(/\n\*\(continued 1\)\*$/, "") + parts[1]).toBe(answer);
+    const [first, second] = parts;
+    if (first === undefined || second === undefined) throw new Error("expected two comment parts");
+    expect(first).toMatch(/\n\*\(continued 1\)\*$/);
+    expect(first.replace(/\n\*\(continued 1\)\*$/, "") + second).toBe(answer);
 
     await responder.replaceResponse(answer.replaceAll("A", "C").replaceAll("B", "D"));
 
     expect(bot.postComment).toHaveBeenCalledTimes(2);
     expect(bot.updateMessage.mock.calls).toEqual([
-      ["GH_octo_widgets_5", "555", parts[0].replaceAll("A", "C").replaceAll("B", "D")],
-      ["GH_octo_widgets_5", "556", parts[1].replaceAll("A", "C").replaceAll("B", "D")],
+      ["GH_octo_widgets_5", "555", first.replaceAll("A", "C").replaceAll("B", "D")],
+      ["GH_octo_widgets_5", "556", second.replaceAll("A", "C").replaceAll("B", "D")],
     ]);
   });
 

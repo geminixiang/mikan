@@ -12,7 +12,6 @@ describe("attach tool", () => {
       { label: "share report", path: "gpt-5-mini.md" },
       undefined,
       undefined,
-      undefined as never,
     );
 
     expect(upload).toHaveBeenCalledWith("gpt-5-mini.md", "gpt-5-mini.md");
@@ -28,7 +27,6 @@ describe("attach tool", () => {
       { label: "share", path: "reports/summary.pdf", title: "Q3 Report" },
       undefined,
       undefined,
-      undefined as never,
     );
 
     expect(upload).toHaveBeenCalledWith("reports/summary.pdf", "Q3 Report.pdf");
@@ -44,7 +42,6 @@ describe("attach tool", () => {
       { label: "share", path: "summary.pdf", title: "Q3.pdf" },
       undefined,
       undefined,
-      undefined as never,
     );
 
     expect(upload).toHaveBeenCalledWith("summary.pdf", "Q3.pdf");
@@ -54,13 +51,7 @@ describe("attach tool", () => {
     const { tool } = createAttachTool();
 
     await expect(
-      tool.execute(
-        "call-1",
-        { label: "share", path: "file.txt" },
-        undefined,
-        undefined,
-        undefined as never,
-      ),
+      tool.execute("call-1", { label: "share", path: "file.txt" }, undefined, undefined),
     ).rejects.toThrow("Upload function not configured");
   });
 });

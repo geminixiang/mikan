@@ -28,7 +28,7 @@ import { createSlackAdapters } from "../adapters/slack/context.js";
 import type { SlackMessagingBot } from "../adapters/slack/bot.js";
 import type { SlackEvent } from "../adapters/slack/types.js";
 import type { SessionLifecycle } from "../runtime/session-lifecycle.js";
-import type { ConversationRuntimeState } from "../runtime/types.js";
+import type { ConversationRuntime, ConversationRuntimeState } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -87,7 +87,9 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
 
 function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
   const lines = readFileSync(sessionFile, "utf-8").split("\n");
-  const header = JSON.parse(lines[0]) as Record<string, unknown>;
+  const headerLine = lines[0];
+  if (headerLine === undefined) throw new Error(`session file ${sessionFile} has no header line`);
+  const header = JSON.parse(headerLine) as Record<string, unknown>;
   header.timestamp = timestamp;
   header.createdAt = new Date(timestamp).getTime();
   lines[0] = JSON.stringify(header);
@@ -122,7 +124,6 @@ function makeEventAndContext(ts: string): {
   const event: ConversationEvent = {
     address: testAddress,
     type: "message",
-    conversationId: "C123",
     conversationKind: "shared",
     ts,
     user: "U1",
@@ -709,6 +710,7 @@ describe("ConversationRuntime lifecycle", () => {
     };
 
     const freshFile = resolveChannelSessionFile(conversationDir);
+    if (freshFile === null) throw new Error("resetSession did not create a channel session file");
     await syncOnce(freshFile);
     expect(readFileSync(freshFile, "utf-8")).not.toContain('"text":"old"');
 

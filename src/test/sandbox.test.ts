@@ -200,7 +200,7 @@ describe("CloudflareSandboxExecutor", () => {
         headers: expect.objectContaining({ "content-type": "application/json" }),
       }),
     );
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+    expect(JSON.parse(fetchMock.mock.calls[0]![1].body)).toEqual({
       sandboxId: "slack-u123",
       command: "pwd",
       timeoutSeconds: 5,

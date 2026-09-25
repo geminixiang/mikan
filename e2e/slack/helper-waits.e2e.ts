@@ -17,8 +17,9 @@ const ctx = loadContextOrSkip();
 describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack wait helpers", () => {
   if (!ctx || !ctx.env.streamingBotToken) return;
   const { client, env } = ctx;
-  assertBotTokenShape(env.streamingBotToken);
-  const botClient = new WebClient(env.streamingBotToken);
+  const streamingBotToken = ctx.env.streamingBotToken;
+  assertBotTokenShape(streamingBotToken);
+  const botClient = new WebClient(streamingBotToken);
 
   it("S-014 waits for bot replies in recent messages and threads", async () => {
     const botAuth = await botClient.auth.test();

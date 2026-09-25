@@ -189,9 +189,9 @@ test("splits buffered output before sending continuation messages", async () => 
   await responder.setWorking(false);
   await responder.respond("x".repeat(25));
 
-  expect(calls[0].operation).toBe("post");
-  expect(calls[0].text?.length).toBeLessThanOrEqual(20);
-  expect(calls[1].operation).toBe("extra");
+  expect(calls[0]?.operation).toBe("post");
+  expect(calls[0]?.text?.length).toBeLessThanOrEqual(20);
+  expect(calls[1]?.operation).toBe("extra");
 });
 
 const chunk = (letter: string) => letter.repeat(100);

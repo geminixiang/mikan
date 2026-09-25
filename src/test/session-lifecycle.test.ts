@@ -35,7 +35,9 @@ describe("SessionLifecycle", () => {
       await gate;
       order.push("first:end");
     });
-    const second = lifecycle.enqueue(slack, "C1", async () => order.push("second"));
+    const second = lifecycle.enqueue(slack, "C1", async () => {
+      order.push("second");
+    });
 
     await vi.waitFor(() => expect(order).toEqual(["first:start"]));
     release();
@@ -335,7 +337,9 @@ describe("SessionLifecycle", () => {
         await gate;
         order.push("discord:end");
       });
-      const other = lifecycle.enqueue(telegram, "900100", async () => order.push("telegram"));
+      const other = lifecycle.enqueue(telegram, "900100", async () => {
+        order.push("telegram");
+      });
 
       await other;
       expect(order).toEqual(["discord:start", "telegram"]);

@@ -143,7 +143,7 @@ describe("event-format round-trip", () => {
       at: "2028-02-29T09:00:00.123+08:00",
     });
 
-    expect(payload.at).toBe("2028-02-29T09:00:00.123+08:00");
+    expect(payload).toMatchObject({ type: "one-shot", at: "2028-02-29T09:00:00.123+08:00" });
     expect(parseEventPayload(JSON.stringify(payload), "leap-day.json")).toEqual(payload);
   });
 });

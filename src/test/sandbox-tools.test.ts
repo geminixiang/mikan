@@ -11,7 +11,7 @@ import {
   type AgentHarnessToolInvocation,
   type ExecutionEnv,
 } from "@earendil-works/pi-agent-core";
-import { validateToolArguments } from "@earendil-works/pi-ai";
+import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import { HostExecutor } from "../sandbox/host.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
@@ -42,7 +42,7 @@ describe("sandbox tools", () => {
     return found;
   };
 
-  const run = async (name: string, params: Record<string, unknown>) => {
+  const run = async (name: string, params: JsonObject) => {
     const candidate = tool(name);
     const validated = validateToolArguments(candidate, {
       type: "toolCall",

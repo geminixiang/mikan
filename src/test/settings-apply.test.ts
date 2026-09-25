@@ -77,12 +77,12 @@ describe("applyConversationSettings", () => {
       refreshConversationEnvironment: vi.fn(),
     };
     const result = applyConversationSettings(runtime, office, {
-      sandbox: { image: { workspaceMount: "full" } },
+      sandbox: { memory: "2g" },
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
     expect(runtime.switchConversationModel).not.toHaveBeenCalled();
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
-    expect(written.sandbox.image.workspaceMount).toBe("full");
+    expect(written.sandbox.memory).toBe("2g");
   });
 
   test("no runtime (portal without bridge): writes, reports null", () => {

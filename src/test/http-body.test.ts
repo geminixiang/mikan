@@ -57,10 +57,11 @@ describe("readRawBody", () => {
   });
 
   test("returns null and sends 413 when body exceeds maxBytes", async () => {
-    const req = makeReq(["a".repeat(100)]) as IncomingMessage & { destroy(): void };
+    const req = makeReq(["a".repeat(100)]);
     let destroyed = false;
     req.destroy = () => {
       destroyed = true;
+      return req;
     };
 
     const state = { status: null as number | null, ended: false };

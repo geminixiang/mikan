@@ -25,6 +25,7 @@ Read the code and documentation relevant to the task; expand the search when the
 | Focused tests         | `npm test -- src/test/<name>.test.ts`         |
 | Full tests            | `npm test`                                    |
 | Lint / format check   | `npm run lint` / `npm run fmt:check`          |
+| Type-check everything | `npm run typecheck` (tests, e2e, examples)    |
 | Format selected files | `npx oxfmt -c .config/oxfmtrc.json <paths>`   |
 | Exports/dependencies  | `npm run knip`                                |
 | Real-platform E2E     | `npm run test:e2e` / `npm run test:e2e:slack` |

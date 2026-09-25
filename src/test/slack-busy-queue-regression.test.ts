@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Type } from "@sinclair/typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -31,12 +32,13 @@ test("the run after a busy tool receives and answers the queued token, not the p
         return fauxAssistantMessage(text.includes(queued) ? queued : busy);
       },
     ]);
-    const tool = {
+    const tool: AgentTool = {
       name: "busy",
+      label: "busy",
       description: "Deterministic completed busy task",
-      parameters: { type: "object", properties: {} },
+      parameters: Type.Object({}),
       execute: async () => ({ content: [{ type: "text", text: "done" }], details: {} }),
-    } as AgentTool;
+    };
     const session = new MikanAgentSession({
       systemPrompt: "Reply with the current user token.",
       model: faux.getModel() as Model<Api>,

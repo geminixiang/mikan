@@ -9,7 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, test, expect, vi } from "vitest";
-import { Type } from "@sinclair/typebox";
+import { Type, type TSchema } from "@sinclair/typebox";
 import { type AgentTool } from "@earendil-works/pi-agent-core";
 import {
   fauxProvider,
@@ -88,7 +88,7 @@ beforeEach(() => {
   aborted = false;
   trace = [];
   id = 0;
-  const tool: AgentTool = {
+  const tool: AgentTool<TSchema> = {
     name: "hold",
     label: "hold",
     description: "Controlled long-running operation",
@@ -426,8 +426,8 @@ test("main DM task_status reads live work and persisted completion without reope
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   const office = workspace.office(createOfficeAddress("slack", "D123"));
   const result = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
-  expect(result[0].status).toBe("completed");
-  expect(result[0].endedAt).toBeDefined();
+  expect(result[0]?.status).toBe("completed");
+  expect(result[0]?.endedAt).toBeDefined();
   expect(await querySlackTasks(office.dir, "D123", [], "OTHER:123")).toEqual([]);
 });
 
@@ -545,7 +545,7 @@ test("stop during runner preparation prevents provider and tool execution", asyn
   const release = deferred();
   const original = MikanAgentSession.prototype.reloadFromSession;
   vi.spyOn(MikanAgentSession.prototype, "reloadFromSession").mockImplementationOnce(
-    async function () {
+    async function (this: MikanAgentSession) {
       preparing.resolve();
       await release.promise;
       return original.call(this);
@@ -637,8 +637,8 @@ test("task membership parser tolerates malformed logs and status isolates platfo
     ],
     `D123:${root}`,
   );
-  expect(observations[0].status).toBe("completed");
-  expect(observations[0].currentTool).toBeUndefined();
+  expect(observations[0]?.status).toBe("completed");
+  expect(observations[0]?.currentTool).toBeUndefined();
 });
 
 test("main DM pure status observes the single active task without a model turn", async () => {

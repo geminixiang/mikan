@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Document, Message, PhotoSize } from "grammy/types";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
@@ -10,6 +11,30 @@ import { conversationIdOf } from "../sessions/session-key.js";
 const officeOf = (sessionKey: string) =>
   createOfficeAddress("telegram", conversationIdOf(sessionKey));
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
+
+function makePhotoSize(fileId: string): PhotoSize {
+  return { file_id: fileId, file_unique_id: `unique-${fileId}`, width: 100, height: 100 };
+}
+
+function makeDocument(fileId: string, fileName: string): Document {
+  return { file_id: fileId, file_unique_id: `unique-${fileId}`, file_name: fileName };
+}
+
+function makeAttachmentMessage(
+  fields: Pick<Message, "message_id" | "photo" | "document">,
+): Message {
+  return {
+    date: Math.floor(Date.now() / 1000),
+    chat: { id: 123, type: "private", first_name: "Alice" },
+    ...fields,
+  };
+}
+
+function requireFirstLine(lines: string[]): string {
+  const line = lines[0];
+  if (line === undefined) throw new Error("expected at least one log line");
+  return line;
+}
 
 function makeHandler(): MessagingEventHandler {
   return {
@@ -282,7 +307,7 @@ describe("TelegramMessagingBot message logging", () => {
     const lines = readFileSync(join(workingDir, officeKey(officeOf("999")), "log.jsonl"), "utf-8")
       .trim()
       .split("\n");
-    const entry = JSON.parse(lines[0]);
+    const entry = JSON.parse(requireFirstLine(lines));
     expect(entry.threadTs).toBe("50");
     expect(entry.text).toBe("hello");
   });
@@ -302,7 +327,7 @@ describe("TelegramMessagingBot message logging", () => {
     const lines = readFileSync(join(workingDir, officeKey(officeOf("123")), "log.jsonl"), "utf-8")
       .trim()
       .split("\n");
-    const entry = JSON.parse(lines[0]);
+    const entry = JSON.parse(requireFirstLine(lines));
     expect(entry.threadTs).toBeUndefined();
   });
 });
@@ -376,11 +401,14 @@ describe("TelegramMessagingBot attachments", () => {
     });
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const attachments = await bot.processAttachments("123", {
-      message_id: 42,
-      photo: [{ file_id: "small-photo" }, { file_id: "large-photo" }],
-      document: { file_id: "doc-1", file_name: "report.pdf" },
-    });
+    const attachments = await bot.processAttachments(
+      "123",
+      makeAttachmentMessage({
+        message_id: 42,
+        photo: [makePhotoSize("small-photo"), makePhotoSize("large-photo")],
+        document: makeDocument("doc-1", "report.pdf"),
+      }),
+    );
 
     expect(getFile).toHaveBeenCalledWith("large-photo");
     expect(getFile).toHaveBeenCalledWith("doc-1");
@@ -412,10 +440,10 @@ describe("TelegramMessagingBot attachments", () => {
     });
     globalThis.fetch = fetchMock as typeof fetch;
 
-    const [attachment] = await bot.processAttachments("456", {
-      message_id: 7,
-      document: { file_id: "file-id", file_name: "photo.jpg" },
-    });
+    const [attachment] = await bot.processAttachments(
+      "456",
+      makeAttachmentMessage({ message_id: 7, document: makeDocument("file-id", "photo.jpg") }),
+    );
 
     expect(getFile).toHaveBeenCalledWith("file-id");
     expect(fetchMock).toHaveBeenCalledWith(
@@ -430,6 +458,7 @@ describe("TelegramMessagingBot attachments", () => {
       ),
     });
 
+    if (!attachment) throw new Error("expected one downloaded attachment");
     const savedFile = join(workingDir, attachment.localPath);
     expect(existsSync(savedFile)).toBe(true);
     expect(readFileSync(savedFile)).toEqual(Buffer.from([1, 2, 3, 4]));

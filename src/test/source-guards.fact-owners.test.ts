@@ -49,6 +49,10 @@ function sameExpression(left: ts.Node, right: ts.Node): boolean {
   return normalized(unwrap(left)) === normalized(unwrap(right));
 }
 
+function onlyElement<T>(items: readonly T[]): T | undefined {
+  return items.length === 1 ? items[0] : undefined;
+}
+
 function isCallTo(node: ts.Node, callee: string): node is ts.CallExpression {
   return ts.isCallExpression(node) && node.expression.getText() === callee;
 }
@@ -147,14 +151,16 @@ function isStringifiedByContext(node: ts.Node): boolean {
 function stringifies(fallback: ts.Node, subject: ts.Node, conditional: ts.Node): boolean {
   const value = unwrap(fallback);
   if (isCallTo(value, "String")) {
-    return value.arguments.length === 1 && sameExpression(value.arguments[0], subject);
+    const argument = onlyElement(value.arguments);
+    return argument !== undefined && sameExpression(argument, subject);
   }
   if (ts.isTemplateExpression(value)) {
+    const span = onlyElement(value.templateSpans);
     return (
       value.head.text === "" &&
-      value.templateSpans.length === 1 &&
-      value.templateSpans[0].literal.text === "" &&
-      sameExpression(value.templateSpans[0].expression, subject)
+      span !== undefined &&
+      span.literal.text === "" &&
+      sameExpression(span.expression, subject)
     );
   }
   return sameExpression(value, subject) && isStringifiedByContext(conditional);
@@ -228,8 +234,9 @@ function classifyRecordTerm(term: ts.Node): { kind: RecordTerm; subject: ts.Node
       ? { kind: "notNull", subject }
       : { kind: "notArray", subject };
   }
-  if (isCallTo(term, "Boolean") && term.arguments.length === 1) {
-    return { kind: "notNull", subject: term.arguments[0] };
+  if (isCallTo(term, "Boolean")) {
+    const subject = onlyElement(term.arguments);
+    if (subject) return { kind: "notNull", subject };
   }
   if (ts.isIdentifier(term) || ts.isPropertyAccessExpression(term)) {
     return { kind: "notNull", subject: term };
@@ -270,8 +277,9 @@ function levelValue(node: ts.Node): string | undefined {
   const value = unwrap(node);
   if (isStringLiteralLike(value)) return value.text;
   if (ts.isLiteralTypeNode(value) && isStringLiteralLike(value.literal)) return value.literal.text;
-  if (ts.isCallExpression(value) && value.arguments.length === 1) {
-    const argument = unwrap(value.arguments[0]);
+  const onlyArgument = ts.isCallExpression(value) ? onlyElement(value.arguments) : undefined;
+  if (onlyArgument) {
+    const argument = unwrap(onlyArgument);
     return isStringLiteralLike(argument) ? argument.text : undefined;
   }
   if (ts.isBinaryExpression(value) && equalityOperators.has(value.operatorToken.kind)) {

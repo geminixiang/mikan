@@ -21,6 +21,7 @@ afterEach(() => {
 function makeMessage(localPath: string): ConversationMessage {
   return {
     id: "M1",
+    address: { platform: "slack", conversationId: "C123" },
     sessionKey: "C123",
     conversationKind: "shared",
     userId: "U1",

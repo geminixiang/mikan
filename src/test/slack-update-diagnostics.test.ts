@@ -18,10 +18,8 @@ afterEach(() => {
 function setup() {
   const breadcrumb = vi.mocked(Sentry.addBreadcrumb).mockImplementation(() => {});
   const update = vi.fn().mockResolvedValue({ ok: true });
-  const bot = Object.assign(Object.create(SlackMessagingBot.prototype) as SlackMessagingBot, {
-    webClient: { chat: { update } },
-    users: new Map(),
-  });
+  const bot: SlackMessagingBot = Object.create(SlackMessagingBot.prototype);
+  Object.assign(bot, { webClient: { chat: { update } }, users: new Map() });
   return { breadcrumb, update, bot };
 }
 

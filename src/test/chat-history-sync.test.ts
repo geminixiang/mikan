@@ -40,11 +40,14 @@ async function readContextText(sessionFile: string): Promise<string> {
   const session = await SessionStore.inspect(sessionFile);
   const context = await session.buildSessionContext();
   return context.messages
-    .map((message) =>
-      typeof message.content === "string"
+    .map((message) => {
+      if (!("content" in message)) {
+        throw new Error(`unexpected ${message.role} message without content in session context`);
+      }
+      return typeof message.content === "string"
         ? message.content
-        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"),
-    )
+        : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+    })
     .join("\n---\n");
 }
 

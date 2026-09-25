@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "inlineSources": false,
+    "paths": {
+      "@geminixiang/mikan": ["../src/index.ts"]
+    }
+  },
+  "include": ["../src/**/*.ts", "../e2e/**/*.ts", "../deploy/examples/embedder/**/*.ts"],
+  "exclude": ["../src/content.config.ts", "../deploy/examples/embedder/index.d.ts"]
+}

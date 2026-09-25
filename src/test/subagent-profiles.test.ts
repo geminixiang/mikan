@@ -151,7 +151,7 @@ describe("loadSubagentProfiles", () => {
     const { profiles, diagnostics } = loadSubagentProfiles(dir);
 
     expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0].message).toContain("model must be provider/id");
+    expect(diagnostics[0]?.message).toContain("model must be provider/id");
     expect(profiles.has("broken")).toBe(false);
     expect(profiles.get("fine")).toMatchObject({ tools: ["read"] });
     expect(profiles.get("summarizer")).toBeDefined();
@@ -163,7 +163,7 @@ describe("loadSubagentProfiles", () => {
 
     const { profiles, diagnostics } = loadSubagentProfiles(dir);
 
-    expect(diagnostics[0].message).toContain("tools is required for a new profile");
+    expect(diagnostics[0]?.message).toContain("tools is required for a new profile");
     expect(profiles.has("vague")).toBe(false);
   });
 
@@ -173,7 +173,7 @@ describe("loadSubagentProfiles", () => {
 
     const { profiles, diagnostics } = loadSubagentProfiles(dir);
 
-    expect(diagnostics[0].message).toContain("needs prompt text in the file body");
+    expect(diagnostics[0]?.message).toContain("needs prompt text in the file body");
     expect(profiles.has("empty")).toBe(false);
   });
 
@@ -181,7 +181,7 @@ describe("loadSubagentProfiles", () => {
     const dir = workspace();
     writeProfile(dir, "software-engineer", `---\nmax_cost_usd: -1\n---\n`);
 
-    expect(loadSubagentProfiles(dir).diagnostics[0].message).toContain(
+    expect(loadSubagentProfiles(dir).diagnostics[0]?.message).toContain(
       "max_cost_usd must be a non-negative number",
     );
   });

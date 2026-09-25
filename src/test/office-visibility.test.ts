@@ -52,7 +52,7 @@ describe("resolveOfficeVisibility", () => {
   });
 
   test("non-Slack platforms are private by decision, not unknown", () => {
-    for (const platform of ["telegram", "discord", "github"]) {
+    for (const platform of ["telegram", "discord", "github"] as const) {
       const value = workspace.office(createOfficeAddress(platform, `X-${platform}`));
       value.ensure();
       expect(resolveOfficeVisibility(value)).toEqual({

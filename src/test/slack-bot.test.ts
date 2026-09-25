@@ -191,7 +191,6 @@ describe("SlackMessagingBot slash commands", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     const open = vi.fn().mockResolvedValue({ channel: { id: "D123" } });
@@ -221,7 +220,9 @@ describe("SlackMessagingBot slash commands", () => {
 
     expect(open).not.toHaveBeenCalled();
 
-    const [event, calledMessagingBot, context] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const firstCall = vi.mocked(handler.handleEvent).mock.calls[0];
+    if (!firstCall) throw new Error("expected /pi-login to dispatch an event");
+    const [event, calledMessagingBot, context] = firstCall;
     expect(event).toMatchObject({
       type: "private_command",
       address: { conversationId: "C123" },
@@ -247,7 +248,6 @@ describe("SlackMessagingBot slash commands", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
     (bot as any).webClient = {
       chat: {
@@ -283,7 +283,6 @@ describe("SlackMessagingBot slash commands", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -335,7 +334,6 @@ describe("SlackMessagingBot slash commands", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -383,7 +381,6 @@ describe("SlackMessagingBot slash commands", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     const postEphemeral = vi.fn().mockResolvedValue(undefined);
@@ -450,7 +447,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let mentionHandler:
@@ -517,7 +513,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -573,7 +568,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -650,7 +644,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -750,7 +743,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -818,7 +810,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -877,7 +868,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -931,7 +921,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let mentionHandler:
@@ -987,7 +976,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let mentionHandler:
@@ -1044,7 +1032,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let mentionHandler:
@@ -1099,7 +1086,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1176,7 +1162,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
@@ -1217,7 +1202,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
     const postMessage = vi.fn().mockResolvedValue({ ts: "2000.0001" });
     (bot as any).webClient = { chat: { postMessage } };
@@ -1238,7 +1222,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     const postMessage = vi.fn().mockRejectedValueOnce(new Error("anchor failed"));
@@ -1296,7 +1279,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     (bot as any).postMessage = vi.fn().mockResolvedValue("2000.0001");
@@ -1379,7 +1361,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1440,7 +1421,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1497,7 +1477,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1556,7 +1535,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1622,7 +1600,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1679,7 +1656,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1743,7 +1719,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1817,7 +1792,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1882,7 +1856,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let messageHandler:
@@ -1970,7 +1943,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
     });
     (bot as any).botUserId = "U_SELF";
     (bot as any).botId = "B_SELF";
@@ -2005,9 +1977,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {
-        processAttachments: vi.fn().mockResolvedValue([]),
-      } as any,
     });
 
     (bot as any).botUserId = "B123";
@@ -2045,7 +2014,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
     });
     (bot as any).users = new Map([
       ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
@@ -2077,7 +2045,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: { processAttachments: vi.fn().mockResolvedValue([]) } as any,
     });
     (bot as any).users = new Map([
       ["U123", { id: "U123", userName: "alice", displayName: "Alice", isBot: false }],
@@ -2109,9 +2076,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {
-        processAttachments: vi.fn().mockResolvedValue([]),
-      } as any,
     });
 
     (bot as any).botUserId = "U_MIKAN";
@@ -2167,9 +2131,6 @@ describe("SlackMessagingBot backfill", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {
-        processAttachments: vi.fn().mockResolvedValue([]),
-      } as any,
     });
 
     (bot as any).botUserId = "B123";
@@ -2224,7 +2185,6 @@ describe("SlackMessagingBot attachments", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
 
     let mentionHandler:
@@ -2306,7 +2266,6 @@ describe("SlackMessagingBot force-stop block action", () => {
       appToken: "xapp-test",
       botToken: "xoxb-test",
       workspace,
-      store: {} as any,
     });
     (bot as any).webClient = {
       chat: { postMessage: vi.fn().mockResolvedValue({ ts: "9000.0001" }) },

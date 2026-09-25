@@ -2,7 +2,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createOfficeAddress, officeKey } from "../../../src/office/index.js";
 import type { KnownBlock } from "@slack/types";
-import type { WebClient } from "@slack/web-api";
+import type {
+  FilesCompleteUploadExternalResponse,
+  WebAPICallResult,
+  WebClient,
+} from "@slack/web-api";
+
+type FilesUploadV2Result = WebAPICallResult & { files?: FilesCompleteUploadExternalResponse[] };
 
 export interface SlackMessage {
   ts?: string;
@@ -146,7 +152,7 @@ export async function uploadTextFile(
     title: filename,
     initial_comment: initialComment,
   });
-  if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
+  if (!res.ok) throw new Error("files.uploadV2 failed");
 }
 
 export interface FileUploadSpec {
@@ -160,7 +166,7 @@ export async function uploadFiles(
   files: FileUploadSpec[],
   initialComment: string,
 ): Promise<string[]> {
-  const res = await client.files.uploadV2({
+  const res: FilesUploadV2Result = await client.files.uploadV2({
     channel_id: channel,
     initial_comment: initialComment,
     file_uploads: files.map((spec) => ({
@@ -169,7 +175,7 @@ export async function uploadFiles(
       title: spec.filename,
     })),
   });
-  if (!res.ok) throw new Error(`files.uploadV2 failed: ${res.error ?? "unknown"}`);
+  if (!res.ok) throw new Error("files.uploadV2 failed");
   console.log(
     JSON.stringify({
       kind: "qa_multi_upload",

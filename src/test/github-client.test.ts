@@ -5,6 +5,8 @@ import { GithubApiError, GithubClient, githubIsRateLimited } from "../adapters/g
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const PRIVATE_KEY_PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 
+type FetchInput = Parameters<typeof fetch>[0];
+
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -60,17 +62,21 @@ describe("GithubClient job logs", () => {
 describe("GithubClient auth", () => {
   test("signs a verifiable RS256 app JWT with the app id as issuer", async () => {
     const calls: { url: string; headers: Record<string, string> }[] = [];
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
       calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
       return jsonResponse({ slug: "mikan" });
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     expect(await client.getAppSlug()).toBe("mikan");
 
-    const auth = calls[0].headers.Authorization;
+    const auth = calls[0]?.headers.Authorization;
+    if (auth === undefined) throw new Error("expected an Authorization header on the first call");
     expect(auth).toMatch(/^Bearer /);
     const [header, payload, signature] = auth.slice("Bearer ".length).split(".");
+    if (header === undefined || payload === undefined || signature === undefined) {
+      throw new Error(`expected a three-part JWT, got ${auth}`);
+    }
     expect(JSON.parse(Buffer.from(header, "base64url").toString())).toEqual({
       alg: "RS256",
       typ: "JWT",
@@ -86,13 +92,13 @@ describe("GithubClient auth", () => {
 
   test("mints the installation token once and reuses it while fresh", async () => {
     const calls: { url: string; headers: Record<string, string> }[] = [];
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
       calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
       if (String(url).includes("/access_tokens")) return tokenResponse();
       return jsonResponse([]);
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     await client.listIssuesSince("o", "r", "2026-01-01T00:00:00Z");
     await client.listIssueCommentsSince("o", "r", "2026-01-01T00:00:00Z");
 
@@ -110,7 +116,7 @@ describe("GithubClient conditional requests", () => {
   test("stores the etag and returns null on 304", async () => {
     let sentIfNoneMatch: string | undefined;
     let first = true;
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
       if (String(url).includes("/access_tokens")) return tokenResponse();
       const headers = init?.headers as Record<string, string>;
       if (first) {
@@ -121,7 +127,7 @@ describe("GithubClient conditional requests", () => {
       return new Response(null, { status: 304 });
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     const since = "2026-01-01T00:00:00Z";
     expect(await client.listIssueCommentsSince("o", "r", since)).toEqual([{ id: 1 }]);
     expect(await client.listIssueCommentsSince("o", "r", since)).toBeNull();
@@ -133,7 +139,7 @@ describe("GithubClient review comments", () => {
   test("listPullReviewCommentsSince polls /pulls/comments conditionally", async () => {
     const calls: string[] = [];
     let first = true;
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+    const fetchImpl = vi.fn(async (url: FetchInput) => {
       if (String(url).includes("/access_tokens")) return tokenResponse();
       calls.push(String(url));
       if (first) {
@@ -143,7 +149,7 @@ describe("GithubClient review comments", () => {
       return new Response(null, { status: 304 });
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     const since = "2026-01-01T00:00:00Z";
     expect(await client.listPullReviewCommentsSince("o", "r", since)).toEqual([{ id: 8001 }]);
     expect(await client.listPullReviewCommentsSince("o", "r", since)).toBeNull();
@@ -152,30 +158,30 @@ describe("GithubClient review comments", () => {
 
   test("listPullReviewComments and createReviewCommentReaction hit the pulls endpoints", async () => {
     const calls: { url: string; method?: string }[] = [];
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
       if (String(url).includes("/access_tokens")) return tokenResponse();
       calls.push({ url: String(url), method: init?.method });
       return jsonResponse([]);
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     await client.listPullReviewComments("o", "r", 5);
     await client.createReviewCommentReaction("o", "r", 8001, "eyes");
 
-    expect(calls[0].url).toContain("/repos/o/r/pulls/5/comments?per_page=100");
+    expect(calls[0]?.url).toContain("/repos/o/r/pulls/5/comments?per_page=100");
     expect(calls[1]).toMatchObject({ method: "POST" });
-    expect(calls[1].url).toContain("/repos/o/r/pulls/comments/8001/reactions");
+    expect(calls[1]?.url).toContain("/repos/o/r/pulls/comments/8001/reactions");
   });
 });
 
 describe("GithubClient errors", () => {
   test("non-2xx responses throw GithubApiError with the status", async () => {
-    const fetchImpl = vi.fn(async (url: RequestInfo | URL) => {
+    const fetchImpl = vi.fn(async (url: FetchInput) => {
       if (String(url).includes("/access_tokens")) return tokenResponse();
       return new Response("API rate limit exceeded", { status: 403 });
     });
 
-    const client = makeClient(fetchImpl as unknown as typeof fetch);
+    const client = makeClient(fetchImpl);
     const failure = await client.getIssue("o", "r", 1).catch((err: unknown) => err);
     expect(failure).toBeInstanceOf(GithubApiError);
     expect((failure as GithubApiError).status).toBe(403);

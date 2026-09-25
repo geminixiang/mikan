@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -19,6 +19,7 @@ import {
   SUBAGENT_ABORT_GRACE_MS,
 } from "../harness/subagent.js";
 import { MikanAgentSession } from "../harness/session.js";
+import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import { MikanModels } from "../harness/models.js";
 import type { SubagentUsage } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -49,7 +50,7 @@ function createFauxSetup(): {
   return { models, faux, model: faux.getModel() as Model<Api> };
 }
 
-const echoTool: AgentTool = {
+const echoTool = adaptAgentTool({
   name: "echo",
   label: "echo",
   description: "Echo the input",
@@ -58,7 +59,7 @@ const echoTool: AgentTool = {
     content: [{ type: "text", text: `echo: ${(args as { text: string }).text}` }],
     details: {},
   }),
-};
+});
 
 const THINKER_PROFILES = new Map([
   [
@@ -215,11 +216,14 @@ describe("runSubagent", () => {
 
   test("logs the abort reason and run id when a subagent timeout cancels an LLM request", async () => {
     const { models, faux, model } = createFauxSetup();
-    const requestStarted = Promise.withResolvers<void>();
+    let resolveRequestStarted: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolve) => {
+      resolveRequestStarted = resolve;
+    });
     faux.setResponses([
       async (_context, options, _state, requestModel) => {
         await options?.onPayload?.({}, requestModel);
-        requestStarted.resolve();
+        resolveRequestStarted?.();
         await new Promise<void>((resolve) => {
           options?.signal?.addEventListener("abort", () => resolve(), { once: true });
         });
@@ -236,7 +240,7 @@ describe("runSubagent", () => {
       workspaceDir: dir,
       availableTools: [],
     });
-    await requestStarted.promise;
+    await requestStarted;
     const result = await pending;
 
     expect(result.status).toBe("timeout");
@@ -252,7 +256,7 @@ describe("runSubagent", () => {
     const toolGate = new Promise<void>((resolve) => {
       releaseTool = resolve;
     });
-    const stuckTool: AgentTool = {
+    const stuckTool = adaptAgentTool({
       name: "stuck",
       label: "stuck",
       description: "Wait until released",
@@ -261,7 +265,7 @@ describe("runSubagent", () => {
         await toolGate;
         return { content: [{ type: "text", text: "released" }], details: {} };
       },
-    };
+    });
     const slots = new SubagentSlotPool(1);
     const usageCalls: SubagentUsage[] = [];
     const startedAt = Date.now();
@@ -295,7 +299,7 @@ describe("runSubagent", () => {
     const toolGate = new Promise<void>((resolve) => {
       releaseTool = resolve;
     });
-    const stuckTool: AgentTool = {
+    const stuckTool = adaptAgentTool({
       name: "stuck",
       label: "stuck",
       description: "Wait until released",
@@ -304,7 +308,7 @@ describe("runSubagent", () => {
         await toolGate;
         return { content: [{ type: "text", text: "released" }], details: {} };
       },
-    };
+    });
     const slots = new SubagentSlotPool(1);
     const controller = new AbortController();
     const usageCalls: SubagentUsage[] = [];
@@ -340,7 +344,7 @@ describe("runSubagent", () => {
     const toolGate = new Promise<void>((_, reject) => {
       rejectTool = reject;
     });
-    const stuckTool: AgentTool = {
+    const stuckTool = adaptAgentTool({
       name: "stuck",
       label: "stuck",
       description: "Reject after the caller has timed out",
@@ -349,7 +353,7 @@ describe("runSubagent", () => {
         await toolGate;
         return { content: [{ type: "text", text: "unreachable" }], details: {} };
       },
-    };
+    });
     const slots = new SubagentSlotPool(1);
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
@@ -936,7 +940,7 @@ describe("runSubagent", () => {
       fauxAssistantMessage("outer complete"),
     ]);
     let nestedError = "";
-    const nestedTool: AgentTool = {
+    const nestedTool = adaptAgentTool({
       name: "nested",
       label: "nested",
       description: "Attempt a nested subagent run",
@@ -953,7 +957,7 @@ describe("runSubagent", () => {
         if (nested.status === "failed") nestedError = nested.error ?? "";
         return { content: [{ type: "text", text: nestedError }], details: {} };
       },
-    };
+    });
 
     const result = await runSubagent({
       request: { task: "Try nesting", tools: ["nested"] },

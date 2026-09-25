@@ -73,8 +73,8 @@ describe("admin portal events listing", () => {
       schedule: null,
     });
     expect(events[0]).toMatchObject({ type: "periodic", schedule: "0 9 * * 1-5", at: null });
-    expect(events[0].size).toBeGreaterThan(0);
-    expect(events[0].mtimeMs).toBeGreaterThan(0);
+    expect(events[0]!.size).toBeGreaterThan(0);
+    expect(events[0]!.mtimeMs).toBeGreaterThan(0);
   });
 
   test("keeps unparseable event files visible with null fields and the owning office", async () => {
@@ -98,7 +98,7 @@ describe("admin portal events listing", () => {
       schedule: null,
       timezone: null,
     });
-    expect(events[0].size).toBeGreaterThan(0);
+    expect(events[0]!.size).toBeGreaterThan(0);
   });
 });
 

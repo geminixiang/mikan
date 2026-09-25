@@ -150,7 +150,10 @@ describe("migrateSessionFile", () => {
 
     await migrateSessionFile(file);
     const migratedHeader = SessionStore.readHeader(file);
-    expect(migratedHeader?.metadata?.source).toEqual({ kind: "platform-history", recentDays: 14 });
+    expect(migratedHeader?.metadata).toHaveProperty("source", {
+      kind: "platform-history",
+      recentDays: 14,
+    });
   });
 
   test("collapses crash-duplicated lines the way the v3 reader did", async () => {

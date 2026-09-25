@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { createSlackBlockKitTool } from "../adapters/slack/tools/blockkit.js";
 import type { PlatformSlackOps, SlackBlockKitOps } from "../adapters/slack/types.js";
+import type { PlatformToolPack } from "../harness/tools/types.js";
 import { errorMessage } from "../unknown-values.js";
 
 const BLOCKS = [
@@ -9,8 +10,21 @@ const BLOCKS = [
   { type: "actions", elements: [] },
 ];
 
-function executeArgs(input: Record<string, unknown>) {
-  return ["call-1", input, undefined, undefined, undefined as never] as const;
+interface BlockKitInput {
+  blocks: unknown[];
+  text: string;
+  thread_ts?: string;
+  update_ts?: string;
+}
+
+function executeArgs(input: BlockKitInput) {
+  return ["call-1", { label: "Post blocks", ...input }, undefined, undefined] as const;
+}
+
+function onlyTool(pack: PlatformToolPack) {
+  const [tool] = pack.tools;
+  if (!tool) throw new Error("expected the slack tool pack to provide a tool");
+  return tool;
 }
 
 describe("slack_blockkit tool", () => {
@@ -140,7 +154,7 @@ describe("slack tool pack", () => {
       ownsBlockKitMessage: vi.fn(() => false),
     };
     const pack = createSlackToolPack(ops);
-    const tool = pack.tools[0];
+    const tool = onlyTool(pack);
 
     pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
     await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
@@ -163,7 +177,7 @@ describe("slack tool pack", () => {
       ownsBlockKitMessage: vi.fn(() => false),
     };
     const pack = createSlackToolPack(ops);
-    const tool = pack.tools[0];
+    const tool = onlyTool(pack);
     pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
 
     await expect(
@@ -180,7 +194,7 @@ describe("slack tool pack", () => {
       ownsBlockKitMessage: vi.fn(() => false),
     };
     const pack = createSlackToolPack(ops);
-    const tool = pack.tools[0];
+    const tool = onlyTool(pack);
     pack.bindRun({ conversationId: "C123", platformName: "slack" });
 
     await expect(
@@ -215,7 +229,7 @@ describe("slack tool pack", () => {
       platformName: "slack",
       threadTs: "original-thread",
     });
-    await restoredPack.tools[0].execute(
+    await onlyTool(restoredPack).execute(
       ...executeArgs({ blocks: BLOCKS, text: "restored", update_ts: "owned-message" }),
     );
     expect(restoredUpdateBlocks).toHaveBeenCalledWith("C123", {

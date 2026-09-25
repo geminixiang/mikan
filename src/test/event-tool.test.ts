@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { OfficeEventStore, officeEventsDir } from "../events/index.js";
 import type { EventPayload, EventStore } from "../events/index.js";
@@ -35,6 +36,12 @@ const context = {
   conversationKind: "shared" as const,
   userId: "U123",
 };
+
+function firstText(result: AgentToolResult<unknown>): string {
+  const first = result.content[0];
+  if (first?.type !== "text") throw new Error("expected the first tool result content to be text");
+  return first.text;
+}
 
 function officeTool(own: Office = office()) {
   const created = createEventTool(new OfficeEventStore(own));
@@ -87,9 +94,7 @@ describe("createEventTool", () => {
       text: "Check deployment status",
     });
     expect(existsSync(join(dir, "workspace", "events"))).toBe(false);
-    expect(result.content[0]?.text).toContain(
-      "Queued immediate event deploy-prod-1700000000000.json",
-    );
+    expect(firstText(result)).toContain("Queued immediate event deploy-prod-1700000000000.json");
   });
 
   test("creates through the injected store", async () => {
@@ -176,7 +181,7 @@ describe("createEventTool", () => {
       "PRIVATE_FIXTURE",
     );
     const listed = await tool.execute("list", { action: "list" });
-    expect(listed.content[0]?.text).not.toContain("foreign.json");
+    expect(firstText(listed)).not.toContain("foreign.json");
   });
 
   test("supports list, read, update, and delete", async () => {
@@ -189,13 +194,13 @@ describe("createEventTool", () => {
     });
 
     const listResult = await tool.execute("call-2", { action: "list" });
-    expect(listResult.content[0]?.text).toContain("deploy-1700000000003.json");
+    expect(firstText(listResult)).toContain("deploy-1700000000003.json");
 
     const readResult = await tool.execute("call-3", {
       action: "read",
       filename: "deploy-1700000000003.json",
     });
-    expect(readResult.content[0]?.text).toContain("Check deployment status");
+    expect(firstText(readResult)).toContain("Check deployment status");
 
     await tool.execute("call-4", {
       action: "update",

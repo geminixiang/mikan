@@ -57,7 +57,7 @@ describe("loadSkillsFromDir", () => {
 
     const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "workspace" });
     expect(skills).toHaveLength(0);
-    expect(diagnostics[0].message).toContain("description is required");
+    expect(diagnostics[0]?.message).toContain("description is required");
   });
 
   test("loads root-level markdown files as skills", () => {
@@ -111,7 +111,7 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
     });
 
     expect(skills.map((skill) => skill.name)).toEqual(["real-skill"]);
-    expect(skills[0].baseDir).toBe(real);
+    expect(skills[0]?.baseDir).toBe(real);
     expect(diagnostics).toEqual([
       expect.objectContaining({ code: "symlink", path: join(dir, "linked-skill") }),
     ]);

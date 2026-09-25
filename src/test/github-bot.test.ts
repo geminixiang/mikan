@@ -60,6 +60,12 @@ function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   };
 }
 
+function firstHandledEvent(handler: MessagingEventHandler) {
+  const call = vi.mocked(handler.handleEvent).mock.calls[0];
+  if (!call) throw new Error("handleEvent was not called");
+  return call;
+}
+
 function futureIso(offsetMs = 60_000): string {
   return new Date(Date.now() + offsetMs).toISOString();
 }
@@ -127,6 +133,18 @@ interface FakeClient {
   createPullRequest: ReturnType<typeof vi.fn>;
   getPullRequest: ReturnType<typeof vi.fn>;
   getCollaboratorPermission: ReturnType<typeof vi.fn>;
+  findOpenPullRequestByBranch: ReturnType<typeof vi.fn>;
+  listCheckRuns: ReturnType<typeof vi.fn>;
+  getJobLog: ReturnType<typeof vi.fn>;
+  listPullRequestFiles: ReturnType<typeof vi.fn>;
+  listIssues: ReturnType<typeof vi.fn>;
+  listPullRequestReviews: ReturnType<typeof vi.fn>;
+  addIssueLabels: ReturnType<typeof vi.fn>;
+  removeIssueLabel: ReturnType<typeof vi.fn>;
+  addIssueAssignees: ReturnType<typeof vi.fn>;
+  removeIssueAssignees: ReturnType<typeof vi.fn>;
+  updateIssueState: ReturnType<typeof vi.fn>;
+  replyToReviewComment: ReturnType<typeof vi.fn>;
 }
 
 function makeFakeClient(): FakeClient {
@@ -156,6 +174,18 @@ function makeFakeClient(): FakeClient {
       html_url: "https://github.com/octo/widgets/pull/5",
       head: { ref: "pi/fix-widget", sha: "headsha", repo: { full_name: "octo/widgets" } },
     }),
+    findOpenPullRequestByBranch: vi.fn().mockResolvedValue(null),
+    listCheckRuns: vi.fn().mockResolvedValue([]),
+    getJobLog: vi.fn().mockResolvedValue(""),
+    listPullRequestFiles: vi.fn().mockResolvedValue([]),
+    listIssues: vi.fn().mockResolvedValue([]),
+    listPullRequestReviews: vi.fn().mockResolvedValue([]),
+    addIssueLabels: vi.fn().mockResolvedValue(undefined),
+    removeIssueLabel: vi.fn().mockResolvedValue(undefined),
+    addIssueAssignees: vi.fn().mockResolvedValue(undefined),
+    removeIssueAssignees: vi.fn().mockResolvedValue(undefined),
+    updateIssueState: vi.fn().mockResolvedValue(undefined),
+    replyToReviewComment: vi.fn().mockResolvedValue(makeReviewComment()),
   };
 }
 
@@ -281,7 +311,7 @@ describe("GithubMessagingBot", () => {
       "widgets",
       expect.any(String),
     );
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event] = firstHandledEvent(handler);
     expect(event.address.conversationId).toBe(CONVERSATION_ID);
   });
 
@@ -296,7 +326,7 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event] = firstHandledEvent(handler);
     expect(event.address.conversationId).toBe(CONVERSATION_ID);
     expect(event.sessionKey).toBe(CONVERSATION_ID);
     expect(event.conversationKind).toBe("shared");
@@ -393,7 +423,7 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event] = firstHandledEvent(handler);
     expect(event.ts).toBe(GITHUB_ISSUE_BODY_TS);
     expect(event.text).toContain("# Widget breaks");
     expect(event.text).toContain("can you triage this?");
@@ -505,7 +535,9 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const since = client.listIssueCommentsSince.mock.calls[0][2] as string;
+    const sinceCall = client.listIssueCommentsSince.mock.calls[0];
+    if (!sinceCall) throw new Error("listIssueCommentsSince was not called");
+    const since = sinceCall[2] as string;
     expect(Date.parse(since)).toBeLessThan(Date.parse(cursor));
   });
 
@@ -851,7 +883,7 @@ describe("GithubMessagingBot", () => {
     await settleQueues();
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event] = firstHandledEvent(handler);
     expect(event.address.conversationId).toBe(CONVERSATION_ID);
     expect(event.ts).toBe("rc-8001");
     expect(event.text).toContain("[PR review comment rc-8001 on src/widget.ts:42]");
@@ -953,7 +985,7 @@ describe("GithubMessagingBot", () => {
     await bot.poll();
     await settleQueues();
 
-    const [event] = vi.mocked(handler.handleEvent).mock.calls[0];
+    const [event] = firstHandledEvent(handler);
     expect(event.text).toContain("Thread so far:");
     expect(event.text).toContain("@bob: root: why this name?");
     expect(event.text).toContain("@alice: because clarity");

@@ -11,8 +11,9 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId || !ctx.env.streamingBotToken)(
   () => {
     if (!ctx || !ctx.env.mikanBotUserId || !ctx.env.streamingBotToken) return;
     const { client, env } = ctx;
-    assertBotTokenShape(env.streamingBotToken);
-    const botClient = new WebClient(env.streamingBotToken);
+    const streamingBotToken = ctx.env.streamingBotToken;
+    assertBotTokenShape(streamingBotToken);
+    const botClient = new WebClient(streamingBotToken);
     const botUserIds = [ctx.env.mikanBotUserId];
 
     it("S-012 bot-originated mentions do not trigger mikan", async () => {

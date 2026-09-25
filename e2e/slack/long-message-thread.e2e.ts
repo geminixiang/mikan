@@ -47,8 +47,9 @@ function createRealSlackResponderBot(botClient: WebClient): SlackMessagingBot {
 describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack long-message continuation", () => {
   if (!ctx || !ctx.env.streamingBotToken) return;
   const { client, env } = ctx;
-  assertBotTokenShape(env.streamingBotToken);
-  const botClient = new WebClient(env.streamingBotToken);
+  const streamingBotToken = ctx.env.streamingBotToken;
+  assertBotTokenShape(streamingBotToken);
+  const botClient = new WebClient(streamingBotToken);
 
   it("S-024 keeps msg_too_long continuation messages in the existing thread", async () => {
     const token = `LONG_THREAD_E2E_${Date.now()}`;
@@ -63,7 +64,6 @@ describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack long-message continua
         {
           type: "mention",
           address: createOfficeAddress("slack", env.channel),
-          conversationId: env.channel,
           conversationKind: "shared",
           channel: env.channel,
           ts: userReplyTs,
@@ -89,10 +89,11 @@ describe.skipIf(!ctx || !ctx.env.streamingBotToken)("Slack long-message continua
       if (rootTs) {
         const messages = await fetchThreadMessages(client, env.channel, rootTs).catch(() => []);
         for (const message of messages.toReversed()) {
-          if (!message.ts || message.ts === rootTs) continue;
+          const messageTs = message.ts;
+          if (!messageTs || messageTs === rootTs) continue;
           await botClient.chat
-            .delete({ channel: env.channel, ts: message.ts })
-            .catch(() => client.chat.delete({ channel: env.channel, ts: message.ts }));
+            .delete({ channel: env.channel, ts: messageTs })
+            .catch(() => client.chat.delete({ channel: env.channel, ts: messageTs }));
         }
         await client.chat.delete({ channel: env.channel, ts: rootTs }).catch(() => undefined);
       }

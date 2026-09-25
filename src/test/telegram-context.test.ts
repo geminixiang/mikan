@@ -4,6 +4,12 @@ import type { TelegramEvent } from "../adapters/telegram/types.js";
 import { createTelegramAdapters } from "../adapters/telegram/context.js";
 import { createOfficeAddress } from "../office/index.js";
 
+function firstCall<T>(calls: T[], name: string): T {
+  const call = calls[0];
+  if (!call) throw new Error(`${name} was not called`);
+  return call;
+}
+
 function makeTelegramMessagingBot(
   overrides: Partial<TelegramMessagingBot> = {},
 ): TelegramMessagingBot {
@@ -116,7 +122,7 @@ describe("respond() — non-threaded", () => {
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("line1");
     await responder.respond("line2");
-    const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
+    const updateCall = firstCall(vi.mocked(bot.updateMessage).mock.calls, "updateMessage");
     expect(updateCall[2]).toContain("line1");
     expect(updateCall[2]).toContain("line2");
   });
@@ -320,7 +326,7 @@ describe("setWorking()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("content");
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
+    const posted = firstCall(vi.mocked(bot.postMessageRaw).mock.calls, "postMessageRaw")[1];
     expect(posted).toBe("content");
   });
 });
@@ -332,7 +338,7 @@ describe("replaceResponse()", () => {
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("original text");
     await responder.replaceResponse("replacement");
-    const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
+    const updateCall = firstCall(vi.mocked(bot.updateMessage).mock.calls, "updateMessage");
     expect(updateCall[2]).not.toContain("original text");
     expect(updateCall[2]).toContain("replacement");
   });
@@ -343,7 +349,7 @@ describe("replaceResponse()", () => {
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
     await responder.replaceResponse("x".repeat(31000));
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
+    const posted = firstCall(vi.mocked(bot.postMessageRaw).mock.calls, "postMessageRaw")[1];
     expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
@@ -365,7 +371,7 @@ describe("text splitting", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("x".repeat(31000));
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
+    const posted = firstCall(vi.mocked(bot.postMessageRaw).mock.calls, "postMessageRaw")[1];
     expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);
@@ -377,7 +383,7 @@ describe("text splitting", () => {
     const { responder } = createTelegramAdapters(event, bot);
     await responder.setWorking(false);
     await responder.respond("x".repeat(30000));
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
+    const posted = firstCall(vi.mocked(bot.postMessageRaw).mock.calls, "postMessageRaw")[1];
     expect(posted.length).toBe(30000);
     expect(posted).not.toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(1);
@@ -388,7 +394,7 @@ describe("text splitting", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("x".repeat(30001));
-    const posted = vi.mocked(bot.postMessageRaw).mock.calls[0][1] as string;
+    const posted = firstCall(vi.mocked(bot.postMessageRaw).mock.calls, "postMessageRaw")[1];
     expect(posted.length).toBeLessThanOrEqual(30000);
     expect(posted).toContain("continued");
     expect(bot.postMessageRaw).toHaveBeenCalledTimes(2);

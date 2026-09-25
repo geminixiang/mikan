@@ -38,7 +38,7 @@ describe("atomicWritePrivateFile error handling", () => {
 
   test("throws and cleans up temp file when renameSync fails", () => {
     vi.mocked(fs.openSync).mockReturnValue(42);
-    vi.mocked(fs.writeSync).mockReturnValue(undefined);
+    vi.mocked(fs.writeSync).mockReturnValue("hello".length);
     vi.mocked(fs.renameSync).mockImplementation(() => {
       throw new Error("cross device");
     });

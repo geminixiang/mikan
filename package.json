@@ -46,6 +46,7 @@
     "build": "npm run clean && tsgo -p src/tsconfig.build.json && shx chmod +x dist/main.js",
     "dev": "tsgo -p src/tsconfig.build.json --watch --preserveWatchOutput",
     "test": "vitest --run --config .config/vitest.config.ts",
+    "typecheck": "tsgo -p .config/tsconfig.typecheck.json",
     "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
     "test:coverage:check": "npm run test:coverage",
     "test:office:docker": "node scripts/verify-office-docker.mjs",

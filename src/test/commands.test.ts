@@ -83,6 +83,7 @@ function fakeVaultManager(): VaultManager & { entries: Set<string> } {
     upsertEnv: (key) => {
       entries.add(key);
     },
+    deleteEnvKey: () => false,
     upsertFile: (key) => {
       entries.add(key);
     },
@@ -150,17 +151,10 @@ function buildContext(args: BuildContextArgs): CommandContext & {
   const services: CommandServices = {
     workspace: testWorkspace("/tmp/no-such-working-dir"),
     runtime: {
-      forceStop: vi.fn(),
-      getRunningSessions: vi.fn().mockReturnValue([]),
-      handleEvent: vi.fn(),
       handleNewCommand: vi.fn(),
-      handleStop: vi.fn(),
-      isRunning: vi.fn().mockReturnValue(false),
       refreshConversationEnvironment: vi.fn().mockReturnValue(true),
       switchConversationModel: vi.fn().mockReturnValue(true),
-      runSession: vi.fn(),
-      shutdown: vi.fn(),
-    } as any,
+    },
     sandbox,
     vaultManager: fakeVaultManager(),
     linkTokenStore: fakeLinkTokenStore(),
@@ -556,7 +550,7 @@ describe("LoginCommandHandler", () => {
 
   test("uses vaultConversationId for vault routing when reply channel differs", async () => {
     const linkTokenStore = fakeLinkTokenStore();
-    const entries = new Set<string>();
+    const vaultManager = fakeVaultManager();
     const ctx = buildContext({
       commandText: "/login",
       privateConversation: true,
@@ -565,22 +559,7 @@ describe("LoginCommandHandler", () => {
       services: {
         linkTokenStore,
         sandbox: { type: "image", image: "ubuntu:24.04" },
-        vaultManager: {
-          entries,
-          hasEntry: (key: string) => entries.has(key),
-          resolve: () => undefined,
-          list: () => [],
-          isEnabled: () => true,
-          upsertEnv: (key: string) => {
-            entries.add(key);
-          },
-          upsertFile: (key: string) => {
-            entries.add(key);
-          },
-          listSharedVaults: () => [],
-          deleteSharedVault: () => false,
-          copySharedVaultTo: () => ({ filesCopied: 0, envKeysCopied: 0 }),
-        } as VaultManager,
+        vaultManager,
       },
     });
 
@@ -594,7 +573,7 @@ describe("LoginCommandHandler", () => {
         providerId: "",
       },
     ]);
-    expect(entries.size).toBe(0);
+    expect(vaultManager.entries.size).toBe(0);
   });
 });
 
@@ -794,7 +773,9 @@ describe("SessionViewCommandHandler", () => {
     mkdirSync(conversationDir, { recursive: true });
     createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir);
 
-    const postPrivate = vi.fn(async () => {});
+    const postPrivate = vi.fn(
+      async (_conversationId: string, _userId: string, _text: string) => {},
+    );
     const bot = fakeMessagingBot({ postPrivate });
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({
@@ -806,9 +787,11 @@ describe("SessionViewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(postPrivate).toHaveBeenCalledOnce();
-    expect(postPrivate.mock.calls[0][0]).toBe("C123");
-    expect(postPrivate.mock.calls[0][1]).toBe("U123");
-    expect(postPrivate.mock.calls[0][2]).toContain("/session?token=tok-sv");
+    expect(postPrivate).toHaveBeenCalledWith(
+      "C123",
+      "U123",
+      expect.stringContaining("/session?token=tok-sv"),
+    );
     expect(sessionViewTokenStore.created).toHaveLength(1);
   });
 
@@ -885,7 +868,7 @@ describe("NewCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(ctx.responder.responses[0]).toContain("只能在與機器人的私訊");
-    expect(ctx.services.runtime.handleNewCommand).not.toHaveBeenCalled();
+    expect(ctx.services.runtime?.handleNewCommand).not.toHaveBeenCalled();
   });
 
   test("resets the active private session", async () => {
@@ -896,7 +879,7 @@ describe("NewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.services.runtime.handleNewCommand).toHaveBeenCalledWith({
+    expect(ctx.services.runtime?.handleNewCommand).toHaveBeenCalledWith({
       bot: ctx.bot,
       message: expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
     });

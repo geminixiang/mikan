@@ -52,7 +52,6 @@ function makeOptions(
 ): MessageIntakeOptions<ConversationEvent> {
   return {
     eventBase: makeEvent(),
-    workingDir: undefined,
     addressed: true,
     magicWord: { addressed: true, scopeFallback: "top-level" },
     busyPolicy: "queue",

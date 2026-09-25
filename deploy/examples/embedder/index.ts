@@ -48,6 +48,7 @@ export function createEmbedder(options: {
 
   const bot: MessagingBot = {
     start: async () => {},
+    stop: async () => {},
     postMessage: async (_conversationId, text) => {
       write(text);
       return `${Date.now()}`;

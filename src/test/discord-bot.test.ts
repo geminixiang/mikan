@@ -46,6 +46,18 @@ function installInteractionHandler(bot: DiscordMessagingBot): (interaction: any)
   return interactionHandler;
 }
 
+function firstHandledEvent(handler: MessagingEventHandler) {
+  const call = vi.mocked(handler.handleEvent).mock.calls[0];
+  if (!call) throw new Error("handleEvent was not called");
+  return call[0];
+}
+
+function requireFirstLine(lines: string[]): string {
+  const line = lines[0];
+  if (line === undefined) throw new Error("expected at least one log line");
+  return line;
+}
+
 function makeDiscordMessage(overrides: Record<string, any> = {}) {
   return {
     id: "M1",
@@ -94,7 +106,7 @@ describe("DiscordMessagingBot attachments", () => {
         ["b", { name: "broken.mov", url: "https://example.com/broken.mov" }],
       ]);
 
-      const result = await bot.processAttachments("C123", attachments as any, "M1");
+      const result = await bot.processAttachments("C123", attachments as any);
 
       expect(fetchMock).toHaveBeenCalledWith("https://example.com/clip.mov");
       expect(fetchMock).toHaveBeenCalledWith("https://example.com/broken.mov");
@@ -108,7 +120,9 @@ describe("DiscordMessagingBot attachments", () => {
           ),
         },
       ]);
-      expect(existsSync(join(workingDir, result[0].localPath))).toBe(true);
+      const [downloaded] = result;
+      if (!downloaded) throw new Error("expected one downloaded attachment");
+      expect(existsSync(join(workingDir, downloaded.localPath))).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -147,7 +161,7 @@ describe("DiscordMessagingBot message routing", () => {
     await vi.waitFor(() => {
       expect(handler.handleEvent).toHaveBeenCalled();
     });
-    const event = vi.mocked(handler.handleEvent).mock.calls[0][0];
+    const event = firstHandledEvent(handler);
     expect(event.sessionKey).toBe("DM1");
   });
 
@@ -166,7 +180,7 @@ describe("DiscordMessagingBot message routing", () => {
     await vi.waitFor(() => {
       expect(handler.handleEvent).toHaveBeenCalled();
     });
-    const event = vi.mocked(handler.handleEvent).mock.calls[0][0];
+    const event = firstHandledEvent(handler);
     expect(event.sessionKey).toBe("C1");
   });
 
@@ -186,7 +200,7 @@ describe("DiscordMessagingBot message routing", () => {
     await vi.waitFor(() => {
       expect(handler.handleEvent).toHaveBeenCalled();
     });
-    const event = vi.mocked(handler.handleEvent).mock.calls[0][0];
+    const event = firstHandledEvent(handler);
     expect(event.sessionKey).toBe("C1:M1");
   });
 
@@ -340,7 +354,7 @@ describe("DiscordMessagingBot message routing", () => {
     )
       .trim()
       .split("\n");
-    const entry = JSON.parse(lines[0]);
+    const entry = JSON.parse(requireFirstLine(lines));
     expect(entry.threadTs).toBe("M1");
   });
 

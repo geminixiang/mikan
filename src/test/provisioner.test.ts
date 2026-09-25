@@ -31,7 +31,7 @@ function routerMock(overrides: {
   const exec = vi.fn(async (_file: string, args: string[]) => {
     calls.push(args);
     if (args[0] === "create") created = true;
-    const fmt = args[0] === "inspect" ? args[2] : "";
+    const fmt = args[0] === "inspect" ? (args[2] ?? "") : "";
     if (args[0] === "inspect" && fmt.includes("State.Running")) {
       if (overrides.status === "missing" && !created) throw new Error("No such object");
       return { stdout: `${overrides.status === "running"}\n` };
@@ -80,7 +80,10 @@ describe("DockerContainerManager", () => {
     ];
     const translator = (spec: string): string => {
       const index = LEGACY_BINDS.indexOf(spec);
-      return index === -1 ? spec : NEW_BINDS[index];
+      if (index === -1) return spec;
+      const translated = NEW_BINDS[index];
+      if (translated === undefined) throw new Error(`no translated bind for ${spec}`);
+      return translated;
     };
 
     test("moves a legacy container: commit with binds label, rm, create translated", async () => {
@@ -410,7 +413,7 @@ describe("DockerContainerManager", () => {
       conversationId: "C1",
     });
 
-    const runArgs = execMock.mock.calls[4][1];
+    const runArgs = execMock.mock.calls[4]?.[1];
     expect(runArgs).toContain("/state/shared/data:/opt/shared/data:ro");
     expect(runArgs).toContain("/work/C1:/workspace/C1");
   });
@@ -660,7 +663,7 @@ describe("DockerContainerManager", () => {
 
     const stopCalls = execMock.mock.calls.filter((c) => c[0] === "docker" && c[1][0] === "stop");
     expect(stopCalls).toHaveLength(1);
-    expect(stopCalls[0][1]).toEqual(["stop", "mikan-sandbox-slack-u111"]);
+    expect(stopCalls[0]?.[1]).toEqual(["stop", "mikan-sandbox-slack-u111"]);
   });
 
   test("reconcile discovers labeled containers and restores state", async () => {
@@ -737,8 +740,8 @@ describe("DockerContainerManager", () => {
     await Promise.all([first, second]);
 
     expect(execMock).toHaveBeenCalledTimes(4);
-    expect(execMock.mock.calls[0][1][0]).toBe("inspect");
-    expect(execMock.mock.calls[3][1][0]).toBe("run");
+    expect(execMock.mock.calls[0]?.[1][0]).toBe("inspect");
+    expect(execMock.mock.calls[3]?.[1][0]).toBe("run");
   });
 
   test("failed docker start clears cached state and allows re-inspection", async () => {
@@ -760,7 +763,7 @@ describe("DockerContainerManager", () => {
     expect(stateField.has("slack-u123")).toBe(false);
 
     await expect(manager.provision("slack-u123")).resolves.toBe("mikan-sandbox-slack-u123");
-    expect(execMock.mock.calls[4][1][0]).toBe("inspect");
+    expect(execMock.mock.calls[4]?.[1][0]).toBe("inspect");
   });
 
   test("passes --cpus, --memory, and --memory-swap to docker run when limits are configured", async () => {

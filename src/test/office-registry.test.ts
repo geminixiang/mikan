@@ -167,7 +167,7 @@ describe("OfficeRegistry", () => {
       readFileSync(join(fixture.stateDir, "office-registry.json"), "utf-8"),
     ) as { version: number; migrations: Array<{ status: string }> };
     expect(persisted.version).toBe(1);
-    expect(persisted.migrations[0].status).toBe("committed");
+    expect(persisted.migrations[0]?.status).toBe("committed");
   });
 
   test("failed transitions survive reload and cannot reopen a migration", () => {
@@ -249,7 +249,9 @@ describe("OfficeRegistry", () => {
     const persisted = JSON.parse(readFileSync(registryPath, "utf8")) as {
       migrations: Array<{ targetDir?: string }>;
     };
-    persisted.migrations[0].targetDir = join(fixture.root, "forged-target");
+    const [migration] = persisted.migrations;
+    if (!migration) throw new Error("expected a persisted legacy migration");
+    migration.targetDir = join(fixture.root, "forged-target");
     writeFileSync(registryPath, `${JSON.stringify(persisted)}\n`);
 
     expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/does not match/);

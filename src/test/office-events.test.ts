@@ -245,9 +245,9 @@ describe("event tool over OfficeEventStore", () => {
     });
 
     await tool.execute("c", { type: "immediate", text: "mine", filenamePrefix: "mine" });
-    const listed = JSON.parse(
-      (await tool.execute("l", { action: "list" })).content[0]!.text as string,
-    );
+    const [listContent] = (await tool.execute("l", { action: "list" })).content;
+    if (listContent?.type !== "text") throw new Error("event list returned no text content");
+    const listed = JSON.parse(listContent.text);
     expect(listed.events.map((event: { filename: string }) => event.filename)).toEqual([
       "mine-1700000000000.json",
     ]);
