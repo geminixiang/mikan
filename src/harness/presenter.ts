@@ -347,7 +347,7 @@ export async function finalizeRunResponse(
     log.logInfo("Final response already handled by tool - skipping final replacement");
     return;
   }
-  if (finalText.trim().startsWith("[SILENT]")) {
+  if (isSilentResponse(finalText)) {
     await deleteForSilentResponse(responder);
     return;
   }
@@ -358,6 +358,10 @@ export async function finalizeRunResponse(
   );
   if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
     await responder.notifyCompletion?.();
+}
+
+function isSilentResponse(finalText: string): boolean {
+  return finalText.trim().startsWith("[SILENT]");
 }
 
 async function deleteForSilentResponse(responder: ConversationResponder): Promise<void> {
@@ -519,7 +523,8 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   if (
     platform.diagnostics?.showUsageSummary === true &&
     !runState.finalResponseHandledByTool &&
-    !statusOnly
+    !statusOnly &&
+    !isSilentResponse(getFinalAssistantText(session))
   ) {
     runState.queue!.enqueue(
       () => responder.respondDiagnostic(summary, { style: "muted" }),

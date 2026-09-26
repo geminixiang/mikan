@@ -357,6 +357,36 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.replaceResponse).not.toHaveBeenCalled();
   });
 
+  test("[SILENT] responses post no usage summary where the deleted reply stood", async () => {
+    const { runner, faux } = await createTestRunner();
+    faux.setResponses([fauxAssistantMessage("[SILENT]")]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage({ id: "event:hourly.json" }), responder, {
+      ...platform,
+      diagnostics: { showUsageSummary: true },
+    });
+
+    expect(responder.deleteResponse).toHaveBeenCalledTimes(1);
+    expect(responder.respondDiagnostic).not.toHaveBeenCalled();
+  });
+
+  test("published responses still post the usage summary", async () => {
+    const { runner, faux } = await createTestRunner();
+    faux.setResponses([fauxAssistantMessage("report")]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage(), responder, {
+      ...platform,
+      diagnostics: { showUsageSummary: true },
+    });
+
+    expect(responder.respondDiagnostic).toHaveBeenCalledWith(
+      expect.stringContaining("Usage Summary"),
+      { style: "muted" },
+    );
+  });
+
   test("error stop reasons surface an apology and a diagnostic", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([

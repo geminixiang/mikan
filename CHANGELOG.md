@@ -11,6 +11,7 @@ any release.
 
 ### Fixed
 
+- Post no Slack usage summary for a `[SILENT]` response: the reply and its thread were deleted, so the summary for a quiet recurring event landed at the top level of the channel on every run.
 - Stop warning `Could not remove snapshot image mikan-migrate:...` for every migrated container on each startup; the startup sweep now leaves a snapshot alone while its container still runs from it, and still reclaims snapshots no container uses.
 
 ## [1.0.0-beta.79]
