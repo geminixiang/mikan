@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.80]
+
 ### Fixed
 
 - Post no Slack usage summary for a `[SILENT]` response: the reply and its thread were deleted, so the summary for a quiet recurring event landed at the top level of the channel on every run.
