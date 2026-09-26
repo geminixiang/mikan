@@ -4,46 +4,44 @@ The Conversation office module. An office is one conversation's persistent
 working area and data boundary (CONTEXT.md); this module owns its identity,
 its host-side directory layout, its durable record, and the legacy migration.
 
-## Files
+## Contracts
 
-- `index.ts`: The whole module in one file, in four sections.
-  - **Identity**: `OfficeAddress` is `platform` plus the platform's raw
-    `conversationId`; raw ids stay at platform I/O boundaries. Storage paths
-    use the versioned `OfficeKey` (`v1-<platform>-<readable>-<16 hex>`),
-    whose digest is SHA-256 over both values (ADR 0005) — the readable
-    middle is a hint, the digest is the authority.
-    `createConversationEvent` / `createConversationMessage` normalize any
-    intake (platform adapter or scheduler) onto one authoritative
-    `OfficeAddress`. The raw conversation id grammars also live here: the
-    Telegram, Discord, and Slack recognizers used by legacy migration, and
-    the GitHub `GH_<owner>_<repo>_<number>` encode/parse
-    (`buildGithubConversationId`, `parseGithubConversationId`) that the
-    GitHub adapter imports.
-    `officeStateDir(stateDir, address)` is the one path helper exported for
-    stateDir-only surfaces that hold no Office value, such as migration and
-    settings helpers. `officeDir` is
-    module-internal, because callers outside `src/office/` use `Office.dir`.
-  - **Layout**: `createWorkspace({root, stateDir})` builds the per-process
-    `Workspace` (workspace-global paths, reserved-name set, office factory);
-    `workspace.office(address)` returns the memoized, frozen `Office` (key,
-    dir, subpaths, host state dir, `ensure()`). `Office.ensure()` is the
-    single materialization seam: it records the office in the registry
-    before creating the directory, so the registry stays the durable
-    raw-id ↔ office mapping (office keys are not reversible). The registry
-    instance and recorded-office cache live on the Workspace value — there
-    is no process-wide registry state.
-  - **Registry**: `OfficeRegistry`, the host-only journal
-    (`office-registry.json` in the state dir): enabled platforms, office
-    records, and crash-safe legacy-migration transitions under a domain
-    lease. Plus the cold-path `listRegisteredOffices` lookup used by Admin enumeration.
-  - **Migration**: The every-boot legacy migration: raw-id workspace dirs,
-    conversation vault keys, and per-conversation host state trees move to
-    the office-key layout, journaled prepare → moving → committed with
-    crash recovery. Unowned dirs fail boot until `mikan office claim` names
-    an owner. Also the container bind translator that lets managed
-    containers survive the rename with writable layers intact.
-- `types.ts`: The exported `Workspace`/`Office` interfaces, projection contracts, and the `GithubConversationRef` parsed from a GitHub conversation id.
-- `projection.ts`: The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the platform (only Slack public channels are public; other platforms are private by decision), the recorded channel kind, and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro) and authorizes prompt sources.
+- **Identity**: `OfficeAddress` is `platform` plus the platform's raw
+  `conversationId`; raw ids stay at platform I/O boundaries. Storage paths
+  use the versioned `OfficeKey` (`v1-<platform>-<readable>-<16 hex>`),
+  whose digest is SHA-256 over both values (ADR 0005) — the readable
+  middle is a hint, the digest is the authority.
+  `createConversationEvent` / `createConversationMessage` normalize any
+  intake (platform adapter or scheduler) onto one authoritative
+  `OfficeAddress`. The raw conversation id grammars also live here: the
+  Telegram, Discord, and Slack recognizers used by legacy migration, and
+  the GitHub `GH_<owner>_<repo>_<number>` encode/parse
+  (`buildGithubConversationId`, `parseGithubConversationId`) that the
+  GitHub adapter imports.
+  `officeStateDir(stateDir, address)` is the one path helper exported for
+  stateDir-only surfaces that hold no Office value, such as migration and
+  settings helpers. `officeDir` is
+  module-internal, because callers outside `src/office/` use `Office.dir`.
+- **Layout**: `createWorkspace({root, stateDir})` builds the per-process
+  `Workspace` (workspace-global paths, reserved-name set, office factory);
+  `workspace.office(address)` returns the memoized, frozen `Office` (key,
+  dir, subpaths, host state dir, `ensure()`). `Office.ensure()` is the
+  single materialization seam: it records the office in the registry
+  before creating the directory, so the registry stays the durable
+  raw-id ↔ office mapping (office keys are not reversible). The registry
+  instance and recorded-office cache live on the Workspace value — there
+  is no process-wide registry state.
+- **Registry**: `OfficeRegistry`, the host-only journal
+  (`office-registry.json` in the state dir): enabled platforms, office
+  records, and crash-safe legacy-migration transitions under a domain
+  lease. Plus the cold-path `listRegisteredOffices` lookup used by Admin enumeration.
+- **Migration**: The every-boot legacy migration: raw-id workspace dirs,
+  conversation vault keys, and per-conversation host state trees move to
+  the office-key layout, journaled prepare → moving → committed with
+  crash recovery. Unowned dirs fail boot until `mikan office claim` names
+  an owner. Also the container bind translator that lets managed
+  containers survive the rename with writable layers intact.
+- **Projection** (`projection.ts`): The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the platform (only Slack public channels are public; other platforms are private by decision), the recorded channel kind, and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro) and authorizes prompt sources.
 
 ## Consumers
 

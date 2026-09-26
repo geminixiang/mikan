@@ -2,17 +2,13 @@
 
 This directory defines sandbox abstractions, concrete sandbox executors, and shared sandbox utilities.
 
-## Files
+## Contracts
 
-- `cloudflare.ts`: Implements the Cloudflare Sandbox bridge executor, argument parsing, health checks, and remote `/exec` calls.
-- `container.ts`: Implements the Docker container executor, `docker exec` command construction, secure env files, and runtime bootstrap.
-- `host.ts`: Implements the host executor by running commands directly through the local shell.
-- `identity.ts`: Separately derives collision-safe credential authorization keys and runtime resource keys.
-- `index.ts`: The published `./sandbox` entry point; it only re-exports the executors, `SandboxError`, the public config/executor types, and the `registry.ts` helpers. Code inside `src/` imports from those modules directly.
-- `registry.ts`: Registers sandbox adapters (including the `image:<image>` config adapter) and exposes parse, validate, and executor factory helpers, plus the per-adapter capability queries — `getSandboxCredentialCapabilities`, `getSandboxWorkspaceCapabilities`, and `assertSandboxSupportsWorkspacePolicy` (a backend without managed projection cannot honor an `isolated` door or read-only shared memory).
-- `provisioner.ts`: Manages per-resource Docker image sandbox containers, mounts, resource limits, boosts, and idle shutdown. New containers get a per-office home volume `mikan-home-<key>` at `/root` (ADR 0009); a home-volume container with mount or network drift, or a stopped one whose `.Image` differs from the local tag's image ID, is replaced with `docker rm` + `docker run` on the same volume. Legacy containers without a home volume keep the `docker commit` recreate path until `mikan sandbox migrate` moves them. `provision`, `stop`, `remove`, and `migrateToHomeVolume` are serialized per key. `remove` keeps the home volume unless `purgeHome` is set; office migration removes it.
-- `types.ts`: Defines all sandbox configs, executors, exec results, runtime path contexts, and adapter types.
-- `utils.ts`: Provides `SandboxError` (user-facing CLI diagnostics), simple child-process execution, process-tree killing, shell escaping, the shared base64-chunked file transport (`execReadFile`/`execWriteFile`) used by every exec-only executor, and `createMountedRuntimePathContext` (runtime→host path translation for mounted workspaces).
+- `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
+- A backend without managed projection cannot honor an `isolated` door or read-only shared memory; `assertSandboxSupportsWorkspacePolicy` in `registry.ts` rejects that combination.
+- Managed image containers (`provisioner.ts`) get a per-office home volume `mikan-home-<key>` at `/root` (ADR 0009). A home-volume container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run` on the same volume. Legacy containers without a home volume keep the `docker commit` recreate path until `mikan sandbox migrate` moves them, and a `mikan-migrate:<name>` snapshot stays while its container still runs from it.
+- `provision`, `stop`, `remove`, and `migrateToHomeVolume` are serialized per key. `remove` keeps the home volume unless `purgeHome` is set; office migration removes it.
+- Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.
 
 ## Host / sandbox path boundary (image mode)
 

@@ -2,12 +2,6 @@
 
 This directory implements the Discord platform adapter.
 
-## Files
-
-- `bot.ts`: Implements Discord event intake, message/reply updates, attachment handling, direct messages, slash-command registration and routing, and channel/user lookup.
-- `context.ts`: Converts Discord events into platform-neutral `ConversationMessage` / `ConversationResponder` objects and formats Discord Markdown/tool output.
-- `types.ts`: The Discord `ConversationEvent` shape.
-
 ## Behavior notes
 
 - Slash commands are registered from `src/adapters/commands/manifest.ts` at ready time

@@ -7,30 +7,6 @@ sources, authorized execution and tools, response presentation, per-request budg
 delegated-spend accounting, and platform-neutral event translation. Platform adapters and Sandbox backends stay outside
 this module.
 
-## Files
-
-| File                    | Authority                                                                                                                                       |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runner.ts`             | `createRunner` / `PiAgentWrapper`: run construction, authorized execution and tool binding, attachments, resource rollback and disposal         |
-| `execution-resolver.ts` | `ActorExecutionResolver`: per-actor executor selection, workspace/vault mount composition, credential injection, and image-container readiness  |
-| `execution-env.ts`      | `createSandboxExecutionEnv`: bridges a sandbox `Executor` to pi's `ExecutionEnv` (FileSystem + Shell) for the native read/write/edit/bash tools |
-| `session.ts`            | `MikanAgentSession`: native Pi integration, cancellation, budgets, retry/compaction settings and delegated usage accounting                     |
-| `prompt.ts`             | Authorized system prompt and per-turn instruction construction                                                                                  |
-| `presenter.ts`          | Response streaming/finalization, diagnostics, tool/subagent progress and usage presentation                                                     |
-| `tool-args.ts`          | Display formatting of tool-call arguments for logs and platform progress lines                                                                  |
-| `models.ts`             | Model catalog and authentication resolution                                                                                                     |
-| `jev.ts`                | Adapter over `@geminixiang/jev` for Jev (typesafe/jev), a typed-decision evaluation model; not part of the chat model catalog                   |
-| `http.ts`               | Shared HTTP dispatcher configuration                                                                                                            |
-| `mcp.ts`                | MCP configuration/presets, transports, discovery/calls, instructions, connection rollback and cleanup                                           |
-| `mcp-result.ts`         | Model-facing MCP results: content conversion, compact JSON, the output bound with structural digests, and the full-result spill                 |
-| `open-connector.ts`     | Default `open-connector` MCP entry: per-conversation runtime-token provisioning and legacy token-file migration                                 |
-| `skills.ts`             | Skill parsing/discovery, authorized skill catalog and prompt formatting                                                                         |
-| `subagent.ts`           | Bounded isolated subagent execution and the process-wide concurrency slot pool                                                                  |
-| `subagent-profiles.ts`  | Subagent profile discovery and validation                                                                                                       |
-| `tools/`                | Platform-neutral agent tools, platform tool-pack ports, and the agent-facing scheduled-event adapter                                            |
-| `types.ts`              | Shared harness, runner and subagent contracts                                                                                                   |
-| `index.ts`              | Published `./harness` entry point: re-exports only; code inside `src/` imports the owning module instead                                        |
-
 ## Run lifecycle
 
 `runner.ts` constructs the conversation-scoped `PiAgentWrapper` and uses

@@ -4,10 +4,11 @@ Scope: the Vault holds only the development keys that R&D services need injected
 
 File-backed credential vault for env secrets, secret files, shared profiles, and sandbox mounts.
 
-## Files
+## Contracts
 
-- `index.ts`: Implements `FileVaultManager`, vault key normalisation, env-file parsing, shared/private vault operations, and `migrateConversationVaultKeys` (legacy raw-id vault dirs → office-key dirs; a collision is reported for manual merge, never clobbered). Also owns what a run receives: `resolveVaultInjection` (env + file mounts, failing closed when a backend cannot mount vault files), `allowsAmbientDefaultSharedVault` (trust model × sandbox topology), and `disabledVaultManager` — the no-op manager used when an embedder constructs the runtime without a vault (reads report empty/disabled, writes throw).
-- `types.ts`: The `VaultManager` interface plus `ResolvedVault`, `ResolvedVaultMount`, and `VaultInjection`.
+- `resolveVaultInjection` fails closed when a sandbox backend cannot mount vault files.
+- `migrateConversationVaultKeys` reports a key collision for manual merge and never overwrites.
+- `disabledVaultManager` serves embedders that construct the runtime without a vault: reads report empty or disabled, and writes throw.
 
 ## Vault keys
 

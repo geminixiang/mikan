@@ -4,7 +4,7 @@ Owner of `settings.json`: the global file in the state dir and the per-office
 file in each office's host-only state directory. Everything that reads or
 writes those files goes through this module; nothing else parses them.
 
-## Files
+## Ownership
 
 | File         | Authority                                                                                                                                                                                                                                                                                           |
 | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

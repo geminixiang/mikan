@@ -6,7 +6,7 @@ TypeScript ESM, Node `>=22.19.0`, `tsgo`, Vitest, `oxlint` + `oxfmt`. Tool confi
 
 ## Navigation
 
-- `src/README.md` — source index; module READMEs explain local interfaces.
+- `ARCHITECTURE.md` — module map and system invariants; a module `README.md`, where one exists, records contracts and pitfalls the code cannot show.
 - `CONTEXT.md`, `ARCHITECTURE.md`, `architecture.toml`, `docs/adr/` — domain model and architectural decisions.
 - `src/harness/`, `src/agent/` — agent execution; `src/runtime/`, `src/sessions/` — conversation orchestration and persistence.
 - `src/adapters/`, `src/adapters/commands/`, `src/cli/` — platform and command entry points.
@@ -14,7 +14,7 @@ TypeScript ESM, Node `>=22.19.0`, `tsgo`, Vitest, `oxlint` + `oxfmt`. Tool confi
 - `src/test/` — unit/integration tests; `e2e/` — real-platform tests.
 - `src/content/docs/` — product docs; `docs/` — internal docs; `deploy/` — deployment assets and examples.
 
-Before editing a module, read its nearest module `README.md` and any parent module READMEs on the path from `src/README.md`; follow their local contracts, then inspect relevant code and tests. Expand the search when the evidence calls for it.
+Before editing a module, read its `README.md` and its parent module's, if they exist, and follow their contracts. A README holds only what the code cannot show: contracts, invariants, and pitfalls. Do not list files or restate names; when a contract can be enforced, write a test and keep only the reason in the README. Then inspect the relevant code and tests, and expand the search when the evidence calls for it.
 
 ## Commands
 

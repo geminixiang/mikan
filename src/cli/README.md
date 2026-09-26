@@ -2,18 +2,9 @@
 
 CLI-only concerns of the `mikan` binary: the argv grammar and the subcommands that run instead of the daemon.
 
-## Files
+## Contracts
 
-- `onboard.ts`: The `mikan onboard` wizard — Clack arrow-key selections for adapter, LLM provider, and sandbox, masked secret input, and a final confirmation before writing. Choices derive from `ENV_MANIFEST` and the settings template; writes `settings.json`, `<state-dir>/mikan.env`, and `models.json` for custom endpoints. Cancel before confirmation writes nothing; an existing custom models file is never overwritten or printed with credentials. Non-TTY invocation retains template-only behavior.
-- `boot.ts`: Pure argv → `BootPlan` resolution — which mode to run (`office`, `sessions`, `sandbox`, `env`, `help`, `version`, `onboard`, `download`, `run`) and with what configuration — plus the `--help` text; `main.ts` executes the plan.
-- `arg-grammar.ts`: Shared Commander configuration, value validation, exit-code handling, the default state dir, and an early `--state-dir` probe for import-time consumers. Commander owns option parsing and generated usage; `BootPlan` and command actions retain execution ownership.
-- `download.ts`: `mikan --download <channel>` — dumps a Slack channel's history, threads, and file listings.
-- `office.ts`: `mikan office list|claim|migrate-openconnector|migrate-events|migrate-door-policy` — inspects registered offices and records which platform owns a legacy raw-id directory when several platforms are enabled and boot cannot infer ownership. The daemon performs the move on its next start, so run `claim` with the daemon stopped. `migrate-openconnector` converts legacy per-office `open-connector-runtime-token.json` files into ordinary conversation `mcpServers` entries for the current `OPENCONNECTOR_ENDPOINT`; also run it with the daemon stopped. `migrate-events` moves legacy workspace event files into office state, and `migrate-door-policy` removes the retired `sandbox.image.workspaceMount` / `sandbox.workspace` keys (ADR 0008); both also require a stopped daemon.
-- `sessions.ts`: `mikan sessions migrate` — offline-converts legacy mikan v3 and Pi 0.84-generation v4 session files to the current Pi v4 format. Run with the daemon stopped; originals remain as `*.v3.bak` or `*.pi-084.bak`. Supports `--state-dir`, `--workspace`, and `--dry-run`.
-- `sandbox.ts`: `mikan sandbox status|diff|migrate --image <image>` — lists managed `image:*` containers as legacy/home-volume and current/stale image, shows the system paths (outside `/root` and `/workspace`) an upgrade discards, and migrates legacy containers onto a home volume and the current image (ADR 0009 rollout step 4). Run `migrate` with the daemon stopped.
-- `process-lifecycle.ts`: Daemon shutdown sequencing — ordered shutdown steps that never skip on failure, and the SIGINT/SIGTERM handler `main.ts` installs.
-- `types.ts`: `BootPlan` — the shape `boot.ts` hands to `main.ts`.
-
-CLI subcommands pass explicit path strings rather than a `Workspace`/`Office`
-value. Office paths use `officeStateDir(stateDir, address)`; session migration
-scans its workspace path directly (`src/office/README.md`).
+- `boot.ts` resolves argv into a `BootPlan` without side effects, and `main.ts` executes it. Commander owns option parsing and usage text.
+- Subcommands that move state (`office claim`, `office migrate-*`, `sessions migrate`, `sandbox migrate`) require a stopped daemon.
+- `mikan onboard` writes nothing when cancelled before confirmation, and never overwrites or prints an existing custom `models.json`.
+- Shutdown steps in `process-lifecycle.ts` run in order and never skip a later step when an earlier one fails.

@@ -5,39 +5,6 @@ GitHub App installation; an optional webhook only pokes the poll loop for
 latency — payloads never enter the intake pipeline (see `DESIGN.md` for the
 full rationale and decisions).
 
-## Files
-
-- `bot.ts`: `GithubMessagingBot` — MessagingBot implementation plus the poll
-  loop (incremental `since` cursors, ETag conditional requests, mention /
-  participation triggering). Exposes `ops` for the tool backends.
-- `github-ops.ts`: `GithubOps` — the host-side backends for all github\_\*
-  tools (`PlatformGithubOps`), standalone from the poll loop: built from the
-  API client, the workspace (each conversation's clone resolves through its
-  office).
-- `client.ts`: minimal GitHub REST client authenticated as a GitHub App
-  (RS256 app JWT → cached installation tokens).
-- `context.ts`: per-event `ConversationMessage` / `ConversationResponder`;
-  no streaming — the finished response is posted as one comment (per-delta
-  edits would churn the API and mark every reply "edited").
-- `ids.ts`: the `rc-<id>` message ts for inline review comments. The
-  `GH_<owner>_<repo>_<number>` conversation id grammar is office-owned
-  (`src/office/index.ts`).
-- `repo.ts`: host-side git operations — shallow clone into the conversation
-  dir, guarded branch push (`pi/*` only, non-force, tokens per-invocation and
-  never persisted), and work-preserving sync (`github_sync`).
-- `tool-pack.ts`: `createGithubToolPack` — the host-side tools under
-  `tools/` as a `PlatformToolPack` injected from main, not core tools.
-- `tools/`: one module per agent-facing tool — `pr.ts` (`github_pr`),
-  `checks.ts` (`github_checks`), `review-reply.ts` (`github_review_reply`),
-  `sync.ts` (`github_sync`), `read.ts` (`github_read`), `issue.ts`
-  (`github_issue`).
-- `webhook.ts`: optional webhook receiver mounted on the link server —
-  verifies `X-Hub-Signature-256` and pokes `requestPoll()`; deliveries are
-  never parsed into events.
-- `types.ts`: adapter config, REST payloads, and host tool contracts
-  (`GithubPrRequest`, `PlatformGithubOps`, …) — GitHub-only, not part of the
-  root `src/types.ts` contract.
-
 ## Configuration (env)
 
 - `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID` — required.
@@ -77,6 +44,9 @@ full rationale and decisions).
 - First contact via a comment fetches the issue title/body and logs it ahead
   of the comment so the session knows what the thread is about.
 - `uploadFile` posts a pointer comment; the REST API cannot attach files.
+- There is no streaming: the finished response is posted as one comment, because per-delta edits would churn the API and mark every reply "edited".
+- The optional webhook receiver only verifies `X-Hub-Signature-256` and requests a poll; deliveries are never parsed into events.
+- The `github_*` tools are a `PlatformToolPack` injected from `main.ts`, not core tools. Git tokens are passed per invocation and never persisted.
 
 ## Repo access and pull requests
 

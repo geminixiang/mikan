@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                                               |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                   |
-| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                      |
-| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                     |
-| Identity and data       | Office, Sessions, Memory capture, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md)                   |
-| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                     |
-| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/web/README.md`](src/adapters/web/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md) |
-| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                                       |
-| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                               |
+| Group                   | Modules                                               | Detailed documentation                                                                                                                                             |
+| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                 |
+| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                    |
+| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                   |
+| Identity and data       | Office, Sessions, Memory capture, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md) |
+| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                   |
+| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                                           |
+| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                     |
+| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                             |
 
 ## Main flows
 

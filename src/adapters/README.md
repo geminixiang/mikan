@@ -14,20 +14,11 @@ a bounded 30-second drain window. Conversation runtime closes after a successful
 drain; on timeout it aborts stuck runner construction and the process reports a
 failed shutdown.
 
-## Files
+## Contracts
 
-- The adapter contract — the platform-neutral `MessagingBot`, `ConversationEvent`, `ConversationMessage`, `ConversationResponder`, and related interfaces — is declared in `src/types.ts`; adapters import it from there. Adapters build events and messages with the office-owned `createConversationEvent` / `createConversationMessage` (`src/office/index.ts`).
-- `messages.ts`: Product name and the cross-platform user-facing status lines (nothing running, stopping, stopped, already working, restarting, force stopped), formatted per platform.
-- `intake.ts`: Conversation intake — the shared ingress pipeline every adapter feeds. Owns the ordering `magic word → trigger policy → attachments → log → busy policy → queue → dispatch`, including the single cross-platform magic-word grammar (`matchMagicWord`; `stop` bypasses trigger policy and queueing). Returns an outcome (`magic-word | not-triggered | rejected-busy | enqueued`); adapters state platform policy as data (`magicWord.scopeFallback`, `busyPolicy`), not callbacks.
-- `shared.ts`: The shared adapter surface — retry, queueing, long-text splitting, stop-target resolution, and the two office write paths every adapter funnels through: `appendChannelLog(office, entry)` for `log.jsonl` and `saveIncomingAttachments(office, items)` for incoming platform files. The latter owns the whole attachment convention (sanitized `<timestamp>_<name>` under the office's attachments dir, office-relative `localPath`, results in caller order); `writeResponseToFile` streams a download to disk and rejects it past `MAX_ATTACHMENT_BYTES` (100 MiB); retry and failure policy stay with each adapter.
-- `progressive-renderer.ts`: The single response state owner. It serializes response operations, accumulates source text, manages working indicators and typing, owns response identity, splits long output, and coordinates buffered or native stream transports. Platform contexts provide only transport and rendering policy.
-- `types.ts`: The adapter type surface — intake options and outcome, the progressive-renderer platform contract, retry/stop-target inputs, incoming/saved attachment shapes, and chat-response error context.
-
-## Subdirectories
-
-- `commands/`: Shared chat-command inventory, parsing, handlers, and command context; platform adapters derive native command registration from this inventory.
-- `discord/`: Discord bot implementation and Discord response context.
-- `github/`: GitHub App polling bot (one issue/PR = one conversation), REST client, and response context.
-- `slack/`: Slack bot, Slack session/thread rules, native Block Kit rendering, and Slack response context.
-- `telegram/`: Telegram bot, Telegram HTML sanitization, and Telegram response context.
-- `web/`: HTTP server, login/OAuth and vault portal, Admin portal, Session View, shared portal shell, and short-lived token stores.
+- Adapters take the platform-neutral contract (`MessagingBot`, `ConversationEvent`, `ConversationMessage`, `ConversationResponder`) from `src/types.ts` and build events and messages with `createConversationEvent` / `createConversationMessage` from `src/office/index.ts`.
+- `intake.ts` is the one ingress pipeline, ordered `magic word → trigger policy → attachments → log → busy policy → queue → dispatch`, with one cross-platform magic-word grammar; `stop` bypasses trigger policy and queueing. Adapters state platform policy as data (`magicWord.scopeFallback`, `busyPolicy`), not callbacks.
+- Office writes go through `appendChannelLog(office, entry)` for `log.jsonl` and `saveIncomingAttachments(office, items)` for incoming files, which owns the `<timestamp>_<sanitized name>` convention, the office-relative `localPath`, and caller-order results. Downloads stream through `writeResponseToFile` and are rejected past `MAX_ATTACHMENT_BYTES` (100 MiB); retry and failure policy stay with each adapter.
+- `progressive-renderer.ts` is the single owner of response state: operation order, source text, working indicators and typing, response identity, long-output splitting, and buffered or native streaming. Platform contexts provide only transport and rendering policy.
+- The Web portals share `web/portal-shell.ts`, and request bodies are read through its size-limited `readRawBody` / `readJsonBody`. `web/server.ts` returns its `Server` handle so the composition root closes it before draining Conversation runtime work.
+- Portals reach directories through the injected `Workspace`. Session View walks session lineage by `parentSessionId`, not by path.
