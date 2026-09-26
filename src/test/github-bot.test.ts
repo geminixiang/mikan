@@ -1020,7 +1020,7 @@ describe("GithubMessagingBot", () => {
   test("syncRepo falls back to the default branch on plain issues and reports fetch-only", async () => {
     mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
     client.getIssue.mockResolvedValue(makeIssue());
-    vi.mocked(syncRepo).mockResolvedValue({
+    vi.mocked(syncRepo).mockResolvedValueOnce({
       target: "main",
       fetchedSha: "abc123def4567890",
       updatedCheckout: false,

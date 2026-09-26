@@ -10,6 +10,7 @@ export default defineConfig({
   },
   test: {
     include: ["src/test/**/*.test.ts"],
+    sequence: { shuffle: true },
     setupFiles: ["./src/test/setup/git-env.ts", "./src/test/setup/state-dir.ts"],
     coverage: {
       provider: "v8",
