@@ -354,12 +354,15 @@ describe("production double-assertion ratchet", () => {
         .map((position) => describeLocation(ast, position)),
     );
     expect(offenders).toEqual([]);
-    expect(
-      Object.keys(productionDoubleAssertionBudget).filter((file) => !knownFiles.has(file)),
-    ).toEqual([]);
-    expect(
-      Object.values(productionDoubleAssertionBudget).reduce((total, count) => total + count, 0),
-    ).toBeLessThanOrEqual(11);
+  });
+
+  test("lowers each per-file budget as soon as its assertions are removed", () => {
+    const counts = Object.fromEntries(
+      productionFiles
+        .map(({ file, ast }) => [file, doubleAssertionPositions(ast).length] as const)
+        .filter(([, count]) => count > 0),
+    );
+    expect(counts).toEqual(productionDoubleAssertionBudget);
   });
 });
 
