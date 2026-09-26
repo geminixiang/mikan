@@ -91,7 +91,7 @@ conversation-dir bind mount:
   read & write).
 - GitHub sets `MessagingInfo.trustModel: "open-trigger"`, so
   `sandbox.defaultSharedVault` is never ambient-copied (see
-  `src/vault/policy.ts`). Admins can still explicitly provision a vault for
+  `src/vault/index.ts`). Admins can still explicitly provision a vault for
   a specific GitHub conversation.
 - A missing `./repo` is re-attempted on every trigger (no-op once cloned), so
   a first clone that failed — e.g. App permissions granted later — heals on
