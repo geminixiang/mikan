@@ -1,6 +1,6 @@
 # MCP token usage after bounded results (beta.78)
 
-Research date: 2026-09-25. Measured on production (`clanker-002`, mikan `1.0.0-beta.78`) through the livingbio Pi DM, with OpenConnector reached at `http://127.0.0.1:3100/mcp`. Sizes are tool-result characters in the session file; costs come from the session's recorded usage.
+Research date: 2026-09-25. Measured on a production deployment (mikan `1.0.0-beta.78`) through a direct message to the bot, with OpenConnector reached at `http://127.0.0.1:3100/mcp`. Sizes are tool-result characters in the session file; costs come from the session's recorded usage.
 
 ## Baseline
 
