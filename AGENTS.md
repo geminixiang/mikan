@@ -51,6 +51,7 @@ Choose verification proportional to the change. Behavior changes need relevant t
 ## Working principles
 
 - Do not write code comments; the urge to add one signals a responsibility-split filename, unclear function name, or malformed architecture that must be fixed instead.
+- This repository is public. Commits, docs, tests, issues, PRs, and release notes must not name organizations, customers, people, or hosts, or include Slack workspace, channel, user, or message IDs or links from real deployments; use placeholders such as `C0123456789`, `acme`, and `example.com`, and describe production evidence without identifiers.
 - Other agents may be editing this checkout at the same time. Stage explicit paths for your own changes, and do not run `git add -A`, `git add .`, `git stash`, `git checkout .`, `git reset --hard`, or `git clean`; they capture or discard work you did not make. Compare behavior against a commit with `git worktree add` instead of stashing.
 - Solve the requested problem with the simplest suitable design. Preserve unrelated work and behavior; avoid speculative abstractions and compatibility layers. Surface consequential compatibility changes rather than assuming they are always safe or always forbidden.
 - Investigate failures from evidence and verify the original symptom after a repair. Choose reading depth, tools, delegation, and checks to fit the task rather than following a fixed sequence. Inject external clients into the owning operation for tests instead of replacing process-wide globals; keep the default production client.
