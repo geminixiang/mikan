@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.79]
+
 ### Changed
 
 - Load the Discord adapter and `discord.js` only when Discord is active, saving about 38 MB of memory and 90 ms of startup in processes that do not run Discord.
@@ -24,6 +26,12 @@ any release.
 - Reject missing sandbox helper executables as ordinary `ENOENT` errors instead of emitting an unhandled child-process error.
 - Accept `thinking: max` in subagent profiles; they kept their own level list without `max`, while settings and `/pi-model` accepted it.
 - Spill oversized MCP JSON results as indented JSON so `read` and `grep` can inspect them; the compact single-line spill exceeded `read`'s per-line limit.
+- Record a Discord channel without a name (such as a DM) under its channel id instead of a `null` name.
+
+### Tests
+
+- Type-check tests, E2E code, and the embedder example in pre-commit and CI, and remove every `any` and double assertion from tests.
+- Run tests in random order and print the seed, so order-dependent tests fail visibly and can be reproduced.
 
 ## [1.0.0-beta.78]
 
