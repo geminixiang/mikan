@@ -11,6 +11,7 @@ any release.
 
 ### Changed
 
+- Load the Discord adapter and `discord.js` only when Discord is active, saving about 38 MB of memory and 90 ms of startup in processes that do not run Discord.
 - Use pi's `typebox` 1.3.27 for tool and settings schemas instead of the incompatible `@sinclair/typebox` 0.34; platform tool packs now share pi's `AgentTool` schema types. Schema validation errors retain field paths but use typebox 1's wording.
 - **Breaking (SDK):** `new ChatHistorySync()` now requires `{ isCommandText }`, so sessions no longer import the command inventory from the adapters. Pass the newly exported `isCommandText` to keep filtering command messages out of synced history.
 

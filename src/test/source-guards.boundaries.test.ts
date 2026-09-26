@@ -273,6 +273,43 @@ const rules: BoundaryRule[] = [
     ],
   },
   {
+    id: "discord-adapter-loaded-on-demand",
+    rule: "Load the Discord adapter with await import() only when Discord is active; a static value import pulls discord.js into every process",
+    appliesTo: (file) => isProductionFile(file) && !file.startsWith("src/adapters/discord/"),
+    violates: (_file, source) =>
+      source.statements
+        .filter(ts.isImportDeclaration)
+        .filter(
+          (node) =>
+            !node.importClause?.isTypeOnly &&
+            ts.isStringLiteral(node.moduleSpecifier) &&
+            /(^|\/)adapters\/discord\//.test(node.moduleSpecifier.text),
+        )
+        .map((node) => node.getStart(source)),
+    spellings: [
+      {
+        file: "src/main.ts",
+        code: 'import { DiscordMessagingBot } from "./adapters/discord/bot.js";',
+        violates: true,
+      },
+      {
+        file: "src/main.ts",
+        code: 'import type { DiscordMessagingBot } from "./adapters/discord/bot.js";',
+        violates: false,
+      },
+      {
+        file: "src/main.ts",
+        code: 'const { DiscordMessagingBot } = await import("./adapters/discord/bot.js");',
+        violates: false,
+      },
+      {
+        file: "src/adapters/discord/bot.ts",
+        code: 'import { a } from "./components.js";',
+        violates: false,
+      },
+    ],
+  },
+  {
     id: "no-double-assertion-in-tests",
     rule: "Tests must not bypass the type checker with a double assertion through unknown; build typed fakes, narrow the production parameter type, or inject the dependency through the class options",
     appliesTo: (file) => file.startsWith("src/test/"),

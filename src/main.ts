@@ -6,7 +6,6 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "no
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MessagingBot, PlatformName } from "./types.js";
-import { DiscordMessagingBot } from "./adapters/discord/bot.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
@@ -513,6 +512,7 @@ if (hasDiscord) {
   if (!discordToken) {
     throw new Error("Discord startup requires DISCORD_BOT_TOKEN");
   }
+  const { DiscordMessagingBot } = await import("./adapters/discord/bot.js");
   const discordMessagingBot = new DiscordMessagingBot(handler, {
     token: discordToken,
     workspace,
