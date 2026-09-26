@@ -60,7 +60,11 @@ function routerMock(overrides: {
       return { stdout: `${(overrides.names ?? []).join("\n")}\n` };
     }
     if (args[0] === "images") {
-      return { stdout: `${(overrides.images ?? []).join("\n")}\n` };
+      const images = overrides.images ?? [];
+      const lines = args.includes("{{.Tag}}")
+        ? images.map((image) => image.slice(image.indexOf(":") + 1))
+        : images;
+      return { stdout: `${lines.join("\n")}\n` };
     }
     return { stdout: "ok\n" };
   });
@@ -230,6 +234,24 @@ describe("DockerContainerManager", () => {
       await manager.sweepContainerLayoutMigration(0);
 
       expect(calls).toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-gone"]);
+    });
+
+    test("sweep keeps a snapshot its container still runs from instead of warning on every restart", async () => {
+      const { exec, calls } = routerMock({
+        status: "stopped",
+        binds: NEW_BINDS,
+        names: ["mikan-sandbox-c123-k"],
+        images: ["mikan-migrate:mikan-sandbox-c123-k"],
+        imageBinds: LEGACY_BINDS,
+        imageRef: "mikan-migrate:mikan-sandbox-c123-k",
+      });
+      const manager = new DockerContainerManager("base", { execFileImpl: exec });
+      manager.armContainerLayoutMigration(translator);
+
+      await manager.sweepContainerLayoutMigration(0);
+
+      expect(calls).not.toContainEqual(["rmi", "mikan-migrate:mikan-sandbox-c123-k"]);
+      expect(dockerWrites(calls)).toEqual([]);
     });
   });
 

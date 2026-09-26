@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop warning `Could not remove snapshot image mikan-migrate:...` for every migrated container on each startup; the startup sweep now leaves a snapshot alone while its container still runs from it, and still reclaims snapshots no container uses.
+
 ## [1.0.0-beta.79]
 
 ### Changed

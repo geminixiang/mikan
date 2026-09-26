@@ -537,6 +537,7 @@ export class DockerContainerManager {
       const containerName = image.slice(DockerContainerManager.MIGRATE_IMAGE_PREFIX.length + 1);
       const status = await this.inspectStatus(containerName);
       if (status === "missing") continue;
+      if (await this.containerRunsFromImage(containerName, image)) continue;
       try {
         await this.execFileImpl("docker", ["rmi", image]);
         log.logInfo(`Removed layout-migration snapshot image ${image}`);
@@ -544,6 +545,16 @@ export class DockerContainerManager {
         log.logWarning(`Could not remove snapshot image ${image}`, String(err));
       }
     }
+  }
+
+  private async containerRunsFromImage(containerName: string, image: string): Promise<boolean> {
+    const { stdout } = await this.execFileImpl("docker", [
+      "inspect",
+      "-f",
+      "{{.Config.Image}}",
+      containerName,
+    ]);
+    return stdout.trim() === image;
   }
 
   async reconcile(): Promise<void> {
