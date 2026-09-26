@@ -142,7 +142,7 @@ describe("ContainerExecutor", () => {
       async () => {},
     );
 
-    await executor.exec("git clone https://github.com/livingbio/skills.git");
+    await executor.exec("git clone https://github.com/acme/skills.git");
 
     expect(envFile.split("\n")).toEqual([
       "GH_TOKEN=gho_test",

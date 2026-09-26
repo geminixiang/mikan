@@ -41,8 +41,8 @@ describe.skipIf(!ctx)("Slack Block Kit markdown", () => {
 
   it("S-024 renders response-source links as native Slack links", async () => {
     const token = `QA_MRKDWN_LINK_${Date.now()}`;
-    const url = "https://github.com/livingbio/designers/issues/523";
-    const source = `${token} <${url}|#523>`;
+    const url = "https://github.com/geminixiang/mikan/issues/1";
+    const source = `${token} <${url}|#1>`;
     let rootTs: string | undefined;
     let messageTs: string | undefined;
 

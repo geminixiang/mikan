@@ -387,22 +387,22 @@ describe("LoginCommandHandler", () => {
     expect(parseLoginCommand("login")).toBeNull();
     expect(parseLoginCommand("/login github_oauth")).toEqual({ action: "setup" });
     expect(parseLoginCommand("/pi-login github")).toEqual({ action: "setup" });
-    expect(parseLoginCommand("/pi-login shared create gliaclaw")).toEqual({
+    expect(parseLoginCommand("/pi-login shared create team-tools")).toEqual({
       action: "shared_create",
-      name: "gliaclaw",
+      name: "team-tools",
     });
-    expect(parseLoginCommand("/pi-login shared update gliaclaw")).toEqual({
+    expect(parseLoginCommand("/pi-login shared update team-tools")).toEqual({
       action: "shared_update",
-      name: "gliaclaw",
+      name: "team-tools",
     });
-    expect(parseLoginCommand("/pi-login shared delete gliaclaw")).toEqual({
+    expect(parseLoginCommand("/pi-login shared delete team-tools")).toEqual({
       action: "shared_delete",
-      name: "gliaclaw",
+      name: "team-tools",
     });
     expect(parseLoginCommand("/pi-login shared list")).toEqual({ action: "shared_list" });
-    expect(parseLoginCommand("/pi-login copy gliaclaw")).toEqual({
+    expect(parseLoginCommand("/pi-login copy team-tools")).toEqual({
       action: "copy_shared",
-      name: "gliaclaw",
+      name: "team-tools",
     });
     expect(parseLoginCommand("help")).toBeNull();
   });
@@ -462,7 +462,7 @@ describe("LoginCommandHandler", () => {
   test("creates a link token for shared profile setup", async () => {
     const linkTokenStore = fakeLinkTokenStore();
     const ctx = buildContext({
-      commandText: "/pi-login shared create gliaclaw",
+      commandText: "/pi-login shared create team-tools",
       privateConversation: true,
       services: { linkTokenStore },
     });
@@ -473,16 +473,16 @@ describe("LoginCommandHandler", () => {
         platform: "slack",
         platformUserId: "U123",
         conversationId: "C123",
-        vaultId: "shared/gliaclaw",
+        vaultId: "shared/team-tools",
         providerId: "",
       },
     ]);
-    expect(ctx.responder.responses[0]).toContain("shared login profile (gliaclaw)");
+    expect(ctx.responder.responses[0]).toContain("shared login profile (team-tools)");
   });
 
   test("lists and deletes shared login profiles", async () => {
     const vaultManager = fakeVaultManager();
-    vaultManager.listSharedVaults = vi.fn(() => ["gliaclaw"]);
+    vaultManager.listSharedVaults = vi.fn(() => ["team-tools"]);
     vaultManager.deleteSharedVault = vi.fn(() => true);
 
     const listCtx = buildContext({
@@ -491,15 +491,15 @@ describe("LoginCommandHandler", () => {
       services: { vaultManager },
     });
     expect(await handler.tryHandle(listCtx)).toBe(true);
-    expect(listCtx.responder.responses[0]).toContain("gliaclaw");
+    expect(listCtx.responder.responses[0]).toContain("team-tools");
 
     const deleteCtx = buildContext({
-      commandText: "/pi-login shared delete gliaclaw",
+      commandText: "/pi-login shared delete team-tools",
       privateConversation: true,
       services: { vaultManager },
     });
     expect(await handler.tryHandle(deleteCtx)).toBe(true);
-    expect(vaultManager.deleteSharedVault).toHaveBeenCalledWith("gliaclaw");
+    expect(vaultManager.deleteSharedVault).toHaveBeenCalledWith("team-tools");
   });
 
   test("copies shared login profile into the conversation vault", async () => {
@@ -507,7 +507,7 @@ describe("LoginCommandHandler", () => {
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
     const { provisioner, remove } = fakeProvisioner();
     const ctx = buildContext({
-      commandText: "/pi-login copy gliaclaw",
+      commandText: "/pi-login copy team-tools",
       privateConversation: true,
       services: {
         vaultManager,
@@ -518,7 +518,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(vaultManager.copySharedVaultTo).toHaveBeenCalledWith(
-      "gliaclaw",
+      "team-tools",
       officeKey(createOfficeAddress("slack", "C123")),
     );
     expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
@@ -530,7 +530,7 @@ describe("LoginCommandHandler", () => {
         { userId: "U123", address: createOfficeAddress("slack", "C123") },
       ),
     );
-    expect(ctx.responder.responses[0]).toContain("Copied shared login profile `gliaclaw`");
+    expect(ctx.responder.responses[0]).toContain("Copied shared login profile `team-tools`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
 
@@ -539,7 +539,7 @@ describe("LoginCommandHandler", () => {
     vaultManager.copySharedVaultTo = vi.fn(() => ({ envKeysCopied: 2, filesCopied: 1 }));
     const { provisioner, remove } = fakeProvisioner();
     const ctx = buildContext({
-      commandText: "/pi-login copy gliaclaw",
+      commandText: "/pi-login copy team-tools",
       privateConversation: true,
       services: {
         vaultManager,

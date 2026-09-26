@@ -10,7 +10,7 @@ Evidence levels:
 
 - Static inspection of application source, existing regression tests, and the installed Pi implementation.
 - Ten additional deterministic local simulations using real Slack adapter intake/queues, ConversationRuntime, runner, Pi harness and session files. Slack transport and model are test doubles; long work is a deferred tool, not an actual slow external service. Native steering is separately exercised directly through Pi's lane interface, not a mikan feature.
-- Authorized live Slack testing in the `geminixiang` workspace, with browser-submitted human messages, real Socket Mode delivery, the configured `macmini/gpt-5.6-terra` model and Docker-backed native bash. These are local-daemon E2E observations, not production observations.
+- Authorized live Slack testing in a private test workspace, with browser-submitted human messages, real Socket Mode delivery, the configured `macmini/gpt-5.6-terra` model and Docker-backed native bash. These are local-daemon E2E observations, not production observations.
 - Twelve relevant test files / 261 tests passed, including the ten temporary investigation tests. The investigation test file was archived outside the worktree, not added to the permanent suite.
 
 ## Source map and actual ownership
@@ -52,7 +52,7 @@ The temporary tests call private adapter methods to inject SDK-normalized messag
 
 ## Live Slack observations
 
-Workspace: `T0B4DDYBVB3` (`geminixiang`). DM: `D0B4BL40DAN`. Shared test channel: `C0B4BL9AB6W` (`qa-mama-test`). All times below are Taiwan time (UTC+8).
+Workspace: `T_TEST` (private test workspace). DM: `D_TEST`. Shared test channel: `C_TEST` (`qa-test`). All times below are Taiwan time (UTC+8).
 
 Local preflight found no running local mikan daemon. Bot `auth.test` matched the intended workspace. A fresh private temporary state/workspace was used. Socket intake and local run logs confirmed that the test daemon handled the test messages; this is stronger evidence than merely observing a Slack reply, though it is not an inventory of unknown remote connections.
 
@@ -67,7 +67,7 @@ Local preflight found no running local mikan daemon. Bot `auth.test` matched the
 
 B waited about 35.35 seconds from Slack submission to visible reply, most of it behind A.
 
-Evidence: [request A](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789434955926779), [request B](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789434976817579), [reply B](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435012164069).
+Evidence: request A, request B, reply B.
 
 ### B. Explicit immediate event frees the conversation
 
@@ -82,7 +82,7 @@ The request explicitly instructed the model to create an immediate event and fin
 
 The independent answer arrives about 45 seconds before the task tool completes. This verifies existing nonblocking execution, not autonomous routing selection.
 
-Evidence: [event request](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435034081909), [event anchor](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435042104379), [independent answer](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435059900289).
+Evidence: event request, event anchor, independent answer.
 
 ### C. A correction in the DM task thread arrives too late for the current operation
 
@@ -94,7 +94,7 @@ Evidence: [event request](https://geminixiang.slack.com/archives/D0B4BL40DAN/p17
 
 The correction was received while the task was active but was queued as a later turn, not incorporated into its current model context.
 
-Evidence: [correction](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435086750329), [later reply](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435113339779).
+Evidence: correction, later reply.
 
 ### D. Natural phrasing can select existing event delegation, but evidence is limited
 
@@ -108,7 +108,7 @@ Important limitation: this was the SAME DM after an explicit event example. The 
 
 The acknowledgement also claimed the wait had started before the task's bash actually began. Starting/queued language matters even when the pipeline works.
 
-Evidence: [natural request](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435130248929), [independent reply](https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789435175322249).
+Evidence: natural request, independent reply.
 
 ### E. Shared-channel bare thread stop does not reach the control path
 
@@ -122,7 +122,7 @@ A final browser readback still showed `Stopping…` after the tool had reported 
 
 This live case targets the top-level task through a reply to its user-message root. Exact scoped-event stop was additionally covered by S3. Do not conflate the two.
 
-Evidence: [root](https://geminixiang.slack.com/archives/C0B4BL9AB6W/p1789435233336179), [bare stop](https://geminixiang.slack.com/archives/C0B4BL9AB6W/p1789435271396399), [mentioned stop](https://geminixiang.slack.com/archives/C0B4BL9AB6W/p1789435295504769).
+Evidence: root, bare stop, mentioned stop.
 
 ## Important design corrections
 
@@ -336,7 +336,7 @@ All spawned crash-test children exited. Temporary integration code was archived 
 - Retried with a 120-second sleep. Pending steering `1789441824.170879` preceded actual stop `1789441825.219529`; bash aborted after 20.2 seconds. No answer to `DISCARDED_02` appeared. Restarted the feature daemon with the repaired build, then continued in the same task thread with `1789441869.129929`; response `1789441871.911569` was `RESUMED_NEW_LIMIT`, with no tools.
 - Final repaired-build stop: request `1789441890.113199`, stop `1789441904.353329`; tool aborted after 10.3 seconds and acknowledgement `1789441904.878009` read `Stopped.`. Earlier stale notices are test artifacts, not repaired historical messages.
 
-Acceptance task: https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789441537622429
+Acceptance task: (Slack link omitted)
 
 Provider/model: macmini/gpt-5.6-terra, thinking off. Real Slack browser input/API readback, Socket Mode intake and Docker native bash; not production deployment and not an arbitrary-task autonomy benchmark. English steering acknowledgements and top-level stop notices remain current presentation limitations. Main-DM natural-language task targeting, automatic crash recovery, and cross-user/attachment control extensions are not implemented.
 
@@ -352,7 +352,7 @@ Verification after repair: 128 test files / 1,767 tests passed; build, lint, for
 - A second 60-second wait in that thread started at 11:30:03; `stop` at `1789443026.733469` aborted it after 23.5 seconds. Slack API confirmed acknowledgement `1789443027.397059` reads `Stopped.` in main DM.
 - Opening the application still produced `setSuggestedPrompts failed: not_agent_app` in logs (11:26:24 and 11:27:47). Current code treats `app_home_opened` Messages as an agent surface even for an ordinary app; that ancillary call needs capability-aware handling. It did not prevent tested message/task/control delivery. No claim that all assistant-specific API scopes or UI navigation behavior are validated.
 
-Private evidence: `/tmp/mikan-task-feature-64oBJD/plain-dm-recheck.json`. Task link: https://geminixiang.slack.com/archives/D0B4BL40DAN/p1789442892520939 . Browser navigation still occasionally showed an App Home or loading surface; do not attribute every prior navigation issue solely to agent_view without a controlled UI comparison. Daemon remains running for user acceptance.
+Private evidence: `/tmp/mikan-task-feature-64oBJD/plain-dm-recheck.json`. Task link: (Slack link omitted) . Browser navigation still occasionally showed an App Home or loading surface; do not attribute every prior navigation issue solely to agent_view without a controlled UI comparison. Daemon remains running for user acceptance.
 
 ## Thread stop routing and completion delivery repair
 
@@ -371,7 +371,7 @@ is controlled by Slack/user settings and was not verified.
 Live local-daemon verification after idle reload (PID 88707):
 
 - Task response `1789443550.662249`, fresh notification `1789443558.853329`
-  contains native `<@U0B4878MUER>` in task root `1789442892.520939`.
+  contains native `<@U_TEST>` in task root `1789442892.520939`.
 - Stop input `1789443588.833919`; acknowledgement `1789443589.410479` reads
   `Stopped.` in that same thread. No new top-level messages in the test interval.
 - The cancelled run produced no second completion mention.
@@ -384,7 +384,7 @@ for user acceptance; no release/deployment/commit was performed.
 ## Natural-language acceptance after explicit /pi-new
 
 2026-09-15 11:51 Taiwan: submitted actual `/pi-new` in the main DM;
-local log confirms `Session reset: D0B4BL40DAN` at 11:51:12 and subsequent
+local log confirms `Session reset: D_TEST` at 11:51:12 and subsequent
 main session suffix `2e68c4ab`. Reset preserves office memory/files as designed;
 it is a clean transient conversation, not a new installation.
 
@@ -589,7 +589,7 @@ full gate before live acceptance: 128 files / 1,784 tests.
 5. Status-only model turns omit user-facing usage chatter while keeping metrics;
    mixed instructions continue to reach the model, not swallowed by the shortcut.
 
-Live `/pi-new` acceptance on geminixiang (local daemon PID 75884): natural ten-version
+Live `/pi-new` acceptance in the test workspace (local daemon PID 75884): natural ten-version
 upgrade-risk request, anchor `1789449162.827189`. Main 「好了嗎？」 at
 `1789449183.841989` got an actual current-tool response at `1789449184.417909`
 (~0.58s), without a model run. Thread 「還要多久？」 used the same read-only
@@ -617,7 +617,7 @@ environment key presence only: SENTRY_DSN and OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
 HEADERS, PROTOCOL were set. No secret values were printed. Production package
 remains 1.0.0-beta.59; daemon was not restarted.
 
-A separate short-lived Node process on clanker-002 used the installed mikan
+A separate short-lived Node process on the production host used the installed mikan
 observability functions and production destination settings to send a synthetic
 error/span, labelled telemetry-verification. It contained no conversation text,
 tool arguments, commands from agent work, or credentials. This is a transport

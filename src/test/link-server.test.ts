@@ -309,7 +309,7 @@ describe("link server", () => {
         mode: "api_key",
         env: {
           SENTRY_AUTH_TOKEN: "sntrys_test-token",
-          SENTRY_ORG: "gliacloud-z3",
+          SENTRY_ORG: "example-org",
           SENTRY_PROJECT: "mikan",
         },
       }),
@@ -320,7 +320,7 @@ describe("link server", () => {
     expect(body.message).toContain("/root/.sentryclirc");
     expect(vaultManager.resolve("vault-u889")?.env).toMatchObject({
       SENTRY_AUTH_TOKEN: "sntrys_test-token",
-      SENTRY_ORG: "gliacloud-z3",
+      SENTRY_ORG: "example-org",
       SENTRY_PROJECT: "mikan",
     });
     expect(vaultManager.resolve("vault-u889")?.mounts).toContainEqual({
@@ -328,7 +328,7 @@ describe("link server", () => {
       target: "/root/.sentryclirc",
     });
     expect(readFileSync(join(stateDir, "vaults", "vault-u889", ".sentryclirc"), "utf-8")).toBe(
-      `[auth]\ntoken=sntrys_test-token\n\n[defaults]\norg = gliacloud-z3\nproject = mikan\n`,
+      `[auth]\ntoken=sntrys_test-token\n\n[defaults]\norg = example-org\nproject = mikan\n`,
     );
     expect(notify).toHaveBeenCalledWith(
       "telegram",

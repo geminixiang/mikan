@@ -211,7 +211,7 @@ describe("GitHub conversation ids", () => {
   });
 
   test("rejects non-GitHub and malformed ids", () => {
-    for (const bad of ["C03045VJJAY", "GH_octo_widgets", "GH_octo_widgets_x", "GH__widgets_1"]) {
+    for (const bad of ["C0123456789", "GH_octo_widgets", "GH_octo_widgets_x", "GH__widgets_1"]) {
       expect(() => parseGithubConversationId(bad)).toThrow(/Not a GitHub conversation id/);
     }
   });

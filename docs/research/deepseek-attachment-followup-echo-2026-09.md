@@ -1,7 +1,7 @@
 # DeepSeek v4 Flash（OpenRouter）在附件追問時複讀上一輪答案
 
 調查日期：2026-09-21
-環境：本機 pm2 daemon（`~/.mikan`），Slack `geminixiang` workspace，`#qa-mama-test` 頻道，host sandbox。
+環境：本機 pm2 daemon（`~/.mikan`），Slack 私人測試 workspace，`#qa-test` 頻道，host sandbox。
 
 ## 結論
 
@@ -13,7 +13,7 @@
 
 ## 方法與證據等級
 
-- **[L] 本地程式與 session 證據**：直接讀取本機 `~/.mikan/workspace/v1-slack-c0b4bl9ab6w-fdd225c4f0dc94eb/` 的 `log.jsonl` 與 `sessions/*.jsonl`，比對送進模型的 user turn 原始內容與模型實際輸出。
+- **[L] 本地程式與 session 證據**：直接讀取本機 `~/.mikan/workspace/<office-key>/` 的 `log.jsonl` 與 `sessions/*.jsonl`，比對送進模型的 user turn 原始內容與模型實際輸出。
 - **[E] 真實 Slack 互動**：透過瀏覽器在真實 Slack workspace 手動觸發，非 mock/單元測試；已先確認唯一 Socket Mode consumer（見 `docs/testing/slack-e2e.md`），排除事件被另一台機器的 mikan 進程吃掉的可能性。
 - **[H] 推論**：cache 命中與複讀之間的關聯是觀察到的相關性，未做控制變因實驗（例如關閉 provider 端 cache）驗證因果。
 
@@ -42,7 +42,7 @@
 Run 2 的 session JSONL（`sessions/2026-09-20T13-50-01-465Z_6b6237a0.jsonl`）顯示：
 
 - 新一輪的 `role: user` entry 內容正確：`"...這個 CSV 有 20 筆 value 資料...\n\n<slack_attachments>\n.../attachments/..._qa_outlier_run2.csv\n</slack_attachments>"`。
-- 對應的 `role: assistant` 回應是：`"QA_R2_WARMUP_1789924655145\n\n1+1 = **2**\n\n_Triggered by @f416720001_"`——與上一輪（暖身問題）的 assistant 輸出逐字相同。
+- 對應的 `role: assistant` 回應是：`"QA_R2_WARMUP_1789924655145\n\n1+1 = **2**\n\n_Triggered by @qa-user_"`——與上一輪（暖身問題）的 assistant 輸出逐字相同。
 - 該 run 的 `usage`：`input: 521, cacheRead: 14080`；上一輪暖身 run 的 `usage`：`input: 757, cacheRead: 13568`。兩者 cache 命中量都異常地高（相對於這輪對話的實際歷史長度）。
 - 整個 run 從 `startedAt` 到 `endedAt` 僅 2.7 秒，遠低於正常「讀檔＋分析」所需時間（其餘正確案例都是 9 秒以上）。
 
@@ -77,7 +77,7 @@ Run 2 的 session JSONL（`sessions/2026-09-20T13-50-01-465Z_6b6237a0.jsonl`）�
 
 ## 一手來源
 
-- **[M1]** 本機 `~/.mikan/workspace/v1-slack-c0b4bl9ab6w-fdd225c4f0dc94eb/log.jsonl` — 對話歷史紀錄，含 Run 2 失敗與其餘正確 run 的完整文字。
-- **[M2]** 本機 `~/.mikan/workspace/v1-slack-c0b4bl9ab6w-fdd225c4f0dc94eb/sessions/2026-09-20T13-50-01-465Z_6b6237a0.jsonl` — DeepSeek session 的原始 `user`/`assistant` entry 與 `usage`（含 `cacheRead`）數據。
+- **[M1]** 本機 `~/.mikan/workspace/<office-key>/log.jsonl` — 對話歷史紀錄，含 Run 2 失敗與其餘正確 run 的完整文字。
+- **[M2]** 本機 `~/.mikan/workspace/<office-key>/sessions/2026-09-20T13-50-01-465Z_6b6237a0.jsonl` — DeepSeek session 的原始 `user`/`assistant` entry 與 `usage`（含 `cacheRead`）數據。
 - **[M3]** `docs/testing/slack-e2e.md` — 唯一 Socket Mode consumer 檢查方法，本次測試前已排除競爭 daemon 干擾。
 - **[M4]** `.pi/skills/mikan-release/references/RELEASE.md` — PM2 env 重載注意事項，本次切換 provider 時依此用 `pm2 delete && pm2 start` 而非 `restart --update-env`。

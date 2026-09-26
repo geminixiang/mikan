@@ -316,7 +316,7 @@ describe("migrateLegacyOffices", () => {
   test("leaves shared and unrecognized vault directories alone", () => {
     const { stateDir, workspaceRoot } = makeFixture();
     makeLegacyOffice(workspaceRoot, "C123");
-    for (const name of ["shared/claw", "u1-ancient", "d0ar8t4q61e"]) {
+    for (const name of ["shared/claw", "u1-ancient", "d0aaaaaaaaa"]) {
       mkdirSync(join(stateDir, "vaults", name), { recursive: true });
     }
 
@@ -327,7 +327,7 @@ describe("migrateLegacyOffices", () => {
     });
 
     expect(summary.vaultKeysMigrated).toEqual([]);
-    for (const name of ["shared/claw", "u1-ancient", "d0ar8t4q61e"]) {
+    for (const name of ["shared/claw", "u1-ancient", "d0aaaaaaaaa"]) {
       expect(existsSync(join(stateDir, "vaults", name))).toBe(true);
     }
   });
@@ -374,7 +374,7 @@ describe("migrateLegacyOffices", () => {
     const { stateDir, workspaceRoot } = makeFixture();
     makeLegacyOffice(workspaceRoot, "C0AB12CD3");
     makeLegacyOffice(workspaceRoot, "D0EF45GH6");
-    makeLegacyOffice(workspaceRoot, "GH_livingbio_genv-queue_1652");
+    makeLegacyOffice(workspaceRoot, "GH_acme_widget-queue_1652");
 
     const summary = migrateLegacyOffices({
       workspaceRoot,
@@ -386,14 +386,14 @@ describe("migrateLegacyOffices", () => {
     expect(summary.migrated.toSorted()).toEqual([
       "C0AB12CD3",
       "D0EF45GH6",
-      "GH_livingbio_genv-queue_1652",
+      "GH_acme_widget-queue_1652",
     ]);
     expect(existsSync(officeDir(workspaceRoot, createOfficeAddress("slack", "C0AB12CD3")))).toBe(
       true,
     );
     expect(
       existsSync(
-        officeDir(workspaceRoot, createOfficeAddress("github", "GH_livingbio_genv-queue_1652")),
+        officeDir(workspaceRoot, createOfficeAddress("github", "GH_acme_widget-queue_1652")),
       ),
     ).toBe(true);
   });

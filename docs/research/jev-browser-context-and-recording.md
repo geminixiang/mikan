@@ -4,7 +4,7 @@ Date: 2026-09-22
 
 ## Question
 
-What is the smallest robust design for mikan to preserve one browser context across navigation, actions, screenshots, HAR, and recording, especially when a site such as GliaPlayer requires a non-headless user agent?
+What is the smallest robust design for mikan to preserve one browser context across navigation, actions, screenshots, HAR, and recording, especially when a site's video player requires a non-headless user agent?
 
 ## Evidence inspected
 
@@ -12,7 +12,7 @@ What is the smallest robust design for mikan to preserve one browser context acr
 - Installed `agent-browser 0.27.0` and upstream tag [`v0.27.0`](https://github.com/vercel-labs/agent-browser/tree/v0.27.0), commit `c830d1b67dc18b754e305859f0ae587f858a1447`.
 - Installed `agent-browser 0.38.1` and upstream tag [`v0.38.1`](https://github.com/vercel-labs/agent-browser/tree/v0.38.1), commit `aff6125c023b810ea3f2e5deec5379e9a4270bdc`.
 - [`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast/tree/1231850a0bf1a0c0341fe408ef1668dbbfdfac46) and `browser-harness 0.1.13`.
-- Real Slack → mikan → sandbox Chromium tests on `https://www.gliacloud.com/`.
+- Real Slack → mikan → sandbox Chromium tests on a publisher site with a floating video player.
 
 ## Historical finding: what fails in agent-browser 0.27.0
 
@@ -32,7 +32,7 @@ It does **not** reapply the configured user agent. `BrowserManager` retains down
 
 This matches the real failure:
 
-- before recording: Mac Chrome UA, GliaPlayer occupied/floating/playing;
+- before recording: Mac Chrome UA, video player occupied/floating/playing;
 - immediately after `record start`: Linux HeadlessChrome UA, empty slot, no player;
 - the WebM contains no player even though the pre-record screenshot does.
 
@@ -214,7 +214,7 @@ scripts when a new page session genuinely must be created. Its ignored E2E test
 one tab, the same URL, in-memory JS heap state, and viewport.
 
 A disposable sandbox was upgraded to Node `24.21.0` and agent-browser `0.38.1`.
-The real Slack → mikan → sandbox GliaPlayer regression verified:
+The real Slack → mikan → sandbox video-player regression verified:
 
 - custom Mac Chrome UA remained unchanged after `record start`;
 - `window.__recordMarker` remained present;
@@ -253,7 +253,7 @@ the Node 24 requirement belongs to the separate sandbox tool image.
 
 A real Slack prompt should be no more complex than:
 
-> Check the GliaPlayer on gliacloud.com, capture its floating behavior for 30 seconds, inspect the ad traffic, and send me the evidence.
+> Check the video player on https://example.com, capture its floating behavior for 30 seconds, inspect the ad traffic, and send me the evidence.
 
 Completion requires:
 

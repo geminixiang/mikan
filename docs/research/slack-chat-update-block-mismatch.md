@@ -24,19 +24,19 @@
 
 ### 1.1 數量：errors 不等於答案或使用者
 
-[E] Sentry org `gliacloud-z3`，project `pi-agent`（`4511194501808128`），issue `7648747302` / `PI-AGENT-1P`，標題 `WebAPIPlatformError: An API error occurred: block_mismatch`，firstSeen `2026-08-03T02:33:55Z`。既有查詢 cumulative count 為 **4119**；Discover `issue.id:7648747302 environment:production` 近 7 天查得 **1419 errors / 9 channel IDs**。
+[E] production Sentry project 的 block_mismatch issue，標題 `WebAPIPlatformError: An API error occurred: block_mismatch`，firstSeen `2026-08-03T02:33:55Z`。既有查詢 cumulative count 為 **4119**；Discover `issue.id:<issue> environment:production` 近 7 天查得 **1419 errors / 9 channel IDs**。
 
-| channel ID  | errors |
-| ----------- | -----: |
-| D0B0QQAE50W |    934 |
-| C0BH4F056DQ |    228 |
-| D0AMUR4566L |    165 |
-| D0AKS5AHX89 |     42 |
-| C043FHB0RK4 |     25 |
-| C0B1EGP9TGS |      8 |
-| D0ALXDH4RGQ |      8 |
-| D0APVHGH2F8 |      8 |
-| C0BKLRG3RLH |      1 |
+| channel ID | errors |
+| ---------- | -----: |
+| DM_A       |    934 |
+| CHANNEL_B  |    228 |
+| DM_C       |    165 |
+| DM_D       |     42 |
+| CHANNEL_E  |     25 |
+| CHANNEL_F  |      8 |
+| DM_G       |      8 |
+| DM_H       |      8 |
+| CHANNEL_I  |      1 |
 
 不能說是 1419 個失敗 run、9 位使用者或 4119 個遺失答案。DM 與 channel 混合；尚無總 run／更新量分母，無法算受影響比例。tag-values endpoint 有忽略 `statsPeriod`、回傳 8 月資料的跡象，故不能用其結果替代 Discover 統計。
 
@@ -44,12 +44,12 @@
 
 以下全為 [E]；UTC。`sourceLength`、table dimensions 是拒絕當下送出的 payload metadata；canonical blocks 是**後來 history 快照**，不是失敗前狀態。
 
-| target / event                                                                | rejection window / 次數        | 失敗 payload                                                   | 事後 recovery 與 canonical 快照                                                                     |
-| ----------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `C0BH4F056DQ` / `1789347600.231649`; event `6375395a1da84382b9270108ca9adb0b` | 09-14 01:03:52.525–54.322 / 9  | single markdown、leading heading、sourceLength 6–27；scheduled | recovered 01:03:54；textLength 884、edited `1789347840`；rich_text/header/rich_text/table/rich_text |
-| `C043FHB0RK4` / `1789297200.380679`; event `fbeb277ab03d45bfbf5e22cb9d28e1b5` | 09-13 11:01:47.596–50.517 / 8  | single markdown、leading heading、sourceLength 6–19；scheduled | recovered 11:01:50；textLength 1682、edited `1789297350`；含 rich_text/header/table                 |
-| `D0B0QQAE50W` / `1789114277.652489`; event `5f55ce9074084ba199847a5069772331` | 09-11 08:12:30.522–34.311 / 16 | single markdown、leading heading、sourceLength 6–44；普通 DM   | recovered 08:12:35；textLength 2852、edited `1789114371`；rich_text/header/table/rich_text          |
-| `D0AMUR4566L` / `1789039236.725179`; event `63e66ea229164145aa4efda0427d5184` | 09-10 11:20:47–11:21:26 / 165  | 後段 single table，7–9 rows × 5 columns，sourceLength 272–367  | recovered 11:21:26；textLength 342、edited `1789039288`；rich_text/table/rich_text                  |
+| target / event                                                              | rejection window / 次數        | 失敗 payload                                                   | 事後 recovery 與 canonical 快照                                                                     |
+| --------------------------------------------------------------------------- | ------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `CHANNEL_B` / `1789347600.231649`; event `6375395a1da84382b9270108ca9adb0b` | 09-14 01:03:52.525–54.322 / 9  | single markdown、leading heading、sourceLength 6–27；scheduled | recovered 01:03:54；textLength 884、edited `1789347840`；rich_text/header/rich_text/table/rich_text |
+| `CHANNEL_E` / `1789297200.380679`; event `fbeb277ab03d45bfbf5e22cb9d28e1b5` | 09-13 11:01:47.596–50.517 / 8  | single markdown、leading heading、sourceLength 6–19；scheduled | recovered 11:01:50；textLength 1682、edited `1789297350`；含 rich_text/header/table                 |
+| `DM_A` / `1789114277.652489`; event `5f55ce9074084ba199847a5069772331`      | 09-11 08:12:30.522–34.311 / 16 | single markdown、leading heading、sourceLength 6–44；普通 DM   | recovered 08:12:35；textLength 2852、edited `1789114371`；rich_text/header/table/rich_text          |
+| `DM_C` / `1789039236.725179`; event `63e66ea229164145aa4efda0427d5184`      | 09-10 11:20:47–11:21:26 / 165  | 後段 single table，7–9 rows × 5 columns，sourceLength 272–367  | recovered 11:21:26；textLength 342、edited `1789039288`；rich_text/table/rich_text                  |
 
 這四個 target 均有後續成功更新；未逐字比對最終答案，不足以保證完整送達，更不能外推所有 targets 都恢復。約 1.8 / 2.9 / 4.8 / 39 秒是 rejection-to-success lag，不是總延遲或 time-to-answer；recovery timestamp 粒度與事件時間不同，不宜做更精確推算。
 
@@ -207,7 +207,7 @@ npm test -- src/test/slack-context.test.ts
 
 ## Live 最小實驗（2026-09-14，local workspace）
 
-使用者完成本地onboarding並授權嘗試後，以本地token auth.test確認team_id `T0B4DDYBVB3`，在DM `D0B4BL40DAN` 建立4則synthetic訊息；未啟動daemon、未使用production token、未修改既有訊息或刪除訊息。每次API間隔至少1300ms，每次update前後都查history。執行命令 `node /tmp/mikan-slack-minimal.mjs`；安全的合成結果 `/tmp/mikan-slack-minimal-results.json`（0600）。共4 posts、20 updates、40 history reads。
+使用者完成本地onboarding並授權嘗試後，以本地token auth.test確認team_id `T_TEST`，在DM `D_TEST` 建立4則synthetic訊息；未啟動daemon、未使用production token、未修改既有訊息或刪除訊息。每次API間隔至少1300ms，每次update前後都查history。執行命令 `node /tmp/mikan-slack-minimal.mjs`；安全的合成結果 `/tmp/mikan-slack-minimal-results.json`（0600）。共4 posts、20 updates、40 history reads。
 
 四則ts：heading blocks `1789361101.994949`、table blocks `1789361126.808569`、heading markdown_text `1789361151.574569`、table markdown_text `1789361176.377239`。
 

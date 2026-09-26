@@ -174,26 +174,26 @@ describe("FileVaultManager", () => {
   });
 
   test("sharedVaultKey validates shared login profile names", () => {
-    expect(sharedVaultKey("gliaclaw")).toBe("shared/gliaclaw");
+    expect(sharedVaultKey("team-tools")).toBe("shared/team-tools");
     expect(sharedVaultKey("team.prod-1")).toBe("shared/team.prod-1");
     expect(sharedVaultKey("../secret")).toBeUndefined();
     expect(sharedVaultKey("bad/name")).toBeUndefined();
   });
 
   test("copySharedVaultTo rejects traversal target keys", () => {
-    const sharedDir = join(vaultsDir, "shared", "gliaclaw");
+    const sharedDir = join(vaultsDir, "shared", "team-tools");
     mkdirSync(sharedDir, { recursive: true });
     writeFileSync(join(sharedDir, "env"), "TOKEN=shared\n");
     const mgr = new FileVaultManager(tmpDir);
 
-    expect(() => mgr.copySharedVaultTo("gliaclaw", "../outside")).toThrow(
+    expect(() => mgr.copySharedVaultTo("team-tools", "../outside")).toThrow(
       "vault: invalid vault key",
     );
     expect(existsSync(join(tmpDir, "outside", "env"))).toBe(false);
   });
 
   test("copySharedVaultTo merge-copies shared vault into target with shared values winning", () => {
-    const sharedDir = join(vaultsDir, "shared", "gliaclaw");
+    const sharedDir = join(vaultsDir, "shared", "team-tools");
     const targetDir = join(vaultsDir, "c123");
     mkdirSync(join(sharedDir, ".config", "gh"), { recursive: true });
     mkdirSync(targetDir, { recursive: true });
@@ -201,7 +201,7 @@ describe("FileVaultManager", () => {
     writeFileSync(join(targetDir, "env"), "A=conversation-a\nD=conversation-d\n");
     writeFileSync(join(sharedDir, ".config", "gh", "hosts.yml"), "github.com:\n  token: shared\n");
 
-    const result = new FileVaultManager(tmpDir).copySharedVaultTo("gliaclaw", "c123");
+    const result = new FileVaultManager(tmpDir).copySharedVaultTo("team-tools", "c123");
 
     expect(result).toEqual({ envKeysCopied: 2, filesCopied: 1 });
     expect(parseEnvFile(readFileSync(join(targetDir, "env"), "utf-8"))).toEqual({
@@ -216,9 +216,9 @@ describe("FileVaultManager", () => {
 
   test("copySharedVaultTo preserves explicit mount targets", () => {
     const mgr = new FileVaultManager(tmpDir);
-    mgr.upsertFile("shared/gliaclaw", "custom.json", "secret", "/opt/provider/credentials.json");
+    mgr.upsertFile("shared/team-tools", "custom.json", "secret", "/opt/provider/credentials.json");
 
-    mgr.copySharedVaultTo("gliaclaw", "U123");
+    mgr.copySharedVaultTo("team-tools", "U123");
 
     expect(mgr.resolve("U123")?.mounts).toEqual([
       {
@@ -229,16 +229,18 @@ describe("FileVaultManager", () => {
   });
 
   test("lists and deletes shared vaults", () => {
-    mkdirSync(join(vaultsDir, "shared", "gliaclaw"), { recursive: true });
+    mkdirSync(join(vaultsDir, "shared", "team-tools"), { recursive: true });
     mkdirSync(join(vaultsDir, "shared", "another"), { recursive: true });
     mkdirSync(join(vaultsDir, "shared", ".hidden"), { recursive: true });
     const mgr = new FileVaultManager(tmpDir);
-    mgr.upsertFile("shared/gliaclaw", "custom.json", "secret", "/opt/custom.json");
+    mgr.upsertFile("shared/team-tools", "custom.json", "secret", "/opt/custom.json");
 
-    expect(mgr.listSharedVaults()).toEqual(["another", "gliaclaw"]);
-    expect(mgr.deleteSharedVault("gliaclaw")).toBe(true);
-    expect(existsSync(join(vaultsDir, "shared", "gliaclaw"))).toBe(false);
-    expect(existsSync(join(tmpDir, "vault-mount-targets", "shared", "gliaclaw.json"))).toBe(false);
+    expect(mgr.listSharedVaults()).toEqual(["another", "team-tools"]);
+    expect(mgr.deleteSharedVault("team-tools")).toBe(true);
+    expect(existsSync(join(vaultsDir, "shared", "team-tools"))).toBe(false);
+    expect(existsSync(join(tmpDir, "vault-mount-targets", "shared", "team-tools.json"))).toBe(
+      false,
+    );
   });
 
   test("upsertFile writes private credential files and persists mount metadata", () => {

@@ -328,10 +328,10 @@ describe("presenter event routing", () => {
       type: "tool_execution_start",
       toolCallId: "tool-jev-browser",
       toolName: "jev_browser",
-      args: { label: "Detect GliaStudios player" },
+      args: { label: "Detect the video player" },
     });
     expect(runState.toolProgress.get("tool-jev-browser")).toEqual({
-      label: "jev_browser · Detect GliaStudios player",
+      label: "jev_browser · Detect the video player",
       status: "running",
     });
   });
