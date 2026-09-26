@@ -195,3 +195,30 @@ describe("GithubClient errors", () => {
     expect(githubIsRateLimited(new Error("rate limit"))).toBe(false);
   });
 });
+
+describe("GithubClient empty responses", () => {
+  test("rejects an empty body where a resource is required, naming the request", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(makeClient(fetchImpl).getRepository("o", "r")).rejects.toThrow(
+      "GitHub GET /repos/o/r returned no body (204)",
+    );
+  });
+
+  test("rejects an empty installation token response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(makeClient(fetchImpl).getRepository("o", "r")).rejects.toThrow(
+      "GitHub POST /app/installations/678/access_tokens returned no body (204)",
+    );
+  });
+
+  test("accepts an empty body for requests without a result", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(tokenResponse())
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await expect(makeClient(fetchImpl).deleteIssueComment("o", "r", 1)).resolves.toBeUndefined();
+  });
+});

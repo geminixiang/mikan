@@ -44,6 +44,12 @@ function base64Url(data: string | Buffer): string {
 
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
+interface GithubRequestOptions {
+  body?: unknown;
+  conditional?: boolean;
+  responseText?: boolean;
+}
+
 export class GithubClient {
   private readonly appId: string;
   private readonly privateKey: string;
@@ -76,20 +82,20 @@ export class GithubClient {
     if (cached && Date.now() < cached.expiresAt - TOKEN_REFRESH_MARGIN_MS) {
       return cached.value;
     }
-    const data = await this.rawRequest<{ token: string; expires_at: string }>(
+    const data = await this.rawRequestBody<{ token: string; expires_at: string }>(
       "POST",
       `/app/installations/${this.installationId}/access_tokens`,
       { auth: `Bearer ${this.appJwt()}` },
     );
-    this.installationToken = { value: data!.token, expiresAt: Date.parse(data!.expires_at) };
+    this.installationToken = { value: data.token, expiresAt: Date.parse(data.expires_at) };
     return this.installationToken.value;
   }
 
-  private async rawRequest<T>(
+  private async send(
     method: string,
     path: string,
-    options: { auth: string; body?: unknown; conditional?: boolean; responseText?: boolean },
-  ): Promise<T | null> {
+    options: GithubRequestOptions & { auth: string },
+  ): Promise<Response> {
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
@@ -106,7 +112,7 @@ export class GithubClient {
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
     if (response.status === 304 && !options.responseText) {
-      return null;
+      return response;
     }
     if (!response.ok) {
       const detail = (await response.text().catch(() => "")).slice(0, 300);
@@ -116,38 +122,75 @@ export class GithubClient {
       const etag = response.headers.get("etag");
       if (etag) this.etags.set(path, etag);
     }
-    if (response.status === 204 && !options.responseText) {
+    return response;
+  }
+
+  private async readBody<T>(response: Response, responseText?: boolean): Promise<T | null> {
+    if (!responseText && (response.status === 204 || response.status === 304)) {
       return null;
     }
-    return (await (options.responseText ? response.text() : response.json())) as T;
+    return (await (responseText ? response.text() : response.json())) as T;
+  }
+
+  private async rawRequest<T>(
+    method: string,
+    path: string,
+    options: GithubRequestOptions & { auth: string },
+  ): Promise<T | null> {
+    return this.readBody<T>(await this.send(method, path, options), options.responseText);
+  }
+
+  private async rawRequestBody<T>(
+    method: string,
+    path: string,
+    options: GithubRequestOptions & { auth: string },
+  ): Promise<T> {
+    const response = await this.send(method, path, options);
+    const body = await this.readBody<T>(response, options.responseText);
+    if (body === null) {
+      throw new Error(`GitHub ${method} ${path} returned no body (${response.status})`);
+    }
+    return body;
   }
 
   private async request<T>(
     method: string,
     path: string,
-    options: { body?: unknown; conditional?: boolean; responseText?: boolean } = {},
+    options: GithubRequestOptions = {},
   ): Promise<T | null> {
     const token = await this.getInstallationToken();
     return this.rawRequest<T>(method, path, { ...options, auth: `Bearer ${token}` });
   }
 
+  private async requestBody<T>(
+    method: string,
+    path: string,
+    options: GithubRequestOptions = {},
+  ): Promise<T> {
+    const token = await this.getInstallationToken();
+    return this.rawRequestBody<T>(method, path, { ...options, auth: `Bearer ${token}` });
+  }
+
   async getAppSlug(): Promise<string> {
-    const app = await this.rawRequest<{ slug: string }>("GET", "/app", {
+    const app = await this.rawRequestBody<{ slug: string }>("GET", "/app", {
       auth: `Bearer ${this.appJwt()}`,
     });
-    return app!.slug;
+    return app.slug;
   }
 
   async getUserId(login: string): Promise<number> {
-    const user = await this.request<{ id: number }>("GET", `/users/${encodeURIComponent(login)}`);
-    return user!.id;
+    const user = await this.requestBody<{ id: number }>(
+      "GET",
+      `/users/${encodeURIComponent(login)}`,
+    );
+    return user.id;
   }
 
   async createScopedInstallationToken(
     repoName: string,
     permissions: GithubTokenPermissions,
   ): Promise<string> {
-    const data = await this.rawRequest<{ token: string }>(
+    const data = await this.rawRequestBody<{ token: string }>(
       "POST",
       `/app/installations/${this.installationId}/access_tokens`,
       {
@@ -155,12 +198,15 @@ export class GithubClient {
         body: { repositories: [repoName], permissions },
       },
     );
-    return data!.token;
+    return data.token;
   }
 
   async getRepository(owner: string, repo: string): Promise<GithubRepositoryDetails> {
-    const details = await this.request<GithubRepositoryDetails>("GET", `/repos/${owner}/${repo}`);
-    return details!;
+    const details = await this.requestBody<GithubRepositoryDetails>(
+      "GET",
+      `/repos/${owner}/${repo}`,
+    );
+    return details;
   }
 
   async getCollaboratorPermission(
@@ -169,11 +215,11 @@ export class GithubClient {
     username: string,
   ): Promise<GithubCollaboratorPermission> {
     try {
-      const data = await this.request<GithubCollaboratorPermission>(
+      const data = await this.requestBody<GithubCollaboratorPermission>(
         "GET",
         `/repos/${owner}/${repo}/collaborators/${encodeURIComponent(username)}/permission`,
       );
-      return data!;
+      return data;
     } catch (err) {
       if (err instanceof GithubApiError && err.status === 404) {
         return { permission: "none" };
@@ -187,18 +233,18 @@ export class GithubClient {
     repo: string,
     params: { title: string; head: string; base: string; body?: string; draft?: boolean },
   ): Promise<GithubPullRequest> {
-    const pr = await this.request<GithubPullRequest>("POST", `/repos/${owner}/${repo}/pulls`, {
+    const pr = await this.requestBody<GithubPullRequest>("POST", `/repos/${owner}/${repo}/pulls`, {
       body: params,
     });
-    return pr!;
+    return pr;
   }
 
   async getPullRequest(owner: string, repo: string, number: number): Promise<GithubPullRequest> {
-    const pr = await this.request<GithubPullRequest>(
+    const pr = await this.requestBody<GithubPullRequest>(
       "GET",
       `/repos/${owner}/${repo}/pulls/${number}`,
     );
-    return pr!;
+    return pr;
   }
 
   async listPullRequestFiles(
@@ -206,11 +252,11 @@ export class GithubClient {
     repo: string,
     number: number,
   ): Promise<GithubPullRequestFile[]> {
-    const files = await this.request<GithubPullRequestFile[]>(
+    const files = await this.requestBody<GithubPullRequestFile[]>(
       "GET",
       `/repos/${owner}/${repo}/pulls/${number}/files?per_page=100`,
     );
-    return files!;
+    return files;
   }
 
   async listPullRequestReviews(
@@ -218,11 +264,11 @@ export class GithubClient {
     repo: string,
     number: number,
   ): Promise<GithubPullRequestReview[]> {
-    const reviews = await this.request<GithubPullRequestReview[]>(
+    const reviews = await this.requestBody<GithubPullRequestReview[]>(
       "GET",
       `/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`,
     );
-    return reviews!;
+    return reviews;
   }
 
   async listIssueComments(
@@ -230,11 +276,11 @@ export class GithubClient {
     repo: string,
     number: number,
   ): Promise<GithubIssueComment[]> {
-    const comments = await this.request<GithubIssueComment[]>(
+    const comments = await this.requestBody<GithubIssueComment[]>(
       "GET",
       `/repos/${owner}/${repo}/issues/${number}/comments?per_page=30`,
     );
-    return comments!;
+    return comments;
   }
 
   async listIssues(
@@ -250,11 +296,11 @@ export class GithubClient {
     });
     if (filters.labels) params.set("labels", filters.labels);
     if (filters.creator) params.set("creator", filters.creator);
-    const issues = await this.request<GithubIssue[]>(
+    const issues = await this.requestBody<GithubIssue[]>(
       "GET",
       `/repos/${owner}/${repo}/issues?${params}`,
     );
-    return issues!;
+    return issues;
   }
 
   async findOpenPullRequestByBranch(
@@ -270,28 +316,28 @@ export class GithubClient {
   }
 
   async listCheckRuns(owner: string, repo: string, ref: string): Promise<GithubCheckRun[]> {
-    const data = await this.request<{ check_runs: GithubCheckRun[] }>(
+    const data = await this.requestBody<{ check_runs: GithubCheckRun[] }>(
       "GET",
       `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`,
     );
-    return data!.check_runs;
+    return data.check_runs;
   }
 
   async getJobLog(owner: string, repo: string, jobId: number): Promise<string> {
-    const text = await this.request<string>(
+    const text = await this.requestBody<string>(
       "GET",
       `/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`,
       { responseText: true },
     );
-    return text!;
+    return text;
   }
 
   async listInstallationRepositories(): Promise<GithubRepository[]> {
-    const data = await this.request<{ repositories: GithubRepository[] }>(
+    const data = await this.requestBody<{ repositories: GithubRepository[] }>(
       "GET",
       "/installation/repositories?per_page=100",
     );
-    return data!.repositories;
+    return data.repositories;
   }
 
   async listIssueCommentsSince(
@@ -323,11 +369,11 @@ export class GithubClient {
     repo: string,
     number: number,
   ): Promise<GithubReviewComment[]> {
-    const comments = await this.request<GithubReviewComment[]>(
+    const comments = await this.requestBody<GithubReviewComment[]>(
       "GET",
       `/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`,
     );
-    return comments!;
+    return comments;
   }
 
   async listIssuesSince(owner: string, repo: string, since: string): Promise<GithubIssue[] | null> {
@@ -339,11 +385,11 @@ export class GithubClient {
   }
 
   async getIssue(owner: string, repo: string, number: number): Promise<GithubIssue> {
-    const issue = await this.request<GithubIssue>(
+    const issue = await this.requestBody<GithubIssue>(
       "GET",
       `/repos/${owner}/${repo}/issues/${number}`,
     );
-    return issue!;
+    return issue;
   }
 
   async addIssueLabels(
@@ -409,12 +455,12 @@ export class GithubClient {
     number: number,
     body: string,
   ): Promise<GithubIssueComment> {
-    const comment = await this.request<GithubIssueComment>(
+    const comment = await this.requestBody<GithubIssueComment>(
       "POST",
       `/repos/${owner}/${repo}/issues/${number}/comments`,
       { body: { body } },
     );
-    return comment!;
+    return comment;
   }
 
   async updateIssueComment(
@@ -450,12 +496,12 @@ export class GithubClient {
     commentId: number,
     body: string,
   ): Promise<GithubReviewComment> {
-    const comment = await this.request<GithubReviewComment>(
+    const comment = await this.requestBody<GithubReviewComment>(
       "POST",
       `/repos/${owner}/${repo}/pulls/${number}/comments/${commentId}/replies`,
       { body: { body } },
     );
-    return comment!;
+    return comment;
   }
 
   async createReviewCommentReaction(

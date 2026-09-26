@@ -589,7 +589,7 @@ export class GithubMessagingBot implements MessagingBot {
     });
 
     const messageText = item.review
-      ? await this.formatReviewMessage(item, cleanedText)
+      ? await this.formatReviewMessage(item.ref, item.review, cleanedText)
       : cleanedText;
 
     const eventBase = createConversationEvent({
@@ -649,8 +649,11 @@ export class GithubMessagingBot implements MessagingBot {
     }
   }
 
-  private async formatReviewMessage(item: IncomingItem, cleanedText: string): Promise<string> {
-    const review = item.review!;
+  private async formatReviewMessage(
+    ref: IncomingItem["ref"],
+    review: NonNullable<IncomingItem["review"]>,
+    cleanedText: string,
+  ): Promise<string> {
     const location = review.line !== null ? `${review.path}:${review.line}` : review.path;
     const parts = [`[PR review comment ${githubReviewCommentTs(review.commentId)} on ${location}]`];
     if (review.diffHunk) {
@@ -661,7 +664,7 @@ export class GithubMessagingBot implements MessagingBot {
       parts.push(`\`\`\`diff\n${hunk}\n\`\`\``);
     }
     if (review.inReplyToId !== undefined) {
-      const turns = await this.reviewThreadContext(item.ref, review.inReplyToId, review.commentId);
+      const turns = await this.reviewThreadContext(ref, review.inReplyToId, review.commentId);
       if (turns.length > 0) {
         parts.push(`Thread so far:\n${turns.join("\n")}`);
       }

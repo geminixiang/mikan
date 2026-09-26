@@ -229,40 +229,40 @@ export class GithubOps implements PlatformGithubOps {
     try {
       switch (request.action) {
         case "add_labels": {
-          if (!request.labels?.length) {
+          const labels = request.labels;
+          if (!labels?.length) {
             throw new Error("add_labels requires a non-empty labels array.");
           }
-          await githubRetry(() =>
-            this.client.addIssueLabels(ref.owner, ref.repo, number, request.labels!),
-          );
-          return `Added label(s) ${request.labels.join(", ")} to #${number}.`;
+          await githubRetry(() => this.client.addIssueLabels(ref.owner, ref.repo, number, labels));
+          return `Added label(s) ${labels.join(", ")} to #${number}.`;
         }
         case "remove_label": {
-          if (!request.label) {
+          const label = request.label;
+          if (!label) {
             throw new Error("remove_label requires a label name.");
           }
-          await githubRetry(() =>
-            this.client.removeIssueLabel(ref.owner, ref.repo, number, request.label!),
-          );
-          return `Removed label ${request.label} from #${number}.`;
+          await githubRetry(() => this.client.removeIssueLabel(ref.owner, ref.repo, number, label));
+          return `Removed label ${label} from #${number}.`;
         }
         case "add_assignees": {
-          if (!request.assignees?.length) {
+          const assignees = request.assignees;
+          if (!assignees?.length) {
             throw new Error("add_assignees requires a non-empty assignees array.");
           }
           await githubRetry(() =>
-            this.client.addIssueAssignees(ref.owner, ref.repo, number, request.assignees!),
+            this.client.addIssueAssignees(ref.owner, ref.repo, number, assignees),
           );
-          return `Assigned ${request.assignees.map((login) => `@${login}`).join(", ")} to #${number}.`;
+          return `Assigned ${assignees.map((login) => `@${login}`).join(", ")} to #${number}.`;
         }
         case "remove_assignees": {
-          if (!request.assignees?.length) {
+          const assignees = request.assignees;
+          if (!assignees?.length) {
             throw new Error("remove_assignees requires a non-empty assignees array.");
           }
           await githubRetry(() =>
-            this.client.removeIssueAssignees(ref.owner, ref.repo, number, request.assignees!),
+            this.client.removeIssueAssignees(ref.owner, ref.repo, number, assignees),
           );
-          return `Unassigned ${request.assignees.map((login) => `@${login}`).join(", ")} from #${number}.`;
+          return `Unassigned ${assignees.map((login) => `@${login}`).join(", ")} from #${number}.`;
         }
         case "close": {
           await githubRetry(() =>
