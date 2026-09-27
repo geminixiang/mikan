@@ -283,6 +283,12 @@ export interface HarnessSettings {
   budget: BudgetSettings;
 }
 
+export type ToolLoopVerdict =
+  | { kind: "allow" }
+  | { kind: "notice"; text: string }
+  | { kind: "block"; reason: string }
+  | { kind: "stop"; reason: string };
+
 export interface SubagentProfileDiagnostic {
   type: "warning";
   message: string;

@@ -586,6 +586,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     sessionUuid,
     waitForQueue: presentation.wait,
   });
+  if (runState.stopReason === "stop") session.compactWhenNearLimit();
   return {
     stopReason: runState.stopReason,
     errorMessage: runState.errorMessage,
@@ -723,6 +724,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     },
 
     async dispose(): Promise<void> {
+      await session.cancelIdleCompaction();
       await sessionManager.close();
     },
 

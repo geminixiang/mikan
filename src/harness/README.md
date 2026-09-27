@@ -48,6 +48,32 @@ including authentication resolvers that do not accept an abort signal. Completed
 run duration is fixed when `prompt()` settles. Pi saves the admitted user request
 before initial compaction; that request remains in history after cancellation.
 
+### Tool loop guard
+
+`loop-guard.ts` watches each run's tool calls through Pi's public `before_tool`
+and `after_tool` hooks. A call's identity is its tool name plus canonical JSON
+arguments without the presentation `label`. The same call made 3–4 times in a
+row gets a notice appended to its result, the 5th through 9th are blocked
+without executing, and the 10th stops the run through the budget circuit breaker
+(`budget_exceeded` with a `tool loop:` reason). A repeating cycle of 2–6
+distinct calls only gets a notice, once at 3 repetitions and again each time
+the count doubles. Subagents get the same guard because they run on
+`MikanAgentSession`. State resets on every `prompt()` and `resume()`.
+
+### Idle compaction
+
+After a run ends with `stop` and its reply has been delivered, the runner calls
+`compactWhenNearLimit()`. When the estimated context has reached 80% of Pi's
+automatic threshold (`contextWindow - reserveTokens`), it starts Pi's manual
+`lane.compact()` in the background, so the next message does not wait for Pi's
+in-run threshold compaction. The next `prompt()`/`resume()` waits for this
+compaction first, so it never races Pi's busy lane. Host history appended in
+the meantime is ordered after the compaction entry. Runner `dispose()` calls
+`cancelIdleCompaction()`, which aborts through the lane and waits for it to
+settle before closing the store. An idle compaction that finishes before the
+next run starts is not counted in any run's usage tally; one still running
+when a run starts reports its events and usage to that run.
+
 ### Public integration API
 
 Use `setSystemPrompt(text)` between prompts instead of mutating the removed

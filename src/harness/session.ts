@@ -7,6 +7,7 @@ import {
   type AgentMessage,
   type HarnessEvent as PiHarnessEvent,
   DEFAULT_COMPACTION_SETTINGS,
+  estimateContextTokens,
   type CompactionSettings,
 } from "@earendil-works/pi-agent-core";
 import type {
@@ -33,6 +34,7 @@ import type {
 } from "./types.js";
 
 import * as log from "../log.js";
+import { ToolLoopGuard } from "./loop-guard.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { errorMessage } from "../unknown-values.js";
@@ -50,6 +52,8 @@ interface ProviderRequestState {
   token: symbol;
   runId: string;
 }
+
+const IDLE_COMPACTION_FRACTION_OF_PI_THRESHOLD = 0.8;
 
 const FORWARDED_EVENTS = [
   "run_start",
@@ -96,6 +100,9 @@ export class MikanAgentSession {
   private latestAssistantErrored = false;
   private runMessages: AgentMessage[] = [];
   private readonly toolArgs = new Map<string, unknown>();
+  private idleCompaction: Promise<void> | undefined;
+  private loopGuard = new ToolLoopGuard();
+  private readonly loopNotices = new Map<string, string>();
   private tally: RunTally = {
     usage: createEmptyUsage(),
     llmCalls: 0,
@@ -193,6 +200,43 @@ export class MikanAgentSession {
     await this.run(undefined, options);
   }
 
+  compactWhenNearLimit(): void {
+    if (this.runActive || this.idleCompaction || !this.lane) return;
+    const { enabled, reserveTokens } = this.settings.compaction;
+    if (!enabled) return;
+    const threshold =
+      (this.model.contextWindow - reserveTokens) * IDLE_COMPACTION_FRACTION_OF_PI_THRESHOLD;
+    const { tokens } = estimateContextTokens(this.transcript);
+    if (tokens < threshold) return;
+    const lane = this.lane;
+    log.logInfo(`Idle compaction started ${JSON.stringify({ tokens, threshold })}`);
+    const compaction = lane
+      .compact(undefined, TODO_CONTEXT)
+      .then(async (result) => {
+        if (!result.ok) {
+          log.logInfo(`Idle compaction skipped: ${result.error.message}`);
+          return;
+        }
+        log.logInfo(`Idle compaction ${result.value.compaction.status}`);
+        await this.reloadFromSession();
+      })
+      .catch((error: unknown) => {
+        log.logWarning("Idle compaction failed", errorMessage(error));
+      })
+      .finally(() => {
+        if (this.idleCompaction === compaction) this.idleCompaction = undefined;
+      });
+    this.idleCompaction = compaction;
+  }
+
+  async cancelIdleCompaction(): Promise<void> {
+    const compaction = this.idleCompaction;
+    if (!compaction || !this.lane) return;
+    const aborted = await this.lane.abort(TODO_CONTEXT);
+    if (!aborted.ok) log.logInfo(`Idle compaction abort: ${aborted.error.message}`);
+    await compaction;
+  }
+
   private async run(
     text: string | undefined,
     options?: {
@@ -215,6 +259,8 @@ export class MikanAgentSession {
     this.latestAssistantNeedsCall = false;
     this.latestAssistantErrored = false;
     this.runMessages = [];
+    this.loopGuard = new ToolLoopGuard();
+    this.loopNotices.clear();
     this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.tally = {
       usage: createEmptyUsage(),
@@ -225,6 +271,7 @@ export class MikanAgentSession {
     };
     let runFailure: { error: unknown } | undefined;
     try {
+      await this.idleCompaction;
       if (!(await this.checkCallBudget())) return;
       this.armDeadline();
       const auth = await this.options.models.getAuth(this.model);
@@ -300,6 +347,7 @@ export class MikanAgentSession {
       cleanupFailure = { error };
     } finally {
       this.toolArgs.clear();
+      this.loopNotices.clear();
       this.pendingProviderRequest = undefined;
       this.currentProviderRequest = undefined;
       this.activeProviderRequest = undefined;
@@ -495,6 +543,27 @@ export class MikanAgentSession {
         };
       }
       return undefined;
+    });
+    this.harness.hooks.on("before_tool", async (event) => {
+      const verdict = this.loopGuard.observe(event.toolName, event.args);
+      switch (verdict.kind) {
+        case "allow":
+          return undefined;
+        case "notice":
+          this.loopNotices.set(event.toolCallId, verdict.text);
+          return undefined;
+        case "block":
+          return { block: { reason: verdict.reason } };
+        case "stop":
+          await this.exceedBudget(verdict.reason);
+          return { block: { reason: verdict.reason, terminate: true } };
+      }
+    });
+    this.harness.hooks.on("after_tool", (event) => {
+      const notice = this.loopNotices.get(event.toolCallId);
+      if (notice === undefined) return undefined;
+      this.loopNotices.delete(event.toolCallId);
+      return { content: [...event.content, { type: "text", text: notice }] };
     });
     for (const type of FORWARDED_EVENTS) {
       this.harness.events.on(type, (event) => this.handlePiEvent(event));
