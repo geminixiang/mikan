@@ -25,7 +25,7 @@ import { downloadChannel } from "./cli/download.js";
 import { EventScheduler } from "./events/scheduler.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./cli/process-lifecycle.js";
-import { startWebServer } from "./adapters/web/server.js";
+import { closeWebServer, startWebServer } from "./adapters/web/server.js";
 import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
@@ -590,17 +590,17 @@ const webServer = LINK_PORT
     })
   : undefined;
 
-function closeWebServer(): Promise<void> {
+const WEB_SERVER_CLOSE_GRACE_MS = 5000;
+
+function stopWebServer(): Promise<void> {
   if (!webServer) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    webServer.close((error) => (error ? reject(error) : resolve()));
-  });
+  return closeWebServer(webServer, WEB_SERVER_CLOSE_GRACE_MS);
 }
 
 async function stopConversationIntake(): Promise<void> {
   const results = await Promise.allSettled([
     ...Object.values(botsByPlatform).map((bot) => bot.stop()),
-    closeWebServer(),
+    stopWebServer(),
   ]);
   const failures = results.flatMap((result) =>
     result.status === "rejected" ? [result.reason] : [],

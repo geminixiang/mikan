@@ -127,3 +127,12 @@ export function startWebServer(options: StartWebServerOptions): Server {
 
   return server;
 }
+
+export function closeWebServer(server: Server, graceMs: number): Promise<void> {
+  const closed = new Promise<void>((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+  server.closeIdleConnections();
+  const forceClose = setTimeout(() => server.closeAllConnections(), graceMs);
+  return closed.finally(() => clearTimeout(forceClose));
+}
