@@ -618,6 +618,21 @@ describe("jev_browser tool", () => {
     expect(parsed.lastPageSnapshot).toContain("Example Domain");
   });
 
+  test("keeps its definition within a prompt budget and leaves code-enforced rules to their errors", () => {
+    const tool = createJevBrowserTool(executor);
+    const definition = JSON.stringify({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.parameters,
+    });
+
+    expect(definition.length).toBeLessThanOrEqual(4200);
+    expect(tool.description).toMatch(/untrusted/i);
+    expect(tool.description).toMatch(/lastPageSnapshot/);
+    expect(tool.description).not.toMatch(/press takes only a key/);
+    expect(tool.description).not.toMatch(/about:blank/);
+  });
+
   test("declares frame as an optional string", () => {
     const schema = createJevBrowserTool(executor).parameters;
     expect(schema.properties.frame).toMatchObject({ type: "string" });
