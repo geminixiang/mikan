@@ -13,8 +13,6 @@ any release.
 
 ### Performance
 
-### Performance
-
 - Shorten the `jev_browser` tool definition from about 7,000 to 2,800 characters sent on every turn: its description and parameters no longer repeat each other or explain rules the tool already enforces with its own error messages.
 - List skills in the prompt one line each under their directory instead of an XML block with a full path per skill; a path appears only when a skill's directory differs from its name. A workspace with 68 skills drops from about 31,000 to 22,000 characters of prompt per turn with the same names and descriptions.
 
