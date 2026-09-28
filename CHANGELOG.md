@@ -9,6 +9,21 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.81]
+
+### Added
+
+- Stream every run of a session live in Session View: a run started from Slack or another chat platform now appears on an open page as it happens (user message, tool results, the streaming answer), then the timeline reloads. Page-sent messages use the same stream; thinking text and errors appear after the timeline reloads.
+- Guard tool loops: repeating the same tool call with identical arguments earns a notice from the third call, is blocked from the fifth, and stops the run at the tenth; short repeating cycles of calls also earn a notice.
+- Compact a session in the background after a successful run when its context nears the compaction threshold, so the next message does not wait for compaction.
+
+### Fixed
+
+- Undo Slack's HTML escaping on incoming text: the model and the office log saw `&amp;&amp;`, `&lt;`, and `&gt;` where the user typed `&&`, `<`, and `>`.
+- Keep the tool checklist visible while the final answer streams; it used to disappear until the answer finished.
+- Stop an open Session View page from holding shutdown open; open live streams now close after a five-second grace, so a restart no longer waits for the process manager's kill timeout.
+- Report a GitHub API request that returns an empty body where a resource is required with its method, path, and status, instead of failing later on a null value.
+
 ### Security
 
 - **Breaking (deploy):** The link server (Admin, Session View, and credential links) now listens on `127.0.0.1` even when `LINK_URL` is set; it used to listen on every interface, so portal tokens could travel in plain HTTP straight to `LINK_PORT` around the TLS reverse proxy. A reverse proxy on the same host (`reverse_proxy 127.0.0.1:8181`) keeps working unchanged. Set the new `LINK_HOST` (for example `0.0.0.0`) when the proxy runs on another host or in a separate network namespace.
