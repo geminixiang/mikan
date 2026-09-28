@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.82]
+
 ### Changed
 
 - mikan reacts `saluting_face` (eyes on GitHub) itself when a run starts its first work tool, instead of the model spending a separate round on the reaction; the model's `react` tool is left for background checks with nothing to report.
