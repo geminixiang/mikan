@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.84]
+
 ### Performance
 
 ### Performance
