@@ -281,7 +281,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
   return `You are mikan, a ${platform.name} bot assistant. Be concise. No emojis.
 
 ## Context
-- For current date/time, use: date
+- Each user message starts with its send time in \`[YYYY-MM-DD HH:MM:SS+ZZ:ZZ]\`; treat it as the current date and time instead of running \`date\`.
 - You have access to previous conversation context including tool results from prior turns.
 - For older human-readable history beyond your context, search \`log.jsonl\` (contains user messages and your final responses, but not tool results).
 - Structured session history with tool results lives in \`${conversationPath}/sessions/\`.
@@ -435,9 +435,12 @@ ls -1 sessions/
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
 - jev: Ask Jev (a fast calibrated decision model) boolean / choice / score questions about a state you supply; returns probabilities and confidence, never text. Use it whenever you need to classify, detect, score, rank, route, pick among known candidates, or verify.
-- react: Add an emoji reaction to the triggering message. Two situations call for it, unconditionally: (1) before starting any multi-step investigation, change/test, or long wait — the same bar as start_task above — react with saluting_face (fall back to eyes on GitHub) as your very first action, before doing anything else; (2) on a periodic/background check with nothing to report, react with eyes instead of writing "nothing to report". Outside these two, do not react — an ordinary question gets a normal reply, not a reaction. Use a short name without colons (e.g. saluting_face, eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
+- react: Add an emoji reaction to the triggering message. mikan already acknowledges work on its own when your first tool starts, so do not react before starting work. React only on a periodic/background check with nothing to report: react with eyes instead of writing "nothing to report". Use a short name without colons (e.g. eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
 
 Each tool requires a "label" parameter (shown to user).
+
+## Signatures
+mikan adds the \`_Triggered by …_\` signature to your final chat response; do not write it there yourself. When you write to GitHub (\`gh issue comment\`, \`gh issue create\`, \`gh pr comment\`, \`gh pr create\`, \`gh pr review\`, or a github_* tool that posts text), end the body with \`_Triggered by @<user>_\`, where <user> is the name in the triggering message's \`[user]\` prefix. For a scheduled event, use \`_Triggered by [event: <file>]_\` with the file name from its \`[EVENT:<file>:…]\` prefix.
 `;
 }
 
@@ -446,29 +449,17 @@ export function buildSystemPrompt(input: BuildSystemPromptOptions): string {
   return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}`;
 }
 
-export function buildTurnInstructions(
-  isEventTrigger: boolean,
-  triggerAttribution: string | undefined,
-  platformName: string,
-): string {
-  const parts: string[] = [];
-  if (isEventTrigger) {
-    parts.push(`## Event Trigger Mode
+export function buildTurnInstructions(isEventTrigger: boolean): string {
+  if (!isEventTrigger) return "";
+  return `## Event Trigger Mode
 - You are handling a scheduled/background event, not opening a brand new chat with a stranger.
 - Treat the incoming user message as a self-contained task prepared by an earlier run.
 - Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
 - For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.
-- If the event text includes tone, brevity, or language instructions, follow them literally.`);
-  }
-  if (triggerAttribution) {
-    parts.push(`## Attribution
-Always end your final ${platformName} response and any GitHub issue/PR comments or descriptions you write via tools with:
-_Triggered by ${triggerAttribution}_
-
-Do not add this to \`[SILENT]\` responses.`);
-  }
-  return parts.join("\n\n");
+- If the event text includes tone, brevity, or language instructions, follow them literally.`;
 }
+
+const TRIGGER_SIGNATURE_LINE = /(?:^|\n)[ \t]*_?Triggered by [^\n]*\s*$/;
 
 export function appendTriggerAttribution(
   text: string,
@@ -477,11 +468,9 @@ export function appendTriggerAttribution(
 ): string {
   if (!triggerAttribution) return text;
   const trimmed = text.trimEnd();
-  const legacySuffix = `_Triggered by ${triggerAttribution}_`;
-  const suffix = sessionLink ? `${legacySuffix} · session: ${sessionLink}` : legacySuffix;
+  const signature = `_Triggered by ${triggerAttribution}_`;
+  const suffix = sessionLink ? `${signature} · session: ${sessionLink}` : signature;
   if (trimmed.endsWith(suffix)) return text;
-  const body = trimmed.endsWith(legacySuffix)
-    ? trimmed.slice(0, -legacySuffix.length).trimEnd()
-    : trimmed;
+  const body = trimmed.replace(TRIGGER_SIGNATURE_LINE, "").trimEnd();
   return `${body}\n\n${suffix}`;
 }

@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- mikan reacts `saluting_face` (eyes on GitHub) itself when a run starts its first work tool, instead of the model spending a separate round on the reaction; the model's `react` tool is left for background checks with nothing to report.
+- mikan owns the `_Triggered by …_` signature on chat responses and replaces any signature line the model wrote, so user messages no longer carry a per-turn attribution instruction. The model is still asked to sign GitHub text it writes itself.
+- The model reads the current time from each message's send time instead of running `date`.
+
 ## [1.0.0-beta.81]
 
 ### Added

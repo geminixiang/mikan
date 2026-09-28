@@ -43,6 +43,7 @@ function makeResponder(): ConversationResponder & {
     setWorking: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),
     deleteResponse: vi.fn().mockResolvedValue(undefined),
+    react: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -298,6 +299,31 @@ describe("presenter event routing", () => {
       },
     ]);
     expect(responder.replaceResponse).toHaveBeenCalledWith("• Inspect file");
+  });
+
+  test("acknowledges the user's message once when the run starts its first work tool", async () => {
+    const { emit, responder, runQueue } = attachPresenter();
+    const start = (toolCallId: string, toolName: string) =>
+      emit({ type: "tool_execution_start", toolCallId, toolName, args: { label: toolName } });
+
+    await start("t0", "task_status");
+    expect(responder.react).not.toHaveBeenCalled();
+    await start("t1", "bash");
+    await start("t2", "read");
+    await runQueue.wait();
+
+    expect(responder.react).toHaveBeenCalledTimes(1);
+    expect(responder.react).toHaveBeenCalledWith("saluting_face");
+  });
+
+  test("a failed acknowledgement reaction does not surface as a chat error", async () => {
+    const { emit, responder, runQueue } = attachPresenter();
+    responder.react = vi.fn().mockRejectedValue(new Error("reaction not allowed"));
+
+    await emit({ type: "tool_execution_start", toolCallId: "t1", toolName: "bash", args: {} });
+    await runQueue.wait();
+
+    expect(responder.respondDiagnostic).not.toHaveBeenCalled();
   });
 
   test("routes tool start and end while keeping pending state in sync", async () => {

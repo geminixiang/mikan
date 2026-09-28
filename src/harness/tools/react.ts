@@ -2,6 +2,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { defineHostFnTool } from "./host-fn-tool.js";
 
+export const REACT_TOOL = "react";
+
 const reactSchema = Type.Object({
   emoji: Type.String({
     description:
@@ -14,9 +16,9 @@ export function createReactTool(): {
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<(emoji: string) => Promise<void>, typeof reactSchema>({
-    name: "react",
+    name: REACT_TOOL,
     description:
-      "Add an emoji reaction to the message you are responding to. Useful for a lightweight acknowledgement (e.g. eyes to show you saw a request, white_check_mark when done) instead of a full reply.",
+      "Add an emoji reaction to the message you are responding to. mikan already reacts on its own when work starts; use this for a lightweight signal such as eyes on a background check with nothing to report.",
     parameters: reactSchema,
     unavailable: "Reactions are not supported in this conversation.",
     run: async (reactFn, { emoji }) => {

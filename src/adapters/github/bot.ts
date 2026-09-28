@@ -100,6 +100,7 @@ const GITHUB_REACTIONS: Record<string, GithubReactionContent> = {
   tada: "hooray",
   rocket: "rocket",
   eyes: "eyes",
+  saluting_face: "eyes",
 };
 
 interface IncomingItem {

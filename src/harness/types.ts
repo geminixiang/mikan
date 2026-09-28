@@ -60,6 +60,7 @@ export interface RunnerSessionState {
   subagentProgressShown: boolean;
   suppressResponseDeltas: boolean;
   answerStreamStarted: boolean;
+  workAcknowledged: boolean;
   publishRunEvent: RunEventListener | undefined;
   lastSubagentProgressAt: number;
   toolProgressTimer: ReturnType<typeof setTimeout> | undefined;

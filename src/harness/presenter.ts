@@ -32,6 +32,7 @@ import {
 import { appendTriggerAttribution } from "./prompt.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { toRunEvent, toolResultText } from "./run-events.js";
+import { REACT_TOOL } from "./tools/react.js";
 
 import * as log from "../log.js";
 import { errorMessage } from "../unknown-values.js";
@@ -96,6 +97,7 @@ function createRunStateDefaults(): RunnerSessionState {
     subagentProgressShown: false,
     suppressResponseDeltas: false,
     answerStreamStarted: false,
+    workAcknowledged: false,
     publishRunEvent: undefined,
     lastSubagentProgressAt: 0,
     toolProgressTimer: undefined,
@@ -341,7 +343,7 @@ export async function finalizeRunResponse(
   if (!finalText.trim()) return;
   const published = await publishFinalResponse(responder, runState, finalText, options);
   const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
-    (name) => ![TASK_STATUS_TOOL, START_TASK_TOOL, "react"].includes(name),
+    (name) => ![TASK_STATUS_TOOL, START_TASK_TOOL, REACT_TOOL].includes(name),
   );
   if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
     await responder.notifyCompletion?.();
@@ -864,8 +866,22 @@ function observeHarnessEvent(event: HarnessEvent, context: RunObserverContext): 
 
 type RunEventOf<T extends RunEvent["type"]> = Extract<RunEvent, { type: T }>;
 
+const WORK_ACKNOWLEDGEMENT_REACTION = "saluting_face";
+
+const TOOLS_THAT_ARE_NOT_WORK = new Set([START_TASK_TOOL, TASK_STATUS_TOOL, REACT_TOOL]);
+
+function acknowledgeWorkOnce(context: FrontProjectionContext): void {
+  const { runState, responder } = context;
+  if (runState.workAcknowledged || !responder.react) return;
+  runState.workAcknowledged = true;
+  responder.react(WORK_ACKNOWLEDGEMENT_REACTION).catch((error: unknown) => {
+    log.logWarning("Could not acknowledge work with a reaction", errorMessage(error));
+  });
+}
+
 function presentToolStarted(event: RunEventOf<"tool_started">, context: FrontProjectionContext) {
   const { runState, responder, queue } = context;
+  if (!TOOLS_THAT_ARE_NOT_WORK.has(event.toolName)) acknowledgeWorkOnce(context);
   if (event.toolName === START_TASK_TOOL || event.toolName === TASK_STATUS_TOOL) return;
   runState.answerStreamStarted = false;
   runState.toolProgress.set(event.toolCallId, { label: event.label, status: "running" });

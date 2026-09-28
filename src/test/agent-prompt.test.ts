@@ -77,6 +77,24 @@ describe("append trigger attribution", () => {
     );
   });
 
+  test("replaces a signature the model copied for someone else instead of stacking two", () => {
+    expect(appendTriggerAttribution("Done.\n\n_Triggered by @alice_", "@bob")).toBe(
+      "Done.\n\n_Triggered by @bob_",
+    );
+  });
+
+  test("replaces a garbled, unclosed signature line the model wrote from habit", () => {
+    expect(appendTriggerAttribution("R5A-OK  \n_Triggered by @f416720ությանը", "@f416720001")).toBe(
+      "R5A-OK\n\n_Triggered by @f416720001_",
+    );
+  });
+
+  test("keeps a sentence that merely mentions the phrase mid-line", () => {
+    expect(appendTriggerAttribution("The job was Triggered by cron.", "@bob")).toBe(
+      "The job was Triggered by cron.\n\n_Triggered by @bob_",
+    );
+  });
+
   test("upgrades existing event attribution with session link", () => {
     expect(
       appendTriggerAttribution(
@@ -89,23 +107,14 @@ describe("append trigger attribution", () => {
 });
 
 describe("turn instructions", () => {
-  test("empty for a plain interactive turn", () => {
-    expect(buildTurnInstructions(false, undefined, "slack")).toBe("");
-  });
-
-  test("includes attribution with the platform name and trigger", () => {
-    const result = buildTurnInstructions(false, "@david", "slack");
-    expect(result).toContain("## Attribution");
-    expect(result).toContain("final slack response");
-    expect(result).toContain("_Triggered by @david_");
-    expect(result).not.toContain("## Event Trigger Mode");
+  test("empty for a plain interactive turn, so the user's message carries no instruction prefix", () => {
+    expect(buildTurnInstructions(false)).toBe("");
   });
 
   test("includes event-trigger mode for event runs", () => {
-    const result = buildTurnInstructions(true, "[event: daily]", "telegram");
+    const result = buildTurnInstructions(true);
     expect(result).toContain("## Event Trigger Mode");
-    expect(result).toContain("## Attribution");
-    expect(result).toContain("_Triggered by [event: daily]_");
+    expect(result).not.toContain("Triggered by");
   });
 });
 
@@ -192,6 +201,27 @@ describe("host sandbox environment description", () => {
   afterEach(() => {
     delete process.env.MIKAN_STATE_DIR;
     rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test("leaves chat signatures and the clock to mikan and asks for signatures only on GitHub writes", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "host" },
+      platform: PLATFORM,
+      skills: [],
+      projection: resolveWorkspaceProjection(office),
+    });
+
+    expect(prompt).not.toContain("use: date");
+    expect(prompt).toContain("send time");
+    expect(prompt).toContain("gh pr comment");
+    expect(prompt).toContain("_Triggered by @<user>_");
+    expect(prompt).toMatch(/mikan (adds|appends) .*signature/i);
+    expect(prompt).not.toMatch(/saluting_face/);
   });
 
   test("tells the agent bash starts in the runtime workspace root, not mikan's own cwd", () => {

@@ -24,6 +24,16 @@ the same stream without re-deriving state from chat-shaped responder calls.
 A renderer restarts its streamed text after every replacement, so the first
 answer delta after a tool call carries the tool checklist; otherwise the
 checklist vanishes while the answer streams and reappears in the final render.
+
+Mechanical conventions belong to mikan, not the model. The presenter reacts
+`saluting_face` (eyes on GitHub) once when a run starts its first work tool, and
+`appendTriggerAttribution` owns the chat signature, replacing whatever
+`Triggered by` line the model wrote from habit. The model is asked to sign only
+GitHub text it writes itself (mostly through `gh`), which mikan cannot see. Each
+user message already carries its send time, so the prompt no longer sends the
+model to `date`. Before this, 97% of final answers repeated the signature, the
+signature instruction prefixed every user message, and each acknowledgement cost
+a separate model round before any work began.
 These responsibilities share the
 harness module with the native Pi session integration rather than forming a
 separate agent-runner module.

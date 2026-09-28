@@ -362,11 +362,7 @@ async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunC
     pathContext,
     (runtimePath) => executor.readFileBase64(runtimePath),
   );
-  const turnInstructions = buildTurnInstructions(
-    message.id.startsWith("event:"),
-    triggerAttribution,
-    platform.name,
-  );
+  const turnInstructions = buildTurnInstructions(message.id.startsWith("event:"));
   const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
   return {
     sessionConversation,

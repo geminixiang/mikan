@@ -1168,6 +1168,13 @@ describe("GithubMessagingBot", () => {
     );
   });
 
+  test("addReaction shows the work acknowledgement as eyes, GitHub's closest reaction", async () => {
+    const bot = makeBot();
+    await bot.start();
+    await bot.addReaction(CONVERSATION_ID, "9001", "saluting_face");
+    expect(client.createCommentReaction).toHaveBeenCalledWith("octo", "widgets", 9001, "eyes");
+  });
+
   test("addReaction routes rc- ts to the review-comment reactions endpoint", async () => {
     const bot = makeBot();
     await bot.start();
