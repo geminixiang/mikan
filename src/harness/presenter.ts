@@ -95,6 +95,7 @@ function createRunStateDefaults(): RunnerSessionState {
     subagentToolCalls: new Set<string>(),
     subagentProgressShown: false,
     suppressResponseDeltas: false,
+    answerStreamStarted: false,
     lastSubagentProgressAt: 0,
     toolProgressTimer: undefined,
     totalUsage: createEmptyUsageTotals(),
@@ -863,6 +864,7 @@ type RunEventOf<T extends RunEvent["type"]> = Extract<RunEvent, { type: T }>;
 function presentToolStarted(event: RunEventOf<"tool_started">, context: FrontProjectionContext) {
   const { runState, responder, queue } = context;
   if (event.toolName === START_TASK_TOOL || event.toolName === TASK_STATUS_TOOL) return;
+  runState.answerStreamStarted = false;
   runState.toolProgress.set(event.toolCallId, { label: event.label, status: "running" });
   if (event.toolName === "subagent") {
     runState.subagentToolCalls.add(event.toolCallId);
@@ -903,9 +905,14 @@ function presentAssistantDelta(
   event: RunEventOf<"assistant_delta">,
   context: FrontProjectionContext,
 ): void {
-  if (!context.responder.appendResponseDelta || context.runState.suppressResponseDeltas) return;
+  const { runState } = context;
+  if (!context.responder.appendResponseDelta || runState.suppressResponseDeltas) return;
+  const delta = runState.answerStreamStarted
+    ? event.delta
+    : formatResponseWithToolProgress(event.delta, runState);
+  runState.answerStreamStarted = true;
   context.queue.enqueue(async () => {
-    await context.responder.appendResponseDelta?.(event.delta);
+    await context.responder.appendResponseDelta?.(delta);
   }, "response delta");
 }
 

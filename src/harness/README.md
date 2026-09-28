@@ -21,6 +21,9 @@ telemetry, run accounting, and daemon logs from the raw Pi event, then
 front projection renders through the responder. The front projection reads only
 `RunEvent`s, so another view of the same run (such as Session View) can consume
 the same stream without re-deriving state from chat-shaped responder calls.
+A renderer restarts its streamed text after every replacement, so the first
+answer delta after a tool call carries the tool checklist; otherwise the
+checklist vanishes while the answer streams and reappears in the final render.
 These responsibilities share the
 harness module with the native Pi session integration rather than forming a
 separate agent-runner module.

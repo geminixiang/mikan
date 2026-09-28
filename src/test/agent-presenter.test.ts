@@ -198,6 +198,72 @@ describe("presenter event routing", () => {
     expect(responder.finishResponse).toHaveBeenCalledWith("Hello\n\n_Triggered by @alice_");
   });
 
+  test("keeps the tool checklist above the final answer while the answer streams", async () => {
+    const { emit, responder, runQueue } = attachPresenter();
+    const partial = fauxAssistantMessage("Done");
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "read",
+      args: { label: "Inspect file" },
+    });
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "read",
+      isError: false,
+      result: { content: [{ type: "text", text: "ok" }] },
+    });
+    await emit({ type: "message_start", message: partial });
+    for (const delta of ["Do", "ne"]) {
+      await emit({
+        type: "message_update",
+        message: partial,
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta, partial },
+      });
+    }
+    await runQueue.wait();
+
+    expect(responder.appendResponseDelta.mock.calls.map(([delta]) => delta)).toEqual([
+      "✓ Inspect file\n\nDo",
+      "ne",
+    ]);
+  });
+
+  test("re-attaches the checklist to the first answer delta after each later tool call", async () => {
+    const { emit, responder, runQueue } = attachPresenter();
+    const partial = fauxAssistantMessage("x");
+    const streamDelta = (delta: string) =>
+      emit({
+        type: "message_update",
+        message: partial,
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta, partial },
+      });
+
+    await streamDelta("Checking");
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "read",
+      args: { label: "Inspect file" },
+    });
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "tool-1",
+      toolName: "read",
+      isError: false,
+      result: { content: [{ type: "text", text: "ok" }] },
+    });
+    await streamDelta("Done");
+    await runQueue.wait();
+
+    expect(responder.appendResponseDelta.mock.calls.map(([delta]) => delta)).toEqual([
+      "Checking",
+      "✓ Inspect file\n\nDone",
+    ]);
+  });
+
   test("routes tool start and end while keeping pending state in sync", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
 

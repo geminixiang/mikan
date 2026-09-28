@@ -59,6 +59,7 @@ export interface RunnerSessionState {
   subagentToolCalls: Set<string>;
   subagentProgressShown: boolean;
   suppressResponseDeltas: boolean;
+  answerStreamStarted: boolean;
   lastSubagentProgressAt: number;
   toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
   totalUsage: {
