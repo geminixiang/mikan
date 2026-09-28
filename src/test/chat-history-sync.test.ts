@@ -832,6 +832,102 @@ describe("ChatHistorySync", () => {
     expect(readFileSync(secondScope.contextFile, "utf-8").match(/\bseed\b/g)).toHaveLength(1);
   });
 
+  test("recognizes mikan's posted reply as the model's own and never feeds the signature back", async () => {
+    const logEntries = [
+      {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "hi",
+        isMessagingBot: false,
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: "Hi! What can I help you with?\n\n_Triggered by @alice_",
+        isMessagingBot: true,
+      },
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
+        user: "bot",
+        text: "Scheduled digest ready.\n\n_Triggered by [event: daily.json]_ · session: https://mikan.example.com/session?token=t",
+        isMessagingBot: true,
+      },
+      {
+        date: "2026-05-01T00:00:03.000Z",
+        ts: "1000.0004",
+        user: "U1",
+        userName: "alice",
+        text: "hi again",
+        isMessagingBot: false,
+      },
+    ];
+    writeLog(logEntries.slice(0, 1));
+    const manager = new ChatHistorySync({
+      isCommandText,
+      recentDays: 7,
+      maxTopLevelMessages: 20,
+      now: () => new Date("2026-05-01T00:00:04.000Z"),
+    });
+    const firstScope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+      currentMessageId: "1000.0001",
+    });
+    const session = await openManagedSession(firstScope.contextFile, conversationDir);
+    await session.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "[2026-05-01 00:00:00+00:00] [alice]: hi" }],
+      timestamp: 1,
+    });
+    await session.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "Hi! What can I help you with?" }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "gpt-test",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2,
+    });
+    await session.close();
+    writeLog(logEntries);
+
+    const scope = await manager.resolveSessionScope({
+      conversationDir,
+      sessionKey: "C123",
+      cwd: conversationDir,
+      currentMessageId: "1000.0004",
+    });
+    const syncSession = await openManagedSession(scope.contextFile, conversationDir);
+    try {
+      await manager.syncSessionManager({
+        conversationDir,
+        sessionKey: "C123",
+        sessionManager: syncSession,
+        currentMessageId: "1000.0004",
+      });
+    } finally {
+      await syncSession.close();
+    }
+
+    const raw = readFileSync(scope.contextFile, "utf-8");
+    expect(raw.match(/What can I help you with/g)).toHaveLength(1);
+    expect(raw).toContain("Scheduled digest ready.");
+    expect(raw).not.toContain("Triggered by");
+  });
+
   test("does not duplicate user-only bootstrapped history after the first assistant reply", async () => {
     writeLog([
       {

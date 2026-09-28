@@ -5,7 +5,11 @@ import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
 import { parseJsonValue, readTextFileIfExists } from "../file-guards.js";
-import { formatHistoryLine, stripHistoryLinePrefix } from "./history-line.js";
+import {
+  formatHistoryLine,
+  stripHistoryLinePrefix,
+  stripTriggerSignature,
+} from "./history-line.js";
 import { isPlatformHistorySession } from "./store.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {
@@ -579,9 +583,14 @@ function comparableSessionMessage(entry: SessionEntry): string | null {
 }
 
 function comparableLogMessage(message: ConversationLogMessage): string | null {
-  const text = message.text?.trim();
+  const text = historyMessageText(message);
   if (!text) return null;
   return `${message.isMessagingBot ? "assistant" : "user"}:${normalizeComparableText(text)}`;
+}
+
+function historyMessageText(message: ConversationLogMessage): string {
+  const text = message.text?.trim() ?? "";
+  return message.isMessagingBot ? stripTriggerSignature(text) : text;
 }
 
 function getSessionMessageText(entry: SessionEntry): string {
@@ -597,7 +606,7 @@ function getSessionMessageText(entry: SessionEntry): string {
 const normalizeComparableText = stripHistoryLinePrefix;
 
 function buildHistorySessionMessage(message: ConversationLogMessage): SessionAppendMessage | null {
-  const text = message.text?.trim();
+  const text = historyMessageText(message);
   if (!text) return null;
 
   const timestamp = parseMessageTimestamp(message);

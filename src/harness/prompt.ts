@@ -7,7 +7,7 @@ import type { ConversationMessage } from "../types.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
-import { formatHistoryLine } from "../sessions/history-line.js";
+import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
 import type { BuildSystemPromptOptions } from "./types.js";
 
 import * as log from "../log.js";
@@ -459,8 +459,6 @@ export function buildTurnInstructions(isEventTrigger: boolean): string {
 - If the event text includes tone, brevity, or language instructions, follow them literally.`;
 }
 
-const TRIGGER_SIGNATURE_LINE = /(?:^|\n)[ \t]*_?Triggered by [^\n]*\s*$/;
-
 export function appendTriggerAttribution(
   text: string,
   triggerAttribution: string | undefined,
@@ -471,6 +469,6 @@ export function appendTriggerAttribution(
   const signature = `_Triggered by ${triggerAttribution}_`;
   const suffix = sessionLink ? `${signature} · session: ${sessionLink}` : signature;
   if (trimmed.endsWith(suffix)) return text;
-  const body = trimmed.replace(TRIGGER_SIGNATURE_LINE, "").trimEnd();
+  const body = stripTriggerSignature(trimmed);
   return `${body}\n\n${suffix}`;
 }

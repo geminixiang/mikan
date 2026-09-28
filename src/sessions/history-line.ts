@@ -34,3 +34,9 @@ const HISTORY_LINE_PREFIX =
 export function stripHistoryLinePrefix(text: string): string {
   return text.replace(HISTORY_LINE_PREFIX, "").trim();
 }
+
+const TRIGGER_SIGNATURE_LINE = /(?:^|\n)[ \t]*_?Triggered by [^\n]*\s*$/;
+
+export function stripTriggerSignature(text: string): string {
+  return text.trimEnd().replace(TRIGGER_SIGNATURE_LINE, "").trimEnd();
+}
