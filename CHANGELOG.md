@@ -11,7 +11,7 @@ any release.
 
 ### Fixed
 
-- Stop copying each mikan reply back into the session a second time: chat history sync compared the posted reply, which carries the `_Triggered by …_` signature, against the model's unsigned text, missed the match, and appended the signed copy. Context held every answer twice and taught the model to keep writing the signature. Imported bot messages are now compared and stored without the signature.
+- Stop copying each mikan reply back into the session a second time: chat history sync compared the posted reply, which carries the `_Triggered by …_` signature, against the model's unsigned text, missed the match, and appended the signed copy. Context held every answer twice and taught the model to keep writing the signature. Imported bot messages are now compared and stored without the signature, and a posted reply that opens with the tool checklist is matched to the model's answer it ends with.
 
 ## [1.0.0-beta.82]
 

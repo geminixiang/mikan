@@ -846,7 +846,7 @@ describe("ChatHistorySync", () => {
         date: "2026-05-01T00:00:01.000Z",
         ts: "1000.0002",
         user: "bot",
-        text: "Hi! What can I help you with?\n\n_Triggered by @alice_",
+        text: "✓ Look up the greeting\n\nHi! What can I help you with?\n\n_Triggered by @alice_",
         isMessagingBot: true,
       },
       {
@@ -886,7 +886,7 @@ describe("ChatHistorySync", () => {
     });
     await session.appendMessage({
       role: "assistant",
-      content: [{ type: "text", text: "Hi! What can I help you with?" }],
+      content: [{ type: "text", text: "Hi! What can I help you with?\n_Triggered by @alice" }],
       api: "openai-responses",
       provider: "openai",
       model: "gpt-test",
@@ -924,8 +924,9 @@ describe("ChatHistorySync", () => {
 
     const raw = readFileSync(scope.contextFile, "utf-8");
     expect(raw.match(/What can I help you with/g)).toHaveLength(1);
+    expect(raw).not.toContain("Look up the greeting");
     expect(raw).toContain("Scheduled digest ready.");
-    expect(raw).not.toContain("Triggered by");
+    expect(raw.match(/Triggered by/g)).toHaveLength(1);
   });
 
   test("does not duplicate user-only bootstrapped history after the first assistant reply", async () => {

@@ -566,18 +566,32 @@ function consumeRepresentedLogMessage(record: LogRecord, counts: Map<string, num
   const comparable = comparableLogMessage(record.message);
   if (!comparable) return false;
 
-  const count = counts.get(comparable) ?? 0;
-  if (count <= 0) return false;
-  counts.set(comparable, count - 1);
+  const key = counts.get(comparable) ? comparable : presentedAnswerKey(comparable, counts);
+  if (!key) return false;
+  counts.set(key, (counts.get(key) ?? 0) - 1);
   return true;
 }
+
+function presentedAnswerKey(comparable: string, counts: Map<string, number>): string | undefined {
+  if (!comparable.startsWith(ASSISTANT_KEY_PREFIX)) return undefined;
+  const posted = comparable.slice(ASSISTANT_KEY_PREFIX.length);
+  for (const [key, count] of counts) {
+    if (count <= 0 || !key.startsWith(ASSISTANT_KEY_PREFIX)) continue;
+    const answer = key.slice(ASSISTANT_KEY_PREFIX.length);
+    if (posted.endsWith(`\n\n${answer}`)) return key;
+  }
+  return undefined;
+}
+
+const ASSISTANT_KEY_PREFIX = "assistant:";
 
 function comparableSessionMessage(entry: SessionEntry): string | null {
   if (entry.type !== "message") return null;
   const role = entry.message.role;
   if (role !== "user" && role !== "assistant") return null;
 
-  const text = normalizeComparableText(getSessionMessageText(entry));
+  const raw = getSessionMessageText(entry);
+  const text = normalizeComparableText(role === "assistant" ? stripTriggerSignature(raw) : raw);
   if (!text) return null;
   return `${role}:${text}`;
 }
