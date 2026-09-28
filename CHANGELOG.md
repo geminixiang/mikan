@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Performance
+
+- List skills in the prompt one line each under their directory instead of an XML block with a full path per skill; a path appears only when a skill's directory differs from its name. A workspace with 68 skills drops from about 31,000 to 22,000 characters of prompt per turn with the same names and descriptions.
+
 ## [1.0.0-beta.83]
 
 ### Fixed

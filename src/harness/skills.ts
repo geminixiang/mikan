@@ -275,24 +275,30 @@ export function formatSkillsForPrompt(skills: MikanSkill[]): string {
   const visible = skills.filter((skill) => !skill.disableModelInvocation);
   if (visible.length === 0) return "";
 
+  const groups = new Map<string, MikanSkill[]>();
+  for (const skill of visible) {
+    const dir = dirname(skill.baseDir);
+    groups.set(dir, [...(groups.get(dir) ?? []), skill]);
+  }
   const lines = [
     "\n\nThe following skills provide specialized instructions for specific tasks.",
+    "Each line is `- <name>: <description>`; the skill's file is `<dir>/<name>/SKILL.md` unless the line names another file.",
     "Use the read tool to load a skill's file when the task matches its description.",
     "When a skill file references a relative path, resolve it against the skill directory (parent of SKILL.md / dirname of the path) and use that absolute path in tool commands.",
-    "",
-    "<available_skills>",
   ];
-  for (const skill of visible) {
-    lines.push("  <skill>");
-    lines.push(`    <name>${escapeXml(skill.name)}</name>`);
-    lines.push(`    <description>${escapeXml(skill.description)}</description>`);
-    if (skill.inline) {
-      lines.push(`    <instructions>${escapeXml(skill.content)}</instructions>`);
-    } else {
-      lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
-    }
-    lines.push("  </skill>");
+  for (const [dir, group] of groups) {
+    lines.push("", `<available_skills dir="${escapeXml(dir)}">`);
+    for (const skill of group) lines.push(...formatSkillLines(skill, dir));
+    lines.push("</available_skills>");
   }
-  lines.push("</available_skills>");
   return lines.join("\n");
+}
+
+function formatSkillLines(skill: MikanSkill, dir: string): string[] {
+  const conventionalFile = `${dir}/${skill.name}/SKILL.md`;
+  const fileNote =
+    skill.inline || skill.filePath === conventionalFile ? "" : ` (${escapeXml(skill.filePath)})`;
+  const line = `- ${escapeXml(skill.name)}${fileNote}: ${escapeXml(skill.description)}`;
+  if (!skill.inline) return [line];
+  return [line, `  <instructions>${escapeXml(skill.content)}</instructions>`];
 }

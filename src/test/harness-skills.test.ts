@@ -164,30 +164,55 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
 });
 
 describe("formatSkillsForPrompt", () => {
-  test("renders the available_skills XML block and hides disabled skills", () => {
+  test("lists each skill on one line under its directory and hides disabled skills", () => {
     const prompt = formatSkillsForPrompt([
       {
         name: "visible",
         description: "A & B",
         content: "",
-        filePath: "/skills/visible/SKILL.md",
-        baseDir: "/skills/visible",
+        filePath: "/workspace/skills/visible/SKILL.md",
+        baseDir: "/workspace/skills/visible",
         source: "workspace",
       },
       {
         name: "hidden",
         description: "Hidden",
         content: "",
-        filePath: "/skills/hidden/SKILL.md",
-        baseDir: "/skills/hidden",
+        filePath: "/workspace/skills/hidden/SKILL.md",
+        baseDir: "/workspace/skills/hidden",
         source: "workspace",
         disableModelInvocation: true,
       },
+      {
+        name: "local",
+        description: "Channel only",
+        content: "",
+        filePath: "/workspace/C1/skills/local/SKILL.md",
+        baseDir: "/workspace/C1/skills/local",
+        source: "channel",
+      },
     ]);
-    expect(prompt).toContain("<available_skills>");
-    expect(prompt).toContain("<name>visible</name>");
-    expect(prompt).toContain("A &amp; B");
+    expect(prompt).toContain('<available_skills dir="/workspace/skills">\n- visible: A &amp; B\n');
+    expect(prompt).toContain(
+      '<available_skills dir="/workspace/C1/skills">\n- local: Channel only\n',
+    );
     expect(prompt).not.toContain("hidden");
+    expect(prompt).not.toContain("<location>");
+    expect(prompt).not.toContain("SKILL.md</");
+  });
+
+  test("names the file of a skill whose directory differs from its name", () => {
+    const prompt = formatSkillsForPrompt([
+      {
+        name: "deploy",
+        description: "Ship it",
+        content: "",
+        filePath: "/workspace/skills/deploy-tools/SKILL.md",
+        baseDir: "/workspace/skills/deploy-tools",
+        source: "workspace",
+      },
+    ]);
+    expect(prompt).toContain("- deploy (/workspace/skills/deploy-tools/SKILL.md): Ship it");
   });
 
   test("inline skills embed instructions instead of a file location", () => {
