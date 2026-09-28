@@ -14,7 +14,8 @@ import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-work
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../types.js";
-import type { McpServerConfig } from "../harness/types.js";
+import type { McpServerConfig, RunEvent } from "../harness/types.js";
+import { RunEventHub } from "../harness/run-events.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
@@ -78,6 +79,7 @@ async function createTestRunner(
     openConnector?: McpServerConfig;
     sessionView?: CreateRunnerOptions["sessionView"];
     platformToolPackFactories?: readonly PlatformToolPackFactory[];
+    runEvents?: CreateRunnerOptions["runEvents"];
   } = {},
 ) {
   const { models, faux } = createFauxModels();
@@ -105,6 +107,7 @@ async function createTestRunner(
     models,
     sessionView: options.sessionView,
     platformToolPackFactories: options.platformToolPackFactories ?? [],
+    runEvents: options.runEvents,
   });
   return { runner, faux };
 }
@@ -310,6 +313,40 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.replaceResponse.mock.calls[0]?.[0]).toContain("hello from the agent");
     expect(responder.deleteResponse).not.toHaveBeenCalled();
     expect(runner.getCurrentStep()).toBeUndefined();
+  });
+
+  test("publishes a run's events, bracketed by start and end, to its office session", async () => {
+    const runEvents = new RunEventHub();
+    const published: RunEvent[] = [];
+    const otherSession: RunEvent[] = [];
+    runEvents.subscribe(createOfficeAddress("slack", "C1"), "C1", (event) => published.push(event));
+    runEvents.subscribe(createOfficeAddress("slack", "C1"), "C1:2000.1", (event) =>
+      otherSession.push(event),
+    );
+    const { runner, faux } = await createTestRunner({ runEvents });
+    faux.setResponses([fauxAssistantMessage("hello from the agent")]);
+
+    await runner.run(makeMessage({ text: "say hello" }), makeResponder(), platform);
+
+    expect(published[0]).toEqual({ type: "run_started", userName: "alice", text: "say hello" });
+    expect(published).toContainEqual(
+      expect.objectContaining({ type: "assistant_message", text: "hello from the agent" }),
+    );
+    expect(published.at(-1)).toEqual({ type: "run_ended", stopReason: "stop" });
+    expect(otherSession).toEqual([]);
+  });
+
+  test("publishes the run end even when the run fails before the model answers", async () => {
+    const runEvents = new RunEventHub();
+    const published: RunEvent[] = [];
+    runEvents.subscribe(createOfficeAddress("slack", "C1"), "C1", (event) => published.push(event));
+    const { runner, faux } = await createTestRunner({ runEvents });
+    faux.setResponses([]);
+
+    await runner.run(makeMessage(), makeResponder(), platform).catch(() => undefined);
+
+    expect(published[0]?.type).toBe("run_started");
+    expect(published.at(-1)?.type).toBe("run_ended");
   });
 
   test("uploads a workspace file through the executor's regular base64 reader", async () => {

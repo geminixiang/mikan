@@ -3,6 +3,7 @@ import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import { RunEventHub } from "../harness/run-events.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
 import type { SessionViewInteractiveOptions } from "../adapters/web/session-view/types.js";
@@ -40,6 +41,7 @@ function idleInteractiveOptions(): SessionViewInteractiveOptions {
       handleNewCommand: async () => {},
     },
     botsByPlatform: {},
+    runEvents: new RunEventHub(),
   };
 }
 

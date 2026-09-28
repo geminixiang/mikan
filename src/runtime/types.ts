@@ -1,4 +1,4 @@
-import type { McpServerConfig } from "../harness/types.js";
+import type { McpServerConfig, RunEventPublisher } from "../harness/types.js";
 import type { EventScheduleSink } from "../events/index.js";
 import type { CreateRunnerOptions, PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
@@ -71,6 +71,7 @@ export interface ConversationRuntimeOptions extends Omit<
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   memoryCapture?: (models: MikanModels) => RunMemoryCapture;
   runnerFactory?: RunnerFactory;
+  runEvents?: RunEventPublisher;
 }
 
 export interface ConversationRuntime extends MessagingEventHandler {

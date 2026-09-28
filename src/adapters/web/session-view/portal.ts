@@ -82,6 +82,7 @@ type SessionStreamEvent =
   | { type: "user"; html: string }
   | { type: "assistant"; html: string }
   | { type: "assistant_remove" }
+  | { type: "assistant_done" }
   | { type: "tool"; html: string }
   | { type: "system"; html: string }
   | {
@@ -118,6 +119,7 @@ class SessionViewStreamHub {
 const sessionViewStreamHub = new SessionViewStreamHub();
 
 import type { SessionViewInteractiveOptions } from "./types.js";
+import type { RunEventListener } from "../../../harness/types.js";
 import { errorMessage } from "../../../unknown-values.js";
 
 export async function handleSessionViewRequest(
@@ -579,9 +581,23 @@ async function handleSessionStreamRequest(
     })}\n\n`,
   );
 
-  const unsubscribe = sessionViewStreamHub.subscribe(streamKey, (event) => {
-    res.write(`data: ${JSON.stringify(event)}\n\n`);
+  const send = (event: SessionStreamEvent) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+  const unsubscribe = sessionViewStreamHub.subscribe(streamKey, send);
+  const liveRun = createLiveRunProjection(send, async () => {
+    const model = await loadSessionViewModel(target.targetSessionFile);
+    return {
+      type: "refresh",
+      timelineHtml: renderTimelineItems(model.items, url.searchParams.get("token") ?? ""),
+      updatedAt: formatDate(model.updatedAt),
+      entryCount: model.entryCount,
+      running: false,
+    };
   });
+  const unsubscribeRun = interactive.runEvents.subscribe(
+    createOfficeAddress(entry.platform, entry.conversationId),
+    activeSessionKey,
+    liveRun,
+  );
   const heartbeat = setInterval(() => {
     res.write(": keep-alive\n\n");
   }, 15000);
@@ -589,6 +605,7 @@ async function handleSessionStreamRequest(
   req.on("close", () => {
     clearInterval(heartbeat);
     unsubscribe();
+    unsubscribeRun();
   });
 }
 
@@ -620,35 +637,25 @@ async function handleSessionMessageRequest(
     json(res, target.status, { ok: false, error: target.message });
     return;
   }
-  const { activeSessionKey, entry, targetSessionFile } = target;
+  const { activeSessionKey, entry } = target;
   if (requestedSessionKey && requestedSessionKey !== activeSessionKey) {
     json(res, 400, { ok: false, error: "Session target mismatch." });
     return;
   }
 
-  await dispatchSessionViewMessage({
-    res,
-    interactive,
-    token,
-    text,
-    activeSessionKey,
-    entry,
-    targetSessionFile,
-  });
+  await dispatchSessionViewMessage({ res, interactive, text, activeSessionKey, entry });
 }
 
 interface SessionViewMessageDispatch {
   res: ServerResponse;
   interactive: SessionViewInteractiveOptions;
-  token: string;
   text: string;
   activeSessionKey: string;
   entry: SessionViewToken;
-  targetSessionFile: string;
 }
 
 async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Promise<void> {
-  const { res, interactive, token, text, activeSessionKey, entry, targetSessionFile } = input;
+  const { res, interactive, text, activeSessionKey, entry } = input;
   const bot = interactive.botsByPlatform[entry.platform];
   if (!bot) {
     json(res, 503, { ok: false, error: `No bot configured for ${entry.platform}.` });
@@ -664,9 +671,7 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
     platformInfo.users.find((user) => user.id === entry.platformUserId)?.userName ||
     platformInfo.users.find((user) => user.id === entry.platformUserId)?.displayName ||
     "unknown";
-  const responder = createSessionViewResponseContext((event) => {
-    sessionViewStreamHub.publish(streamKey, event);
-  });
+  const responder = createSilentResponder();
   const event = createConversationEvent({
     platform: entry.platform,
     type: "session_view",
@@ -698,82 +703,100 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
     platform: { ...platformInfo, diagnostics: { showUsageSummary: false } },
   };
 
-  sessionViewStreamHub.publish(streamKey, { type: "status", running: true });
-  sessionViewStreamHub.publish(streamKey, {
-    type: "user",
-    html: renderLiveUserMessage(text, platformUserName),
-  });
-
-  void interactive.handler
-    .handleEvent(event, bot, context)
-    .then(async () => {
-      const model = await loadSessionViewModel(targetSessionFile);
-      sessionViewStreamHub.publish(streamKey, {
-        type: "refresh",
-        timelineHtml: renderTimelineItems(model.items, token),
-        updatedAt: formatDate(model.updatedAt),
-        entryCount: model.entryCount,
-        running: false,
-      });
-    })
-    .catch((error) => {
-      log.logWarning(`[${entry.conversationId}] Session view message failed`, errorMessage(error));
-      reportUserFacingError(error, {
-        domain: "session_view",
-        surface: "session_view",
-        operation: "interactive_message",
-        severity: "error",
-        platform: entry.platform,
-        context: {
-          conversationId: entry.conversationId,
-          sessionKey: activeSessionKey,
-          messageId: ts,
-          textLength: text.length,
-        },
-      });
-      sessionViewStreamHub.publish(streamKey, {
-        type: "error",
-        message: errorMessage(error),
-      });
-      sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
+  void interactive.handler.handleEvent(event, bot, context).catch((error) => {
+    log.logWarning(`[${entry.conversationId}] Session view message failed`, errorMessage(error));
+    reportUserFacingError(error, {
+      domain: "session_view",
+      surface: "session_view",
+      operation: "interactive_message",
+      severity: "error",
+      platform: entry.platform,
+      context: {
+        conversationId: entry.conversationId,
+        sessionKey: activeSessionKey,
+        messageId: ts,
+        textLength: text.length,
+      },
     });
+    sessionViewStreamHub.publish(streamKey, {
+      type: "error",
+      message: errorMessage(error),
+    });
+    sessionViewStreamHub.publish(streamKey, { type: "status", running: false });
+  });
 
   json(res, 202, { ok: true, accepted: true });
 }
 
-function createSessionViewResponseContext(
-  publish: (event: SessionStreamEvent) => void,
-): ConversationResponder {
-  let accumulatedText = "";
+async function ignoreResponse(): Promise<void> {}
 
+function createSilentResponder(): ConversationResponder {
+  const ignore = ignoreResponse;
   return {
-    respond: async (text: string) => {
-      accumulatedText = accumulatedText ? `${accumulatedText}\n${text}` : text;
-      publish({ type: "assistant", html: renderLiveAssistantMessage(accumulatedText) });
-    },
-    replaceResponse: async (text: string) => {
-      accumulatedText = text;
-      publish({ type: "assistant", html: renderLiveAssistantMessage(accumulatedText) });
-    },
-    respondDiagnostic: async (text: string, options?: { style?: "muted" | "error" }) => {
-      if (options?.style === "error") {
-        publish({ type: "system", html: renderLiveSystemEvent(text, "err") });
-      }
-    },
-    respondToolResult: async (result) => {
-      publish({ type: "tool", html: renderLiveToolResult(result) });
-    },
-    setTyping: async () => {
-      publish({ type: "status", running: true });
-    },
-    setWorking: async (working: boolean) => {
-      publish({ type: "status", running: working });
-    },
-    uploadFile: async () => {},
-    deleteResponse: async () => {
-      accumulatedText = "";
-      publish({ type: "assistant_remove" });
-    },
+    respond: ignore,
+    replaceResponse: ignore,
+    respondDiagnostic: ignore,
+    respondToolResult: ignore,
+    setTyping: ignore,
+    setWorking: ignore,
+    uploadFile: ignore,
+    deleteResponse: ignore,
+  };
+}
+
+function createLiveRunProjection(
+  send: (event: SessionStreamEvent) => void,
+  refresh: () => Promise<SessionStreamEvent>,
+): RunEventListener {
+  let answer = "";
+  return (event) => {
+    switch (event.type) {
+      case "run_started":
+        answer = "";
+        send({ type: "status", running: true });
+        send({ type: "user", html: renderLiveUserMessage(event.text, event.userName) });
+        return;
+      case "tool_ended":
+        send({
+          type: "tool",
+          html: renderLiveToolResult({
+            toolName: event.toolName,
+            result: event.resultText,
+            isError: event.isError,
+          }),
+        });
+        return;
+      case "assistant_delta":
+        answer += event.delta;
+        send({ type: "assistant", html: renderLiveAssistantMessage(answer) });
+        return;
+      case "assistant_message":
+        answer = "";
+        send({ type: "assistant_done" });
+        return;
+      case "compaction_started":
+        send({ type: "system", html: renderLiveSystemEvent("Compacting context…") });
+        return;
+      case "retry_started":
+        send({
+          type: "system",
+          html: renderLiveSystemEvent(`Retrying (${event.attempt}/${event.maxAttempts})…`),
+        });
+        return;
+      case "budget_exceeded":
+        send({
+          type: "system",
+          html: renderLiveSystemEvent(`Stopped: run budget exceeded (${event.reason})`, "err"),
+        });
+        return;
+      case "run_ended":
+        void refresh()
+          .then(send)
+          .catch((error) => send({ type: "error", message: errorMessage(error) }));
+        return;
+      default:
+        return;
+    }
   };
 }
 
@@ -921,6 +944,9 @@ const sessionViewScript = `
           }
           case 'assistant_remove':
             if (liveAssistant?.isConnected) liveAssistant.remove();
+            liveAssistant = null;
+            break;
+          case 'assistant_done':
             liveAssistant = null;
             break;
           case 'refresh':

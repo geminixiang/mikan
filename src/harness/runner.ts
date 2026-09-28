@@ -36,6 +36,7 @@ import type {
   PlatformToolRoles,
   PreparedRunContext,
   RunPresentation,
+  RunEventListener,
   RunnerSessionState,
 } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
@@ -604,6 +605,7 @@ interface RunnerInterfaceParams {
   sessionUuid: string;
   contextFile: string;
   sessionView: CreateRunnerOptions["sessionView"];
+  runEvents: CreateRunnerOptions["runEvents"];
   runState: RunnerSessionState;
   executor: Executor;
   resolveForRun: RunnerExecutionContext["resolveForRun"];
@@ -636,6 +638,51 @@ async function steerRun(
   return true;
 }
 
+async function publishRunLifecycle<T extends { stopReason: string }>(
+  publish: RunEventListener | undefined,
+  message: ConversationMessage,
+  run: () => Promise<T>,
+): Promise<T> {
+  publish?.({
+    type: "run_started",
+    userName: message.userName ?? message.userId,
+    text: message.text,
+  });
+  let stopReason = "error";
+  try {
+    const result = await run();
+    stopReason = result.stopReason;
+    return result;
+  } finally {
+    publish?.({ type: "run_ended", stopReason });
+  }
+}
+
+function prepareRunnerTurn(
+  params: RunnerInterfaceParams,
+  message: ConversationMessage,
+  responder: ConversationResponder,
+  platform: MessagingInfo,
+): ReturnType<typeof prepareRunContext> {
+  const { office, executor, resolveForRun, session, toolBindings } = params;
+  return prepareRunContext({
+    message,
+    responder,
+    platform,
+    office,
+    executor,
+    resolveForRun,
+    session,
+    setEventContext: toolBindings.setEventContext,
+    setSandboxContext: toolBindings.setSandboxContext,
+    setUploadFunction: toolBindings.setUploadFunction,
+    setImageUploadFunction: toolBindings.setImageUploadFunction,
+    setReactFunction: toolBindings.setReactFunction,
+    bindTasks: toolBindings.bindTasks,
+    bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
+  });
+}
+
 function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   const {
     conversationId,
@@ -645,16 +692,17 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     sessionUuid,
     contextFile,
     sessionView,
+    runEvents,
     runState,
-    executor,
-    resolveForRun,
     session,
     model,
     agentConfig,
     sessionManager,
     chatSessionManager,
-    toolBindings,
   } = params;
+  const publishRunEvent: RunEventListener | undefined = runEvents
+    ? (event) => runEvents.publish(office.address, sessionKey, event)
+    : undefined;
   let activeMessage: ConversationMessage | undefined;
   let stopped = false;
   return {
@@ -672,50 +720,38 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
       activeMessage = message;
       stopped = false;
       let presentation: RunPresentation | undefined;
-      try {
-        const prepared = await prepareRunContext({
-          message,
-          responder,
-          platform,
-          office,
-          executor,
-          resolveForRun,
-          session,
-          setEventContext: toolBindings.setEventContext,
-          setSandboxContext: toolBindings.setSandboxContext,
-          setUploadFunction: toolBindings.setUploadFunction,
-          setImageUploadFunction: toolBindings.setImageUploadFunction,
-          setReactFunction: toolBindings.setReactFunction,
-          bindTasks: toolBindings.bindTasks,
-          bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
-        });
-        if (stopped) return { stopReason: "aborted" };
-        presentation = activateRunPresentation(runState, {
-          responder,
-          sessionConversation: prepared.sessionConversation,
-          userName: message.userName,
-          sessionUuid,
-          triggerAttribution: prepared.triggerAttribution,
-        });
-        return await runPreparedTurn({
-          prepared,
-          presentation,
-          message,
-          responder,
-          platform,
-          runState,
-          session,
-          model,
-          agentConfig,
-          sessionUuid,
-          conversationId,
-          contextFile,
-          sessionView,
-        });
-      } finally {
-        activeMessage = undefined;
-        presentation?.dispose();
-      }
+      return publishRunLifecycle(publishRunEvent, message, async () => {
+        try {
+          const prepared = await prepareRunnerTurn(params, message, responder, platform);
+          if (stopped) return { stopReason: "aborted" };
+          presentation = activateRunPresentation(runState, {
+            responder,
+            sessionConversation: prepared.sessionConversation,
+            userName: message.userName,
+            sessionUuid,
+            triggerAttribution: prepared.triggerAttribution,
+            publishRunEvent,
+          });
+          return await runPreparedTurn({
+            prepared,
+            presentation,
+            message,
+            responder,
+            platform,
+            runState,
+            session,
+            model,
+            agentConfig,
+            sessionUuid,
+            conversationId,
+            contextFile,
+            sessionView,
+          });
+        } finally {
+          activeMessage = undefined;
+          presentation?.dispose();
+        }
+      });
     },
 
     abort(): void {
@@ -771,7 +807,7 @@ async function finishRunnerCreation(params: {
     platformToolRoles,
     toolContext,
   } = params;
-  const { sessionKey, office, sessionScope, sessionView, chatHistory } = options;
+  const { sessionKey, office, sessionScope, sessionView, chatHistory, runEvents } = options;
   const { contextFile } = sessionScope;
   try {
     const sessionUuid = extractSessionUuid(contextFile);
@@ -800,6 +836,7 @@ async function finishRunnerCreation(params: {
       sessionUuid,
       contextFile,
       sessionView,
+      runEvents,
       runState,
       executor,
       resolveForRun,

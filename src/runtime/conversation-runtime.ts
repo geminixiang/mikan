@@ -558,6 +558,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         : undefined,
       platformToolPackFactories: this.options.platformToolPackFactories,
       models: this.resolvedModels,
+      runEvents: this.options.runEvents,
     });
   }
 

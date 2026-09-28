@@ -1,6 +1,8 @@
 import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { describe, expect, test } from "vitest";
-import { toRunEvent } from "../harness/run-events.js";
+import { RunEventHub, toRunEvent } from "../harness/run-events.js";
+import type { RunEvent } from "../harness/types.js";
+import { createOfficeAddress } from "../office/index.js";
 import { JEV_TOOL } from "../harness/tools/jev.js";
 
 const subagentSnapshot = {
@@ -162,5 +164,49 @@ describe("toRunEvent", () => {
         durationMs: 1,
       }),
     ).toEqual({ type: "budget_exceeded", reason: "tool loop: bash" });
+  });
+});
+
+describe("RunEventHub", () => {
+  const office = createOfficeAddress("slack", "C1");
+
+  test("delivers events only to subscribers of the same office session", () => {
+    const hub = new RunEventHub();
+    const sameSession: RunEvent[] = [];
+    const otherSession: RunEvent[] = [];
+    const otherOffice: RunEvent[] = [];
+    hub.subscribe(office, "C1", (event) => sameSession.push(event));
+    hub.subscribe(office, "C1:1000.1", (event) => otherSession.push(event));
+    hub.subscribe(createOfficeAddress("telegram", "C1"), "C1", (event) => otherOffice.push(event));
+
+    hub.publish(office, "C1", { type: "assistant_delta", delta: "hi" });
+
+    expect(sameSession).toEqual([{ type: "assistant_delta", delta: "hi" }]);
+    expect(otherSession).toEqual([]);
+    expect(otherOffice).toEqual([]);
+  });
+
+  test("stops delivering after unsubscribe", () => {
+    const hub = new RunEventHub();
+    const seen: RunEvent[] = [];
+    const unsubscribe = hub.subscribe(office, "C1", (event) => seen.push(event));
+
+    unsubscribe();
+    hub.publish(office, "C1", { type: "compaction_started" });
+
+    expect(seen).toEqual([]);
+  });
+
+  test("keeps delivering to other subscribers when one listener throws", () => {
+    const hub = new RunEventHub();
+    const seen: RunEvent[] = [];
+    hub.subscribe(office, "C1", () => {
+      throw new Error("viewer went away");
+    });
+    hub.subscribe(office, "C1", (event) => seen.push(event));
+
+    hub.publish(office, "C1", { type: "compaction_started" });
+
+    expect(seen).toEqual([{ type: "compaction_started" }]);
   });
 });

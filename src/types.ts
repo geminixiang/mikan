@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { SubagentRunStatus } from "./harness/types.js";
+import type { RunEventPublisher, SubagentRunStatus } from "./harness/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
@@ -445,6 +445,7 @@ export interface CreateRunnerOptions {
   };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models?: MikanModels;
+  runEvents?: RunEventPublisher;
 }
 
 export interface SessionViewTokenCreateOptions {

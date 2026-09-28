@@ -96,6 +96,7 @@ function createRunStateDefaults(): RunnerSessionState {
     subagentProgressShown: false,
     suppressResponseDeltas: false,
     answerStreamStarted: false,
+    publishRunEvent: undefined,
     lastSubagentProgressAt: 0,
     toolProgressTimer: undefined,
     totalUsage: createEmptyUsageTotals(),
@@ -139,6 +140,7 @@ export function activateRunPresentation(
       sessionId: context.sessionUuid,
     },
     triggerAttribution: context.triggerAttribution,
+    publishRunEvent: context.publishRunEvent,
   });
 
   const { responder } = context;
@@ -168,6 +170,7 @@ export function activateRunPresentation(
       runState.responder = null;
       runState.logCtx = null;
       runState.queue = null;
+      runState.publishRunEvent = undefined;
     },
   };
 }
@@ -986,6 +989,9 @@ function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void
       );
       return;
     }
+    case "run_started":
+    case "run_ended":
+      return;
   }
 }
 
@@ -1006,6 +1012,7 @@ export function attachSessionEventHandlers(params: SessionEventHandlerParams): v
     });
     const runEvent = toRunEvent(event);
     if (!runEvent) return;
+    runState.publishRunEvent?.(runEvent);
     presentRunEvent(runEvent, {
       runState,
       responder: runState.responder,

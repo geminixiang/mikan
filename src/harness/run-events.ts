@@ -1,7 +1,10 @@
 import { parseSubagentProgressSnapshot } from "./tools/subagent.js";
 import { JEV_TOOL } from "./tools/jev.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
-import type { HarnessEvent, RunEvent } from "./types.js";
+import type { OfficeAddress } from "../types.js";
+import * as log from "../log.js";
+import { errorMessage } from "../unknown-values.js";
+import type { HarnessEvent, RunEvent, RunEventListener } from "./types.js";
 
 const TOOL_CALL_PART_TYPES = new Set(["tool_use", "toolCall", "tool-call"]);
 
@@ -96,5 +99,36 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
       return { type: "budget_exceeded", reason: event.reason };
     default:
       return undefined;
+  }
+}
+
+function runScopeKey(address: OfficeAddress, sessionKey: string): string {
+  return JSON.stringify([address.platform, address.conversationId, sessionKey]);
+}
+
+export class RunEventHub {
+  private readonly listeners = new Map<string, Set<RunEventListener>>();
+
+  subscribe(address: OfficeAddress, sessionKey: string, listener: RunEventListener): () => void {
+    const key = runScopeKey(address, sessionKey);
+    const scoped = this.listeners.get(key) ?? new Set<RunEventListener>();
+    scoped.add(listener);
+    this.listeners.set(key, scoped);
+    return () => {
+      scoped.delete(listener);
+      if (scoped.size === 0 && this.listeners.get(key) === scoped) this.listeners.delete(key);
+    };
+  }
+
+  publish(address: OfficeAddress, sessionKey: string, event: RunEvent): void {
+    const scoped = this.listeners.get(runScopeKey(address, sessionKey));
+    if (!scoped) return;
+    for (const listener of scoped) {
+      try {
+        listener(event);
+      } catch (error) {
+        log.logWarning("Run event listener failed", errorMessage(error));
+      }
+    }
   }
 }

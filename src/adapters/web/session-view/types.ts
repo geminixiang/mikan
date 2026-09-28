@@ -1,9 +1,11 @@
+import type { RunEventHub } from "../../../harness/run-events.js";
 import type { MessagingEventHandler, MessagingBot, PlatformName } from "../../../types.js";
 import type { TokenRecord } from "../types.js";
 
 export interface SessionViewInteractiveOptions {
   handler: MessagingEventHandler;
   botsByPlatform: Partial<Record<string, MessagingBot>>;
+  runEvents: RunEventHub;
 }
 
 export interface SessionViewItem {

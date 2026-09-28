@@ -35,6 +35,7 @@ import { assertStateDirOutsideWorkspace } from "./file-guards.js";
 import { resolveLinkBaseUrl } from "./env-manifest.js";
 import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
 import { defaultModelsJsonPath } from "./harness/models.js";
+import { RunEventHub } from "./harness/run-events.js";
 import { readEnv, setEnvAliases } from "./env-manifest.js";
 import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
 import { SandboxError } from "./sandbox/utils.js";
@@ -349,6 +350,7 @@ if (sandbox.type === "image") {
 
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
+const runEvents = new RunEventHub();
 const adminTokenStore = new InMemoryAdminTokenStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
@@ -447,6 +449,7 @@ const handler = createConversationRuntime({
   sessionViewTokenStore,
   adminTokenStore,
   openConnector,
+  runEvents,
   portalBaseUrl: portalBaseUrl(),
   platformToolPackFactories: buildPlatformToolPackFactories(),
   memoryCapture: (models) => new MemoryCapture(models),
@@ -571,7 +574,7 @@ const webServer = LINK_PORT
         if (bot) await bot.postMessage(conversationId, message);
       },
       sessionViewTokenStore,
-      sessionViewInteractive: { handler, botsByPlatform },
+      sessionViewInteractive: { handler, botsByPlatform, runEvents },
       adminOptions: {
         adminTokenStore,
         workspace,

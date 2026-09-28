@@ -60,6 +60,7 @@ export interface RunnerSessionState {
   subagentProgressShown: boolean;
   suppressResponseDeltas: boolean;
   answerStreamStarted: boolean;
+  publishRunEvent: RunEventListener | undefined;
   lastSubagentProgressAt: number;
   toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
   totalUsage: {
@@ -124,6 +125,7 @@ export interface RunPresentationContext {
   userName: string | undefined;
   sessionUuid: string;
   triggerAttribution: string | undefined;
+  publishRunEvent?: RunEventListener;
 }
 
 export interface PlatformToolRoles {
@@ -352,7 +354,15 @@ export type RunEvent =
   | { type: "assistant_message"; thinking: string[]; text: string; callsTools: boolean }
   | { type: "compaction_started" }
   | { type: "retry_started"; attempt: number; maxAttempts: number }
-  | { type: "budget_exceeded"; reason: string };
+  | { type: "budget_exceeded"; reason: string }
+  | { type: "run_started"; userName: string; text: string }
+  | { type: "run_ended"; stopReason: string };
+
+export type RunEventListener = (event: RunEvent) => void;
+
+export interface RunEventPublisher {
+  publish(address: OfficeAddress, sessionKey: string, event: RunEvent): void;
+}
 
 export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
 

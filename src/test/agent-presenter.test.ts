@@ -7,7 +7,12 @@ import {
   createRunState,
 } from "../harness/presenter.js";
 import type { MikanAgentSession } from "../harness/session.js";
-import type { PlatformToolRoles, HarnessEvent, HarnessEventListener } from "../harness/types.js";
+import type {
+  PlatformToolRoles,
+  HarnessEvent,
+  HarnessEventListener,
+  RunEvent,
+} from "../harness/types.js";
 import { startOperationSpan } from "../observability/index.js";
 
 vi.mock("../observability/index.js", async (importOriginal) => {
@@ -52,7 +57,10 @@ function resettableRunState(state = createRunState()) {
   return resettable;
 }
 
-function attachPresenter(platformToolRoles = NO_PLATFORM_TOOLS) {
+function attachPresenter(
+  platformToolRoles = NO_PLATFORM_TOOLS,
+  publishRunEvent?: (event: RunEvent) => void,
+) {
   let listener: HarnessEventListener | undefined;
   const session = {
     subscribe(next: HarnessEventListener) {
@@ -68,6 +76,7 @@ function attachPresenter(platformToolRoles = NO_PLATFORM_TOOLS) {
     userName: "alice",
     sessionUuid: "session-1",
     triggerAttribution: "@alice",
+    publishRunEvent,
   });
   const model = fauxProvider().getModel();
 
@@ -262,6 +271,33 @@ describe("presenter event routing", () => {
       "Checking",
       "✓ Inspect file\n\nDone",
     ]);
+  });
+
+  test("publishes each run event to the run's observer alongside the responder", async () => {
+    const published: RunEvent[] = [];
+    const { emit, runQueue, responder } = attachPresenter(NO_PLATFORM_TOOLS, (event) =>
+      published.push(event),
+    );
+
+    await emit({
+      type: "tool_execution_start",
+      toolCallId: "tool-1",
+      toolName: "read",
+      args: { label: "Inspect file" },
+    });
+    await emit({ type: "message_start", message: fauxAssistantMessage("x") });
+    await runQueue.wait();
+
+    expect(published).toEqual([
+      {
+        type: "tool_started",
+        toolCallId: "tool-1",
+        toolName: "read",
+        label: "Inspect file",
+        args: { label: "Inspect file" },
+      },
+    ]);
+    expect(responder.replaceResponse).toHaveBeenCalledWith("• Inspect file");
   });
 
   test("routes tool start and end while keeping pending state in sync", async () => {
