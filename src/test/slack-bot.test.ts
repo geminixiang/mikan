@@ -607,6 +607,26 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     });
   });
 
+  test("Slack's HTML escaping is undone before a mention reaches the runtime and the office log", async () => {
+    const handler = makeHandler();
+    const { socket } = await startSlackHarness({ handler, workspace });
+
+    await socket.deliver("app_mention", {
+      event: {
+        text: "<@B123> run `a &lt; b &amp;&amp; c &gt; d` literally &amp;lt;",
+        channel: "C123",
+        user: "U123",
+        ts: "1001.0000",
+      },
+      ack: makeAck(),
+    });
+
+    const expected = "run `a < b && c > d` literally &lt;";
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(handler.handleEvent).mock.calls[0]?.[0]).toMatchObject({ text: expected });
+    expect(readLogEntries(workspace, "C123").map((entry) => entry.text)).toEqual([expected]);
+  });
+
   test("auto-reply marker enables unaddressed channel messages", async () => {
     mkdirSync(join(workingDir, C123_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "");
@@ -1511,6 +1531,25 @@ describe("SlackMessagingBot backfill", () => {
     ]);
   });
 
+  test("backfill undoes Slack's HTML escaping for human and external-bot messages", async () => {
+    const entries = await backfillC123(
+      { handler: makeHandler() },
+      async () => ({
+        ok: true,
+        messages: [
+          { user: "U1", text: "x &lt; y &amp;&amp; y &gt; z", ts: "1000.1" },
+          { bot_id: "B_OTHER", text: "deploy &amp; notify", ts: "1000.0" },
+        ],
+      }),
+      2,
+    );
+
+    expect(entries.map((entry) => entry.text).toSorted()).toEqual([
+      "deploy & notify",
+      "x < y && y > z",
+    ]);
+  });
+
   test("backfill preserves threadTs for thread replies", async () => {
     const entries = await backfillC123(
       {
@@ -1566,6 +1605,18 @@ describe("SlackMessagingBot backfill", () => {
     });
     expect(result.map((message) => message.text)).toEqual(["first", "second"]);
     expect(result[0]).toMatchObject({ ts: "1000.0001", userId: "U123", userName: "alice" });
+  });
+
+  test("fetchHistory undoes Slack's HTML escaping", async () => {
+    const { bot, web } = createSlackHarness({ handler: makeHandler(), workspace });
+    vi.mocked(web.conversations.history).mockResolvedValue({
+      ok: true,
+      messages: [{ user: "U123", text: "a &lt; b &amp;&amp; c", ts: "1000.0001" }],
+    });
+
+    const result = await bot.fetchHistory("C123", {});
+
+    expect(result.map((message) => message.text)).toEqual(["a < b && c"]);
   });
 
   test("fetchHistory with threadTs reads the thread's replies and drops the parent", async () => {

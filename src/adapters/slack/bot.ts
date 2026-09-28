@@ -186,6 +186,10 @@ function collectSlackText(value: unknown, parts: string[]): void {
   collectSlackText(obj.blocks, parts);
 }
 
+function unescapeSlackText(text: string): string {
+  return text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+}
+
 function buildSlackAppMessageText(event: {
   text?: string;
   blocks?: unknown[];
@@ -196,7 +200,7 @@ function buildSlackAppMessageText(event: {
   collectSlackText(event.blocks, parts);
   collectSlackText(event.attachments, parts);
   const deduped = parts.filter((part, index) => parts.indexOf(part) === index);
-  return deduped.join("\n");
+  return unescapeSlackText(deduped.join("\n"));
 }
 
 const MRKDWN_CONTEXT_TEXT_LIMIT = 3000;
@@ -444,7 +448,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private stripOwnMention(text: string | undefined): string {
-    const source = text ?? "";
+    const source = unescapeSlackText(text ?? "");
     if (!this.botUserId) return source.trim();
     if (!this.ownMentionRegex || !this.ownMentionRegex.source.includes(this.botUserId)) {
       this.ownMentionRegex = new RegExp(`<@${this.botUserId}>`, "gi");
@@ -612,7 +616,7 @@ export class SlackMessagingBot implements MessagingBot {
           const user = msg.user ? this.users.get(msg.user) : undefined;
           const message: PlatformHistoryMessage = {
             ts: msg.ts,
-            text: msg.text ?? "",
+            text: unescapeSlackText(msg.text ?? ""),
             isBot: !!msg.bot_id || msg.subtype === "bot_message" || user?.isBot === true,
           };
           if (msg.thread_ts && msg.thread_ts !== msg.ts) message.threadTs = msg.thread_ts;
