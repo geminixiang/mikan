@@ -9,6 +9,7 @@ import {
   manifestVarNames,
   noPlatformsMessage,
   platformIsActive,
+  resolveLinkListenHost,
 } from "../env-manifest.js";
 import { helpText } from "../cli/boot.js";
 
@@ -84,5 +85,18 @@ describe("derived surfaces", () => {
     );
     expect(template).toContain("mikan.env");
     expect(template).not.toMatch(/SLACK_APP_TOKEN|ANTHROPIC_API_KEY/);
+  });
+});
+
+describe("link server listen host", () => {
+  test("stays on loopback even when a public LINK_URL is set, so only the reverse proxy reaches it", () => {
+    expect(resolveLinkListenHost(lookup({ LINK_URL: "https://mikan.example.com" }))).toBe(
+      "127.0.0.1",
+    );
+    expect(resolveLinkListenHost(lookup({}))).toBe("127.0.0.1");
+  });
+
+  test("LINK_HOST opts into another interface", () => {
+    expect(resolveLinkListenHost(lookup({ LINK_HOST: "0.0.0.0" }))).toBe("0.0.0.0");
   });
 });

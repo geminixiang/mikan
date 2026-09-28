@@ -46,6 +46,7 @@ async function openSessionStream(runEvents: RunEventHub, sessionKey: string) {
   });
   server = startWebServer({
     port: 0,
+    host: "127.0.0.1",
     linkTokenStore: new InMemoryLinkTokenStore(),
     vaultManager: new FileVaultManager(join(root, "vaults")),
     notify: async () => {},

@@ -32,6 +32,7 @@ function startTestWebServer(
 ): Server {
   return startWebServer({
     port,
+    host: "127.0.0.1",
     linkTokenStore,
     vaultManager,
     notify,

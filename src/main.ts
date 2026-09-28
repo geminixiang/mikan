@@ -32,7 +32,7 @@ import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/porta
 import { DockerContainerManager } from "./sandbox/provisioner.js";
 import { loadGlobalSettings, MissingGlobalSettingsError } from "./settings/index.js";
 import { assertStateDirOutsideWorkspace } from "./file-guards.js";
-import { resolveLinkBaseUrl } from "./env-manifest.js";
+import { resolveLinkBaseUrl, resolveLinkListenHost } from "./env-manifest.js";
 import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
 import { defaultModelsJsonPath } from "./harness/models.js";
 import { RunEventHub } from "./harness/run-events.js";
@@ -567,6 +567,7 @@ if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
 const webServer = LINK_PORT
   ? startWebServer({
       port: LINK_PORT,
+      host: resolveLinkListenHost(),
       linkTokenStore,
       vaultManager,
       notify: async (platform, conversationId, message) => {

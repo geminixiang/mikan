@@ -136,6 +136,8 @@ Session view token は base session file に固定されます。`/session?sessi
 
 Server は `LINK_PORT` / `MIKAN_LINK_PORT` を port として解析できる場合だけ起動します。`LINK_URL` / `MIKAN_LINK_URL` が設定され、port が設定されていない場合、mikan は既定 port `8181` を使います。
 
+`LINK_URL` の有無にかかわらず、`LINK_HOST` / `MIKAN_LINK_HOST` で別のアドレスを指定しない限り server は `127.0.0.1` だけで待ち受けます。同じ host 上の Caddy などの reverse proxy を前段に置き（`reverse_proxy 127.0.0.1:8181`）、portal token が TLS 経由でのみ流れるようにしてください。proxy が別の host または network namespace にある場合だけ `LINK_HOST=0.0.0.0` を設定し、その port をファイアウォールで保護してください。
+
 Token stores は現在すべて in-memory で、`src/main.ts` により 5 分ごとに期限切れ token が削除されます。Process を再起動すると、まだ期限切れでない web tokens もすべて無効になります。
 
 これらの URLs は bearer capabilities です。query-string tokens は browser history、screenshots、コピーされた URLs、proxy logs から漏洩する可能性があります。意図したユーザーとのみ共有し、chat channels や issue trackers には絶対に公開しないでください。

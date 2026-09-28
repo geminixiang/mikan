@@ -136,6 +136,8 @@ Session view token 錨定到 base session file。使用 `/session?session=<file.
 
 Server 只有在 `LINK_PORT` / `MIKAN_LINK_PORT` 可解析成 port 時才會啟動。若設定了 `LINK_URL` / `MIKAN_LINK_URL` 但沒有設定 port，mikan 會使用預設 port `8181`。
 
+不論是否設定 `LINK_URL`，server 都只監聽 `127.0.0.1`，除非 `LINK_HOST` / `MIKAN_LINK_HOST` 指定其他位址。請在同一台主機用 Caddy 等 reverse proxy 對外（`reverse_proxy 127.0.0.1:8181`），讓 portal token 只經過 TLS 傳輸；只有 proxy 在另一台主機或另一個 network namespace 時才設定 `LINK_HOST=0.0.0.0`，並用防火牆擋住這個 port。
+
 Token stores 目前都是 in-memory，並由 `src/main.ts` 每五分鐘清理過期 token。Process 重啟會讓尚未過期的 web tokens 全部失效。
 
 這些 URL 是 bearer capabilities。Query-string tokens 可能透過瀏覽器歷史、螢幕截圖、複製的 URL 或 proxy logs 洩漏；請僅與預期使用者分享，且絕不發布到聊天頻道或 issue trackers。

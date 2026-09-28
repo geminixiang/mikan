@@ -2,7 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RunEventHub } from "../harness/run-events.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
@@ -20,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -59,6 +60,7 @@ test("closing the web server ends an open session stream instead of waiting for 
   });
   const server = startWebServer({
     port: 0,
+    host: "127.0.0.1",
     linkTokenStore: new InMemoryLinkTokenStore(),
     vaultManager: new FileVaultManager(join(root, "vaults")),
     notify: async () => {},
@@ -79,4 +81,19 @@ test("closing the web server ends an open session stream instead of waiting for 
 
   expect(await Promise.race([closed, stillOpen])).toBe("closed");
   await reader.cancel().catch(() => {});
+});
+
+test("the web server listens only on the host it is given, even with a public LINK_URL", async () => {
+  vi.stubEnv("LINK_URL", "https://mikan.example.com");
+  const server = startWebServer({
+    port: 0,
+    host: "127.0.0.1",
+    linkTokenStore: new InMemoryLinkTokenStore(),
+    vaultManager: new FileVaultManager(join(root, "vaults")),
+    notify: async () => {},
+  });
+  await listeningPort(server);
+
+  expect(server.address()).toMatchObject({ address: "127.0.0.1" });
+  await closeWebServer(server, 0);
 });

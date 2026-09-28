@@ -97,6 +97,10 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     vars: [
       { name: "LINK_URL", doc: "Externally visible base URL, e.g. https://mikan.example.com" },
       { name: "LINK_PORT", doc: "Listen port (default 8181 when LINK_URL is set)" },
+      {
+        name: "LINK_HOST",
+        doc: "Listen address (default 127.0.0.1, for a reverse proxy on the same host)",
+      },
       { name: "GITHUB_OAUTH_CLIENT_ID", doc: "GitHub OAuth app for /login linking" },
       { name: "GITHUB_OAUTH_CLIENT_SECRET", secret: true, doc: "GitHub OAuth app secret" },
       { name: "GOOGLE_WORKSPACE_CLI_CLIENT_ID", doc: "Google Workspace OAuth client for /login" },
@@ -259,6 +263,12 @@ export function envReport(env: EnvLookup = readEnv): string {
   }
   lines.push("Each var also accepts a MIKAN_-prefixed alias (e.g. MIKAN_LINK_URL).");
   return lines.join("\n");
+}
+
+export function resolveLinkListenHost(
+  read: (name: string) => string | undefined = readEnv,
+): string {
+  return read("LINK_HOST") ?? "127.0.0.1";
 }
 
 export function resolveLinkBaseUrl(): string | undefined {

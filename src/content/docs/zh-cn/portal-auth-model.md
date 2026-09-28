@@ -137,6 +137,8 @@ description: mikan 管理、登录和会话 portal 使用的短期 capability to
 
 服务器仅在 `LINK_PORT` / `MIKAN_LINK_PORT` 可以解析为端口时启动。如果设置了 `LINK_URL` / `MIKAN_LINK_URL` 但未配置端口，mikan 使用默认端口 `8181`。
 
+无论是否设置 `LINK_URL`，服务器都只监听 `127.0.0.1`，除非 `LINK_HOST` / `MIKAN_LINK_HOST` 指定其他地址。请在同一台主机用 Caddy 等反向代理对外（`reverse_proxy 127.0.0.1:8181`），让 portal token 只经过 TLS 传输；仅当代理位于另一台主机或另一个 network namespace 时才设置 `LINK_HOST=0.0.0.0`，并用防火墙挡住该端口。
+
 Token store 目前位于内存中，`src/main.ts` 每五分钟清理过期 token。进程重启会使所有未过期的 Web token 失效。
 
 这些 URL 是 bearer capability。Query-string token 可能通过浏览器历史记录、截图、复制的 URL 或代理日志泄露；请只与预期用户共享，绝不要发布到聊天频道或 issue tracker 中。

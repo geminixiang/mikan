@@ -139,6 +139,8 @@ Even if a full dashboard is added later, these boundaries should remain:
 
 The server starts only when `LINK_PORT` / `MIKAN_LINK_PORT` can be parsed as a port. If `LINK_URL` / `MIKAN_LINK_URL` is set but no port is configured, mikan uses the default port `8181`.
 
+The server listens on `127.0.0.1` unless `LINK_HOST` / `MIKAN_LINK_HOST` names another address, whether or not `LINK_URL` is set. Put a reverse proxy such as Caddy on the same host in front of it (`reverse_proxy 127.0.0.1:8181`) so portal tokens only travel over TLS; set `LINK_HOST=0.0.0.0` only when the proxy runs on another host or network namespace, and firewall the port.
+
 Token stores are currently in-memory and `src/main.ts` cleans expired tokens every five minutes. A process restart invalidates all unexpired web tokens.
 
 These URLs are bearer capabilities. Query-string tokens can leak through browser history, screenshots, copied URLs, or proxy logs; share them only with the intended user and never publish them in chat channels or issue trackers.

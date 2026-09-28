@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Security
+
+- **Breaking (deploy):** The link server (Admin, Session View, and credential links) now listens on `127.0.0.1` even when `LINK_URL` is set; it used to listen on every interface, so portal tokens could travel in plain HTTP straight to `LINK_PORT` around the TLS reverse proxy. A reverse proxy on the same host (`reverse_proxy 127.0.0.1:8181`) keeps working unchanged. Set the new `LINK_HOST` (for example `0.0.0.0`) when the proxy runs on another host or in a separate network namespace.
+
 ## [1.0.0-beta.80]
 
 ### Fixed

@@ -22,6 +22,7 @@ import { errorMessage } from "../../unknown-values.js";
 
 interface StartWebServerOptions {
   port: number;
+  host: string;
   linkTokenStore: InMemoryLinkTokenStore;
   vaultManager: VaultManager;
   notify: NotifyFn;
@@ -109,12 +110,11 @@ export function startWebServer(options: StartWebServerOptions): Server {
     }
   });
 
-  const bindHost = resolveLinkBaseUrl() ? undefined : "127.0.0.1";
-  server.listen(options.port, bindHost, () => {
-    log.logInfo(`Web server listening on ${bindHost ?? "0.0.0.0"}:${options.port}`);
+  server.listen(options.port, options.host, () => {
+    log.logInfo(`Web server listening on ${options.host}:${options.port}`);
     if (!resolveLinkBaseUrl()) {
       log.logWarning(
-        "MIKAN_LINK_URL is not set — bound to 127.0.0.1 and OAuth redirect_uri will be " +
+        "MIKAN_LINK_URL is not set — OAuth redirect_uri will be " +
           "derived from request headers (Host / X-Forwarded-*). Set " +
           "MIKAN_LINK_URL=https://your-host.example.com for production.",
       );

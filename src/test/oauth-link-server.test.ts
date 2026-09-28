@@ -69,7 +69,13 @@ async function createFlow(
 
   const tokenStore = new InMemoryLinkTokenStore();
   const token = tokenStore.create("telegram", userId, userId.replace(/^U/, ""), vaultId, "");
-  const server = startWebServer({ port: 0, linkTokenStore: tokenStore, vaultManager, notify });
+  const server = startWebServer({
+    port: 0,
+    host: "127.0.0.1",
+    linkTokenStore: tokenStore,
+    vaultManager,
+    notify,
+  });
   servers.push(server);
   await waitForListening(server);
 
