@@ -15,7 +15,13 @@ workspace projection, Vault credentials, and managed image-container readiness
 to that run's tools and prompt. The resolver rejects overlapping mount targets
 before executor creation and reports provisioning failures without changing
 cleanup ownership. `prompt.ts` owns prompt construction; `presenter.ts` turns
-session events into responder operations. These responsibilities share the
+session events into responder operations in two passes: a run observer records
+telemetry, run accounting, and daemon logs from the raw Pi event, then
+`run-events.ts` translates the event into a platform-neutral `RunEvent` that the
+front projection renders through the responder. The front projection reads only
+`RunEvent`s, so another view of the same run (such as Session View) can consume
+the same stream without re-deriving state from chat-shaped responder calls.
+These responsibilities share the
 harness module with the native Pi session integration rather than forming a
 separate agent-runner module.
 

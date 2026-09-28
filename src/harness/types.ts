@@ -337,6 +337,22 @@ export type HarnessEvent =
 
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
+export type RunEvent =
+  | { type: "tool_started"; toolCallId: string; toolName: string; label: string; args: unknown }
+  | { type: "subagent_progress"; toolCallId: string; snapshot: SubagentProgressSnapshot }
+  | {
+      type: "tool_ended";
+      toolCallId: string;
+      toolName: string;
+      isError: boolean;
+      resultText: string;
+    }
+  | { type: "assistant_delta"; delta: string }
+  | { type: "assistant_message"; thinking: string[]; text: string; callsTools: boolean }
+  | { type: "compaction_started" }
+  | { type: "retry_started"; attempt: number; maxAttempts: number }
+  | { type: "budget_exceeded"; reason: string };
+
 export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
 
 export type MikanToolInput = AgentTool | MikanHarnessTool;

@@ -1,0 +1,166 @@
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { describe, expect, test } from "vitest";
+import { toRunEvent } from "../harness/run-events.js";
+import { JEV_TOOL } from "../harness/tools/jev.js";
+
+const subagentSnapshot = {
+  mode: "single",
+  nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
+};
+
+describe("toRunEvent", () => {
+  test("names a started tool by its trimmed label, falling back to the tool name", () => {
+    expect(
+      toRunEvent({
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: "bash",
+        args: { label: "  List files  ", command: "ls" },
+      }),
+    ).toEqual({
+      type: "tool_started",
+      toolCallId: "t1",
+      toolName: "bash",
+      label: "List files",
+      args: { label: "  List files  ", command: "ls" },
+    });
+    expect(
+      toRunEvent({ type: "tool_execution_start", toolCallId: "t2", toolName: "read", args: {} }),
+    ).toMatchObject({ label: "read" });
+  });
+
+  test("prefixes Jev labels with the tool name", () => {
+    expect(
+      toRunEvent({
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: JEV_TOOL,
+        args: { label: "Check memory" },
+      }),
+    ).toMatchObject({ label: `${JEV_TOOL} · Check memory` });
+  });
+
+  test("reports subagent progress and ignores other partial results", () => {
+    expect(
+      toRunEvent({
+        type: "tool_execution_update",
+        toolCallId: "s1",
+        toolName: "subagent",
+        args: {},
+        partialResult: { details: { progress: subagentSnapshot } },
+      }),
+    ).toMatchObject({
+      type: "subagent_progress",
+      toolCallId: "s1",
+      snapshot: { mode: "single", nodes: [{ id: "node-1", status: "running" }] },
+    });
+    expect(
+      toRunEvent({
+        type: "tool_execution_update",
+        toolCallId: "b1",
+        toolName: "bash",
+        args: {},
+        partialResult: { content: [{ type: "text", text: "partial" }] },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("reports a finished tool with its text result", () => {
+    expect(
+      toRunEvent({
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        toolName: "bash",
+        isError: true,
+        result: { content: [{ type: "text", text: "boom" }] },
+      }),
+    ).toEqual({
+      type: "tool_ended",
+      toolCallId: "t1",
+      toolName: "bash",
+      isError: true,
+      resultText: "boom",
+    });
+  });
+
+  test("reports assistant text deltas and drops empty or non-text updates", () => {
+    const message = fauxAssistantMessage("hi");
+    expect(
+      toRunEvent({
+        type: "message_update",
+        message,
+        assistantMessageEvent: {
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "hi",
+          partial: message,
+        },
+      }),
+    ).toEqual({ type: "assistant_delta", delta: "hi" });
+    expect(
+      toRunEvent({
+        type: "message_update",
+        message,
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "", partial: message },
+      }),
+    ).toBeUndefined();
+    expect(
+      toRunEvent({
+        type: "message_update",
+        message,
+        assistantMessageEvent: {
+          type: "thinking_delta",
+          contentIndex: 0,
+          delta: "hmm",
+          partial: message,
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("reports a finished assistant message with its thinking, text, and whether it calls tools", () => {
+    const message = fauxAssistantMessage([
+      { type: "thinking", thinking: "plan" },
+      { type: "text", text: "first" },
+      { type: "text", text: "second" },
+      { type: "toolCall", id: "t1", name: "bash", arguments: {} },
+    ]);
+    expect(toRunEvent({ type: "message_end", message })).toEqual({
+      type: "assistant_message",
+      thinking: ["plan"],
+      text: "first\nsecond",
+      callsTools: true,
+    });
+    expect(
+      toRunEvent({
+        type: "message_end",
+        message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 },
+      }),
+    ).toBeUndefined();
+  });
+
+  test("reports compaction start, retries, and budget stops", () => {
+    expect(toRunEvent({ type: "compaction_start", reason: "threshold" })).toEqual({
+      type: "compaction_started",
+    });
+    expect(
+      toRunEvent({
+        type: "auto_retry_start",
+        attempt: 2,
+        maxAttempts: 3,
+        delayMs: 1000,
+        errorMessage: "overloaded",
+      }),
+    ).toEqual({ type: "retry_started", attempt: 2, maxAttempts: 3 });
+    expect(
+      toRunEvent({
+        type: "budget_exceeded",
+        reason: "tool loop: bash",
+        tokens: 1,
+        costUsd: 0,
+        llmCalls: 1,
+        durationMs: 1,
+      }),
+    ).toEqual({ type: "budget_exceeded", reason: "tool loop: bash" });
+  });
+});

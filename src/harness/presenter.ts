@@ -5,6 +5,7 @@ import type {
   PlatformToolRoles,
   RunPresentation,
   RunPresentationContext,
+  RunEvent,
   RunnerSessionState,
   SessionEventHandlerParams,
   UsageReportContext,
@@ -12,7 +13,6 @@ import type {
 import type { MikanAgentSession } from "./session.js";
 import {
   mergeSubagentProgress,
-  parseSubagentProgressSnapshot,
   renderSubagentDashboard,
   settleSubagentProgress,
 } from "./tools/subagent.js";
@@ -31,8 +31,7 @@ import {
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
-import { JEV_TOOL } from "./tools/jev.js";
-import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
+import { toRunEvent, toolResultText } from "./run-events.js";
 
 import * as log from "../log.js";
 import { errorMessage } from "../unknown-values.js";
@@ -181,15 +180,6 @@ export function isEventTriggerAttribution(triggerAttribution: string | undefined
   return triggerAttribution?.startsWith("[event:") === true;
 }
 
-function extractToolLabel(toolName: string, args: unknown): string {
-  const label = (args as { label?: unknown } | undefined)?.label;
-  const text = typeof label === "string" ? label.trim() || toolName : toolName;
-  if ((toolName === JEV_TOOL || toolName === JEV_BROWSER_TOOL) && text !== toolName) {
-    return `${toolName} · ${text}`;
-  }
-  return text;
-}
-
 function formatToolProgress(runState: RunnerSessionState): string {
   const lines = Array.from(runState.toolProgress.entries()).flatMap(([toolCallId, item]) => {
     if (runState.subagentToolCalls.has(toolCallId)) return [];
@@ -277,13 +267,6 @@ function flushToolProgressUpdate(
     () => replaceResponseWithToolProgress(responder, runState, subagentProgress),
     "tool progress update",
   );
-}
-
-function extractSubagentProgress(partialResult: unknown): SubagentProgressSnapshot | undefined {
-  if (!partialResult || typeof partialResult !== "object") return undefined;
-  const details = (partialResult as { details?: unknown }).details;
-  if (!details || typeof details !== "object") return undefined;
-  return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
 }
 
 async function finalizeErrorResponse(
@@ -534,21 +517,6 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   }
 }
 
-function toolResultContentText(result: unknown): string | undefined {
-  if (!result || typeof result !== "object" || !("content" in result)) return undefined;
-  const content = (result as { content: unknown }).content;
-  if (!Array.isArray(content)) return undefined;
-  const textParts = (content as Array<{ type?: string; text?: string }>)
-    .filter((part) => part.type === "text" && part.text)
-    .map((part) => part.text);
-  return textParts.length > 0 ? textParts.join("\n") : undefined;
-}
-
-function extractToolResultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  return toolResultContentText(result) ?? JSON.stringify(result);
-}
-
 function serializedLength(value: unknown): number {
   if (typeof value === "string") return value.length;
   try {
@@ -567,20 +535,23 @@ function toolCategory(name: string, roles: PlatformToolRoles): string {
   return "function";
 }
 
-interface PresenterEventContext {
+interface RunObserverContext {
   runState: RunnerSessionState;
-  responder: ConversationResponder;
   logCtx: NonNullable<RunnerSessionState["logCtx"]>;
-  queue: NonNullable<RunnerSessionState["queue"]>;
   baseAttrs: { channel_id: string; session_id: string | undefined };
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   platformToolRoles: PlatformToolRoles;
 }
 
-type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
+interface FrontProjectionContext {
+  runState: RunnerSessionState;
+  responder: ConversationResponder;
+  logCtx: NonNullable<RunnerSessionState["logCtx"]>;
+  queue: NonNullable<RunnerSessionState["queue"]>;
+}
 
-type ToolUpdateEvent = Extract<HarnessEvent, { type: "tool_execution_update" }>;
+type ToolStartEvent = Extract<HarnessEvent, { type: "tool_execution_start" }>;
 
 type ToolEndEvent = Extract<HarnessEvent, { type: "tool_execution_end" }>;
 
@@ -597,8 +568,8 @@ type LifecycleEvent = Extract<
   { type: "compaction_start" | "compaction_end" | "auto_retry_start" | "budget_exceeded" }
 >;
 
-function handleToolStart(event: ToolStartEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx, queue, baseAttrs } = context;
+function observeToolStart(event: ToolStartEvent, context: RunObserverContext): void {
+  const { runState, logCtx, baseAttrs } = context;
   const args = (event.args ?? {}) as { label?: string };
   const label = args.label || event.toolName;
   runState.toolCallCount += 1;
@@ -609,20 +580,6 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
     startTime: Date.now(),
   });
   if (event.toolName === START_TASK_TOOL) return;
-  if (event.toolName !== TASK_STATUS_TOOL) {
-    runState.toolProgress.set(event.toolCallId, {
-      label: extractToolLabel(event.toolName, event.args),
-      status: "running",
-    });
-  }
-  if (event.toolName === "subagent") {
-    runState.subagentToolCalls.add(event.toolCallId);
-  } else if (event.toolName !== TASK_STATUS_TOOL) {
-    queue.enqueue(
-      () => replaceResponseWithToolProgress(responder, runState),
-      "tool progress update",
-    );
-  }
   spansFor(runState).tools.set(
     event.toolCallId,
     startOperationSpan(
@@ -642,19 +599,10 @@ function handleToolStart(event: ToolStartEvent, context: PresenterEventContext):
   log.logToolStart(logCtx, event.toolName, label, event.args as Record<string, unknown>);
 }
 
-function handleToolUpdate(event: ToolUpdateEvent, context: PresenterEventContext): void {
-  const subagentProgress = extractSubagentProgress(event.partialResult);
-  if (!subagentProgress) return;
-  context.runState.subagentProgress.set(event.toolCallId, subagentProgress);
-  context.runState.subagentToolCalls.add(event.toolCallId);
-  context.runState.suppressResponseDeltas = true;
-  scheduleToolProgressUpdate(context.responder, context.runState);
-}
-
 function recordToolMetrics(
   event: ToolEndEvent,
   durationMs: number,
-  context: PresenterEventContext,
+  context: RunObserverContext,
 ): void {
   recordCounter(
     "agent.tool.calls",
@@ -677,15 +625,14 @@ function recordToolMetrics(
   });
 }
 
-function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): void {
-  const { runState, responder, logCtx } = context;
-  const resultStr = extractToolResultText(event.result);
+function observeToolEnd(event: ToolEndEvent, context: RunObserverContext): void {
+  const { runState, logCtx } = context;
   const outputCharacters = serializedLength(event.result);
   runState.toolOutputCharacters += outputCharacters;
   if (event.isError) runState.toolErrorCount += 1;
   const pending = runState.pendingTools.get(event.toolCallId);
+  runState.pendingTools.delete(event.toolCallId);
   if (event.toolName === START_TASK_TOOL) {
-    runState.pendingTools.delete(event.toolCallId);
     if (!event.isError) runState.finalResponseHandledByTool = true;
     else
       reportUserFacingError(new Error("Task admission failed"), {
@@ -697,20 +644,6 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
       });
     return;
   }
-  const progress = runState.toolProgress.get(event.toolCallId);
-  if (progress) progress.status = event.isError ? "error" : "done";
-  const subagentProgress = runState.subagentProgress.get(event.toolCallId);
-  if (subagentProgress) {
-    runState.subagentProgress.set(
-      event.toolCallId,
-      settleSubagentProgress(subagentProgress, event.isError),
-    );
-  }
-  if (event.toolName !== TASK_STATUS_TOOL) flushToolProgressUpdate(responder, runState);
-  const completedProgress = runState.subagentProgress.get(event.toolCallId);
-  if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
-  runState.subagentProgress.delete(event.toolCallId);
-  runState.pendingTools.delete(event.toolCallId);
   const durationMs = pending ? Date.now() - pending.startTime : 0;
   const toolSpan = spansFor(runState).tools.get(event.toolCallId);
   toolSpan?.end({
@@ -727,6 +660,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   });
   spansFor(runState).tools.delete(event.toolCallId);
   recordToolMetrics(event, durationMs, context);
+  const resultStr = toolResultText(event.result);
   if (event.isError) {
     log.logToolError(logCtx, event.toolName, durationMs, resultStr);
     return;
@@ -737,7 +671,7 @@ function handleToolEnd(event: ToolEndEvent, context: PresenterEventContext): voi
   }
 }
 
-function handleMessageStart(event: MessageStartEvent, context: PresenterEventContext): void {
+function observeMessageStart(event: MessageStartEvent, context: RunObserverContext): void {
   if (event.message.role !== "assistant") return;
   context.runState.llmCallCount += 1;
   spansFor(context.runState).llm.push({
@@ -764,7 +698,7 @@ function handleMessageStart(event: MessageStartEvent, context: PresenterEventCon
   log.logResponseStart(context.logCtx);
 }
 
-function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventContext): void {
+function observeMessageUpdate(event: MessageUpdateEvent, context: RunObserverContext): void {
   const update = event.assistantMessageEvent;
   if (update.type !== "text_delta" || !update.delta) return;
   const llmEntry = spansFor(context.runState).llm[0];
@@ -772,14 +706,9 @@ function handleMessageUpdate(event: MessageUpdateEvent, context: PresenterEventC
     llmEntry.firstTokenAt = Date.now();
     context.runState.firstTokenLatencyMs ??= llmEntry.firstTokenAt - llmEntry.startedAt;
   }
-  if (context.responder.appendResponseDelta && !context.runState.suppressResponseDeltas) {
-    context.queue.enqueue(async () => {
-      await context.responder.appendResponseDelta?.(update.delta);
-    }, "response delta");
-  }
 }
 
-function recordAssistantUsage(message: AssistantMessage, context: PresenterEventContext): void {
+function recordAssistantUsage(message: AssistantMessage, context: RunObserverContext): void {
   if (!message.usage) return;
   const { totalUsage } = context.runState;
   totalUsage.input += message.usage.input;
@@ -823,49 +752,7 @@ function recordAssistantUsage(message: AssistantMessage, context: PresenterEvent
   });
 }
 
-function presentThinking(thinking: string, context: PresenterEventContext): void {
-  log.logThinking(context.logCtx, thinking);
-  context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
-  context.queue.enqueue(
-    () => context.responder.respondDiagnostic(`_${thinking}_`),
-    "thinking diagnostic",
-  );
-}
-
-function presentFinalText(text: string, context: PresenterEventContext): void {
-  const finalText = appendTriggerAttribution(
-    formatResponseWithToolProgress(text, context.runState),
-    context.runState.triggerAttribution,
-  );
-  log.logResponse(context.logCtx, text);
-  if (context.runState.completedSubagentProgress.length > 0) return;
-  if (context.responder.finishResponse) {
-    context.queue.enqueue(async () => {
-      await context.responder.finishResponse?.(finalText);
-    }, "response finish");
-  } else {
-    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
-  }
-}
-
-function presentAssistantMessage(message: AssistantMessage, context: PresenterEventContext): void {
-  const thinkingParts: string[] = [];
-  const textParts: string[] = [];
-  const hasToolCall = message.content.some((part) =>
-    ["tool_use", "toolCall", "tool-call"].includes((part as { type?: string }).type ?? ""),
-  );
-  for (const part of message.content) {
-    if (part.type === "thinking") thinkingParts.push(part.thinking);
-    else if (part.type === "text") textParts.push(part.text);
-  }
-  for (const thinking of thinkingParts) presentThinking(thinking, context);
-
-  const text = textParts.join("\n");
-  if (!text.trim() || hasToolCall || context.runState.finalResponseHandledByTool) return;
-  presentFinalText(text, context);
-}
-
-function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext): void {
+function observeMessageEnd(event: MessageEndEvent, context: RunObserverContext): void {
   if (event.message.role !== "assistant") return;
   const message = event.message;
   context.runState.assistantMessageCount += 1;
@@ -915,15 +802,12 @@ function handleMessageEnd(event: MessageEndEvent, context: PresenterEventContext
     }),
     error: message.errorMessage ? operationError("LLMError") : undefined,
   });
-  presentAssistantMessage(message, context);
 }
 
-function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventContext): void {
+function observeLifecycleEvent(event: LifecycleEvent, context: RunObserverContext): void {
   if (event.type === "compaction_start") {
     context.runState.compactionCount += 1;
-    const text = "_Compacting context..._";
     log.logInfo(`Auto-compaction started (reason: ${event.reason})`);
-    context.queue.enqueue(() => context.responder.respond(text), "compaction start");
     return;
   }
   if (event.type === "compaction_end") {
@@ -937,51 +821,164 @@ function handleLifecycleEvent(event: LifecycleEvent, context: PresenterEventCont
   if (event.type === "auto_retry_start") {
     context.runState.retryCount += 1;
     log.logWarning(`Retrying (${event.attempt}/${event.maxAttempts})`, event.errorMessage);
-    const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-    context.queue.enqueue(() => context.responder.respond(text), "retry");
     return;
   }
-
   context.runState.budgetExceeded = true;
   log.logWarning(
     "Run stopped by budget circuit breaker",
     `${event.reason} (tokens=${event.tokens}, cost=${event.costUsd.toFixed(2)}, calls=${event.llmCalls}, ${event.durationMs}ms)`,
   );
-  const text = `_Stopped: run budget exceeded (${event.reason})_`;
-  context.queue.enqueue(
-    () => context.responder.respondDiagnostic(text, { style: "error" }),
-    "budget exceeded",
-  );
 }
 
-function handlePresenterEvent(event: HarnessEvent, context: PresenterEventContext): void {
+function observeHarnessEvent(event: HarnessEvent, context: RunObserverContext): void {
   switch (event.type) {
     case "tool_execution_start":
-      handleToolStart(event, context);
-      return;
-    case "tool_execution_update":
-      handleToolUpdate(event, context);
+      observeToolStart(event, context);
       return;
     case "tool_execution_end":
-      handleToolEnd(event, context);
+      observeToolEnd(event, context);
       return;
     case "message_start":
-      handleMessageStart(event, context);
+      observeMessageStart(event, context);
       return;
     case "message_update":
-      handleMessageUpdate(event, context);
+      observeMessageUpdate(event, context);
       return;
     case "message_end":
-      handleMessageEnd(event, context);
+      observeMessageEnd(event, context);
       return;
     case "compaction_start":
     case "compaction_end":
     case "auto_retry_start":
     case "budget_exceeded":
-      handleLifecycleEvent(event, context);
+      observeLifecycleEvent(event, context);
       return;
     default:
       return;
+  }
+}
+
+type RunEventOf<T extends RunEvent["type"]> = Extract<RunEvent, { type: T }>;
+
+function presentToolStarted(event: RunEventOf<"tool_started">, context: FrontProjectionContext) {
+  const { runState, responder, queue } = context;
+  if (event.toolName === START_TASK_TOOL || event.toolName === TASK_STATUS_TOOL) return;
+  runState.toolProgress.set(event.toolCallId, { label: event.label, status: "running" });
+  if (event.toolName === "subagent") {
+    runState.subagentToolCalls.add(event.toolCallId);
+    return;
+  }
+  queue.enqueue(() => replaceResponseWithToolProgress(responder, runState), "tool progress update");
+}
+
+function presentSubagentProgress(
+  event: RunEventOf<"subagent_progress">,
+  context: FrontProjectionContext,
+): void {
+  context.runState.subagentProgress.set(event.toolCallId, event.snapshot);
+  context.runState.subagentToolCalls.add(event.toolCallId);
+  context.runState.suppressResponseDeltas = true;
+  scheduleToolProgressUpdate(context.responder, context.runState);
+}
+
+function presentToolEnded(event: RunEventOf<"tool_ended">, context: FrontProjectionContext) {
+  const { runState, responder } = context;
+  if (event.toolName === START_TASK_TOOL) return;
+  const progress = runState.toolProgress.get(event.toolCallId);
+  if (progress) progress.status = event.isError ? "error" : "done";
+  const subagentProgress = runState.subagentProgress.get(event.toolCallId);
+  if (subagentProgress) {
+    runState.subagentProgress.set(
+      event.toolCallId,
+      settleSubagentProgress(subagentProgress, event.isError),
+    );
+  }
+  if (event.toolName !== TASK_STATUS_TOOL) flushToolProgressUpdate(responder, runState);
+  const completedProgress = runState.subagentProgress.get(event.toolCallId);
+  if (completedProgress) runState.completedSubagentProgress.push(completedProgress);
+  runState.subagentProgress.delete(event.toolCallId);
+}
+
+function presentAssistantDelta(
+  event: RunEventOf<"assistant_delta">,
+  context: FrontProjectionContext,
+): void {
+  if (!context.responder.appendResponseDelta || context.runState.suppressResponseDeltas) return;
+  context.queue.enqueue(async () => {
+    await context.responder.appendResponseDelta?.(event.delta);
+  }, "response delta");
+}
+
+function presentThinking(thinking: string, context: FrontProjectionContext): void {
+  log.logThinking(context.logCtx, thinking);
+  context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
+  context.queue.enqueue(
+    () => context.responder.respondDiagnostic(`_${thinking}_`),
+    "thinking diagnostic",
+  );
+}
+
+function presentFinalText(text: string, context: FrontProjectionContext): void {
+  const finalText = appendTriggerAttribution(
+    formatResponseWithToolProgress(text, context.runState),
+    context.runState.triggerAttribution,
+  );
+  log.logResponse(context.logCtx, text);
+  if (context.runState.completedSubagentProgress.length > 0) return;
+  if (context.responder.finishResponse) {
+    context.queue.enqueue(async () => {
+      await context.responder.finishResponse?.(finalText);
+    }, "response finish");
+  } else {
+    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
+  }
+}
+
+function presentAssistantMessage(
+  event: RunEventOf<"assistant_message">,
+  context: FrontProjectionContext,
+): void {
+  for (const thinking of event.thinking) presentThinking(thinking, context);
+  if (!event.text.trim() || event.callsTools || context.runState.finalResponseHandledByTool) return;
+  presentFinalText(event.text, context);
+}
+
+function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void {
+  switch (event.type) {
+    case "tool_started":
+      presentToolStarted(event, context);
+      return;
+    case "subagent_progress":
+      presentSubagentProgress(event, context);
+      return;
+    case "tool_ended":
+      presentToolEnded(event, context);
+      return;
+    case "assistant_delta":
+      presentAssistantDelta(event, context);
+      return;
+    case "assistant_message":
+      presentAssistantMessage(event, context);
+      return;
+    case "compaction_started":
+      context.queue.enqueue(
+        () => context.responder.respond("_Compacting context..._"),
+        "compaction start",
+      );
+      return;
+    case "retry_started": {
+      const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
+      context.queue.enqueue(() => context.responder.respond(text), "retry");
+      return;
+    }
+    case "budget_exceeded": {
+      const text = `_Stopped: run budget exceeded (${event.reason})_`;
+      context.queue.enqueue(
+        () => context.responder.respondDiagnostic(text, { style: "error" }),
+        "budget exceeded",
+      );
+      return;
+    }
   }
 }
 
@@ -989,11 +986,9 @@ export function attachSessionEventHandlers(params: SessionEventHandlerParams): v
   const { session, runState, model, agentConfig, platformToolRoles } = params;
   session.subscribe((event) => {
     if (!runState.responder || !runState.logCtx || !runState.queue) return;
-    handlePresenterEvent(event, {
+    observeHarnessEvent(event, {
       runState,
-      responder: runState.responder,
       logCtx: runState.logCtx,
-      queue: runState.queue,
       baseAttrs: {
         channel_id: runState.logCtx.conversationId,
         session_id: runState.logCtx.sessionId,
@@ -1001,6 +996,14 @@ export function attachSessionEventHandlers(params: SessionEventHandlerParams): v
       model,
       agentConfig,
       platformToolRoles,
+    });
+    const runEvent = toRunEvent(event);
+    if (!runEvent) return;
+    presentRunEvent(runEvent, {
+      runState,
+      responder: runState.responder,
+      logCtx: runState.logCtx,
+      queue: runState.queue,
     });
   });
 }
