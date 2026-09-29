@@ -91,6 +91,56 @@ function plainTextFallback(tokens: Token[]): string {
   return parts.filter(Boolean).join("\n");
 }
 
+function slackExpandedBlockCount(text: string): number {
+  let count = 0;
+  let inProse = false;
+  for (const token of markdown.parse(text, {})) {
+    if (token.level !== 0 || token.nesting === -1) continue;
+    if (token.type === "heading_open") {
+      count += 1;
+      inProse = false;
+    } else if (token.type !== "inline" && !inProse) {
+      count += 1;
+      inProse = true;
+    }
+  }
+  return count;
+}
+
+function headingsAsBoldLines(text: string): string {
+  const lines = text.split("\n");
+  for (const token of markdown.parse(text, {})) {
+    if (token.type !== "heading_open" || !token.map) continue;
+    const [start] = token.map;
+    const heading = lines[start];
+    if (heading === undefined) continue;
+    const content = heading
+      .replace(/^\s*#{1,6}\s+/, "")
+      .replace(/\s+#+\s*$/, "")
+      .trim();
+    lines[start] = content ? `**${content}**` : "";
+  }
+  return lines.join("\n");
+}
+
+function fitSlackBlockLimit(blocks: KnownBlock[]): KnownBlock[] {
+  const expanded = blocks.reduce(
+    (total, block) =>
+      total +
+      (block.type === "markdown" ? slackExpandedBlockCount((block as { text: string }).text) : 1),
+    0,
+  );
+  if (expanded <= MAX_BLOCKS) return blocks;
+  return blocks.map((block) =>
+    block.type === "markdown"
+      ? ({
+          type: "markdown",
+          text: headingsAsBoldLines((block as { text: string }).text),
+        } as KnownBlock)
+      : block,
+  );
+}
+
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
   const normalized = normalizeMarkdownTables(
     normalizeSlackCurrencyBold(source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)")),
@@ -120,6 +170,6 @@ export function renderSlackBlocks(source: string): { text: string; blocks: Known
 
   return {
     text: fallback.filter(Boolean).join("\n\n") || normalized,
-    blocks,
+    blocks: fitSlackBlockLimit(blocks),
   };
 }

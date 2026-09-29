@@ -11,6 +11,7 @@ any release.
 
 ### Fixed
 
+- A long Slack answer with many headings no longer fails with `invalid_blocks` and an `Error:` line. Slack expands each heading of a markdown block into its own block and rejects a message with more than 50; when an answer would exceed that, its headings are sent as bold lines instead.
 - MCP tools ask the model for a progress label like every built-in tool, so the Slack checklist shows a readable step (for example "確認 GitHub 連線") instead of `mcp__server__tool`. The label is not forwarded to the MCP server, and a tool that already has its own `label` argument is left unchanged.
 
 ## [1.0.0-beta.85]

@@ -17,6 +17,20 @@ describe("renderSlackBlocks", () => {
     expect(rendered.blocks).toEqual([{ type: "markdown", text: source }]);
   });
 
+  test("keeps headings while Slack's expansion of them fits in one message", () => {
+    const source = Array.from({ length: 3 }, (_, i) => `## Part ${i}\n\nBody ${i}`).join("\n\n");
+    expect(markdownTexts(renderSlackBlocks(source).blocks)).toEqual([source]);
+  });
+
+  test("turns headings into bold lines when Slack would expand them past 50 blocks", () => {
+    const source = Array.from({ length: 30 }, (_, i) => `## Part ${i}\n\nBody ${i}`).join("\n\n");
+    const texts = markdownTexts(renderSlackBlocks(source).blocks);
+    const joined = texts.join("\n\n");
+    expect(joined).not.toMatch(/^#{1,6} /m);
+    expect(joined).toContain("**Part 0**\n\nBody 0");
+    expect(joined).toContain("**Part 29**\n\nBody 29");
+  });
+
   test("keeps bullets verbatim in the markdown block", () => {
     const rendered = renderSlackBlocks("- one\n- two");
     expect(rendered.blocks).toEqual([{ type: "markdown", text: "- one\n- two" }]);
