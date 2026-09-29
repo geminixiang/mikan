@@ -456,6 +456,31 @@ test("status questions in an active task are read-only, immediate, and do not ad
   );
 });
 
+test("a status question answered as the completion notice goes out does not say the task is running", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
+  const root = await startTask();
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  let statusAtCompletion: string | undefined;
+  const post = vi.mocked(bot.postMessage).getMockImplementation();
+  vi.mocked(bot.postMessage).mockImplementation(async (channel, text, threadTs) => {
+    if (text.includes("這一輪處理已結束")) {
+      const [task] = await querySlackTasks(
+        office.dir,
+        "D123",
+        runtime.getRunningSessions(),
+        `D123:${root}`,
+      );
+      statusAtCompletion = task?.status;
+    }
+    return post ? post(channel, text, threadTs) : "1.1";
+  });
+
+  hold.resolve();
+  await vi.waitFor(() => expect(statusAtCompletion).toBeDefined());
+
+  expect(statusAtCompletion).toBe("completed");
+});
+
 test("main DM task_status reads live work and persisted completion without reopening writer", async () => {
   let observed = "";
   faux.setResponses([

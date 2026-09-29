@@ -11,6 +11,7 @@ any release.
 
 ### Fixed
 
+- Asking "好了嗎" at the moment a background task finishes no longer answers "還在處理" right beside the completion notice. Task status now trusts the recorded end of the run over the runtime's still-settling state.
 - A Slack message whose acknowledgement was lost during a socket reconnect no longer runs twice. Slack redelivers such events; mikan now recognizes a message or mention it has already taken and ignores the copy. A failed acknowledgement is logged instead of surfacing as an unhandled promise rejection.
 - A Slack app that is not an agent app no longer calls `assistant.threads.setSuggestedPrompts` and logs `not_agent_app` every time someone opens its DM; after the first refusal the call is skipped until restart.
 - A long Slack answer that outgrew the native stream no longer shows up twice. The partial streamed message is deleted before the full answer is posted, and the notification text sent with it is capped at the 4,000 bytes `chat.update` accepts, so the edit no longer fails with `msg_too_long`.

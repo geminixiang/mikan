@@ -55,17 +55,16 @@ export async function querySlackTasks(
       observedAt: new Date().toISOString(),
       status: "unknown",
     };
-    if (active) {
-      observation.status = active.stopping ? "stopping" : "running";
-      observation.currentTool = active.currentTool;
-      observations.push(observation);
-      continue;
-    }
     try {
       const state = await SessionStore.inspectExecution(getThreadSessionFile(conversationDir, key));
-      if (!state.open && state.result) {
+      const finishedThisRun =
+        !state.open && state.result && (!active || state.result.endedAt >= active.startedAt);
+      if (finishedThisRun && state.result) {
         observation.status = state.result.status;
         observation.endedAt = new Date(state.result.endedAt).toISOString();
+      } else if (active) {
+        observation.status = active.stopping ? "stopping" : "running";
+        observation.currentTool = active.currentTool;
       } else if (!state.started) {
         observation.status = "queued";
       }
