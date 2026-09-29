@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import type { MikanModels } from "../../../harness/models.js";
+import { parseJsonSchemaValue } from "../../../file-guards.js";
 
 type AdminModelStatus = "available" | "unverified";
 
@@ -17,6 +19,10 @@ interface ProviderModelsCacheEntry {
 }
 
 const providerModelsCache = new Map<string, ProviderModelsCacheEntry>();
+
+const ModelListSchema = Type.Object({
+  data: Type.Optional(Type.Array(Type.Object({ id: Type.Optional(Type.Unknown()) }))),
+});
 
 export async function resolveAdminModelAccessStatuses(
   registry: MikanModels,
@@ -86,8 +92,7 @@ async function fetchOpenAiModelIds(apiKey: string): Promise<Set<string>> {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (!response.ok) throw new Error(`OpenAI models request failed: ${response.status}`);
-  const body = (await response.json()) as { data?: Array<{ id?: unknown }> };
-  return new Set((body.data ?? []).map((model) => model.id).filter(isString));
+  return readModelIds(response, "OpenAI");
 }
 
 async function fetchAnthropicModelIds(apiKey: string): Promise<Set<string>> {
@@ -98,7 +103,15 @@ async function fetchAnthropicModelIds(apiKey: string): Promise<Set<string>> {
     },
   });
   if (!response.ok) throw new Error(`Anthropic models request failed: ${response.status}`);
-  const body = (await response.json()) as { data?: Array<{ id?: unknown }> };
+  return readModelIds(response, "Anthropic");
+}
+
+async function readModelIds(response: Response, provider: string): Promise<Set<string>> {
+  const body = parseJsonSchemaValue(
+    await response.text(),
+    ModelListSchema,
+    (detail) => `${provider} models response is malformed: ${detail}`,
+  );
   return new Set((body.data ?? []).map((model) => model.id).filter(isString));
 }
 

@@ -70,6 +70,36 @@ describe("generate_image tool", () => {
     expect(await readFile(hostPath)).toEqual(image);
   });
 
+  test("reports the HTTP status when a failing provider returns a non-JSON body", async () => {
+    const outputDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
+    dirs.push(outputDir);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<html>Bad Gateway</html>", {
+            status: 502,
+            headers: { "Content-Type": "text/html" },
+          }),
+      ),
+    );
+    const { tool, setUploadFunction } = createGenerateImageTool({
+      model,
+      getApiKey: async () => "test-token",
+      outputDir,
+    });
+    setUploadFunction(async () => {});
+
+    await expect(
+      tool.execute(
+        "call-1",
+        { label: "draw robot", prompt: "a waving robot" },
+        undefined,
+        undefined,
+      ),
+    ).rejects.toThrow('Image generation with model "gpt-5.6-sol" failed: HTTP 502');
+  });
+
   test("surfaces provider errors with the model id that was requested", async () => {
     const outputDir = await mkdtemp(join(tmpdir(), "mikan-image-test-"));
     dirs.push(outputDir);

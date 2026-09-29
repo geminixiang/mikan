@@ -133,6 +133,9 @@ export class EventScheduler implements EventScheduleSink {
           return;
         }
         this.scheduled.set(key, entry);
+        return;
+      default:
+        event satisfies never;
     }
   }
 

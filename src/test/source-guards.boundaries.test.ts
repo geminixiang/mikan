@@ -47,6 +47,15 @@ const productionDoubleAssertionBudget: Record<string, number> = {
   "src/sessions/session-store.ts": 1,
 };
 
+const productionParsedJsonAssertionBudget: Record<string, number> = {
+  "src/adapters/github/client.ts": 1,
+  "src/harness/tools/jev-browser.ts": 2,
+  "src/migrations/session-files.ts": 1,
+  "src/migrations/sessions-v3.ts": 2,
+  "src/sandbox/cloudflare.ts": 1,
+  "src/sessions/session-store.ts": 1,
+};
+
 function publishedEntryPoints(): Map<string, string> {
   const manifest = JSON.parse(readRepositoryFile("package.json")) as {
     exports: Record<string, string | { import?: string }>;
@@ -135,6 +144,32 @@ function doubleAssertionPositions(source: ts.SourceFile): number[] {
   };
   visit(source);
   return positions;
+}
+
+function readsParsedJson(expression: ts.Expression): boolean {
+  let inner = expression;
+  while (ts.isParenthesizedExpression(inner) || ts.isAwaitExpression(inner)) {
+    inner = inner.expression;
+  }
+  if (ts.isConditionalExpression(inner)) {
+    return readsParsedJson(inner.whenTrue) || readsParsedJson(inner.whenFalse);
+  }
+  if (!ts.isCallExpression(inner) || !ts.isPropertyAccessExpression(inner.expression)) return false;
+  const callee = inner.expression;
+  return (
+    callee.name.text === "json" ||
+    (callee.name.text === "parse" && callee.expression.getText() === "JSON")
+  );
+}
+
+function parsedJsonAssertionPositions(source: ts.SourceFile): number[] {
+  return collectNodes(
+    source,
+    (node) =>
+      (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) &&
+      node.type.kind !== ts.SyntaxKind.UnknownKeyword &&
+      readsParsedJson(node.expression),
+  ).map((node) => node.getStart(source));
 }
 
 const rules: BoundaryRule[] = [
@@ -399,6 +434,40 @@ describe("production double-assertion ratchet", () => {
         .filter(([, count]) => count > 0),
     );
     expect(counts).toEqual(productionDoubleAssertionBudget);
+  });
+});
+
+describe("production parsed-JSON assertion ratchet", () => {
+  test("recognizes assertions on parsed JSON, not validated or unknown results", () => {
+    const count = (code: string) =>
+      parsedJsonAssertionPositions(parseSource("x.ts", `async function f() { ${code} }`)).length;
+    expect(count("const x = JSON.parse(raw) as X;")).toBe(1);
+    expect(count("const x = (await response.json()) as X;")).toBe(1);
+    expect(count("const x = (await (flag ? r.text() : r.json())) as X;")).toBe(1);
+    expect(count("const x = JSON.parse(raw) as unknown;")).toBe(0);
+    expect(count("const x = parseJsonSchemaValue(raw, Schema, message);")).toBe(0);
+    expect(count("const x = value as X;")).toBe(0);
+  });
+
+  test("allows existing assertions only within their per-file budgets", () => {
+    const offenders = productionFiles.flatMap(({ file, ast }) =>
+      parsedJsonAssertionPositions(ast)
+        .slice(productionParsedJsonAssertionBudget[file] ?? 0)
+        .map((position) => describeLocation(ast, position)),
+    );
+    expect(
+      offenders,
+      "Validate parsed JSON with parseJsonSchemaValue or a type guard instead of asserting its type.",
+    ).toEqual([]);
+  });
+
+  test("lowers each per-file budget as soon as its assertions are removed", () => {
+    const counts = Object.fromEntries(
+      productionFiles
+        .map(({ file, ast }) => [file, parsedJsonAssertionPositions(ast).length] as const)
+        .filter(([, count]) => count > 0),
+    );
+    expect(counts).toEqual(productionParsedJsonAssertionBudget);
   });
 });
 

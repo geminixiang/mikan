@@ -1040,6 +1040,8 @@ function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void
     case "run_started":
     case "run_ended":
       return;
+    default:
+      event satisfies never;
   }
 }
 

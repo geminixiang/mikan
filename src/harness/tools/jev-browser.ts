@@ -6,6 +6,8 @@ import { shellEscape } from "../../sandbox/utils.js";
 import { readEnv } from "../../env-manifest.js";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
+import { parseJsonSchemaValue } from "../../file-guards.js";
+import { isRecord } from "../../unknown-values.js";
 
 export const JEV_BROWSER_TOOL = "jev_browser";
 
@@ -18,6 +20,16 @@ const MAX_SNAPSHOT_CHARS = 12_000;
 const MAX_UNCHANGED_ACTIONS = 3;
 const BROWSER_TAB_LIMIT = 3;
 const TEXT_MODEL = "openai/gpt-4o-mini";
+
+const ChatCompletionSchema = Type.Object({
+  choices: Type.Optional(
+    Type.Array(
+      Type.Object({
+        message: Type.Optional(Type.Object({ content: Type.Optional(Type.String()) })),
+      }),
+    ),
+  ),
+});
 
 const jevBrowserSchema = Type.Object({
   label: LABEL_PARAMETER,
@@ -343,9 +355,11 @@ async function generateFieldText(
   if (!response.ok) {
     throw new Error(`Text-generation model returned HTTP ${response.status}`);
   }
-  const body = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
+  const body = parseJsonSchemaValue(
+    await response.text(),
+    ChatCompletionSchema,
+    () => "Text-generation model returned a malformed response",
+  );
   const content = body.choices?.[0]?.message?.content;
   if (!content) throw new Error("Text-generation model returned no content");
   let parsed: unknown;
@@ -354,7 +368,7 @@ async function generateFieldText(
   } catch {
     throw new Error("Text-generation model returned invalid JSON");
   }
-  const text = (parsed as { text?: unknown })?.text;
+  const text = isRecord(parsed) ? parsed.text : undefined;
   if (typeof text !== "string" || !text.trim()) {
     throw new Error("Text-generation model returned no usable value");
   }

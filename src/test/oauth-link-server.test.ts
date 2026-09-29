@@ -280,6 +280,26 @@ describe("OAuth link server flows", () => {
     expect(vaultManager.resolve("vault-u230")?.env ?? {}).toEqual({});
   });
 
+  test("GitHub OAuth treats a non-string access_token as missing", async () => {
+    const stateDir = createStateDir(dirs);
+    configureGitHubOAuth();
+
+    const { url, token, vaultManager } = await createFlow(servers, stateDir, "U235");
+    const redirectUrl = await startOAuth(url, token, "github");
+    const state = redirectUrl.searchParams.get("state");
+
+    expect(state).toBeTruthy();
+
+    mockTokenExchange({ body: JSON.stringify({ access_token: 12345, expires_in: 3600 }) });
+
+    const response = await originalFetch(`${url}/oauth/callback?state=${state}&code=numeric`);
+    const html = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(html).toContain("did not return an access_token");
+    expect(vaultManager.resolve("vault-u235")?.env ?? {}).toEqual({});
+  });
+
   test("OAuth callback returns a server error when vault persistence fails", async () => {
     const stateDir = createStateDir(dirs);
     configureGitHubOAuth();

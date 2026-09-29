@@ -1570,6 +1570,15 @@ interface ExchangeOAuthCodeOptions {
   codeVerifier: string;
 }
 
+function stringFields(value: unknown): Record<string, string> {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+}
+
 async function exchangeOAuthCode(
   options: ExchangeOAuthCodeOptions,
 ): Promise<Record<string, string>> {
@@ -1596,7 +1605,7 @@ async function exchangeOAuthCode(
   let parsed: Record<string, string> = {};
 
   if (contentType.includes("application/json")) {
-    parsed = JSON.parse(text) as Record<string, string>;
+    parsed = stringFields(JSON.parse(text));
   } else {
     const form = new URLSearchParams(text);
     parsed = Object.fromEntries(form.entries());

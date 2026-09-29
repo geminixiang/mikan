@@ -557,6 +557,8 @@ export class MikanAgentSession {
         case "stop":
           await this.exceedBudget(verdict.reason);
           return { block: { reason: verdict.reason, terminate: true } };
+        default:
+          return verdict satisfies never;
       }
     });
     this.harness.hooks.on("after_tool", (event) => {
@@ -678,6 +680,8 @@ export class MikanAgentSession {
           isError: event.isError,
         });
         return;
+      default:
+        event satisfies never;
     }
   }
 
@@ -757,6 +761,8 @@ export class MikanAgentSession {
         }
         await this.emit({ type: "agent_end", messages: this.runMessages });
         return;
+      default:
+        event satisfies never;
     }
   }
 

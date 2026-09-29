@@ -1,6 +1,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,9 +18,18 @@ const schema = Type.Object({
   ),
 });
 
-interface ImageResponse {
-  data?: Array<{ b64_json?: string }>;
-  error?: { message?: string };
+const ImageResponseSchema = Type.Object({
+  data: Type.Optional(Type.Array(Type.Object({ b64_json: Type.Optional(Type.String()) }))),
+  error: Type.Optional(Type.Object({ message: Type.Optional(Type.String()) })),
+});
+
+function readImageResponse(text: string): Static<typeof ImageResponseSchema> | undefined {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return Value.Check(ImageResponseSchema, parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function createGenerateImageTool(options: {
@@ -65,14 +75,14 @@ export function createGenerateImageTool(options: {
             }),
           },
         );
-        const body = (await response.json()) as ImageResponse;
+        const body = readImageResponse(await response.text());
         if (!response.ok) {
           throw new Error(
             `Image generation with model "${options.model.id}" failed: ` +
-              (body.error?.message ?? `HTTP ${response.status}`),
+              (body?.error?.message ?? `HTTP ${response.status}`),
           );
         }
-        const encoded = body.data?.[0]?.b64_json;
+        const encoded = body?.data?.[0]?.b64_json;
         if (!encoded) throw new Error("Image generation response contained no image");
 
         const fileName = `generated-${randomUUID()}.png`;
