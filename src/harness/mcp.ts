@@ -14,6 +14,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { MikanHarnessTool } from "./types.js";
 import { guardMcpToolResult, type McpCallResult } from "./mcp-result.js";
 import { tagHarnessTool } from "./tools/pi-tools.js";
+import { LABEL_PARAMETER } from "./tools/host-fn-tool.js";
 
 import * as log from "../log.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
@@ -196,23 +197,27 @@ async function connectServer(
       timeout: CONNECT_TIMEOUT_MS,
       signal,
     });
-    const tools: MikanHarnessTool[] = listed.tools.map((mcpTool) =>
-      tagHarnessTool({
+    const tools: MikanHarnessTool[] = listed.tools.map((mcpTool) => {
+      const ownsLabel = Object.hasOwn(mcpTool.inputSchema.properties ?? {}, "label");
+      return tagHarnessTool({
         name: `mcp__${name}__${mcpTool.name}`,
         label: `${name}: ${mcpTool.name}`,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-        parameters: mcpTool.inputSchema,
+        parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),
         execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
           const [, params, , toolContext, , context] = args;
           const result = await client.callTool(
-            { name: mcpTool.name, arguments: params as Record<string, unknown> },
+            {
+              name: mcpTool.name,
+              arguments: ownsLabel ? (params as Record<string, unknown>) : withoutLabel(params),
+            },
             undefined,
             { timeout: CALL_TIMEOUT_MS, signal: context.abortSignal },
           );
           return guardMcpToolResult(result as McpCallResult, toolContext.env, context);
         },
-      }),
-    );
+      });
+    });
     const instructions = client.getInstructions()?.trim();
     return { client, tools, instructions: instructions || undefined };
   } catch (error) {
@@ -223,6 +228,22 @@ async function connectServer(
     }
     throw error;
   }
+}
+
+type McpInputSchema = Awaited<ReturnType<Client["listTools"]>>["tools"][number]["inputSchema"];
+
+function withLabelParameter(schema: McpInputSchema): McpInputSchema {
+  return {
+    ...schema,
+    properties: { label: LABEL_PARAMETER, ...schema.properties },
+    required: ["label", ...(schema.required ?? [])],
+  };
+}
+
+function withoutLabel(params: unknown): Record<string, unknown> {
+  if (!isRecord(params)) return {};
+  const { label: _label, ...rest } = params;
+  return rest;
 }
 
 export function formatMcpServerInstructions(instructions: McpServerInstruction[]): string {

@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP tools ask the model for a progress label like every built-in tool, so the Slack checklist shows a readable step (for example "確認 GitHub 連線") instead of `mcp__server__tool`. The label is not forwarded to the MCP server, and a tool that already has its own `label` argument is left unchanged.
+
 ## [1.0.0-beta.85]
 
 ### Breaking

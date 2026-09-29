@@ -34,6 +34,11 @@ server.registerTool(
   }),
 );
 server.registerTool(
+  "tag",
+  { description: "Tag an item with its own label", inputSchema: { label: z.string() } },
+  async ({ label }) => ({ content: [{ type: "text", text: "tagged:" + label }] }),
+);
+server.registerTool(
   "boom",
   { description: "Always fails", inputSchema: {} },
   async () => ({ isError: true, content: [{ type: "text", text: "kaboom" }] }),
@@ -77,7 +82,12 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function startHttpMcpServer(): Promise<{ server: Server; url: string }> {
+function startHttpMcpServer(): Promise<{
+  server: Server;
+  url: string;
+  received: Array<Record<string, unknown> | undefined>;
+}> {
+  const received: Array<Record<string, unknown> | undefined> = [];
   const server = createServer(async (req, res) => {
     if (req.method !== "POST" || req.url !== "/mcp") {
       res.writeHead(405).end();
@@ -94,6 +104,7 @@ function startHttpMcpServer(): Promise<{ server: Server; url: string }> {
       method?: string;
       params?: { name?: string; arguments?: Record<string, unknown> };
     };
+    if (message.method === "tools/call") received.push(message.params?.arguments);
     if (message.method === "notifications/initialized") {
       res.writeHead(202).end();
       return;
@@ -168,7 +179,7 @@ function startHttpMcpServer(): Promise<{ server: Server; url: string }> {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address() as AddressInfo;
-      resolve({ server, url: `http://127.0.0.1:${address.port}/mcp` });
+      resolve({ server, url: `http://127.0.0.1:${address.port}/mcp`, received });
     });
   });
 }
@@ -209,8 +220,12 @@ describe("loadMcpTools", () => {
 
       const echo = result.tools.find((tool) => tool.name === "mcp__test__echo")!;
       expect(echo.parameters).toMatchObject({ type: "object" });
-      const echoed = await callTool(echo, { message: "hi" });
+      const echoed = await callTool(echo, { label: "Say hi", message: "hi" });
       expect(echoed.content).toEqual([{ type: "text", text: "echo:hi:s3cret" }]);
+
+      const tag = result.tools.find((tool) => tool.name === "mcp__test__tag")!;
+      const tagged = await callTool(tag, { label: "urgent" });
+      expect(tagged.content).toEqual([{ type: "text", text: "tagged:urgent" }]);
 
       const boom = result.tools.find((tool) => tool.name === "mcp__test__boom")!;
       await expect(callTool(boom, {})).rejects.toThrow("kaboom");
@@ -251,6 +266,32 @@ describe("loadMcpTools", () => {
         connectionName: "account-b",
       });
       expect(explicit.content).toEqual([{ type: "text", text: "executed:multi.read:account-b" }]);
+    } finally {
+      await result.dispose();
+      await new Promise<void>((resolve) => http.server.close(() => resolve()));
+    }
+  });
+
+  it("asks the model for a progress label like every other tool, and keeps it from the server", async () => {
+    const http = await startHttpMcpServer();
+    const result = await loadMcpTools({
+      "open-connector": { url: http.url, headers: { Authorization: "Bearer scoped-token" } },
+    });
+    try {
+      const execute = result.tools.find(
+        (tool) => tool.name === "mcp__open-connector__execute_action",
+      )!;
+      expect(execute.parameters).toMatchObject({
+        properties: { label: { type: "string" }, actionId: { type: "string" } },
+        required: ["label", "actionId"],
+      });
+      const list = result.tools.find(
+        (tool) => tool.name === "mcp__open-connector__list_connections",
+      )!;
+      expect(list.parameters).toMatchObject({ required: ["label"] });
+
+      await callTool(execute, { label: "Open the issue", actionId: "github.create_issue" });
+      expect(http.received).toEqual([{ actionId: "github.create_issue" }]);
     } finally {
       await result.dispose();
       await new Promise<void>((resolve) => http.server.close(() => resolve()));
