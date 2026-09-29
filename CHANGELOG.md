@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.85]
+
 ### Breaking
 
 - **State migrations run only through `mikan migrate`.** The daemon now refuses to start while a migration is pending, and prints the exact command to run. It no longer moves anything at startup or on first read. After installing a new version, run `mikan migrate --sandbox=<the daemon's --sandbox> --dry-run`; if anything is pending, stop the daemon, run the same command without `--dry-run`, then start it. Applied migrations are recorded in `<state-dir>/migrations.json`, and `mikan onboard` marks a new state directory as fully migrated. See [ADR 0014](docs/adr/0014-versioned-state-migrations.md).
