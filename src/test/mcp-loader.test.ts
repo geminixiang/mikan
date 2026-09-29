@@ -14,64 +14,65 @@ import { afterAll, describe, expect, it } from "vitest";
 import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
 import type { MikanHarnessTool } from "../harness/types.js";
 
-const sdkUrl = (subpath: string) =>
-  new URL(`../../node_modules/@modelcontextprotocol/sdk/dist/esm/${subpath}`, import.meta.url).href;
-const zodUrl = new URL("../../node_modules/zod/index.js", import.meta.url).href;
 const SERVER_SCRIPT = `
-import { McpServer } from ${JSON.stringify(sdkUrl("server/mcp.js"))};
-import { StdioServerTransport } from ${JSON.stringify(sdkUrl("server/stdio.js"))};
-import { z } from ${JSON.stringify(zodUrl)};
+import { createInterface } from "node:readline";
 
-const server = new McpServer({ name: "test-server", version: "1.0.0" });
-server.registerTool(
-  "echo",
-  {
+const text = (value) => ({ content: [{ type: "text", text: value }] });
+const tools = {
+  echo: {
     description: "Echo a message back",
-    inputSchema: { message: z.string() },
+    inputSchema: { type: "object", properties: { message: { type: "string" } }, required: ["message"] },
+    run: ({ message }) => text("echo:" + message + ":" + (process.env.TEST_SECRET ?? "")),
   },
-  async ({ message }) => ({
-    content: [{ type: "text", text: "echo:" + message + ":" + (process.env.TEST_SECRET ?? "") }],
-  }),
-);
-server.registerTool(
-  "tag",
-  { description: "Tag an item with its own label", inputSchema: { label: z.string() } },
-  async ({ label }) => ({ content: [{ type: "text", text: "tagged:" + label }] }),
-);
-server.registerTool(
-  "boom",
-  { description: "Always fails", inputSchema: {} },
-  async () => ({ isError: true, content: [{ type: "text", text: "kaboom" }] }),
-);
-server.registerTool(
-  "big",
-  { description: "Return a large pretty-printed page", inputSchema: {} },
-  async () => ({
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify(
+  tag: {
+    description: "Tag an item with its own label",
+    inputSchema: { type: "object", properties: { label: { type: "string" } }, required: ["label"] },
+    run: ({ label }) => text("tagged:" + label),
+  },
+  boom: {
+    description: "Always fails",
+    inputSchema: { type: "object", properties: {} },
+    run: () => ({ isError: true, content: [{ type: "text", text: "kaboom" }] }),
+  },
+  big: {
+    description: "Return a large pretty-printed page",
+    inputSchema: { type: "object", properties: {} },
+    run: () =>
+      text(
+        JSON.stringify(
           {
             total_count: 691,
             nextCursor: "cursor-2",
-            items: Array.from({ length: 100 }, (_, index) => ({
-              number: index + 1,
-              body: "x".repeat(2000),
-            })),
+            items: Array.from({ length: 100 }, (_, index) => ({ number: index + 1, body: "x".repeat(2000) })),
           },
           null,
           2,
         ),
-      },
-    ],
-  }),
-);
-server.registerTool(
-  "structured",
-  { description: "Return only structured content", inputSchema: {} },
-  async () => ({ content: [], structuredContent: { answer: 42 } }),
-);
-await server.connect(new StdioServerTransport());
+      ),
+  },
+  structured: {
+    description: "Return only structured content",
+    inputSchema: { type: "object", properties: {} },
+    run: () => ({ content: [], structuredContent: { answer: 42 } }),
+  },
+};
+
+function handle(message) {
+  if (message.method === "initialize") {
+    return { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "test-server", version: "1.0.0" } };
+  }
+  if (message.method === "tools/list") {
+    return { tools: Object.entries(tools).map(([name, { description, inputSchema }]) => ({ name, description, inputSchema })) };
+  }
+  if (message.method === "tools/call") return tools[message.params.name].run(message.params.arguments ?? {});
+  return {};
+}
+
+for await (const line of createInterface({ input: process.stdin })) {
+  const message = JSON.parse(line);
+  if (message.id === undefined) continue;
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: handle(message) }) + "\\n");
+}
 `;
 
 const dir = mkdtempSync(join(tmpdir(), "mikan-mcp-test-"));
@@ -231,6 +232,24 @@ describe("loadMcpTools", () => {
       await expect(callTool(boom, {})).rejects.toThrow("kaboom");
     } finally {
       await result.dispose();
+    }
+  }, 30_000);
+
+  it("gives a stdio server only its configured env, never the host's secrets", async () => {
+    process.env.TEST_SECRET = "host-secret";
+    try {
+      const result = await loadMcpTools({
+        test: { command: process.execPath, args: [serverPath] },
+      });
+      try {
+        const echo = result.tools.find((tool) => tool.name === "mcp__test__echo")!;
+        const echoed = await callTool(echo, { label: "Say hi", message: "hi" });
+        expect(echoed.content).toEqual([{ type: "text", text: "echo:hi:" }]);
+      } finally {
+        await result.dispose();
+      }
+    } finally {
+      delete process.env.TEST_SECRET;
     }
   }, 30_000);
 

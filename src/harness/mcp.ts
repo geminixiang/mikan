@@ -5,17 +5,20 @@ import type {
   McpServerInstruction,
   McpToolsResult,
 } from "./types.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
-  StdioClientTransport,
-  getDefaultEnvironment,
-} from "@modelcontextprotocol/sdk/client/stdio.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+  McpClient,
+  McpHttpError,
+  StdioTransport,
+  StreamableHttpTransport,
+  type McpTransport,
+  type Tool as McpTool,
+} from "@earendil-works/pi-mcp";
 import type { MikanHarnessTool } from "./types.js";
-import { guardMcpToolResult, type McpCallResult } from "./mcp-result.js";
+import { guardMcpToolResult } from "./mcp-result.js";
 import { tagHarnessTool } from "./tools/pi-tools.js";
 import { LABEL_PARAMETER } from "./tools/host-fn-tool.js";
 
+import { readStandardEnv } from "../env-manifest.js";
 import * as log from "../log.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 
@@ -161,22 +164,51 @@ const CONNECT_TIMEOUT_MS = 15_000;
 
 const CALL_TIMEOUT_MS = 120_000;
 
-function buildTransport(name: string, config: McpServerConfig) {
+const INHERITED_ENV_KEYS = ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"];
+
+function inheritedEnvironment(): Record<string, string> {
+  return Object.fromEntries(
+    INHERITED_ENV_KEYS.flatMap((key) => {
+      const value = readStandardEnv(key);
+      return value === undefined || value.startsWith("()") ? [] : [[key, value]];
+    }),
+  );
+}
+
+const ERROR_BODY_CHARS = 300;
+
+function describeLoadError(error: unknown): string {
+  const message = errorMessage(error);
+  if (!(error instanceof McpHttpError)) return message;
+  const body = error.body.trim();
+  return body ? `${message} (HTTP ${error.status}): ${body.slice(0, ERROR_BODY_CHARS)}` : message;
+}
+
+function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
+}
+
+function buildTransport(name: string, config: McpServerConfig): McpTransport {
   if (config.command && config.url) {
     throw new Error(`server "${name}" sets both command and url; pick one transport`);
   }
   if (config.command) {
-    return new StdioClientTransport({
+    return new StdioTransport({
       command: config.command,
       args: config.args ?? [],
-      env: { ...getDefaultEnvironment(), ...config.env },
-      stderr: "ignore",
+      env: { ...inheritedEnvironment(), ...config.env },
+      inheritEnv: false,
+      stderr: "pipe",
     });
   }
   if (config.url) {
-    return new StreamableHTTPClientTransport(new URL(config.url), {
-      requestInit: config.headers ? { headers: config.headers } : undefined,
-    });
+    return new StreamableHttpTransport({ url: config.url, headers: config.headers });
   }
   throw new Error(`server "${name}" sets neither command nor url`);
 }
@@ -185,20 +217,17 @@ async function connectServer(
   name: string,
   config: McpServerConfig,
   signal?: AbortSignal,
-): Promise<{ client: Client; tools: MikanHarnessTool[]; instructions?: string }> {
-  const client = new Client({ name: "mikan", version: "1.0.0" });
-  const transport = buildTransport(name, config);
+): Promise<{ client: McpClient; tools: MikanHarnessTool[]; instructions?: string }> {
+  const client = new McpClient({
+    name: "mikan",
+    version: "1.0.0",
+    requestTimeoutMs: CONNECT_TIMEOUT_MS,
+  });
   try {
-    await client.connect(transport, {
-      timeout: CONNECT_TIMEOUT_MS,
-      signal,
-    });
-    const listed = await client.listTools(undefined, {
-      timeout: CONNECT_TIMEOUT_MS,
-      signal,
-    });
-    const tools: MikanHarnessTool[] = listed.tools.map((mcpTool) => {
-      const ownsLabel = Object.hasOwn(mcpTool.inputSchema.properties ?? {}, "label");
+    await untilAborted(client.connect(buildTransport(name, config)), signal);
+    const listed = await client.listTools({ timeoutMs: CONNECT_TIMEOUT_MS, signal });
+    const tools: MikanHarnessTool[] = listed.map((mcpTool) => {
+      const ownsLabel = Object.hasOwn(schemaProperties(mcpTool.inputSchema), "label");
       return tagHarnessTool({
         name: `mcp__${name}__${mcpTool.name}`,
         label: `${name}: ${mcpTool.name}`,
@@ -207,18 +236,15 @@ async function connectServer(
         execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
           const [, params, , toolContext, , context] = args;
           const result = await client.callTool(
-            {
-              name: mcpTool.name,
-              arguments: ownsLabel ? (params as Record<string, unknown>) : withoutLabel(params),
-            },
-            undefined,
-            { timeout: CALL_TIMEOUT_MS, signal: context.abortSignal },
+            mcpTool.name,
+            ownsLabel ? (params as Record<string, unknown>) : withoutLabel(params),
+            { timeoutMs: CALL_TIMEOUT_MS, signal: context.abortSignal },
           );
-          return guardMcpToolResult(result as McpCallResult, toolContext.env, context);
+          return guardMcpToolResult(result, toolContext.env, context);
         },
       });
     });
-    const instructions = client.getInstructions()?.trim();
+    const instructions = client.instructions?.trim();
     return { client, tools, instructions: instructions || undefined };
   } catch (error) {
     try {
@@ -230,13 +256,19 @@ async function connectServer(
   }
 }
 
-type McpInputSchema = Awaited<ReturnType<Client["listTools"]>>["tools"][number]["inputSchema"];
+type McpInputSchema = McpTool["inputSchema"];
+
+function schemaProperties(schema: McpInputSchema): Record<string, unknown> {
+  return isRecord(schema.properties) ? schema.properties : {};
+}
 
 function withLabelParameter(schema: McpInputSchema): McpInputSchema {
+  const required = Array.isArray(schema.required) ? schema.required : [];
   return {
     ...schema,
-    properties: { label: LABEL_PARAMETER, ...schema.properties },
-    required: ["label", ...(schema.required ?? [])],
+    type: "object",
+    properties: { label: LABEL_PARAMETER, ...schemaProperties(schema) },
+    required: ["label", ...required],
   };
 }
 
@@ -259,7 +291,7 @@ export async function loadMcpTools(
   servers: Record<string, McpServerConfig>,
   signal?: AbortSignal,
 ): Promise<McpToolsResult> {
-  const clients: Client[] = [];
+  const clients: McpClient[] = [];
   const tools: MikanHarnessTool[] = [];
   const errors: McpLoadError[] = [];
   const instructions: McpServerInstruction[] = [];
@@ -278,7 +310,7 @@ export async function loadMcpTools(
   for (const [index, result] of results.entries()) {
     const name = entries[index]![0];
     if (result.status === "rejected") {
-      errors.push({ server: name, error: String(result.reason?.message ?? result.reason) });
+      errors.push({ server: name, error: describeLoadError(result.reason) });
       continue;
     }
     clients.push(result.value.client);

@@ -35,6 +35,8 @@ any release.
 
 ### Changed
 
+- Pi is upgraded from 0.87 to 0.99 (`pi-agent-core`, `pi-ai`).
+- MCP servers now connect through Pi's `@earendil-works/pi-mcp` client instead of the official `@modelcontextprotocol/sdk`, which is removed along with `zod`. Stdio servers still receive only a minimal inherited environment plus their configured `env`. When an HTTP server rejects the connection, the error now carries the status and the start of the server's response body.
 - **Breaking:** `jev_browser` no longer takes a `session` parameter. Each conversation thread has one browser that stays open across calls until `close: true`; a later `url` opens a new tab, and opening past three tabs closes the oldest inactive tabs and reports them in `closedOldTabs`. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out.
 - When a scheduled run hits its budget, the stop notice now says how long it ran, how many model and tool calls it made, the slowest steps with their durations, and which step was still running. Slow queries can be found from the notice alone.
 

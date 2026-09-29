@@ -4,15 +4,18 @@ const client = vi.hoisted(() => ({
   connect: vi.fn(),
   listTools: vi.fn(),
   close: vi.fn(),
-  getInstructions: vi.fn(),
+  instructions: vi.fn(),
 }));
 
-vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
-  Client: class {
+vi.mock("@earendil-works/pi-mcp", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@earendil-works/pi-mcp")>()),
+  McpClient: class {
     connect = client.connect;
     listTools = client.listTools;
     close = client.close;
-    getInstructions = client.getInstructions;
+    get instructions() {
+      return client.instructions();
+    }
   },
 }));
 
@@ -22,8 +25,8 @@ import { SessionStore } from "../sessions/session-store.js";
 describe("MCP connection rollback", () => {
   test("the pending session owns connections and preserves guidance across prompt replacements", async () => {
     client.connect.mockReset().mockResolvedValue(undefined);
-    client.listTools.mockReset().mockResolvedValue({ tools: [] });
-    client.getInstructions.mockReset().mockReturnValue("Use the service safely");
+    client.listTools.mockReset().mockResolvedValue([]);
+    client.instructions.mockReset().mockReturnValue("Use the service safely");
     client.close.mockReset().mockResolvedValue(undefined);
     const store = SessionStore.inMemory("/work");
     await store.connectMcp({ service: { command: "unused" } });
@@ -38,9 +41,9 @@ describe("MCP connection rollback", () => {
     client.connect.mockReset().mockResolvedValue(undefined);
     client.listTools
       .mockReset()
-      .mockResolvedValueOnce({ tools: [] })
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error("discovery failed"));
-    client.getInstructions.mockReset().mockReturnValue(undefined);
+    client.instructions.mockReset().mockReturnValue(undefined);
     client.close
       .mockReset()
       .mockResolvedValueOnce(undefined)
@@ -55,12 +58,7 @@ describe("MCP connection rollback", () => {
 
   test("closes a client when shutdown aborts connection", async () => {
     const controller = new AbortController();
-    client.connect.mockReset().mockImplementation(
-      (_transport: unknown, options: { signal?: AbortSignal }) =>
-        new Promise<void>((_resolve, reject) => {
-          options.signal?.addEventListener("abort", () => reject(options.signal?.reason));
-        }),
-    );
+    client.connect.mockReset().mockReturnValue(new Promise<void>(() => {}));
     client.listTools.mockReset();
     client.close.mockReset().mockResolvedValue(undefined);
 

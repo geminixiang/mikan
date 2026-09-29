@@ -69,10 +69,10 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@earendil-works/pi-agent-core": "^0.87.0",
-    "@earendil-works/pi-ai": "^0.87.0",
+    "@earendil-works/pi-agent-core": "^0.99.1",
+    "@earendil-works/pi-ai": "^0.99.1",
+    "@earendil-works/pi-mcp": "^0.99.1",
     "@geminixiang/jev": "^0.3.1",
-    "@modelcontextprotocol/sdk": "^1.30.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-metrics-otlp-proto": "^0.221.0",
     "@opentelemetry/exporter-trace-otlp-proto": "^0.221.0",
@@ -110,8 +110,7 @@
     "remark-gfm": "^4.0.1",
     "shx": "^0.4.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
-    "zod": "^4.0.0"
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "@discordjs/rest": {
