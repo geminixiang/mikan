@@ -39,6 +39,14 @@ docker run --rm -v "$home_volume:/root" "$image" sh -c '
 '
 docker run --rm -v "$home_volume:/root" "$image" sh -c 'cowsay ok >/dev/null && ruff --version >/dev/null'
 
+echo "== apt installs work under the provisioner's hardening"
+docker run --rm --tmpfs /root --cap-drop ALL --security-opt no-new-privileges "$image" sh -c '
+  set -e
+  apt-get update -qq >/dev/null
+  apt-get install -y -qq --no-install-recommends sqlite3 >/dev/null
+  command -v sqlite3 >/dev/null
+'
+
 echo "== agent-browser drives chromium"
 docker run --rm --tmpfs /root "$image" sh -c '
   set -e

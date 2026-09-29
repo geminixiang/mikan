@@ -110,6 +110,9 @@ RUN export UV_TOOL_DIR=/opt/uv/tools UV_TOOL_BIN_DIR=/usr/local/bin \
 
 RUN curl -fsSL https://sentry.io/get-cli/ | INSTALL_DIR=/usr/local/bin sh
 
+RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99mikan-sandbox \
+  && chown root:root /var/cache/apt/archives/partial
+
 RUN rmdir /root/.ssh 2>/dev/null; test "$(ls -A /root | tr "\n" " ")" = ".bashrc .profile " || (ls -la /root && exit 1)
 
 WORKDIR /workspace
