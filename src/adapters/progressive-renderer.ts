@@ -151,6 +151,9 @@ class ProgressiveRenderer {
     this.state.streamActive = false;
     this.state.streamedSource = "";
     await this.platform.stream.stop(streamId).catch(() => undefined);
+    await this.platform.delete?.(streamId).catch((error: unknown) => {
+      log.logWarning("Could not delete an abandoned stream message", errorMessage(error));
+    });
     if (this.state.responseId === streamId) this.state.responseId = null;
   }
 

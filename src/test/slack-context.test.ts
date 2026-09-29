@@ -912,6 +912,29 @@ describe("streaming lifecycle", () => {
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T002", "hello final");
   });
 
+  test("a stream Slack rejects as too long at the end is replaced, not left beside a second copy", async () => {
+    const bot = makeSlackMessagingBot({
+      startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
+      appendMessageStream: vi
+        .fn()
+        .mockRejectedValue(new Error("An API error occurred: msg_too_long")),
+      stopMessageStream: vi.fn().mockResolvedValue(undefined),
+      postInThread: vi.fn().mockResolvedValue("FALLBACK1"),
+    });
+    const event = makeEvent({ thread_ts: undefined });
+    const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
+
+    await responder.appendResponseDelta?.("partial");
+    await responder.finishResponse?.("partial and the rest");
+
+    expect(bot.deleteMessage).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "C001",
+      "1000.0001",
+      expect.stringContaining("partial and the rest"),
+    );
+  });
+
   test("finish re-renders a table without outer pipes canonically", async () => {
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
@@ -948,6 +971,7 @@ describe("streaming lifecycle", () => {
     await responder.finishResponse?.("hello world");
 
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.deleteMessage).toHaveBeenCalledWith("C001", "STREAM1");
     expect(bot.updateMessage).not.toHaveBeenCalledWith("C001", "STREAM1", expect.any(String));
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",

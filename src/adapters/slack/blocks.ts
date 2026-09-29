@@ -13,6 +13,8 @@ const markdown = new MarkdownIt({ html: false });
 const MAX_BLOCKS = 50;
 const MARKDOWN_TEXT_LIMIT = 12000;
 const FIELD_TEXT_LIMIT = 2000;
+const NOTIFICATION_TEXT_BYTE_LIMIT = 4000;
+const ELLIPSIS = "…";
 
 const LEGACY_MRKDWN_LINK_PATTERN = /<(https?:\/\/[^<>|\s]+)\|([^<>\n]+)>/g;
 
@@ -141,6 +143,20 @@ function fitSlackBlockLimit(blocks: KnownBlock[]): KnownBlock[] {
   );
 }
 
+function capNotificationText(text: string): string {
+  if (Buffer.byteLength(text) <= NOTIFICATION_TEXT_BYTE_LIMIT) return text;
+  const budget = NOTIFICATION_TEXT_BYTE_LIMIT - Buffer.byteLength(ELLIPSIS);
+  let used = 0;
+  let end = 0;
+  for (const character of text) {
+    const size = Buffer.byteLength(character);
+    if (used + size > budget) break;
+    used += size;
+    end += character.length;
+  }
+  return `${text.slice(0, end)}${ELLIPSIS}`;
+}
+
 export function renderSlackBlocks(source: string): { text: string; blocks: KnownBlock[] } {
   const normalized = normalizeMarkdownTables(
     normalizeSlackCurrencyBold(source.replace(LEGACY_MRKDWN_LINK_PATTERN, "[$2]($1)")),
@@ -169,7 +185,7 @@ export function renderSlackBlocks(source: string): { text: string; blocks: Known
   if (trailingProse.trim()) fallback.push(plainTextFallback(markdown.parse(trailingProse, {})));
 
   return {
-    text: fallback.filter(Boolean).join("\n\n") || normalized,
+    text: capNotificationText(fallback.filter(Boolean).join("\n\n") || normalized),
     blocks: fitSlackBlockLimit(blocks),
   };
 }

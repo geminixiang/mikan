@@ -31,6 +31,18 @@ describe("renderSlackBlocks", () => {
     expect(joined).toContain("**Part 29**\n\nBody 29");
   });
 
+  test("caps the notification text at Slack's 4,000-byte update limit, keeping the blocks whole", () => {
+    const source = "中文段落。".repeat(1200);
+    const rendered = renderSlackBlocks(source);
+    expect(Buffer.byteLength(rendered.text)).toBeLessThanOrEqual(4000);
+    expect(rendered.text.endsWith("…")).toBe(true);
+    expect(markdownTexts(rendered.blocks).join("")).toBe(source);
+  });
+
+  test("leaves a short notification text unchanged", () => {
+    expect(renderSlackBlocks("短答案").text).toBe("短答案");
+  });
+
   test("keeps bullets verbatim in the markdown block", () => {
     const rendered = renderSlackBlocks("- one\n- two");
     expect(rendered.blocks).toEqual([{ type: "markdown", text: "- one\n- two" }]);
