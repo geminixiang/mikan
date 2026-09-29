@@ -11,6 +11,8 @@ any release.
 
 ### Fixed
 
+- A Slack message whose acknowledgement was lost during a socket reconnect no longer runs twice. Slack redelivers such events; mikan now recognizes a message or mention it has already taken and ignores the copy. A failed acknowledgement is logged instead of surfacing as an unhandled promise rejection.
+- A Slack app that is not an agent app no longer calls `assistant.threads.setSuggestedPrompts` and logs `not_agent_app` every time someone opens its DM; after the first refusal the call is skipped until restart.
 - A long Slack answer that outgrew the native stream no longer shows up twice. The partial streamed message is deleted before the full answer is posted, and the notification text sent with it is capped at the 4,000 bytes `chat.update` accepts, so the edit no longer fails with `msg_too_long`.
 - A long Slack answer with many headings no longer fails with `invalid_blocks` and an `Error:` line. Slack expands each heading of a markdown block into its own block and rejects a message with more than 50; when an answer would exceed that, its headings are sent as bold lines instead.
 - MCP tools ask the model for a progress label like every built-in tool, so the Slack checklist shows a readable step (for example "確認 GitHub 連線") instead of `mcp__server__tool`. The label is not forwarded to the MCP server, and a tool that already has its own `label` argument is left unchanged.

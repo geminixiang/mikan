@@ -154,6 +154,11 @@ export function chunkStreamText(text: string, limit = MAX_STREAM_TEXT_CHARS): st
   return chunks;
 }
 
+function slackErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error) || !isRecord(error.data)) return undefined;
+  return typeof error.data.error === "string" ? error.data.error : undefined;
+}
+
 function slackIsRateLimited(err: Error): boolean {
   if (err instanceof WebAPIRateLimitedError) return true;
   if ((err as { code?: unknown }).code === "rate_limited") return true;
@@ -210,6 +215,21 @@ export function italicizeLines(text: string): string {
     .join("\n");
 }
 
+const RECENT_MESSAGE_KEYS = 2000;
+
+function withLoggedAck(event: string, payload: SlackSocketEventArgs): SlackSocketEventArgs {
+  return {
+    ...payload,
+    ack: () =>
+      payload.ack().catch((error: unknown) => {
+        log.logWarning(
+          `Slack ack failed for ${event}; Slack may redeliver it`,
+          errorMessage(error),
+        );
+      }),
+  };
+}
+
 const MRKDWN_CONTEXT_TEXT_LIMIT = 3000;
 
 export function buildMrkdwnContextBlock(text: string): object {
@@ -264,6 +284,8 @@ export class SlackMessagingBot implements MessagingBot {
   private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
   private intake = new MessagingIntakeTracker("Slack");
+  private readonly recentMessageKeys = new Set<string>();
+  private agentSurfaceUnavailable = false;
   private eventScheduler: EventScheduler | null = null;
 
   private office(channelId: string): Office {
@@ -738,13 +760,20 @@ export class SlackMessagingBot implements MessagingBot {
     threadTs: string | undefined,
     prompts: SuggestedPrompt[],
   ): Promise<void> {
-    return slackRetry(async () => {
-      await this.webClient.assistant.threads.setSuggestedPrompts({
-        channel_id: channel,
-        thread_ts: threadTs || undefined,
-        prompts,
+    if (this.agentSurfaceUnavailable) return;
+    try {
+      await slackRetry(async () => {
+        await this.webClient.assistant.threads.setSuggestedPrompts({
+          channel_id: channel,
+          thread_ts: threadTs || undefined,
+          prompts,
+        });
       });
-    });
+    } catch (error) {
+      if (slackErrorCode(error) !== "not_agent_app") throw error;
+      this.agentSurfaceUnavailable = true;
+      log.logInfo("Slack app is not an agent app; suggested prompts are disabled");
+    }
   }
 
   async setAssistantTitle(channel: string, threadTs: string, title: string): Promise<void> {
@@ -1394,31 +1423,34 @@ export class SlackMessagingBot implements MessagingBot {
       log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
     });
 
-    this.socketClient.on("app_mention", (payload) =>
-      this.intake.run(() => this.handleAppMention(payload)),
+    const on = (event: string, handle: (args: SlackSocketEventArgs) => Promise<void> | void) =>
+      this.socketClient.on(event, (payload) =>
+        this.intake.run(() => handle(withLoggedAck(event, payload))),
+      );
+    on("app_mention", (payload) => this.handleAppMention(payload));
+    on("message", (payload) => this.handleMessageEvent(payload));
+    on("slash_commands", (payload) => this.handleSlashCommand(payload));
+    on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
+    on("assistant_thread_started", (payload) => this.handleAssistantThreadStarted(payload));
+    on("assistant_thread_context_changed", (payload) =>
+      this.handleAgentContextChangedEvent(payload),
     );
-    this.socketClient.on("message", (payload) =>
-      this.intake.run(() => this.handleMessageEvent(payload)),
-    );
-    this.socketClient.on("slash_commands", (payload) =>
-      this.intake.run(() => this.handleSlashCommand(payload)),
-    );
-    this.socketClient.on("app_home_opened", (payload) =>
-      this.intake.run(() => this.handleAppHomeOpened(payload)),
-    );
-    this.socketClient.on("assistant_thread_started", (payload) =>
-      this.intake.run(() => this.handleAssistantThreadStarted(payload)),
-    );
-    this.socketClient.on("assistant_thread_context_changed", (payload) =>
-      this.intake.run(() => this.handleAgentContextChangedEvent(payload)),
-    );
-    this.socketClient.on("app_context_changed", (payload) =>
-      this.intake.run(() => this.handleAgentContextChangedEvent(payload)),
-    );
+    on("app_context_changed", (payload) => this.handleAgentContextChangedEvent(payload));
     const blockAction = ({ body, ack }: SlackSocketEventArgs) =>
-      this.intake.run(() => this.handleBlockAction({ body: body as SlackBlockActionBody, ack }));
-    this.socketClient.on("block_actions", blockAction);
-    this.socketClient.on("interactive", blockAction);
+      this.handleBlockAction({ body: body as SlackBlockActionBody, ack });
+    on("block_actions", blockAction);
+    on("interactive", blockAction);
+  }
+
+  private isRedelivery(kind: string, channel: string, ts: string): boolean {
+    const key = `${kind}:${channel}:${ts}`;
+    if (this.recentMessageKeys.has(key)) return true;
+    this.recentMessageKeys.add(key);
+    if (this.recentMessageKeys.size > RECENT_MESSAGE_KEYS) {
+      const oldest = this.recentMessageKeys.values().next().value;
+      if (oldest !== undefined) this.recentMessageKeys.delete(oldest);
+    }
+    return false;
   }
 
   private async handleAppMention({ event, ack }: SlackSocketEventArgs): Promise<void> {
@@ -1433,6 +1465,11 @@ export class SlackMessagingBot implements MessagingBot {
 
     if (e.channel.startsWith("D")) {
       ack();
+      return;
+    }
+    if (this.isRedelivery("app_mention", e.channel, e.ts)) {
+      log.logInfo(`[${e.channel}] Ignoring redelivered mention ${e.ts}`);
+      await ack();
       return;
     }
 
@@ -1618,6 +1655,11 @@ export class SlackMessagingBot implements MessagingBot {
   private async handleMessageEvent({ event, ack }: SlackSocketEventArgs): Promise<void> {
     const e = event as SlackIncomingMessage;
     if (!this.admitHumanMessage(e, ack)) return;
+    if (this.isRedelivery("message", e.channel, e.ts)) {
+      log.logInfo(`[${e.channel}] Ignoring redelivered message ${e.ts}`);
+      await ack();
+      return;
+    }
 
     const isDM = e.channel_type === "im" || e.channel.startsWith("D");
     const conversationKind: ConversationKind = isDM ? "direct" : "shared";

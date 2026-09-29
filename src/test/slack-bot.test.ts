@@ -655,6 +655,55 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
   });
 
+  test("stops setting suggested prompts once Slack says the app is not an agent app", async () => {
+    const handler = makeHandler();
+    const { socket, web } = await startSlackHarness({ handler, workspace });
+    vi.mocked(web.assistant.threads.setSuggestedPrompts).mockRejectedValue(
+      Object.assign(new Error("An API error occurred: not_agent_app"), {
+        data: { ok: false, error: "not_agent_app" },
+      }),
+    );
+    const open = () =>
+      socket.deliver("app_home_opened", {
+        event: { user: "U123", tab: "messages", channel: "D123" },
+        ack: makeAck(),
+      });
+
+    await open();
+    await vi.waitFor(() =>
+      expect(web.assistant.threads.setSuggestedPrompts).toHaveBeenCalledTimes(1),
+    );
+    await open();
+    await open();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(web.assistant.threads.setSuggestedPrompts).toHaveBeenCalledTimes(1);
+  });
+
+  test("a message Slack redelivers after a lost ack runs once", async () => {
+    const handler = makeHandler();
+    const { socket } = await startSlackHarness({ handler, workspace });
+    const dm = {
+      text: "run the report",
+      channel: "D123",
+      user: "U123",
+      ts: "1001.0001",
+      channel_type: "im",
+    };
+    const lostAck = vi.fn(async () => {
+      throw new Error("Failed to send a WebSocket message as the client is not ready");
+    });
+
+    await socket.deliver("message", { event: dm, ack: lostAck });
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    const redeliveryAck = makeAck();
+    await socket.deliver("message", { event: { ...dm }, ack: redeliveryAck });
+
+    expect(redeliveryAck).toHaveBeenCalled();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+  });
+
   test("shared channel messages trigger only when auto-reply is enabled", async () => {
     const handler = makeHandler();
     const { socket } = await startSlackHarness({ handler, workspace });
