@@ -96,7 +96,12 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
     case "auto_retry_start":
       return { type: "retry_started", attempt: event.attempt, maxAttempts: event.maxAttempts };
     case "budget_exceeded":
-      return { type: "budget_exceeded", reason: event.reason };
+      return {
+        type: "budget_exceeded",
+        reason: event.reason,
+        llmCalls: event.llmCalls,
+        durationMs: event.durationMs,
+      };
     default:
       return undefined;
   }

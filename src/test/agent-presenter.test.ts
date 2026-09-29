@@ -603,12 +603,67 @@ describe("presenter event routing", () => {
       "_Retrying (1/3)..._",
     ]);
     expect(responder.respondDiagnostic).toHaveBeenCalledWith(
-      "_Stopped: run budget exceeded (call limit)_",
+      "Stopped: run budget exceeded (call limit)\nRan 1s: 2 model calls, no tool calls.",
       { style: "error" },
     );
     expect(runState.compactionCount).toBe(1);
     expect(runState.retryCount).toBe(1);
     expect(runState.budgetExceeded).toBe(true);
+  });
+
+  test("a budget stop reports where the run spent its time", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: 0 });
+    const { emit, responder, runQueue } = attachPresenter();
+    const tool = async (id: string, label: string, from: number, to?: number, isError = false) => {
+      vi.setSystemTime(from);
+      await emit({
+        type: "tool_execution_start",
+        toolCallId: id,
+        toolName: "bash",
+        args: { label },
+      });
+      if (to === undefined) return;
+      vi.setSystemTime(to);
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: id,
+        toolName: "bash",
+        result: { content: [] },
+        isError,
+      });
+    };
+    try {
+      await tool("t1", "Read the query notes", 1_000, 1_400);
+      await tool("t2", "Query six weeks", 10_000, 138_000, true);
+      await tool("t3", "Retry six weeks", 150_000, 277_000);
+      await tool("t4", "Query one day", 300_000, 313_000);
+      await tool("t5", "Query one week", 552_000);
+      vi.setSystemTime(600_001);
+      await emit({
+        type: "budget_exceeded",
+        reason: "600001ms >= 600000ms limit",
+        tokens: 100,
+        costUsd: 0.1,
+        llmCalls: 9,
+        durationMs: 600_001,
+      });
+      await runQueue.wait();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(responder.respondDiagnostic).toHaveBeenCalledWith(
+      [
+        "Stopped: run budget exceeded (600001ms >= 600000ms limit)",
+        "Ran 10m 0s: 9 model calls, 5 tool calls (1 failed) that took 5m 16s in total.",
+        "Slowest steps:",
+        "• Query six weeks (bash): 2m 8s, failed",
+        "• Retry six weeks (bash): 2m 7s",
+        "• Query one day (bash): 13s",
+        "Still running when stopped: Query one week (bash), 48s",
+      ].join("\n"),
+      { style: "error" },
+    );
   });
 
   test("reactivation clears completed tool progress, subagent dashboard, and attribution", async () => {

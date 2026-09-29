@@ -19,7 +19,7 @@ import { createOfficeAddress, createWorkspace, officeKey } from "../office/index
 import type { Workspace } from "../office/types.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
-import { SlackMessagingBot } from "../adapters/slack/bot.js";
+import { italicizeLines, SlackMessagingBot } from "../adapters/slack/bot.js";
 import type {
   SlackSocketConnection,
   SlackSocketEventArgs,
@@ -1884,6 +1884,14 @@ describe("SlackMessagingBot force-stop block action", () => {
     expect(handler.forceStop).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
       "C123:1000.0001",
+    );
+  });
+});
+
+describe("italicizeLines", () => {
+  test("italicizes each non-empty line, because Slack emphasis does not span newlines", () => {
+    expect(italicizeLines("Stopped: over budget\n\n• Query (bash): 2m 8s")).toBe(
+      "_Stopped: over budget_\n\n_• Query (bash): 2m 8s_",
     );
   });
 });

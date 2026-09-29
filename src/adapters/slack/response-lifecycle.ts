@@ -4,7 +4,7 @@ import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { splitText } from "../shared.js";
 import { formatToolArgs } from "../../harness/tool-args.js";
 import type { HandleTooLongInput } from "../types.js";
-import { buildMrkdwnContextBlock } from "./bot.js";
+import { buildMrkdwnContextBlock, italicizeLines } from "./bot.js";
 import type { SlackEvent, SlackAdapterSessionPlan, SlackResponderBot } from "./types.js";
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
@@ -139,7 +139,7 @@ class SlackResponseLifecycle {
           await slack.postInThread(
             event.channel,
             threadAnchor,
-            options.style === "error" ? `_${part}_` : part,
+            options.style === "error" ? italicizeLines(part) : part,
           ),
         );
       }

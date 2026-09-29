@@ -163,7 +163,7 @@ describe("toRunEvent", () => {
         llmCalls: 1,
         durationMs: 1,
       }),
-    ).toEqual({ type: "budget_exceeded", reason: "tool loop: bash" });
+    ).toEqual({ type: "budget_exceeded", reason: "tool loop: bash", llmCalls: 1, durationMs: 1 });
   });
 });
 

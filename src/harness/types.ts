@@ -53,6 +53,7 @@ export interface RunnerSessionState {
     enqueue(fn: () => Promise<void>, errorContext: string): void;
   } | null;
   pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
+  completedTools: ToolTiming[];
   toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
   subagentProgress: Map<string, SubagentProgressSnapshot>;
   completedSubagentProgress: SubagentProgressSnapshot[];
@@ -355,7 +356,7 @@ export type RunEvent =
   | { type: "assistant_message"; thinking: string[]; text: string; callsTools: boolean }
   | { type: "compaction_started" }
   | { type: "retry_started"; attempt: number; maxAttempts: number }
-  | { type: "budget_exceeded"; reason: string }
+  | { type: "budget_exceeded"; reason: string; llmCalls: number; durationMs: number }
   | { type: "run_started"; userName: string; text: string }
   | { type: "run_ended"; stopReason: string };
 
@@ -432,4 +433,19 @@ export interface McpToolsResult {
   errors: McpLoadError[];
   instructions: McpServerInstruction[];
   dispose: () => Promise<void>;
+}
+
+export interface ToolTiming {
+  label: string;
+  toolName: string;
+  durationMs: number;
+  isError: boolean;
+}
+
+export interface BudgetStopReport {
+  reason: string;
+  llmCalls: number;
+  durationMs: number;
+  completed: readonly ToolTiming[];
+  running: readonly ToolTiming[];
 }

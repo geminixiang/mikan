@@ -203,6 +203,13 @@ function buildSlackAppMessageText(event: {
   return unescapeSlackText(deduped.join("\n"));
 }
 
+export function italicizeLines(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => (line.trim() ? `_${line}_` : line))
+    .join("\n");
+}
+
 const MRKDWN_CONTEXT_TEXT_LIMIT = 3000;
 
 export function buildMrkdwnContextBlock(text: string): object {
@@ -562,7 +569,7 @@ export class SlackMessagingBot implements MessagingBot {
       await this.postEphemeral(
         conversationId,
         userId,
-        options?.style === "error" ? `_${text}_` : text,
+        options?.style === "error" ? italicizeLines(text) : text,
       );
       return;
     }
@@ -1266,7 +1273,9 @@ export class SlackMessagingBot implements MessagingBot {
           await respond(responseText, [buildMrkdwnContextBlock(responseText)]);
           return;
         }
-        await respond(responseOptions?.style === "error" ? `_${responseText}_` : responseText);
+        await respond(
+          responseOptions?.style === "error" ? italicizeLines(responseText) : responseText,
+        );
       },
       respondToolResult: async (result: ChatToolResult) => {
         const duration = (result.durationMs / 1000).toFixed(1);

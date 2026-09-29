@@ -8,6 +8,7 @@ import type {
   RunEvent,
   RunnerSessionState,
   SessionEventHandlerParams,
+  ToolTiming,
   UsageReportContext,
 } from "./types.js";
 import type { MikanAgentSession } from "./session.js";
@@ -35,7 +36,8 @@ import { toRunEvent, toolResultText } from "./run-events.js";
 import { REACT_TOOL } from "./tools/react.js";
 
 import * as log from "../log.js";
-import { errorMessage } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
+import { formatBudgetStop } from "./budget-stop.js";
 
 interface LlmOperationSpan {
   span: ObservabilitySpan;
@@ -90,6 +92,7 @@ function createRunStateDefaults(): RunnerSessionState {
     logCtx: null,
     queue: null,
     pendingTools: new Map<string, { toolName: string; args: unknown; startTime: number }>(),
+    completedTools: [],
     toolProgress: new Map<string, { label: string; status: "running" | "done" | "error" }>(),
     subagentProgress: new Map<string, SubagentProgressSnapshot>(),
     completedSubagentProgress: [],
@@ -574,6 +577,23 @@ type LifecycleEvent = Extract<
   { type: "compaction_start" | "compaction_end" | "auto_retry_start" | "budget_exceeded" }
 >;
 
+function toolLabel(args: unknown, toolName: string): string {
+  const label = isRecord(args) && typeof args.label === "string" ? args.label.trim() : "";
+  return label || toolName;
+}
+
+function runningTools(runState: RunnerSessionState): ToolTiming[] {
+  const now = Date.now();
+  return [...runState.pendingTools.values()]
+    .filter((pending) => pending.toolName !== START_TASK_TOOL)
+    .map((pending) => ({
+      label: toolLabel(pending.args, pending.toolName),
+      toolName: pending.toolName,
+      durationMs: now - pending.startTime,
+      isError: false,
+    }));
+}
+
 function observeToolStart(event: ToolStartEvent, context: RunObserverContext): void {
   const { runState, logCtx, baseAttrs } = context;
   const args = (event.args ?? {}) as { label?: string };
@@ -651,6 +671,12 @@ function observeToolEnd(event: ToolEndEvent, context: RunObserverContext): void 
     return;
   }
   const durationMs = pending ? Date.now() - pending.startTime : 0;
+  runState.completedTools.push({
+    label: toolLabel(pending?.args, event.toolName),
+    toolName: event.toolName,
+    durationMs,
+    isError: event.isError,
+  });
   const toolSpan = spansFor(runState).tools.get(event.toolCallId);
   toolSpan?.end({
     attributes: metricAttributes({
@@ -998,7 +1024,13 @@ function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void
       return;
     }
     case "budget_exceeded": {
-      const text = `_Stopped: run budget exceeded (${event.reason})_`;
+      const text = formatBudgetStop({
+        reason: event.reason,
+        llmCalls: event.llmCalls,
+        durationMs: event.durationMs,
+        completed: context.runState.completedTools,
+        running: runningTools(context.runState),
+      });
       context.queue.enqueue(
         () => context.responder.respondDiagnostic(text, { style: "error" }),
         "budget exceeded",

@@ -18,8 +18,13 @@ any release.
 - **Host and container vaults use hashed keys only.** The runtime no longer falls back to vault directories named by raw user id (`host`) or `container-<name>` (`container:*`). `mikan migrate` renames them.
 - The public API no longer exports `findV3SessionFiles`, `isV3SessionFile`, or `migrateSessionFile`.
 
+### Changed
+
+- When a scheduled run hits its budget, the stop notice now says how long it ran, how many model and tool calls it made, the slowest steps with their durations, and which step was still running. Slow queries can be found from the notice alone.
+
 ### Fixed
 
+- Multi-line error notices in Slack are italicized line by line, because Slack emphasis does not span line breaks.
 - Upgrading a 0.5.3 install keeps each conversation's credentials. The old startup migration looked for a vault name that 0.5.3 never wrote, so 0.5.3 conversation vaults were silently left behind; `mikan migrate` moves them to their office keys.
 - Upgrading a 0.5.3 install removes its sandbox containers instead of recreating them from snapshots under their old names next to the new ones.
 
