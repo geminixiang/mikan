@@ -85,6 +85,8 @@ export interface PeriodicEventInfo {
   nextRun: string | null;
 }
 
+import { Cron } from "croner";
+import { errorMessage } from "../unknown-values.js";
 import { type Static, Type } from "typebox";
 import { parseJsonSchemaValue } from "../file-guards.js";
 
@@ -248,7 +250,19 @@ export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
       if (!input.timezone) {
         throw new Error("`timezone` is required for periodic events");
       }
+      upcomingRuns(input.schedule, input.timezone, 1);
       return { type: "periodic", ...base, schedule: input.schedule, timezone: input.timezone };
+  }
+}
+
+export function upcomingRuns(schedule: string, timezone: string, count: number): Date[] {
+  try {
+    return new Cron(schedule, { timezone, paused: true }).nextRuns(count);
+  } catch (error) {
+    throw new Error(
+      `Invalid cron \`schedule\` "${schedule}" or \`timezone\` "${timezone}": ${errorMessage(error)}`,
+      { cause: error },
+    );
   }
 }
 

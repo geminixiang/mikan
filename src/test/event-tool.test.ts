@@ -222,6 +222,39 @@ describe("createEventTool", () => {
     expect(existsSync(path)).toBe(false);
   });
 
+  test("periodic event result lists the next runs in the event timezone", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-29T06:00:00Z"));
+    vi.useFakeTimers({ now: Date.parse("2026-09-29T06:00:00Z"), toFake: ["Date"] });
+    try {
+      const { tool } = officeTool();
+      const result = await tool.execute("call-1", {
+        type: "periodic",
+        text: "weekly review",
+        schedule: "30 9 * * 1",
+        timezone: "Asia/Taipei",
+      });
+
+      expect(firstText(result)).toContain(
+        "Next runs: Mon 2026-10-05 09:30, Mon 2026-10-12 09:30, Mon 2026-10-19 09:30 (Asia/Taipei)",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejects an invalid periodic schedule before writing the event", async () => {
+    const { tool, own } = officeTool();
+    await expect(
+      tool.execute("call-1", {
+        type: "periodic",
+        text: "x",
+        schedule: "30 9 * * Monday-ish",
+        timezone: "Asia/Taipei",
+      }),
+    ).rejects.toThrow("Invalid cron `schedule`");
+    expect(existsSync(officeEventsDir(own)) ? readdirSync(officeEventsDir(own)) : []).toEqual([]);
+  });
+
   test("requires event context before execution", async () => {
     const { tool } = createEventTool(new OfficeEventStore(office()));
     await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(

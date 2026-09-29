@@ -1,7 +1,12 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { type Static, Type } from "typebox";
 import type { ConversationKind } from "../../types.js";
-import { buildEventPayload, EventTypeSchema, validateEventFilename } from "../../events/index.js";
+import {
+  buildEventPayload,
+  EventTypeSchema,
+  upcomingRuns,
+  validateEventFilename,
+} from "../../events/index.js";
 import type { EventPayload, EventStore } from "../../events/index.js";
 import * as log from "../../log.js";
 
@@ -232,12 +237,31 @@ function formatEventWriteResult(
     : payload.conversationId;
   switch (payload.type) {
     case "periodic":
-      return `${scheduledVerb} periodic event ${filename} for ${target} (${payload.schedule} ${payload.timezone})`;
+      return `${scheduledVerb} periodic event ${filename} for ${target} (${payload.schedule} ${payload.timezone}). ${formatUpcomingRuns(payload.schedule, payload.timezone)}`;
     case "one-shot":
       return `${scheduledVerb} one-shot event ${filename} for ${target} at ${payload.at}`;
     case "immediate":
       return `${immediateVerb} immediate event ${filename} for ${target}`;
   }
+}
+
+function formatUpcomingRuns(schedule: string, timezone: string): string {
+  const format = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const runs = upcomingRuns(schedule, timezone, 3).map((run) => {
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      format.formatToParts(run).find((p) => p.type === type)?.value;
+    return `${part("weekday")} ${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+  });
+  return `Next runs: ${runs.join(", ")} (${timezone})`;
 }
 
 function requireFilename(params: EventToolParams): string {
