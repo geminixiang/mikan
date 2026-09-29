@@ -365,6 +365,22 @@ describe("loadMcpTools", () => {
     }
   }, 30_000);
 
+  it("names a failing HTTP server's status and response body once", async () => {
+    const body = "Error 1102: Worker exceeded resource limits";
+    const server = createServer((_req, res) => res.writeHead(503).end(body));
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    const result = await loadMcpTools({ down: { url: `http://127.0.0.1:${port}/mcp` } });
+    try {
+      const [error] = result.errors;
+      expect(error?.error).toContain("503");
+      expect(error?.error.split(body)).toHaveLength(2);
+    } finally {
+      await result.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("reports unreachable servers as errors without failing the rest", async () => {
     const result = await loadMcpTools({
       good: { command: process.execPath, args: [serverPath] },

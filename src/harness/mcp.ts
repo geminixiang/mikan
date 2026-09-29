@@ -180,8 +180,9 @@ const ERROR_BODY_CHARS = 300;
 function describeLoadError(error: unknown): string {
   const message = errorMessage(error);
   if (!(error instanceof McpHttpError)) return message;
-  const body = error.body.trim();
-  return body ? `${message} (HTTP ${error.status}): ${body.slice(0, ERROR_BODY_CHARS)}` : message;
+  const body = error.body.trim().slice(0, ERROR_BODY_CHARS);
+  if (!body || message.includes(body.slice(0, 40))) return message;
+  return `${message} (HTTP ${error.status}): ${body}`;
 }
 
 function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
