@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ffmpeg \
   file \
   fonts-liberation \
+  fonts-noto-cjk \
   git \
   gnupg \
   imagemagick \
@@ -112,6 +113,12 @@ RUN curl -fsSL https://sentry.io/get-cli/ | INSTALL_DIR=/usr/local/bin sh
 
 RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99mikan-sandbox \
   && chown root:root /var/cache/apt/archives/partial
+
+RUN printf '%s\n' '[externally-managed]' \
+    'Error=This sandbox manages Python packages with uv, not pip.' \
+    ' Run a script with its packages: uv run --with pandas --with matplotlib script.py' \
+    ' Or create a project venv: uv venv .venv && uv pip install --python .venv pandas' \
+    > "$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')/EXTERNALLY-MANAGED"
 
 RUN rmdir /root/.ssh 2>/dev/null; test "$(ls -A /root | tr "\n" " ")" = ".bashrc .profile " || (ls -la /root && exit 1)
 

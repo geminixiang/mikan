@@ -47,6 +47,15 @@ docker run --rm --tmpfs /root --cap-drop ALL --security-opt no-new-privileges "$
   command -v sqlite3 >/dev/null
 '
 
+echo "== CJK text renders and Python packages install through uv"
+docker run --rm "$image" sh -c '
+  set -e
+  test -n "$(fc-list :lang=zh-tw)"
+  test -n "$(fc-list :lang=ja)"
+  cd /tmp && echo "import six" > probe.py && uv run -q --with six probe.py
+  pip install six 2>&1 | grep -q "uv run --with"
+'
+
 echo "== agent-browser drives chromium"
 docker run --rm --tmpfs /root "$image" sh -c '
   set -e

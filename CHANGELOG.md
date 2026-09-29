@@ -11,6 +11,8 @@ any release.
 
 ### Fixed
 
+- The sandbox image now ships CJK fonts (`fonts-noto-cjk`, about 170 MB). Without them, `jev_browser` screenshots showed Chinese and Japanese text as blank space, and charts drawn in the sandbox could not use Chinese labels.
+- Python packages in the sandbox go through uv. The system pip still refuses installs, but its message now names the uv commands to use (`uv run --with <package>`), so the agent recovers after one attempt instead of trying pip, venvs, and apt in turn. The docs no longer claim that `pip install --user` works.
 - Creating or updating a periodic event now reports its next three runs in the event's timezone, so the agent no longer computes weekdays itself (it once announced a Monday reminder for a Tuesday). An invalid cron `schedule` or `timezone` is rejected before the event file is written instead of being saved and then skipped by the scheduler.
 - `apt-get install` works inside managed sandbox containers again. The containers drop all capabilities, so apt's download sandbox user could not switch groups and every install failed; the image now runs apt downloads as root, and the image smoke test installs a package under the same hardening.
 - Asking "好了嗎" at the moment a background task finishes no longer answers "還在處理" right beside the completion notice. Task status now trusts the recorded end of the run over the runtime's still-settling state.
