@@ -225,8 +225,7 @@ never carries the judged state, questions, or answers.
 
 `jev_browser` runs **every** `agent-browser` command (including cleanup) through
 this runner's actor-resolved sandbox `Executor`, not a host subprocess. The CLI,
-Chrome, named browser sessions, and output files belong to that sandbox; the
-same session name can be used from the sandbox's `bash` tool. Jev's decision
+Chrome, the runner's browser, and output files belong to that sandbox. Jev's decision
 requests still use the host-side adapter above. Tool assembly is not restricted
 to host mode; each backend must provision `agent-browser` and its browser
 runtime on the sandbox PATH. A missing CLI is a provisioning error: the tool

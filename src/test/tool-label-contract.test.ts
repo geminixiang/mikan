@@ -74,7 +74,7 @@ describe("every agent-facing tool requires a label parameter", () => {
       "call",
       {
         label: "Capture sandbox browser",
-        session: "office-browser",
+        url: "https://example.com",
         commands: [["screenshot", "/workspace/scratch/page.png"]],
       },
       () => {},
@@ -82,10 +82,17 @@ describe("every agent-facing tool requires a label parameter", () => {
       invocation,
       TODO_CONTEXT,
     );
-    expect(exec).toHaveBeenCalledExactlyOnceWith(
-      "'agent-browser' '--session' 'office-browser' 'screenshot' '/workspace/scratch/page.png' '--json'",
-      { timeout: 90, signal: TODO_CONTEXT.abortSignal },
-    );
+    expect(exec.mock.calls.map(([command]) => command)).toEqual([
+      expect.stringMatching(
+        /^'agent-browser' '--session' 'mikan-jb-[^']+' 'open' 'https:\/\/example.com' '--json'$/,
+      ),
+      expect.stringMatching(
+        /^'agent-browser' '--session' 'mikan-jb-[^']+' 'screenshot' '\/workspace\/scratch\/page.png' '--json'$/,
+      ),
+    ]);
+    expect(
+      exec.mock.calls.every(([, options]) => options.signal === TODO_CONTEXT.abortSignal),
+    ).toBe(true);
     vi.restoreAllMocks();
   });
 

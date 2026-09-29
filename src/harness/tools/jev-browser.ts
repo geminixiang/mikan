@@ -16,6 +16,7 @@ const HARD_MAX_STEPS = 40;
 const MAX_REFS = 200;
 const MAX_SNAPSHOT_CHARS = 12_000;
 const MAX_UNCHANGED_ACTIONS = 3;
+const BROWSER_TAB_LIMIT = 3;
 const TEXT_MODEL = "openai/gpt-4o-mini";
 
 const jevBrowserSchema = Type.Object({
@@ -28,7 +29,8 @@ const jevBrowserSchema = Type.Object({
   ),
   url: Type.Optional(
     Type.String({
-      description: "Page to open first. Omit to keep the current page of an existing session.",
+      description:
+        "Page to open first, in a new tab after the first call. Omit to keep working on the current tab.",
     }),
   ),
   frame: Type.Optional(
@@ -40,19 +42,13 @@ const jevBrowserSchema = Type.Object({
   commands: Type.Optional(
     Type.Array(Type.Array(Type.String()), {
       description:
-        'agent-browser argv arrays run in order before goal, without the leading agent-browser, --session, or --json, e.g. [["record","start","<scratch>/demo.webm"]] or [["screenshot","<scratch>/shot.png","--full"]]. Use them for anything the goal loop does not do (screenshot, pdf, record, network har, cookies, eval, set viewport, get text). Write files under the scratch directory.',
-    }),
-  ),
-  session: Type.Optional(
-    Type.String({
-      description:
-        "Name that keeps one browser open across calls, reusing an open session of that name. It stays open until a call passes close: true. Omit for a one-off browser that closes itself.",
+        'agent-browser argv arrays run in order before goal, without the leading agent-browser, --session, or --json; switch tabs with ["tab","t2"], e.g. [["record","start","<scratch>/demo.webm"]] or [["screenshot","<scratch>/shot.png","--full"]]. Use them for anything the goal loop does not do (screenshot, pdf, record, network har, cookies, eval, set viewport, get text). Write files under the scratch directory.',
     }),
   ),
   close: Type.Optional(
     Type.Boolean({
       description:
-        "Close the browser when this call returns. Defaults to true without session and false with one; session plus close: true alone just closes it.",
+        "Close this thread's browser, with its tabs and logins, when the call returns. Alone it only closes.",
     }),
   ),
   maxSteps: Type.Optional(
@@ -93,21 +89,53 @@ function lifecycleOf(result: AgentBrowserResult<unknown>): BrowserLifecycle | un
   return (result.data as { lifecycle?: BrowserLifecycle } | null)?.lifecycle;
 }
 
-function describeContinuity(hadSession: boolean, first: BrowserLifecycle | undefined): string {
-  if (!hadSession) {
-    return "one-off session: no session name was given, so this browser is not intended to persist for a later call";
-  }
+function describeContinuity(expectedOpen: boolean, first: BrowserLifecycle | undefined): string {
+  if (!expectedOpen) return "new: this call started the thread's browser";
   if (first?.reused === true) {
-    return "continuous: this call reused the same running browser a prior call in this session left open";
+    return "continuous: this call reused the browser earlier calls in this thread left open";
   }
   if (first?.launched !== true && first?.relaunchedBrowser !== true) {
     return "unknown: the CLI did not provide sufficient lifecycle information to determine whether the browser was reused";
   }
   return (
-    "NOT continuous: this call got a freshly (re)launched browser under this session name, " +
-    "not the one a prior call left open — any recording, HAR capture, or page state from an earlier call was lost. " +
-    "If a prior call in this session did not pass close: true, check whether it actually kept the browser open."
+    "NOT continuous: the thread's browser was relaunched, so tabs, logins, recordings, and HAR captures " +
+    "from earlier calls were lost."
   );
+}
+
+interface BrowserTab {
+  tabId: string;
+  active?: boolean;
+  url?: string;
+}
+
+function tabNumber(tab: BrowserTab): number {
+  return Number(tab.tabId.replace(/^t/, ""));
+}
+
+async function closeOldestTabs(
+  executor: Executor,
+  sessionId: string,
+  keep: number,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const listed = await runAgentBrowser<{ tabs?: BrowserTab[] }>(
+    executor,
+    sessionId,
+    ["tab", "list"],
+    signal,
+  );
+  const tabs = listed.success && Array.isArray(listed.data?.tabs) ? listed.data.tabs : [];
+  const oldest = tabs
+    .filter((tab) => !tab.active)
+    .toSorted((a, b) => tabNumber(a) - tabNumber(b))
+    .slice(0, Math.max(0, tabs.length - keep));
+  const closed: string[] = [];
+  for (const tab of oldest) {
+    const result = await runAgentBrowser(executor, sessionId, ["tab", "close", tab.tabId], signal);
+    if (result.success) closed.push(tab.url ?? tab.tabId);
+  }
+  return closed;
 }
 
 interface HistoryEntry {
@@ -349,14 +377,29 @@ function resolveTarget(
   return typeof choice === "string" ? choice : undefined;
 }
 
+async function openPage(
+  executor: Executor,
+  sessionId: string,
+  url: string,
+  inNewTab: boolean,
+  signal?: AbortSignal,
+): Promise<AgentBrowserResult<unknown>> {
+  if (!inNewTab) return runAgentBrowser(executor, sessionId, ["open", url], signal);
+  const tab = await runAgentBrowser(executor, sessionId, ["tab", "new"], signal);
+  if (!tab.success) return tab;
+  return runAgentBrowser(executor, sessionId, ["open", url], signal);
+}
+
 function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
-  const explicitlyClosedSessions = new Set<string>();
+  const sessionId = `mikan-jb-${randomUUID()}`;
+  let browserOpen = false;
+  let closedByCall = false;
   return {
     name: JEV_BROWSER_TOOL,
     label: "jev browser",
     description: [
       "Control a real Chrome browser in this conversation's sandbox (not the host): give a goal that Jev drives step by step (click, type, select, scroll, wait), run raw agent-browser commands, or both; commands run first.",
-      "For multi-step work, reuse one named session across calls; each extra session starts another browser.",
+      `Each thread has one browser that stays open across calls; url opens a new tab, and past ${BROWSER_TAB_LIMIT} tabs the oldest closes.`,
       "Read the page from lastPageSnapshot (accessibility text; the tool does not summarize) and command output from commandResults. A browserContinuity of unknown is missing metadata, not a failure.",
       'CLI success is not goal completion: verify the visible state. To submit a typed input, run ["press","Enter"]: press takes a key, not a ref. After navigation, snapshot again and use the new @refs. If content sits in an iframe, set frame instead of scrolling. find may act, not only read. When syntax is unclear, run ["<command>","--help"]; after one informed retry, report the blocker instead of trying more selectors.',
       "If agent-browser is missing from the sandbox, report it; never install it on the host.",
@@ -377,40 +420,26 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
           );
         }
       }
-      if (!args.url && !args.session) {
-        throw new Error("Provide url to open a page, or session to reuse an existing one.");
-      }
-      if (
-        args.session &&
-        args.close === true &&
-        !args.url &&
-        !args.goal &&
-        !args.commands?.length
-      ) {
-        const result = await runAgentBrowser(executor, args.session, ["close"], signal);
-        if (!result.success) throw new Error(`Failed to close browser session: ${result.error}`);
-        explicitlyClosedSessions.add(args.session);
+      if (args.close === true && !args.url && !args.goal && !args.commands?.length) {
+        const result = await runAgentBrowser(executor, sessionId, ["close"], signal);
+        if (!result.success) throw new Error(`Failed to close the browser: ${result.error}`);
+        browserOpen = false;
+        closedByCall = true;
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ status: "closed", session: args.session }),
-            },
-          ],
+          content: [{ type: "text" as const, text: JSON.stringify({ status: "closed" }) }],
           details: undefined,
         };
       }
       if (!args.goal && !args.commands?.length) {
+        throw new Error("Provide goal or commands, or close: true to only close the browser.");
+      }
+      if (!args.url && closedByCall) {
         throw new Error(
-          "Provide goal or commands, or use session with close: true to only close a browser.",
+          "This thread's browser was explicitly closed. Provide url to start it again; refusing to silently replace it with about:blank.",
         );
       }
-      if (args.session && !args.url && explicitlyClosedSessions.has(args.session)) {
-        throw new Error(
-          `Browser session "${args.session}" was explicitly closed. Provide url to start it again; refusing to silently replace it with about:blank.`,
-        );
-      }
-      const sessionId = args.session ?? `mikan-jb-${randomUUID()}`;
+      const expectedOpen = browserOpen;
+      const closedTabs: string[] = [];
       const maxSteps = Math.min(args.maxSteps ?? DEFAULT_MAX_STEPS, HARD_MAX_STEPS);
       const openrouterApiKey = readEnv("OPENROUTER_API_KEY");
       const history: HistoryEntry[] = [];
@@ -434,12 +463,18 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
 
       try {
         if (args.url) {
-          const openResult = await runAgentBrowser(executor, sessionId, ["open", args.url], signal);
+          if (browserOpen) {
+            closedTabs.push(
+              ...(await closeOldestTabs(executor, sessionId, BROWSER_TAB_LIMIT - 1, signal)),
+            );
+          }
+          const openResult = await openPage(executor, sessionId, args.url, browserOpen, signal);
           captureLifecycle(openResult);
           if (!openResult.success) {
             throw new Error(`Failed to open ${args.url}: ${openResult.error}`);
           }
-          if (args.session) explicitlyClosedSessions.delete(args.session);
+          browserOpen = true;
+          closedByCall = false;
         }
 
         if (args.frame !== undefined) {
@@ -479,8 +514,8 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
                   {
                     status,
                     message,
-                    session: sessionId,
-                    browserContinuity: describeContinuity(!!args.session, firstLifecycle),
+                    browserContinuity: describeContinuity(expectedOpen, firstLifecycle),
+                    closedOldTabs: closedTabs.length ? closedTabs : undefined,
                     commandResults,
                   },
                   null,
@@ -667,11 +702,12 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
           finalUrl = finalSnapshot.data.origin ?? finalUrl;
         }
       } finally {
-        const shouldClose = args.close ?? !args.session;
-        if (shouldClose) {
+        if (args.close === true) {
           await runAgentBrowser(executor, sessionId, ["close"])
             .then((result) => {
-              if (args.session && result.success) explicitlyClosedSessions.add(sessionId);
+              if (!result.success) return;
+              browserOpen = false;
+              closedByCall = true;
             })
             .catch(() => {});
         }
@@ -685,8 +721,8 @@ function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevB
               {
                 status,
                 message,
-                session: sessionId,
-                browserContinuity: describeContinuity(!!args.session, firstLifecycle),
+                browserContinuity: describeContinuity(expectedOpen, firstLifecycle),
+                closedOldTabs: closedTabs.length ? closedTabs : undefined,
                 steps: history.length,
                 finalUrl,
                 history,
