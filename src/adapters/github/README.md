@@ -13,12 +13,15 @@ full rationale and decisions).
 - `GITHUB_REPOS` — optional comma-separated `owner/repo` list; defaults to
   every repository the installation can access.
 - `GITHUB_POLL_INTERVAL` — optional poll interval in seconds (default 60).
+- `GITHUB_AGENT_TOKEN` — optional token of a machine-user account (a
+  fine-grained PAT with Issues and Pull requests read & write). See
+  "Agent machine user" below.
 - `GITHUB_WEBHOOK_SECRET` — optional; when set (and the link server is
   running, `LINK_PORT`), signed GitHub App webhook deliveries to
   `/github/webhook` trigger an immediate poll, cutting mention latency from
   the poll interval to seconds. Configure the App webhook with the same
-  secret and subscribe to Issues, Issue comment, and Pull request review
-  comment events. Polling continues regardless as the delivery backstop.
+  secret and subscribe to Issues, Issue comment, Pull request, and Pull
+  request review comment events. Polling continues regardless as the delivery backstop.
 
 ## Behavior notes
 
@@ -47,6 +50,30 @@ full rationale and decisions).
 - There is no streaming: the finished response is posted as one comment, because per-delta edits would churn the API and mark every reply "edited".
 - The optional webhook receiver only verifies `X-Hub-Signature-256` and requests a poll; deliveries are never parsed into events.
 - The `github_*` tools are a `PlatformToolPack` injected from `main.ts`, not core tools. Git tokens are passed per invocation and never persisted.
+
+## Agent machine user
+
+GitHub never offers an App's `slug[bot]` in @-mention autocomplete and an App
+cannot be assigned, so a teammate-like handle needs a real user account. With
+`GITHUB_AGENT_TOKEN` set, the adapter resolves that account's login at startup
+(`GET /user`) and:
+
+- triggers on `@<agent-login>` as well as `@<app-slug>`;
+- triggers when a write-or-better user assigns an issue or PR to the account,
+  with the issue title and body as the message and the assigner as the user.
+  Assignments come from the repo's recent issue events (`per_page=100`,
+  conditional), which is one extra request per repo per tick; more than 100
+  issue events between two polls can drop an assignment. They have their own
+  baseline in the sync state, so enabling the token never replays earlier
+  assignments;
+- posts comments, review replies, and reactions with the account's token;
+- ignores the account's own comments. It is a `User`, so the `Bot` type check
+  alone would make it answer itself forever.
+
+Pushes, PRs, labels, assignees, and issue state still use the App's
+per-repo, least-privilege installation tokens, and commits keep the App's
+identity. The account must be a repo collaborator or org member to appear in
+autocomplete and the assignee picker.
 
 ## Repo access and pull requests
 

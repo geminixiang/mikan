@@ -126,7 +126,12 @@ describe("handleGithubWebhookRequest", () => {
   });
 
   test("pokes on relevant events with 202", async () => {
-    for (const event of ["issues", "issue_comment", "pull_request_review_comment"]) {
+    for (const event of [
+      "issues",
+      "issue_comment",
+      "pull_request",
+      "pull_request_review_comment",
+    ]) {
       const opts = options();
       const { req, url } = makeReq({ body: "{}", signature: sign("{}"), event });
       const out = makeRes(req);
@@ -160,6 +165,8 @@ function makeHandler(): MessagingEventHandler {
 function makeClient(): GithubApi {
   return {
     getAppSlug: vi.fn<GithubApi["getAppSlug"]>().mockResolvedValue("mikan"),
+    getAgentLogin: vi.fn<GithubApi["getAgentLogin"]>().mockResolvedValue(null),
+    listIssueEventsRecent: vi.fn<GithubApi["listIssueEventsRecent"]>().mockResolvedValue([]),
     getUserId: vi.fn<GithubApi["getUserId"]>().mockResolvedValue(999),
     createScopedInstallationToken: vi.fn<GithubApi["createScopedInstallationToken"]>(),
     getRepository: vi.fn<GithubApi["getRepository"]>(),

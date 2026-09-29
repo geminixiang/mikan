@@ -68,6 +68,11 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
       },
       { name: "GITHUB_POLL_INTERVAL", doc: "Poll interval in seconds (default 60)" },
       {
+        name: "GITHUB_AGENT_TOKEN",
+        secret: true,
+        doc: "Machine-user token; mentions and assignments of that user trigger, and replies post as it",
+      },
+      {
         name: "GITHUB_WEBHOOK_SECRET",
         secret: true,
         doc: "Webhook secret; when set, deliveries to /github/webhook trigger an immediate poll (needs LINK_PORT)",

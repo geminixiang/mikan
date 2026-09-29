@@ -5,7 +5,12 @@ import type { GithubWebhookOptions } from "./types.js";
 
 export const GITHUB_WEBHOOK_PATH = "/github/webhook";
 
-const POKE_EVENTS = new Set(["issues", "issue_comment", "pull_request_review_comment"]);
+const POKE_EVENTS = new Set([
+  "issues",
+  "issue_comment",
+  "pull_request",
+  "pull_request_review_comment",
+]);
 
 const MAX_BODY_BYTES = 1024 * 1024;
 

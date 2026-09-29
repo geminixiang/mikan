@@ -82,6 +82,8 @@ function fakeTelegramClient(stop: TelegramClient["stop"] = async () => {}): Tele
 function fakeGithubApi(overrides: Partial<GithubApi> = {}): GithubApi {
   return {
     getAppSlug: unexpectedCall,
+    getAgentLogin: unexpectedCall,
+    listIssueEventsRecent: unexpectedCall,
     getUserId: unexpectedCall,
     createScopedInstallationToken: unexpectedCall,
     getRepository: unexpectedCall,
@@ -265,6 +267,7 @@ describe("platform stop intake", () => {
     const bot = githubBot(
       fakeGithubApi({
         getAppSlug: async () => "mikan",
+        getAgentLogin: async () => null,
         getUserId: async () => 1,
         listIssuesSince,
         listIssueCommentsSince: async () => [],

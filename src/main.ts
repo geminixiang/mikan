@@ -85,6 +85,7 @@ const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
 const GITHUB_REPOS = readEnv("GITHUB_REPOS");
 const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
 const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
+const GITHUB_AGENT_TOKEN = readEnv("GITHUB_AGENT_TOKEN");
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
@@ -489,6 +490,7 @@ if (hasGithub) {
     appId: GITHUB_APP_ID,
     privateKey: githubPrivateKey,
     installationId: GITHUB_INSTALLATION_ID,
+    agentToken: GITHUB_AGENT_TOKEN,
     repos: GITHUB_REPOS
       ? GITHUB_REPOS.split(",")
           .map((repo) => repo.trim())

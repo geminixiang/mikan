@@ -6,6 +6,7 @@ import type {
   GithubCollaboratorPermission,
   GithubIssue,
   GithubIssueComment,
+  GithubIssueEvent,
   GithubPullRequest,
   GithubPullRequestFile,
   GithubPullRequestReview,
@@ -54,6 +55,7 @@ export class GithubClient {
   private readonly appId: string;
   private readonly privateKey: string;
   private readonly installationId: string;
+  private readonly agentToken: string | undefined;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private installationToken: { value: string; expiresAt: number } | null = null;
@@ -63,6 +65,7 @@ export class GithubClient {
     this.appId = options.appId;
     this.privateKey = options.privateKey;
     this.installationId = options.installationId;
+    this.agentToken = options.agentToken;
     this.baseUrl = (options.baseUrl ?? "https://api.github.com").replace(/\/+$/, "");
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
@@ -169,6 +172,26 @@ export class GithubClient {
   ): Promise<T> {
     const token = await this.getInstallationToken();
     return this.rawRequestBody<T>(method, path, { ...options, auth: `Bearer ${token}` });
+  }
+
+  private async speakerAuth(): Promise<string> {
+    return `Bearer ${this.agentToken ?? (await this.getInstallationToken())}`;
+  }
+
+  private async speak(method: string, path: string, body: unknown): Promise<void> {
+    await this.rawRequest(method, path, { body, auth: await this.speakerAuth() });
+  }
+
+  private async speakBody<T>(method: string, path: string, body: unknown): Promise<T> {
+    return this.rawRequestBody<T>(method, path, { body, auth: await this.speakerAuth() });
+  }
+
+  async getAgentLogin(): Promise<string | null> {
+    if (!this.agentToken) return null;
+    const user = await this.rawRequestBody<{ login: string }>("GET", "/user", {
+      auth: `Bearer ${this.agentToken}`,
+    });
+    return user.login;
   }
 
   async getAppSlug(): Promise<string> {
@@ -384,6 +407,14 @@ export class GithubClient {
     );
   }
 
+  async listIssueEventsRecent(owner: string, repo: string): Promise<GithubIssueEvent[] | null> {
+    return this.request<GithubIssueEvent[]>(
+      "GET",
+      `/repos/${owner}/${repo}/issues/events?per_page=100`,
+      { conditional: true },
+    );
+  }
+
   async getIssue(owner: string, repo: string, number: number): Promise<GithubIssue> {
     const issue = await this.requestBody<GithubIssue>(
       "GET",
@@ -455,12 +486,11 @@ export class GithubClient {
     number: number,
     body: string,
   ): Promise<GithubIssueComment> {
-    const comment = await this.requestBody<GithubIssueComment>(
+    return this.speakBody<GithubIssueComment>(
       "POST",
       `/repos/${owner}/${repo}/issues/${number}/comments`,
-      { body: { body } },
+      { body },
     );
-    return comment;
   }
 
   async updateIssueComment(
@@ -469,13 +499,11 @@ export class GithubClient {
     commentId: number,
     body: string,
   ): Promise<void> {
-    await this.request("PATCH", `/repos/${owner}/${repo}/issues/comments/${commentId}`, {
-      body: { body },
-    });
+    await this.speak("PATCH", `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body });
   }
 
   async deleteIssueComment(owner: string, repo: string, commentId: number): Promise<void> {
-    await this.request("DELETE", `/repos/${owner}/${repo}/issues/comments/${commentId}`);
+    await this.speak("DELETE", `/repos/${owner}/${repo}/issues/comments/${commentId}`, undefined);
   }
 
   async createCommentReaction(
@@ -484,8 +512,8 @@ export class GithubClient {
     commentId: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.request("POST", `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
-      body: { content },
+    await this.speak("POST", `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
+      content,
     });
   }
 
@@ -496,12 +524,11 @@ export class GithubClient {
     commentId: number,
     body: string,
   ): Promise<GithubReviewComment> {
-    const comment = await this.requestBody<GithubReviewComment>(
+    return this.speakBody<GithubReviewComment>(
       "POST",
       `/repos/${owner}/${repo}/pulls/${number}/comments/${commentId}/replies`,
-      { body: { body } },
+      { body },
     );
-    return comment;
   }
 
   async createReviewCommentReaction(
@@ -510,8 +537,8 @@ export class GithubClient {
     commentId: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.request("POST", `/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`, {
-      body: { content },
+    await this.speak("POST", `/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`, {
+      content,
     });
   }
 
@@ -521,8 +548,6 @@ export class GithubClient {
     number: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.request("POST", `/repos/${owner}/${repo}/issues/${number}/reactions`, {
-      body: { content },
-    });
+    await this.speak("POST", `/repos/${owner}/${repo}/issues/${number}/reactions`, { content });
   }
 }

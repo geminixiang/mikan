@@ -40,6 +40,7 @@ The App slug is the name users mention to trigger first contact.
 | `GITHUB_REPOS`                                           | Optional comma-separated `owner/repo` list; defaults to all installation repositories.          |
 | `GITHUB_POLL_INTERVAL`                                   | Optional poll interval in seconds (default 60).                                                 |
 | `GITHUB_WEBHOOK_SECRET`                                  | Optional webhook secret; deliveries to `/github/webhook` trigger an immediate poll (see below). |
+| `GITHUB_AGENT_TOKEN`                                     | Optional machine-user token; see [Agent machine user](#agent-machine-user).                     |
 
 ## Event source
 
@@ -53,11 +54,21 @@ Dedup is a persisted watermark at `<state-dir>/github-sync.json` (atomic write):
 
 ### Optional webhook (lower latency)
 
-Without a webhook, a mention waits up to one poll interval. To respond in seconds instead, enable the App webhook: set the webhook URL to `<link-server base URL>/github/webhook`, choose a secret, subscribe to **Issues**, **Issue comment**, and **Pull request review comment** events, and set the same secret as `GITHUB_WEBHOOK_SECRET` (requires the link server, `LINK_PORT`). A verified delivery only asks the poll loop to run immediately — payloads are never parsed into events, so ordering, dedup, and permission checks are unchanged, and polling remains the backstop for missed deliveries.
+Without a webhook, a mention waits up to one poll interval. To respond in seconds instead, enable the App webhook: set the webhook URL to `<link-server base URL>/github/webhook`, choose a secret, subscribe to **Issues**, **Issue comment**, **Pull request**, and **Pull request review comment** events, and set the same secret as `GITHUB_WEBHOOK_SECRET` (requires the link server, `LINK_PORT`). A verified delivery only asks the poll loop to run immediately — payloads are never parsed into events, so ordering, dedup, and permission checks are unchanged, and polling remains the backstop for missed deliveries.
 
 ## Triggering
 
 A comment, inline review comment, or new issue body triggers a run only when it @mentions the app slug, or the bot already participates in that issue's conversation. The commenter must also hold **write permission or better** on the repo — on public repos anyone can comment, so mentions from anyone below write are ignored entirely (permission lookups are cached for five minutes and fail closed). Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session; the magic word uses one grammar across all platforms.
+
+### Agent machine user
+
+GitHub never suggests an App's `slug[bot]` in @-mention autocomplete, and an App cannot be assigned. To make mikan feel like a teammate, create a regular GitHub account for it, add it as a collaborator or org member, and set `GITHUB_AGENT_TOKEN` to a fine-grained personal access token of that account with **Issues** and **Pull requests** read & write. mikan then:
+
+- triggers on `@<agent-login>` as well as the App slug, with autocomplete;
+- triggers when a user with write permission or better assigns an issue or PR to the account, using the issue title and body as the message;
+- posts comments, review replies, and reactions as the account, and never answers its own comments.
+
+Pushes, pull requests, labels, assignees, and issue state still use the App's short-lived per-repo tokens, and commits keep the App identity. Enabling the token never replays earlier assignments.
 
 Because anyone can open an issue on a public repo, GitHub reports `trustModel: "open-trigger"`. That disables the ambient `sandbox.defaultSharedVault` copy for GitHub conversations: they get no credentials by default, and an admin has to provision a vault for a specific conversation deliberately. See [Vault](/sandbox/vault/).
 

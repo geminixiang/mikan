@@ -24,6 +24,7 @@ export interface GithubBotConfig {
   appId: string;
   privateKey: string;
   installationId: string;
+  agentToken?: string;
   repos: string[];
   pollIntervalMs: number;
   workspace: Workspace;
@@ -36,6 +37,12 @@ interface GithubRepoSyncState {
   seenComments: number[];
   seenIssues: number[];
   seenReviewComments?: number[];
+  assignments?: GithubAssignmentSyncState;
+}
+
+interface GithubAssignmentSyncState {
+  baseline: string;
+  seenEvents: number[];
 }
 
 export interface GithubSyncState {
@@ -64,6 +71,15 @@ export interface GithubIssue {
   state?: string;
   labels?: { name: string }[];
   assignees?: { login: string }[];
+}
+
+export interface GithubIssueEvent {
+  id: number;
+  event: string;
+  created_at: string;
+  actor: GithubUser | null;
+  assignee?: { login: string } | null;
+  issue?: GithubIssue;
 }
 
 export interface GithubIssueComment {
@@ -196,6 +212,7 @@ export interface GithubClientOptions {
   appId: string;
   privateKey: string;
   installationId: string;
+  agentToken?: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 }

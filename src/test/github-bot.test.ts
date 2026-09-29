@@ -22,6 +22,7 @@ import type {
   GithubApi,
   GithubIssue,
   GithubIssueComment,
+  GithubIssueEvent,
   GithubReviewComment,
 } from "../adapters/github/types.js";
 
@@ -97,6 +98,18 @@ function makeIssue(overrides: Partial<GithubIssue> = {}): GithubIssue {
   };
 }
 
+function makeAssignedEvent(overrides: Partial<GithubIssueEvent> = {}): GithubIssueEvent {
+  return {
+    id: 6001,
+    event: "assigned",
+    created_at: futureIso(),
+    actor: { login: "alice", type: "User" },
+    assignee: { login: "Acme-Agent" },
+    issue: makeIssue({ body: "Please handle this." }),
+    ...overrides,
+  };
+}
+
 function makeReviewComment(overrides: Partial<GithubReviewComment> = {}): GithubReviewComment {
   const createdAt = futureIso();
   return {
@@ -118,6 +131,8 @@ type FakeClient = { [Method in keyof GithubApi]: Mock<GithubApi[Method]> };
 function makeFakeClient(): FakeClient {
   return {
     getAppSlug: vi.fn<GithubApi["getAppSlug"]>().mockResolvedValue("mikan"),
+    getAgentLogin: vi.fn<GithubApi["getAgentLogin"]>().mockResolvedValue(null),
+    listIssueEventsRecent: vi.fn<GithubApi["listIssueEventsRecent"]>().mockResolvedValue([]),
     getUserId: vi.fn<GithubApi["getUserId"]>().mockResolvedValue(999),
     listInstallationRepositories: vi
       .fn<GithubApi["listInstallationRepositories"]>()
@@ -1202,5 +1217,136 @@ describe("GithubMessagingBot", () => {
       bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
     ).rejects.toThrow(/not pushable/);
     expect(pushBranch).not.toHaveBeenCalled();
+  });
+
+  describe("with an agent machine user", () => {
+    beforeEach(() => {
+      client.getAgentLogin.mockResolvedValue("Acme-Agent");
+    });
+
+    test("a mention of the agent user triggers with the mention stripped", async () => {
+      const bot = makeBot();
+      await bot.start();
+      client.listIssueCommentsSince.mockResolvedValue([
+        makeComment({ body: "@acme-agent please look" }),
+      ]);
+
+      await bot.poll();
+      await settleQueues();
+
+      const [event] = firstHandledEvent(handler);
+      expect(event.text).toBe("please look");
+    });
+
+    test("the agent user's own comments never trigger, even in a participating thread", async () => {
+      mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
+      writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
+      const bot = makeBot();
+      await bot.start();
+      client.listIssueCommentsSince.mockResolvedValue([
+        makeComment({ body: "Here is my answer", user: { login: "acme-agent", type: "User" } }),
+      ]);
+
+      await bot.poll();
+      await settleQueues();
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+    });
+
+    test("assigning the agent user triggers a run on the issue as the assigner", async () => {
+      const bot = makeBot();
+      await bot.start();
+      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent()]);
+
+      await bot.poll();
+      await settleQueues();
+
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+      const [event] = firstHandledEvent(handler);
+      expect(event.address.conversationId).toBe(CONVERSATION_ID);
+      expect(event.ts).toBe(GITHUB_ISSUE_BODY_TS);
+      expect(event.user).toBe("alice");
+      expect(event.text).toContain("[Assigned to you by @alice]");
+      expect(event.text).toContain("# Widget breaks");
+      expect(event.text).toContain("Please handle this.");
+      expect(client.getIssue).not.toHaveBeenCalled();
+    });
+
+    test("an assignment triggers once across polls", async () => {
+      const bot = makeBot();
+      await bot.start();
+      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent()]);
+
+      await bot.poll();
+      await bot.poll();
+      await settleQueues();
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("old, foreign, bot-made, and below-permission assignments do not trigger", async () => {
+      client.getCollaboratorPermission.mockImplementation(async (_owner, _repo, user) => ({
+        permission: user === "drive-by" ? "read" : "write",
+      }));
+      const bot = makeBot();
+      await bot.start();
+      client.listIssueEventsRecent.mockResolvedValue([
+        makeAssignedEvent({ id: 1, created_at: new Date(Date.now() - 60_000).toISOString() }),
+        makeAssignedEvent({ id: 2, assignee: { login: "bob" } }),
+        makeAssignedEvent({ id: 3, event: "unassigned" }),
+        makeAssignedEvent({ id: 4, actor: { login: "mikan[bot]", type: "Bot" } }),
+        makeAssignedEvent({ id: 5, actor: { login: "drive-by", type: "User" } }),
+      ]);
+
+      await bot.poll();
+      await settleQueues();
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+    });
+
+    test("a new issue that both mentions and is assigned to the agent triggers once", async () => {
+      const bot = makeBot();
+      await bot.start();
+      const issue = makeIssue({ body: "@acme-agent please take this" });
+      client.listIssuesSince.mockResolvedValue([issue]);
+      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent({ issue })]);
+
+      await bot.poll();
+      await settleQueues();
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("sync state written before assignment polling starts its own baseline", async () => {
+      const statePath = join(workingDir, "state", "github-sync.json");
+      mkdirSync(join(workingDir, "state"), { recursive: true });
+      const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      writeFileSync(
+        statePath,
+        JSON.stringify({
+          repos: {
+            "octo/widgets": { baseline, cursor: baseline, seenComments: [], seenIssues: [] },
+          },
+        }),
+      );
+      const beforeUpgrade = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      client.listIssueEventsRecent.mockResolvedValue([
+        makeAssignedEvent({ created_at: beforeUpgrade }),
+      ]);
+
+      const bot = makeBot();
+      await bot.start();
+      await bot.poll();
+      await settleQueues();
+
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+      const state = JSON.parse(readFileSync(statePath, "utf-8"));
+      expect(Date.parse(state.repos["octo/widgets"].assignments.baseline)).toBeGreaterThan(
+        Date.parse(beforeUpgrade),
+      );
+    });
+  });
+
+  test("without an agent machine user, issue events are never polled", async () => {
+    const bot = makeBot();
+    await bot.start();
+    await bot.poll();
+    expect(client.listIssueEventsRecent).not.toHaveBeenCalled();
   });
 });

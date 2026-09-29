@@ -35,6 +35,7 @@ import type {
   GithubBotConfig,
   GithubEvent,
   GithubIssue,
+  GithubIssueEvent,
   GithubReactionContent,
   GithubRepoRef,
   GithubSyncState,
@@ -50,6 +51,9 @@ const SyncStateSchema = Type.Object({
       seenComments: Type.Array(Type.Number()),
       seenIssues: Type.Array(Type.Number()),
       seenReviewComments: Type.Optional(Type.Array(Type.Number())),
+      assignments: Type.Optional(
+        Type.Object({ baseline: Type.String(), seenEvents: Type.Array(Type.Number()) }),
+      ),
     }),
   ),
 });
@@ -83,6 +87,8 @@ interface RepoWatermark {
   seenComments: Set<number>;
   seenIssues: Set<number>;
   seenReviewComments: Set<number>;
+  assignmentBaseline: string;
+  seenAssignments: Set<number>;
 }
 
 export const formatGithubContinuation = (partNum: number): string => `*(continued ${partNum})*`;
@@ -110,6 +116,7 @@ interface IncomingItem {
   text: string;
   createdAt: string;
   isPr?: boolean;
+  assigned?: boolean;
   review?: {
     commentId: number;
     path: string;
@@ -164,6 +171,8 @@ export class GithubMessagingBot implements MessagingBot {
   private readonly config: GithubBotConfig;
   readonly ops: GithubOps;
   private appSlug: string | null = null;
+  private agentLogin: string | null = null;
+  private readonly issueBodiesTriggeredThisPoll = new Set<string>();
   private botEmail: string | null = null;
   private watchedRepos: GithubRepoRef[] = [];
   private queues = new Map<string, MessagingEventQueue>();
@@ -185,6 +194,7 @@ export class GithubMessagingBot implements MessagingBot {
         appId: config.appId,
         privateKey: config.privateKey,
         installationId: config.installationId,
+        agentToken: config.agentToken,
       });
     this.ops = new GithubOps(this.client, { workspace: config.workspace });
   }
@@ -193,6 +203,7 @@ export class GithubMessagingBot implements MessagingBot {
     this.stopped = false;
     this.stopping = false;
     this.appSlug = await this.client.getAppSlug();
+    this.agentLogin = (await this.client.getAgentLogin())?.toLowerCase() ?? null;
     try {
       const botUserId = await this.client.getUserId(`${this.appSlug}[bot]`);
       this.botEmail = `${botUserId}+${this.appSlug}[bot]@users.noreply.github.com`;
@@ -224,6 +235,8 @@ export class GithubMessagingBot implements MessagingBot {
               seenComments: new Set(saved.seenComments),
               seenIssues: new Set(saved.seenIssues),
               seenReviewComments: new Set(saved.seenReviewComments ?? []),
+              assignmentBaseline: saved.assignments?.baseline ?? now,
+              seenAssignments: new Set(saved.assignments?.seenEvents ?? []),
             }
           : {
               baseline: now,
@@ -231,6 +244,8 @@ export class GithubMessagingBot implements MessagingBot {
               seenComments: new Set(),
               seenIssues: new Set(),
               seenReviewComments: new Set(),
+              assignmentBaseline: now,
+              seenAssignments: new Set(),
             },
       );
     }
@@ -245,7 +260,7 @@ export class GithubMessagingBot implements MessagingBot {
 
     log.logConnected("GitHub");
     log.logInfo(
-      `GitHub bot started as @${this.appSlug}[bot], polling ${this.watchedRepos.length} repo(s) every ${Math.round(this.config.pollIntervalMs / 1000)}s`,
+      `GitHub bot started as @${this.appSlug}[bot]${this.agentLogin ? ` speaking as @${this.agentLogin}` : ""}, polling ${this.watchedRepos.length} repo(s) every ${Math.round(this.config.pollIntervalMs / 1000)}s`,
     );
   }
 
@@ -404,6 +419,7 @@ export class GithubMessagingBot implements MessagingBot {
     if (!state) return false;
     const since = new Date(Date.parse(state.cursor) - POLL_OVERLAP_MS).toISOString();
     let changed = false;
+    this.issueBodiesTriggeredThisPoll.clear();
 
     const issues = (await this.client.listIssuesSince(repo.owner, repo.repo, since)) ?? [];
     changed =
@@ -445,10 +461,54 @@ export class GithubMessagingBot implements MessagingBot {
         },
       }))) || changed;
 
+    if (this.agentLogin) {
+      changed = (await this.pollAssignments(repo, state, this.agentLogin)) || changed;
+    }
+
     pruneSeen(state.seenComments);
     pruneSeen(state.seenIssues);
     pruneSeen(state.seenReviewComments);
+    pruneSeen(state.seenAssignments);
     return changed;
+  }
+
+  private async pollAssignments(
+    repo: GithubRepoRef,
+    state: RepoWatermark,
+    agentLogin: string,
+  ): Promise<boolean> {
+    const events = (await this.client.listIssueEventsRecent(repo.owner, repo.repo)) ?? [];
+    let changed = false;
+    for (const event of events.toSorted((a, b) => a.id - b.id)) {
+      if (!this.isAssignmentTo(event, agentLogin)) continue;
+      if (event.created_at < state.assignmentBaseline || state.seenAssignments.has(event.id)) {
+        continue;
+      }
+      state.seenAssignments.add(event.id);
+      changed = true;
+      const { actor, issue } = event;
+      if (!actor || !issue || actor.type === "Bot" || this.isAgent(actor.login)) continue;
+      const ref = { ...repo, number: issue.number };
+      if (this.issueBodiesTriggeredThisPoll.has(buildGithubConversationId(ref))) continue;
+      await this.handleIncoming({
+        ref,
+        ts: GITHUB_ISSUE_BODY_TS,
+        user: actor.login,
+        text: `[Assigned to you by @${actor.login}]\n\n# ${issue.title}\n\n${issue.body ?? ""}`.trim(),
+        createdAt: event.created_at,
+        isPr: Boolean(issue.pull_request),
+        assigned: true,
+      });
+    }
+    return changed;
+  }
+
+  private isAssignmentTo(event: GithubIssueEvent, agentLogin: string): boolean {
+    return event.event === "assigned" && event.assignee?.login.toLowerCase() === agentLogin;
+  }
+
+  private isAgent(login: string): boolean {
+    return this.agentLogin !== null && login.toLowerCase() === this.agentLogin;
   }
 
   private async advanceFeed<
@@ -473,7 +533,7 @@ export class GithubMessagingBot implements MessagingBot {
       if (item.created_at < state.baseline || seen.has(item.id)) continue;
       seen.add(item.id);
       changed = true;
-      if (item.user.type === "Bot") continue;
+      if (item.user.type === "Bot" || this.isAgent(item.user.login)) continue;
       await this.handleIncoming(toIncoming(item));
     }
     return changed;
@@ -501,6 +561,10 @@ export class GithubMessagingBot implements MessagingBot {
         seenComments: [...watermark.seenComments],
         seenIssues: [...watermark.seenIssues],
         seenReviewComments: [...watermark.seenReviewComments],
+        assignments: {
+          baseline: watermark.assignmentBaseline,
+          seenEvents: [...watermark.seenAssignments],
+        },
       };
     }
     return state;
@@ -512,7 +576,8 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   private mentionPattern(): RegExp | null {
-    return this.appSlug ? new RegExp(`@${this.appSlug}(?![\\w-])`, "gi") : null;
+    const handles = [this.appSlug, this.agentLogin].filter((handle) => handle !== null);
+    return handles.length > 0 ? new RegExp(`@(?:${handles.join("|")})(?![\\w-])`, "gi") : null;
   }
 
   private isMentioned(text: string): boolean {
@@ -561,7 +626,7 @@ export class GithubMessagingBot implements MessagingBot {
 
   private async handleIncoming(item: IncomingItem): Promise<void> {
     const conversationId = buildGithubConversationId(item.ref);
-    const mentioned = this.isMentioned(item.text);
+    const mentioned = item.assigned === true || this.isMentioned(item.text);
     const participating = this.isParticipating(conversationId);
     if (!mentioned && !participating) return;
 
@@ -572,6 +637,7 @@ export class GithubMessagingBot implements MessagingBot {
       return;
     }
 
+    if (item.ts === GITHUB_ISSUE_BODY_TS) this.issueBodiesTriggeredThisPoll.add(conversationId);
     const cleanedText = this.stripMention(item.text);
     const sessionKey = resolveChatSessionKey({
       conversationId,

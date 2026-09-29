@@ -222,3 +222,65 @@ describe("GithubClient empty responses", () => {
     await expect(makeClient(fetchImpl).deleteIssueComment("o", "r", 1)).resolves.toBeUndefined();
   });
 });
+
+function authOf(fetchImpl: ReturnType<typeof vi.fn>, path: string): string | undefined {
+  const init = fetchImpl.mock.calls.find(([url]) => String(url).endsWith(path))?.[1] as
+    | RequestInit
+    | undefined;
+  return (init?.headers as Record<string, string> | undefined)?.Authorization;
+}
+
+describe("GithubClient agent machine user", () => {
+  function makeAgentClient(fetchImpl: typeof fetch): GithubClient {
+    return new GithubClient({
+      appId: "12345",
+      privateKey: PRIVATE_KEY_PEM,
+      installationId: "678",
+      agentToken: "github_pat_agent",
+      fetchImpl,
+    });
+  }
+
+  test("comments and reactions speak with the agent token; reads keep the installation token", async () => {
+    const fetchImpl = vi.fn(async (url: FetchInput) =>
+      String(url).includes("/access_tokens") ? tokenResponse() : jsonResponse({ id: 1 }),
+    );
+    const client = makeAgentClient(fetchImpl);
+
+    await client.createIssueComment("o", "r", 5, "hi");
+    await client.updateIssueComment("o", "r", 11, "edited");
+    await client.createIssueReaction("o", "r", 5, "eyes");
+    await client.createCommentReaction("o", "r", 11, "eyes");
+    await client.replyToReviewComment("o", "r", 5, 12, "reply");
+    await client.getIssue("o", "r", 5);
+
+    expect(authOf(fetchImpl, "/repos/o/r/issues/5/comments")).toBe("Bearer github_pat_agent");
+    expect(authOf(fetchImpl, "/repos/o/r/issues/comments/11")).toBe("Bearer github_pat_agent");
+    expect(authOf(fetchImpl, "/repos/o/r/issues/5/reactions")).toBe("Bearer github_pat_agent");
+    expect(authOf(fetchImpl, "/repos/o/r/issues/comments/11/reactions")).toBe(
+      "Bearer github_pat_agent",
+    );
+    expect(authOf(fetchImpl, "/repos/o/r/pulls/5/comments/12/replies")).toBe(
+      "Bearer github_pat_agent",
+    );
+    expect(authOf(fetchImpl, "/repos/o/r/issues/5")).toBe("Bearer ghs_installation");
+  });
+
+  test("getAgentLogin reads /user with the agent token, and is null without one", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ login: "acme-agent" }));
+    expect(await makeAgentClient(fetchImpl).getAgentLogin()).toBe("acme-agent");
+    expect(authOf(fetchImpl, "/user")).toBe("Bearer github_pat_agent");
+
+    const plainFetch = vi.fn();
+    expect(await makeClient(plainFetch).getAgentLogin()).toBeNull();
+    expect(plainFetch).not.toHaveBeenCalled();
+  });
+
+  test("without an agent token, comments keep posting as the App installation", async () => {
+    const fetchImpl = vi.fn(async (url: FetchInput) =>
+      String(url).includes("/access_tokens") ? tokenResponse() : jsonResponse({ id: 1 }),
+    );
+    await makeClient(fetchImpl).createIssueComment("o", "r", 5, "hi");
+    expect(authOf(fetchImpl, "/repos/o/r/issues/5/comments")).toBe("Bearer ghs_installation");
+  });
+});
