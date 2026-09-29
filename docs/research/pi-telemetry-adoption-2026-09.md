@@ -60,6 +60,18 @@ grep -rn 'startHarnessSpan(\|startAiSpan(\|startSpan(' \
   | grep -v '\.map' | grep -v 'export function'
 ```
 
+## Recheck on 0.99.1 (2026-09-30)
+
+Still **not yet**. Pi 0.99.1 adds the telemetry types to the public
+`pi-agent-core` exports, and the drive, compaction, and assistant execution
+paths now forward the context's `telemetryContext` into `pi-ai` stream options.
+The emitted spans are unchanged: the reproduction command above still finds
+only `pi.harness.hook`, and no `pi-ai` provider starts `pi.ai.request`.
+Upstream's own audit (`packages/agent/docs/post-wp05-roadmap.md`, "Telemetry
+contract exceeds implementation") records the same gap and says Pi will first
+decide whether each declared span is kept or removed from the public schema.
+Adopting now would wire an adapter to a schema that may shrink.
+
 ## Trigger to revisit
 
 Adopt when the Pi changelog or the check above shows `pi.ai.request` or
