@@ -12,12 +12,14 @@ Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub (`@gemin
 
 `package.json` lists every script. Non-obvious ones:
 
-| Action                | Command                                     |
-| --------------------- | ------------------------------------------- |
-| Install               | `npm install --ignore-scripts`              |
-| Focused tests         | `npm test -- src/test/<name>.test.ts`       |
-| Type-check everything | `npm run typecheck` (tests, e2e, examples)  |
-| Format selected files | `npx oxfmt -c .config/oxfmtrc.json <paths>` |
+| Action                                          | Command                                     |
+| ----------------------------------------------- | ------------------------------------------- |
+| Install                                         | `npm install --ignore-scripts`              |
+| Focused tests                                   | `npm test -- src/test/<name>.test.ts`       |
+| Type-check everything                           | `npm run typecheck` (tests, e2e, examples)  |
+| Format selected files                           | `npx oxfmt -c .config/oxfmtrc.json <paths>` |
+| List duplicated code                            | `npm run duplication`                       |
+| Find test-only or dead exports (manual cleanup) | `npm run knip:unused`                       |
 
 Match verification to the change: behavior changes need a test that fails without them; documentation-only changes need formatting and `src/test/doc-references.test.ts`. The pre-commit hook runs the full gate.
 
@@ -33,6 +35,7 @@ These rules have guards. When a guard fails, follow the owner or budget it names
 
 - Imports come from the declaring module; only `package.json` `exports` entries re-export, and code outside `src/adapters/` reaches adapters only through the composition root (`main.ts`, `cli/`, `runtime/`). Each constant, default, schema, or metadata fact has one owning module. Guards: `src/test/source-guards.*.test.ts`; add a guard class with spelling tables when you give a fact an owner.
 - Production double assertions through `unknown` match exact per-file budgets in `src/test/source-guards.boundaries.test.ts`. Lower a budget in the change that removes an assertion; prefer narrowing, a validator, or a typed seam to raising one.
+- Production duplicated code matches exact per-file-pair clone budgets in `src/test/source-guards.duplication.test.ts`. Lower a budget in the change that removes a clone; move shared logic to one owning module instead of raising one.
 - Every model-facing tool schema requires a `label` parameter, because the system prompt promises it and the presenter shows it as the run's current step; the TypeScript type does not carry the JSON Schema `required` list, so a missing label compiles. Use `defineHostFnTool`, which injects it. Guard: `src/test/tool-label-contract.test.ts`, whose exemptions each carry a reason.
 - Provider-facing tool schemas have an object root, because OpenAI rejects top-level unions, `anyOf`, and `oneOf`; validate alternate invocation modes inside the object.
 
