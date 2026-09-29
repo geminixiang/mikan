@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../types.js";
 import {
+  MAX_PENDING_EVENTS,
   MessagingEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -9,7 +10,12 @@ import {
   withRetry,
 } from "../adapters/shared.js";
 import { formatToolArgs } from "../harness/tool-args.js";
-import { createOfficeAddress, officeKey, sameOffice } from "../office/index.js";
+import {
+  createConversationEvent,
+  createOfficeAddress,
+  officeKey,
+  sameOffice,
+} from "../office/index.js";
 
 const slack = createOfficeAddress("slack", "C123");
 
@@ -136,6 +142,35 @@ describe("withRetry", () => {
 });
 
 describe("MessagingEventQueue", () => {
+  test("offerEvent rejects an event once the pending events reach the limit", async () => {
+    const queue = new MessagingEventQueue("test");
+    const event = createConversationEvent({
+      platform: "slack",
+      type: "mention",
+      conversationId: "C1",
+      conversationKind: "shared",
+      user: "EVENT",
+      text: "scheduled",
+      ts: "event:1",
+    });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ran: number[] = [];
+
+    const accepted = Array.from({ length: MAX_PENDING_EVENTS + 2 }, (_, index) =>
+      queue.offerEvent(event, async () => {
+        ran.push(index);
+        await gate;
+      }),
+    );
+
+    expect(accepted).toEqual([...Array(MAX_PENDING_EVENTS + 1).fill(true), false]);
+    release();
+    await vi.waitFor(() => expect(ran).toHaveLength(MAX_PENDING_EVENTS + 1));
+  });
+
   test("a failing job is swallowed and later jobs still run", async () => {
     const queue = new MessagingEventQueue("test");
     const ran: string[] = [];

@@ -306,16 +306,7 @@ export class GithubMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
-    const conversationId = event.address.conversationId;
-    const queue = this.getQueue(conversationId);
-    if (queue.size() >= 5) {
-      log.logWarning(
-        `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
-      );
-      return false;
-    }
-    log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    return queue.enqueue(() => {
+    return this.getQueue(event.address.conversationId).offerEvent(event, () => {
       const context = createGithubAdapters(event as GithubEvent, this);
       return this.handler.handleEvent(event, this, context);
     });

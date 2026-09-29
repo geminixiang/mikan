@@ -932,15 +932,7 @@ export class SlackMessagingBot implements MessagingBot {
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
     const conversationId = event.address.conversationId;
-    const queue = this.getQueue(conversationId);
-    if (queue.size() >= 5) {
-      log.logWarning(
-        `Event queue full for ${conversationId}, discarding: ${event.text.substring(0, 50)}`,
-      );
-      return false;
-    }
-    log.logInfo(`Enqueueing event for ${conversationId}: ${event.text.substring(0, 50)}`);
-    return queue.enqueue(async () => {
+    return this.getQueue(conversationId).offerEvent(event, async () => {
       let anchorTs: string | undefined;
       if (!event.thread_ts) {
         try {

@@ -4,7 +4,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { dirname, join } from "node:path";
-import type { MessagingEventHandler, OfficeAddress } from "../types.js";
+import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
 import { sameOffice } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import * as log from "../log.js";
@@ -78,6 +78,8 @@ export class MessagingIntakeTracker {
   }
 }
 
+export const MAX_PENDING_EVENTS = 5;
+
 export class MessagingEventQueue {
   private queue: Array<() => Promise<void>> = [];
   private processing = false;
@@ -95,6 +97,17 @@ export class MessagingEventQueue {
 
   size(): number {
     return this.queue.length;
+  }
+
+  offerEvent(event: ConversationEvent, work: () => Promise<void>): boolean {
+    const conversationId = event.address.conversationId;
+    const preview = event.text.substring(0, 50);
+    if (this.queue.length >= MAX_PENDING_EVENTS) {
+      log.logWarning(`Event queue full for ${conversationId}, discarding: ${preview}`);
+      return false;
+    }
+    log.logInfo(`Enqueueing event for ${conversationId}: ${preview}`);
+    return this.enqueue(work);
   }
 
   close(): Promise<void> {

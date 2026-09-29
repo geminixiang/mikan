@@ -16,9 +16,6 @@ const duplicationScript = "duplication";
 const scannedRoot = "src";
 
 const productionCloneBudget: Record<string, number> = {
-  "src/adapters/discord/bot.ts <-> src/adapters/github/bot.ts": 1,
-  "src/adapters/discord/bot.ts <-> src/adapters/slack/bot.ts": 1,
-  "src/adapters/discord/bot.ts <-> src/adapters/telegram/bot.ts": 1,
   "src/adapters/discord/context.ts <-> src/adapters/github/context.ts": 1,
   "src/adapters/web/admin/portal.ts <-> src/adapters/web/admin/portal.ts": 5,
   "src/sandbox/cloudflare.ts <-> src/sandbox/container.ts": 1,
