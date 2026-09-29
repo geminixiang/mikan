@@ -241,6 +241,23 @@ describe("host sandbox environment description", () => {
     expect(prompt).toContain(`Bash commands start in: ${workspaceDir}`);
     expect(prompt).not.toContain(`Bash commands start in: ${process.cwd()}`);
   });
+
+  test("tells the agent a managed container keeps only its workspace across image updates", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const prompt = buildSystemPrompt({
+      workspacePath: "/workspace",
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "image", image: "ubuntu:24.04" },
+      platform: PLATFORM,
+      skills: [],
+      projection: resolveWorkspaceProjection(office),
+    });
+
+    expect(prompt).toContain("Only files under /workspace persist");
+    expect(prompt).not.toContain("persist for this user's container");
+  });
 });
 
 describe("system prompt memory guidance", () => {

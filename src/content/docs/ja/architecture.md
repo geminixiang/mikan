@@ -40,7 +40,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- argv を boot plan に解決し（`src/cli/boot.ts`）、それを実行する: env / `settings.json` の読み込み、`Workspace` の構築、office migration の実行、選択されたプラットフォーム bot の起動
+- argv を boot plan に解決し（`src/cli/boot.ts`）、それを実行する: env / `settings.json` の読み込み、未適用の State マイグレーションがあれば起動を拒否、`Workspace` の構築、選択されたプラットフォーム bot の起動
 - 各プラットフォーム bot の `MessagingEventHandler` として `ConversationRuntime` を作成する
 - `stop` マジックワードは conversation intake（`src/adapters/intake.ts`）が trigger policy とキューイングより先に認識する
 - `/login`、`/session`、`/new` などの制御コマンドは `ConversationRuntime.runSession` 内で dispatch する。アダプターが登録・ルーティングに使うコマンド一覧は `src/adapters/commands/manifest.ts` にある
@@ -88,7 +88,6 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `workspace.office(address)` は、すべての path を事前計算した frozen な `Office` を返す — `dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — さらに唯一の materialization seam である `ensure()` を持つ
 - host 上、sandbox runtime 内、vault のいずれでも office を指す `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`）を導出する
 - office key は逆変換できないため、生 id ↔ office の対応を保持する host 専用の office registry（`office-registry.json`）を管理する
-- 旧来の生 id 配置からの boot 時 migration を、クラッシュ復旧付きの journal で実行する
 - workspace projection を解決する: その office の door policy に対して、どの host path が sandbox runtime に mount されるか
 
 ### F. 状態と永続化レイヤー
@@ -177,7 +176,7 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # 必須のグローバル設定
-├── office-registry.json       # office 一覧 + migration journal
+├── office-registry.json       # office 一覧
 ├── conversations/
 │   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials

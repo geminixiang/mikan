@@ -67,11 +67,11 @@ describe("ActorExecutionResolver", () => {
     expect(decision.projection.mounts.some((mount) => mount.source === workspaceDir)).toBe(false);
   });
 
-  test("fails closed when legacy conversation settings are malformed", async () => {
+  test("fails closed when conversation settings are malformed", async () => {
     createGlobalSettingsFile(stateDir);
-    const conversationDir = join(workspaceDir, C123_OFFICE);
-    mkdirSync(conversationDir, { recursive: true });
-    writeFileSync(join(conversationDir, "settings.json"), "{ invalid json }", "utf-8");
+    const settingsDir = join(stateDir, "conversations", C123_OFFICE);
+    mkdirSync(settingsDir, { recursive: true });
+    writeFileSync(join(settingsDir, "settings.json"), "{ invalid json }", "utf-8");
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
@@ -258,7 +258,7 @@ describe("ActorExecutionResolver", () => {
     await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
   });
 
-  test("host mode resolves an unknown-kind office after preserving legacy credential lookup", async () => {
+  test("host mode resolves an unknown-kind office through the hashed user vault", async () => {
     createGlobalSettingsFile(stateDir);
     const resolvedKeys: string[] = [];
     const vault = fakeVault({
@@ -275,7 +275,7 @@ describe("ActorExecutionResolver", () => {
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).resolves.toBeDefined();
 
-    expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/), "U123"]);
+    expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/)]);
   });
 
   test("fails closed when vault file mounts overlap each other", async () => {

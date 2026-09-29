@@ -1,39 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Dirent, Stats } from "node:fs";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
-import * as log from "../log.js";
+import type { Stats } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import type {
   ConversationEvent,
   ConversationMessage,
   OfficeAddress,
   OfficeKey,
-  OfficeMigrationPreparation,
-  OfficeMigrationRecord,
-  OfficeMigrationStatus,
   OfficeRecord,
   OfficeRegistryState,
   PlatformName,
 } from "../types.js";
-import type {
-  GithubConversationRef,
-  Office,
-  OfficeMigrationRunSummary,
-  Workspace,
-} from "./types.js";
-import { legacyConversationCredentialKey } from "../sandbox/identity.js";
-import { guestWorkspacePath } from "../sandbox/layout.js";
-import { migrateConversationVaultKeys } from "../vault/index.js";
+import type { GithubConversationRef, Office, Workspace } from "./types.js";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { isRecord } from "../unknown-values.js";
 
@@ -273,13 +251,6 @@ function ensureRegularOfficeDirectory(dir: string): void {
 
 const REGISTRY_VERSION = 1;
 const REGISTRY_FILENAME = "office-registry.json";
-const MIGRATION_STATUSES = new Set<OfficeMigrationStatus>([
-  "needs-owner",
-  "prepared",
-  "moving",
-  "committed",
-  "failed",
-]);
 const REGISTRY_LOCK_FILENAME = ".office-registry.lock";
 const REGISTRY_LOCK_RETRY_MS = 25;
 const REGISTRY_LOCK_TIMEOUT_MS = 5_000;
@@ -318,22 +289,6 @@ export class OfficeRegistry {
     return this.state;
   }
 
-  getMigration(rawConversationId: string): OfficeMigrationRecord | undefined {
-    assertConversationId(rawConversationId);
-    return this.state.migrations.find((record) => record.rawConversationId === rawConversationId);
-  }
-
-  enablePlatform(platform: PlatformName): OfficeRegistryState {
-    const validPlatform = assertPlatformName(platform);
-    return this.withExclusiveLease(() => {
-      if (this.state.enabledPlatforms.includes(validPlatform)) return this.state;
-
-      const enabledPlatforms = [...this.state.enabledPlatforms, validPlatform].toSorted();
-      this.replaceState(enabledPlatforms, this.state.offices, this.state.migrations);
-      return this.state;
-    });
-  }
-
   recordOffice(address: OfficeAddress): OfficeRecord {
     const normalized = validateOfficeAddress(address);
     const existing = this.findOffice(normalized);
@@ -346,11 +301,7 @@ export class OfficeRegistry {
         conversationId: normalized.conversationId,
         recordedAt: new Date().toISOString(),
       });
-      this.replaceState(
-        this.state.enabledPlatforms,
-        [...this.state.offices, record],
-        this.state.migrations,
-      );
+      this.replaceState([...this.state.offices, record]);
       return record;
     });
   }
@@ -366,170 +317,8 @@ export class OfficeRegistry {
     );
   }
 
-  prepareLegacyMigration(options: OfficeMigrationPreparation): OfficeMigrationRecord {
-    const rawConversationId = assertConversationId(options.rawConversationId);
-    const sourceDir = resolve(options.sourceDir);
-    const workspaceRoot = resolve(options.workspaceRoot);
-    return this.withExclusiveLease(() => {
-      const existing = this.getMigration(rawConversationId);
-      assertCanonicalSource(sourceDir, workspaceRoot, rawConversationId);
-      if (existing) {
-        assertSameMigrationInputs(existing, sourceDir, workspaceRoot);
-        if (existing.status !== "needs-owner") return existing;
-      }
-
-      assertRegularDirectory(sourceDir, "Legacy office source");
-      const ownerPlatform = this.resolveOwner(options.ownerPlatform, rawConversationId);
-      if (!ownerPlatform) {
-        const record = makeRecord({
-          rawConversationId,
-          sourceDir,
-          workspaceRoot,
-          status: "needs-owner",
-        });
-        this.replaceMigration(existing, record);
-        return record;
-      }
-
-      const targetDir = officeDir(workspaceRoot, {
-        platform: ownerPlatform,
-        conversationId: rawConversationId,
-      });
-      if (pathExists(targetDir)) {
-        const failed = makeRecord({
-          rawConversationId,
-          sourceDir,
-          workspaceRoot,
-          ownerPlatform,
-          targetDir,
-          status: "failed",
-          error: "Target office directory already exists",
-        });
-        this.replaceMigration(existing, failed);
-        throw new Error(`${failed.error}: ${targetDir}`);
-      }
-
-      const prepared = makeRecord({
-        rawConversationId,
-        sourceDir,
-        workspaceRoot,
-        ownerPlatform,
-        targetDir,
-        status: "prepared",
-      });
-      this.replaceMigration(existing, prepared);
-      return prepared;
-    });
-  }
-
-  markMoving(rawConversationId: string): OfficeMigrationRecord {
-    return this.withExclusiveLease(() => {
-      const record = this.requireMigration(rawConversationId);
-      if (
-        record.status === "moving" ||
-        record.status === "committed" ||
-        record.status === "failed"
-      ) {
-        return record;
-      }
-      if (record.status === "needs-owner") {
-        throw new Error(`Legacy office ${JSON.stringify(rawConversationId)} still needs an owner`);
-      }
-      assertRegularDirectory(record.sourceDir, "Legacy office source");
-      const targetDir = migrationTarget(record);
-      if (!targetDir) throw new Error("Prepared office migration has no target directory");
-      if (pathExists(targetDir)) {
-        const failed = this.failRecord(record, "Target office directory appeared before moving");
-        throw new Error(`${failed.error}: ${targetDir}`);
-      }
-
-      const moving = transitionRecord(record, "moving");
-      this.replaceMigration(record, moving);
-      return moving;
-    });
-  }
-
-  markCommitted(rawConversationId: string): OfficeMigrationRecord {
-    return this.withExclusiveLease(() => {
-      const record = this.requireMigration(rawConversationId);
-      if (record.status === "committed" || record.status === "failed") return record;
-      if (record.status !== "moving") {
-        throw new Error(`Cannot commit office migration from ${record.status}`);
-      }
-      const targetDir = migrationTarget(record);
-      if (!targetDir) throw new Error("Moving office migration has no target directory");
-      assertRegularDirectory(targetDir, "Migrated office target");
-      assertPathAbsent(record.sourceDir, "Legacy office source");
-
-      const committed = transitionRecord(record, "committed");
-      this.replaceMigration(record, committed);
-      return committed;
-    });
-  }
-
-  markFailed(rawConversationId: string, error: string): OfficeMigrationRecord {
-    return this.withExclusiveLease(() => {
-      const record = this.requireMigration(rawConversationId);
-      if (record.status === "committed") {
-        throw new Error("A committed office migration cannot be marked failed");
-      }
-      if (record.status === "failed") return record;
-      return this.failRecord(record, error);
-    });
-  }
-
-  private resolveOwner(
-    ownerPlatform: PlatformName | undefined,
-    rawConversationId: string,
-  ): PlatformName | undefined {
-    if (ownerPlatform !== undefined) {
-      const validPlatform = assertPlatformName(ownerPlatform);
-      if (!this.state.enabledPlatforms.includes(validPlatform)) {
-        throw new Error(`Owner platform ${validPlatform} is not enabled`);
-      }
-      return validPlatform;
-    }
-    const candidates = platformsMatchingConversationIdFormat(
-      rawConversationId,
-      this.state.enabledPlatforms,
-    );
-    return candidates.length === 1 ? candidates[0] : undefined;
-  }
-
-  private requireMigration(rawConversationId: string): OfficeMigrationRecord {
-    assertConversationId(rawConversationId);
-    const record = this.getMigration(rawConversationId);
-    if (!record) throw new Error(`No office migration registered for ${rawConversationId}`);
-    return record;
-  }
-
-  private failRecord(record: OfficeMigrationRecord, error: string): OfficeMigrationRecord {
-    const message = error.trim();
-    if (!message) throw new Error("Office migration failure reason must not be empty");
-    const failed = transitionRecord(record, "failed", message);
-    this.replaceMigration(record, failed);
-    return failed;
-  }
-
-  private replaceMigration(
-    previous: OfficeMigrationRecord | undefined,
-    next: OfficeMigrationRecord,
-  ): void {
-    const migrations = [...this.state.migrations];
-    const index = previous
-      ? migrations.findIndex((record) => record.rawConversationId === previous.rawConversationId)
-      : -1;
-    if (index === -1) migrations.push(next);
-    else migrations[index] = next;
-    this.replaceState(this.state.enabledPlatforms, this.state.offices, migrations);
-  }
-
-  private replaceState(
-    enabledPlatforms: readonly PlatformName[],
-    offices: readonly OfficeRecord[],
-    migrations: readonly OfficeMigrationRecord[],
-  ): void {
-    const candidate = freezeState({ enabledPlatforms, offices, migrations });
+  private replaceState(offices: readonly OfficeRecord[]): void {
+    const candidate = freezeState(offices);
     this.writeState(this.registryPath, `${JSON.stringify(candidate, null, 2)}\n`);
     this.state = candidate;
   }
@@ -548,7 +337,7 @@ export class OfficeRegistry {
     assertRegistryFileSafe(this.registryPath);
     const raw = readTextFileIfExists(this.registryPath);
     if (raw === undefined) {
-      return freezeState({ enabledPlatforms: [], offices: [], migrations: [] });
+      return freezeState([]);
     }
 
     let value: unknown;
@@ -561,98 +350,22 @@ export class OfficeRegistry {
   }
 }
 
-interface RecordFields {
-  rawConversationId: string;
-  sourceDir: string;
-  workspaceRoot: string;
-  ownerPlatform?: PlatformName;
-  targetDir?: string;
-  status: OfficeMigrationStatus;
-  error?: string;
-  updatedAt?: string;
-}
-
-function makeRecord(fields: RecordFields): OfficeMigrationRecord {
-  const record: OfficeMigrationRecord = {
-    rawConversationId: fields.rawConversationId,
-    sourceDir: fields.sourceDir,
-    workspaceRoot: fields.workspaceRoot,
-    ownerPlatform: fields.ownerPlatform ? fields.ownerPlatform : undefined,
-    targetDir: fields.targetDir ? fields.targetDir : undefined,
-    status: fields.status,
-    error: fields.error ? fields.error : undefined,
-    updatedAt: fields.updatedAt ?? new Date().toISOString(),
-  };
-  return Object.freeze(record);
-}
-
-function transitionRecord(
-  record: OfficeMigrationRecord,
-  status: OfficeMigrationStatus,
-  error?: string,
-): OfficeMigrationRecord {
-  const targetDir = migrationTarget(record);
-  return makeRecord({
-    rawConversationId: record.rawConversationId,
-    sourceDir: record.sourceDir,
-    workspaceRoot: record.workspaceRoot,
-    ownerPlatform: record.ownerPlatform,
-    targetDir,
-    status,
-    error,
-  });
-}
-
-function migrationTarget(record: OfficeMigrationRecord): string | undefined {
-  return record.ownerPlatform
-    ? officeDir(record.workspaceRoot, {
-        platform: record.ownerPlatform,
-        conversationId: record.rawConversationId,
-      })
-    : undefined;
-}
-
-function freezeState(input: {
-  enabledPlatforms: readonly PlatformName[];
-  offices: readonly OfficeRecord[];
-  migrations: readonly OfficeMigrationRecord[];
-}): OfficeRegistryState {
+function freezeState(offices: readonly OfficeRecord[]): OfficeRegistryState {
   return Object.freeze({
     version: REGISTRY_VERSION as 1,
-    enabledPlatforms: Object.freeze([...input.enabledPlatforms]),
-    offices: Object.freeze(input.offices.map((record) => Object.freeze({ ...record }))),
-    migrations: Object.freeze(input.migrations.map((record) => Object.freeze({ ...record }))),
+    offices: Object.freeze(offices.map((record) => Object.freeze({ ...record }))),
   });
 }
 
 function parseState(value: unknown, path: string): OfficeRegistryState {
-  if (!isRecord(value) || value.version !== REGISTRY_VERSION) {
-    throw new Error(`Invalid office registry version at ${path}`);
+  if (!isRecord(value) || value.version !== REGISTRY_VERSION || !Array.isArray(value.offices)) {
+    throw new Error(`Invalid office registry at ${path}`);
   }
-  if (!Array.isArray(value.enabledPlatforms) || !Array.isArray(value.migrations)) {
-    throw new Error(`Invalid office registry shape at ${path}`);
-  }
-
-  const enabledPlatforms = value.enabledPlatforms.map((platform) => {
-    if (typeof platform !== "string") throw new Error(`Invalid enabled platform in ${path}`);
-    return assertPlatformName(platform);
-  });
-  if (new Set(enabledPlatforms).size !== enabledPlatforms.length) {
-    throw new Error(`Duplicate enabled platform in ${path}`);
-  }
-
-  const offices = (Array.isArray(value.offices) ? value.offices : []).map((entry) =>
-    parseOfficeRecord(entry, path),
-  );
+  const offices = value.offices.map((entry) => parseOfficeRecord(entry, path));
   if (new Set(offices.map((record) => officeKey(record))).size !== offices.length) {
     throw new Error(`Duplicate office record in ${path}`);
   }
-
-  const migrations = value.migrations.map((entry) => parseRecord(entry, path, enabledPlatforms));
-  if (new Set(migrations.map((record) => record.rawConversationId)).size !== migrations.length) {
-    throw new Error(`Duplicate office migration in ${path}`);
-  }
-  return freezeState({ enabledPlatforms, offices, migrations });
+  return freezeState(offices);
 }
 
 function parseOfficeRecord(value: unknown, path: string): OfficeRecord {
@@ -669,159 +382,6 @@ function parseOfficeRecord(value: unknown, path: string): OfficeRecord {
     conversationId: assertConversationId(value.conversationId),
     recordedAt: value.recordedAt,
   });
-}
-
-interface MigrationFields {
-  rawConversationId: string;
-  sourceDir: string;
-  workspaceRoot: string;
-  status: OfficeMigrationStatus;
-  updatedAt: string;
-}
-
-function hasMigrationStrings(
-  value: Record<string, unknown>,
-): value is Record<string, unknown> & Record<keyof MigrationFields, string> {
-  return (
-    typeof value.rawConversationId === "string" &&
-    typeof value.sourceDir === "string" &&
-    typeof value.workspaceRoot === "string" &&
-    typeof value.status === "string" &&
-    typeof value.updatedAt === "string"
-  );
-}
-
-function parseMigrationFields(value: Record<string, unknown>, path: string): MigrationFields {
-  if (!hasMigrationStrings(value)) {
-    throw new Error(`Invalid office migration fields in ${path}`);
-  }
-  assertConversationId(value.rawConversationId);
-  if (!isAbsolute(value.sourceDir) || !isAbsolute(value.workspaceRoot)) {
-    throw new Error(`Office migration paths must be absolute in ${path}`);
-  }
-  assertCanonicalSource(value.sourceDir, value.workspaceRoot, value.rawConversationId);
-  if (!MIGRATION_STATUSES.has(value.status as OfficeMigrationStatus)) {
-    throw new Error(`Invalid office migration status in ${path}`);
-  }
-  return {
-    rawConversationId: value.rawConversationId,
-    sourceDir: value.sourceDir,
-    workspaceRoot: value.workspaceRoot,
-    status: value.status as OfficeMigrationStatus,
-    updatedAt: value.updatedAt,
-  };
-}
-
-function assertOwnershipMatchesStatus(
-  status: OfficeMigrationStatus,
-  ownerPlatform: PlatformName | undefined,
-  targetDir: string | undefined,
-  path: string,
-): void {
-  const owned = ownerPlatform !== undefined;
-  const targeted = targetDir !== undefined;
-  if (status === "needs-owner" && (owned || targeted)) {
-    throw new Error(`Needs-owner migration cannot have an owner or target in ${path}`);
-  }
-  if (status !== "needs-owner" && status !== "failed" && !(owned && targeted)) {
-    throw new Error(`Prepared office migration is missing ownership in ${path}`);
-  }
-  if (!owned && targeted) {
-    throw new Error(`Office migration target has no owner in ${path}`);
-  }
-}
-
-function parseRecord(
-  value: unknown,
-  path: string,
-  enabledPlatforms: readonly PlatformName[],
-): OfficeMigrationRecord {
-  if (!isRecord(value)) throw new Error(`Invalid office migration record in ${path}`);
-  const fields = parseMigrationFields(value, path);
-  const ownerPlatform = optionalPlatform(value.ownerPlatform);
-  const targetDir = optionalString(value.targetDir);
-  const error = optionalString(value.error);
-
-  if (ownerPlatform !== undefined && !enabledPlatforms.includes(ownerPlatform)) {
-    throw new Error(`Office migration owner is not enabled in ${path}`);
-  }
-  assertOwnershipMatchesStatus(fields.status, ownerPlatform, targetDir, path);
-
-  const expectedTargetDir = ownerPlatform
-    ? officeDir(fields.workspaceRoot, {
-        platform: ownerPlatform,
-        conversationId: fields.rawConversationId,
-      })
-    : undefined;
-  if (targetDir !== expectedTargetDir) {
-    throw new Error(`Office migration target does not match its office address in ${path}`);
-  }
-  if (fields.status === "failed" && !error) {
-    throw new Error(`Failed office migration is missing an error in ${path}`);
-  }
-
-  return buildMigrationRecord(fields, ownerPlatform, expectedTargetDir, error);
-}
-
-function buildMigrationRecord(
-  fields: MigrationFields,
-  ownerPlatform: PlatformName | undefined,
-  targetDir: string | undefined,
-  error: string | undefined,
-): OfficeMigrationRecord {
-  return makeRecord({
-    rawConversationId: fields.rawConversationId,
-    sourceDir: fields.sourceDir,
-    workspaceRoot: fields.workspaceRoot,
-    ownerPlatform,
-    targetDir,
-    status: fields.status,
-    error,
-    updatedAt: fields.updatedAt,
-  });
-}
-
-function optionalPlatform(value: unknown): PlatformName | undefined {
-  return value === undefined
-    ? undefined
-    : typeof value === "string"
-      ? assertPlatformName(value)
-      : failOptional("platform");
-}
-
-function optionalString(value: unknown): string | undefined {
-  return value === undefined
-    ? undefined
-    : typeof value === "string"
-      ? value
-      : failOptional("string");
-}
-
-function failOptional(label: string): never {
-  throw new Error(`Invalid optional ${label} in office registry`);
-}
-
-function assertSameMigrationInputs(
-  existing: OfficeMigrationRecord,
-  sourceDir: string,
-  workspaceRoot: string,
-): void {
-  if (existing.sourceDir !== sourceDir || existing.workspaceRoot !== workspaceRoot) {
-    throw new Error(`Legacy office migration inputs changed for ${existing.rawConversationId}`);
-  }
-}
-
-function assertCanonicalSource(
-  sourceDir: string,
-  workspaceRoot: string,
-  rawConversationId: string,
-): void {
-  const expectedSourceDir = resolve(workspaceRoot, rawConversationId);
-  if (sourceDir !== expectedSourceDir) {
-    throw new Error(`Legacy office source must be ${expectedSourceDir}`);
-  }
-  assertRegularDirectory(workspaceRoot, "Workspace root");
-  assertPathIfPresent(sourceDir, "Legacy office source");
 }
 
 function assertRegularDirectory(path: string, label: string): void {
@@ -850,21 +410,6 @@ function assertRegistryFileSafe(path: string): void {
   if (stat && (stat.isSymbolicLink() || !stat.isFile())) {
     throw new Error(`Office registry must be a regular file: ${path}`);
   }
-}
-
-function assertPathIfPresent(path: string, label: string): void {
-  const stat = lstatIfExists(path);
-  if (stat && (stat.isSymbolicLink() || !stat.isDirectory())) {
-    throw new Error(`${label} must be a regular directory: ${path}`);
-  }
-}
-
-function assertPathAbsent(path: string, label: string): void {
-  if (lstatIfExists(path)) throw new Error(`${label} must be absent: ${path}`);
-}
-
-function pathExists(path: string): boolean {
-  return lstatIfExists(path) !== undefined;
 }
 
 function claimRegistryLock(lockPath: string, token: string): void {
@@ -945,274 +490,6 @@ export function listRegisteredOffices(stateDir: string): readonly OfficeRecord[]
   return new OfficeRegistry(stateDir).getOffices();
 }
 
-function platformsMatchingConversationIdFormat(
-  rawConversationId: string,
-  enabledPlatforms: readonly PlatformName[],
-): PlatformName[] {
-  return enabledPlatforms.filter((platform) => {
-    switch (platform) {
-      case "github":
-        return isGithubConversationId(rawConversationId);
-      case "telegram":
-        return /^-?\d+$/.test(rawConversationId);
-      case "discord":
-        return /^\d+$/.test(rawConversationId);
-      case "slack":
-        return /^[A-Z][A-Z0-9]*$/.test(rawConversationId);
-    }
-  });
-}
-
-function isGithubConversationId(rawConversationId: string): boolean {
-  try {
-    parseGithubConversationId(rawConversationId);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === code;
-}
-
-export function migrateLegacyOffices(options: {
-  workspaceRoot: string;
-  stateDir: string;
-  enabledPlatforms: readonly PlatformName[];
-}): OfficeMigrationRunSummary {
-  const registry = new OfficeRegistry(options.stateDir);
-  for (const platform of options.enabledPlatforms) registry.enablePlatform(platform);
-
-  const summary: OfficeMigrationRunSummary = {
-    migrated: [],
-    recovered: [],
-    unowned: [],
-    failed: [],
-    vaultKeysMigrated: [],
-    vaultConflicts: [],
-    stateDirsMigrated: [],
-    stateDirConflicts: [],
-  };
-
-  recoverInterruptedMoves(registry, summary);
-  claimAndMoveLegacyDirs(registry, options.workspaceRoot, summary);
-
-  const vaults = migrateConversationVaultKeys({
-    stateDir: options.stateDir,
-    offices: registry.getOffices(),
-  });
-  summary.vaultKeysMigrated = vaults.migrated;
-  summary.vaultConflicts = vaults.conflicts;
-  for (const rawConversationId of vaults.migrated) {
-    log.logInfo(`[office] Migrated vault key to office key: ${rawConversationId}`);
-  }
-
-  migrateConversationStateDirs(registry, options.stateDir, summary);
-
-  for (const record of registry.getState().migrations) {
-    if (record.status === "needs-owner") summary.unowned.push(record.rawConversationId);
-    else if (record.status === "failed") summary.failed.push(record.rawConversationId);
-  }
-  return summary;
-}
-
-function recoverInterruptedMoves(
-  registry: OfficeRegistry,
-  summary: OfficeMigrationRunSummary,
-): void {
-  for (const record of registry.getState().migrations) {
-    if (record.status !== "moving") continue;
-    const failure = finishInterruptedMove(record);
-    if (failure) {
-      registry.markFailed(record.rawConversationId, failure);
-      continue;
-    }
-    registry.markCommitted(record.rawConversationId);
-    recordMigratedOffice(registry, record);
-    summary.recovered.push(record.rawConversationId);
-    log.logInfo(`[office] Recovered interrupted migration: ${record.rawConversationId}`);
-  }
-}
-
-function finishInterruptedMove(record: OfficeMigrationRecord): string | undefined {
-  const targetDir = record.targetDir;
-  if (!targetDir) return "Moving record has no target directory";
-  const sourceExists = pathExists(record.sourceDir);
-  const targetExists = pathExists(targetDir);
-  if (sourceExists && targetExists) {
-    return "Both legacy source and office target exist; merge them manually";
-  }
-  if (!sourceExists && !targetExists) return "Neither legacy source nor office target exists";
-  if (sourceExists) renameSync(record.sourceDir, targetDir);
-  return undefined;
-}
-
-function isClaimableLegacyDir(
-  registry: OfficeRegistry,
-  workspaceRoot: string,
-  rawConversationId: string,
-): boolean {
-  const existing = registry.getMigration(rawConversationId);
-  if (existing?.status === "committed") {
-    throw new Error(
-      `Legacy office directory reappeared after migration: ${join(workspaceRoot, rawConversationId)}`,
-    );
-  }
-  return existing?.status !== "failed";
-}
-
-function claimAndMoveLegacyDirs(
-  registry: OfficeRegistry,
-  workspaceRoot: string,
-  summary: OfficeMigrationRunSummary,
-): void {
-  for (const rawConversationId of listLegacyOfficeDirs(workspaceRoot)) {
-    if (!isClaimableLegacyDir(registry, workspaceRoot, rawConversationId)) continue;
-
-    const record = registry.prepareLegacyMigration({
-      rawConversationId,
-      sourceDir: join(workspaceRoot, rawConversationId),
-      workspaceRoot,
-    });
-    if (record.status === "needs-owner") continue;
-
-    const moving = registry.markMoving(rawConversationId);
-    const targetDir = moving.targetDir;
-    if (!targetDir) throw new Error("Moving office migration has no target directory");
-    renameSync(moving.sourceDir, targetDir);
-    registry.markCommitted(rawConversationId);
-    recordMigratedOffice(registry, moving);
-    summary.migrated.push(rawConversationId);
-    log.logInfo(`[office] Migrated office directory: ${rawConversationId} -> ${targetDir}`);
-  }
-}
-
-function migrateConversationStateDirs(
-  registry: OfficeRegistry,
-  stateDir: string,
-  summary: OfficeMigrationRunSummary,
-): void {
-  for (const office of registry.getOffices()) {
-    const legacyDir = join(stateDir, "conversations", office.conversationId);
-    if (!existsSync(legacyDir)) continue;
-    const targetDir = officeStateDir(stateDir, office);
-    if (existsSync(targetDir)) {
-      summary.stateDirConflicts.push(office.conversationId);
-      continue;
-    }
-    renameSync(legacyDir, targetDir);
-    summary.stateDirsMigrated.push(office.conversationId);
-    log.logInfo(`[office] Migrated host state dir to office key: ${office.conversationId}`);
-  }
-}
-
-function recordMigratedOffice(registry: OfficeRegistry, record: OfficeMigrationRecord): void {
-  if (!record.ownerPlatform) return;
-  registry.recordOffice({
-    platform: record.ownerPlatform,
-    conversationId: record.rawConversationId,
-  });
-}
-
-function listLegacyOfficeDirs(workspaceRoot: string): string[] {
-  return readdirSync(workspaceRoot, { withFileTypes: true })
-    .filter((entry) => isLegacyOfficeDir(workspaceRoot, entry))
-    .map((entry) => entry.name)
-    .toSorted();
-}
-
-function isLegacyOfficeDir(workspaceRoot: string, entry: Dirent): boolean {
-  if (entry.name.startsWith(".")) return false;
-  if (RESERVED_WORKSPACE_NAMES.has(entry.name)) return false;
-  if (isOfficeKey(entry.name)) return false;
-  if (entry.isSymbolicLink()) {
-    throw new Error(`Workspace entry must not be a symlink: ${join(workspaceRoot, entry.name)}`);
-  }
-  if (!entry.isDirectory()) return false;
-  if (looksLikeConversationOffice(join(workspaceRoot, entry.name))) return true;
-  log.logInfo(
-    `[office] Skipping non-office workspace directory (no ${OFFICE_LOG_FILENAME} or sessions/): ${entry.name}`,
-  );
-  return false;
-}
-
-function looksLikeConversationOffice(dir: string): boolean {
-  return existsSync(join(dir, OFFICE_LOG_FILENAME)) || existsSync(join(dir, "sessions"));
-}
-
-export function formatUnmigratedOfficesError(summary: OfficeMigrationRunSummary): string {
-  const lines = ["Conversation office migration cannot complete:"];
-  if (summary.unowned.length > 0) {
-    lines.push(
-      "",
-      "These legacy conversation directories have no owning platform (several",
-      "platforms are enabled, so ownership cannot be inferred):",
-      ...summary.unowned.map((id) => `  - ${id}`),
-      "",
-      "Assign each one with:",
-      "  mikan office claim <conversationId> <platform>",
-    );
-  }
-  lines.push(
-    ...conflictSection(summary.failed, [
-      "These migrations previously failed and need manual repair (see",
-      "office-registry.json in the state dir for each error):",
-    ]),
-    ...conflictSection(summary.vaultConflicts, [
-      "These conversations have credentials under both the legacy and the",
-      "office-key vault directory; merge them manually under <state-dir>/vaults:",
-    ]),
-    ...conflictSection(summary.stateDirConflicts, [
-      "These conversations have host state under both the legacy and the",
-      "office-key directory; merge them manually under <state-dir>/conversations:",
-    ]),
-  );
-  return lines.join("\n");
-}
-
-function conflictSection(ids: readonly string[], explanation: string[]): string[] {
-  if (ids.length === 0) return [];
-  return ["", ...explanation, ...ids.map((id) => `  - ${id}`)];
-}
-
-function replacePrefix(path: string, pairs: Array<[string, string]>): string {
-  for (const [oldPrefix, newPrefix] of pairs) {
-    if (path === oldPrefix) return newPrefix;
-    if (path.startsWith(`${oldPrefix}/`)) return newPrefix + path.slice(oldPrefix.length);
-  }
-  return path;
-}
-
-export function buildContainerBindTranslator(options: {
-  offices: readonly OfficeRecord[];
-  workspaceRoot: string;
-  stateDir: string;
-}): (bindSpec: string) => string {
-  const hostPairs: Array<[string, string]> = [];
-  const guestPairs: Array<[string, string]> = [];
-  for (const office of options.offices) {
-    const key = officeKey(office);
-    const rawId = office.conversationId;
-    hostPairs.push([join(options.workspaceRoot, rawId), join(options.workspaceRoot, key)]);
-    hostPairs.push([
-      join(options.stateDir, "conversations", rawId),
-      officeStateDir(options.stateDir, office),
-    ]);
-    hostPairs.push([
-      join(options.stateDir, "vaults", legacyConversationCredentialKey(rawId)),
-      join(options.stateDir, "vaults", key),
-    ]);
-    guestPairs.push([guestWorkspacePath(rawId), guestWorkspacePath(key)]);
-  }
-
-  return (bindSpec: string): string => {
-    const readOnly = bindSpec.endsWith(":ro");
-    const spec = readOnly ? bindSpec.slice(0, -3) : bindSpec;
-    const separator = spec.indexOf(":");
-    if (separator === -1) return bindSpec;
-    const source = replacePrefix(spec.slice(0, separator), hostPairs);
-    const target = replacePrefix(spec.slice(separator + 1), guestPairs);
-    return `${source}:${target}${readOnly ? ":ro" : ""}`;
-  };
 }

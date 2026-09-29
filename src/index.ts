@@ -8,7 +8,6 @@ export {
 } from "./harness/http.js";
 export { MikanModels, defaultModelsJsonPath } from "./harness/models.js";
 export { SessionStore } from "./sessions/session-store.js";
-export { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "./sessions/migrate-v3.js";
 export { MikanAgentSession } from "./harness/session.js";
 export { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "./harness/skills.js";
 export { loadSubagentProfiles } from "./harness/subagent-profiles.js";

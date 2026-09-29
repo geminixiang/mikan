@@ -99,7 +99,7 @@ GITHUB_INSTALLATION_ID=12345678
 GITHUB_APP_PRIVATE_KEY_PATH=/srv/mikan/github-app.pem
 ```
 
-Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan && pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
+Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=<mode> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
 
 For a one-off foreground run, the same CLI works directly:
 
@@ -190,7 +190,7 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
     └── sessions/
 ```
 
-Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`) and are not reversible to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)`. `mikan office list` prints the registered offices; deployments created before the office layout are migrated on the next boot, and `mikan office claim <conversationId> <platform>` names the owner when boot cannot infer it.
+Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`) and are not reversible to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)`. `mikan office list` prints the registered offices. `mikan migrate` upgrades a 0.5.3 install to this layout; see [State migrations](src/content/docs/deployment.mdx).
 
 ## More docs
 

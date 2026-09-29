@@ -88,7 +88,7 @@ Office visibility は Slack の conversation type に従います（ADR 0008）�
 
 visibility を強制できるのは `image:*` だけです。`host`、`container:*`、`cloudflare:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
 
-廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は古いファイルを読み込むために引き続き解析されますが、解決後の設定からは取り除かれ、projection には一切影響しません。daemon を停止して `mikan office migrate-door-policy` を実行すると、global と各 office の settings ファイルからこれらの key が削除され、明示的な shared-support `private` visibility だけが `office.visibility` に引き継がれます。それ以外は何も導出されません。他の private office へのアクセスには ADR 0008 のメンバーシップに基づく権限付与が必要で、より広い mount では実現しません。
+廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。別の private office へのアクセスには、より広い mount ではなく、ADR 0008 で説明するメンバーシップに基づく grant が必要です。
 
 ## MCP servers
 
@@ -114,7 +114,7 @@ visibility を強制できるのは `image:*` だけです。`host`、`container
 
 Admin の MCP panel には repository-owned の curated Marketplace があります。install 前に完全な host command または remote endpoint、必要な credentials、source、target scope、security warning を表示し、確認後は通常の `mcpServers` entry だけを書き込みます。Local package version は pin され、別の installed database や automatic updater は作りません。また、catalog 掲載は security certification ではありません。Local stdio preset は mikan host 上で code を実行し、remote preset はその tool に送られた call と data を受信します。
 
-OpenConnector は deployment default を持つ通常の MCP server です。`OPENCONNECTOR_ENDPOINT` が default の `open-connector` server を指定し、`OPENCONNECTOR_ADMIN_TOKEN` は conversation ごとの runtime token を発行する host-only の credential です。Slack conversation が global または conversation 設定で `open-connector` を宣言していない場合、mikan は `mikan:slack:<workspace-id>:<channel-id>` という名前の token を作成し（現在の OpenConnector deployment の action／proxy policy をコピー）、その conversation の host-only settings に通常の `mcpServers` entry として保存します。以降この entry は Admin MCP パネルに表示され、他の server と同様にテスト、無効化、削除、または self-hosted OpenConnector への置き換えができます。削除すると次の応答で default が再作成され、無効化すると統合が停止します。Admin token は default endpoint の origin にのみ送信され、settings や sandbox には入りません。既存の `open-connector-runtime-token.json` は daemon 停止後に `mikan office migrate-openconnector` で変換できます。
+OpenConnector は deployment default を持つ通常の MCP server です。`OPENCONNECTOR_ENDPOINT` が default の `open-connector` server を指定し、`OPENCONNECTOR_ADMIN_TOKEN` は conversation ごとの runtime token を発行する host-only の credential です。Slack conversation が global または conversation 設定で `open-connector` を宣言していない場合、mikan は `mikan:slack:<workspace-id>:<channel-id>` という名前の token を作成し（現在の OpenConnector deployment の action／proxy policy をコピー）、その conversation の host-only settings に通常の `mcpServers` entry として保存します。以降この entry は Admin MCP パネルに表示され、他の server と同様にテスト、無効化、削除、または self-hosted OpenConnector への置き換えができます。削除すると次の応答で default が再作成され、無効化すると統合が停止します。Admin token は default endpoint の origin にのみ送信され、settings や sandbox には入りません。
 
 ## プラットフォーム認証情報
 
@@ -131,18 +131,18 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 
 ## CLI リファレンス
 
-| コマンドまたはオプション                                           | 用途                                                                                  |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                | 必須のグローバル設定ファイルを作成                                                    |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace` |
-| `mikan env`                                                        | 環境変数の完全なインベントリと、現在設定されている内容を表示                          |
-| `mikan --download <channel-id>`                                    | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                        |
-| `mikan --version`                                                  | インストール済み version を表示                                                       |
-| `mikan --help`                                                     | CLI の使い方と platform-token のサマリーを表示                                        |
-| `mikan office list`                                                | 登録済み office、有効なプラットフォーム、保留中の legacy migration を一覧表示         |
-| `mikan office claim <conversationId> <platform>`                   | boot が帰属を判定できなかった legacy な生 id directory の所有プラットフォームを指定   |
+| コマンドまたはオプション                                               | 用途                                                                                                    |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `mikan onboard [--state-dir=<dir>]`                                    | 必須のグローバル設定ファイルを作成                                                                      |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`     | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace`                   |
+| `mikan env`                                                            | 環境変数の完全なインベントリと、現在設定されている内容を表示                                            |
+| `mikan --download <channel-id>`                                        | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                                          |
+| `mikan --version`                                                      | インストール済み version を表示                                                                         |
+| `mikan --help`                                                         | CLI の使い方と platform-token のサマリーを表示                                                          |
+| `mikan office list`                                                    | 各 office key とそのプラットフォーム・conversation id を一覧表示                                        |
+| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | daemon を停止した状態で未適用の [State マイグレーション](/ja/deployment/#state-マイグレーション) を適用 |
 
-`mikan office` は `--state-dir <dir>` と `--workspace <dir>` を受け付けます。workspace の既定値は `<state-dir>/workspace` です。`claim` は判断を記録するだけで、実際の移動は daemon が次回起動時に行うため、daemon を停止した状態で実行してください。
+`mikan office` と `mikan migrate` は `--state-dir <dir>` を受け付けます。`mikan migrate` はさらに `--workspace <dir>` を受け付け、既定値は `<state-dir>/workspace` です。
 
 ## Observability：OTLP、Sentry、Phoenix
 

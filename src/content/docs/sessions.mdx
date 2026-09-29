@@ -58,16 +58,8 @@ A scoped session records the top-level session it was created from in its header
 
 ## Operator migration
 
-**Stop the daemon before migrating.** Run:
-
-```bash
-mikan sessions migrate
-```
-
-This offline conversion handles both legacy mikan v3 and Pi 0.84-generation v4
-session files and rewrites them to the current Pi 0.85 v4 format. Use
-`--state-dir`, `--workspace`, or `--dry-run` as needed; `--dry-run` leaves files
-untouched. Originals remain as `*.v3.bak` or `*.pi-084.bak`.
+Runtime opens only the current Pi 0.85 v4 format. `mikan migrate` converts 0.5.3 v3 session files
+and keeps each original as `*.v3.bak`; see [State migrations](/deployment/#state-migrations).
 
 ## Bootstrap, Clean sessions, and memory
 

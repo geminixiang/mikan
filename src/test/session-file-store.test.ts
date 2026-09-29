@@ -154,13 +154,12 @@ describe("SessionStore", () => {
     expect(await store.getLeafId()).toBe(second);
   });
 
-  test("open of a legacy v3 file throws and points at the migration script", async () => {
+  test("open of a file in a pre-migration format throws without rewriting it", async () => {
     const file = join(dir, "session.jsonl");
     writeFileSync(file, `${JSON.stringify(legacyV3Header)}\n`);
     const original = readFileSync(file, "utf-8");
 
-    await expect(SessionStore.open(file)).rejects.toThrow(/legacy v3/);
-    await expect(SessionStore.open(file)).rejects.toThrow(/mikan sessions migrate/);
+    await expect(SessionStore.open(file)).rejects.toThrow(/unrecognized header/);
     expect(readFileSync(file, "utf-8")).toBe(original);
   });
 
@@ -183,7 +182,7 @@ describe("SessionStore", () => {
     expect(store.getCwd()).toBe("/legacy");
   });
 
-  test("readHeader returns a v3-flavored view, null for absent files, and throws for v3", () => {
+  test("readHeader returns a v3-flavored view, and null for absent or unrecognized files", () => {
     expect(SessionStore.readHeader(join(dir, "missing.jsonl"))).toBeNull();
 
     const empty = join(dir, "empty.jsonl");
@@ -202,7 +201,7 @@ describe("SessionStore", () => {
 
     const v3 = join(dir, "v3.jsonl");
     writeFileSync(v3, `${JSON.stringify(legacyV3Header)}\n`);
-    expect(() => SessionStore.readHeader(v3)).toThrow(/legacy v3/);
+    expect(SessionStore.readHeader(v3)).toBeNull();
   });
 
   test.each([false, true])(

@@ -1,16 +1,5 @@
 import type { ContainerMount, OfficeAddress, OfficeKey, WorkspaceVisibility } from "../types.js";
 
-export interface OfficeMigrationRunSummary {
-  migrated: string[];
-  recovered: string[];
-  unowned: string[];
-  failed: string[];
-  vaultKeysMigrated: string[];
-  vaultConflicts: string[];
-  stateDirsMigrated: string[];
-  stateDirConflicts: string[];
-}
-
 export interface GithubConversationRef {
   owner: string;
   repo: string;

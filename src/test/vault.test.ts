@@ -417,7 +417,7 @@ describe("ActorExecutionResolver image mode", () => {
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
-    expect(mgr.resolve(DockerContainerManager.sanitizeSegment("D123"))).toBeUndefined();
+    expect(mgr.resolve("d123")).toBeUndefined();
   });
 
   test("copies the default shared vault for a new image sandbox vault", async () => {
@@ -478,9 +478,7 @@ describe("ActorExecutionResolver image mode", () => {
       trustModel: "open-trigger",
     });
 
-    expect(
-      mgr.resolve(DockerContainerManager.sanitizeSegment("GH_octo_widgets_5")),
-    ).toBeUndefined();
+    expect(mgr.resolve("gh-octo-widgets-5")).toBeUndefined();
 
     await resolver.resolve({ userId: "U1", address: createOfficeAddress("slack", "D999") });
     expect(

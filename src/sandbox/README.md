@@ -6,8 +6,8 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 
 - `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
 - A backend without managed projection cannot honor an `isolated` door or read-only shared memory; `assertSandboxSupportsWorkspacePolicy` in `registry.ts` rejects that combination.
-- Managed image containers (`provisioner.ts`) get a per-office home volume `mikan-home-<key>` at `/root` (ADR 0009). A home-volume container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run` on the same volume. Legacy containers without a home volume keep the `docker commit` recreate path until `mikan sandbox migrate` moves them, and a `mikan-migrate:<name>` snapshot stays while its container still runs from it.
-- `provision`, `stop`, `remove`, and `migrateToHomeVolume` are serialized per key. `remove` keeps the home volume unless `purgeHome` is set; office migration removes it.
+- Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
+- `provision`, `stop`, and `remove` are serialized per key.
 - Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.
 
 ## Host / sandbox path boundary (image mode)

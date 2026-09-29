@@ -1,16 +1,6 @@
 import type { Dirent } from "node:fs";
-import {
-  chmodSync,
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-} from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { dirname, isAbsolute, join, normalize, sep } from "node:path";
-import { officeKey } from "../office/index.js";
-import { legacyConversationCredentialKey } from "../sandbox/identity.js";
 import { guestHomePath } from "../sandbox/layout.js";
 import type { OfficeAddress } from "../types.js";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
@@ -466,42 +456,6 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   }
 
   return defaultVaultTargetPath(normalized);
-}
-
-export function migrateConversationVaultKeys(options: {
-  stateDir: string;
-  offices: readonly OfficeAddress[];
-}): { migrated: string[]; conflicts: string[] } {
-  const vaultsDir = join(options.stateDir, "vaults");
-  const migrated: string[] = [];
-  const conflicts: string[] = [];
-  if (!existsSync(vaultsDir)) return { migrated, conflicts };
-
-  const officesByConversationId = new Map<string, OfficeAddress[]>();
-  for (const office of options.offices) {
-    const offices = officesByConversationId.get(office.conversationId) ?? [];
-    offices.push(office);
-    officesByConversationId.set(office.conversationId, offices);
-  }
-  for (const [conversationId, offices] of officesByConversationId) {
-    const legacyDir = join(vaultsDir, legacyConversationCredentialKey(conversationId));
-    if (!existsSync(legacyDir)) continue;
-    if (offices.length !== 1) {
-      conflicts.push(conversationId);
-      continue;
-    }
-
-    const office = offices[0];
-    if (!office) throw new Error(`vault: missing office owner for ${conversationId}`);
-    const targetDir = join(vaultsDir, officeKey(office));
-    if (existsSync(targetDir)) {
-      conflicts.push(conversationId);
-      continue;
-    }
-    renameSync(legacyDir, targetDir);
-    migrated.push(conversationId);
-  }
-  return { migrated, conflicts };
 }
 
 export function allowsAmbientDefaultSharedVault(options: {

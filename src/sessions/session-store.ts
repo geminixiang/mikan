@@ -161,12 +161,6 @@ function parseCurrentHeader(filePath: string, firstLine: string): CurrentSession
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
   const record = parsed;
-  if (record.type === "session" || (record.kind === "header" && record.version === 4)) {
-    const generation = record.type === "session" ? "legacy v3" : "Pi 0.84 v4";
-    throw new SessionFormatError(
-      `Session file uses the ${generation} format: ${filePath}. Run \`mikan sessions migrate\` before starting this mikan version.`,
-    );
-  }
   if (
     record.kind !== "header" ||
     record.v !== CURRENT_SESSION_VERSION ||
@@ -570,10 +564,7 @@ export class SessionStore implements SessionInspection {
     try {
       const header = parseCurrentHeader(path, firstLine);
       return headerView(header, parseMikanMetadata(path));
-    } catch (error) {
-      if (error instanceof SessionFormatError && /legacy v3|Pi 0\.84 v4/.test(error.message)) {
-        throw error;
-      }
+    } catch {
       return null;
     }
   }

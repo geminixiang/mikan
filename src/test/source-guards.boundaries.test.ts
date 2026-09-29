@@ -43,8 +43,7 @@ const productionDoubleAssertionBudget: Record<string, number> = {
   "src/adapters/slack/bot.ts": 1,
   "src/adapters/web/admin/portal.ts": 2,
   "src/adapters/web/session-view/portal.ts": 1,
-  "src/sessions/migrate-pi-084.ts": 2,
-  "src/sessions/migrate-v3.ts": 4,
+  "src/migrations/sessions-v3.ts": 4,
   "src/sessions/session-store.ts": 1,
 };
 

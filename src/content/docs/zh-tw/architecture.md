@@ -40,7 +40,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- 把 argv 解析成一份 boot plan（`src/cli/boot.ts`），再執行它：讀取 env / `settings.json`、建立 `Workspace`、執行 office 遷移，並啟動選定的平台 bot
+- 把 argv 解析成一份 boot plan（`src/cli/boot.ts`），再執行它：讀取 env / `settings.json`、還有待套用的 State 遷移時拒絕啟動、建立 `Workspace`，並啟動選定的平台 bot
 - 建立 `ConversationRuntime` 作為各平台 bot 的 `MessagingEventHandler`
 - `stop` 魔法詞由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 與排隊之前辨識
 - `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 內 dispatch；adapter 註冊與路由所依據的命令清單位於 `src/adapters/commands/manifest.ts`
@@ -88,7 +88,6 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - `workspace.office(address)` 回傳一個所有路徑都已預先算好的凍結 `Office` 值——`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——再加上 `ensure()`，也就是唯一的實體化接縫
 - 推導出 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`），用來在 host 上、sandbox runtime 內以及 vault 中命名該 office
 - 維護僅限 host 的 office registry（`office-registry.json`），作為 raw id ↔ office 的持久對照，因為 office key 無法反推
-- 執行開機時從 legacy raw-id 佈局而來的遷移，並以 journal 支援當機復原
 - 解析 workspace projection：依該 office 的 door policy，決定哪些 host 路徑會掛進 sandbox runtime
 
 ### F. 狀態與持久化層
@@ -177,7 +176,7 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # required global settings
-├── office-registry.json       # office inventory + migration journal
+├── office-registry.json       # office inventory
 ├── conversations/
 │   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials

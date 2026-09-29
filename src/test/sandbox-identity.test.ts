@@ -1,8 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   credentialAuthorizationKey,
-  legacyConversationCredentialKey,
-  legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
   sanitizeIdentitySegment,
   scopeCloudflareSandboxId,
@@ -54,19 +52,6 @@ describe("sandbox identity", () => {
     expect(credentialAuthorizationKey(image, discord)).not.toBe(
       credentialAuthorizationKey(image, telegram),
     );
-  });
-
-  test("legacy conversation vault keys stay derivable for the boot migration", () => {
-    expect(legacyConversationCredentialKey("C1")).toMatch(/^c1-[a-f0-9]{12}$/);
-  });
-
-  test("only retains exact legacy credential identities", () => {
-    const scope = { userId: "U1", address: createOfficeAddress("slack", "C1") };
-    expect(legacyExactCredentialAuthorizationKey({ type: "host" }, scope)).toBe("U1");
-    expect(
-      legacyExactCredentialAuthorizationKey({ type: "container", container: "shared" }, scope),
-    ).toBe("container-shared");
-    expect(legacyExactCredentialAuthorizationKey(image, scope)).toBeUndefined();
   });
 
   test("sanitizes readable identity segments", () => {

@@ -2,10 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  ensureDefaultOpenConnector,
-  migrateLegacyOpenConnectorTokens,
-} from "../harness/open-connector.js";
+import { ensureDefaultOpenConnector } from "../harness/open-connector.js";
 import { loadScopeMcpServers, resolveConversationSettings } from "../settings/index.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
@@ -234,71 +231,6 @@ describe("ensureDefaultOpenConnector", () => {
         fetch: fetchMock,
       }),
     ).rejects.toThrow(/HTTP 503/);
-    expect(loadScopeMcpServers(office).conversation).toEqual({});
-  });
-});
-
-describe("migrateLegacyOpenConnectorTokens", () => {
-  test("converts legacy token files into conversation MCP entries and removes them", () => {
-    const office = testOffice();
-    office.ensure();
-    mkdirSync(office.stateDir, { recursive: true });
-    const legacyPath = join(office.stateDir, "open-connector-runtime-token.json");
-    writeFileSync(
-      legacyPath,
-      JSON.stringify({
-        version: 1,
-        origin: "http://127.0.0.1:3737",
-        name: "mikan:slack:T123:C123",
-        id: "token-1",
-        token: "oct_legacy",
-      }),
-    );
-    const declared = testOffice("C9");
-    declared.ensure();
-    mkdirSync(declared.stateDir, { recursive: true });
-    writeFileSync(join(declared.stateDir, "open-connector-runtime-token.json"), "{}");
-    writeFileSync(
-      join(declared.stateDir, "settings.json"),
-      JSON.stringify({ mcpServers: { "open-connector": { url: "https://own.example/mcp" } } }),
-    );
-
-    const report = migrateLegacyOpenConnectorTokens(stateDir, defaultServer.url);
-
-    expect(report).toEqual({
-      migrated: [office.key],
-      skipped: [{ key: declared.key, reason: "open-connector is already declared" }],
-    });
-    expect(loadScopeMcpServers(office).conversation).toEqual({
-      "open-connector": {
-        url: defaultServer.url,
-        headers: { Authorization: "Bearer oct_legacy" },
-      },
-    });
-    expect(() => statSync(legacyPath)).toThrow();
-    expect(statSync(join(declared.stateDir, "open-connector-runtime-token.json")).isFile()).toBe(
-      true,
-    );
-  });
-
-  test("skips tokens minted for a different origin", () => {
-    const office = testOffice();
-    office.ensure();
-    mkdirSync(office.stateDir, { recursive: true });
-    writeFileSync(
-      join(office.stateDir, "open-connector-runtime-token.json"),
-      JSON.stringify({
-        version: 1,
-        origin: "https://old.example",
-        name: "mikan:slack:T123:C123",
-        id: "token-1",
-        token: "oct_legacy",
-      }),
-    );
-    expect(migrateLegacyOpenConnectorTokens(stateDir, defaultServer.url)).toEqual({
-      migrated: [],
-      skipped: [{ key: office.key, reason: "token origin https://old.example differs" }],
-    });
     expect(loadScopeMcpServers(office).conversation).toEqual({});
   });
 });

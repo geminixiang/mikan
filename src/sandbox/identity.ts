@@ -9,22 +9,17 @@ export function credentialAuthorizationKey(
   baseConfig: SandboxConfig,
   scope: CredentialScope,
 ): string {
-  if (baseConfig.type === "host") return identityKey("user", scope.userId);
-  if (baseConfig.type === "container") return identityKey("container", baseConfig.container);
+  if (baseConfig.type === "host") return userCredentialKey(scope.userId);
+  if (baseConfig.type === "container") return containerCredentialKey(baseConfig.container);
   return officeKey(scope.address);
 }
 
-export function legacyExactCredentialAuthorizationKey(
-  baseConfig: SandboxConfig,
-  scope: CredentialScope,
-): string | undefined {
-  if (baseConfig.type === "host") return scope.userId;
-  if (baseConfig.type === "container") return `container-${baseConfig.container}`;
-  return undefined;
+export function userCredentialKey(userId: string): string {
+  return identityKey("user", userId);
 }
 
-export function legacyConversationCredentialKey(rawConversationId: string): string {
-  return identityKey("conversation", rawConversationId);
+export function containerCredentialKey(container: string): string {
+  return identityKey("container", container);
 }
 
 export function runtimeResourceKey(
@@ -34,10 +29,6 @@ export function runtimeResourceKey(
   if (baseConfig.type === "container") return identityKey("container", baseConfig.container);
   if (baseConfig.type === "host") return identityKey("user", ids.userId);
   return officeKey(ids.address);
-}
-
-export function legacyConversationResourceKey(rawConversationId: string): string {
-  return identityKey("conversation", rawConversationId);
 }
 
 export function sanitizeIdentitySegment(value: string): string {
@@ -52,7 +43,7 @@ export function scopeCloudflareSandboxId(baseId: string, resourceKey: string): s
   return `${baseId}-${resourceKey}`;
 }
 
-function identityKey(kind: "user" | "conversation" | "container", value: string): string {
+function identityKey(kind: "user" | "container", value: string): string {
   const readable = sanitizeIdentitySegment(value).slice(0, 40).replace(/-+$/g, "") || "unknown";
   const hash = createHash("sha256")
     .update(`${kind}\0${value}`)

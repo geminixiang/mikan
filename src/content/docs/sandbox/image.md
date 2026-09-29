@@ -33,30 +33,17 @@ Features:
 
 ## Upgrading the sandbox image
 
-A managed container is the image plus a per-office home volume `mikan-home-<key>` mounted at
-`/root`. Workspace mounts and `/root` (npm/uv/pip caches, `~/.local`, dotfiles) survive an upgrade;
-anything else written to the container filesystem (`apt install`, `/etc` edits, `/tmp`) does not.
+A managed container is disposable. Only its bind mounts (the conversation office, shared knowledge,
+and vault files) outlive it; anything written elsewhere in the container, including `/root`, package
+installs, and `/etc` edits, is discarded when the container is replaced. Keep anything durable in
+the workspace.
 
 1. Pull the new image on the host under the tag mikan runs with (`docker pull …:latest`). mikan never
    pulls by itself; keep the previous image ID around for rollback.
-2. Containers created with a home volume pick up the new image automatically: a running container
-   is never interrupted, and once it has been stopped for idleness, the next message replaces it
-   (`docker rm` + `docker run` with the same volume).
-3. Containers created before home volumes are left alone. With the daemon stopped, inspect and
-   migrate them in small batches:
+2. A running container is never interrupted. Once a container has been stopped for idleness, the
+   next message replaces it from the new image (`docker rm` + `docker run`).
 
-```bash
-mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
-```
-
-`status` lists each container as `legacy`/`home-volume` and `current-image`/`stale-image`. `diff`
-lists the system paths an upgrade will discard. `migrate` seeds the home volume from the
-container's current `/root`, then recreates it from the current image.
-
-Rollback: re-tag the previous image ID and let containers be replaced again; the home volume is
-kept as-is. `/login` recreates the container but keeps its home volume.
+Rollback: re-tag the previous image ID and let containers be replaced again.
 
 ## Mounts and the conversation office
 
@@ -67,24 +54,19 @@ adds the workspace-global `MEMORY.md`, `skills/`, and `events/`. Private visibil
 memory bind read-only, while public visibility leaves it read-write. `trusted` / `full` mounts the
 whole workspace root at `/workspace`.
 
-Changing the door policy updates the mounts on the next message. A container with a home volume
-is recreated from the current image, keeping `/root` and workspace mounts but discarding other
-container filesystem changes. A legacy container without a home volume instead uses a snapshot
-to preserve its writable layer. The same paths cover office-directory renames during boot-time
-layout migration.
+When the mounts change, for example after a visibility change, the next message replaces the
+container from the current image.
 
 ## Vault and container keys
 
 Credentials are keyed by **office key**: the vault directory for a conversation is
 `~/.mikan/vaults/<office-key>/`. The key is derived by hashing the platform name together with the
 platform's raw conversation id, so two platforms that happen to use the same raw id can never
-resolve each other's credentials. Conversation vault directories written under the older raw-id
-scheme are renamed to office keys by the boot-time migration.
+resolve each other's credentials. `mikan migrate` renames 0.5.3 vault directories, which used the raw
+conversation id, to office keys.
 
-The managed container is named `mikan-sandbox-<resource-key>`, and its network
-`mikan-sandbox-net-<resource-key>`. The resource key is still derived from the raw conversation id
-(a sanitized prefix plus a short digest) — renaming it would churn every provisioned container, so
-it migrates separately. A collision there costs a container recreate, never credential access.
+The managed container is named `mikan-sandbox-<office-key>`, and its network
+`mikan-sandbox-net-<office-key>`.
 
 Suitable for:
 

@@ -46,7 +46,7 @@ Visibility 跟随 Slack 对话类型（ADR 0008）：公开频道是 public offi
 | `default` | 清除覆盖值；跟随 Slack 对话类型。                                              |
 | `private` | 把本公开频道视为 private。对 DM 或私有频道没有额外效果，它们本来就是 private。 |
 
-更改在下一条消息时生效，届时沙箱运行时会带着新的挂载重建；已有的容器内容会被保留。对话正忙时切换会被拒绝。底层的 `office.visibility` 字段请参阅[配置](/zh-cn/configuration/)。
+更改在下一条消息时生效，届时沙箱容器会带着新的挂载被替换；只有工作区和 vault 文件会保留。对话正忙时切换会被拒绝。底层的 `office.visibility` 字段请参阅[配置](/zh-cn/configuration/)。
 
 <Aside type="note" title="平台注册命令">
   原生 slash commands 也必须在平台中注册。命令清单位于 `src/adapters/commands/manifest.ts`：Discord

@@ -40,7 +40,7 @@ Raw platform identifiers stay at these external I/O boundaries. Everything inwar
 
 Responsibilities:
 
-- resolve argv into a boot plan (`src/cli/boot.ts`), then execute it: read env / `settings.json`, build the `Workspace`, run the office migration, and start the selected platform bots
+- resolve argv into a boot plan (`src/cli/boot.ts`), then execute it: read env / `settings.json`, refuse to start while a State migration is pending, build the `Workspace`, and start the selected platform bots
 - create `ConversationRuntime` as the `MessagingEventHandler` for each platform bot
 - recognize the `stop` magic word in conversation intake (`src/adapters/intake.ts`) before trigger policy and queueing
 - dispatch control commands such as `/login`, `/session`, and `/new` inside `ConversationRuntime.runSession`; the command inventory that adapters register/route from lives in `src/adapters/commands/manifest.ts`
@@ -88,7 +88,6 @@ Responsibilities:
 - `workspace.office(address)` returns a frozen `Office` value with every path precomputed — `dir`, `memoryPath`, `skillsDir`, `sessionsDir`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — plus `ensure()`, the single materialization seam
 - derive the `OfficeKey` (`v1-<platform>-<readable-id>-<sha256 prefix>`) that names the office on the host, inside sandbox runtimes, and in the vault
 - keep the host-only office registry (`office-registry.json`) as the durable raw-id ↔ office mapping, because office keys are not reversible
-- run the boot-time migration from the legacy raw-id layout, journaled with crash recovery
 - resolve the workspace projection: which host paths are mounted into the sandbox runtime for the office's door policy
 
 ### F. State and persistence layer

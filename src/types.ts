@@ -22,19 +22,6 @@ export interface OfficeAddress {
 
 export type OfficeKey = string & { readonly __brand: "OfficeKey" };
 
-export type OfficeMigrationStatus = "needs-owner" | "prepared" | "moving" | "committed" | "failed";
-
-export interface OfficeMigrationRecord {
-  readonly rawConversationId: string;
-  readonly sourceDir: string;
-  readonly workspaceRoot: string;
-  readonly ownerPlatform?: PlatformName;
-  readonly targetDir?: string;
-  readonly status: OfficeMigrationStatus;
-  readonly error?: string;
-  readonly updatedAt: string;
-}
-
 export interface OfficeRecord {
   readonly platform: PlatformName;
   readonly conversationId: string;
@@ -43,16 +30,7 @@ export interface OfficeRecord {
 
 export interface OfficeRegistryState {
   readonly version: 1;
-  readonly enabledPlatforms: readonly PlatformName[];
   readonly offices: readonly OfficeRecord[];
-  readonly migrations: readonly OfficeMigrationRecord[];
-}
-
-export interface OfficeMigrationPreparation {
-  readonly rawConversationId: string;
-  readonly sourceDir: string;
-  readonly workspaceRoot: string;
-  readonly ownerPlatform?: PlatformName;
 }
 
 export type PlatformTrustModel = "membership" | "open-trigger";
@@ -329,8 +307,6 @@ export interface PortalShellOptions {
   bodyAttributes?: Record<string, string>;
 }
 
-export type ContainerBindTranslator = (bindSpec: string) => string;
-
 export interface ContainerMount {
   source: string;
   target: string;
@@ -360,16 +336,6 @@ export interface ProvisionOptions {
   mounts?: ContainerMount[];
   conversationId?: string;
 }
-
-export interface ManagedContainerInventoryEntry {
-  containerName: string;
-  containerKey?: string;
-  running: boolean;
-  homeVolume: boolean;
-  imageStale: boolean;
-}
-
-export type HomeVolumeMigrationOutcome = "migrated" | "already-migrated" | "missing";
 
 export interface DockerContainerManagerOptions {
   limits?: ResourceLimits;

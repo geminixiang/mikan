@@ -88,7 +88,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord�
 
 只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
-已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）仍可解析以載入舊檔，但會從解析後的設定中移除，永不影響投影。請在停止 daemon 後執行 `mikan office migrate-door-policy` 清除：它會從全域與每個 office 的 settings 檔移除這些 key，只把明確的 shared-support `private` visibility 轉為 `office.visibility`。不會推導其他任何東西——要存取其他 private office 需要 ADR 0008 描述的成員身分授權，而不是更大的掛載。
+已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）如果存在會被忽略，也不會改變 projection。要存取另一個 private office，需要 ADR 0008 描述的成員制授權，而不是更寬的 mount。
 
 ## MCP servers
 
@@ -114,7 +114,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord�
 
 Admin 的 MCP 面板提供 repository-owned 的精選 Marketplace。安裝前會顯示完整 host command 或 remote endpoint、所需憑證、來源、目標 scope 與安全警告；確認後只會建立一般的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自動更新服務，也不把 catalog 收錄視為安全認證。Local stdio preset 會在 mikan host 執行程式碼；remote preset 則會收到送往其工具的呼叫與資料。
 
-OpenConnector 是一個附帶部署預設值的一般 MCP server。`OPENCONNECTOR_ENDPOINT` 指定預設的 `open-connector` server，`OPENCONNECTOR_ADMIN_TOKEN` 是 host-only 的憑證，用來替各 conversation 產生 runtime token。當 Slack conversation 未在 global 或 conversation 設定宣告 `open-connector` 時，mikan 會建立名稱為 `mikan:slack:<workspace-id>:<channel-id>` 的 token（複製目前 OpenConnector deployment 的 action／proxy policy），並以一般 `mcpServers` entry 形式存入該 conversation 的 host-only settings。之後這個 entry 會出現在 Admin MCP 面板，可像其他 server 一樣測試、停用、移除，或改成自架的 OpenConnector；移除後下次回應會重新產生預設 entry，停用則關閉整合。Admin token 只會送到預設 endpoint 的 origin，不會進入 settings 或 sandbox。既有的 `open-connector-runtime-token.json` 可在停止 daemon 後用 `mikan office migrate-openconnector` 轉換。
+OpenConnector 是一個附帶部署預設值的一般 MCP server。`OPENCONNECTOR_ENDPOINT` 指定預設的 `open-connector` server，`OPENCONNECTOR_ADMIN_TOKEN` 是 host-only 的憑證，用來替各 conversation 產生 runtime token。當 Slack conversation 未在 global 或 conversation 設定宣告 `open-connector` 時，mikan 會建立名稱為 `mikan:slack:<workspace-id>:<channel-id>` 的 token（複製目前 OpenConnector deployment 的 action／proxy policy），並以一般 `mcpServers` entry 形式存入該 conversation 的 host-only settings。之後這個 entry 會出現在 Admin MCP 面板，可像其他 server 一樣測試、停用、移除，或改成自架的 OpenConnector；移除後下次回應會重新產生預設 entry，停用則關閉整合。Admin token 只會送到預設 endpoint 的 origin，不會進入 settings 或 sandbox。
 
 ## 平台憑證
 
@@ -131,18 +131,18 @@ OpenConnector 是一個附帶部署預設值的一般 MCP server。`OPENCONNECTO
 
 ## CLI 參考
 
-| 指令或選項                                                         | 用途                                                                   |
-| ------------------------------------------------------------------ | ---------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                | 建立必要的全域設定檔                                                   |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]` | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace` |
-| `mikan env`                                                        | 顯示完整的環境變數清單，以及目前已設定的項目                           |
-| `mikan --download <channel-id>`                                    | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                            |
-| `mikan --version`                                                  | 顯示已安裝版本                                                         |
-| `mikan --help`                                                     | 顯示 CLI 用法與平台 token 摘要                                         |
-| `mikan office list`                                                | 列出已註冊的 office、已啟用的平台，以及待處理的 legacy 遷移            |
-| `mikan office claim <conversationId> <platform>`                   | 指定開機時無法歸屬的 legacy raw-id 目錄屬於哪個平台                    |
+| 指令或選項                                                             | 用途                                                                     |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `mikan onboard [--state-dir=<dir>]`                                    | 建立必要的全域設定檔                                                     |
+| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`     | 啟動已設定的平台 bot；working directory 預設為 `<state-dir>/workspace`   |
+| `mikan env`                                                            | 顯示完整的環境變數清單，以及目前已設定的項目                             |
+| `mikan --download <channel-id>`                                        | 下載 Slack 頻道歷史；需要 `SLACK_BOT_TOKEN`                              |
+| `mikan --version`                                                      | 顯示已安裝版本                                                           |
+| `mikan --help`                                                         | 顯示 CLI 用法與平台 token 摘要                                           |
+| `mikan office list`                                                    | 列出每個 office key 及其平台與 conversation id                           |
+| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | 在 daemon 停止時套用待處理的 [State 遷移](/zh-tw/deployment/#state-遷移) |
 
-`mikan office` 接受 `--state-dir <dir>` 與 `--workspace <dir>`；workspace 預設為 `<state-dir>/workspace`。`claim` 只會記錄這個決定——實際搬移由 daemon 在下次啟動時執行，因此請在 daemon 停止的狀態下執行它。
+`mikan office` 與 `mikan migrate` 接受 `--state-dir <dir>`；`mikan migrate` 另外接受 `--workspace <dir>`，預設為 `<state-dir>/workspace`。
 
 ## Observability：OTLP、Sentry 與 Phoenix
 

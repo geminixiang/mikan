@@ -138,15 +138,3 @@ export interface ThreadBootstrapWaitOptions {
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;
 }
-
-export interface MigrateResult {
-  file: string;
-  status: "migrated" | "already-v4" | "skipped";
-  detail?: string;
-}
-
-export interface Pi084MigrationResult {
-  file: string;
-  status: "migrated" | "already-current" | "not-pi-084";
-  detail?: string;
-}

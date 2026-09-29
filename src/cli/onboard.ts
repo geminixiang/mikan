@@ -3,6 +3,7 @@ import { join } from "node:path";
 import * as prompts from "@clack/prompts";
 import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
+import { recordAllMigrations } from "../migrations/index.js";
 import type { OnboardLlmChoice } from "../types.js";
 import { defaultModelsJsonPath } from "../harness/models.js";
 import { atomicWritePrivateFile } from "../file-guards.js";
@@ -191,6 +192,7 @@ export async function runOnboardWizard(
   }
 
   createGlobalSettingsFile(stateDir, llm);
+  recordAllMigrations(stateDir);
   io.print(`\nWrote ${settingsPath}`);
 
   if (modelsJson) {
@@ -215,6 +217,7 @@ export async function runOnboardWizard(
 export async function runOnboardCommand(stateDir: string): Promise<number> {
   if (!process.stdin.isTTY) {
     const settingsPath = createGlobalSettingsFile(stateDir);
+    recordAllMigrations(stateDir);
     console.log(`Created global settings at ${settingsPath}`);
     console.log(
       `Review the file, then start mikan (workspace defaults to ${join(stateDir, "workspace")}).`,

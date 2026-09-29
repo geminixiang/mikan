@@ -213,7 +213,7 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 - Runtime workspace root: ${workspaceRoot}
 - Bash commands start in: ${workspaceRoot}
 - Install tools with the image's package manager
-- Your changes persist for this user's container until it is recreated`;
+- Only files under ${workspaceRoot} persist; installed packages and anything else in the container are discarded when the sandbox image is updated`;
     case "container":
       return `You are running inside a shared container.
 - Runtime workspace root: ${workspaceRoot}

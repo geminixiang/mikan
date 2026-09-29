@@ -59,16 +59,7 @@ scoped session は、それがどの top-level session から作られたかを 
 
 ## 運用者向けの移行
 
-**移行前に daemon を停止してください。** 実行:
-
-```bash
-mikan sessions migrate
-```
-
-この offline conversion は legacy mikan v3 と Pi 0.84-generation v4 の session
-files を扱い、current Pi 0.85 v4 format に書き換えます。必要に応じて
-`--state-dir`、`--workspace`、`--dry-run` を使えます。`--dry-run` は files を
-変更しません。Originals は `*.v3.bak` または `*.pi-084.bak` として残ります。
+runtime が開くのは現在の Pi 0.85 v4 形式だけです。`mikan migrate` が 0.5.3 の v3 session file を変換し、元のファイルを `*.v3.bak` として残します。[State マイグレーション](/ja/deployment/#state-マイグレーション)を参照してください。
 
 ## Bootstrap、Clean session、メモリ
 

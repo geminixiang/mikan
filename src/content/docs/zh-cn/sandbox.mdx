@@ -56,14 +56,7 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
 
 ### 从原始 id 布局升级
 
-在办公室布局之前创建的 workspace 中，目录是按原始对话 id 命名的。每次启动都会迁移它们——workspace 目录、对话 vault key，以及按对话的主机 state——并为每一次移动记录日志，因此中断的迁移会继续进行，而不会丢失某个对话。
-
-有两种情况会让启动有意停止，而不是靠猜测：
-
-- **无归属目录。** 启用了多个平台时，mikan 无法判断某个原始目录属于哪一个。请用 `mikan office claim <conversationId> <platform>` 指明所有者（daemon 需停止）；下次启动会执行移动。
-- **冲突**，即旧版目录和 office key 目录已同时存在。这些情况会被报告以便手动合并，绝不会被覆盖。
-
-受管理的 container 能在重命名中存活：它们的 bind 会被转换到运行中 container 的快照上，因此可写层得以保留，而不是从基础镜像重建。
+0.5.3 的工作区以原始对话 id 命名目录。`mikan migrate` 会把它们连同 vault、设置、会话和事件一起移到办公室布局；详见[从 0.5.3 升级](/zh-cn/deployment/#从-053-升级)。
 
 ## 各模式文档
 

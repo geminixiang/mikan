@@ -159,8 +159,7 @@ failure leaves settings untouched and is logged. From then on the entry is
 loaded, tested, disabled, removed, or replaced by a self-hosted declaration
 exactly like any other server; removing it re-provisions on the next runner.
 The loader passes tool arguments through unchanged — connection selection is
-the server's own concern. `mikan office migrate-openconnector` converts legacy
-`open-connector-runtime-token.json` files into such entries.
+the server's own concern.
 
 The agent's creation-time trust gate still precedes provisioning and loading:
 `open-trigger` gets no MCP servers, tools or guidance; `membership` keeps the

@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                             |
-| ----------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                 |
-| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                    |
-| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                                   |
-| Identity and data       | Office, Sessions, Memory capture, Configuration       | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md) |
-| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                   |
-| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                                           |
-| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                                     |
-| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                             |
+| Group                   | Modules                                                           | Detailed documentation                                                                                                                                                                                                     |
+| ----------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform edge           | Platform adapters, Conversation intake                            | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                                                                                         |
+| Orchestration           | Composition root, Conversation runtime                            | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                                                                                            |
+| Agent core              | Harness and generic agent tools                                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                                                                                           |
+| Identity and data       | Office, Sessions, Memory capture, Configuration, State migrations | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/memory-capture/README.md`](src/memory-capture/README.md), [`src/migrations/README.md`](src/migrations/README.md) |
+| Execution and authority | Harness execution resolution, Sandbox, Vault                      | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)                                                                           |
+| External/control edges  | Platform/Web adapters and Commands                                | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                                                                                                   |
+| Scheduling              | Scheduled-event protocol, office store, and scheduler             | [`src/events/README.md`](src/events/README.md)                                                                                                                                                                             |
+| Observability           | OpenTelemetry pipeline and Sentry adapter                         | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                                                                                     |
 
 ## Main flows
 
@@ -109,14 +109,14 @@ Daemon boot proceeds conceptually as follows:
 2. Parse argv and select daemon or one-shot CLI mode.
 3. Validate deployment settings and the State-dir/workspace relationship.
 4. Construct the Workspace and Office registry.
-5. Complete crash-resumable legacy office migration before accepting events.
+5. Refuse to start while any State migration is pending, naming the `mikan migrate` command to run.
 6. Configure sandbox, vault, portal, and platform facilities.
 7. Construct the Conversation runtime with capability factories.
 8. Start platform bots, web services, and the event watcher.
 9. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
 10. Force-flush and shut down the OpenTelemetry providers, then close Sentry issue reporting, whether graceful application shutdown succeeds or fails. Attempt every configured backend and exit non-zero on any failure or timeout. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
 
-A migration ambiguity, path conflict, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
+A pending migration, malformed authoritative setting, or unsupported security policy fails startup rather than widening access.
 
 ### Conversation run
 
@@ -175,8 +175,7 @@ with normal chat.
 
 Cross-office scheduling is not available through the event tool; it requires
 the explicit actor-to-target grants defined in `docs/office-policy.md`, which
-are not implemented yet. Legacy `<workspace>/events/*.json` records are drained
-by `mikan office migrate-events`. Event text must never contain secrets.
+are not implemented yet. Event text must never contain secrets.
 
 ### Memory capture
 
@@ -200,6 +199,7 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
 
 <state-dir>/                              host-private authority
 ├── settings.json
+├── migrations.json                       applied State migrations
 ├── office-registry.json
 ├── vaults/
 └── conversations/<office-key>/
@@ -210,9 +210,11 @@ The exact paths are owned by the relevant modules, not by this diagram. Code mus
 
 The State dir is never part of a Workspace projection.
 
+Only the current file formats are read at runtime. `mikan migrate` converts older ones, in the order and with the record described in [`src/migrations/README.md`](src/migrations/README.md) and [ADR 0014](docs/adr/0014-versioned-state-migrations.md). A managed sandbox container is disposable: only the workspace projection and vault mounts outlive an image or mount change.
+
 ## Configuration authority
 
-`src/settings/index.ts` owns settings format, defaults, normalization, validation, and scope merge; `src/settings/apply.ts` is the one write seam for settings that affect live conversations; `src/settings/migrate.ts` holds one-time settings migrations run only from the CLI.
+`src/settings/index.ts` owns settings format, defaults, normalization, validation, and scope merge; `src/settings/apply.ts` is the one write seam for settings that affect live conversations.
 
 Settings baked into a cached runner—such as model selection or prompt-affecting workspace policy—require cache coordination:
 
@@ -232,7 +234,7 @@ Not every supported execution mode provides this property: host execution and ex
 
 ### Data isolation
 
-Office visibility (ADR 0008) is derived from the platform conversation type: Slack public channels are public; private channels, DMs, group DMs, externally shared channels, unknown kinds, and every conversation on Telegram, Discord, or GitHub are private. Every office projects the same shape — its own directory read-write, every other public office read-only under `/workspace/public/<key>` (enumerated from the registry on each projection, so a channel changing visibility changes affected containers' mount signature and they rebuild on their next message), and workspace-global `MEMORY.md`/`skills/` read-write for public offices or read-only for private ones. No projection mounts the workspace root. An operator may narrow a public channel to private through Admin or `/pi-sandbox visibility`; nothing widens beyond the platform. Retired door-policy keys are dropped at load time and removed by `mikan office migrate-door-policy`. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
+Office visibility (ADR 0008) is derived from the platform conversation type: Slack public channels are public; private channels, DMs, group DMs, externally shared channels, unknown kinds, and every conversation on Telegram, Discord, or GitHub are private. Every office projects the same shape — its own directory read-write, every other public office read-only under `/workspace/public/<key>` (enumerated from the registry on each projection, so a channel changing visibility changes affected containers' mount signature and they rebuild on their next message), and workspace-global `MEMORY.md`/`skills/` read-write for public offices or read-only for private ones. No projection mounts the workspace root. An operator may narrow a public channel to private through Admin or `/pi-sandbox visibility`; nothing widens beyond the platform. The policy resolver returns mounts and prompt sources together and rejects malformed authoritative settings.
 
 ### Credential authority
 
@@ -266,7 +268,7 @@ Evidence: `src/office/index.ts`, ADR 0005.
 
 <a id="inv-office-record-before-directory"></a>
 
-**`office-record-before-directory`** — Office materialization records the durable address-to-key mapping before creating the office directory. Migration is journaled, idempotent, crash-resumable, and conflict-failing.
+**`office-record-before-directory`** — Office materialization records the durable address-to-key mapping before creating the office directory.
 
 Evidence: `src/office/index.ts`.
 
@@ -370,9 +372,9 @@ Evidence: `src/settings/apply.ts`.
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. Legacy mikan v3 and Pi 0.84-generation v4 files are converted offline with `mikan sessions migrate` while the daemon is stopped; originals remain as `*.v3.bak` or `*.pi-084.bak`. Thread lineage remains stable across top-level `/new` resets.
+**`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. 0.5.3 v3 files are converted by `mikan migrate`, which keeps each original as `*.v3.bak`. Thread lineage remains stable across top-level `/new` resets.
 
-Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/sessions/migrate-v3.ts`, `src/sessions/migrate-pi-084.ts`.
+Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/migrations/sessions-v3.ts`.
 
 ## Known deviations
 

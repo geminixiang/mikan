@@ -40,7 +40,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- 将 argv 解析为启动计划（`src/cli/boot.ts`），然后执行它：读取 env / `settings.json`、构建 `Workspace`、运行办公室迁移，并启动所选的平台 bot
+- 将 argv 解析为启动计划（`src/cli/boot.ts`），然后执行它：读取 env / `settings.json`、仍有待应用的 State 迁移时拒绝启动、构建 `Workspace`，并启动所选的平台 bot
 - 为每个平台 bot 创建 `ConversationRuntime`，作为 `MessagingEventHandler`
 - `stop` 魔法词由 conversation intake（`src/adapters/intake.ts`）在 trigger policy 和排队之前识别
 - `/login`、`/session`、`/new` 等控制命令在 `ConversationRuntime.runSession` 内分发；适配器注册与路由所依据的命令清单位于 `src/adapters/commands/manifest.ts`
@@ -88,7 +88,6 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - `workspace.office(address)` 返回一个冻结的 `Office` 值，其中所有路径均已预先计算——`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath` 以及仅主机的 `stateDir`——外加 `ensure()`，即唯一的物化缝隙
 - 派生 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 前缀>`），它在主机上、沙箱运行时内部以及 vault 中都用于命名该办公室
 - 维护仅主机的办公室注册表（`office-registry.json`），作为原始 id ↔ 办公室的持久映射，因为 office key 不可逆
-- 运行启动时从旧版原始 id 布局的迁移，带日志记录并支持崩溃恢复
 - 解析工作区投影：按办公室的门禁策略，将哪些主机路径挂载进沙箱运行时
 
 ### F. 状态和持久化层
@@ -177,7 +176,7 @@ sequenceDiagram
 
 <state-dir>/
 ├── settings.json              # required global settings
-├── office-registry.json       # office inventory + migration journal
+├── office-registry.json       # office inventory
 ├── conversations/
 │   └── <officeKey>/settings.json  # host-only conversation overrides
 └── vaults/<vaultId>/          # credentials

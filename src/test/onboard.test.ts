@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { renderEnvFile, runOnboardWizard } from "../cli/onboard.js";
+import { pendingMigrations } from "../migrations/index.js";
 import type { OnboardIo } from "../cli/types.js";
 
 let dir: string;
@@ -68,6 +69,7 @@ describe("runOnboardWizard", () => {
     expect(envContent).toContain("SLACK_BOT_TOKEN=xoxb-456");
     expect(envContent).toContain("ANTHROPIC_API_KEY=sk-ant-789");
     expect(statSync(envFile).mode & 0o777).toBe(0o600);
+    expect(pendingMigrations(dir)).toEqual([]);
   });
 
   test("custom endpoint writes models.json and points settings at it", async () => {
@@ -133,6 +135,7 @@ describe("runOnboardWizard", () => {
     expect(await runOnboardWizard(dir, io)).toBe(1);
     expect(existsSync(join(dir, "settings.json"))).toBe(false);
     expect(existsSync(join(dir, "mikan.env"))).toBe(false);
+    expect(existsSync(join(dir, "migrations.json"))).toBe(false);
     expect(io.transcript.join("\n")).not.toContain("api-secret");
     expect(io.transcript.join("\n")).not.toContain("tg-secret");
   });

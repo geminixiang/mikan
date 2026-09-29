@@ -33,37 +33,24 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## 升級沙盒映像
 
-受管容器由「映像」加上每個 office 一個的 home volume `mikan-home-<key>`（掛在 `/root`）組成。工作區掛載與
-`/root`（npm/uv/pip 快取、`~/.local`、dotfiles）在升級後保留；其他寫進容器檔案系統的內容（`apt install`、
-`/etc` 修改、`/tmp`）不保留。
+受管 container 可以隨時拋棄。只有它的 bind mount（conversation office、共享知識與 vault 檔案）會留下；寫在 container 其他位置的東西，包括 `/root`、安裝的套件與 `/etc` 的修改，都會在 container 被替換時消失。需要保留的東西請放在 workspace。
 
-1. 在主機上以 mikan 使用的 tag 拉取新映像（`docker pull …:latest`）。mikan 不會自行 pull；保留舊映像 ID 以便回滾。
-2. 有 home volume 的容器會自動換上新映像：執行中的容器不會被中斷，閒置停止後，下一則訊息會以同一個 volume
-   `docker rm` + `docker run` 取代它。
-3. 在 home volume 之前建立的舊容器不會被自動處理。先停止 daemon，再小批次檢查並遷移：
+1. 在 host 上用 mikan 使用的 tag 拉取新映像（`docker pull …:latest`）。mikan 不會自行拉取；請保留前一個 image ID 以便回滾。
+2. 執行中的 container 不會被中斷。container 因閒置而停止後，下一則訊息會用新映像替換它（`docker rm` + `docker run`）。
 
-```bash
-mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
-```
-
-`status` 會標示每個容器是 `legacy`/`home-volume`、`current-image`/`stale-image`；`diff` 列出升級會丟棄的系統路徑；
-`migrate` 先用容器目前的 `/root` 填入 home volume，再以目前映像重建容器。
-
-回滾：把 tag 指回舊映像 ID，容器會再次被替換，home volume 原樣保留。`/login` 會重建容器但保留 home volume。
+回滾：把 tag 指回前一個 image ID，讓 container 再被替換一次。
 
 ## Mount 與 conversation office
 
 該對話的 office 目錄會以可讀寫的方式 bind mount 在 `/workspace/<office-key>`，其中 office key 就是 `v1-<platform>-<readable-id>-<hash>` 這段、同時也是宿主機上該目錄的名稱。isolated projection 只掛載這個目錄；trusted 的 `shared-support` layout 會再加上 workspace 全域的 `MEMORY.md`、`skills/` 與 `events/`。private visibility 會把全域記憶 bind 設為唯讀，public visibility 則維持讀寫；`trusted` / `full` 會把整個 workspace root 掛在 `/workspace`。
 
-變更 door policy 會在下一則訊息時更新 mount。有 home volume 的 container 會用目前映像重建，保留 `/root` 與 workspace mount，但其他寫入 container 檔案系統的內容會消失。舊版、尚無 home volume 的 container 則會透過 snapshot 保留可寫層。開機時 layout 遷移所做的 office 目錄改名，也走同一條路徑。
+mount 改變時（例如 visibility 變更之後），下一則訊息會用目前映像替換 container。
 
 ## Vault key 與 container key
 
-Credentials 以 **office key** 為 key：某個對話的 vault 目錄是 `~/.mikan/vaults/<office-key>/`。這個 key 由平台名稱與該平台的原始 conversation id 一起雜湊而來，因此就算兩個平台剛好使用相同的 raw id，也絕不可能解析到對方的憑證。在舊的 raw-id 機制下寫入的 conversation vault 目錄，會由開機時的遷移改名為 office key。
+Credentials 以 **office key** 為 key：某個對話的 vault 目錄是 `~/.mikan/vaults/<office-key>/`。這個 key 由平台名稱與該平台的原始 conversation id 一起雜湊而來，因此就算兩個平台剛好使用相同的 raw id，也絕不可能解析到對方的憑證。`mikan migrate` 會把 0.5.3 以原始 conversation id 命名的 vault 目錄改名為 office key。
 
-受管 container 名為 `mikan-sandbox-<resource-key>`，其 network 則是 `mikan-sandbox-net-<resource-key>`。resource key 仍由原始 conversation id 推導（一段清理過的前綴加上短 digest）——改動它會讓每一個已佈建的 container 都被翻攪，因此它是分開遷移的。這裡發生碰撞的代價是一次 container 重建，絕不會影響憑證存取。
+受管 container 名為 `mikan-sandbox-<office-key>`，其 network 則是 `mikan-sandbox-net-<office-key>`。
 
 適合：
 

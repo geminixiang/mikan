@@ -111,6 +111,8 @@ npm i -g @geminixiang/mikan
 pm2 reload mikan
 ```
 
+新しいバージョンに未適用の [State マイグレーション](#state-マイグレーション) がある場合は、reload の前に実行してください。
+
 `~/.mikan/mikan.env` を編集した後は、環境が再読み込みされるように ecosystem file 経由で reload
 します：
 
@@ -126,39 +128,42 @@ pm2 reload ecosystem.config.cjs
   中はどのプロセスもプラットフォームに接続していません。 オフピークにデプロイしてください。
 </Aside>
 
-### Office layout migration をまたぐアップグレード
+### State マイグレーション
 
-Conversation directory は、生の platform id ではなく office key（`v1-<platform>-…`）で命名されます。
-生 id を使っていたリリースからアップグレードすると、起動時に migration が実行されます。旧来の
-workspace directory、conversation vault、conversation ごとの state tree が office key 配置へ
-rename され、その過程は `<state-dir>/office-registry.json` に journal されるため、中断しても次回
-起動時に再開されます。管理下の `image:*` container は rename をまたいで writable layer を保持します。
-旧 path を mount したままの container は、boot 中ではなく次のメッセージの前に、snapshot・削除の上、
-変換後の mount で再作成されます。
+永続化ファイルの形式を変えるリリースには、番号付きのマイグレーションが含まれます。未適用のマイグレーションがある間、daemon は起動を拒否し、実行すべき `mikan migrate` コマンドをそのまま表示します。daemon が自分でファイルを変換することはありません。適用済みのマイグレーションは `<state-dir>/migrations.json` に記録されます。
 
-legacy directory の帰属を判定できない場合、boot は続行せず**失敗**します。layout 変更後、そうした
-directory は runtime から見えなくなるため、そのまま起動すると conversation が黙って空であるかのように
-見えてしまうからです。起動時のエラーは未解決の directory を個別に名指しします。
+新しいバージョンをインストールしたら、未適用のマイグレーションを確認します。`--dry-run` は読み取りだけなので、daemon の実行中でも安全です。daemon と同じ `--sandbox`、`--state-dir`、workspace を指定します:
 
-所有権は推測ではなく検証されます。有効なプラットフォームのうち、ちょうど 1 つの id 形式だけが
-その名前を生み得た場合にのみ、directory は自動的に claim されます。有効な 2 つのプラットフォームに
-またがって名前が曖昧な directory — Telegram と Discord の両方が動作している状態での数字のみの名前 —
-には、明示的な所有者が必要です：
+```bash
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace --dry-run
+```
+
+`No pending migrations.` と表示されたら、上の手順で reload します。そうでなければ daemon を停止し、適用してから再起動します:
 
 ```bash
 pm2 stop mikan
-mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
-mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace
 pm2 start mikan
 ```
 
-`claim` は所有者を記録するだけで、実際の移動は daemon が次回起動時に行います。だからこそ、プロセスを
-停止した状態で実行します。vault や state directory の衝突 — 同じ conversation が legacy 名と office
-key 名の両方に存在する場合 — も同様に報告され、`<state-dir>` 配下で手作業により統合する必要があります。
+安全に判断できない場合、マイグレーションは記録されずに停止します。たとえば、名前が複数の有効なプラットフォームに当てはまる directory（Telegram と Discord を両方動かしているときの数字だけの id）や、同じ会話が古い名前と新しい名前の両方に存在する場合です。エラーには各パスと対処方法が表示されます。曖昧な所有者は `--owner <conversationId>=<platform>`（繰り返し指定可）で指定して再実行してください。すでに成功したマイグレーションは適用済みのまま残ります。
 
-<Aside type="caution" title="先に state directory をバックアップしてください">
-  この migration は workspace と state directory の両方で directory を rename します。新しい
-  バージョンで最初に起動する前に、`<state-dir>`（できれば workspace も）のコピーを取ってください。
+### 0.5.3 からのアップグレード
+
+1.0.0 は 0.5.3 のインストールを直接マイグレーションします。プレリリースにしか存在しなかった形式はサポート対象外です。`mikan migrate` は次を行います:
+
+- conversation directory とその vault を、生の conversation id から office key へ rename する
+- `host` の per-user vault と `container:*` の vault を、hash された identity key へ rename する
+- 各会話の `settings.json` を `<state-dir>/conversations/<office-key>/` へ移動する
+- v3 の session file を現在の形式へ変換し、元のファイルを `*.v3.bak` として残す
+- `<workspace>/events/*.json` を各会話の host 専用 event store へ移動する
+- 0.5.3 の sandbox container を削除する。次のメッセージで現在のイメージから空の `/root` で再作成される
+- mikan に `~/.mikan/models.json` がまだなければ、`~/.pi/agent/models.json`（または `$PI_CODING_AGENT_DIR/models.json`）をコピーする
+
+Provider の API key は `models.json` か環境変数から読まれます。0.5.3 が `~/.pi/mikan/auth.json` から読んでいた key は移行されないため、起動前に `~/.mikan/mikan.env` に設定してください。
+
+<Aside type="caution" title="先に state directory をバックアップする">
+  マイグレーションは workspace と state directory の両方で directory を rename します。実行前に `<state-dir>` と workspace のコピーを取ってください。
 </Aside>
 
 ## Health endpoint

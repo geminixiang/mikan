@@ -108,6 +108,8 @@ npm i -g @geminixiang/mikan
 pm2 reload mikan
 ```
 
+如果新版本有待套用的 [State 遷移](#state-遷移)，請先執行再重新載入。
+
 編輯 `~/.mikan/mikan.env` 之後，請透過 ecosystem file 重新載入，讓環境重新讀取：
 
 ```bash
@@ -121,26 +123,42 @@ pm2 reload ecosystem.config.cjs
   是先停舊、再起新，排空期間沒有任何 process 連著平台；請在離峰時段部署。
 </Aside>
 
-### 跨 office 佈局遷移的升級
+### State 遷移
 
-對話目錄是以 office key（`v1-<platform>-…`）命名，而不是原始平台 id。從使用 raw id 的版本升級上來時，啟動階段會執行一次遷移：legacy workspace 目錄、conversation vault 與各對話的 state tree 會被改名成 office key 佈局，並記錄在 `<state-dir>/office-registry.json` 的 journal 中，因此中斷的執行會在下次啟動時續做。受管的 `image:*` container 會在改名後保留可寫層——仍掛著 legacy 路徑的 container 會被 snapshot、移除，並在它的下一則訊息之前以轉譯後的 mount 重新建立，而不是在開機時進行。
+會改變持久化檔案格式的版本，會附帶一個有編號的遷移。只要還有待套用的遷移，daemon 就會拒絕啟動，並印出應該執行的 `mikan migrate` 完整指令；它不會自行轉換任何檔案。已套用的遷移記錄在 `<state-dir>/migrations.json`。
 
-當某個 legacy 目錄無法歸屬時，開機會**失敗**而不是繼續：在佈局變更之後，這樣的目錄對 runtime 是不可見的，硬要啟動就會讓那個對話看起來莫名其妙變成空的。啟動錯誤訊息會列出每一個無法解析的目錄。
+安裝新版本後，先檢查有沒有待套用的遷移。`--dry-run` 只會讀取，daemon 執行中也可以安全使用。請帶入與 daemon 相同的 `--sandbox`、`--state-dir` 與 workspace：
 
-擁有者是驗證出來的，不是猜的：只有當恰好一個已啟用平台的 id 格式可能產生該名稱時，目錄才會被自動認領。如果某個目錄名稱在兩個已啟用平台之間有歧義——例如純數字，而 Telegram 與 Discord 同時在跑——就需要明確指定擁有者：
+```bash
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace --dry-run
+```
+
+如果印出 `No pending migrations.`，照上面的方式重新載入即可。否則先停止 daemon、套用遷移，再重新啟動：
 
 ```bash
 pm2 stop mikan
-mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
-mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace
 pm2 start mikan
 ```
 
-`claim` 只會記錄擁有者；實際搬移由 daemon 在下次啟動時執行，這也是為什麼它要在 process 停止的狀態下執行。Vault 或 state directory 的衝突——同一個對話同時以 legacy 名稱與 office key 名稱存在——會以同樣方式回報，必須在 `<state-dir>` 底下手動合併。
+遇到無法安全判斷的情況，遷移會停下來且不會被記錄，例如：目錄名稱同時符合多個已啟用平台（Telegram 與 Discord 同時執行時的純數字 id），或同一個對話同時存在新舊兩個名稱。錯誤訊息會列出每個路徑與處理方式。用 `--owner <conversationId>=<platform>`（可重複）指定有歧義目錄的擁有者後再執行一次；已經成功的遷移會維持已套用。
+
+### 從 0.5.3 升級
+
+1.0.0 可以直接遷移 0.5.3 的安裝；只在預覽版出現過的格式不在支援範圍。`mikan migrate` 會：
+
+- 把對話目錄及其 vault 從原始 conversation id 改名為 office key；
+- 把 `host` 模式的每位使用者 vault 與 `container:*` 的 vault 改名為雜湊後的 identity key；
+- 把每個對話的 `settings.json` 移到 `<state-dir>/conversations/<office-key>/`；
+- 把 v3 session 檔轉成目前格式，原檔保留為 `*.v3.bak`；
+- 把 `<workspace>/events/*.json` 移到各對話僅 host 可見的事件儲存區；
+- 移除 0.5.3 的沙盒容器；下一則訊息進來時會以目前映像重建，`/root` 從空的開始；
+- 如果 mikan 還沒有 `~/.mikan/models.json`，就複製 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）。
+
+Provider API key 來自 `models.json` 或環境變數。0.5.3 從 `~/.pi/mikan/auth.json` 讀取的 key 不會被遷移；請在啟動前設定到 `~/.mikan/mikan.env`。
 
 <Aside type="caution" title="請先備份 state directory">
-  這次遷移會同時改名 workspace 與 state directory 底下的目錄。在新版本第一次啟動之前，請先複製一份
-  `<state-dir>`（最好連 workspace 一起）。
+  遷移會同時改名 workspace 與 state directory 底下的目錄。遷移前請先複製一份 `<state-dir>` 與 workspace。
 </Aside>
 
 ## Health endpoint

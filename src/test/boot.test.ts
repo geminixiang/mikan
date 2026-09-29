@@ -96,10 +96,10 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--worker-token"])).toThrow(/unknown option '--worker-token'/);
   });
 
-  test("office subcommand short-circuits with its own argv", () => {
-    const plan = resolveBoot(["office", "claim", "C123", "slack"]);
-    expect(plan.mode).toBe("office");
-    expect(plan.officeArgs).toEqual(["claim", "C123", "slack"]);
+  test("migrate subcommand short-circuits with its own argv", () => {
+    const plan = resolveBoot(["migrate", "--dry-run", "--owner", "C123=slack"]);
+    expect(plan.mode).toBe("migrate");
+    expect(plan.migrateArgs).toEqual(["--dry-run", "--owner", "C123=slack"]);
   });
 
   test("env subcommand selects env mode", () => {

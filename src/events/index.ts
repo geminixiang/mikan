@@ -1,4 +1,4 @@
-import type { OfficeAddress, OfficeKey } from "../types.js";
+import type { OfficeAddress } from "../types.js";
 
 export type EventPayload = EventFilePayload;
 
@@ -252,13 +252,11 @@ export function buildEventPayload(input: EventPayloadInput): EventFilePayload {
   }
 }
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { atomicWritePrivateFile } from "../file-guards.js";
-import type { Office, Workspace } from "../office/types.js";
-import { createOfficeAddress, listRegisteredOffices, officeKey } from "../office/index.js";
-import { errorMessage } from "../unknown-values.js";
+import type { Office } from "../office/types.js";
 
 export function officeEventsDir(office: Office): string {
   return join(office.stateDir, "events");
@@ -375,66 +373,4 @@ export class OfficeEventStore implements EventStore {
     });
     return { path: filePath, size: fileStat.size };
   }
-}
-
-export interface LegacyEventMigrationReport {
-  migrated: { filename: string; key: OfficeKey }[];
-  skipped: { filename: string; reason: string }[];
-}
-
-export function migrateLegacyWorkspaceEvents(workspace: Workspace): LegacyEventMigrationReport {
-  const report: LegacyEventMigrationReport = { migrated: [], skipped: [] };
-  const legacyDir = join(workspace.root, "events");
-  if (!existsSync(legacyDir)) return report;
-  const registered = new Set(
-    listRegisteredOffices(workspace.stateDir).map((record) => officeKey(record)),
-  );
-  for (const filename of readdirSync(legacyDir).filter((name) => name.endsWith(".json"))) {
-    const source = join(legacyDir, filename);
-    if (!statSync(source).isFile()) continue;
-    let payload: EventFilePayload;
-    try {
-      payload = parseEventPayload(readFileSync(source, "utf-8"), filename);
-    } catch (error) {
-      report.skipped.push({
-        filename,
-        reason: errorMessage(error),
-      });
-      continue;
-    }
-    if (!payload.platform) {
-      report.skipped.push({ filename, reason: "no platform; owner cannot be attributed" });
-      continue;
-    }
-    let address: OfficeAddress;
-    try {
-      address = createOfficeAddress(
-        payload.platform as OfficeAddress["platform"],
-        payload.conversationId,
-      );
-    } catch (error) {
-      report.skipped.push({
-        filename,
-        reason: errorMessage(error),
-      });
-      continue;
-    }
-    const key = officeKey(address);
-    if (!registered.has(key)) {
-      report.skipped.push({ filename, reason: `office ${key} is not registered` });
-      continue;
-    }
-    const office = workspace.office(address);
-    const targetDir = officeEventsDir(office);
-    mkdirSync(targetDir, { recursive: true });
-    const target = join(targetDir, filename);
-    if (existsSync(target)) {
-      report.skipped.push({ filename, reason: `already exists in ${key}` });
-      continue;
-    }
-    atomicWritePrivateFile(target, JSON.stringify(payload) + "\n");
-    rmSync(source);
-    report.migrated.push({ filename, key });
-  }
-  return report;
 }

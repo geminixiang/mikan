@@ -63,21 +63,7 @@ workspace root を mount する layout はありません。admin portal また�
 
 ### 生 id 配置からのアップグレード
 
-office 配置より前に作成された workspace には、生の conversation id で命名された directory が
-含まれます。起動のたびにそれらは移行されます — workspace directory、conversation の vault key、
-conversation ごとの host state — そして各移動が journal されるため、中断しても conversation を
-失わずに再開できます。
-
-推測せず、意図的に boot を止める状況が 2 つあります：
-
-- **所有者不明の directory。** 複数のプラットフォームが有効な場合、mikan はどれが生 directory の
-  所有者かを判定できません。`mikan office claim <conversationId> <platform>` で所有者を指定し
-  （daemon は停止した状態で）、次回起動時に移動が実行されます。
-- **衝突**、つまり legacy と office key の両方の directory がすでに存在する場合。これらは手作業での
-  統合のために報告され、上書きされることはありません。
-
-管理下の container は rename をまたいで生き残ります。bind は実行中の container の snapshot に対して
-変換されるため、writable layer は base image から作り直されるのではなく保持されます。
+0.5.3 の workspace は生の conversation id で directory を命名しています。`mikan migrate` がそれらを vault、設定、session、event とあわせて office layout へ移動します。[0.5.3 からのアップグレード](/ja/deployment/#053-からのアップグレード)を参照してください。
 
 ## 各モードのドキュメント
 

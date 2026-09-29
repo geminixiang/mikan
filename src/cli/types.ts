@@ -10,19 +10,9 @@ export interface OnboardIo {
 }
 
 export interface BootPlan {
-  mode:
-    | "office"
-    | "sessions"
-    | "sandbox"
-    | "env"
-    | "help"
-    | "version"
-    | "onboard"
-    | "download"
-    | "run";
+  mode: "migrate" | "office" | "env" | "help" | "version" | "onboard" | "download" | "run";
+  migrateArgs?: string[];
   officeArgs?: string[];
-  sessionsArgs?: string[];
-  sandboxArgs?: string[];
   stateDir: string;
   workingDir: string;
   workingDirExplicit: boolean;

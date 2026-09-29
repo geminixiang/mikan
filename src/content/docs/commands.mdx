@@ -47,7 +47,7 @@ Visibility follows the Slack conversation type (ADR 0008): public channels are p
 | `default` | Clear the override; follow the Slack conversation type.                                                            |
 | `private` | Treat this public channel as private. Has no further effect on a DM or private channel, which are already private. |
 
-The change takes effect on the next message, when the sandbox runtime is rebuilt with the new mounts; existing container contents are preserved. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `office.visibility` field.
+The change takes effect on the next message, when the sandbox container is replaced with the new mounts; only the workspace and vault files carry over. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `office.visibility` field.
 
 <Aside type="note" title="Platform command registration">
   Native slash commands must also be registered with the platform. The command inventory lives in

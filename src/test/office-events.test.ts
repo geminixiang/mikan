@@ -1,17 +1,9 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConversationEvent, MessagingBot } from "../types.js";
-import { OfficeEventStore, migrateLegacyWorkspaceEvents } from "../events/index.js";
+import { OfficeEventStore } from "../events/index.js";
 import { EventScheduler } from "../events/scheduler.js";
 import { createEventTool } from "../harness/tools/event.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
@@ -258,45 +250,5 @@ describe("event tool over OfficeEventStore", () => {
       /not found/,
     );
     expect(existsSync(join(other.stateDir, "events", "theirs.json"))).toBe(true);
-  });
-});
-
-describe("migrateLegacyWorkspaceEvents", () => {
-  test("moves attributable legacy files into office state and reports the rest", () => {
-    const own = office("slack", "C1");
-    const legacyDir = join(dir, "workspace", "events");
-    mkdirSync(legacyDir);
-    writeFileSync(
-      join(legacyDir, "ok.json"),
-      JSON.stringify({
-        type: "periodic",
-        platform: "slack",
-        conversationId: "C1",
-        text: "standup",
-        schedule: "0 9 * * *",
-        timezone: "Asia/Taipei",
-      }),
-    );
-    writeFileSync(
-      join(legacyDir, "no-platform.json"),
-      JSON.stringify({ type: "immediate", conversationId: "C1", text: "x" }),
-    );
-    writeFileSync(
-      join(legacyDir, "unknown.json"),
-      JSON.stringify({ type: "immediate", platform: "slack", conversationId: "C9", text: "x" }),
-    );
-    writeFileSync(join(legacyDir, "broken.json"), "{");
-
-    const report = migrateLegacyWorkspaceEvents(workspace());
-
-    expect(report.migrated).toEqual([{ filename: "ok.json", key: own.key }]);
-    expect(report.skipped.map((entry) => entry.filename).toSorted()).toEqual([
-      "broken.json",
-      "no-platform.json",
-      "unknown.json",
-    ]);
-    expect(statSync(join(own.stateDir, "events", "ok.json")).mode & 0o777).toBe(0o600);
-    expect(existsSync(join(legacyDir, "ok.json"))).toBe(false);
-    expect(existsSync(join(legacyDir, "unknown.json"))).toBe(true);
   });
 });

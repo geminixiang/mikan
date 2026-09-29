@@ -15,7 +15,6 @@ import type { VaultManager } from "../vault/types.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
 import {
   credentialAuthorizationKey,
-  legacyExactCredentialAuthorizationKey,
   runtimeResourceKey,
   scopeCloudflareSandboxId,
 } from "../sandbox/identity.js";
@@ -50,16 +49,13 @@ export class ActorExecutionResolver {
   } {
     const scope = { userId: context.userId, address: context.address };
     const credentialKey = credentialAuthorizationKey(this.baseConfig, scope);
-    const legacyCredentialKey = legacyExactCredentialAuthorizationKey(this.baseConfig, scope);
     const resourceKey = runtimeResourceKey(this.baseConfig, {
       userId: context.userId,
       address: context.address,
     });
-    this.ensureDefaultSharedVault(credentialKey, legacyCredentialKey, context.trustModel);
+    this.ensureDefaultSharedVault(credentialKey, context.trustModel);
 
-    const vault =
-      this.vaultManager.resolve(credentialKey) ??
-      (legacyCredentialKey ? this.vaultManager.resolve(legacyCredentialKey) : undefined);
+    const vault = this.vaultManager.resolve(credentialKey);
     const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
     const office = this.workspace.office(context.address);
     const projection = resolveWorkspaceProjection(office);
@@ -85,16 +81,10 @@ export class ActorExecutionResolver {
 
   private ensureDefaultSharedVault(
     credentialKey: string,
-    legacyCredentialKey: string | undefined,
     trustModel: ActorContext["trustModel"],
   ): void {
     if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
-    if (
-      this.vaultManager.hasEntry(credentialKey) ||
-      (legacyCredentialKey && this.vaultManager.hasEntry(legacyCredentialKey))
-    ) {
-      return;
-    }
+    if (this.vaultManager.hasEntry(credentialKey)) return;
 
     let profile: string | undefined;
     try {

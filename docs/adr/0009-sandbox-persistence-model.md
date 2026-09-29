@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by [ADR 0014](0014-versioned-state-migrations.md)
 ---
 
 # A managed sandbox is an image plus a home volume

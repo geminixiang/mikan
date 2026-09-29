@@ -1,6 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
-import { existsSync, lstatSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { readEnv } from "../env-manifest.js";
@@ -9,7 +9,6 @@ import {
   ensureDirExists,
   readJsonSchemaFileIfExists,
 } from "../file-guards.js";
-import * as log from "../log.js";
 
 export class MissingGlobalSettingsError extends Error {
   constructor(public readonly settingsPath: string) {
@@ -93,28 +92,6 @@ const SettingsFileSchema = Type.Object({
           memory: Type.Optional(Type.String()),
         }),
       ),
-      image: Type.Optional(
-        Type.Object({
-          workspaceMount: Type.Optional(
-            Type.Union([Type.Literal("private"), Type.Literal("full")]),
-          ),
-        }),
-      ),
-      workspace: Type.Optional(
-        Type.Object({
-          doorPolicy: Type.Optional(
-            Type.Union([Type.Literal("isolated"), Type.Literal("trusted")]),
-          ),
-          layout: Type.Optional(
-            Type.Union([
-              Type.Literal("conversation"),
-              Type.Literal("shared-support"),
-              Type.Literal("full"),
-            ]),
-          ),
-          visibility: Type.Optional(Type.Union([Type.Literal("public"), Type.Literal("private")])),
-        }),
-      ),
       defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
@@ -133,10 +110,10 @@ const SettingsFileSchema = Type.Object({
   ),
 });
 
-export type SettingsFileConfig = Static<typeof SettingsFileSchema>;
-export type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
+type SettingsFileConfig = Static<typeof SettingsFileSchema>;
+type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
 
-export function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
+function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail, kind) =>
     kind === "shape"
       ? `Malformed settings file at ${settingsPath}: expected a JSON object at the top level`
@@ -232,29 +209,11 @@ export function loadGlobalSettings(): AgentConfig {
 export function conversationSettingsPath(office: Office): string {
   const hostPath = join(office.stateDir, "settings.json");
   if (existsSync(hostPath)) {
-    assertSettingsFile(hostPath, "Host conversation settings");
+    assertSettingsFile(hostPath, "Conversation settings");
     return hostPath;
   }
-
   ensureDirExists(dirname(hostPath));
-  const legacyPath = join(office.dir, "settings.json");
-  let content = "{}\n";
-  let migrated = false;
-  if (existsSync(legacyPath)) {
-    assertSettingsFile(legacyPath, "Legacy conversation settings");
-    content = readFileSync(legacyPath, "utf-8");
-    loadSettingsFile(legacyPath);
-    migrated = true;
-  }
-  atomicWritePrivateFile(hostPath, content);
-  if (migrated) {
-    try {
-      rmSync(legacyPath);
-    } catch (err) {
-      log.logWarning(`Could not remove legacy conversation settings: ${legacyPath}`, String(err));
-    }
-    log.logInfo(`Migrated conversation settings to host-only path: ${hostPath}`);
-  }
+  atomicWritePrivateFile(hostPath, "{}\n");
   return hostPath;
 }
 
@@ -341,11 +300,11 @@ export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoic
   return settingsPath;
 }
 
-export function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
+function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
   return values !== undefined && Object.values(values).some((value) => value !== undefined);
 }
 
-export function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
+function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
     llm: hasDefinedValue(config.llm) ? config.llm : undefined,
     sentry: hasDefinedValue(config.sentry) ? config.sentry : undefined,

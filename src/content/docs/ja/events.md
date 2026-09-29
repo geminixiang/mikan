@@ -7,7 +7,7 @@ description: event tool で管理するスケジュール済み agent 実行の�
 
 イベントレコードは host 側の `<state-dir>/conversations/<office-key>/events/` に保存され、workspace 内には置かれず、どの sandbox にもマウントされません。agent は `event` tool だけでイベントを管理でき、到達できるのは現在の Office 自身のレコードのみです。他の Office のファイル名は「not found」になり、`scope=all` は拒否され、`create` は既存ファイルを上書きしません。レコードを削除すると対応する timer や cron が即座に取り消されます。Office をまたぐスケジュールはこの tool では行えず、Office policy で定義される明示的な権限付与が必要です。
 
-旧来の workspace `events/` バスから移行する場合は、daemon を停止してから `mikan office migrate-events` を実行してください。明示的な `platform` を持たない、または登録済み Office に一致しないレコードは報告され、そのまま残されます。
+`mikan migrate` が 0.5.3 の workspace `events/` のレコードを各会話の store へ移動します。[State マイグレーション](/ja/deployment/#state-マイグレーション)を参照してください。
 
 ## イベントタイプ
 

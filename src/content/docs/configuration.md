@@ -90,7 +90,7 @@ Office visibility follows the Slack conversation type (ADR 0008); conversations 
 
 Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` run every office in one filesystem and are trusted deployments; a private office there is served with a one-time logged warning.
 
-The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) still parse so old files load, but they are dropped from the resolved configuration and never change the projection. Remove them with `mikan office migrate-door-policy` (daemon stopped): it strips those keys from the global and every office settings file, carrying only an explicit shared-support `private` visibility into `office.visibility`. Nothing else is derived — reaching another private office needs the membership-based grants described in ADR 0008, not a wider mount.
+The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. Reaching another private office needs the membership-based grants described in ADR 0008, not a wider mount.
 
 ## MCP servers
 
@@ -118,7 +118,7 @@ Global and per-conversation `mcpServers` merge per server name: a conversation e
 
 The Admin MCP panels also include a small repository-owned Marketplace. Installing a reviewed preset shows its exact host command or remote endpoint, credential requirements, source, target scope, and security warning before writing an ordinary `mcpServers` entry. Local package versions are pinned. Marketplace installation does not create a separate installed database, run an automatic updater, or treat catalog inclusion as a security certification. Local stdio presets execute on the mikan host; remote presets receive the tool calls and data sent to them.
 
-OpenConnector is an ordinary MCP server with a deployment default. `OPENCONNECTOR_ENDPOINT` names the default `open-connector` server and `OPENCONNECTOR_ADMIN_TOKEN` is the host-only credential that mints per-conversation runtime tokens. When a Slack conversation has not declared `open-connector` in global or conversation settings, mikan creates a token named `mikan:slack:<workspace-id>:<channel-id>` (copying the current OpenConnector deployment action/proxy policy), and saves it as a normal `mcpServers` entry in that conversation's host-only settings. From then on the entry appears in the Admin MCP panel and can be tested, disabled, removed, or replaced with a self-hosted OpenConnector like any other server; removing it re-provisions the default on the next response, disabling it turns the integration off. The admin token is only ever sent to the default endpoint's origin and never enters settings or sandboxes. Existing `open-connector-runtime-token.json` files convert with `mikan office migrate-openconnector` while the daemon is stopped.
+OpenConnector is an ordinary MCP server with a deployment default. `OPENCONNECTOR_ENDPOINT` names the default `open-connector` server and `OPENCONNECTOR_ADMIN_TOKEN` is the host-only credential that mints per-conversation runtime tokens. When a Slack conversation has not declared `open-connector` in global or conversation settings, mikan creates a token named `mikan:slack:<workspace-id>:<channel-id>` (copying the current OpenConnector deployment action/proxy policy), and saves it as a normal `mcpServers` entry in that conversation's host-only settings. From then on the entry appears in the Admin MCP panel and can be tested, disabled, removed, or replaced with a self-hosted OpenConnector like any other server; removing it re-provisions the default on the next response, disabling it turns the integration off. The admin token is only ever sent to the default endpoint's origin and never enters settings or sandboxes.
 
 ## Platform credentials
 
@@ -144,10 +144,10 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 | `mikan --download <channel-id>`                                          | Download Slack channel history; requires `SLACK_BOT_TOKEN`                                |
 | `mikan --version`                                                        | Print the installed version                                                               |
 | `mikan --help`                                                           | Show CLI usage and the platform-token summary                                             |
-| `mikan office list`                                                      | List registered offices, enabled platforms, and pending legacy migrations                 |
-| `mikan office claim <conversationId> <platform>`                         | Name the owning platform of a legacy raw-id directory boot could not attribute            |
+| `mikan office list`                                                      | List each office key with its platform and conversation id                                |
+| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]`   | Apply pending [State migrations](/deployment/#state-migrations) with the daemon stopped   |
 
-`mikan office` accepts `--state-dir <dir>` and `--workspace <dir>`; the workspace defaults to `<state-dir>/workspace`. `claim` only records the decision — the daemon performs the move on its next start, so run it with the daemon stopped.
+`mikan office` and `mikan migrate` accept `--state-dir <dir>`; `mikan migrate` also accepts `--workspace <dir>`, which defaults to `<state-dir>/workspace`.
 
 ## Observability: OTLP, Sentry, and Phoenix
 

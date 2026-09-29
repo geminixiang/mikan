@@ -33,27 +33,12 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## サンドボックスイメージの更新
 
-管理コンテナはイメージと、office ごとの home volume `mikan-home-<key>`（`/root` にマウント）で構成されます。
-ワークスペースのマウントと `/root`（npm/uv/pip のキャッシュ、`~/.local`、dotfiles）は更新後も残り、それ以外に
-コンテナのファイルシステムへ書き込んだもの（`apt install`、`/etc` の編集、`/tmp`）は残りません。
+管理下の container は使い捨てです。bind mount（conversation office、共有 knowledge、vault file）だけが残り、`/root`、インストールしたパッケージ、`/etc` の変更など container 内のそれ以外の場所に書いたものは、container が置き換えられると消えます。残したいものは workspace に置いてください。
 
-1. mikan が使うタグで新しいイメージをホストに pull します（`docker pull …:latest`）。mikan 自身は pull しません。
-   ロールバック用に旧イメージ ID を残してください。
-2. home volume を持つコンテナは自動で新イメージに切り替わります。実行中のコンテナは中断されず、アイドル停止後の
-   次のメッセージで同じ volume を使って `docker rm` + `docker run` で置き換えられます。
-3. home volume 導入前に作られたコンテナは自動では変更されません。daemon を停止し、少しずつ確認・移行します：
+1. mikan が使う tag で新しいイメージを host に pull します（`docker pull …:latest`）。mikan が自分で pull することはありません。rollback に備えて以前の image ID を残しておきます。
+2. 実行中の container が中断されることはありません。idle で停止した container は、次のメッセージで新しいイメージから置き換えられます（`docker rm` + `docker run`）。
 
-```bash
-mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
-```
-
-`status` は各コンテナの `legacy`/`home-volume` と `current-image`/`stale-image` を表示し、`diff` は更新で失われる
-システムパスを列挙し、`migrate` は現在の `/root` で home volume を初期化してから現在のイメージで再作成します。
-
-ロールバック：タグを旧イメージ ID に戻せば再度置き換えられ、home volume はそのまま残ります。`/login` はコンテナを
-再作成しますが home volume は保持します。
+Rollback: 以前の image ID を tag し直し、container をもう一度置き換えさせます。
 
 ## Mount と conversation office
 
@@ -64,24 +49,13 @@ workspace 全体の `MEMORY.md`、`skills/`、`events/` を追加します。pri
 bind を read-only にし、public visibility は read-write のままです。`trusted` / `full` は workspace root
 全体を `/workspace` に mount します。
 
-door policy を変更しても container はリセットされません。求められる mount が実行中の container と
-一致しなくなると、mikan はそれを snapshot し、変換後の mount で再作成して再度起動します。そのため、
-container 自身のファイルシステムにインストール・書き込みされたものは変更をまたいで保持されます。
-起動時の layout migration による office directory の rename も、同じ経路でカバーされます。
+mount が変わると（たとえば visibility の変更後）、次のメッセージで container が現在のイメージから置き換えられます。
 
 ## Vault key と container key
 
-認証情報は **office key** で索かれます。ある conversation の vault directory は
-`~/.mikan/vaults/<office-key>/` です。この key は platform 名とプラットフォームの生の conversation id
-を一緒に hash して導出されるため、たまたま同じ生 id を使う 2 つのプラットフォームが互いの認証情報を
-解決することは決してありません。古い生 id 方式で書かれた conversation の vault directory は、起動時の
-migration によって office key へ rename されます。
+認証情報は **office key** で索かれます。ある conversation の vault directory は `~/.mikan/vaults/<office-key>/` です。この key は platform 名とプラットフォームの生の conversation id を一緒に hash して導出されるため、たまたま同じ生 id を使う 2 つのプラットフォームが互いの認証情報を解決することは決してありません。`mikan migrate` が、生の conversation id を使っていた 0.5.3 の vault directory を office key へ rename します。
 
-管理下の container 名は `mikan-sandbox-<resource-key>`、その network は
-`mikan-sandbox-net-<resource-key>` です。resource key は現在も生の conversation id から導出されます
-（サニタイズ済みの prefix に短い digest を付けたもの）。これを rename するとプロビジョニング済みの
-container がすべて作り直しになるため、別途 migration されます。そこでの衝突のコストは container の
-作り直しであって、認証情報へのアクセスではありません。
+管理下の container 名は `mikan-sandbox-<office-key>`、その network は `mikan-sandbox-net-<office-key>` です。
 
 適している用途：
 

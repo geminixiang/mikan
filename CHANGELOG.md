@@ -9,6 +9,20 @@ any release.
 
 ## [Unreleased]
 
+### Breaking
+
+- **State migrations run only through `mikan migrate`.** The daemon now refuses to start while a migration is pending, and prints the exact command to run. It no longer moves anything at startup or on first read. After installing a new version, run `mikan migrate --sandbox=<the daemon's --sandbox> --dry-run`; if anything is pending, stop the daemon, run the same command without `--dry-run`, then start it. Applied migrations are recorded in `<state-dir>/migrations.json`, and `mikan onboard` marks a new state directory as fully migrated. See [ADR 0014](docs/adr/0014-versioned-state-migrations.md).
+- **Removed commands:** `mikan office claim`, `mikan office migrate-openconnector`, `mikan office migrate-events`, `mikan office migrate-door-policy`, `mikan sessions migrate`, and `mikan sandbox status|diff|migrate`. `mikan office list` remains and now prints each office key with its platform and conversation id.
+- **Upgrades are supported only from 0.5.3.** Formats that existed only in 1.0.0 prereleases are no longer converted: OpenConnector `open-connector-runtime-token.json` files, door-policy settings, Pi 0.84 session files, `<state-dir>/conversations/<raw-id>` directories, and the hashed legacy vault keys. A prerelease install that already ran those conversions is unaffected.
+- **Sandbox containers are disposable.** A managed container has no home volume. When its image or mounts change, it is replaced once it is stopped, and only the workspace and vault mounts carry over. Anything else, including `/root`, installed packages, and caches, starts empty. Existing `mikan-home-*` volumes and `mikan-migrate:*` images are no longer used, and operators may delete them.
+- **Host and container vaults use hashed keys only.** The runtime no longer falls back to vault directories named by raw user id (`host`) or `container-<name>` (`container:*`). `mikan migrate` renames them.
+- The public API no longer exports `findV3SessionFiles`, `isV3SessionFile`, or `migrateSessionFile`.
+
+### Fixed
+
+- Upgrading a 0.5.3 install keeps each conversation's credentials. The old startup migration looked for a vault name that 0.5.3 never wrote, so 0.5.3 conversation vaults were silently left behind; `mikan migrate` moves them to their office keys.
+- Upgrading a 0.5.3 install removes its sandbox containers instead of recreating them from snapshots under their old names next to the new ones.
+
 ## [1.0.0-beta.84]
 
 ### Performance

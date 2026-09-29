@@ -111,6 +111,8 @@ npm i -g @geminixiang/mikan
 pm2 reload mikan
 ```
 
+If the new version has pending [State migrations](#state-migrations), run them before reloading.
+
 After editing `~/.mikan/mikan.env`, reload through the ecosystem file so the environment is
 re-read:
 
@@ -126,40 +128,54 @@ pm2 reload ecosystem.config.cjs
   the drain is also a window with no process connected to the platforms; deploy off-peak.
 </Aside>
 
-### Upgrading across the office layout migration
+### State migrations
 
-Conversation directories are named by office key (`v1-<platform>-…`) rather than by raw platform id.
-Upgrading from a release that used raw ids runs a migration at startup: legacy workspace
-directories, conversation vaults, and per-conversation state trees are renamed into the office-key
-layout, journaled in `<state-dir>/office-registry.json` so an interrupted run resumes on the next
-start. Managed `image:*` containers keep their writable layers across the rename — a container still
-mounting legacy paths is snapshotted, removed, and re-created with translated mounts before its next
-message, not during boot.
+A release that changes the format of persisted files ships a numbered migration. The daemon refuses
+to start while one is pending and prints the exact `mikan migrate` command to run; it never converts
+files on its own. `<state-dir>/migrations.json` records which migrations have been applied.
 
-Boot **fails** rather than continuing when a legacy directory cannot be attributed — after the
-layout change such a directory is invisible to the runtime, and starting anyway would present the
-conversation as silently empty. The startup error names each unresolved directory.
+Check for pending migrations after installing a new version. `--dry-run` only reads, so it is safe
+while the daemon runs. Pass the same `--sandbox`, `--state-dir`, and workspace the daemon uses:
 
-Ownership is verified, not guessed: a directory is claimed automatically only when exactly one
-enabled platform's id format could have produced its name. A directory whose name is ambiguous
-across two enabled platforms — bare digits, with both Telegram and Discord running — needs an
-explicit owner:
+```bash
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace --dry-run
+```
+
+If it prints `No pending migrations.`, reload as above. Otherwise stop the daemon, apply them, and
+start it again:
 
 ```bash
 pm2 stop mikan
-mikan office list --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
-mikan office claim 100200300 telegram --state-dir=/srv/mikan/state --workspace=/srv/mikan/workspace
+mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace
 pm2 start mikan
 ```
 
-`claim` only records the owner; the daemon performs the move on its next start, which is why it is
-run with the process stopped. Vault or state-directory conflicts — the same conversation present
-under both the legacy and the office-key name — are reported the same way and must be merged by
-hand under `<state-dir>`.
+A migration stops, without being recorded, when it cannot decide safely: for example, a directory
+whose name fits several enabled platforms (bare digits with both Telegram and Discord running), or a
+conversation present under both an old and a new name. The error names each path and the fix. Name
+an ambiguous owner with `--owner <conversationId>=<platform>` (repeatable) and run again; the
+migrations that already succeeded stay applied.
+
+### Upgrading from 0.5.3
+
+1.0.0 migrates a 0.5.3 install directly; prerelease-only formats are not supported. `mikan migrate`:
+
+- renames conversation directories and their vaults from raw conversation ids to office keys;
+- renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
+- moves each conversation's `settings.json` into `<state-dir>/conversations/<office-key>/`;
+- converts v3 session files to the current format, keeping each original as `*.v3.bak`;
+- moves `<workspace>/events/*.json` into each conversation's host-only event store;
+- removes the 0.5.3 sandbox containers, which are recreated from the current image on the next
+  message, with an empty `/root`;
+- copies `~/.pi/agent/models.json` (or `$PI_CODING_AGENT_DIR/models.json`) to `~/.mikan/models.json`
+  when mikan does not have one yet.
+
+Provider API keys come from `models.json` or environment variables. Keys that 0.5.3 read from
+`~/.pi/mikan/auth.json` are not migrated; set them in `~/.mikan/mikan.env` before starting.
 
 <Aside type="caution" title="Back up the state directory first">
-  The migration renames directories under both the workspace and the state directory. Take a copy of
-  `<state-dir>` (and ideally the workspace) before the first start on the new version.
+  Migrations rename directories under both the workspace and the state directory. Take a copy of
+  `<state-dir>` and the workspace before migrating.
 </Aside>
 
 ## Health endpoint

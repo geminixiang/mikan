@@ -7,7 +7,7 @@ description: 通过 event tool 管理的调度代理运行的事件格式和处�
 
 事件记录存放在 host 端的 `<state-dir>/conversations/<office-key>/events/`，不在 workspace 内，也不会挂载进任何 sandbox。agent 只能通过 `event` tool 管理事件，而且只能接触当前 Office 自己的记录：其他 Office 的文件名会返回“not found”，`scope=all` 会被拒绝，`create` 不会覆盖既有文件。删除记录会立即取消对应的 timer 或 cron。跨 Office 调度无法通过此工具完成，需要 Office policy 中定义的明确授权。
 
-从旧的 workspace `events/` 总线升级时，请先停止 daemon 再运行 `mikan office migrate-events`；没有明确 `platform`、或匹配不到已注册 Office 的记录会被列出并保留原地。
+`mikan migrate` 会把 0.5.3 工作区 `events/` 中的记录移到各对话的存储；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
 
 ## 事件类型
 

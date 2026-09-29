@@ -57,6 +57,13 @@ docs = "src/office/README.md"
 sources = ["src/office/"]
 
 [[modules]]
+id = "state-migrations"
+name = "State migrations"
+kind = "authority"
+docs = "src/migrations/README.md"
+sources = ["src/migrations/", "src/cli/migrate.ts"]
+
+[[modules]]
 id = "configuration"
 name = "Configuration and live settings"
 kind = "authority"
@@ -283,6 +290,13 @@ authority = "configuration"
 scope = "deployment"
 classification = "host-private"
 docs = "ARCHITECTURE.md#storage-and-authority-map"
+
+[[resources]]
+id = "migration-record"
+authority = "state-migrations"
+scope = "deployment"
+classification = "host-authoritative"
+docs = "src/migrations/README.md"
 
 [[resources]]
 id = "office-registry"

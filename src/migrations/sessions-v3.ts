@@ -7,14 +7,14 @@ import {
   type Entry as PiEntry,
   type JsonValue,
 } from "@earendil-works/pi-agent-core";
-import { SessionStore } from "./session-store.js";
+import { SessionStore } from "../sessions/session-store.js";
 import {
   commitMigration,
   findSessionFiles,
   optionalAnnotations,
   V4FileWriter,
-} from "./migrate-common.js";
-import type { MigrateResult } from "./types.js";
+} from "./session-files.js";
+import type { Migration, MigrationContext, SessionMigrationResult } from "./types.js";
 
 interface V3EntryBase {
   type: string;
@@ -434,8 +434,8 @@ async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promis
 export async function migrateSessionFile(
   filePath: string,
   options?: { dryRun?: boolean },
-): Promise<MigrateResult> {
-  if (!isV3SessionFile(filePath)) return { file: filePath, status: "already-v4" };
+): Promise<SessionMigrationResult> {
+  if (!isV3SessionFile(filePath)) return { file: filePath, status: "already-current" };
   const sourceBytes = readFileSync(filePath);
   const source = readV3SessionFile(filePath);
   if (options?.dryRun) return { file: filePath, status: "migrated", detail: "dry run" };
@@ -454,3 +454,14 @@ export async function migrateSessionFile(
 export function findV3SessionFiles(root: string): string[] {
   return findSessionFiles(root, isV3SessionFile);
 }
+
+export const sessionsV3Migration: Migration = Object.freeze({
+  id: "0004-sessions-v3",
+  summary: "convert v3 session files to the current Pi session format, keeping *.v3.bak",
+  async run(context: MigrationContext): Promise<void> {
+    for (const file of findV3SessionFiles(context.workspaceRoot)) {
+      context.report(`  session ${file}`);
+      await migrateSessionFile(file, { dryRun: context.dryRun });
+    }
+  },
+});

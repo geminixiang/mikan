@@ -88,7 +88,7 @@ Vault 中的材料并不是同一类无差别的 secret：
 
 **拒绝意味着运行会失败，而不是该文件被悄悄忽略。** vault 目录中只要存有 `env` 以外的任何文件，就会解析出一个文件 mount，而无法 mount 文件的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是带着不完整的凭证集合运行。因此在这些模式上，请只用 `env` 保存凭证——早先 `image` 部署遗留在 vault 中的一个多余 `gws.json`，就会让该对话无法运行。
 
-office key 由平台名称与平台的原始对话 id 一起哈希派生，因此两个共用同一原始 id 的平台无法解析到彼此的凭证。在旧的原始 id 方案下创建的对话 vault 目录，会由启动时的迁移重命名为 office key；若发生冲突（两个目录同时存在），启动会停止以便手动合并，而不是自行选一个。
+office key 由平台名称与平台的原始对话 id 一起哈希派生，因此两个共用同一原始 id 的平台无法解析到彼此的凭证。`mikan migrate` 会把 0.5.3 的 vault 目录重命名为 office key；若两个目录同时存在，它会停止以便手动合并，而不是自行选一个。
 
 ## 共享 vault
 

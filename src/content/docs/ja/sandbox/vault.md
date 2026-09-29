@@ -92,7 +92,7 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 したがってこれらのモードでは、認証情報を `env` のみに留めてください。以前の `image` デプロイから
 vault に残った `gws.json` 1 つで、その conversation は実行できなくなります。
 
-office key は、platform 名とプラットフォームの生の conversation id を一緒に hash して導出されるため、生 id を共有する 2 つのプラットフォームが互いの認証情報を解決することはできません。古い生 id 方式で作成された conversation の vault directory は、起動時の migration によって office key へ rename されます。衝突（両方の directory が存在する）が起きた場合は、どちらかを選ぶのではなく boot を止めて手作業での統合を促します。
+office key は、platform 名とプラットフォームの生の conversation id を一緒に hash して導出されるため、生 id を共有する 2 つのプラットフォームが互いの認証情報を解決することはできません。衝突（両方の directory が存在する）が起きた場合は、どちらかを選ぶのではなく boot を止めて手作業での統合を促します。`mikan migrate` が 0.5.3 の vault directory を office key へ rename します。両方の directory が存在する場合は、どちらかを選ぶのではなく、手動マージのために停止します。
 
 ## 共有 vault
 

@@ -4,7 +4,7 @@ import { parseSandboxArg } from "../sandbox/registry.js";
 import type { BootPlan } from "./types.js";
 import { cliCommand, defaultStateDir, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
 
-const SUBCOMMANDS = ["office", "sessions", "sandbox", "env"] as const;
+const SUBCOMMANDS = ["migrate", "office", "env"] as const;
 
 interface BootOptions {
   stateDir?: string;
@@ -61,9 +61,8 @@ function subcommandPlan(args: string[]): BootPlan | undefined {
   const stateDir = defaultStateDir();
   return {
     mode,
+    migrateArgs: mode === "migrate" ? args.slice(1) : undefined,
     officeArgs: mode === "office" ? args.slice(1) : undefined,
-    sessionsArgs: mode === "sessions" ? args.slice(1) : undefined,
-    sandboxArgs: mode === "sandbox" ? args.slice(1) : undefined,
     stateDir,
     workingDir: join(stateDir, "workspace"),
     workingDirExplicit: false,
@@ -84,9 +83,8 @@ export function helpText(): string {
     bootCommand().helpInformation() +
     `
 Commands:
-  mikan office <list|claim|migrate-openconnector|migrate-events|migrate-door-policy>  Inspect offices, claim legacy directories, migrate legacy state.
-  mikan sessions migrate     Migrate legacy sessions (stop the daemon first).
-  mikan sandbox <status|diff|migrate> --image <image>  Inspect and upgrade image:* sandboxes (stop the daemon before migrate).
+  mikan migrate --sandbox <spec> [--dry-run]  Apply pending state migrations (stop the daemon first).
+  mikan office list          List office keys with their platform and conversation id.
   mikan env                  Show environment-variable inventory.
   mikan onboard              Interactive first-run setup.
 

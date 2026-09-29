@@ -5,7 +5,7 @@ import "./observability/instrument.js";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MessagingBot, PlatformName } from "./types.js";
+import type { MessagingBot } from "./types.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "./adapters/github/types.js";
@@ -45,16 +45,10 @@ import type { BootPlan } from "./cli/types.js";
 import { runOnboardCommand } from "./cli/onboard.js";
 import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
 import { FileVaultManager } from "./vault/index.js";
+import { runMigrateCommand } from "./cli/migrate.js";
 import { runOfficeCommand } from "./cli/office.js";
-import { runSessionsCommand } from "./cli/sessions.js";
-import { runSandboxCommand } from "./cli/sandbox.js";
-import {
-  buildContainerBindTranslator,
-  createWorkspace,
-  formatUnmigratedOfficesError,
-  migrateLegacyOffices,
-  OfficeRegistry,
-} from "./office/index.js";
+import { formatPendingMigrations, pendingMigrations } from "./migrations/index.js";
+import { createWorkspace } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
@@ -175,12 +169,8 @@ if (plan.mode === "office") {
   process.exit(runOfficeCommand(plan.officeArgs ?? []));
 }
 
-if (plan.mode === "sessions") {
-  process.exit(await runSessionsCommand(plan.sessionsArgs ?? []));
-}
-
-if (plan.mode === "sandbox") {
-  process.exit(await runSandboxCommand(plan.sandboxArgs ?? []));
+if (plan.mode === "migrate") {
+  process.exit(await runMigrateCommand(plan.migrateArgs ?? []));
 }
 
 const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
@@ -246,41 +236,10 @@ if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   process.exit(1);
 }
 
-const enabledPlatforms: PlatformName[] = [
-  ...(hasSlack ? (["slack"] as const) : []),
-  ...(hasTelegram ? (["telegram"] as const) : []),
-  ...(hasDiscord ? (["discord"] as const) : []),
-  ...(hasGithub ? (["github"] as const) : []),
-];
-const officeMigration = (() => {
-  try {
-    return migrateLegacyOffices({ workspaceRoot: workingDir, stateDir, enabledPlatforms });
-  } catch (error) {
-    handleStartupError(error);
-  }
-})();
-if (
-  officeMigration.unowned.length > 0 ||
-  officeMigration.failed.length > 0 ||
-  officeMigration.vaultConflicts.length > 0 ||
-  officeMigration.stateDirConflicts.length > 0
-) {
-  console.error(formatUnmigratedOfficesError(officeMigration));
+const pending = pendingMigrations(stateDir);
+if (pending.length > 0) {
+  console.error(formatPendingMigrations({ pending, stateDir, workspaceRoot: workingDir, sandbox }));
   process.exit(1);
-}
-if (officeMigration.migrated.length > 0 || officeMigration.recovered.length > 0) {
-  console.log(
-    `  Office layout migration: ${officeMigration.migrated.length} moved, ` +
-      `${officeMigration.recovered.length} recovered.`,
-  );
-}
-if (officeMigration.vaultKeysMigrated.length > 0) {
-  console.log(`  Vault keys migrated to office keys: ${officeMigration.vaultKeysMigrated.length}.`);
-}
-if (officeMigration.stateDirsMigrated.length > 0) {
-  console.log(
-    `  Host state dirs migrated to office keys: ${officeMigration.stateDirsMigrated.length}.`,
-  );
 }
 
 try {
@@ -326,16 +285,6 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
-const registryOffices = new OfficeRegistry(stateDir).getOffices();
-if (provisioner && registryOffices.length > 0) {
-  provisioner.armContainerLayoutMigration(
-    buildContainerBindTranslator({
-      offices: registryOffices,
-      workspaceRoot: workingDir,
-      stateDir,
-    }),
-  );
-}
 const resourceController = sandbox.type === "image" ? provisioner : undefined;
 
 if (sandbox.type === "image") {
@@ -682,9 +631,3 @@ await Promise.all(
     }),
   ),
 );
-
-if (provisioner) {
-  void provisioner.sweepContainerLayoutMigration().catch((err) => {
-    log.logWarning("Container layout sweep failed", errorMessage(err));
-  });
-}

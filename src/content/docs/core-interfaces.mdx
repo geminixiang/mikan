@@ -199,7 +199,7 @@ Owns the model turn loop, message persistence, retries, compaction, budget circu
 
 ### `SessionStore`
 
-Owns the current Pi 0.85 v4 append-only session JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan-specific metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format, so legacy mikan v3 and Pi 0.84-generation v4 files must be converted with `mikan sessions migrate` while the daemon is stopped. `SessionHeader.version` in the compatibility view is currently `4` (`CURRENT_SESSION_VERSION`). Session entries may branch; consumers must use store/context helpers rather than assuming the file is a flat chat transcript.
+Owns the current Pi 0.85 v4 append-only session JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan-specific metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format; `mikan migrate` converts 0.5.3 v3 files. `SessionHeader.version` in the compatibility view is currently `4` (`CURRENT_SESSION_VERSION`). Session entries may branch; consumers must use store/context helpers rather than assuming the file is a flat chat transcript.
 
 ### `MikanModels`
 
@@ -291,7 +291,7 @@ Rules that cross this boundary:
 
 `OfficeAddress` is `{ platform, conversationId }` — the platform plus its raw conversation id. `officeKey(address)` derives the storage identity `v1-<platform>-<readable-id>-<16 hex digits>`, where the readable middle is diagnostic and the SHA-256 prefix is the identity component. The same key names the office directory on the host, inside sandbox runtimes, and in the vault, so two platforms sharing a raw conversation id can never reach each other's files or credentials.
 
-Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, host-only) is the durable raw-id ↔ office mapping, and also journals the boot-time migration from the legacy raw-id layout. Admin enumeration reads it through `listRegisteredOffices`. Sandbox resource names (container names and Cloudflare scopes) remain raw-conversation-derived until the resource-naming migration; a collision there costs a runtime recreate, never credential access.
+Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, host-only) is the durable raw-id ↔ office mapping. Admin enumeration and `mikan office list` read it through `listRegisteredOffices`.
 
 ### The two records
 
@@ -331,19 +331,19 @@ The bus is shared and agent-writable by design. Ownership prefixes are cooperati
 
 ## 11. Persisted filesystem interface
 
-| Path                                                  | Owner                 | Visibility / compatibility                     |
-| ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | Host-only global settings                      |
-| `<state-dir>/office-registry.json`                    | office registry       | Host-only office inventory + migration journal |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides               |
-| `<state-dir>/models.json`                             | harness model catalog | Host-only custom providers/models              |
-| `<state-dir>/vaults/**`                               | vault/login           | Host-only secrets and mount files              |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox-visible durable memory                 |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox-visible prompt instructions            |
-| `<workspace>/events/*.json`                           | event store/watcher   | Shared scheduling wire format                  |
-| `<workspace>/agents/*.md`                             | subagent profiles     | Per-install model patches over built-ins       |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only platform history                   |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only agent history            |
+| Path                                                  | Owner                 | Visibility / compatibility               |
+| ----------------------------------------------------- | --------------------- | ---------------------------------------- |
+| `<state-dir>/settings.json`                           | config                | Host-only global settings                |
+| `<state-dir>/office-registry.json`                    | office registry       | Host-only office inventory               |
+| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides         |
+| `<state-dir>/models.json`                             | harness model catalog | Host-only custom providers/models        |
+| `<state-dir>/vaults/**`                               | vault/login           | Host-only secrets and mount files        |
+| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox-visible durable memory           |
+| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox-visible prompt instructions      |
+| `<workspace>/events/*.json`                           | event store/watcher   | Shared scheduling wire format            |
+| `<workspace>/agents/*.md`                             | subagent profiles     | Per-install model patches over built-ins |
+| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only platform history             |
+| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only agent history      |
 
 `MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `<state-dir>/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
 
@@ -377,7 +377,8 @@ These suites protect the cross-owner contracts rather than individual helpers. W
 | Contract row                                          | Tests to run together                                                                                                                                                                                                   | What the row protects                                                                                                                                                    |
 | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Platform intake, response, and command inventory      | `src/test/adapters-intake.test.ts`, `src/test/slack-context.test.ts`, `src/test/discord-context.test.ts`, `src/test/telegram-context.test.ts`, `src/test/github-context.test.ts`, `src/test/command-manifest.test.ts`   | Normalized event/context identity, magic-word and busy ordering, attachment handoff, responder capabilities, and one command inventory across platforms                  |
-| Office identity, layout, and migration                | `src/test/office-address.test.ts`, `src/test/office-layout.test.ts`, `src/test/office-registry.test.ts`, `src/test/office-migration.test.ts`, `src/test/office-cli.test.ts`, `src/test/workspace-projection.test.ts`    | Key derivation and validation, frozen layout values, record-before-mkdir ordering, journaled crash-safe migration, operator claiming, and door-policy mount composition  |
+| Office identity and layout                            | `src/test/office-address.test.ts`, `src/test/office-layout.test.ts`, `src/test/office-registry.test.ts`, `src/test/workspace-projection.test.ts`                                                                        | Key derivation and validation, frozen layout values, record-before-mkdir ordering, and projection mount composition                                                      |
+| State migrations                                      | `src/test/migrations.test.ts`, `src/test/migrate-v3.test.ts`, `src/test/cli-commands.test.ts`                                                                                                                           | 0.5.3 upgrade end to end, idempotence, dry run, ownership, and the applied-migration record                                                                              |
 | Session identity and runtime ordering                 | `src/test/session-key.test.ts`, `src/test/session-lifecycle.test.ts`, `src/test/session-runtime.test.ts`, `src/test/chat-history-sync.test.ts`, `src/test/session-store.test.ts`, `src/test/session-file-store.test.ts` | Session ownership/path validation, runner leases and settlement, per-key serialization, parent-thread bootstrap, chat/session separation, and session-tree compatibility |
 | Harness, tools, skills, and subagents                 | `src/test/harness-runner.test.ts`, `src/test/harness-skills.test.ts`, `src/test/subagent-runner.test.ts`, `src/test/subagent-tool.test.ts`, `src/test/agent-runner.test.ts`                                             | Run lifecycle, persistence, skill discovery, bounded delegated runs, and the runner-to-tool seam                                                                         |
 | Runtime, workspace projection, and executor transport | `src/test/execution-resolver.test.ts`, `src/test/sandbox-path-context.test.ts`, `src/test/executor-files.test.ts`, `src/test/agent-prompt.test.ts`, `src/test/agent-attachments.test.ts`                                | Host/runtime path mapping, mount composition and collision failures, credential-capability errors, and shell-hostile file round trips                                    |

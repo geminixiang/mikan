@@ -33,25 +33,12 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## 升级沙盒镜像
 
-受管容器由“镜像”加上每个 office 一个的 home volume `mikan-home-<key>`（挂载在 `/root`）组成。工作区挂载与
-`/root`（npm/uv/pip 缓存、`~/.local`、dotfiles）在升级后保留；其他写入容器文件系统的内容（`apt install`、
-`/etc` 修改、`/tmp`）不保留。
+受管理的容器可以随时丢弃。只有它的 bind mount（对话办公室、共享知识和 vault 文件）会保留；写在容器其他位置的内容，包括 `/root`、安装的软件包和 `/etc` 的修改，都会在容器被替换时消失。需要保留的内容请放在工作区。
 
-1. 在主机上以 mikan 使用的 tag 拉取新镜像（`docker pull …:latest`）。mikan 不会自行 pull；保留旧镜像 ID 以便回滚。
-2. 有 home volume 的容器会自动换上新镜像：运行中的容器不会被中断，闲置停止后，下一条消息会用同一个 volume
-   `docker rm` + `docker run` 替换它。
-3. 在 home volume 之前创建的旧容器不会被自动处理。先停止 daemon，再小批量检查并迁移：
+1. 在主机上用 mikan 使用的 tag 拉取新镜像（`docker pull …:latest`）。mikan 不会自行拉取；请保留上一个 image ID 以便回滚。
+2. 运行中的容器不会被中断。容器因空闲而停止后，下一条消息会用新镜像替换它（`docker rm` + `docker run`）。
 
-```bash
-mikan sandbox status --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox diff <container-key> --image ghcr.io/geminixiang/mikan-sandbox:latest
-mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandbox:latest
-```
-
-`status` 标示每个容器是 `legacy`/`home-volume`、`current-image`/`stale-image`；`diff` 列出升级会丢弃的系统路径；
-`migrate` 先用容器当前的 `/root` 填充 home volume，再用当前镜像重建容器。
-
-回滚：把 tag 指回旧镜像 ID，容器会再次被替换，home volume 原样保留。`/login` 会重建容器但保留 home volume。
+回滚：把 tag 指回上一个 image ID，让容器再被替换一次。
 
 ## 挂载与对话办公室
 
@@ -61,19 +48,13 @@ mikan sandbox migrate <container-key>... --image ghcr.io/geminixiang/mikan-sandb
 全局记忆 bind 标记为只读，public visibility 则维持读写；`trusted` / `full` 会把整个工作区根目录挂载到
 `/workspace`。
 
-更改门禁策略不会重置容器。当期望的 mount 与运行中的容器不再匹配时，mikan 会对它做快照，用转换后的 mount
-重新创建并再次启动，因此容器自身文件系统中安装或写入的内容都能在这次更改中存活。启动时布局迁移所做的
-办公室目录重命名也走同一条路径。
+mount 改变时（例如 visibility 变更之后），下一条消息会用当前镜像替换容器。
 
 ## Vault key 与容器 key
 
-凭证按 **office key** 标识：某个对话的 vault 目录是 `~/.mikan/vaults/<office-key>/`。该 key 由平台名称
-与平台的原始对话 id 一起哈希派生，因此两个恰好使用同一原始 id 的平台永远无法解析到彼此的凭证。在旧的
-原始 id 方案下写入的对话 vault 目录，会由启动时的迁移重命名为 office key。
+凭证按 **office key** 标识：某个对话的 vault 目录是 `~/.mikan/vaults/<office-key>/`。该 key 由平台名称与平台的原始对话 id 一起哈希派生，因此两个恰好使用同一原始 id 的平台永远无法解析到彼此的凭证。`mikan migrate` 会把 0.5.3 以原始对话 id 命名的 vault 目录重命名为 office key。
 
-受管理的容器名为 `mikan-sandbox-<resource-key>`，其网络为 `mikan-sandbox-net-<resource-key>`。
-resource key 仍由原始对话 id 派生（一个经过清洗的前缀加上一个短摘要）——重命名它会让每个已 provision 的
-容器全部翻搅一遍，因此它单独迁移。那里发生冲突的代价是重建一次容器，绝不会导致凭证访问。
+受管理的容器名为 `mikan-sandbox-<office-key>`，其网络为 `mikan-sandbox-net-<office-key>`。
 
 适用于：
 

@@ -56,16 +56,7 @@ Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `
 
 ## 維運遷移
 
-**遷移前請停止 daemon。** 執行：
-
-```bash
-mikan sessions migrate
-```
-
-這項離線轉換會處理舊版 mikan v3 與 Pi 0.84 世代 v4 session files，並將它們
-改寫為目前的 Pi 0.85 v4 格式。可視需要使用 `--state-dir`、`--workspace` 或
-`--dry-run`；`--dry-run` 不會修改檔案。原檔案會保留為 `*.v3.bak` 或
-`*.pi-084.bak`。
+Runtime 只開啟目前的 Pi 0.85 v4 格式。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔，並把原檔保留為 `*.v3.bak`；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
 
 ## Bootstrap、Clean session 與記憶
 

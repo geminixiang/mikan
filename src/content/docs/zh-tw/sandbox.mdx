@@ -56,14 +56,7 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 
 ### 從 raw-id 佈局升級
 
-在 office 佈局之前建立的 workspace，其目錄是以原始 conversation id 命名。每次開機都會遷移它們——workspace 目錄、conversation vault key、以及各對話的 host state——並為每一次搬移寫下 journal，因此中斷的執行會續做，而不會弄丟某個對話。
-
-有兩種情況會刻意讓開機停下來，而不是用猜的：
-
-- **無主目錄。** 同時啟用多個平台時，mikan 無法判斷某個 raw 目錄屬於哪一個平台。請用 `mikan office claim <conversationId> <platform>`（需先停掉 daemon）指定擁有者，下次啟動就會完成搬移。
-- **衝突**，也就是 legacy 目錄與 office key 目錄都已存在。這種情況會回報出來讓人手動合併，絕不會被覆寫。
-
-受管 container 能在改名後存活：它們的 bind 會被轉譯到執行中 container 的 snapshot 上，因此可寫層會被保留，而不是從 base image 重建。
+0.5.3 的 workspace 以原始 conversation id 命名目錄。`mikan migrate` 會把它們連同 vault、設定、session 與事件一起搬到 office 佈局；詳見[從 0.5.3 升級](/zh-tw/deployment/#從-053-升級)。
 
 ## 各模式文件
 

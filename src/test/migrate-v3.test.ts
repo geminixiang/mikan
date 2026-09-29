@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SessionStore } from "../sessions/session-store.js";
-import { findV3SessionFiles, isV3SessionFile, migrateSessionFile } from "../sessions/migrate-v3.js";
+import {
+  findV3SessionFiles,
+  isV3SessionFile,
+  migrateSessionFile,
+} from "../migrations/sessions-v3.js";
 
 let dir: string;
 
@@ -197,12 +201,12 @@ describe("migrateSessionFile", () => {
     expect(await store.getSessionName()).toBe("titled");
   });
 
-  test("is idempotent: a migrated file reports already-v4", async () => {
+  test("is idempotent: a migrated file reports already-current", async () => {
     const file = join(dir, "idempotent.jsonl");
     writeJsonl(file, [header, v3Message("a", null, "A")]);
     await migrateSessionFile(file);
     const second = await migrateSessionFile(file);
-    expect(second.status).toBe("already-v4");
+    expect(second.status).toBe("already-current");
   });
 
   test("refuses to overwrite an existing backup", async () => {
@@ -252,20 +256,6 @@ describe("migrateSessionFile", () => {
     expect(readFileSync(file, "utf-8")).toBe(before);
     expect(existsSync(`${file}.v3.bak`)).toBe(false);
     expect(existsSync(`${file}.v4.tmp`)).toBe(false);
-  });
-});
-
-describe("unmigrated v3 sessions fail loudly", () => {
-  test("current-pointer resolution throws instead of silently rotating away from a v3 session", async () => {
-    const sessionDir = join(dir, "sessions");
-    mkdirSync(sessionDir, { recursive: true });
-    const v3File = join(sessionDir, "2026-01-01T00-00-00-000Z_11111111.jsonl");
-    writeJsonl(v3File, [header, v3Message("a", null, "history")]);
-    writeFileSync(join(sessionDir, "current"), "2026-01-01T00-00-00-000Z_11111111.jsonl");
-
-    const { tryResolveCurrentSession } = await import("../sessions/store.js");
-    expect(() => tryResolveCurrentSession(sessionDir)).toThrow(/legacy v3/);
-    expect(() => tryResolveCurrentSession(sessionDir)).toThrow(/mikan sessions migrate/);
   });
 });
 

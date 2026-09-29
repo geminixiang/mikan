@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test } from "vitest";
 import { officeDir } from "../office/index.js";
 import { createOfficeAddress, createWorkspace, OfficeRegistry } from "../office/index.js";
 
@@ -52,221 +52,11 @@ describe("OfficeRegistry", () => {
     utimesSync(lockDir, old, old);
 
     expect(() =>
-      new OfficeRegistry(fixture.stateDir, { lockTimeoutMs: 50 }).enablePlatform("slack"),
+      new OfficeRegistry(fixture.stateDir, { lockTimeoutMs: 50 }).recordOffice(
+        createOfficeAddress("slack", "C123"),
+      ),
     ).toThrow(/Timed out acquiring office registry lock/);
     expect(existsSync(lockDir)).toBe(true);
-  });
-
-  test("a single enabled platform claims an unowned legacy directory", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-
-    const record = registry.prepareLegacyMigration(fixture);
-
-    expect(record).toMatchObject({
-      rawConversationId: "C123",
-      sourceDir: fixture.sourceDir,
-      ownerPlatform: "slack",
-      targetDir: officeDir(fixture.workspaceRoot, createOfficeAddress("slack", "C123")),
-      status: "prepared",
-    });
-    expect(existsSync(record.targetDir!)).toBe(false);
-  });
-
-  test("a uniquely matching id format claims even with several platforms enabled", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    registry.enablePlatform("discord");
-
-    const record = registry.prepareLegacyMigration(fixture);
-
-    expect(record.status).toBe("prepared");
-    expect(record.ownerPlatform).toBe("slack");
-  });
-
-  test("an id matching several enabled formats stays unowned", () => {
-    const fixture = makeFixture();
-    const digitsDir = join(fixture.workspaceRoot, "900100");
-    mkdirSync(digitsDir, { recursive: true });
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("discord");
-    registry.enablePlatform("telegram");
-
-    const record = registry.prepareLegacyMigration({
-      rawConversationId: "900100",
-      sourceDir: digitsDir,
-      workspaceRoot: fixture.workspaceRoot,
-    });
-
-    expect(record.status).toBe("needs-owner");
-    expect(record.ownerPlatform).toBeUndefined();
-    expect(record.targetDir).toBeUndefined();
-    expect(() => registry.markMoving("900100")).toThrow(/needs an owner/);
-  });
-
-  test("an explicit owner resolves ambiguity without guessing from the raw id", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    registry.enablePlatform("discord");
-
-    const record = registry.prepareLegacyMigration({ ...fixture, ownerPlatform: "discord" });
-
-    expect(record.ownerPlatform).toBe("discord");
-    expect(record.status).toBe("prepared");
-  });
-
-  test("target collisions fail closed and persist a failed state", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    const targetDir = officeDir(fixture.workspaceRoot, createOfficeAddress("slack", "C123"));
-    mkdirSync(targetDir, { recursive: true });
-
-    expect(() => registry.prepareLegacyMigration(fixture)).toThrow(/already exists/);
-    expect(registry.getMigration("C123")).toMatchObject({ status: "failed", targetDir });
-    expect(new OfficeRegistry(fixture.stateDir).getMigration("C123")).toMatchObject({
-      status: "failed",
-    });
-  });
-
-  test("symlink legacy sources are rejected", () => {
-    const fixture = makeFixture();
-    rmSync(fixture.sourceDir, { recursive: true });
-    const outside = join(fixture.root, "outside");
-    mkdirSync(outside, { recursive: true });
-    symlinkSync(outside, fixture.sourceDir, "dir");
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-
-    expect(() => registry.prepareLegacyMigration(fixture)).toThrow(/regular directory/);
-    expect(registry.getMigration("C123")).toBeUndefined();
-  });
-
-  test("reloads an atomic journal and makes transitions idempotent", () => {
-    const fixture = makeFixture();
-    const first = new OfficeRegistry(fixture.stateDir);
-    first.enablePlatform("slack");
-    const prepared = first.prepareLegacyMigration(fixture);
-
-    const reloaded = new OfficeRegistry(fixture.stateDir);
-    expect(reloaded.getMigration("C123")).toEqual(prepared);
-    const moving = reloaded.markMoving("C123");
-    expect(reloaded.markMoving("C123")).toEqual(moving);
-
-    rmSync(fixture.sourceDir, { recursive: true });
-    mkdirSync(moving.targetDir!);
-    const afterCrashReload = new OfficeRegistry(fixture.stateDir);
-    const committed = afterCrashReload.markCommitted("C123");
-    expect(new OfficeRegistry(fixture.stateDir).markCommitted("C123")).toEqual(committed);
-    expect(committed.status).toBe("committed");
-
-    const persisted = JSON.parse(
-      readFileSync(join(fixture.stateDir, "office-registry.json"), "utf-8"),
-    ) as { version: number; migrations: Array<{ status: string }> };
-    expect(persisted.version).toBe(1);
-    expect(persisted.migrations[0]?.status).toBe("committed");
-  });
-
-  test("failed transitions survive reload and cannot reopen a migration", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    registry.prepareLegacyMigration(fixture);
-
-    const failed = registry.markFailed("C123", "operator stopped migration");
-    expect(failed.status).toBe("failed");
-    expect(new OfficeRegistry(fixture.stateDir).markFailed("C123", "different reason")).toEqual(
-      failed,
-    );
-    expect(new OfficeRegistry(fixture.stateDir).markMoving("C123")).toEqual(failed);
-  });
-
-  test("rejects non-directory legacy sources", () => {
-    const fixture = makeFixture();
-    rmSync(fixture.sourceDir, { recursive: true });
-    writeFileSync(fixture.sourceDir, "not a directory");
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-
-    expect(() => registry.prepareLegacyMigration(fixture)).toThrow(/regular directory/);
-  });
-
-  test("serializes registry instances without losing platform or migration updates", () => {
-    const fixture = makeFixture();
-    const secondSourceDir = join(fixture.workspaceRoot, "D456");
-    mkdirSync(secondSourceDir);
-    const secondFixture = { ...fixture, sourceDir: secondSourceDir, rawConversationId: "D456" };
-    const first = new OfficeRegistry(fixture.stateDir);
-    const second = new OfficeRegistry(fixture.stateDir);
-
-    first.enablePlatform("slack");
-    second.enablePlatform("discord");
-    first.prepareLegacyMigration(fixture);
-    second.prepareLegacyMigration({ ...secondFixture, ownerPlatform: "discord" });
-
-    const persisted = new OfficeRegistry(fixture.stateDir);
-    expect(persisted.getState().enabledPlatforms).toEqual(["discord", "slack"]);
-    expect(persisted.getState().migrations).toHaveLength(2);
-    expect(persisted.getMigration(fixture.rawConversationId)).toBeDefined();
-    expect(persisted.getMigration(secondFixture.rawConversationId)).toBeDefined();
-  });
-
-  test("requires the canonical source path and rejects symlinked workspace roots", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-
-    expect(() =>
-      registry.prepareLegacyMigration({
-        ...fixture,
-        sourceDir: join(fixture.root, "arbitrary-host", "C123"),
-      }),
-    ).toThrow(/must be/);
-
-    const realWorkspace = join(fixture.root, "real-workspace");
-    mkdirSync(join(realWorkspace, "C123"), { recursive: true });
-    const symlinkedWorkspace = join(fixture.root, "linked-workspace");
-    symlinkSync(realWorkspace, symlinkedWorkspace, "dir");
-    expect(() =>
-      registry.prepareLegacyMigration({
-        rawConversationId: "C123",
-        sourceDir: join(symlinkedWorkspace, "C123"),
-        workspaceRoot: symlinkedWorkspace,
-      }),
-    ).toThrow(/Workspace root/);
-  });
-
-  test("rejects a forged persisted target directory", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    registry.prepareLegacyMigration(fixture);
-
-    const registryPath = join(fixture.stateDir, "office-registry.json");
-    const persisted = JSON.parse(readFileSync(registryPath, "utf8")) as {
-      migrations: Array<{ targetDir?: string }>;
-    };
-    const [migration] = persisted.migrations;
-    if (!migration) throw new Error("expected a persisted legacy migration");
-    migration.targetDir = join(fixture.root, "forged-target");
-    writeFileSync(registryPath, `${JSON.stringify(persisted)}\n`);
-
-    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/does not match/);
-  });
-
-  test("does not commit while the source still exists", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-    registry.prepareLegacyMigration(fixture);
-    const moving = registry.markMoving("C123");
-    mkdirSync(moving.targetDir!);
-
-    expect(() => registry.markCommitted("C123")).toThrow(/must be absent/);
-    expect(registry.getMigration("C123")?.status).toBe("moving");
   });
 
   test("failed writes leave memory and disk unchanged", () => {
@@ -277,25 +67,11 @@ describe("OfficeRegistry", () => {
       writeState: throwRegistryWriteFailure,
     });
 
-    expect(() => failing.enablePlatform("slack")).toThrow(/injected registry write failure/);
+    expect(() => failing.recordOffice(createOfficeAddress("slack", "C123"))).toThrow(
+      /injected registry write failure/,
+    );
     expect(failing.getState()).toEqual(before);
     expect(new OfficeRegistry(fixture.stateDir).getState()).toEqual(before);
-  });
-
-  test("updates transition timestamps only for real transitions", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-    registry.enablePlatform("slack");
-
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
-    const prepared = registry.prepareLegacyMigration(fixture);
-    const samePrepared = registry.prepareLegacyMigration(fixture);
-    expect(samePrepared.updatedAt).toBe(prepared.updatedAt);
-
-    vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
-    const moving = registry.markMoving("C123");
-    expect(moving.updatedAt).not.toBe(prepared.updatedAt);
-    vi.useRealTimers();
   });
 
   test("records offices idempotently and separates platforms sharing a raw id", () => {
@@ -330,16 +106,6 @@ describe("OfficeRegistry", () => {
     expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Duplicate office record/);
   });
 
-  test("reads registry files written before office records existed", () => {
-    const fixture = makeFixture();
-    writeFileSync(
-      join(fixture.stateDir, "office-registry.json"),
-      JSON.stringify({ version: 1, enabledPlatforms: ["slack"], migrations: [] }),
-    );
-
-    expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual([]);
-  });
-
   test("rejects a truncated (torn) registry file instead of starting empty", () => {
     const fixture = makeFixture();
     new OfficeRegistry(fixture.stateDir).recordOffice(createOfficeAddress("slack", "C123"));
@@ -354,17 +120,36 @@ describe("OfficeRegistry", () => {
     const fixture = makeFixture();
     const path = join(fixture.stateDir, "office-registry.json");
 
-    writeFileSync(path, JSON.stringify({ version: 2, enabledPlatforms: [], migrations: [] }));
-    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry version/);
+    writeFileSync(path, JSON.stringify({ version: 2, offices: [] }));
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry at/);
 
-    writeFileSync(path, JSON.stringify({ version: 1, enabledPlatforms: "slack" }));
-    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry shape/);
+    writeFileSync(path, JSON.stringify({ version: 1, offices: "slack" }));
+    expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Invalid office registry at/);
 
     writeFileSync(
       path,
-      JSON.stringify({ version: 1, enabledPlatforms: ["matrix"], migrations: [] }),
+      JSON.stringify({
+        version: 1,
+        offices: [{ platform: "matrix", conversationId: "C1", recordedAt: "2026-01-01" }],
+      }),
     );
     expect(() => new OfficeRegistry(fixture.stateDir)).toThrow(/Unsupported platform/);
+  });
+
+  test("ignores fields that only prerelease registries wrote", () => {
+    const fixture = makeFixture();
+    const office = { platform: "slack", conversationId: "C123", recordedAt: "2026-01-01" };
+    writeFileSync(
+      join(fixture.stateDir, "office-registry.json"),
+      JSON.stringify({
+        version: 1,
+        enabledPlatforms: ["slack"],
+        offices: [office],
+        migrations: [],
+      }),
+    );
+
+    expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual([office]);
   });
 
   test("reload picks up changes another process wrote to the journal", () => {
@@ -412,14 +197,5 @@ describe("OfficeRegistry", () => {
 
       expect(() => office.ensure()).toThrow(/regular non-symlink directory/);
     });
-  });
-
-  test("requires explicit owners to be enabled", () => {
-    const fixture = makeFixture();
-    const registry = new OfficeRegistry(fixture.stateDir);
-
-    expect(() => registry.prepareLegacyMigration({ ...fixture, ownerPlatform: "slack" })).toThrow(
-      /is not enabled/,
-    );
   });
 });

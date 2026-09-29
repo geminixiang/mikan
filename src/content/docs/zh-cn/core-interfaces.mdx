@@ -199,7 +199,7 @@ interface ConversationContext {
 
 ### `SessionStore`
 
-负责 Pi 0.85 当前 v4 的仅追加会话 JSONL 树。持久化 header 使用 `v: 4` 和 `storageVersion: 1`；mikan 专属 metadata 存储为命名空间持久值 `mikan/metadata`。运行时只接受这一当前格式，因此旧版 mikan v3 和 Pi 0.84 代 v4 文件必须在 daemon 停止时通过 `mikan sessions migrate` 转换。兼容视图中的 `SessionHeader.version` 当前为 `4`（`CURRENT_SESSION_VERSION`）。会话条目可能分支；使用方必须使用 store/context 辅助函数，而不能假定文件是一份扁平的聊天记录。
+负责 Pi 0.85 当前 v4 的仅追加会话 JSONL 树。持久化 header 使用 `v: 4` 和 `storageVersion: 1`；mikan 专属 metadata 存储为命名空间持久值 `mikan/metadata`。运行时只接受这一当前格式；`mikan migrate` 会转换 0.5.3 的 v3 文件。兼容视图中的 `SessionHeader.version` 当前为 `4`（`CURRENT_SESSION_VERSION`）。会话条目可能分支；使用方必须使用 store/context 辅助函数，而不能假定文件是一份扁平的聊天记录。
 
 ### `MikanModels`
 
@@ -330,7 +330,7 @@ type EventFilePayload =
 | 路径                                                  | 所有者                | 可见性 / 兼容性                   |
 | ----------------------------------------------------- | --------------------- | --------------------------------- |
 | `<state-dir>/settings.json`                           | config                | 仅主机的全局设置                  |
-| `<state-dir>/office-registry.json`                    | office registry       | 仅主机的办公室清单 + 迁移日志     |
+| `<state-dir>/office-registry.json`                    | office registry       | 仅主机的办公室清单                |
 | `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 仅主机的对话覆盖                  |
 | `<state-dir>/models.json`                             | harness model catalog | 仅主机的自定义 provider/模型      |
 | `<state-dir>/vaults/**`                               | vault/login           | 仅主机的 secret 与 mount 文件     |

@@ -31,16 +31,11 @@ its host-side directory layout, its durable record, and the legacy migration.
   raw-id ↔ office mapping (office keys are not reversible). The registry
   instance and recorded-office cache live on the Workspace value — there
   is no process-wide registry state.
-- **Registry**: `OfficeRegistry`, the host-only journal
-  (`office-registry.json` in the state dir): enabled platforms, office
-  records, and crash-safe legacy-migration transitions under a domain
-  lease. Plus the cold-path `listRegisteredOffices` lookup used by Admin enumeration.
-- **Migration**: The every-boot legacy migration: raw-id workspace dirs,
-  conversation vault keys, and per-conversation host state trees move to
-  the office-key layout, journaled prepare → moving → committed with
-  crash recovery. Unowned dirs fail boot until `mikan office claim` names
-  an owner. Also the container bind translator that lets managed
-  containers survive the rename with writable layers intact.
+- **Registry**: `OfficeRegistry`, the host-only record
+  (`office-registry.json` in the state dir) of every office's address,
+  written under a domain lease. Plus the cold-path `listRegisteredOffices`
+  lookup used by Admin enumeration and `mikan office list`. Moving 0.5.3
+  raw-id directories into this layout belongs to `src/migrations/`.
 - **Projection** (`projection.ts`): The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the platform (only Slack public channels are public; other platforms are private by decision), the recorded channel kind, and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro) and authorizes prompt sources.
 
 ## Consumers

@@ -68,20 +68,9 @@ semantics and the retired door-policy settings are documented in [Configuration]
 
 ### Upgrading from the raw-id layout
 
-Workspaces created before the office layout hold directories named by raw conversation id. Every
-boot migrates them — workspace directories, conversation vault keys, and per-conversation host state
-— journaling each move so an interrupted run resumes instead of losing a conversation.
-
-Two situations stop boot deliberately rather than guessing:
-
-- **Unowned directories.** With several platforms enabled, mikan cannot tell which one owns a raw
-  directory. Name the owner with `mikan office claim <conversationId> <platform>` (daemon stopped);
-  the next start performs the move.
-- **Conflicts**, where both the legacy and the office-key directory already exist. These are
-  reported for manual merge and never clobbered.
-
-Managed containers survive the rename: their binds are translated onto a snapshot of the running
-container, so the writable layer is preserved rather than rebuilt from the base image.
+0.5.3 workspaces hold directories named by raw conversation id. `mikan migrate` moves them to the
+office layout, together with their vaults, settings, sessions, and events; see
+[Upgrading from 0.5.3](/deployment/#upgrading-from-053).
 
 ## Per-mode docs
 

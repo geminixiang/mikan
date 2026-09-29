@@ -185,15 +185,15 @@ describe("loadGlobalSettings", () => {
   test("throws on conversation settings.json with invalid nested field types", () => {
     createGlobalSettingsFile(stateDir);
     const conversation = office();
-    mkdirSync(conversation.dir, { recursive: true });
+    mkdirSync(conversation.stateDir, { recursive: true });
     writeFileSync(
-      join(conversation.dir, "settings.json"),
-      JSON.stringify({ sandbox: { image: { workspaceMount: "everything" } } }),
+      join(conversation.stateDir, "settings.json"),
+      JSON.stringify({ office: { visibility: "everyone" } }),
       "utf-8",
     );
 
     expect(() => resolveConversationSettings(conversation)).toThrow(
-      /Malformed settings file.*workspaceMount/,
+      /Malformed settings file.*visibility/,
     );
   });
 
@@ -285,30 +285,15 @@ describe("loadGlobalSettings", () => {
     });
   });
 
-  test("migrates a legacy conversation settings.json into the state dir once", () => {
+  test("never reads a settings.json planted in the sandbox-visible office directory", () => {
     createGlobalSettingsFile(stateDir);
     const conversation = office();
     mkdirSync(conversation.dir, { recursive: true });
-    const legacyPath = join(conversation.dir, "settings.json");
-    writeFileSync(legacyPath, JSON.stringify({ sandbox: { memory: "3g" } }));
-
-    const config = resolveConversationSettings(conversation);
-    expect(config.sandbox?.memory).toBe("3g");
-    expect(existsSync(legacyPath)).toBe(false);
-    expect(existsSync(conversationSettingsPath(conversation))).toBe(true);
-  });
-
-  test("a legacy settings.json appearing after migration is never read (sandbox plant)", () => {
-    createGlobalSettingsFile(stateDir);
-    const conversation = office();
-    mkdirSync(conversation.dir, { recursive: true });
-
-    expect(resolveConversationSettings(conversation).sandbox?.memory).toBe("1g");
-
     writeFileSync(
       join(conversation.dir, "settings.json"),
       JSON.stringify({ sandbox: { memory: "9g" } }),
     );
+
     expect(resolveConversationSettings(conversation).sandbox?.memory).toBe("1g");
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
   });

@@ -94,7 +94,7 @@ any file other than `env` resolves to a file mount, and a mode that cannot mount
 credential set. So on those modes, keep credentials in `env` only — a stray `gws.json` left in the
 vault from an earlier `image` deployment will stop the conversation from running.
 
-The office key is derived by hashing the platform name together with the platform's raw conversation id, so two platforms that share a raw id cannot resolve each other's credentials. Conversation vault directories created under the older raw-id scheme are renamed to office keys by the boot-time migration; a conflict (both directories present) stops boot for manual merge instead of picking one.
+The office key is derived by hashing the platform name together with the platform's raw conversation id, so two platforms that share a raw id cannot resolve each other's credentials. `mikan migrate` renames 0.5.3 vault directories to office keys; if both directories exist, it stops for a manual merge instead of picking one.
 
 ## Shared vaults
 
