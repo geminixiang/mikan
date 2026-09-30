@@ -17,7 +17,6 @@ import {
   githubReviewCommentTs,
   parseReviewCommentTs,
 } from "../adapters/github/ids.js";
-import { cloneRepo, pushBranch, syncRepo } from "../adapters/github/repo.js";
 import type {
   GithubApi,
   GithubIssue,
@@ -26,23 +25,6 @@ import type {
   GithubReviewComment,
   GithubWebhookDelivery,
 } from "../adapters/github/types.js";
-
-vi.mock("../adapters/github/repo.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../adapters/github/repo.js")>();
-  return {
-    ...actual,
-    cloneRepo: vi.fn().mockResolvedValue(undefined),
-    pushBranch: vi.fn().mockResolvedValue(undefined),
-    syncRepo: vi.fn().mockResolvedValue({
-      target: "pr-5",
-      fetchedSha: "abc123def4567890",
-      updatedCheckout: true,
-      dirty: false,
-      currentBranch: "pr-5",
-      localCommits: 0,
-    }),
-  };
-});
 
 const AGENT_TOKEN = "agent-token";
 
@@ -347,9 +329,6 @@ describe("GithubMessagingBot", () => {
     mkdirSync(workingDir, { recursive: true });
     client = makeFakeClient();
     handler = makeHandler();
-    vi.mocked(cloneRepo).mockClear();
-    vi.mocked(pushBranch).mockClear();
-    vi.mocked(syncRepo).mockClear();
   });
 
   afterEach(() => {
@@ -561,9 +540,6 @@ describe("GithubMessagingBot", () => {
     const [event] = firstHandledEvent(handler);
     expect(event.text).toContain("[Review requested by @alice]");
     expect(event.text).toContain("# Rename widget");
-    expect(cloneRepo).toHaveBeenCalledWith(
-      expect.objectContaining({ prNumber: 5, prHeadBranch: "pi/fix-widget" }),
-    );
   });
 
   test("an issue opened with a mention and assigned to the agent triggers once", async () => {
@@ -674,65 +650,21 @@ describe("GithubMessagingBot", () => {
     });
   });
 
-  test("first contact clones with the agent token as the agent's commit identity", async () => {
-    const bot = await startedBot();
-    await deliver(bot, commentDelivery("@acme-agent look"));
-
-    expect(cloneRepo).toHaveBeenCalledWith({
-      url: "https://github.com/octo/widgets.git",
-      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
-      token: AGENT_TOKEN,
-      authorName: "Acme-Agent",
-      authorEmail: "999+Acme-Agent@users.noreply.github.com",
-      prNumber: undefined,
-      prHeadBranch: undefined,
-    });
-  });
-
-  test("a pull request opened with a mention checks out its head branch", async () => {
+  test("a triggered conversation leaves the office without a host-side clone", async () => {
     const bot = await startedBot();
     await deliver(bot, openedDelivery("@acme-agent review this", { pullRequest: true }));
 
-    expect(cloneRepo).toHaveBeenCalledWith(
-      expect.objectContaining({ prNumber: 5, prHeadBranch: "pi/fix-widget" }),
-    );
-  });
-
-  test("fork PRs clone without a head branch name", async () => {
-    client.getPullRequest.mockResolvedValue({
-      number: 5,
-      html_url: "https://github.com/octo/widgets/pull/5",
-      head: { ref: "feature", sha: "headsha", repo: { full_name: "alice/widgets" } },
-    });
-    const bot = await startedBot();
-    await deliver(bot, openedDelivery("@acme-agent review this", { pullRequest: true }));
-
-    expect(cloneRepo).toHaveBeenCalledWith(
-      expect.objectContaining({ prNumber: 5, prHeadBranch: undefined }),
-    );
-  });
-
-  test("ignored comments never clone", async () => {
-    const bot = await startedBot();
-    await deliver(bot, commentDelivery("unrelated"));
-    expect(cloneRepo).not.toHaveBeenCalled();
-  });
-
-  test("an existing clone is not cloned again", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    const bot = await startedBot();
-    await deliver(bot, commentDelivery("@acme-agent again"));
-    expect(cloneRepo).not.toHaveBeenCalled();
-  });
-
-  test("a participating conversation with a missing clone retries on the next trigger", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE), { recursive: true });
-    writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
-    const bot = await startedBot();
-    await deliver(bot, commentDelivery("try again", { issue: { pull_request: {} } }));
-
-    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(workingDir, CONVERSATION_OFFICE, "repo"))).toBe(false);
+  });
+
+  test("only collaborators with write access trigger, so the conversation trusts membership", async () => {
+    const bot = await startedBot();
+    expect(bot.getMessagingInfo().trustModel).toBe("membership");
+    expect(bot.agentIdentity).toEqual({
+      login: "Acme-Agent",
+      email: "999+Acme-Agent@users.noreply.github.com",
+    });
   });
 
   test("a mentioned review comment triggers with diff anchor context and rc- ts", async () => {
@@ -748,7 +680,6 @@ describe("GithubMessagingBot", () => {
     expect(event.text).toContain("+const widgetCount = 1;");
     expect(event.text).toContain("please rename this");
     expect(event.text).not.toContain("@acme-agent");
-    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
     expect(client.listPullReviewComments).not.toHaveBeenCalled();
   });
 
@@ -803,25 +734,19 @@ describe("GithubMessagingBot", () => {
     );
   });
 
-  test("pushAndCreatePr pushes the branch with the agent token and opens the PR", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
+  test("createPullRequest opens a PR for a branch the agent already pushed", async () => {
     const bot = await startedBot();
 
-    const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
-      branch: "pi/fix-5",
+    const result = await bot.ops.createPullRequest(CONVERSATION_ID, {
+      branch: "fix-5",
       title: "Fix the widget",
       body: "Closes #5",
       draft: true,
     });
 
-    expect(pushBranch).toHaveBeenCalledWith({
-      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
-      branch: "pi/fix-5",
-      token: AGENT_TOKEN,
-    });
     expect(client.createPullRequest).toHaveBeenCalledWith("octo", "widgets", {
       title: "Fix the widget",
-      head: "pi/fix-5",
+      head: "fix-5",
       base: "main",
       body: "Closes #5",
       draft: true,
@@ -829,8 +754,7 @@ describe("GithubMessagingBot", () => {
     expect(result).toEqual({ number: 7, url: "https://github.com/octo/widgets/pull/7" });
   });
 
-  test("pushAndCreatePr returns the existing open PR when the branch already has one", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
+  test("createPullRequest returns the existing open PR when the branch already has one", async () => {
     const { GithubApiError } = await import("../adapters/github/client.js");
     client.createPullRequest.mockRejectedValue(
       new GithubApiError(422, "POST", "/repos/octo/widgets/pulls", "A pull request already exists"),
@@ -841,12 +765,11 @@ describe("GithubMessagingBot", () => {
     });
     const bot = await startedBot();
 
-    const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
-      branch: "pi/fix-5",
+    const result = await bot.ops.createPullRequest(CONVERSATION_ID, {
+      branch: "fix-5",
       title: "t",
     });
 
-    expect(pushBranch).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       number: 7,
       url: "https://github.com/octo/widgets/pull/7",
@@ -946,51 +869,6 @@ describe("GithubMessagingBot", () => {
     client.getPullRequest = vi.fn().mockRejectedValue(new Error("404"));
     const bot = await startedBot();
     await expect(bot.ops.getChecks(CONVERSATION_ID)).rejects.toThrow(/pass the branch/);
-  });
-
-  test("syncRepo requires a clone and fetches the PR head with the agent token", async () => {
-    const bot = await startedBot();
-
-    await expect(bot.ops.syncRepo(CONVERSATION_ID)).rejects.toThrow(/no \.\/repo clone/);
-
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
-
-    const report = await bot.ops.syncRepo(CONVERSATION_ID);
-
-    expect(syncRepo).toHaveBeenCalledWith({
-      dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
-      token: AGENT_TOKEN,
-      branch: undefined,
-      prNumber: 5,
-      prHeadBranch: "pi/fix-widget",
-      defaultBranch: undefined,
-    });
-    expect(report).toContain("Updated ./repo");
-    expect(report).toContain("pr-5");
-  });
-
-  test("syncRepo falls back to the default branch on plain issues and reports fetch-only", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    client.getIssue.mockResolvedValue(makeIssue());
-    vi.mocked(syncRepo).mockResolvedValueOnce({
-      target: "main",
-      fetchedSha: "abc123def4567890",
-      updatedCheckout: false,
-      dirty: true,
-      currentBranch: "main",
-      localCommits: 2,
-    });
-    const bot = await startedBot();
-
-    const report = await bot.ops.syncRepo(CONVERSATION_ID);
-
-    expect(syncRepo).toHaveBeenCalledWith(
-      expect.objectContaining({ defaultBranch: "main", prNumber: undefined }),
-    );
-    expect(report).toContain("left the checkout alone");
-    expect(report).toContain("uncommitted changes");
-    expect(report).toContain("2 local commit(s)");
   });
 
   test("readGithub defaults to the conversation's number and scopes to its repo", async () => {
@@ -1131,19 +1009,5 @@ describe("GithubMessagingBot", () => {
       "eyes",
     );
     expect(client.createCommentReaction).not.toHaveBeenCalled();
-  });
-
-  test("pushAndCreatePr refuses non-pi branches and missing clones", async () => {
-    const bot = await startedBot();
-
-    await expect(
-      bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
-    ).rejects.toThrow(/no \.\/repo clone/);
-
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    await expect(
-      bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
-    ).rejects.toThrow(/not pushable/);
-    expect(pushBranch).not.toHaveBeenCalled();
   });
 });

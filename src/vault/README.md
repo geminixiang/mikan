@@ -38,12 +38,12 @@ Rule: **an agent's effective credentials must not exceed what the people able
 to drive that conversation should wield**, and escalation is always explicit —
 never ambient. Three identity tiers, narrowest first:
 
-1. **Platform bot identity** (e.g. the GitHub App): host-side, per-operation
-   scoped tokens that never enter the sandbox. The default for platforms whose
-   trigger surface is wide (`MessagingInfo.trustModel: "open-trigger"`).
+1. **Platform bot identity** (e.g. the GitHub agent token): host-side tokens
+   that never enter the sandbox. Platforms whose trigger surface is wide
+   (`MessagingInfo.trustModel: "open-trigger"`) get only this.
 2. **Shared machine identity** (`sandbox.defaultSharedVault`): broad
    convenience credentials copied into each new conversation's vault. Only
-   appropriate for `trustModel: "membership"` (Slack/Discord/Telegram) on
+   appropriate for `trustModel: "membership"` (Slack/Discord/Telegram/GitHub) on
    isolated sandboxes (`image` / `cloudflare`). Decided by
    `allowsAmbientDefaultSharedVault` — not by platform name strings.
 3. **Personal identity** (`/pi-login` OAuth): the agent acts as a specific

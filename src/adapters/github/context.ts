@@ -4,37 +4,46 @@ import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
-import type { GithubCapability, GithubConversationBot, GithubEvent } from "./types.js";
+import type {
+  GithubCapability,
+  GithubAgentIdentity,
+  GithubConversationBot,
+  GithubEvent,
+} from "./types.js";
+import type { GithubConversationRef } from "../../office/types.js";
 
-function repositoryGuide(capabilities: ReadonlySet<GithubCapability>, number: number): string {
+function repositoryGuide(
+  capabilities: ReadonlySet<GithubCapability>,
+  ref: GithubConversationRef,
+  identity: GithubAgentIdentity | undefined,
+): string {
+  const author = identity
+    ? `Commit as the agent account: git config user.name "${identity.login}" and ` +
+      `git config user.email "${identity.email}". `
+    : "";
   const clone =
     `## Repository & pull requests\n` +
-    `The repository is cloned at ./repo — a snapshot from this conversation's first ` +
-    `trigger; run github_sync when it may be stale to pull the latest PR head or base ` +
-    `branch. If this conversation is a pull request, its head branch is checked out ` +
-    `under its real name (run git branch --show-current in ./repo to see it; fork PRs ` +
-    `fall back to pr-${number}). You have no git credentials, so git fetch/push ` +
-    `fail by design.\n`;
+    `Nothing is cloned for you. When you need the code, clone it into your scratch ` +
+    `directory with git clone https://github.com/${ref.owner}/${ref.repo}.git; if this ` +
+    `conversation is a pull request, run gh pr checkout ${ref.number} inside the clone. ` +
+    `git and gh use the GitHub credentials of this sandbox, if it has any; without them ` +
+    `only public repositories are reachable. ${author}\n`;
   const shipping = capabilities.has("push")
-    ? `To ship code changes: commit inside ./repo (the git author is preconfigured) on a ` +
-      `pi/<name> branch, then call the github_pr tool to push it. When this conversation's ` +
-      `checked-out PR head branch is already named pi/<name> — e.g. a PR you opened ` +
-      `earlier — commit directly on it and pass that branch to github_pr: the push ` +
-      `updates THIS pull request instead of opening a new one. Any other branch opens a ` +
-      `new pull request (draft: true for a draft); calling github_pr again with the same ` +
-      `branch pushes new commits to its existing PR. Use github_checks to read CI results ` +
-      `for your branch (or this PR) — pass a failing check's job id to read its log — and ` +
-      `iterate until they pass. You cannot push the default branch or ` +
-      `merge — humans review and merge every PR.\n`
-    : `You cannot push branches or open pull requests here: propose code changes in your ` +
+    ? `To ship code changes: push a new branch (for example pi/fix-${ref.number}), never ` +
+      `the default branch, which is protected, then call github_pr with that branch to ` +
+      `open a pull request (draft: true for a draft). To update this pull request, push ` +
+      `to its head branch; no github_pr call is needed. Use github_checks to read CI ` +
+      `results for your branch (or this PR) — pass a failing check's job id to read its ` +
+      `log — and iterate until they pass. Humans review and merge every PR.\n`
+    : `Do not push branches or open pull requests here: propose code changes in your ` +
       `reply (for example as a diff or suggestion block) for a human to apply. Use ` +
       `github_checks to read this pull request's CI results.\n`;
-  const lookup = capabilities.has("triage")
-    ? `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
-      `files, review state, other issues in this repo); github_issue manages labels, ` +
-      `assignees, and close/reopen for triage.`
-    : `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
-      `files, review state, other issues in this repo).`;
+  const lookup =
+    `github_read looks up PR/issue metadata that a clone does not show (diff stats, ` +
+    `changed files, review state, other issues in this repo)` +
+    (capabilities.has("triage")
+      ? `; github_issue manages labels, assignees, and close/reopen for triage.`
+      : `.`);
   return clone + shipping + lookup;
 }
 
@@ -78,7 +87,7 @@ export function createGithubAdapters(
       `tagged [PR review comment rc-<id> …] are inline review threads on a diff line: ` +
       `answer those with the github_review_reply tool (comment_id = that id) so the reply ` +
       `lands in-thread — your normal response posts as a plain PR comment.\n\n` +
-      repositoryGuide(bot.capabilities, ref.number),
+      repositoryGuide(bot.capabilities, ref, bot.agentIdentity),
     diagnostics: {
       showUsageSummary: false,
     },

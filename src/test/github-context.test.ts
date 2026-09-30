@@ -25,6 +25,7 @@ function makeEvent(overrides: Partial<GithubEvent> = {}): GithubEvent {
 function makeFakeBot(capabilities: ReadonlySet<GithubCapability> = new Set()) {
   return {
     capabilities,
+    agentIdentity: { login: "acme-agent", email: "999+acme-agent@users.noreply.github.com" },
     postComment: vi.fn<GithubConversationBot["postComment"]>().mockResolvedValue(555),
     updateMessage: vi.fn<GithubConversationBot["updateMessage"]>().mockResolvedValue(undefined),
     deleteComment: vi.fn<GithubConversationBot["deleteComment"]>().mockResolvedValue(undefined),
@@ -37,13 +38,13 @@ function makeFakeBot(capabilities: ReadonlySet<GithubCapability> = new Set()) {
 describe("createGithubAdapters", () => {
   test("the guide offers pushing and triage only when those capabilities are enabled", () => {
     const readOnly = createGithubAdapters(makeEvent(), makeFakeBot()).platform.formattingGuide;
-    expect(readOnly).toContain("You cannot push branches or open pull requests here");
+    expect(readOnly).toContain("Do not push branches or open pull requests here");
     expect(readOnly).not.toContain("github_pr");
     expect(readOnly).not.toContain("github_issue");
 
     const full = createGithubAdapters(makeEvent(), makeFakeBot(new Set(["push", "triage"])))
       .platform.formattingGuide;
-    expect(full).toContain("call the github_pr tool to push it");
+    expect(full).toContain("then call github_pr");
     expect(full).toContain("github_issue manages labels");
   });
 
@@ -109,11 +110,19 @@ describe("createGithubAdapters", () => {
     expect(platform.formattingGuide).toContain("first message");
   });
 
-  test("system prompt explains the repo clone and github_pr workflow", () => {
+  test("system prompt has the agent clone and push inside its sandbox as the agent account", () => {
     const { platform } = createGithubAdapters(makeEvent(), makeFakeBot(new Set(["push"])));
-    expect(platform.formattingGuide).toContain("./repo");
-    expect(platform.formattingGuide).toContain("github_pr");
-    expect(platform.formattingGuide).toContain("pi/<name>");
+    const guide = platform.formattingGuide;
+    expect(guide).toContain("git clone https://github.com/octo/widgets.git");
+    expect(guide).toContain("gh pr checkout 5");
+    expect(guide).toContain('user.email "999+acme-agent@users.noreply.github.com"');
+    expect(guide).toContain("github_pr");
+    expect(guide).not.toContain("./repo");
+    expect(guide).not.toContain("github_sync");
+  });
+
+  test("the platform trusts membership", () => {
+    expect(createGithubAdapters(makeEvent(), makeFakeBot()).platform.trustModel).toBe("membership");
   });
 
   test("respondDiagnostic posts a separate comment and keeps the response intact", async () => {

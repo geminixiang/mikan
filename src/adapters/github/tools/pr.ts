@@ -8,9 +8,8 @@ export const GITHUB_PR_TOOL = "github_pr";
 const githubPrSchema = Type.Object({
   branch: Type.String({
     description:
-      'Local branch inside ./repo to push. Must be named pi/<something> (e.g. "pi/fix-42"); ' +
-      "the default branch is never pushable. To update this conversation's own PR, pass its " +
-      "checked-out pi/* head branch.",
+      'Branch you already pushed from your sandbox (e.g. "pi/fix-42"); it becomes the pull ' +
+      "request head.",
   }),
   title: Type.String({ description: "Pull request title." }),
   body: Type.Optional(Type.String({ description: "Pull request description (Markdown)." })),
@@ -32,11 +31,10 @@ export function createGithubPrTool(): {
   >({
     name: GITHUB_PR_TOOL,
     description:
-      "Push a pi/<name> branch you committed inside ./repo and open a GitHub pull request " +
-      "(or draft) for it. Pushing a branch that already has an open PR — including this " +
-      "conversation's own PR head — updates that PR instead of opening a new one. Only " +
-      "available in GitHub issue/PR conversations. You cannot push to the default branch " +
-      "and you cannot merge — humans review and merge the PR.",
+      "Open a GitHub pull request (or draft) for a branch you already pushed with git from " +
+      "your sandbox. If the branch already has an open PR, returns that PR instead of " +
+      "opening another. Only available in GitHub issue/PR conversations. You cannot merge — " +
+      "humans review and merge the PR.",
     parameters: githubPrSchema,
     unavailable: `${GITHUB_PR_TOOL} is only available in GitHub conversations.`,
     run: async (prFn, args: GithubPrArgs) => {
@@ -46,7 +44,7 @@ export function createGithubPrTool(): {
           {
             type: "text" as const,
             text: result.updatedExisting
-              ? `Pushed to existing PR #${result.number}: ${result.url}`
+              ? `Branch already has PR #${result.number}: ${result.url}`
               : `Opened ${args.draft ? "draft " : ""}PR #${result.number}: ${result.url}`,
           },
         ],

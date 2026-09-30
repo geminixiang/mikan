@@ -144,7 +144,7 @@ interface ConversationContext {
 - 接收调度：`enqueueEvent`；
 - 发现/策略：`getMessagingInfo()`。
 
-`MessagingInfo.trustModel` 是安全敏感的。当沙箱拓扑是隔离的时，`membership` 允许环境共享 vault 策略。诸如公开 GitHub 活动这类开放触发面必须返回 `open-trigger`。
+`MessagingInfo.trustModel` 是安全敏感的。当沙箱拓扑是隔离的时，`membership` 允许环境共享 vault 策略。任何人都能触发 agent 的触发面必须返回 `open-trigger`。
 
 `MessagingBot` 是唯一面向 host 的 adapter 接口；生命周期与 messaging capability 不再拆分到另一个浅接口。
 

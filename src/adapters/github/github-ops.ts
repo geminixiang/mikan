@@ -1,10 +1,6 @@
-import { existsSync } from "node:fs";
 import * as log from "../../log.js";
 import { GithubApiError, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
-import { conversationRepoDir, GITHUB_PUSH_BRANCH_PATTERN, pushBranch, syncRepo } from "./repo.js";
-import { createOfficeAddress, parseGithubConversationId } from "../../office/index.js";
-
-import type { GithubConversationRef, Workspace } from "../../office/types.js";
+import { parseGithubConversationId } from "../../office/index.js";
 import type {
   GithubApi,
   GithubCheckSummary,
@@ -18,55 +14,16 @@ import type {
 
 const MAX_LOG_CHARS = 20000;
 
-async function fetchIsPr(client: GithubApi, ref: GithubConversationRef): Promise<boolean> {
-  try {
-    const issue = await githubRetry(() => client.getIssue(ref.owner, ref.repo, ref.number));
-    return Boolean(issue.pull_request);
-  } catch {
-    return false;
-  }
-}
-
-export async function fetchPrHeadBranch(
-  client: GithubApi,
-  ref: GithubConversationRef,
-): Promise<string | undefined> {
-  try {
-    const pr = await githubRetry(() => client.getPullRequest(ref.owner, ref.repo, ref.number));
-    const sameRepo =
-      pr.head?.repo?.full_name?.toLowerCase() === `${ref.owner}/${ref.repo}`.toLowerCase();
-    return sameRepo ? pr.head?.ref : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export class GithubOps implements PlatformGithubOps {
-  constructor(
-    private readonly client: GithubApi,
-    private readonly config: { workspace: Workspace; token: string },
-  ) {}
+  constructor(private readonly client: GithubApi) {}
 
-  private repoDir(conversationId: string): string {
-    return conversationRepoDir(
-      this.config.workspace.office(createOfficeAddress("github", conversationId)),
-    );
-  }
-
-  async pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult> {
+  async createPullRequest(
+    conversationId: string,
+    request: GithubPrRequest,
+  ): Promise<GithubPrResult> {
     const ref = parseGithubConversationId(conversationId);
-    const dir = this.repoDir(conversationId);
-    if (!existsSync(dir)) {
-      throw new Error("This conversation has no ./repo clone to push from.");
-    }
-    if (!GITHUB_PUSH_BRANCH_PATTERN.test(request.branch)) {
-      throw new Error(
-        `Branch '${request.branch}' is not pushable: name it pi/<something> (e.g. pi/fix-${ref.number}).`,
-      );
-    }
     const repository = await githubRetry(() => this.client.getRepository(ref.owner, ref.repo));
     const base = request.base ?? repository.default_branch;
-    await pushBranch({ dir, branch: request.branch, token: this.config.token });
     try {
       const pr = await githubRetry(() =>
         this.client.createPullRequest(ref.owner, ref.repo, {
@@ -92,7 +49,7 @@ export class GithubOps implements PlatformGithubOps {
         );
         if (existing) {
           log.logInfo(
-            `[${conversationId}] Pushed to existing PR #${existing.number}: ${existing.html_url}`,
+            `[${conversationId}] Branch already has PR #${existing.number}: ${existing.html_url}`,
           );
           return { number: existing.number, url: existing.html_url, updatedExisting: true };
         }
@@ -155,53 +112,6 @@ export class GithubOps implements PlatformGithubOps {
       }),
     );
     return [...jobs.flat(), ...statuses];
-  }
-
-  async syncRepo(conversationId: string, branch?: string): Promise<string> {
-    const ref = parseGithubConversationId(conversationId);
-    const dir = this.repoDir(conversationId);
-    if (!existsSync(dir)) {
-      throw new Error("This conversation has no ./repo clone to sync.");
-    }
-    let prNumber: number | undefined;
-    let prHeadBranch: string | undefined;
-    let defaultBranch: string | undefined;
-    if (!branch) {
-      if (await fetchIsPr(this.client, ref)) {
-        prNumber = ref.number;
-        prHeadBranch = await fetchPrHeadBranch(this.client, ref);
-      } else {
-        const repository = await githubRetry(() => this.client.getRepository(ref.owner, ref.repo));
-        defaultBranch = repository.default_branch;
-      }
-    }
-    const result = await syncRepo({
-      dir,
-      token: this.config.token,
-      branch,
-      prNumber,
-      prHeadBranch,
-      defaultBranch,
-    });
-
-    if (result.updatedCheckout) {
-      return `Updated ./repo: branch ${result.target} is now at ${result.fetchedSha.slice(0, 12)}.`;
-    }
-    const reasons: string[] = [];
-    if (result.currentBranch !== result.target) {
-      reasons.push(`the checkout is on '${result.currentBranch}', not '${result.target}'`);
-    }
-    if (result.dirty) {
-      reasons.push("the working tree has uncommitted changes");
-    }
-    if (result.localCommits > 0) {
-      reasons.push(`'${result.target}' has ${result.localCommits} local commit(s) not on origin`);
-    }
-    return (
-      `Fetched ${result.target} to FETCH_HEAD (${result.fetchedSha.slice(0, 12)}) but left the ` +
-      `checkout alone: ${reasons.join("; ")}. Merge or rebase FETCH_HEAD yourself ` +
-      `(e.g. git merge FETCH_HEAD), or commit your work to a pi/* branch first.`
-    );
   }
 
   async readGithub(conversationId: string, request: GithubReadRequest): Promise<GithubReadResult> {
@@ -370,7 +280,7 @@ export class GithubOps implements PlatformGithubOps {
           `No GitHub Actions log for job ${jobId}. Logs are only available for checks reported ` +
             `by github-actions; external CI keeps logs on its own service — ` +
             `use that check's summary/url from github_checks, or reproduce the failure locally ` +
-            `in ./repo instead. Do not retry with other ids.`,
+            `in your clone instead. Do not retry with other ids.`,
           { cause: err },
         );
       }

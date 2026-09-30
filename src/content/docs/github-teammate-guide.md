@@ -26,7 +26,7 @@ As an owner, invite `acme-agent` at `https://github.com/orgs/acme/people`, then 
 | ---------- | ----------------------------------------------------------- |
 | **Read**   | Be mentioned and assigned, comment, react, read code and CI |
 | **Triage** | Also manage labels, assignees, and close issues             |
-| **Write**  | Also push `pi/*` branches and open pull requests            |
+| **Write**  | Also push branches and open pull requests                   |
 
 The role is an upper bound. mikan's own settings (step 5) decide what it actually does.
 
@@ -43,7 +43,7 @@ Do every step **signed in as the account**.
 
    | Permission          | Access         | Used for                                 |
    | ------------------- | -------------- | ---------------------------------------- |
-   | **Contents**        | Read and write | Cloning, and pushing `pi/*` branches     |
+   | **Contents**        | Read and write | Cloning and pushing from the sandbox     |
    | **Issues**          | Read and write | Comments, reactions, labels, assignees   |
    | **Pull requests**   | Read and write | PR comments, review replies, opening PRs |
    | **Actions**         | Read-only      | CI jobs and their logs                   |
@@ -107,6 +107,8 @@ GitHub bot started as @acme-agent, answering in acme/*
 ```
 
 An invalid token makes startup fail.
+
+mikan itself never runs git. The agent clones and pushes inside its sandbox, which gets GitHub credentials the same way Slack conversations do: through `sandbox.defaultSharedVault` or a conversation vault with `GH_TOKEN`. See [Vault](/sandbox/vault/). Without them the agent can still read public repositories and answer through the API. Protect the default branch so that the agent's changes land only through reviewed pull requests.
 
 ## 7. Try it
 

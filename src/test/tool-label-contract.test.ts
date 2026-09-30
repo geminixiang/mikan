@@ -11,11 +11,10 @@ import { createOfficeAddress } from "../office/index.js";
 
 function mockGithubOps(): PlatformGithubOps {
   return {
-    pushAndCreatePr: vi.fn(),
+    createPullRequest: vi.fn(),
     getChecks: vi.fn(),
     getJobLog: vi.fn(),
     replyToReviewThread: vi.fn(),
-    syncRepo: vi.fn(),
     readGithub: vi.fn(),
     manageIssue: vi.fn(),
   };

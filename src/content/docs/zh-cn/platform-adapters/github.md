@@ -9,19 +9,18 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 与 repo 都转�
 
 ## 主要代码
 
-| 文件                                | 用途                                                                                                                       |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 主体：判断是否触发、检查权限、送入对话。                                                                        |
-| `src/adapters/github/activity.ts`   | 校验 webhook 内容，整理成统一的活动格式。                                                                                  |
-| `src/adapters/github/policy.ts`     | 解析并应用限制设置。                                                                                                       |
-| `src/adapters/github/webhook.ts`    | 校验签名、响应 GitHub、丢弃重复的推送。                                                                                    |
-| `src/adapters/github/github-ops.ts` | 每个 `github_*` tool 背后的 host 端 backend。                                                                              |
-| `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、受保护的 branch push、保留工作的 sync。                                                        |
-| `src/adapters/github/client.ts`     | 以账号 token 认证的最小 REST client。                                                                                      |
-| `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为单条 comment 发布（不做 streaming edits）。                           |
-| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` 语法位于 `src/office/index.ts`。                                 |
-| `src/adapters/github/tool-pack.ts`  | 把 host 端 tools 打包成由 main 注入的 platform tool pack。                                                                 |
-| `src/adapters/github/tools/`        | 提供给 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
+| 文件                                | 用途                                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `src/adapters/github/bot.ts`        | GitHub bot 主体：判断是否触发、检查权限、送入对话。                                                         |
+| `src/adapters/github/activity.ts`   | 校验 webhook 内容，整理成统一的活动格式。                                                                   |
+| `src/adapters/github/policy.ts`     | 解析并应用限制设置。                                                                                        |
+| `src/adapters/github/webhook.ts`    | 校验签名、响应 GitHub、丢弃重复的推送。                                                                     |
+| `src/adapters/github/github-ops.ts` | 每个 `github_*` tool 背后的 host 端 backend。                                                               |
+| `src/adapters/github/client.ts`     | 以账号 token 认证的最小 REST client。                                                                       |
+| `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为单条 comment 发布（不做 streaming edits）。            |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` 语法位于 `src/office/index.ts`。                  |
+| `src/adapters/github/tool-pack.ts`  | 把 host 端 tools 打包成由 main 注入的 platform tool pack。                                                  |
+| `src/adapters/github/tools/`        | 提供给 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_read`、`github_issue`。 |
 
 ## 需要准备
 
@@ -67,14 +66,14 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 与 repo 都转�
 
 未设置 `GITHUB_CAPABILITIES` 时，mikan 可以评论、添加 reaction、读取仓库与 CI 结果、在 review thread 回复，但不能修改 label、assignee 或代码。
 
-| 能力     | 开放                                                            |
-| -------- | --------------------------------------------------------------- |
-| `triage` | `github_issue` tool：label、assignee、关闭与重新打开。          |
-| `push`   | `github_pr` tool：推送 `pi/*` branch、创建或更新 pull request。 |
+| 能力     | 开放                                                         |
+| -------- | ------------------------------------------------------------ |
+| `triage` | `github_issue` tool：label、assignee、关闭与重新打开。       |
+| `push`   | `github_pr` tool 以及推送 branch、创建 pull request 的说明。 |
 
-未开启的能力，对应的 tool 和说明完全不会提供给 agent。token 的权限和账号在仓库的角色仍在外层生效。
+未开启的能力，对应的 tool 和说明完全不会提供给 agent，但不会收回凭证：agent 能从 sandbox 推送什么，取决于 sandbox 的 GitHub token、账号在仓库的角色以及 branch protection。请保护默认 branch，让 agent 的改动只能经由 review 过的 pull request 进入。
 
-由于任何人都可以在公开仓库上开 issue，GitHub 报告 `trustModel: "open-trigger"`。这会为 GitHub 对话禁用环境 `sandbox.defaultSharedVault` 复制：它们默认不获得任何凭证，管理员必须有意地为某个特定对话配置 vault。参阅 [Vault](/zh-cn/sandbox/vault/)。
+只有至少具备 write 权限的协作者能触发 mikan，所以 GitHub 报告 `trustModel: "membership"`。GitHub 对话因此会像 Slack 对话一样获得 `sandbox.defaultSharedVault` 与 settings 声明的 MCP servers。参阅 [Vault](/zh-cn/sandbox/vault/)。
 
 ## Session 与回复
 
@@ -82,13 +81,10 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 与 repo 都转�
 
 ## 仓库访问与 pull request
 
-Sandbox 永远不持有凭证；git 在 office 目录 bind mount 的 host 端运行，账号 token 每次调用时传入，绝不写入 `.git/config`。
+mikan 从不在 host 上运行 git。agent 在自己的 sandbox 内，用 sandbox 的 GitHub 凭证把仓库 clone 到 scratch 目录、用 `gh pr checkout` 切到 pull request、以 agent 账号 commit 并 push。没有凭证时只能访问公开仓库。
 
-- 第一次接触时，仓库会 shallow clone 到对话 office 的 `repo/` 目录（agent 的 prompt 中称为 `./repo`），commit 作者是 agent 账号。PR 对话会以真实 branch 名 checkout PR head（fork PR 与查询失败时退回 `pr-<n>`）。Clone 失败时，下次触发会重试。
-- Agent 在 sandbox 内用普通 git 创建 branch 与 commit；从 sandbox push 会刻意失败。
-- `github_pr`（能力 `push`）推送 agent 的 `pi/*` branch 并创建 pull request（支持 draft）；同一 branch 再次调用会推送到已有 PR。它不能推送默认 branch、force-push 或 merge。
+- `github_pr`（能力 `push`）为 agent 已经推送的 branch 创建 pull request（支持 draft）；该 branch 已有开启中的 PR 时直接返回那个 PR。它不会推送，也不能 merge。
 - `github_checks` 读取已推送 branch 或 PR head 的 GitHub Actions job 与 commit status，并可按 `job_id` 获取 Actions job 的日志末尾。Fine-grained token 没有 Checks 权限，所以第三方 CI app 发布的 check run 不可见。
-- `github_sync` 从 origin 更新 `./repo`。只有在不会丢失 agent 工作时才移动 checkout；否则只 fetch 到 `FETCH_HEAD` 并报告。
 - `github_review_reply` 在单个 inline review thread 中回复。
 - `github_read` 读取对话所属仓库的 PR 状态、变更文件、review、issue 与评论。
 - `github_issue`（能力 `triage`）管理 label、assignee 与关闭／重新打开。Lock、delete 与 transfer 不在其 action set 中。
@@ -98,4 +94,3 @@ Sandbox 永远不持有凭证；git 在 office 目录 bind mount 的 host 端运
 - 漏掉的 webhook 推送不会补发。
 - REST API 不支持文件上传；`uploadFile` 会改发一条指引评论。
 - 只有 summary 正文提到账号、没有 inline comment 的 PR review 不会触发。请改为请它 review，或另外评论。
-- `./repo` 是第一次接触时的快照；agent 用 `github_sync` 更新。

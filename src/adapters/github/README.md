@@ -46,30 +46,26 @@ Restrictions (optional):
   because per-delta edits would churn the API and mark every reply "edited".
 - The `github_*` tools are a `PlatformToolPack` injected from `main.ts`, not
   core tools; the pack omits tools whose capability is off.
-- GitHub sets `MessagingInfo.trustModel: "open-trigger"`, so
-  `sandbox.defaultSharedVault` is never ambient-copied (see
-  `src/vault/index.ts`).
+- GitHub sets `MessagingInfo.trustModel: "membership"`: only collaborators
+  with at least write access trigger it (`GITHUB_MIN_PERMISSION` accepts
+  nothing lower), so `sandbox.defaultSharedVault` and settings-declared MCP
+  servers apply as on Slack.
 
 ## Repo access and pull requests
 
-The sandbox stays credential-free; git runs host-side with the agent token
-passed per invocation, never written to `.git/config`.
+The host never runs git (ADR 0016; guard `github-adapter-runs-no-host-processes`).
+The agent clones, commits, and pushes inside its sandbox with the sandbox's
+GitHub credentials (the Vault, usually through `sandbox.defaultSharedVault`).
+What it can push is decided by that token, the account's repository role, and
+branch protection, not by mikan. The prompt gives the agent account as the
+commit identity (`<id>+<login>@users.noreply.github.com`).
 
-- First contact clones the repo shallowly into `<conversationDir>/repo/` with
-  the agent account as the commit identity (`<id>+<login>@users.noreply.github.com`).
-  PR conversations check out the PR head under its real branch name (fork PRs
-  and failed lookups fall back to `pr-<n>`), so a PR whose head is a `pi/*`
-  branch can be updated in place. A failed clone is retried on the next
-  trigger.
-- `github_pr` (capability `push`) pushes the agent's `pi/*` branch and opens
-  the PR, or pushes to the existing open PR for that branch. Default-branch
-  pushes, force pushes, and merging are impossible by construction.
+- `github_pr` (capability `push`) opens a pull request for a branch the agent
+  already pushed, or returns the open PR for that branch. It never pushes.
 - `github_checks` reports GitHub Actions jobs and commit statuses for a
   pushed branch or the PR head, and fetches one Actions job's log tail by
   `job_id`. Fine-grained PATs have no Checks permission, so check runs from
   third-party CI apps are not visible.
-- `github_sync` refreshes `./repo` from origin and only moves the checkout
-  when that cannot lose agent work; otherwise it fetches and reports.
 - `github_review_reply` answers inside one inline review thread.
 - `github_read` reads PR metadata, changed files, reviews, issues, and
   comments of the conversation's repository.

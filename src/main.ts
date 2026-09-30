@@ -20,7 +20,6 @@ import { GITHUB_ISSUE_TOOL } from "./adapters/github/tools/issue.js";
 import { GITHUB_PR_TOOL } from "./adapters/github/tools/pr.js";
 import { GITHUB_READ_TOOL } from "./adapters/github/tools/read.js";
 import { GITHUB_REVIEW_REPLY_TOOL } from "./adapters/github/tools/review-reply.js";
-import { GITHUB_SYNC_TOOL } from "./adapters/github/tools/sync.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { downloadChannel } from "./cli/download.js";
 import { EventScheduler } from "./events/scheduler.js";
@@ -379,8 +378,8 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   if (!githubPolicy) return factories;
   const githubCapabilities = githubPolicy.capabilities;
   const platformGithubOps: PlatformGithubOps = {
-    pushAndCreatePr: (conversationId, request) =>
-      requireGithubBot(GITHUB_PR_TOOL).ops.pushAndCreatePr(conversationId, request),
+    createPullRequest: (conversationId, request) =>
+      requireGithubBot(GITHUB_PR_TOOL).ops.createPullRequest(conversationId, request),
     getChecks: (conversationId, branch) =>
       requireGithubBot(GITHUB_CHECKS_TOOL).ops.getChecks(conversationId, branch),
     getJobLog: (conversationId, jobId) =>
@@ -391,8 +390,6 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
         commentId,
         body,
       ),
-    syncRepo: (conversationId, branch) =>
-      requireGithubBot(GITHUB_SYNC_TOOL).ops.syncRepo(conversationId, branch),
     readGithub: (conversationId, request) =>
       requireGithubBot(GITHUB_READ_TOOL).ops.readGithub(conversationId, request),
     manageIssue: (conversationId, request) =>

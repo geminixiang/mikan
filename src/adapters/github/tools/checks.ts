@@ -50,11 +50,11 @@ export function createGithubChecksTool(): {
   const { tool, setFn } = defineHostFnTool<GithubChecksFns, typeof githubChecksSchema>({
     name: GITHUB_CHECKS_TOOL,
     description:
-      "Read CI status (GitHub Actions jobs and commit statuses) for a branch you pushed with github_pr, or for this " +
+      "Read CI status (GitHub Actions jobs and commit statuses) for a branch you pushed, or for this " +
       "conversation's pull request when branch is omitted. Pass job_id (a [job …] id, " +
       "GitHub Actions) from the summary to fetch that job's log. Commit statuses from external " +
       "CI keep logs on their own service: use " +
-      "their summary/url, or reproduce the failure locally in ./repo. Only available in " +
+      "their summary/url, or reproduce the failure locally in your clone. Only available in " +
       "GitHub conversations.",
     parameters: githubChecksSchema,
     unavailable: `${GITHUB_CHECKS_TOOL} is only available in GitHub conversations.`,

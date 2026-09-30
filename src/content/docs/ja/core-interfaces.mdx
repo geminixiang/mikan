@@ -105,7 +105,7 @@ host に面した platform port です。次を組み合わせます:
 - intake scheduling: `enqueueEvent`；
 - discovery/policy: `getMessagingInfo()`。
 
-`MessagingInfo.trustModel` はセキュリティに関わります。`membership` は、sandbox topology が isolated である場合に ambient shared-vault policy を許可します。public な GitHub activity のようなオープンなトリガー面は `open-trigger` を返さなければなりません。
+`MessagingInfo.trustModel` はセキュリティに関わります。`membership` は、sandbox topology が isolated である場合に ambient shared-vault policy を許可します。誰でも agent をトリガーできる面は `open-trigger` を返さなければなりません。
 
 `MessagingBot` が host に面した唯一の adapter インターフェースです。lifecycle と messaging capabilities を別の浅いインターフェースには分割しません。
 

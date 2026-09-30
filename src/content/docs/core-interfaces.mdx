@@ -144,7 +144,7 @@ The host-facing platform port. It combines:
 - intake scheduling: `enqueueEvent`;
 - discovery/policy: `getMessagingInfo()`.
 
-`MessagingInfo.trustModel` is security-sensitive. `membership` permits the ambient shared-vault policy when the sandbox topology is isolated. An open trigger surface such as public GitHub activity must return `open-trigger`.
+`MessagingInfo.trustModel` is security-sensitive. `membership` permits the ambient shared-vault policy when the sandbox topology is isolated. A surface where anyone can trigger the agent must return `open-trigger`.
 
 `MessagingBot` is the single host-facing adapter interface; lifecycle and messaging capabilities are not split across a second shallow interface.
 

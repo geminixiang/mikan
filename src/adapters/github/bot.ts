@@ -17,9 +17,8 @@ import { matchMagicWord, processMessageIntake } from "../intake.js";
 import { readGithubActivity } from "./activity.js";
 import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import { createGithubAdapters } from "./context.js";
-import { fetchPrHeadBranch, GithubOps } from "./github-ops.js";
+import { GithubOps } from "./github-ops.js";
 import { permissionMeets, repoIsAllowed, userIsAllowed } from "./policy.js";
-import { cloneRepo, conversationRepoDir } from "./repo.js";
 import {
   buildGithubConversationId,
   createConversationEvent,
@@ -71,7 +70,6 @@ interface IncomingItem {
   user: string;
   text: string;
   createdAt: string;
-  isPr: boolean;
   addressed: boolean;
   review?: GithubReviewAnchor;
 }
@@ -110,11 +108,15 @@ export class GithubMessagingBot implements MessagingBot {
     this.handler = handler;
     this.config = config;
     this.client = client ?? new GithubClient({ token: config.token });
-    this.ops = new GithubOps(this.client, { workspace: config.workspace, token: config.token });
+    this.ops = new GithubOps(this.client);
   }
 
   get capabilities(): ReadonlySet<GithubCapability> {
     return this.config.policy.capabilities;
+  }
+
+  get agentIdentity(): GithubAgentIdentity | undefined {
+    return this.identity ?? undefined;
   }
 
   async start(): Promise<void> {
@@ -186,7 +188,7 @@ export class GithubMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "github",
-      trustModel: "open-trigger",
+      trustModel: "membership",
       formattingGuide:
         "## GitHub Formatting (GitHub Flavored Markdown)\n" +
         "Standard Markdown plus tables, task lists, fenced code blocks, and ```suggestion blocks.\n" +
@@ -225,12 +227,11 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   async receive(delivery: GithubWebhookDelivery): Promise<void> {
-    const identity = this.identity;
-    if (this.stopped || !identity) return;
+    if (this.stopped || !this.identity) return;
     const activity = readGithubActivity(delivery);
     if (!activity) return;
     try {
-      await this.handleActivity(activity, identity);
+      await this.handleActivity(activity);
     } catch (err) {
       log.logWarning(
         `GitHub: failed to handle ${delivery.event} for ${activity.repo.owner}/${activity.repo.repo}#${activity.number}`,
@@ -270,10 +271,7 @@ export class GithubMessagingBot implements MessagingBot {
     return true;
   }
 
-  private async handleActivity(
-    activity: GithubActivity,
-    identity: GithubAgentIdentity,
-  ): Promise<void> {
+  private async handleActivity(activity: GithubActivity): Promise<void> {
     const { policy } = this.config;
     if (activity.sender.isBot || this.isAgent(activity.sender.login)) return;
     if (!repoIsAllowed(policy, activity.repo)) return;
@@ -295,19 +293,15 @@ export class GithubMessagingBot implements MessagingBot {
     }
     if (activity.ts === GITHUB_ISSUE_BODY_TS && !this.claimBodyTrigger(conversationId)) return;
     const note = bodyTriggerNote(activity);
-    await this.handleIncoming(
-      {
-        ref,
-        ts: activity.ts,
-        user: activity.sender.login,
-        text: note ? `${note}\n\n${activity.text}` : activity.text,
-        createdAt: activity.createdAt,
-        isPr: activity.isPr,
-        addressed: trigger !== "followup",
-        review: activity.review,
-      },
-      identity,
-    );
+    await this.handleIncoming({
+      ref,
+      ts: activity.ts,
+      user: activity.sender.login,
+      text: note ? `${note}\n\n${activity.text}` : activity.text,
+      createdAt: activity.createdAt,
+      addressed: trigger !== "followup",
+      review: activity.review,
+    });
   }
 
   private mentionPattern(): RegExp | null {
@@ -357,7 +351,7 @@ export class GithubMessagingBot implements MessagingBot {
     return allowed;
   }
 
-  private async handleIncoming(item: IncomingItem, identity: GithubAgentIdentity): Promise<void> {
+  private async handleIncoming(item: IncomingItem): Promise<void> {
     const conversationId = buildGithubConversationId(item.ref);
     const participating = this.isParticipating(conversationId);
     const cleanedText = this.stripMention(item.text);
@@ -402,7 +396,9 @@ export class GithubMessagingBot implements MessagingBot {
         this.logToFile(conversationId, entry);
       },
       processAttachments: async () => {
-        await this.prepareConversation(item, conversationId, participating, identity);
+        if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
+          await this.logIssueContext(item.ref, conversationId, item.createdAt);
+        }
         return [];
       },
       queueKey: conversationId,
@@ -411,20 +407,6 @@ export class GithubMessagingBot implements MessagingBot {
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),
     });
-  }
-
-  private async prepareConversation(
-    item: IncomingItem,
-    conversationId: string,
-    participating: boolean,
-    identity: GithubAgentIdentity,
-  ): Promise<void> {
-    if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
-      await this.logIssueContext(item.ref, conversationId, item.createdAt);
-    }
-    if (!existsSync(conversationRepoDir(this.office(conversationId)))) {
-      await this.ensureRepoClone(item.ref, conversationId, item.isPr, identity);
-    }
   }
 
   private async formatReviewMessage(
@@ -508,34 +490,5 @@ export class GithubMessagingBot implements MessagingBot {
       attachments: [],
       isMessagingBot: false,
     });
-  }
-
-  private async ensureRepoClone(
-    ref: GithubConversationRef,
-    conversationId: string,
-    isPr: boolean,
-    identity: GithubAgentIdentity,
-  ): Promise<void> {
-    const office = this.office(conversationId);
-    const dir = conversationRepoDir(office);
-    if (existsSync(dir)) return;
-    try {
-      office.ensure();
-      const prHeadBranch = isPr ? await fetchPrHeadBranch(this.client, ref) : undefined;
-      await cloneRepo({
-        url: `https://github.com/${ref.owner}/${ref.repo}.git`,
-        dir,
-        token: this.config.token,
-        authorName: identity.login,
-        authorEmail: identity.email,
-        prNumber: isPr ? ref.number : undefined,
-        prHeadBranch,
-      });
-      log.logInfo(
-        `[${conversationId}] Cloned ${ref.owner}/${ref.repo}${isPr ? ` and checked out PR #${ref.number} head as ${prHeadBranch ?? `pr-${ref.number}`}` : ""}`,
-      );
-    } catch (err) {
-      log.logWarning(`GitHub: repo clone failed for ${conversationId}`, errorMessage(err));
-    }
   }
 }

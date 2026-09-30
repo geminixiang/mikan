@@ -19,6 +19,7 @@ export type GithubConversationBot = Pick<
   | "logBotResponse"
   | "getMessagingInfo"
   | "capabilities"
+  | "agentIdentity"
 >;
 
 export type GithubTrigger = "mention" | "assign" | "review" | "followup";
@@ -191,40 +192,6 @@ export type GithubReactionContent =
   | "rocket"
   | "eyes";
 
-export interface CloneRepoOptions {
-  url: string;
-  dir: string;
-  token: string;
-  authorName: string;
-  authorEmail: string;
-  prNumber?: number;
-  prHeadBranch?: string;
-}
-
-export interface PushBranchOptions {
-  dir: string;
-  branch: string;
-  token: string;
-}
-
-export interface SyncRepoOptions {
-  dir: string;
-  token: string;
-  branch?: string;
-  prNumber?: number;
-  prHeadBranch?: string;
-  defaultBranch?: string;
-}
-
-export interface SyncRepoResult {
-  target: string;
-  fetchedSha: string;
-  updatedCheckout: boolean;
-  dirty: boolean;
-  currentBranch: string;
-  localCommits: number;
-}
-
 export interface GithubClientOptions {
   token: string;
   baseUrl?: string;
@@ -285,8 +252,6 @@ export interface GithubIssueRequest {
   state_reason?: "completed" | "not_planned";
 }
 
-export type GithubSyncFn = (branch?: string) => Promise<string>;
-
 export type GithubReviewReplyFn = (commentId: number, body: string) => Promise<{ url: string }>;
 
 export type GithubReadFn = (request: GithubReadRequest) => Promise<GithubReadResult>;
@@ -294,7 +259,7 @@ export type GithubReadFn = (request: GithubReadRequest) => Promise<GithubReadRes
 export type GithubIssueFn = (request: GithubIssueRequest) => Promise<string>;
 
 export interface PlatformGithubOps {
-  pushAndCreatePr(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
+  createPullRequest(conversationId: string, request: GithubPrRequest): Promise<GithubPrResult>;
   getChecks(conversationId: string, branch?: string): Promise<GithubCheckSummary[]>;
   getJobLog(conversationId: string, jobId: number): Promise<string>;
   replyToReviewThread(
@@ -302,7 +267,6 @@ export interface PlatformGithubOps {
     commentId: number,
     body: string,
   ): Promise<{ url: string }>;
-  syncRepo(conversationId: string, branch?: string): Promise<string>;
   readGithub(conversationId: string, request: GithubReadRequest): Promise<GithubReadResult>;
   manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string>;
 }

@@ -4,11 +4,10 @@ import type { GithubCapability, PlatformGithubOps } from "../adapters/github/typ
 
 function mockOps(): PlatformGithubOps {
   return {
-    pushAndCreatePr: vi.fn().mockResolvedValue({ number: 1, url: "https://example/pr/1" }),
+    createPullRequest: vi.fn().mockResolvedValue({ number: 1, url: "https://example/pr/1" }),
     getChecks: vi.fn().mockResolvedValue([]),
     getJobLog: vi.fn().mockResolvedValue("log"),
     replyToReviewThread: vi.fn().mockResolvedValue({ url: "https://example/pr/1#r1" }),
-    syncRepo: vi.fn().mockResolvedValue("synced"),
     readGithub: vi.fn().mockResolvedValue({ kind: "pr_files", files: [] }),
     manageIssue: vi.fn().mockResolvedValue("done"),
   };
@@ -25,7 +24,6 @@ describe("createGithubToolPack", () => {
       "github_pr",
       "github_read",
       "github_review_reply",
-      "github_sync",
     ]);
   });
 
@@ -60,7 +58,7 @@ describe("createGithubToolPack", () => {
 
     pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
     const result = await pr.execute("id", { branch: "pi/x", title: "t" });
-    expect(ops.pushAndCreatePr).toHaveBeenCalledWith("GH_o_r_1", {
+    expect(ops.createPullRequest).toHaveBeenCalledWith("GH_o_r_1", {
       branch: "pi/x",
       title: "t",
     });
@@ -78,14 +76,14 @@ describe("createGithubToolPack", () => {
     packB.bindRun({ conversationId: "GH_o_r_2", platformName: "github" });
 
     await prA.execute("id", { branch: "pi/a", title: "a" });
-    expect(ops.pushAndCreatePr).toHaveBeenLastCalledWith("GH_o_r_1", {
+    expect(ops.createPullRequest).toHaveBeenLastCalledWith("GH_o_r_1", {
       branch: "pi/a",
       title: "a",
     });
 
     packB.bindRun({ conversationId: "D123", platformName: "slack" });
     await prA.execute("id", { branch: "pi/a2", title: "a2" });
-    expect(ops.pushAndCreatePr).toHaveBeenLastCalledWith("GH_o_r_1", {
+    expect(ops.createPullRequest).toHaveBeenLastCalledWith("GH_o_r_1", {
       branch: "pi/a2",
       title: "a2",
     });

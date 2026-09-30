@@ -54,7 +54,6 @@ tools depend on the connected server's `listTools()` response.
 | `github_pr`             |     ✓     |        ✓        |        —        |          —           |     PR request in arguments; operation status and URL.      |
 | `github_checks`         |     ✓     |        ✓        |        —        |          —           |          Branch/job ID; check summary or job log.           |
 | `github_review_reply`   |     ✓     |        ✓        |        —        |          —           |          Reply body in arguments; thread and URL.           |
-| `github_sync`           |     ✓     |        ✓        |        —        |          —           |                   Branch and sync report.                   |
 | `github_read`           |     ✓     |        ✓        |        —        |          —           |          Query and formatted PR/issue/review data.          |
 | `github_issue`          |     ✓     |        ✓        |        —        |          —           |             Issue request and operation report.             |
 | `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                        |

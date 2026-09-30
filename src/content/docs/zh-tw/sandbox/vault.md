@@ -94,7 +94,7 @@ office key 由平台名稱與該平台的原始 conversation id 一起雜湊而�
 
 ## Shared vault
 
-`sandbox.defaultSharedVault` 指定 `vaults/shared/` 底下的一份 profile，會在新對話第一次使用時複製進它的 vault。這種預設複製只發生在需要成員資格的平台（Slack、Discord、Telegram），且僅限 isolated 的 `image` 與 `cloudflare` 拓撲。像 GitHub 這種可由任何人觸發的介面永遠不會繼承它——但管理員仍可明確為特定的 GitHub 對話佈建 vault。
+`sandbox.defaultSharedVault` 指定 `vaults/shared/` 底下的一份 profile，會在新對話第一次使用時複製進它的 vault。這種預設複製只發生在需要成員資格的平台（Slack、Discord、Telegram，以及只有具 write 權限的協作者才能觸發的 GitHub），且僅限 isolated 的 `image` 與 `cloudflare` 拓撲。可由任何人觸發的介面永遠不會繼承它——但管理員仍可明確為特定對話佈建 vault。
 
 ## `/pi-login`
 

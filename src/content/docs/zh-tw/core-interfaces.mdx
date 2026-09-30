@@ -105,7 +105,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 - intake scheduling：`enqueueEvent`；
 - discovery/policy：`getMessagingInfo()`。
 
-`MessagingInfo.trustModel` 具安全敏感性。當 sandbox 拓撲為隔離時，`membership` 允許環境式的 shared-vault 政策。像公開 GitHub 活動這類開放觸發面必須回傳 `open-trigger`。
+`MessagingInfo.trustModel` 具安全敏感性。當 sandbox 拓撲為隔離時，`membership` 允許環境式的 shared-vault 政策。任何人都能觸發 agent 的介面必須回傳 `open-trigger`。
 
 `MessagingBot` 是唯一面向 host 的 adapter 介面；lifecycle 與 messaging capability 不再拆成另一個淺介面。
 

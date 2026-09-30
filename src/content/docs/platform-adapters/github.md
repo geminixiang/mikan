@@ -11,19 +11,18 @@ The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercas
 
 ## Main code
 
-| File                                | Purpose                                                                                                                    |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot core: trigger decisions, permission checks, conversation intake.                                                |
-| `src/adapters/github/activity.ts`   | Validates webhook payloads and normalizes them into one activity shape.                                                    |
-| `src/adapters/github/policy.ts`     | Parses and applies the restriction settings.                                                                               |
-| `src/adapters/github/webhook.ts`    | Verifies signatures, answers GitHub, and drops repeated deliveries.                                                        |
-| `src/adapters/github/github-ops.ts` | The host-side backends behind every `github_*` tool.                                                                       |
-| `src/adapters/github/repo.ts`       | Host-side git: shallow clone, guarded branch push, work-preserving sync.                                                   |
-| `src/adapters/github/client.ts`     | Minimal REST client authenticated with the agent account's token.                                                          |
-| `src/adapters/github/context.ts`    | Creates the GitHub `ConversationResponder`; posts the finished response as one comment (no streaming edits).               |
-| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts. The `GH_<owner>_<repo>_<number>` conversation id grammar lives in `src/office/index.ts`.      |
-| `src/adapters/github/tool-pack.ts`  | Bundles the host-side tools as a platform tool pack injected from main.                                                    |
-| `src/adapters/github/tools/`        | The agent-facing tools: `github_pr`, `github_checks`, `github_review_reply`, `github_sync`, `github_read`, `github_issue`. |
+| File                                | Purpose                                                                                                               |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/adapters/github/bot.ts`        | GitHub bot core: trigger decisions, permission checks, conversation intake.                                           |
+| `src/adapters/github/activity.ts`   | Validates webhook payloads and normalizes them into one activity shape.                                               |
+| `src/adapters/github/policy.ts`     | Parses and applies the restriction settings.                                                                          |
+| `src/adapters/github/webhook.ts`    | Verifies signatures, answers GitHub, and drops repeated deliveries.                                                   |
+| `src/adapters/github/github-ops.ts` | The host-side backends behind every `github_*` tool.                                                                  |
+| `src/adapters/github/client.ts`     | Minimal REST client authenticated with the agent account's token.                                                     |
+| `src/adapters/github/context.ts`    | Creates the GitHub `ConversationResponder`; posts the finished response as one comment (no streaming edits).          |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts. The `GH_<owner>_<repo>_<number>` conversation id grammar lives in `src/office/index.ts`. |
+| `src/adapters/github/tool-pack.ts`  | Bundles the host-side tools as a platform tool pack injected from main.                                               |
+| `src/adapters/github/tools/`        | The agent-facing tools: `github_pr`, `github_checks`, `github_review_reply`, `github_read`, `github_issue`.           |
 
 ## Requirements
 
@@ -69,14 +68,14 @@ Delivery is best effort. mikan answers GitHub immediately, ignores a repeated de
 
 Without `GITHUB_CAPABILITIES`, mikan comments, reacts, reads the repository and CI results, and replies in review threads. It cannot change labels, assignees, or code.
 
-| Capability | Adds                                                                         |
-| ---------- | ---------------------------------------------------------------------------- |
-| `triage`   | The `github_issue` tool: labels, assignees, close and reopen.                |
-| `push`     | The `github_pr` tool: push `pi/*` branches and open or update pull requests. |
+| Capability | Adds                                                                           |
+| ---------- | ------------------------------------------------------------------------------ |
+| `triage`   | The `github_issue` tool: labels, assignees, close and reopen.                  |
+| `push`     | The `github_pr` tool and instructions to push branches and open pull requests. |
 
-A capability that is off removes its tool and its instructions from the agent entirely. The token's permissions and the account's repository role still apply on top.
+A capability that is off removes its tool and its instructions from the agent entirely. It does not take credentials away: what the agent can push from its sandbox is decided by the sandbox's GitHub token, the account's repository role, and branch protection. Protect the default branch so that changes land only through reviewed pull requests.
 
-Because anyone can open an issue on a public repository, GitHub reports `trustModel: "open-trigger"`. That disables the ambient `sandbox.defaultSharedVault` copy for GitHub conversations: they get no credentials by default, and an admin has to provision a vault for a specific conversation deliberately. See [Vault](/sandbox/vault/).
+Only collaborators with at least write access trigger mikan, so GitHub reports `trustModel: "membership"`. GitHub conversations therefore receive `sandbox.defaultSharedVault` and settings-declared MCP servers like Slack conversations. See [Vault](/sandbox/vault/).
 
 ## Sessions and replies
 
@@ -84,13 +83,10 @@ The whole issue/PR is one persistent session (`sessionKey === conversationId`), 
 
 ## Repository access and pull requests
 
-The sandbox never holds credentials; git runs on the host side of the office-dir bind mount with the agent token passed per invocation and never written to `.git/config`.
+mikan never runs git on the host. The agent clones the repository into its scratch directory, checks out a pull request with `gh pr checkout`, commits as the agent account, and pushes, all inside its sandbox with the sandbox's GitHub credentials. Without credentials only public repositories are reachable.
 
-- On first contact the repo is shallow-cloned into the conversation office's `repo/` directory (`./repo` in the agent's prompt), with the agent account as the commit author. PR conversations get the PR head checked out under its real branch name (fork PRs and failed lookups fall back to `pr-<n>`). A failed clone is retried on the next trigger.
-- The agent branches and commits inside the sandbox with plain git; pushing from the sandbox fails by design.
-- `github_pr` (capability `push`) pushes the agent's `pi/*` branch and opens a pull request (draft supported); calling it again with the same branch pushes to the existing PR. It cannot push the default branch, force-push, or merge.
+- `github_pr` (capability `push`) opens a pull request (draft supported) for a branch the agent already pushed; if the branch already has an open PR, it returns that PR. It never pushes and cannot merge.
 - `github_checks` reads GitHub Actions jobs and commit statuses for a pushed branch or the PR head, and fetches an Actions job's log tail by `job_id`. Fine-grained tokens have no Checks permission, so check runs published by third-party CI apps are not visible.
-- `github_sync` refreshes `./repo` from origin. It only moves the checkout when that cannot lose the agent's work; otherwise it fetches to `FETCH_HEAD` and reports.
 - `github_review_reply` posts a reply inside one inline review thread.
 - `github_read` reads PR state and diff stats, changed files, reviews, issue metadata, comments, and a filtered issue/PR listing of the conversation's repository.
 - `github_issue` (capability `triage`) manages labels, assignees, and close/reopen. Lock, delete, and transfer are not in its action set.
@@ -100,4 +96,3 @@ The sandbox never holds credentials; git runs on the host side of the office-dir
 - Missed webhook deliveries are not replayed.
 - File uploads are not supported by the REST API; `uploadFile` posts a pointer comment instead.
 - A PR review whose summary body alone mentions the account (with zero inline comments) does not trigger. Request the account's review, or comment instead.
-- The `./repo` clone starts as a snapshot from first contact; the agent uses `github_sync` to update it.

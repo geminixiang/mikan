@@ -359,6 +359,37 @@ const rules: BoundaryRule[] = [
     ],
   },
   {
+    id: "github-adapter-runs-no-host-processes",
+    rule: "The GitHub adapter never starts a host process such as git; the agent runs git inside its sandbox (ADR 0016)",
+    appliesTo: (file) => isProductionFile(file) && file.startsWith("src/adapters/github/"),
+    violates: (_file, source) =>
+      source.statements
+        .filter(ts.isImportDeclaration)
+        .filter(
+          (node) =>
+            ts.isStringLiteral(node.moduleSpecifier) &&
+            /^(node:)?child_process$/.test(node.moduleSpecifier.text),
+        )
+        .map((node) => node.getStart(source)),
+    spellings: [
+      {
+        file: "src/adapters/github/repo.ts",
+        code: 'import { execFile } from "node:child_process";',
+        violates: true,
+      },
+      {
+        file: "src/adapters/github/repo.ts",
+        code: 'import { spawn } from "child_process";',
+        violates: true,
+      },
+      {
+        file: "src/sandbox/host.ts",
+        code: 'import { spawn } from "node:child_process";',
+        violates: false,
+      },
+    ],
+  },
+  {
     id: "office-files-open-without-following-links",
     rule: "The agent can replace the conversation log and MEMORY.md with a link; read and append them with readTextFileNoFollowIfExists and appendFileNoFollow (ADR 0016)",
     appliesTo: (file) => isProductionFile(file) && file !== "src/file-guards.ts",

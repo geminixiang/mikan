@@ -26,7 +26,7 @@ description: 用 fine-grained PAT 和 webhook 把一個 GitHub 帳號綁給 mika
 | ---------- | ------------------------------------------------- |
 | **Read**   | 被 @、被 assign、留言、按 reaction、讀程式碼與 CI |
 | **Triage** | 另外可以管理 label、assignee、關閉 issue          |
-| **Write**  | 另外可以推 `pi/*` branch、開 pull request         |
+| **Write**  | 另外可以推 branch、開 pull request                |
 
 角色是上限，mikan 實際能做什麼由第 6 步的設定決定。
 
@@ -43,7 +43,7 @@ description: 用 fine-grained PAT 和 webhook 把一個 GitHub 帳號綁給 mika
 
    | 權限                | 設定           | 用途                            |
    | ------------------- | -------------- | ------------------------------- |
-   | **Contents**        | Read and write | Clone，以及推 `pi/*` branch     |
+   | **Contents**        | Read and write | 在 sandbox 裡 clone 和 push     |
    | **Issues**          | Read and write | 留言、reaction、label、assignee |
    | **Pull requests**   | Read and write | PR 留言、review 回覆、開 PR     |
    | **Actions**         | Read-only      | CI job 與 log                   |
@@ -107,6 +107,8 @@ GitHub bot started as @acme-agent, answering in acme/*
 ```
 
 Token 無效時，mikan 會啟動失敗。
+
+mikan 自己從不執行 git。agent 在 sandbox 裡 clone 和 push，sandbox 取得 GitHub 憑證的方式跟 Slack 對話一樣：透過 `sandbox.defaultSharedVault`，或對話 vault 裡的 `GH_TOKEN`。見 [Vault](/zh-tw/sandbox/vault/)。沒有憑證時，agent 仍可讀公開 repo 並透過 API 回覆。請保護預設 branch，讓 agent 的變更只能經由 review 過的 pull request 進入。
 
 ## 7. 試試看
 

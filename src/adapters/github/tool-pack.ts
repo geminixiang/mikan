@@ -3,7 +3,6 @@ import { createGithubPrTool } from "./tools/pr.js";
 import { createGithubIssueTool } from "./tools/issue.js";
 import { createGithubReadTool } from "./tools/read.js";
 import { createGithubReviewReplyTool } from "./tools/review-reply.js";
-import { createGithubSyncTool } from "./tools/sync.js";
 import type { PlatformToolPack } from "../../harness/tools/types.js";
 import type { GithubCapability, PlatformGithubOps } from "./types.js";
 
@@ -15,7 +14,6 @@ export function createGithubToolPack(
   const { tool: githubChecksTool, setGithubChecksFunction } = createGithubChecksTool();
   const { tool: githubReviewReplyTool, setGithubReviewReplyFunction } =
     createGithubReviewReplyTool();
-  const { tool: githubSyncTool, setGithubSyncFunction } = createGithubSyncTool();
   const { tool: githubReadTool, setGithubReadFunction } = createGithubReadTool();
   const { tool: githubIssueTool, setGithubIssueFunction } = createGithubIssueTool();
 
@@ -24,7 +22,6 @@ export function createGithubToolPack(
       ...(capabilities.has("push") ? [githubPrTool] : []),
       githubChecksTool,
       githubReviewReplyTool,
-      githubSyncTool,
       githubReadTool,
       ...(capabilities.has("triage") ? [githubIssueTool] : []),
     ],
@@ -33,12 +30,11 @@ export function createGithubToolPack(
         setGithubPrFunction(null);
         setGithubChecksFunction(null);
         setGithubReviewReplyFunction(null);
-        setGithubSyncFunction(null);
         setGithubReadFunction(null);
         setGithubIssueFunction(null);
         return;
       }
-      setGithubPrFunction((request) => ops.pushAndCreatePr(conversationId, request));
+      setGithubPrFunction((request) => ops.createPullRequest(conversationId, request));
       setGithubChecksFunction({
         getChecks: (branch) => ops.getChecks(conversationId, branch),
         getJobLog: (jobId) => ops.getJobLog(conversationId, jobId),
@@ -46,7 +42,6 @@ export function createGithubToolPack(
       setGithubReviewReplyFunction((commentId, body) =>
         ops.replyToReviewThread(conversationId, commentId, body),
       );
-      setGithubSyncFunction((branch) => ops.syncRepo(conversationId, branch));
       setGithubReadFunction((request) => ops.readGithub(conversationId, request));
       setGithubIssueFunction((request) => ops.manageIssue(conversationId, request));
     },

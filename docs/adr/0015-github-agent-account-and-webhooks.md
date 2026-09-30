@@ -18,7 +18,7 @@ Events arrive as signed GitHub webhooks. Delivery is best effort: a missed event
 
 ## Decision
 
-- **Identity**: the agent account comments, replies to review threads, reacts, pushes `pi/*` branches, opens pull requests, and authors commits.
+- **Identity**: the agent account comments, replies to review threads, reacts, opens pull requests, and authors commits. The agent pushes from its sandbox with the sandbox's credentials; mikan runs no git on the host ([ADR 0016](0016-host-sandbox-trust-boundary.md)).
   - The host holds one fine-grained PAT of that account with Contents, Issues, and Pull requests read & write, and Actions and Commit statuses read.
   - The sandbox stays credential-free, and git runs host-side with the token passed per invocation.
 - **Event source**: webhooks to `<LINK_URL>/github/webhook`, verified with `X-Hub-Signature-256` against `GITHUB_WEBHOOK_SECRET`.

@@ -17,8 +17,9 @@ new concepts — only a new `MessagingBot` implementation and an event source.
 mikan acts on GitHub as a regular user account the operator binds with a
 fine-grained PAT (`GITHUB_AGENT_TOKEN`). An App's `slug[bot]` never appears in
 @-mention autocomplete and cannot be assigned or asked for review; a user
-account can, so people address mikan like a teammate. Every API call, clone,
-push, and commit uses that one identity. The account is a `User`, so the
+account can, so people address mikan like a teammate. Every API call and
+commit uses that one identity; the agent's pushes use whichever token the
+sandbox holds, normally the same account's. The account is a `User`, so the
 adapter ignores its own actions explicitly; the `Bot` sender check alone
 would let it answer itself forever.
 
@@ -95,12 +96,13 @@ minutes so the agent answers once.
 
 ## Capabilities
 
-Commenting, reading, CI results, syncing the clone, and review replies are
-always available. `GITHUB_CAPABILITIES` adds `triage` (`github_issue`) and
+Commenting, reading, CI results, and review replies are always available. `GITHUB_CAPABILITIES` adds `triage` (`github_issue`) and
 `push` (`github_pr`). A capability that is off removes the tool from the
 agent's tool list and from the conversation guide, so the model is never told
 about an action it cannot take. The token's permissions and the account's
-repository role remain the outer bound.
+repository role remain the outer bound. mikan runs no git on the host
+(ADR 0016): the agent clones and pushes in its sandbox, so what it can push is
+bounded by the sandbox's token and branch protection, not by a capability.
 
 ## Review threads
 
@@ -114,8 +116,8 @@ mentions the agent does not trigger; review requests and inline comments do.
 ## Tool pack
 
 One tool per file under `tools/`: `github_pr`, `github_checks` (Actions jobs,
-commit statuses, and Actions job logs), `github_review_reply`, `github_sync`
-(work-preserving clone refresh), `github_read` (metadata the clone lacks), and
+commit statuses, and Actions job logs), `github_review_reply`, `github_read`
+(metadata a clone lacks), and
 `github_issue` (labels, assignees, state; closed action set). All run
 host-side, are wired per run through `PlatformGithubOps`, and are enabled only
 in GitHub conversations.
