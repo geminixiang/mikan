@@ -1,9 +1,5 @@
-import { createVerify, generateKeyPairSync } from "node:crypto";
 import { describe, expect, test, vi } from "vitest";
 import { GithubApiError, GithubClient, githubIsRateLimited } from "../adapters/github/client.js";
-
-const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
-const PRIVATE_KEY_PEM = privateKey.export({ type: "pkcs1", format: "pem" }).toString();
 
 type FetchInput = Parameters<typeof fetch>[0];
 
@@ -15,20 +11,15 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-function tokenResponse(): Response {
-  return jsonResponse({
-    token: "ghs_installation",
-    expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-  });
+function makeClient(fetchImpl: typeof fetch): GithubClient {
+  return new GithubClient({ token: "github_pat_agent", fetchImpl });
 }
 
-function makeClient(fetchImpl: typeof fetch): GithubClient {
-  return new GithubClient({
-    appId: "12345",
-    privateKey: PRIVATE_KEY_PEM,
-    installationId: "678",
-    fetchImpl,
-  });
+function authOf(fetchImpl: ReturnType<typeof vi.fn>, path: string): string | undefined {
+  const init = fetchImpl.mock.calls.find(([url]) => String(url).endsWith(path))?.[1] as
+    | RequestInit
+    | undefined;
+  return (init?.headers as Record<string, string> | undefined)?.Authorization;
 }
 
 describe("GithubClient job logs", () => {
@@ -38,128 +29,73 @@ describe("GithubClient job logs", () => {
   ])("reads text for status %i", async (status, expected) => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(tokenResponse())
       .mockResolvedValueOnce(new Response(status === 204 ? null : expected, { status }));
     expect(await makeClient(fetchImpl).getJobLog("o", "r", 7)).toBe(expected);
     expect(fetchImpl).toHaveBeenLastCalledWith(
       "https://api.github.com/repos/o/r/actions/jobs/7/logs",
-      expect.objectContaining({
-        method: "GET",
-        headers: expect.objectContaining({ Authorization: "Bearer ghs_installation" }),
-      }),
+      expect.objectContaining({ method: "GET" }),
     );
   });
 
   test.each([304, 403, 404, 500])("rejects unsuccessful text response %i", async (status) => {
     const fetchImpl = vi
       .fn()
-      .mockResolvedValueOnce(tokenResponse())
       .mockResolvedValueOnce(new Response(status === 304 ? null : "failure", { status }));
     await expect(makeClient(fetchImpl).getJobLog("o", "r", 7)).rejects.toMatchObject({ status });
   });
 });
 
 describe("GithubClient auth", () => {
-  test("signs a verifiable RS256 app JWT with the app id as issuer", async () => {
-    const calls: { url: string; headers: Record<string, string> }[] = [];
-    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
-      calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
-      return jsonResponse({ slug: "mikan" });
-    });
-
+  test("every request, read or write, uses the agent token", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ id: 1, login: "acme-agent" }));
     const client = makeClient(fetchImpl);
-    expect(await client.getAppSlug()).toBe("mikan");
 
-    const auth = calls[0]?.headers.Authorization;
-    if (auth === undefined) throw new Error("expected an Authorization header on the first call");
-    expect(auth).toMatch(/^Bearer /);
-    const [header, payload, signature] = auth.slice("Bearer ".length).split(".");
-    if (header === undefined || payload === undefined || signature === undefined) {
-      throw new Error(`expected a three-part JWT, got ${auth}`);
-    }
-    expect(JSON.parse(Buffer.from(header, "base64url").toString())).toEqual({
-      alg: "RS256",
-      typ: "JWT",
-    });
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString());
-    expect(claims.iss).toBe("12345");
-    expect(claims.exp).toBeGreaterThan(claims.iat);
-    const verified = createVerify("RSA-SHA256")
-      .update(`${header}.${payload}`)
-      .verify(publicKey, Buffer.from(signature, "base64url"));
-    expect(verified).toBe(true);
-  });
+    expect(await client.getAuthenticatedUser()).toEqual({ id: 1, login: "acme-agent" });
+    await client.getIssue("o", "r", 5);
+    await client.createIssueComment("o", "r", 5, "hi");
+    await client.replyToReviewComment("o", "r", 5, 12, "reply");
 
-  test("mints the installation token once and reuses it while fresh", async () => {
-    const calls: { url: string; headers: Record<string, string> }[] = [];
-    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
-      calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
-      if (String(url).includes("/access_tokens")) return tokenResponse();
-      return jsonResponse([]);
-    });
-
-    const client = makeClient(fetchImpl);
-    await client.listIssuesSince("o", "r", "2026-01-01T00:00:00Z");
-    await client.listIssueCommentsSince("o", "r", "2026-01-01T00:00:00Z");
-
-    const tokenCalls = calls.filter((call) => call.url.includes("/access_tokens"));
-    expect(tokenCalls).toHaveLength(1);
-    const apiCalls = calls.filter((call) => call.url.includes("/repos/"));
-    expect(apiCalls).toHaveLength(2);
-    for (const call of apiCalls) {
-      expect(call.headers.Authorization).toBe("Bearer ghs_installation");
+    for (const path of [
+      "/user",
+      "/repos/o/r/issues/5",
+      "/repos/o/r/issues/5/comments",
+      "/repos/o/r/pulls/5/comments/12/replies",
+    ]) {
+      expect(authOf(fetchImpl, path)).toBe("Bearer github_pat_agent");
     }
   });
 });
 
-describe("GithubClient conditional requests", () => {
-  test("stores the etag and returns null on 304", async () => {
-    let sentIfNoneMatch: string | undefined;
-    let first = true;
-    const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
-      if (String(url).includes("/access_tokens")) return tokenResponse();
-      const headers = init?.headers as Record<string, string>;
-      if (first) {
-        first = false;
-        return jsonResponse([{ id: 1 }], { headers: { etag: 'W/"abc"' } });
-      }
-      sentIfNoneMatch = headers["If-None-Match"];
-      return new Response(null, { status: 304 });
+describe("GithubClient CI", () => {
+  test("reads commit statuses, workflow runs for a sha, and their jobs", async () => {
+    const fetchImpl = vi.fn(async (url: FetchInput) => {
+      const path = String(url);
+      if (path.includes("/status")) return jsonResponse({ sha: "abc", statuses: [] });
+      if (path.includes("/jobs")) return jsonResponse({ jobs: [{ id: 42 }] });
+      return jsonResponse({ workflow_runs: [{ id: 10, name: "CI" }] });
     });
-
     const client = makeClient(fetchImpl);
-    const since = "2026-01-01T00:00:00Z";
-    expect(await client.listIssueCommentsSince("o", "r", since)).toEqual([{ id: 1 }]);
-    expect(await client.listIssueCommentsSince("o", "r", since)).toBeNull();
-    expect(sentIfNoneMatch).toBe('W/"abc"');
+
+    expect(await client.getCombinedStatus("o", "r", "pi/fix")).toEqual({
+      sha: "abc",
+      statuses: [],
+    });
+    expect(await client.listWorkflowRuns("o", "r", "abc")).toEqual([{ id: 10, name: "CI" }]);
+    expect(await client.listWorkflowJobs("o", "r", 10)).toEqual([{ id: 42 }]);
+
+    const urls = fetchImpl.mock.calls.map(([url]) => String(url));
+    expect(urls).toEqual([
+      "https://api.github.com/repos/o/r/commits/pi%2Ffix/status?per_page=100",
+      "https://api.github.com/repos/o/r/actions/runs?head_sha=abc&per_page=20",
+      "https://api.github.com/repos/o/r/actions/runs/10/jobs?per_page=100",
+    ]);
   });
 });
 
 describe("GithubClient review comments", () => {
-  test("listPullReviewCommentsSince polls /pulls/comments conditionally", async () => {
-    const calls: string[] = [];
-    let first = true;
-    const fetchImpl = vi.fn(async (url: FetchInput) => {
-      if (String(url).includes("/access_tokens")) return tokenResponse();
-      calls.push(String(url));
-      if (first) {
-        first = false;
-        return jsonResponse([{ id: 8001 }], { headers: { etag: 'W/"rc"' } });
-      }
-      return new Response(null, { status: 304 });
-    });
-
-    const client = makeClient(fetchImpl);
-    const since = "2026-01-01T00:00:00Z";
-    expect(await client.listPullReviewCommentsSince("o", "r", since)).toEqual([{ id: 8001 }]);
-    expect(await client.listPullReviewCommentsSince("o", "r", since)).toBeNull();
-    expect(calls[0]).toContain("/repos/o/r/pulls/comments?sort=updated&direction=asc&since=");
-  });
-
   test("listPullReviewComments and createReviewCommentReaction hit the pulls endpoints", async () => {
     const calls: { url: string; method?: string }[] = [];
     const fetchImpl = vi.fn(async (url: FetchInput, init?: RequestInit) => {
-      if (String(url).includes("/access_tokens")) return tokenResponse();
       calls.push({ url: String(url), method: init?.method });
       return jsonResponse([]);
     });
@@ -176,10 +112,7 @@ describe("GithubClient review comments", () => {
 
 describe("GithubClient errors", () => {
   test("non-2xx responses throw GithubApiError with the status", async () => {
-    const fetchImpl = vi.fn(async (url: FetchInput) => {
-      if (String(url).includes("/access_tokens")) return tokenResponse();
-      return new Response("API rate limit exceeded", { status: 403 });
-    });
+    const fetchImpl = vi.fn(async () => new Response("API rate limit exceeded", { status: 403 }));
 
     const client = makeClient(fetchImpl);
     const failure = await client.getIssue("o", "r", 1).catch((err: unknown) => err);
@@ -198,89 +131,14 @@ describe("GithubClient errors", () => {
 
 describe("GithubClient empty responses", () => {
   test("rejects an empty body where a resource is required, naming the request", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(tokenResponse())
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(makeClient(fetchImpl).getRepository("o", "r")).rejects.toThrow(
       "GitHub GET /repos/o/r returned no body (204)",
     );
   });
 
-  test("rejects an empty installation token response", async () => {
-    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
-    await expect(makeClient(fetchImpl).getRepository("o", "r")).rejects.toThrow(
-      "GitHub POST /app/installations/678/access_tokens returned no body (204)",
-    );
-  });
-
   test("accepts an empty body for requests without a result", async () => {
-    const fetchImpl = vi
-      .fn()
-      .mockResolvedValueOnce(tokenResponse())
-      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(makeClient(fetchImpl).deleteIssueComment("o", "r", 1)).resolves.toBeUndefined();
-  });
-});
-
-function authOf(fetchImpl: ReturnType<typeof vi.fn>, path: string): string | undefined {
-  const init = fetchImpl.mock.calls.find(([url]) => String(url).endsWith(path))?.[1] as
-    | RequestInit
-    | undefined;
-  return (init?.headers as Record<string, string> | undefined)?.Authorization;
-}
-
-describe("GithubClient agent machine user", () => {
-  function makeAgentClient(fetchImpl: typeof fetch): GithubClient {
-    return new GithubClient({
-      appId: "12345",
-      privateKey: PRIVATE_KEY_PEM,
-      installationId: "678",
-      agentToken: "github_pat_agent",
-      fetchImpl,
-    });
-  }
-
-  test("comments and reactions speak with the agent token; reads keep the installation token", async () => {
-    const fetchImpl = vi.fn(async (url: FetchInput) =>
-      String(url).includes("/access_tokens") ? tokenResponse() : jsonResponse({ id: 1 }),
-    );
-    const client = makeAgentClient(fetchImpl);
-
-    await client.createIssueComment("o", "r", 5, "hi");
-    await client.updateIssueComment("o", "r", 11, "edited");
-    await client.createIssueReaction("o", "r", 5, "eyes");
-    await client.createCommentReaction("o", "r", 11, "eyes");
-    await client.replyToReviewComment("o", "r", 5, 12, "reply");
-    await client.getIssue("o", "r", 5);
-
-    expect(authOf(fetchImpl, "/repos/o/r/issues/5/comments")).toBe("Bearer github_pat_agent");
-    expect(authOf(fetchImpl, "/repos/o/r/issues/comments/11")).toBe("Bearer github_pat_agent");
-    expect(authOf(fetchImpl, "/repos/o/r/issues/5/reactions")).toBe("Bearer github_pat_agent");
-    expect(authOf(fetchImpl, "/repos/o/r/issues/comments/11/reactions")).toBe(
-      "Bearer github_pat_agent",
-    );
-    expect(authOf(fetchImpl, "/repos/o/r/pulls/5/comments/12/replies")).toBe(
-      "Bearer github_pat_agent",
-    );
-    expect(authOf(fetchImpl, "/repos/o/r/issues/5")).toBe("Bearer ghs_installation");
-  });
-
-  test("getAgentLogin reads /user with the agent token, and is null without one", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ login: "acme-agent" }));
-    expect(await makeAgentClient(fetchImpl).getAgentLogin()).toBe("acme-agent");
-    expect(authOf(fetchImpl, "/user")).toBe("Bearer github_pat_agent");
-
-    const plainFetch = vi.fn();
-    expect(await makeClient(plainFetch).getAgentLogin()).toBeNull();
-    expect(plainFetch).not.toHaveBeenCalled();
-  });
-
-  test("without an agent token, comments keep posting as the App installation", async () => {
-    const fetchImpl = vi.fn(async (url: FetchInput) =>
-      String(url).includes("/access_tokens") ? tokenResponse() : jsonResponse({ id: 1 }),
-    );
-    await makeClient(fetchImpl).createIssueComment("o", "r", 5, "hi");
-    expect(authOf(fetchImpl, "/repos/o/r/issues/5/comments")).toBe("Bearer ghs_installation");
   });
 });

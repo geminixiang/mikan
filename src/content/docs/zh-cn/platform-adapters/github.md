@@ -1,83 +1,101 @@
 ---
 title: GitHub 适配器
-description: GitHub 适配器的 GitHub App 轮询、issue/PR 对话、水位线去重和基于评论的回复。
+description: 绑定 GitHub 账号、由 webhook 驱动、issue/PR 对话、限制设置，以及以 comment 回复。
 ---
 
-每个 GitHub issue 或 pull request 都是一个 mikan 对话。适配器以 GitHub App installation 身份轮询 GitHub API，不使用 webhook 端点，以保留 mikan 的主动模型。
+每个 GitHub issue 或 pull request 都是一个 mikan 对话。mikan 以你绑定的普通 GitHub 账号行动，所以大家可以像对待队友一样，用自动补全 @ 它、把 issue 和 PR assign 给它、请它 review。GitHub 通过带签名的 webhook 通知 mikan 发生了什么。设计理由见 [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md)。
 
-对话 id 为 `GH_<owner>_<repo>_<number>`，其中 owner 和 repo 都转为小写。它避开了 `/` 和 `:`，因为 id 会被原样用作一个路径段，也会用在 docker 的 `-v source:target` 语法中；它以 `_` 而非 `-` 分隔，是因为 GitHub owner 可能包含 `-`（那会让 owner/repo 的边界产生歧义），但绝不会包含 `_`。和所有平台一样，原始 id 只停留在 GitHub API 边界上：在磁盘上，该对话位于一个以 office key 命名的办公室目录中。
+Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 与 repo 都转为小写。它避开 `/` 与 `:`，因为 id 会原样作为单一路径片段使用，也会出现在 docker 的 `-v source:target` 语法中；它以 `_` 而非 `-` 分隔，是因为 GitHub owner 可能含有 `-`（那会让 owner/repo 的边界产生歧义），但绝不会含有 `_`。和每个平台一样，原始 id 只停留在 GitHub API 边界上：在磁盘上，该对话位于以 office key 命名的 office 目录中。
 
 ## 主要代码
 
-| 文件                                | 用途                                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 核心：轮询循环、水位线去重、提及/参与触发。                                                              |
-| `src/adapters/github/github-ops.ts` | 每个 `github_*` 工具背后的主机侧后端，独立于轮询循环。                                                              |
-| `src/adapters/github/repo.ts`       | 主机侧 git：浅克隆、受保护的分支推送、保留工作的同步。                                                              |
-| `src/adapters/github/client.ts`     | 以 GitHub App 身份验证的最小 REST 客户端（RS256 JWT → installation tokens）。                                       |
-| `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为一条评论发布（不进行流式编辑）。                               |
-| `src/adapters/github/ids.ts`        | `rc-<id>` review 评论 ts。`GH_<owner>_<repo>_<number>` 对话 ID 语法位于 `src/office/index.ts`。                     |
-| `src/adapters/github/tool-pack.ts`  | 把主机侧工具打包为由 main 注入的平台工具包。                                                                        |
-| `src/adapters/github/tools/`        | 面向代理的工具：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
-| `src/adapters/github/types.ts`      | GitHub 适配器专用类型和 REST payload 结构。                                                                         |
+| 文件                                | 用途                                                                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `src/adapters/github/bot.ts`        | GitHub bot 主体：判断是否触发、检查权限、送入对话。                                                                        |
+| `src/adapters/github/activity.ts`   | 校验 webhook 内容，整理成统一的活动格式。                                                                                  |
+| `src/adapters/github/policy.ts`     | 解析并应用限制设置。                                                                                                       |
+| `src/adapters/github/webhook.ts`    | 校验签名、响应 GitHub、丢弃重复的推送。                                                                                    |
+| `src/adapters/github/github-ops.ts` | 每个 `github_*` tool 背后的 host 端 backend。                                                                              |
+| `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、受保护的 branch push、保留工作的 sync。                                                        |
+| `src/adapters/github/client.ts`     | 以账号 token 认证的最小 REST client。                                                                                      |
+| `src/adapters/github/context.ts`    | 创建 GitHub `ConversationResponder`；将完成的回复作为单条 comment 发布（不做 streaming edits）。                           |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` 语法位于 `src/office/index.ts`。                                 |
+| `src/adapters/github/tool-pack.ts`  | 把 host 端 tools 打包成由 main 注入的 platform tool pack。                                                                 |
+| `src/adapters/github/tools/`        | 提供给 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 
-## 创建并安装 GitHub App
+## 需要准备
 
-1. 为拥有目标仓库的账号或组织创建 GitHub App。
-2. 授予仓库权限：**Metadata: Read**、**Contents: Read & write**、**Issues: Read & write**、**Pull requests: Read & write**、**Checks: Read** 和 **Actions: Read**。Issues/PR 写入权限用于评论和 reaction；Contents/Pull requests 写入权限仅由受保护的 `github_pr` 工具使用。
-3. 将 App 安装到 mikan 可以轮询的仓库。
-4. 记录 App ID 和 installation ID，然后生成 private key。将 PEM 保存在工作区之外，并优先使用 `GITHUB_APP_PRIVATE_KEY_PATH`，而不是内联 secret。
-
-App slug 是用户首次联系时提及的名称。
+- **一个 agent 账号**：给 mikan 用的普通 GitHub 账号，对它要工作的仓库有访问权限。它在各仓库的角色是外层上限：只需要对话的仓库给 read，要推 branch 的仓库给 write。
+- **该账号的 fine-grained personal access token**：resource owner 选组织，repository permissions 为 **Contents**、**Issues**、**Pull requests** 读写，**Actions** 与 **Commit statuses** 只读。组织要求审批时由 owner 审批。
+- **一个 webhook**：发送到 `<LINK_URL>/github/webhook`，设置 secret，订阅 **Issues**、**Issue comments**、**Pull requests**、**Pull request review comments**。组织 webhook 最简单；GitHub App 的 webhook 也可以，mikan 不使用任何 App 凭证。
+- **Link server**（`LINK_PORT` 与公开的 `LINK_URL`），用于接收 webhook。
 
 ## 配置
 
-| 环境变量                                                 | 用途                                                               |
-| -------------------------------------------------------- | ------------------------------------------------------------------ |
-| `GITHUB_APP_ID`                                          | GitHub App id（必需）。                                            |
-| `GITHUB_INSTALLATION_ID`                                 | 要以其身份操作的 installation id（必需）。                         |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可内联（使用 `\n` 转义）或作为文件提供。      |
-| `GITHUB_REPOS`                                           | 可选的逗号分隔 `owner/repo` 列表；默认为 installation 的所有仓库。 |
-| `GITHUB_POLL_INTERVAL`                                   | 可选的轮询间隔（秒，默认 60）。                                    |
+| 环境变量                | 用途                                                                 |
+| ----------------------- | -------------------------------------------------------------------- |
+| `GITHUB_AGENT_TOKEN`    | 账号的 fine-grained PAT（必填）。GitHub 拒绝时启动失败。             |
+| `GITHUB_WEBHOOK_SECRET` | Webhook secret（必填）。                                             |
+| `GITHUB_REPOS`          | 以逗号分隔的 `owner/repo` 或 `owner/*`（必填）。其他仓库一律不回应。 |
+| `GITHUB_PUBLIC_REPOS`   | 设为 `true` 时也回应公开仓库（默认 `false`）。                       |
+| `GITHUB_USERS`          | 以逗号分隔、允许触发的账号（默认：任何有足够权限的人）。             |
+| `GITHUB_MIN_PERMISSION` | 触发者需要的仓库权限：`write`（默认）、`maintain` 或 `admin`。       |
+| `GITHUB_TRIGGERS`       | `mention`、`assign`、`review`、`followup` 的任意组合（默认全部）。   |
+| `GITHUB_CAPABILITIES`   | 在评论之外额外开放 `triage` 和／或 `push`（默认都不开）。            |
 
-## 事件来源
+任何一项填了无法识别的值，启动就会失败。
 
-轮询循环针对每个监视的仓库，使用 ETag 条件请求获取自增量游标以来更新的 issue、issue/PR 评论以及 PR 内联 review 评论（304 响应不计入 rate limit）。目前每个端点读取一页、最多 100 条记录；如果两次轮询间发生更大规模的突发更新，游标推进后可能会漏掉记录。对于繁忙的 installation，请减小 `GITHUB_POLL_INTERVAL` 或缩小 `GITHUB_REPOS` 范围。
+## 触发条件
 
-去重使用持久保存在 `<state-dir>/github-sync.json` 中的水位线（原子写入）：
+一次推送要同时满足以下条件才会触发：
 
-- 首次运行只记录基线，不发出任何事件——历史记录永远不会触发运行。
-- 已处理的评论/issue ID 永远不会再次触发，编辑也不会再次触发。
-- mikan 停机期间发布的评论会在重启后重放。
+1. 发送者不是 bot，也不是 agent 账号自己。
+2. 仓库匹配 `GITHUB_REPOS`，且是私有仓库，除非 `GITHUB_PUBLIC_REPOS=true`。
+3. 属于已开启的触发方式：
+   - `mention`：新的 issue、PR、评论或 inline review comment 提到 `@<账号>`；
+   - `assign`：issue 或 PR 被 assign 给这个账号；
+   - `review`：PR 请这个账号 review；
+   - `followup`：mikan 已经参与的 thread 有新评论。
+4. 设置了 `GITHUB_USERS` 时，发送者在名单内。
+5. 发送者在该仓库有 `GITHUB_MIN_PERMISSION` 以上的权限。查询结果缓存五分钟，查询失败一律拒绝。
 
-## 触发方式
+其他情况一律忽略，也不会留下任何状态。@ 账号并评论 `stop`（或 `/stop`）会停止运行中的 session。
 
-仅当评论、内联 review 评论或新 issue 正文 @提及 app slug，或 bot 已参与该 issue 的对话时，才会触发运行。评论者还必须对仓库具有**写入权限或更高权限**——在公开仓库中任何人都可以评论，因此所有写入权限以下用户的提及都会被完全忽略（权限查询缓存五分钟，失败时默认拒绝）。其他所有内容都会被忽略，不创建任何状态。提及 bot 的 `stop`（或 `/stop`）评论会停止运行中的会话；该魔法词在所有平台上使用同一套语法。
+推送采用尽力而为：mikan 立即响应 GitHub，忽略重复推送，不保存任何推送记录。mikan 停机或无法访问时发送的事件会丢失，请再 @ 一次。
+
+## 能力
+
+未设置 `GITHUB_CAPABILITIES` 时，mikan 可以评论、添加 reaction、读取仓库与 CI 结果、在 review thread 回复，但不能修改 label、assignee 或代码。
+
+| 能力     | 开放                                                            |
+| -------- | --------------------------------------------------------------- |
+| `triage` | `github_issue` tool：label、assignee、关闭与重新打开。          |
+| `push`   | `github_pr` tool：推送 `pi/*` branch、创建或更新 pull request。 |
+
+未开启的能力，对应的 tool 和说明完全不会提供给 agent。token 的权限和账号在仓库的角色仍在外层生效。
 
 由于任何人都可以在公开仓库上开 issue，GitHub 报告 `trustModel: "open-trigger"`。这会为 GitHub 对话禁用环境 `sandbox.defaultSharedVault` 复制：它们默认不获得任何凭证，管理员必须有意地为某个特定对话配置 vault。参阅 [Vault](/zh-cn/sandbox/vault/)。
 
-## 会话和回复
+## Session 与回复
 
-整个 issue/PR 是一个持久会话（`sessionKey === conversationId`）——包括内联 review 话题，它们被展平合入该会话，而不是映射到子会话。触发运行的 review 评论会作为带有 `[PR review comment rc-<id> on <path>:<line>]` 标签的消息注入，携带对应的 diff hunk；如果是话题中途的回复，还会附带该话题此前的对话轮次。代理使用 `github_review_reply` 工具回复该话题（普通回复会作为常规 PR 评论发布）。回复使用 GitHub Flavored Markdown，并在回复完成后发布——不进行流式编辑，因此回复不会频繁调用 API 或显示为“edited”。超过评论拆分阈值的输出会作为后续评论发布。系统提示会告知代理对话对应的 issue/PR（owner/repo#number）。首次通过评论联系时，会先记录 issue 标题/正文，使会话了解话题内容。
+整个 issue/PR 是一个持久 session（`sessionKey === conversationId`），inline review thread 也会平铺进同一个 session。触发的 review comment 会被注入为带 `[PR review comment rc-<id> on <path>:<line>]` 标记的消息并附上 diff hunk；thread 中段的回复还会附上之前的内容。Agent 用 `github_review_reply` tool 回复该 thread。回复使用 GitHub Flavored Markdown，并在完成后才发布。第一次通过评论接触时，会先记录 issue 标题与正文。
 
-## 仓库访问和 pull request
+## 仓库访问与 pull request
 
-沙箱从不持有凭证；git 操作横跨办公室目录 bind mount 的两侧：
+Sandbox 永远不持有凭证；git 在 office 目录 bind mount 的 host 端运行，账号 token 每次调用时传入，绝不写入 `.git/config`。
 
-- 首次联系时，仓库会被浅克隆到该对话办公室的 `repo/` 目录——沙箱内为 `/workspace/<office-key>/repo`，代理的提示词中称之为 `./repo`——使用仅限该仓库和 `contents:read` 的临时 token。token 按 git 调用传入，绝不会写入 `.git/config`。PR 对话会以 PR head 的真实分支名签出（fork PR 或查询失败时回退为 `pr-<n>`），因此 head 为 `pi/*` 分支的 PR 可以原地更新：直接在该分支上提交并调用 `github_pr`，推送会回到同一个 PR。
-- 代理在沙箱中使用普通 git 创建分支和提交（bot 的 author identity 已预配置）；按设计，从沙箱 push 会失败。
-- `github_pr` 工具在主机侧运行：它为该仓库生成 `contents:write` + `pull_requests:write` token，从挂载的主机侧推送代理的 `pi/*` 分支，并以 App 身份创建 pull request（支持 draft）；使用相同分支再次调用会将新提交推送到现有 PR。它不能推送默认分支、force-push 或 merge——每个 PR 都由人工 review 和 merge。
-- `github_checks` 工具读取已推送分支（或 PR head）的 CI check run，并可通过 `job_id` 获取 GitHub Actions job 的日志末尾（需要 **Checks: Read** 和 **Actions: Read** 权限）。外部 CI check 会保留摘要和 URL，但其日志无法通过 GitHub 获取。
-- `github_sync` 工具从 origin 刷新 `./repo` 快照——最新的 PR head、base 分支或指定分支——使用临时只读 token。仅当不会丢失代理的工作时（工作树干净、没有代理提交；被 force-push 的 PR head 仍会同步），它才会移动检出；否则它只 fetch 到 `FETCH_HEAD` 并报告结果，由代理在沙箱内自行 merge 或 rebase。
-- `github_review_reply` 工具在一个内联 review 话题内发布回复，数字 id 取自 `rc-<id>` 消息。
-- `github_read` 工具读取克隆无法展示的元数据：PR 状态和 diff 统计、变更文件、已提交的 review 及未解决话题 id、issue 元数据、最近评论，以及经过滤的 issue/PR 列表。它在构造上就限定于对话所属的仓库。
-- `github_issue` 工具管理对话所属仓库中任意 issue 的 label、assignee 和 close/reopen（triage）。lock、delete 和 transfer 不在其操作集内。
-
-这些工具使用设置部分列出的 App 权限，无法绕过 mikan 强制实施的分支/默认分支保护。
+- 第一次接触时，仓库会 shallow clone 到对话 office 的 `repo/` 目录（agent 的 prompt 中称为 `./repo`），commit 作者是 agent 账号。PR 对话会以真实 branch 名 checkout PR head（fork PR 与查询失败时退回 `pr-<n>`）。Clone 失败时，下次触发会重试。
+- Agent 在 sandbox 内用普通 git 创建 branch 与 commit；从 sandbox push 会刻意失败。
+- `github_pr`（能力 `push`）推送 agent 的 `pi/*` branch 并创建 pull request（支持 draft）；同一 branch 再次调用会推送到已有 PR。它不能推送默认 branch、force-push 或 merge。
+- `github_checks` 读取已推送 branch 或 PR head 的 GitHub Actions job 与 commit status，并可按 `job_id` 获取 Actions job 的日志末尾。Fine-grained token 没有 Checks 权限，所以第三方 CI app 发布的 check run 不可见。
+- `github_sync` 从 origin 更新 `./repo`。只有在不会丢失 agent 工作时才移动 checkout；否则只 fetch 到 `FETCH_HEAD` 并报告。
+- `github_review_reply` 在单个 inline review thread 中回复。
+- `github_read` 读取对话所属仓库的 PR 状态、变更文件、review、issue 与评论。
+- `github_issue`（能力 `triage`）管理 label、assignee 与关闭／重新打开。Lock、delete 与 transfer 不在其 action set 中。
 
 ## 限制
 
-- REST API 不支持文件上传；`uploadFile` 会改为发布指针评论。
-- 仅在摘要正文中提及 bot（没有任何内联评论）的 PR review 不会触发——不存在仓库级的 “reviews since” 端点。请改为发布普通 PR 评论。
-- `./repo` 克隆是首次联系时的快照；沙箱自身无法获取更新——代理需使用 `github_sync` 来刷新。
-- 缺失的克隆会在每次触发时重新尝试（一旦存在即为空操作），因此首次克隆失败——例如 App 权限是后来才授予的——会在下一次提及时自愈。
+- 漏掉的 webhook 推送不会补发。
+- REST API 不支持文件上传；`uploadFile` 会改发一条指引评论。
+- 只有 summary 正文提到账号、没有 inline comment 的 PR review 不会触发。请改为请它 review，或另外评论。
+- `./repo` 是第一次接触时的快照；agent 用 `github_sync` 更新。

@@ -5,9 +5,12 @@ import { createGithubReadTool } from "./tools/read.js";
 import { createGithubReviewReplyTool } from "./tools/review-reply.js";
 import { createGithubSyncTool } from "./tools/sync.js";
 import type { PlatformToolPack } from "../../harness/tools/types.js";
-import type { PlatformGithubOps } from "./types.js";
+import type { GithubCapability, PlatformGithubOps } from "./types.js";
 
-export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
+export function createGithubToolPack(
+  ops: PlatformGithubOps,
+  capabilities: ReadonlySet<GithubCapability>,
+): PlatformToolPack {
   const { tool: githubPrTool, setGithubPrFunction } = createGithubPrTool();
   const { tool: githubChecksTool, setGithubChecksFunction } = createGithubChecksTool();
   const { tool: githubReviewReplyTool, setGithubReviewReplyFunction } =
@@ -18,12 +21,12 @@ export function createGithubToolPack(ops: PlatformGithubOps): PlatformToolPack {
 
   return {
     tools: [
-      githubPrTool,
+      ...(capabilities.has("push") ? [githubPrTool] : []),
       githubChecksTool,
       githubReviewReplyTool,
       githubSyncTool,
       githubReadTool,
-      githubIssueTool,
+      ...(capabilities.has("triage") ? [githubIssueTool] : []),
     ],
     bindRun({ conversationId, platformName }) {
       if (platformName !== "github") {

@@ -4,7 +4,39 @@ import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
 import { formatGithubContinuation } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
-import type { GithubConversationBot, GithubEvent } from "./types.js";
+import type { GithubCapability, GithubConversationBot, GithubEvent } from "./types.js";
+
+function repositoryGuide(capabilities: ReadonlySet<GithubCapability>, number: number): string {
+  const clone =
+    `## Repository & pull requests\n` +
+    `The repository is cloned at ./repo — a snapshot from this conversation's first ` +
+    `trigger; run github_sync when it may be stale to pull the latest PR head or base ` +
+    `branch. If this conversation is a pull request, its head branch is checked out ` +
+    `under its real name (run git branch --show-current in ./repo to see it; fork PRs ` +
+    `fall back to pr-${number}). You have no git credentials, so git fetch/push ` +
+    `fail by design.\n`;
+  const shipping = capabilities.has("push")
+    ? `To ship code changes: commit inside ./repo (the git author is preconfigured) on a ` +
+      `pi/<name> branch, then call the github_pr tool to push it. When this conversation's ` +
+      `checked-out PR head branch is already named pi/<name> — e.g. a PR you opened ` +
+      `earlier — commit directly on it and pass that branch to github_pr: the push ` +
+      `updates THIS pull request instead of opening a new one. Any other branch opens a ` +
+      `new pull request (draft: true for a draft); calling github_pr again with the same ` +
+      `branch pushes new commits to its existing PR. Use github_checks to read CI results ` +
+      `for your branch (or this PR) — pass a failing check's job id to read its log — and ` +
+      `iterate until they pass. You cannot push the default branch or ` +
+      `merge — humans review and merge every PR.\n`
+    : `You cannot push branches or open pull requests here: propose code changes in your ` +
+      `reply (for example as a diff or suggestion block) for a human to apply. Use ` +
+      `github_checks to read this pull request's CI results.\n`;
+  const lookup = capabilities.has("triage")
+    ? `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
+      `files, review state, other issues in this repo); github_issue manages labels, ` +
+      `assignees, and close/reopen for triage.`
+    : `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
+      `files, review state, other issues in this repo).`;
+  return clone + shipping + lookup;
+}
 
 export function createGithubAdapters(
   event: GithubEvent,
@@ -46,26 +78,7 @@ export function createGithubAdapters(
       `tagged [PR review comment rc-<id> …] are inline review threads on a diff line: ` +
       `answer those with the github_review_reply tool (comment_id = that id) so the reply ` +
       `lands in-thread — your normal response posts as a plain PR comment.\n\n` +
-      `## Repository & pull requests\n` +
-      `The repository is cloned at ./repo — a snapshot from this conversation's first ` +
-      `trigger; run github_sync when it may be stale to pull the latest PR head or base ` +
-      `branch. If this conversation is a pull request, its head branch is checked out ` +
-      `under its real name (run git branch --show-current in ./repo to see it; fork PRs ` +
-      `fall back to pr-${ref.number}). You have no git credentials, so git fetch/push ` +
-      `fail by design.\n` +
-      `To ship code changes: commit inside ./repo (the git author is preconfigured) on a ` +
-      `pi/<name> branch, then call the github_pr tool to push it. When this conversation's ` +
-      `checked-out PR head branch is already named pi/<name> — e.g. a PR you opened ` +
-      `earlier — commit directly on it and pass that branch to github_pr: the push ` +
-      `updates THIS pull request instead of opening a new one. Any other branch opens a ` +
-      `new pull request (draft: true for a draft); calling github_pr again with the same ` +
-      `branch pushes new commits to its existing PR. Use github_checks to read CI results ` +
-      `for your branch (or this PR) — pass a failing check's job id to read its log — and ` +
-      `iterate until they pass. You cannot push the default branch or ` +
-      `merge — humans review and merge every PR.\n` +
-      `github_read looks up PR/issue metadata this clone cannot show (diff stats, changed ` +
-      `files, review state, other issues in this repo); github_issue manages labels, ` +
-      `assignees, and close/reopen for triage.`,
+      repositoryGuide(bot.capabilities, ref.number),
     diagnostics: {
       showUsageSummary: false,
     },

@@ -109,14 +109,15 @@ describe("runOnboardWizard", () => {
     expect(nextSteps).toContain("--sandbox image:ghcr.io/geminixiang/mikan-sandbox:latest");
   });
 
-  test("github adapter asks required vars plus the private-key path", async () => {
+  test("github adapter asks the agent token, webhook secret, and repositories", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["4", "12345", "678", "/etc/mikan/app.pem", "2", "sk-oai", "", "1"]);
+    const io = scriptedIo(["4", "github_pat_x", "hush", "acme/*", "2", "sk-oai", "", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
-    expect(envContent).toContain("GITHUB_APP_ID=12345");
-    expect(envContent).toContain("GITHUB_APP_PRIVATE_KEY_PATH=/etc/mikan/app.pem");
+    expect(envContent).toContain("GITHUB_AGENT_TOKEN=github_pat_x");
+    expect(envContent).toContain("GITHUB_WEBHOOK_SECRET=hush");
+    expect(envContent).toContain("GITHUB_REPOS=acme/*");
     expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")).llm.provider).toBe(
       "openai",
     );

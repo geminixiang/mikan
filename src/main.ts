@@ -2,13 +2,14 @@
 
 import "./observability/instrument.js";
 
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MessagingBot } from "./types.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
-import type { PlatformGithubOps } from "./adapters/github/types.js";
+import { parseGithubPolicy } from "./adapters/github/policy.js";
+import type { GithubPolicy, PlatformGithubOps } from "./adapters/github/types.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
@@ -78,14 +79,8 @@ const SLACK_APP_TOKEN = readEnv("SLACK_APP_TOKEN");
 const SLACK_BOT_TOKEN = readEnv("SLACK_BOT_TOKEN");
 const TELEGRAM_BOT_TOKEN = readEnv("TELEGRAM_BOT_TOKEN");
 const DISCORD_BOT_TOKEN = readEnv("DISCORD_BOT_TOKEN");
-const GITHUB_APP_ID = readEnv("GITHUB_APP_ID");
-const GITHUB_APP_PRIVATE_KEY = readEnv("GITHUB_APP_PRIVATE_KEY");
-const GITHUB_APP_PRIVATE_KEY_PATH = readEnv("GITHUB_APP_PRIVATE_KEY_PATH");
-const GITHUB_INSTALLATION_ID = readEnv("GITHUB_INSTALLATION_ID");
-const GITHUB_REPOS = readEnv("GITHUB_REPOS");
-const GITHUB_POLL_INTERVAL = readEnv("GITHUB_POLL_INTERVAL");
-const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const GITHUB_AGENT_TOKEN = readEnv("GITHUB_AGENT_TOKEN");
+const GITHUB_WEBHOOK_SECRET = readEnv("GITHUB_WEBHOOK_SECRET");
 const LINK_BASE_URL = resolveLinkBaseUrl();
 const LINK_PORT_RAW = readEnv("LINK_PORT");
 const LINK_PORT = LINK_PORT_RAW ? parseInt(LINK_PORT_RAW, 10) : LINK_BASE_URL ? 8181 : undefined;
@@ -237,6 +232,25 @@ if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
   process.exit(1);
 }
 
+let githubPolicy: GithubPolicy | undefined;
+try {
+  githubPolicy = hasGithub
+    ? parseGithubPolicy({
+        repos: readEnv("GITHUB_REPOS"),
+        publicRepos: readEnv("GITHUB_PUBLIC_REPOS"),
+        users: readEnv("GITHUB_USERS"),
+        minPermission: readEnv("GITHUB_MIN_PERMISSION"),
+        triggers: readEnv("GITHUB_TRIGGERS"),
+        capabilities: readEnv("GITHUB_CAPABILITIES"),
+      })
+    : undefined;
+  if (hasGithub && !LINK_PORT) {
+    throw new Error("GitHub receives webhooks on the link server: set LINK_PORT and LINK_URL");
+  }
+} catch (error) {
+  handleStartupError(error);
+}
+
 const pending = pendingMigrations(stateDir);
 if (pending.length > 0) {
   console.error(formatPendingMigrations({ pending, stateDir, workspaceRoot: workingDir, sandbox }));
@@ -362,7 +376,8 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
     };
     factories.push(() => createSlackToolPack(platformSlackOps));
   }
-  if (!hasGithub) return factories;
+  if (!githubPolicy) return factories;
+  const githubCapabilities = githubPolicy.capabilities;
   const platformGithubOps: PlatformGithubOps = {
     pushAndCreatePr: (conversationId, request) =>
       requireGithubBot(GITHUB_PR_TOOL).ops.pushAndCreatePr(conversationId, request),
@@ -383,7 +398,7 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
     manageIssue: (conversationId, request) =>
       requireGithubBot(GITHUB_ISSUE_TOOL).ops.manageIssue(conversationId, request),
   };
-  factories.push(() => createGithubToolPack(platformGithubOps));
+  factories.push(() => createGithubToolPack(platformGithubOps, githubCapabilities));
   return factories;
 }
 
@@ -473,47 +488,16 @@ if (hasDiscord) {
   botsByPlatform.discord = discordMessagingBot;
   log.logInfo("Platform: Discord");
 }
-if (hasGithub) {
-  if (!GITHUB_APP_ID || !GITHUB_INSTALLATION_ID) {
-    throw new Error("GitHub startup requires GITHUB_APP_ID and GITHUB_INSTALLATION_ID");
-  }
-  const githubPrivateKey = GITHUB_APP_PRIVATE_KEY_PATH
-    ? readFileSync(GITHUB_APP_PRIVATE_KEY_PATH, "utf-8")
-    : GITHUB_APP_PRIVATE_KEY?.replace(/\\n/g, "\n");
-  if (!githubPrivateKey) {
-    throw new Error(
-      "GitHub startup requires GITHUB_APP_PRIVATE_KEY or GITHUB_APP_PRIVATE_KEY_PATH",
-    );
-  }
-  const pollIntervalSeconds = GITHUB_POLL_INTERVAL ? parseInt(GITHUB_POLL_INTERVAL, 10) : NaN;
-  const githubMessagingBot = new GithubMessagingBot(handler, {
-    appId: GITHUB_APP_ID,
-    privateKey: githubPrivateKey,
-    installationId: GITHUB_INSTALLATION_ID,
-    agentToken: GITHUB_AGENT_TOKEN,
-    repos: GITHUB_REPOS
-      ? GITHUB_REPOS.split(",")
-          .map((repo) => repo.trim())
-          .filter(Boolean)
-      : [],
-    pollIntervalMs:
-      (Number.isFinite(pollIntervalSeconds) && pollIntervalSeconds > 0 ? pollIntervalSeconds : 60) *
-      1000,
+if (githubPolicy && GITHUB_AGENT_TOKEN) {
+  botsByPlatform.github = new GithubMessagingBot(handler, {
+    token: GITHUB_AGENT_TOKEN,
+    policy: githubPolicy,
     workspace,
-    syncStatePath: join(stateDir, "github-sync.json"),
   });
-  botsByPlatform.github = githubMessagingBot;
   log.logInfo("Platform: GitHub");
 }
 
-const githubBotForWebhook = botsByPlatform.github as GithubMessagingBot | undefined;
-if (GITHUB_WEBHOOK_SECRET && (!githubBotForWebhook || !LINK_PORT)) {
-  log.logWarning(
-    "GITHUB_WEBHOOK_SECRET is set but " +
-      (githubBotForWebhook ? "LINK_PORT is not" : "the GitHub platform is not enabled") +
-      " — the webhook endpoint will not be served",
-  );
-}
+const githubBot = botsByPlatform.github as GithubMessagingBot | undefined;
 
 const webServer = LINK_PORT
   ? startWebServer({
@@ -536,10 +520,10 @@ const webServer = LINK_PORT
         eventScheduler: () => eventScheduler,
       },
       githubWebhook:
-        GITHUB_WEBHOOK_SECRET && githubBotForWebhook
+        GITHUB_WEBHOOK_SECRET && githubBot
           ? {
               secret: GITHUB_WEBHOOK_SECRET,
-              onPoke: () => githubBotForWebhook.requestPoll(),
+              onDelivery: (delivery) => void githubBot.receive(delivery),
             }
           : undefined,
     })

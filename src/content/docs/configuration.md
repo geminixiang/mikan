@@ -124,12 +124,12 @@ OpenConnector is an ordinary MCP server with a deployment default. `OPENCONNECTO
 
 At least one complete platform credential set is required for normal bot mode:
 
-| Platform | Required environment variables                                                                           | Optional variables                     |
-| -------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                                                     | —                                      |
-| Telegram | `TELEGRAM_BOT_TOKEN`                                                                                     | —                                      |
-| Discord  | `DISCORD_BOT_TOKEN`                                                                                      | —                                      |
-| GitHub   | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY` or `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`, `GITHUB_POLL_INTERVAL` |
+| Platform | Required environment variables                                                 | Optional variables                                                                                       |
+| -------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                           | —                                                                                                        |
+| Telegram | `TELEGRAM_BOT_TOKEN`                                                           | —                                                                                                        |
+| Discord  | `DISCORD_BOT_TOKEN`                                                            | —                                                                                                        |
+| GitHub   | `GITHUB_AGENT_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOS`, and `LINK_PORT` | `GITHUB_PUBLIC_REPOS`, `GITHUB_USERS`, `GITHUB_MIN_PERMISSION`, `GITHUB_TRIGGERS`, `GITHUB_CAPABILITIES` |
 
 See [Platform adapters](/platform-adapters/) for platform-specific setup and permissions.
 

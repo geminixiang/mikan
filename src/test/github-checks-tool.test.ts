@@ -16,7 +16,7 @@ describe("github_checks tool", () => {
     await expect(tool.execute("t1", {})).rejects.toThrow(/only available in GitHub/);
   });
 
-  test("summarizes check runs; skipped is not counted as failing", async () => {
+  test("summarizes Actions jobs and commit statuses; skipped is not counted as failing", async () => {
     const { tool, setGithubChecksFunction } = createGithubChecksTool();
     setGithubChecksFunction(
       makeFns({
@@ -27,7 +27,7 @@ describe("github_checks tool", () => {
             status: "completed",
             conclusion: "success",
             url: "https://ci/1",
-            appSlug: "github-actions",
+            source: "actions",
             outputSummary: null,
           },
           {
@@ -36,7 +36,7 @@ describe("github_checks tool", () => {
             status: "completed",
             conclusion: "failure",
             url: "https://ci/2",
-            appSlug: "github-actions",
+            source: "actions",
             outputSummary: "2 errors in src/x.py",
           },
           {
@@ -45,16 +45,16 @@ describe("github_checks tool", () => {
             status: "completed",
             conclusion: "skipped",
             url: null,
-            appSlug: "github-actions",
+            source: "actions",
             outputSummary: null,
           },
           {
             id: 4,
-            name: "external build (living-bio)",
+            name: "ci/external",
             status: "completed",
             conclusion: "failure",
             url: "https://cb/4",
-            appSlug: "living-bio",
+            source: "status",
             outputSummary: null,
           },
           {
@@ -63,7 +63,7 @@ describe("github_checks tool", () => {
             status: "in_progress",
             conclusion: null,
             url: null,
-            appSlug: "github-actions",
+            source: "actions",
             outputSummary: null,
           },
         ]),
@@ -78,7 +78,7 @@ describe("github_checks tool", () => {
     expect(text).toContain("↳ 2 errors in src/x.py");
     expect(text).toContain("− dependabot: skipped [job 3]");
     expect(text).toContain(
-      "✗ external build (living-bio): failure [external CI: living-bio — logs not on GitHub] (https://cb/4)",
+      "✗ ci/external: failure [commit status — logs not on GitHub] (https://cb/4)",
     );
     expect(text).toContain("… build: in_progress [job 5]");
   });
@@ -90,7 +90,9 @@ describe("github_checks tool", () => {
 
     const result = await tool.execute("t1", { branch: "pi/x" });
     expect(getChecks).toHaveBeenCalledWith("pi/x");
-    expect((result.content[0] as { text: string }).text).toContain("No check runs found");
+    expect((result.content[0] as { text: string }).text).toContain(
+      "No CI jobs or commit statuses found",
+    );
   });
 
   test("job_id switches to log mode", async () => {

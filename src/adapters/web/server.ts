@@ -16,7 +16,7 @@ import { handleSessionViewRequest } from "./session-view/portal.js";
 import type { SessionViewInteractiveOptions } from "./session-view/types.js";
 import type { InMemorySessionViewTokenStore } from "./session-view/portal.js";
 import type { Office, Workspace } from "../../office/types.js";
-import { handleGithubWebhookRequest } from "../github/webhook.js";
+import { createGithubWebhookHandler } from "../github/webhook.js";
 import type { GithubWebhookOptions } from "../github/types.js";
 import { errorMessage } from "../../unknown-values.js";
 
@@ -49,6 +49,10 @@ export function startWebServer(options: StartWebServerOptions): Server {
   const adminEventStore = (office: Office) =>
     new OfficeEventStore(office, options.adminOptions?.eventScheduler?.());
 
+  const githubWebhook = options.githubWebhook
+    ? createGithubWebhookHandler(options.githubWebhook)
+    : undefined;
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url ?? "/", requestBaseUrl(req));
@@ -59,10 +63,7 @@ export function startWebServer(options: StartWebServerOptions): Server {
         return;
       }
 
-      if (
-        options.githubWebhook &&
-        (await handleGithubWebhookRequest(req, res, url, options.githubWebhook))
-      ) {
+      if (githubWebhook && (await githubWebhook(req, res, url))) {
         return;
       }
 

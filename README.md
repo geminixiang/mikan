@@ -94,9 +94,9 @@ SLACK_APP_TOKEN=xapp-...
 SLACK_BOT_TOKEN=xoxb-...
 TELEGRAM_BOT_TOKEN=123456:ABC-...
 DISCORD_BOT_TOKEN=MTI...
-GITHUB_APP_ID=123456
-GITHUB_INSTALLATION_ID=12345678
-GITHUB_APP_PRIVATE_KEY_PATH=/srv/mikan/github-app.pem
+GITHUB_AGENT_TOKEN=github_pat_...
+GITHUB_WEBHOOK_SECRET=...
+GITHUB_REPOS=acme/*
 ```
 
 Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=<mode> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
@@ -114,7 +114,7 @@ The working directory is optional: it defaults to `<state-dir>/workspace` (so `~
 - **Slack** — create a Socket Mode app using [src/content/docs/slack-bot-minimal-guide.md](src/content/docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
 - **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
 - **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
-- **GitHub** — install a GitHub App (polling, no webhooks) and set `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and a private key. One issue or PR is one conversation. See [src/content/docs/platform-adapters/github.md](src/content/docs/platform-adapters/github.md).
+- **GitHub** — bind a regular GitHub account with a fine-grained PAT, point an organization webhook at `<LINK_URL>/github/webhook`, and list the repositories mikan answers in. People mention, assign, and request reviews from it like a teammate; one issue or PR is one conversation. See [src/content/docs/platform-adapters/github.md](src/content/docs/platform-adapters/github.md).
 
 Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [src/content/docs/sessions.mdx](src/content/docs/sessions.mdx).
 

@@ -1,83 +1,101 @@
 ---
 title: GitHub 接続
-description: GitHub adapter の GitHub App polling、issue/PR conversations、watermark dedup、comment-based responses。
+description: 紐付けた GitHub アカウントと webhook による駆動、issue/PR conversation、制限設定、comment による応答。
 ---
 
-1 つの GitHub issue または pull request が 1 つの mikan conversation になります。adapter は GitHub App installation として GitHub API を poll します。webhook endpoint は不要で、mikan の proactive model を維持します。
+1 つの GitHub issue または pull request が 1 つの mikan conversation になります。mikan は紐付けた通常の GitHub アカウントとして動作するため、チームメイトと同じように、オートコンプリートで @ メンションし、issue や PR を assign し、review を依頼できます。何が起きたかは署名付き webhook で mikan に届きます。理由は [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md) を参照してください。
 
 conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文字化されます。id は 1 つの path segment としてそのまま使われ、docker の `-v source:target` 構文にも入るため、`/` と `:` を避けています。また `-` ではなく `_` で区切るのは、GitHub の owner が `-` を含み得る（それでは owner/repo の境界が曖昧になる）一方で `_` は含まないためです。他のすべてのプラットフォームと同じく、生 id は GitHub API の境界に留まります。ディスク上では、この conversation は office key で命名された office directory に存在します。
 
-## 主要コード
+## 主なコード
 
-| ファイル                            | 用途                                                                                                                    |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 本体：poll loop、watermark dedup、mention/participation triggering。                                         |
-| `src/adapters/github/github-ops.ts` | すべての `github_*` tool を支える host 側 backend。poll loop からは独立。                                               |
-| `src/adapters/github/repo.ts`       | host 側の git：shallow clone、ガード付きの branch push、作業を保持する sync。                                           |
-| `src/adapters/github/client.ts`     | GitHub App として認証する最小 REST client（RS256 JWT → installation tokens）。                                          |
-| `src/adapters/github/context.ts`    | GitHub 版 `ConversationResponder` を作成し、完成した response を 1 つの comment として投稿（streaming edits なし）。    |
-| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` conversation id の文法は `src/office/index.ts` にあります。   |
-| `src/adapters/github/tool-pack.ts`  | host 側 tools を、main から注入される platform tool pack としてまとめる。                                               |
-| `src/adapters/github/tools/`        | agent 向けの tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
-| `src/adapters/github/types.ts`      | GitHub adapter 固有の types と REST payload shapes。                                                                    |
+| ファイル                            | 役割                                                                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `src/adapters/github/bot.ts`        | GitHub bot の中核：トリガー判定、権限確認、conversation への投入。                                                    |
+| `src/adapters/github/activity.ts`   | webhook payload を検証し、1 つの activity 形式に正規化します。                                                        |
+| `src/adapters/github/policy.ts`     | 制限設定を解析して適用します。                                                                                        |
+| `src/adapters/github/webhook.ts`    | 署名を検証し、GitHub に応答し、重複配信を捨てます。                                                                   |
+| `src/adapters/github/github-ops.ts` | 各 `github_*` tool の host 側 backend。                                                                               |
+| `src/adapters/github/repo.ts`       | host 側 git：shallow clone、保護付き branch push、作業を保つ sync。                                                   |
+| `src/adapters/github/client.ts`     | アカウントの token で認証する最小限の REST client。                                                                   |
+| `src/adapters/github/context.ts`    | GitHub の `ConversationResponder` を作成し、完成した応答を 1 つの comment として投稿します（streaming edit なし）。   |
+| `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` の文法は `src/office/index.ts` にあります。                 |
+| `src/adapters/github/tool-pack.ts`  | host 側 tools を main から注入される platform tool pack にまとめます。                                                |
+| `src/adapters/github/tools/`        | agent 向け tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
 
-## GitHub App の作成とインストール
+## 必要なもの
 
-1. 対象 repositories を所有する account または organization 用に GitHub App を作成します。
-2. repository permissions を付与します：**Metadata: Read**、**Contents: Read & write**、**Issues: Read & write**、**Pull requests: Read & write**、**Checks: Read**、**Actions: Read**。Issues/PR write access は comments と reactions を対象とし、Contents/Pull requests write access は保護された `github_pr` tool だけが使用します。
-3. mikan が poll してよい repositories に App をインストールします。
-4. App ID と installation ID を記録し、private key を生成します。PEM は workspace の外に保管し、inline secret より `GITHUB_APP_PRIVATE_KEY_PATH` を優先してください。
-
-App slug は、ユーザーが最初の接触を起動するために mention する名前です。
+- **agent アカウント**：mikan 用の通常の GitHub ユーザーアカウントで、作業する repository へのアクセス権を持つもの。各 repository でのロールが外側の上限になります。会話だけなら read、branch を push するなら write です。
+- **そのアカウントの fine-grained personal access token**：resource owner は organization、repository permissions は **Contents**、**Issues**、**Pull requests** が read & write、**Actions** と **Commit statuses** が read。organization が承認を求める場合は owner が承認します。
+- **webhook**：`<LINK_URL>/github/webhook` 宛てで secret を設定し、**Issues**、**Issue comments**、**Pull requests**、**Pull request review comments** を購読します。organization webhook が最も簡単です。GitHub App の webhook でも動作し、mikan は App の認証情報を使いません。
+- **link server**（`LINK_PORT` と公開された `LINK_URL`）。webhook を受け取ります。
 
 ## 設定
 
-| 環境変数                                                 | 用途                                                                                      |
-| -------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `GITHUB_APP_ID`                                          | GitHub App id（必須）。                                                                   |
-| `GITHUB_INSTALLATION_ID`                                 | 動作主体となる installation id（必須）。                                                  |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM。inline（`\n` escapes 付き）または file。                             |
-| `GITHUB_REPOS`                                           | 任意の comma-separated `owner/repo` list。既定値は installation のすべての repositories。 |
-| `GITHUB_POLL_INTERVAL`                                   | 任意の poll interval（秒、既定値 60）。                                                   |
+| 環境変数                | 用途                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------- |
+| `GITHUB_AGENT_TOKEN`    | アカウントの fine-grained PAT（必須）。GitHub が拒否すると起動に失敗します。     |
+| `GITHUB_WEBHOOK_SECRET` | webhook の secret（必須）。                                                      |
+| `GITHUB_REPOS`          | カンマ区切りの `owner/repo` または `owner/*`（必須）。それ以外には応答しません。 |
+| `GITHUB_PUBLIC_REPOS`   | `true` で public repository にも応答します（既定 `false`）。                     |
+| `GITHUB_USERS`          | トリガーできるログインのカンマ区切りリスト（既定：必要な権限を持つ全員）。       |
+| `GITHUB_MIN_PERMISSION` | トリガーに必要な repository 権限：`write`（既定）、`maintain`、`admin`。         |
+| `GITHUB_TRIGGERS`       | `mention`、`assign`、`review`、`followup` の任意の組み合わせ（既定はすべて）。   |
+| `GITHUB_CAPABILITIES`   | コメント以外に許可する `triage` と `push`（既定はどちらもなし）。                |
 
-## イベントソース
+不明な値があると起動に失敗します。
 
-poll loop は監視対象 repo ごとに、incremental cursor 以降に更新された issues、issue/PR comments、inline PR review comments を取得し、ETag conditional requests を使用します（304 responses は rate limit を消費しません）。現在、各 endpoint は最大 100 records の 1 page だけを読み取ります。poll 間にそれを超える burst があると、cursor の前進時に見落とす可能性があります。利用の多い installations では `GITHUB_POLL_INTERVAL` を短くするか、`GITHUB_REPOS` を限定してください。
+## トリガー
 
-Dedup は `<state-dir>/github-sync.json` に永続化される watermark です（atomic write）：
+配信は次をすべて満たすときだけ実行を開始します。
 
-- 初回実行は baseline を記録し、何も生成しません。履歴が trigger になることはありません。
-- 処理済み comment/issue ids は再度 trigger にならず、編集でも再 trigger になりません。
-- mikan 停止中に投稿された comments は再起動後に replay されます。
+1. 送信者が bot でも agent アカウント自身でもない。
+2. repository が `GITHUB_REPOS` に一致し、`GITHUB_PUBLIC_REPOS=true` でない限り private である。
+3. 有効なトリガーである：
+   - `mention`：新しい issue、pull request、comment、inline review comment が `@<login>` をメンションした；
+   - `assign`：issue または pull request がアカウントに assign された；
+   - `review`：pull request でアカウントの review が依頼された；
+   - `followup`：mikan がすでに参加している thread に新しい comment が来た。
+4. `GITHUB_USERS` が設定されていれば、送信者がそこに含まれる。
+5. 送信者が repository で `GITHUB_MIN_PERMISSION` 以上の権限を持つ。確認結果は 5 分間キャッシュされ、失敗時は拒否します。
 
-## Trigger
+それ以外は状態を作らずに無視します。メンション付きの `stop`（または `/stop`）comment は実行中の session を止めます。
 
-comment、inline review comment、または新しい issue body は、App slug を @mention するか、bot がすでにその issue conversation に参加している場合のみ run を起動します。commenter は repo で **write permission 以上**も保持している必要があります。public repos では誰でも comment できるため、write 未満のユーザーによる mentions は完全に無視されます（permission lookups は 5 分間 cache され、失敗時は拒否します）。その他は state を作成せずにすべて無視されます。mention 付きの `stop`（または `/stop`）comment は実行中の session を停止します。この magic word の文法はすべてのプラットフォームで共通です。
+配信はベストエフォートです。mikan はすぐに GitHub へ応答し、重複配信を無視し、配信記録を残しません。mikan が停止中または到達不能な間のイベントは失われるので、もう一度メンションしてください。
+
+## ケイパビリティ
+
+`GITHUB_CAPABILITIES` がなければ、mikan はコメント、リアクション、repository と CI 結果の読み取り、review thread への返信ができますが、label、assignee、コードは変更できません。
+
+| ケイパビリティ | 追加されるもの                                                         |
+| -------------- | ---------------------------------------------------------------------- |
+| `triage`       | `github_issue` tool：label、assignee、close と reopen。                |
+| `push`         | `github_pr` tool：`pi/*` branch の push と pull request の作成・更新。 |
+
+無効なケイパビリティの tool と説明は agent に一切渡されません。token の権限とアカウントの repository ロールも引き続き適用されます。
 
 public repo では誰でも issue を作成できるため、GitHub は `trustModel: "open-trigger"` を報告します。これにより、GitHub conversation では ambient な `sandbox.defaultSharedVault` のコピーが無効になります。既定では認証情報を一切受け取らず、管理者が特定の conversation に対して意図的に vault をプロビジョニングする必要があります。[Vault](/ja/sandbox/vault/) を参照してください。
 
-## Sessions と返信
+## Session と返信
 
-issue/PR 全体が 1 つの永続 session（`sessionKey === conversationId`）です。inline review threads も含まれ、sub-sessions に対応付けるのではなく session に flatten されます。trigger となった review comment は `[PR review comment rc-<id> on <path>:<line>]` と tag 付けされた message として注入され、diff hunk と、thread 途中への返信の場合はその thread の以前のやり取りを含みます。agent は `github_review_reply` tool でその thread に返信します（通常の response は普通の PR comment として投稿されます）。Responses は GitHub Flavored Markdown で、response 完了後に投稿されます。streaming edits は行わないため、API を頻繁に更新したり「edited」と表示したりしません。comment split threshold を超える output は continuation comments として投稿されます。system prompt は agent に conversation の issue/PR（owner/repo#number）を伝えます。comment から初めて接触した場合、その前に issue title/body を記録し、session が thread の内容を把握できるようにします。
+issue/PR 全体が 1 つの永続 session（`sessionKey === conversationId`）で、inline review thread もそこに平坦化されます。トリガーした review comment は `[PR review comment rc-<id> on <path>:<line>]` というタグ付きメッセージとして diff hunk とともに注入され、thread 途中の返信にはそれまでのやり取りも付きます。agent は `github_review_reply` tool でその thread に答えます。応答は GitHub Flavored Markdown で、完成後に投稿されます。comment 経由の初回接触では、issue のタイトルと本文を先に記録します。
 
-## Repository access と pull requests
+## Repository アクセスと pull request
 
-sandbox は credentials を一切保持しません。git は office-dir bind mount の両側にまたがって動作します：
+sandbox は認証情報を持ちません。git は office directory の bind mount の host 側で実行され、agent token は呼び出しごとに渡され、`.git/config` には書き込まれません。
 
-- 初回接触時に repo は conversation office の `repo/` directory へ shallow-clone されます。sandbox 内では `/workspace/<office-key>/repo` で、agent の prompt はこれを `./repo` と呼びます。その repo と `contents:read` に限定した ephemeral token を git invocation ごとに渡し、`.git/config` には書き込みません。PR conversations では PR head が実際の branch 名で checkout されます（fork PR や lookup 失敗時は `pr-<n>` に fallback）。そのため head が `pi/*` branch の PR はその場で更新できます：その branch に commit して `github_pr` を呼べば同じ PR に push されます。
-- agent は sandbox 内で通常の git を使って branch と commit を作成します（bot の author identity は事前設定済み）。sandbox からの push は設計上失敗します。
-- `github_pr` tool は host 側で実行されます。その 1 repo 用の `contents:write` + `pull_requests:write` token を発行し、mount の host 側から agent の `pi/*` branch を push して、App として pull request（draft 対応）を開きます。同じ branch で再実行すると、既存 PR に新しい commits を push します。default branch の push、force-push、merge はできません。すべての PR は人が review、merge します。
-- `github_checks` tool は push 済み branch（または PR head）の CI check runs を読み取り、GitHub Actions job の log tail を `job_id` で取得できます（**Checks: Read** と **Actions: Read** が必要）。external CI checks は summary と URL を保持しますが、logs は GitHub 経由では取得できません。
-- `github_sync` tool は `./repo` snapshot を origin から更新します。最新の PR head、base branch、または指定した branch です。ephemeral read token を使用し、agent の作業を失う可能性がない場合のみ checkout を動かします（clean tree かつ agent commits なし。force-push された PR heads は sync されます）。それ以外の場合は `FETCH_HEAD` に fetch して報告し、agent が sandbox 内で merge または rebase できるようにします。
-- `github_review_reply` tool は 1 つの inline review thread 内に返信を投稿します。numeric id は `rc-<id>` message から取得します。
-- `github_read` tool は clone では見えない metadata を読み取ります。PR state と diff stats、changed files、open thread ids 付きの submitted reviews、issue metadata、直近の comments、filter 付きの issue/PR listing です。構造上、conversation の repo に限定されます。
-- `github_issue` tool は conversation の repo 内の任意の issue に対して labels、assignees、close/reopen を管理します（triage 用）。Lock、delete、transfer は action set に含まれません。
-
-これらの tools は setup section に記載した App permissions を使用します。mikan が強制する branch/default-branch guards を回避することはできません。
+- 初回接触時に repo を conversation office の `repo/` に shallow clone し（agent の prompt では `./repo`）、commit author は agent アカウントになります。PR conversation では PR head を実際の branch 名で checkout します（fork PR と取得失敗時は `pr-<n>`）。clone に失敗した場合は次のトリガーで再試行します。
+- agent は sandbox 内で通常の git で branch と commit を作ります。sandbox からの push は意図的に失敗します。
+- `github_pr`（ケイパビリティ `push`）は agent の `pi/*` branch を push して pull request（draft 可）を作成し、同じ branch で再度呼ぶと既存 PR に push します。default branch への push、force push、merge はできません。
+- `github_checks` は push した branch または PR head の GitHub Actions job と commit status を読み、`job_id` で Actions job のログ末尾を取得します。fine-grained token には Checks 権限がないため、サードパーティ CI app の check run は見えません。
+- `github_sync` は origin から `./repo` を更新します。agent の作業を失わない場合だけ checkout を動かし、そうでなければ `FETCH_HEAD` に fetch して報告します。
+- `github_review_reply` は 1 つの inline review thread に返信します。
+- `github_read` は conversation の repository の PR 状態、変更ファイル、review、issue、comment を読みます。
+- `github_issue`（ケイパビリティ `triage`）は label、assignee、close/reopen を管理します。lock、delete、transfer はありません。
 
 ## 制限
 
-- REST API は file uploads に対応していません。`uploadFile` は代わりに pointer comment を投稿します。
-- summary body だけが bot に mention する PR review（inline comments が 0 件）は trigger になりません。repo 全体の "reviews since" endpoint が存在しないためです。代わりに通常の PR comment を投稿してください。
-- `./repo` clone は初回接触時の snapshot として始まります。sandbox 自身は updates を fetch できないため、agent は `github_sync` を使用します。
-- clone が存在しない場合は trigger のたびに再試行されます（存在すれば no-op）。そのため、たとえば App の permissions を後から付与した場合など、初回 clone に失敗していても次の mention で回復します。
+- 取りこぼした webhook 配信は再送されません。
+- REST API はファイル添付に対応しないため、`uploadFile` は案内 comment を投稿します。
+- summary 本文だけでアカウントをメンションし inline comment がない PR review はトリガーしません。review を依頼するか、comment してください。
+- `./repo` は初回接触時のスナップショットです。agent は `github_sync` で更新します。

@@ -48,37 +48,40 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     key: "github",
     title: "GitHub",
     kind: "platform",
-    doc: "Issue/PR conversations via a GitHub App (polling; optional webhook poke)",
+    doc: "Issue/PR conversations as a bound GitHub account, driven by webhooks (needs LINK_PORT)",
     vars: [
-      { name: "GITHUB_APP_ID", required: true, doc: "GitHub App id" },
-      { name: "GITHUB_INSTALLATION_ID", required: true, doc: "App installation id" },
-      {
-        name: "GITHUB_APP_PRIVATE_KEY_PATH",
-        doc: "Path to the App private key .pem (preferred; keep outside any repo)",
-      },
-      {
-        name: "GITHUB_APP_PRIVATE_KEY",
-        secret: true,
-        deploy: false,
-        doc: "App private key PEM with literal \\n newlines (fallback)",
-      },
-      {
-        name: "GITHUB_REPOS",
-        doc: "Comma-separated owner/repo allowlist (default: all installed)",
-      },
-      { name: "GITHUB_POLL_INTERVAL", doc: "Poll interval in seconds (default 60)" },
       {
         name: "GITHUB_AGENT_TOKEN",
+        required: true,
         secret: true,
-        doc: "Machine-user token; mentions and assignments of that user trigger, and replies post as it",
+        doc: "Fine-grained PAT of the agent account; mikan acts on GitHub only as it",
       },
       {
         name: "GITHUB_WEBHOOK_SECRET",
+        required: true,
         secret: true,
-        doc: "Webhook secret; when set, deliveries to /github/webhook trigger an immediate poll (needs LINK_PORT)",
+        doc: "Secret of the webhook that delivers to <LINK_URL>/github/webhook",
+      },
+      {
+        name: "GITHUB_REPOS",
+        required: true,
+        doc: "Comma-separated owner/repo or owner/* the agent answers in",
+      },
+      { name: "GITHUB_PUBLIC_REPOS", doc: "Answer in public repositories too (default false)" },
+      { name: "GITHUB_USERS", doc: "Comma-separated logins allowed to trigger (default: anyone)" },
+      {
+        name: "GITHUB_MIN_PERMISSION",
+        doc: "Repository permission a trigger needs: write, maintain, or admin (default write)",
+      },
+      {
+        name: "GITHUB_TRIGGERS",
+        doc: "Comma-separated mention, assign, review, followup (default all)",
+      },
+      {
+        name: "GITHUB_CAPABILITIES",
+        doc: "Comma-separated triage, push beyond commenting (default none)",
       },
     ],
-    anyOf: ["GITHUB_APP_PRIVATE_KEY", "GITHUB_APP_PRIVATE_KEY_PATH"],
   },
   {
     key: "llm",
@@ -206,10 +209,7 @@ type EnvLookup = (name: string) => string | undefined;
 export function platformIsActive(key: string, env: EnvLookup = readEnv): boolean {
   const group = ENV_MANIFEST.find((candidate) => candidate.key === key);
   if (!group) throw new Error(`Unknown env-manifest group: ${key}`);
-  const required = group.vars.filter((spec) => spec.required);
-  if (!required.every((spec) => env(spec.name))) return false;
-  if (group.anyOf && !group.anyOf.some((name) => env(name))) return false;
-  return true;
+  return group.vars.filter((spec) => spec.required).every((spec) => env(spec.name));
 }
 
 export function activePlatformKeys(env: EnvLookup = readEnv): string[] {
@@ -220,8 +220,7 @@ export function activePlatformKeys(env: EnvLookup = readEnv): string[] {
 
 function platformRecipe(group: EnvGroup): string {
   const required = group.vars.filter((spec) => spec.required).map((spec) => spec.name);
-  const alternative = group.anyOf ? ` + ${group.anyOf.join(" | ")}` : "";
-  return `${group.title}: ${required.join(" + ")}${alternative}`;
+  return `${group.title}: ${required.join(" + ")}`;
 }
 
 export function noPlatformsMessage(): string {

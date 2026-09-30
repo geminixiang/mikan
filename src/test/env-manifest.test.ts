@@ -25,15 +25,18 @@ describe("platform activation", () => {
     );
   });
 
-  test("github needs ids plus one private-key form", () => {
-    const base = { GITHUB_APP_ID: "1", GITHUB_INSTALLATION_ID: "2" };
-    expect(platformIsActive("github", lookup(base))).toBe(false);
-    expect(platformIsActive("github", lookup({ ...base, GITHUB_APP_PRIVATE_KEY: "pem" }))).toBe(
-      true,
-    );
-    expect(
-      platformIsActive("github", lookup({ ...base, GITHUB_APP_PRIVATE_KEY_PATH: "/k.pem" })),
-    ).toBe(true);
+  test("github needs the agent token, the webhook secret, and a repository allowlist", () => {
+    const complete = {
+      GITHUB_AGENT_TOKEN: "github_pat_x",
+      GITHUB_WEBHOOK_SECRET: "hush",
+      GITHUB_REPOS: "acme/*",
+    };
+    expect(platformIsActive("github", lookup(complete))).toBe(true);
+    for (const name of Object.keys(complete)) {
+      const partial = Object.fromEntries(Object.entries(complete).filter(([key]) => key !== name));
+      expect(platformIsActive("github", lookup(partial))).toBe(false);
+    }
+    expect(platformIsActive("github", lookup({ GITHUB_APP_ID: "1" }))).toBe(false);
   });
 
   test("activePlatformKeys lists exactly the active groups", () => {
@@ -51,7 +54,7 @@ describe("derived surfaces", () => {
       expect(message).toContain(group.title);
     }
     expect(message).toContain("SLACK_APP_TOKEN + SLACK_BOT_TOKEN");
-    expect(message).toContain("GITHUB_APP_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY_PATH");
+    expect(message).toContain("GITHUB_AGENT_TOKEN + GITHUB_WEBHOOK_SECRET + GITHUB_REPOS");
   });
 
   test("--help embeds the platform recipes", () => {

@@ -374,7 +374,6 @@ export interface EnvGroup {
   title: string;
   kind: "platform" | "feature";
   vars: EnvVarSpec[];
-  anyOf?: readonly string[];
   doc?: string;
 }
 

@@ -18,7 +18,7 @@ import type {
 
 const MAX_LOG_CHARS = 20000;
 
-export async function fetchIsPr(client: GithubApi, ref: GithubConversationRef): Promise<boolean> {
+async function fetchIsPr(client: GithubApi, ref: GithubConversationRef): Promise<boolean> {
   try {
     const issue = await githubRetry(() => client.getIssue(ref.owner, ref.repo, ref.number));
     return Boolean(issue.pull_request);
@@ -44,7 +44,7 @@ export async function fetchPrHeadBranch(
 export class GithubOps implements PlatformGithubOps {
   constructor(
     private readonly client: GithubApi,
-    private readonly config: { workspace: Workspace },
+    private readonly config: { workspace: Workspace; token: string },
   ) {}
 
   private repoDir(conversationId: string): string {
@@ -66,11 +66,7 @@ export class GithubOps implements PlatformGithubOps {
     }
     const repository = await githubRetry(() => this.client.getRepository(ref.owner, ref.repo));
     const base = request.base ?? repository.default_branch;
-    const token = await this.client.createScopedInstallationToken(ref.repo, {
-      contents: "write",
-      pull_requests: "write",
-    });
-    await pushBranch({ dir, branch: request.branch, token });
+    await pushBranch({ dir, branch: request.branch, token: this.config.token });
     try {
       const pr = await githubRetry(() =>
         this.client.createPullRequest(ref.owner, ref.repo, {
@@ -122,16 +118,43 @@ export class GithubOps implements PlatformGithubOps {
       }
       target = pr.head.sha;
     }
-    const runs = await githubRetry(() => this.client.listCheckRuns(ref.owner, ref.repo, target));
-    return runs.map((run) => ({
-      id: run.id,
-      name: run.name,
-      status: run.status,
-      conclusion: run.conclusion,
-      url: run.html_url,
-      appSlug: run.app?.slug ?? null,
-      outputSummary: run.output?.summary?.trim() ? run.output.summary.slice(0, 500) : null,
-    }));
+    const status = await githubRetry(() =>
+      this.client.getCombinedStatus(ref.owner, ref.repo, target),
+    );
+    const runs = await githubRetry(() =>
+      this.client.listWorkflowRuns(ref.owner, ref.repo, status.sha),
+    );
+    const jobs = await Promise.all(
+      runs.map(async (run) => {
+        const runJobs = await githubRetry(() =>
+          this.client.listWorkflowJobs(ref.owner, ref.repo, run.id),
+        );
+        return runJobs.map(
+          (job): GithubCheckSummary => ({
+            id: job.id,
+            name: run.name ? `${run.name} / ${job.name}` : job.name,
+            status: job.status,
+            conclusion: job.conclusion,
+            url: job.html_url,
+            source: "actions",
+            outputSummary: null,
+          }),
+        );
+      }),
+    );
+    const statuses = status.statuses.map(
+      (entry): GithubCheckSummary => ({
+        id: entry.id,
+        name: entry.context,
+        status: entry.state === "pending" ? "in_progress" : "completed",
+        conclusion:
+          entry.state === "pending" ? null : entry.state === "success" ? "success" : "failure",
+        url: entry.target_url,
+        source: "status",
+        outputSummary: entry.description?.trim() ? entry.description.slice(0, 500) : null,
+      }),
+    );
+    return [...jobs.flat(), ...statuses];
   }
 
   async syncRepo(conversationId: string, branch?: string): Promise<string> {
@@ -140,9 +163,6 @@ export class GithubOps implements PlatformGithubOps {
     if (!existsSync(dir)) {
       throw new Error("This conversation has no ./repo clone to sync.");
     }
-    const token = await this.client.createScopedInstallationToken(ref.repo, {
-      contents: "read",
-    });
     let prNumber: number | undefined;
     let prHeadBranch: string | undefined;
     let defaultBranch: string | undefined;
@@ -155,7 +175,14 @@ export class GithubOps implements PlatformGithubOps {
         defaultBranch = repository.default_branch;
       }
     }
-    const result = await syncRepo({ dir, token, branch, prNumber, prHeadBranch, defaultBranch });
+    const result = await syncRepo({
+      dir,
+      token: this.config.token,
+      branch,
+      prNumber,
+      prHeadBranch,
+      defaultBranch,
+    });
 
     if (result.updatedCheckout) {
       return `Updated ./repo: branch ${result.target} is now at ${result.fetchedSha.slice(0, 12)}.`;

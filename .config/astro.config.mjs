@@ -204,6 +204,15 @@ export default defineConfig({
               link: "/slack-bot-minimal-guide/",
             },
             {
+              label: "GitHub Teammate Setup",
+              translations: {
+                "zh-TW": "GitHub 同事設定",
+                "zh-CN": "GitHub 同事设置",
+                ja: "GitHub チームメイト設定",
+              },
+              link: "/github-teammate-guide/",
+            },
+            {
               label: "Slack QA Test Plan",
               translations: {
                 "zh-TW": "Slack QA 測試計畫",

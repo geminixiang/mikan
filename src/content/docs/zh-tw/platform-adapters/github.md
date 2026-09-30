@@ -1,9 +1,11 @@
 ---
 title: GitHub 接入
-description: GitHub adapter 的 GitHub App polling、issue/PR 對話、watermark 去重與 comment-based responses。
+description: 綁定 GitHub 帳號、以 webhook 驅動、issue/PR 對話、限制設定與以 comment 回覆。
 ---
 
-每個 GitHub issue 或 pull request 都是一個 mikan 對話。Adapter 以 GitHub App installation 身分輪詢 GitHub API，不需要 webhook endpoint，保留 mikan 的主動式模型。
+每個 GitHub issue 或 pull request 都是一個 mikan 對話。mikan 以你綁定的一般 GitHub 帳號行動，所以大家可以像對待隊友一樣，用自動完成 @ 它、把 issue 和 PR assign 給它、請它 review。GitHub 透過有簽章的 webhook 通知 mikan 發生了什麼。設計理由見 [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md)。
+
+逐步設定請見[讓 mikan 成為 GitHub 隊友](/zh-tw/github-teammate-guide/)。
 
 Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉為小寫。它避開 `/` 與 `:`，因為 id 會原樣當成單一路徑片段使用，也會出現在 docker 的 `-v source:target` 語法中；它以 `_` 而非 `-` 分隔，是因為 GitHub owner 可能含有 `-`（那會讓 owner/repo 的界線變得有歧義），但絕不會含有 `_`。和每個平台一樣，raw id 只停留在 GitHub API 邊界上：在磁碟上，該對話位於一個以 office key 命名的 office 目錄中。
 
@@ -11,73 +13,91 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 
 | 檔案                                | 用途                                                                                                                       |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `src/adapters/github/bot.ts`        | GitHub bot 主體：poll loop、watermark 去重、mention/participation 觸發。                                                   |
-| `src/adapters/github/github-ops.ts` | 每個 `github_*` tool 背後的 host 端 backend，獨立於 poll loop。                                                            |
+| `src/adapters/github/bot.ts`        | GitHub bot 主體：判斷是否觸發、檢查權限、送進對話。                                                                        |
+| `src/adapters/github/activity.ts`   | 驗證 webhook 內容，整理成統一的活動格式。                                                                                  |
+| `src/adapters/github/policy.ts`     | 解析並套用限制設定。                                                                                                       |
+| `src/adapters/github/webhook.ts`    | 驗證簽章、回應 GitHub、丟掉重複的推送。                                                                                    |
+| `src/adapters/github/github-ops.ts` | 每個 `github_*` tool 背後的 host 端 backend。                                                                              |
 | `src/adapters/github/repo.ts`       | Host 端 git：shallow clone、有防護的 branch push、保留工作的 sync。                                                        |
-| `src/adapters/github/client.ts`     | 以 GitHub App 驗證的最小 REST client（RS256 JWT → installation tokens）。                                                  |
+| `src/adapters/github/client.ts`     | 以帳號 token 驗證的最小 REST client。                                                                                      |
 | `src/adapters/github/context.ts`    | 建立 GitHub `ConversationResponder`；將完成的回應作為單一 comment 發布（不做 streaming edits）。                           |
 | `src/adapters/github/ids.ts`        | `rc-<id>` review-comment ts。`GH_<owner>_<repo>_<number>` conversation id 語法位於 `src/office/index.ts`。                 |
 | `src/adapters/github/tool-pack.ts`  | 把 host 端的 tools 打包成由 main 注入的 platform tool pack。                                                               |
 | `src/adapters/github/tools/`        | 提供給 agent 的 tools：`github_pr`、`github_checks`、`github_review_reply`、`github_sync`、`github_read`、`github_issue`。 |
-| `src/adapters/github/types.ts`      | GitHub adapter 專用型別與 REST payload shapes。                                                                            |
 
-## 建立並安裝 GitHub App
+## 需要準備
 
-1. 為擁有目標 repositories 的 account 或 organization 建立 GitHub App。
-2. 授予 repository permissions：**Metadata: Read**、**Contents: Read & write**、**Issues: Read & write**、**Pull requests: Read & write**、**Checks: Read** 與 **Actions: Read**。Issues/PR write access 涵蓋 comments 與 reactions；Contents/Pull requests write access 僅由受保護的 `github_pr` tool 使用。
-3. 將 App 安裝到 mikan 可輪詢的 repositories。
-4. 記下 App ID 與 installation ID，接著產生 private key。將 PEM 保存在 workspace 外，並優先使用 `GITHUB_APP_PRIVATE_KEY_PATH`，不要使用 inline secret。
-
-App slug 是使用者首次觸發時 mention 的名稱。
+- **一個 agent 帳號**：給 mikan 用的一般 GitHub 帳號，對它要工作的 repo 有存取權。它在各 repo 的角色是外層上限：只需要對話的 repo 給 read，要推 branch 的 repo 給 write。
+- **該帳號的 fine-grained personal access token**：resource owner 選組織，repository permissions 為 **Contents**、**Issues**、**Pull requests** 讀寫，**Actions** 與 **Commit statuses** 唯讀。組織要求核准時，由 owner 核准。
+- **一個 webhook**：送到 `<LINK_URL>/github/webhook`，設定 secret，訂閱 **Issues**、**Issue comments**、**Pull requests**、**Pull request review comments**。組織 webhook 最簡單；GitHub App 的 webhook 也可以，mikan 不使用任何 App 憑證。
+- **Link server**（`LINK_PORT` 與公開的 `LINK_URL`），用來接收 webhook。
 
 ## 設定
 
-| Env var                                                  | 用途                                                                         |
-| -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `GITHUB_APP_ID`                                          | GitHub App id（必要）。                                                      |
-| `GITHUB_INSTALLATION_ID`                                 | 要以其身分操作的 installation id（必要）。                                   |
-| `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_PRIVATE_KEY_PATH` | App private key PEM，可 inline（使用 `\n` escapes）或以檔案提供。            |
-| `GITHUB_REPOS`                                           | 選用、以逗號分隔的 `owner/repo` 清單；預設為所有 installation repositories。 |
-| `GITHUB_POLL_INTERVAL`                                   | 選用的 poll interval，單位為秒（預設 60）。                                  |
+| 環境變數                | 用途                                                                   |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `GITHUB_AGENT_TOKEN`    | 帳號的 fine-grained PAT（必填）。GitHub 拒絕時啟動失敗。               |
+| `GITHUB_WEBHOOK_SECRET` | Webhook secret（必填）。                                               |
+| `GITHUB_REPOS`          | 以逗號分隔的 `owner/repo` 或 `owner/*`（必填）。其他 repo 一律不回應。 |
+| `GITHUB_PUBLIC_REPOS`   | 設為 `true` 時也回應公開 repo（預設 `false`）。                        |
+| `GITHUB_USERS`          | 以逗號分隔、允許觸發的帳號（預設：任何有足夠權限的人）。               |
+| `GITHUB_MIN_PERMISSION` | 觸發者需要的 repo 權限：`write`（預設）、`maintain` 或 `admin`。       |
+| `GITHUB_TRIGGERS`       | `mention`、`assign`、`review`、`followup` 的任意組合（預設全部）。     |
+| `GITHUB_CAPABILITIES`   | 在留言之外額外開放 `triage` 和／或 `push`（預設都不開）。              |
 
-## 事件來源
-
-Poll loop 會使用 ETag conditional requests（304 responses 不計入 rate limit），針對每個監看的 repo 取得自增 cursor 後更新的 issues、issue/PR comments 與 inline PR review comments。每個 endpoint 目前會讀取一頁、最多 100 筆 records；若兩次 polls 間出現更大的 burst，cursor 前進時可能遺漏。繁忙的 installations 請縮短 `GITHUB_POLL_INTERVAL` 或縮小 `GITHUB_REPOS` 範圍。
-
-去重使用持久化於 `<state-dir>/github-sync.json` 的 watermark（atomic write）：
-
-- 第一次執行只記錄 baseline，不會發出任何事件，歷史紀錄絕不會觸發。
-- 已處理的 comment/issue ids 不會再次觸發，編輯也不會再次觸發。
-- mikan 停機期間發布的 comments 會在重新啟動後重播。
+任何一項填了不認得的值，啟動就會失敗。
 
 ## 觸發條件
 
-Comment、inline review comment 或新 issue body 只有在 @mention app slug，或 bot 已參與該 issue 的對話時才會觸發執行。Commenter 也必須具有該 repo 的 **write permission or better**；在 public repos 中任何人都能留言，因此低於 write 的使用者所發 mentions 會完全忽略（permission lookups 快取五分鐘，且失敗時拒絕）。其他內容都會忽略且不建立任何狀態。包含 mention 的 `stop`（或 `/stop`）comment 會停止執行中的 session；這個 magic word 在所有平台上使用同一套文法。
+一次推送要同時符合以下條件才會觸發：
 
-由於任何人都能在 public repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。這會關閉 GitHub 對話的環境式 `sandbox.defaultSharedVault` 複製：它們預設不會拿到任何憑證，必須由管理員刻意為特定對話佈建 vault。見 [Vault](/zh-tw/sandbox/vault/)。
+1. 發送者不是 bot，也不是 agent 帳號自己。
+2. Repo 符合 `GITHUB_REPOS`，而且是私有 repo，除非 `GITHUB_PUBLIC_REPOS=true`。
+3. 屬於有開啟的觸發方式：
+   - `mention`：新的 issue、PR、留言或 inline review comment 提到 `@<帳號>`；
+   - `assign`：issue 或 PR 被 assign 給這個帳號；
+   - `review`：PR 請這個帳號 review；
+   - `followup`：mikan 已經參與的 thread 有新留言。
+4. 有設定 `GITHUB_USERS` 時，發送者在名單內。
+5. 發送者在該 repo 有 `GITHUB_MIN_PERMISSION` 以上的權限。查詢結果快取五分鐘，查詢失敗一律拒絕。
+
+其他情況一律忽略，也不會留下任何狀態。@ 帳號並留言 `stop`（或 `/stop`）會停止執行中的 session；這個 magic word 在所有平台用同一套語法。
+
+推送採盡力而為：mikan 立刻回應 GitHub，忽略重複的推送，不保存任何推送紀錄。mikan 停機或連不到時送出的事件會遺失，請再 @ 一次。
+
+## 能力
+
+沒有設定 `GITHUB_CAPABILITIES` 時，mikan 可以留言、按 reaction、讀取 repo 與 CI 結果、在 review thread 回覆，但不能改 label、assignee 或程式碼。
+
+| 能力     | 開放                                                        |
+| -------- | ----------------------------------------------------------- |
+| `triage` | `github_issue` tool：label、assignee、關閉與重開。          |
+| `push`   | `github_pr` tool：推 `pi/*` branch、開或更新 pull request。 |
+
+沒開的能力，對應的 tool 和說明會完全不給 agent。token 的權限和帳號在 repo 的角色仍然在外層生效。
+
+因為任何人都能在公開 repo 開 issue，GitHub 會回報 `trustModel: "open-trigger"`。這會停用 GitHub 對話的 ambient `sandbox.defaultSharedVault` 複製：預設不會拿到任何 credentials，admin 必須刻意替特定對話配置 vault。見 [Vault](/zh-tw/sandbox/vault/)。
 
 ## Sessions 與回覆
 
-整個 issue/PR 使用一個持久 session（`sessionKey === conversationId`），包含 inline review threads——它們會被攤平併入該 session，而不是映射到 sub-sessions。觸發的 review comment 會以標記為 `[PR review comment rc-<id> on <path>:<line>]` 的訊息注入，附帶 diff hunk；若是 thread 中段的回覆，還會附上該 thread 先前的對話。Agent 使用 `github_review_reply` tool 回覆該 thread（一般回應會以普通 PR comment 發布）。回應使用 GitHub Flavored Markdown，並在回應完成後發布，不做 streaming edits，因此 replies 不會反覆呼叫 API 或顯示為「edited」。超出 comment split threshold 的輸出會以 continuation comments 發布。System prompt 會告訴 agent 對話所屬的 issue/PR（owner/repo#number）。首次透過 comment 聯絡時，會先記錄 issue title/body，讓 session 知道 thread 的主題。
+整個 issue/PR 是一個持久 session（`sessionKey === conversationId`），inline review threads 也會攤平進同一個 session，而不是對應到 sub-sessions。觸發的 review comment 會被注入為標記 `[PR review comment rc-<id> on <path>:<line>]` 的訊息，帶有 diff hunk；若是 thread 中段的回覆，也會附上該 thread 先前的內容。Agent 會用 `github_review_reply` tool 回覆該 thread（一般回應會以普通 PR comment 發布）。回覆使用 GitHub Flavored Markdown，並在完成後才發布：不做 streaming edits，因此不會頻繁呼叫 API，也不會顯示為「edited」。超過 comment 分割門檻的輸出會以接續 comments 發布。第一次透過 comment 接觸時，會先記錄 issue 標題與內文，讓 session 知道這個 thread 在談什麼。
 
 ## Repository 存取與 pull requests
 
-Sandbox 絕不持有憑證；git 操作跨越 office-dir bind mount 的兩端：
+Sandbox 永遠不持有 credentials；git 在 office 目錄 bind mount 的 host 端執行，帳號 token 每次呼叫時傳入，絕不寫入 `.git/config`。
 
-- 首次接觸時，repo 會 shallow-clone 到該對話 office 的 `repo/` 目錄——在 sandbox 內是 `/workspace/<office-key>/repo`，agent 的 prompt 則稱它為 `./repo`——使用限於該 repo 且具有 `contents:read` 的 ephemeral token；token 會隨每次 git invocation 傳入，絕不寫入 `.git/config`。PR 對話會以 PR head 的真實 branch 名稱 checkout（fork PR 或查詢失敗時 fallback 為 `pr-<n>`），因此 head 為 `pi/*` branch 的 PR 可以原地更新：直接在該 branch 上 commit 並呼叫 `github_pr`，push 會回到同一個 PR。
-- Agent 在 sandbox 內使用一般 git 建立 branch 與 commits（已預先設定 bot author identity）；依設計，從 sandbox push 會失敗。
-- `github_pr` tool 在 host 端執行：它會為該 repo 產生 `contents:write` + `pull_requests:write` token，從 mount 的 host 端 push agent 的 `pi/*` branch，並以 App 身分建立 pull request（支援 draft）；使用相同 branch 再次呼叫會將新 commits push 到既有 PR。它不能 push default branch、force-push 或 merge，所有 PR 都由人員 review 與 merge。
-- `github_checks` tool 會讀取已 push branch（或 PR head）的 CI check runs，並可透過 `job_id` 取得 GitHub Actions job 的 log tail（需要 **Checks: Read** 與 **Actions: Read**）。External CI checks 會保留摘要與 URL，但 logs 無法透過 GitHub 取得。
-- `github_sync` tool 使用 ephemeral read token，將 `./repo` snapshot 從 origin 更新為最新 PR head、base branch 或指定 branch。只有在不會遺失 agent 工作成果時（working tree 乾淨、沒有 agent commits；force-push 過的 PR heads 仍可同步）才會移動 checkout；否則只 fetch 到 `FETCH_HEAD` 並回報，讓 agent 在 sandbox 內自行 merge 或 rebase。
-- `github_review_reply` tool 會在單一 inline review thread 內發布回覆，數字 id 取自 `rc-<id>` 訊息。
-- `github_read` tool 讀取 clone 無法呈現的 metadata：PR 狀態與 diff 統計、變更檔案、已提交的 reviews 及 open thread ids、issue metadata、近期 comments，以及可篩選的 issue/PR 清單。其設計上僅限於該對話所屬的 repo。
-- `github_issue` tool 管理該對話 repo 內任一 issue 的 labels、assignees 與 close/reopen（triage）。Lock、delete 與 transfer 不在其 action set 中。
-
-這些工具使用設定章節列出的 App permissions。它們無法繞過 mikan 強制執行的 branch/default-branch guards。
+- 第一次接觸時，repo 會 shallow clone 到對話 office 的 `repo/` 目錄（agent 的 prompt 中稱為 `./repo`），commit 作者是 agent 帳號。PR 對話會以真實 branch name checkout PR head（fork PR 與查詢失敗時會退回 `pr-<n>`）。Clone 失敗時，下次觸發會重試。
+- Agent 在 sandbox 內用一般 git 建 branch 與 commit；從 sandbox push 會刻意失敗。
+- `github_pr`（能力 `push`）push agent 的 `pi/*` branch 並開 pull request（支援 draft）；同一個 branch 再次呼叫會 push 到既有 PR。它不能 push 預設 branch、force-push 或 merge。
+- `github_checks` 讀取已 push branch 或 PR head 的 GitHub Actions jobs 與 commit statuses，並可依 `job_id` 取得 Actions job 的 log 尾端。Fine-grained token 沒有 Checks 權限，所以第三方 CI app 發布的 check runs 看不到。
+- `github_sync` 從 origin 更新 `./repo`。只有在不會遺失 agent 工作時才移動 checkout；否則只 fetch 到 `FETCH_HEAD` 並回報。
+- `github_review_reply` 在單一 inline review thread 中回覆。
+- `github_read` 讀取對話所屬 repo 的 PR 狀態與 diff stats、變更檔案、reviews、issue metadata、comments，以及篩選後的 issue/PR 清單。
+- `github_issue`（能力 `triage`）管理 labels、assignees 與 close/reopen。Lock、delete 與 transfer 不在其 action set 中。
 
 ## 限制
 
-- REST API 不支援檔案上傳；`uploadFile` 會改為發布 pointer comment。
-- 若 PR review 只有 summary body mention bot（沒有任何 inline comments），不會觸發——沒有 repo 層級的「reviews since」endpoint。請改發一般 PR comment。
-- `./repo` clone 是首次接觸時的 snapshot；sandbox 無法自行 fetch updates——agent 使用 `github_sync` 更新。
-- 每次觸發都會重試缺少的 clone（存在後就是 no-op），因此第一次失敗的 clone——例如 App 權限是後來才授予的——會在下次 mention 時自行修復。
+- 漏掉的 webhook 推送不會補送。
+- REST API 不支援檔案上傳；`uploadFile` 會改發一則指標 comment。
+- 只有 summary body 提到帳號、沒有 inline comment 的 PR review 不會觸發。請改成請它 review，或另外留言。
+- `./repo` clone 是第一次接觸時的快照；agent 用 `github_sync` 更新。

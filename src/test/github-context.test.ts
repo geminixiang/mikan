@@ -2,7 +2,11 @@ import { describe, expect, test, vi } from "vitest";
 import { GithubMessagingBot } from "../adapters/github/bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "../adapters/github/client.js";
 import { createGithubAdapters } from "../adapters/github/context.js";
-import type { GithubConversationBot, GithubEvent } from "../adapters/github/types.js";
+import type {
+  GithubCapability,
+  GithubConversationBot,
+  GithubEvent,
+} from "../adapters/github/types.js";
 import { createOfficeAddress } from "../office/index.js";
 
 function makeEvent(overrides: Partial<GithubEvent> = {}): GithubEvent {
@@ -18,8 +22,9 @@ function makeEvent(overrides: Partial<GithubEvent> = {}): GithubEvent {
   };
 }
 
-function makeFakeBot() {
+function makeFakeBot(capabilities: ReadonlySet<GithubCapability> = new Set()) {
   return {
+    capabilities,
     postComment: vi.fn<GithubConversationBot["postComment"]>().mockResolvedValue(555),
     updateMessage: vi.fn<GithubConversationBot["updateMessage"]>().mockResolvedValue(undefined),
     deleteComment: vi.fn<GithubConversationBot["deleteComment"]>().mockResolvedValue(undefined),
@@ -30,6 +35,18 @@ function makeFakeBot() {
 }
 
 describe("createGithubAdapters", () => {
+  test("the guide offers pushing and triage only when those capabilities are enabled", () => {
+    const readOnly = createGithubAdapters(makeEvent(), makeFakeBot()).platform.formattingGuide;
+    expect(readOnly).toContain("You cannot push branches or open pull requests here");
+    expect(readOnly).not.toContain("github_pr");
+    expect(readOnly).not.toContain("github_issue");
+
+    const full = createGithubAdapters(makeEvent(), makeFakeBot(new Set(["push", "triage"])))
+      .platform.formattingGuide;
+    expect(full).toContain("call the github_pr tool to push it");
+    expect(full).toContain("github_issue manages labels");
+  });
+
   test("session key is the conversation id (one issue = one session)", () => {
     const { message } = createGithubAdapters(makeEvent(), makeFakeBot());
     expect(message.sessionKey).toBe("GH_octo_widgets_5");
@@ -93,7 +110,7 @@ describe("createGithubAdapters", () => {
   });
 
   test("system prompt explains the repo clone and github_pr workflow", () => {
-    const { platform } = createGithubAdapters(makeEvent(), makeFakeBot());
+    const { platform } = createGithubAdapters(makeEvent(), makeFakeBot(new Set(["push"])));
     expect(platform.formattingGuide).toContain("./repo");
     expect(platform.formattingGuide).toContain("github_pr");
     expect(platform.formattingGuide).toContain("pi/<name>");

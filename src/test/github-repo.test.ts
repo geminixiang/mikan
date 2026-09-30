@@ -58,8 +58,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused-for-file-remotes",
-      botLogin: "mikan[bot]",
-      botEmail: "999+mikan[bot]@users.noreply.github.com",
+      authorName: "mikan[bot]",
+      authorEmail: "999+mikan[bot]@users.noreply.github.com",
     });
 
     expect(existsSync(join(cloneDir, "README.md"))).toBe(true);
@@ -75,8 +75,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
 
@@ -89,8 +89,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
       prHeadBranch: "pi/fix-3",
     });
@@ -104,8 +104,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
       prHeadBranch: "--force-looking-name",
     });
@@ -118,8 +118,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
     });
     writeFileSync(join(cloneDir, "fix.txt"), "fixed\n");
     git(cloneDir, "checkout", "-b", "pi/fix-3");
@@ -136,8 +136,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
     });
 
     for (const branch of ["main", "feature/x", "pi", "pi/", "-pi/x"]) {
@@ -155,8 +155,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     const seedDir = join(root, "seed");
@@ -178,8 +178,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
       prHeadBranch: "pi/fix-3",
     });
@@ -207,8 +207,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     expect(gitPlain(cloneDir, "rev-parse", "--abbrev-ref", "HEAD")).toBe("pr-3");
@@ -230,8 +230,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     writeFileSync(join(cloneDir, "local.txt"), "local commit\n");
@@ -255,8 +255,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     const seedDir = join(root, "seed");
@@ -278,8 +278,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     writeFileSync(join(cloneDir, "wip.txt"), "uncommitted work\n");
@@ -303,8 +303,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     writeFileSync(join(cloneDir, "local.txt"), "local commit\n");
@@ -324,8 +324,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
       prNumber: 3,
     });
     git(cloneDir, "checkout", "-b", "pi/fix-3");
@@ -342,8 +342,8 @@ describe("github repo git operations", () => {
       url: originUrl,
       dir: cloneDir,
       token: "unused",
-      botLogin: "mikan[bot]",
-      botEmail: "bot@example.com",
+      authorName: "mikan[bot]",
+      authorEmail: "bot@example.com",
     });
     const seedDir = join(root, "seed");
     git(seedDir, "checkout", "main");

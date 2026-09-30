@@ -9,6 +9,12 @@ any release.
 
 ## [Unreleased]
 
+### Breaking
+
+- **The GitHub adapter now runs as a bound GitHub account driven by webhooks, and no longer uses a GitHub App or polling.** People mention it with autocomplete, assign it issues and pull requests, and request its review. Set `GITHUB_AGENT_TOKEN` (a fine-grained PAT of that account), `GITHUB_WEBHOOK_SECRET` (an organization or App webhook to `<LINK_URL>/github/webhook`), and `GITHUB_REPOS` (now required: `owner/repo` or `owner/*`); the link server must run. `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_PRIVATE_KEY_PATH`, and `GITHUB_POLL_INTERVAL` are removed, `@<app-slug>` no longer triggers, and `<state-dir>/github-sync.json` is no longer read and can be deleted. Deliveries are best effort: events sent while mikan is down are not replayed. See [ADR 0015](docs/adr/0015-github-agent-account-and-webhooks.md) and [Make mikan a GitHub teammate](src/content/docs/github-teammate-guide.md).
+- **The GitHub adapter is restricted by default.** It answers only in private repositories listed in `GITHUB_REPOS`, only to people with write permission, and only comments and reads. `GITHUB_CAPABILITIES=triage,push` restores label and assignee management and pull requests; `GITHUB_PUBLIC_REPOS`, `GITHUB_USERS`, `GITHUB_MIN_PERMISSION`, and `GITHUB_TRIGGERS` narrow or widen who can trigger it and how.
+- `github_checks` reads GitHub Actions jobs and commit statuses instead of check runs, because fine-grained PATs have no Checks permission. Check runs from third-party CI apps are no longer visible.
+
 ### Fixed
 
 - The sandbox image now ships CJK fonts (`fonts-noto-cjk`, about 170 MB). Without them, `jev_browser` screenshots showed Chinese and Japanese text as blank space, and charts drawn in the sandbox could not use Chinese labels.

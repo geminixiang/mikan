@@ -120,12 +120,12 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 
 通常の bot mode には、少なくとも 1 組の完全な platform credentials が必要です：
 
-| Platform | 必須の環境変数                                                                                                  | 任意の変数                             |
-| -------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                                                            | —                                      |
-| Telegram | `TELEGRAM_BOT_TOKEN`                                                                                            | —                                      |
-| Discord  | `DISCORD_BOT_TOKEN`                                                                                             | —                                      |
-| GitHub   | `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, および `GITHUB_APP_PRIVATE_KEY` または `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`, `GITHUB_POLL_INTERVAL` |
+| Platform | 必須の環境変数                                                                    | 任意の変数                                                                                               |
+| -------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                              | —                                                                                                        |
+| Telegram | `TELEGRAM_BOT_TOKEN`                                                              | —                                                                                                        |
+| Discord  | `DISCORD_BOT_TOKEN`                                                               | —                                                                                                        |
+| GitHub   | `GITHUB_AGENT_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOS`, および `LINK_PORT` | `GITHUB_PUBLIC_REPOS`, `GITHUB_USERS`, `GITHUB_MIN_PERMISSION`, `GITHUB_TRIGGERS`, `GITHUB_CAPABILITIES` |
 
 プラットフォーム固有のセットアップと権限については [プラットフォーム接続](/ja/platform-adapters/) を参照してください。
 

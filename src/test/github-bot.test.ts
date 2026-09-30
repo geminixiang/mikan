@@ -22,8 +22,9 @@ import type {
   GithubApi,
   GithubIssue,
   GithubIssueComment,
-  GithubIssueEvent,
+  GithubPolicy,
   GithubReviewComment,
+  GithubWebhookDelivery,
 } from "../adapters/github/types.js";
 
 vi.mock("../adapters/github/repo.js", async (importOriginal) => {
@@ -42,6 +43,8 @@ vi.mock("../adapters/github/repo.js", async (importOriginal) => {
     }),
   };
 });
+
+const AGENT_TOKEN = "agent-token";
 
 function makeHandler(runningKeys: string[] = []): MessagingEventHandler {
   const running = new Set(runningKeys);
@@ -67,57 +70,42 @@ function firstHandledEvent(handler: MessagingEventHandler) {
   return call;
 }
 
-function futureIso(offsetMs = 60_000): string {
-  return new Date(Date.now() + offsetMs).toISOString();
-}
+const CREATED_AT = "2026-09-30T10:00:00Z";
+const ALICE = { login: "alice", type: "User" };
+const REPOSITORY = { name: "widgets", private: true, owner: { login: "octo" } };
 
 function makeComment(overrides: Partial<GithubIssueComment> = {}): GithubIssueComment {
-  const createdAt = futureIso();
   return {
     id: 9001,
     body: "hello",
-    user: { login: "alice", type: "User" },
-    created_at: createdAt,
-    updated_at: createdAt,
+    user: ALICE,
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
     issue_url: "https://api.github.com/repos/octo/widgets/issues/5",
     ...overrides,
   };
 }
 
 function makeIssue(overrides: Partial<GithubIssue> = {}): GithubIssue {
-  const createdAt = futureIso();
   return {
     id: 7001,
     number: 5,
     title: "Widget breaks",
     body: "It broke.",
-    user: { login: "alice", type: "User" },
-    created_at: createdAt,
-    updated_at: createdAt,
-    ...overrides,
-  };
-}
-
-function makeAssignedEvent(overrides: Partial<GithubIssueEvent> = {}): GithubIssueEvent {
-  return {
-    id: 6001,
-    event: "assigned",
-    created_at: futureIso(),
-    actor: { login: "alice", type: "User" },
-    assignee: { login: "Acme-Agent" },
-    issue: makeIssue({ body: "Please handle this." }),
+    user: ALICE,
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
     ...overrides,
   };
 }
 
 function makeReviewComment(overrides: Partial<GithubReviewComment> = {}): GithubReviewComment {
-  const createdAt = futureIso();
   return {
     id: 8001,
-    body: "@mikan please rename this",
-    user: { login: "alice", type: "User" },
-    created_at: createdAt,
-    updated_at: createdAt,
+    body: "@acme-agent please rename this",
+    user: ALICE,
+    created_at: CREATED_AT,
+    updated_at: CREATED_AT,
     pull_request_url: "https://api.github.com/repos/octo/widgets/pulls/5",
     path: "src/widget.ts",
     line: 42,
@@ -126,22 +114,117 @@ function makeReviewComment(overrides: Partial<GithubReviewComment> = {}): Github
   };
 }
 
+interface DeliveryOverrides {
+  sender?: { login: string; type: string };
+  repository?: { name: string; private: boolean; owner: { login: string } };
+  issue?: Record<string, unknown>;
+}
+
+function issueFields(overrides: Record<string, unknown> = {}) {
+  return {
+    number: 5,
+    title: "Widget breaks",
+    body: "It broke.",
+    user: ALICE,
+    created_at: CREATED_AT,
+    ...overrides,
+  };
+}
+
+function commentDelivery(
+  body: string,
+  overrides: DeliveryOverrides & { id?: number; action?: string } = {},
+): GithubWebhookDelivery {
+  const sender = overrides.sender ?? ALICE;
+  return {
+    event: "issue_comment",
+    payload: {
+      action: overrides.action ?? "created",
+      repository: overrides.repository ?? REPOSITORY,
+      sender,
+      issue: issueFields(overrides.issue),
+      comment: { id: overrides.id ?? 9001, body, user: sender, created_at: CREATED_AT },
+    },
+  };
+}
+
+function openedDelivery(
+  body: string,
+  overrides: DeliveryOverrides & { pullRequest?: boolean } = {},
+): GithubWebhookDelivery {
+  const item = issueFields({ body, ...overrides.issue });
+  const common = {
+    action: "opened",
+    repository: overrides.repository ?? REPOSITORY,
+    sender: overrides.sender ?? ALICE,
+  };
+  return overrides.pullRequest
+    ? { event: "pull_request", payload: { ...common, pull_request: item } }
+    : { event: "issues", payload: { ...common, issue: item } };
+}
+
+function assignedDelivery(
+  assignee: string,
+  overrides: DeliveryOverrides = {},
+): GithubWebhookDelivery {
+  return {
+    event: "issues",
+    payload: {
+      action: "assigned",
+      repository: overrides.repository ?? REPOSITORY,
+      sender: overrides.sender ?? ALICE,
+      issue: issueFields({ body: "Please handle this.", ...overrides.issue }),
+      assignee: { login: assignee },
+    },
+  };
+}
+
+function reviewRequestedDelivery(reviewer: string): GithubWebhookDelivery {
+  return {
+    event: "pull_request",
+    payload: {
+      action: "review_requested",
+      repository: REPOSITORY,
+      sender: ALICE,
+      pull_request: issueFields({ title: "Rename widget", body: "Renames it." }),
+      requested_reviewer: { login: reviewer },
+    },
+  };
+}
+
+function reviewCommentDelivery(
+  overrides: Partial<GithubReviewComment> = {},
+  sender = ALICE,
+): GithubWebhookDelivery {
+  const comment = makeReviewComment({ user: sender, ...overrides });
+  return {
+    event: "pull_request_review_comment",
+    payload: {
+      action: "created",
+      repository: REPOSITORY,
+      sender,
+      pull_request: issueFields(),
+      comment: {
+        id: comment.id,
+        body: comment.body,
+        user: comment.user,
+        created_at: comment.created_at,
+        path: comment.path,
+        line: comment.line,
+        diff_hunk: comment.diff_hunk,
+        in_reply_to_id: comment.in_reply_to_id,
+      },
+    },
+  };
+}
+
 type FakeClient = { [Method in keyof GithubApi]: Mock<GithubApi[Method]> };
 
 function makeFakeClient(): FakeClient {
   return {
-    getAppSlug: vi.fn<GithubApi["getAppSlug"]>().mockResolvedValue("mikan"),
-    getAgentLogin: vi.fn<GithubApi["getAgentLogin"]>().mockResolvedValue(null),
-    listIssueEventsRecent: vi.fn<GithubApi["listIssueEventsRecent"]>().mockResolvedValue([]),
-    getUserId: vi.fn<GithubApi["getUserId"]>().mockResolvedValue(999),
-    listInstallationRepositories: vi
-      .fn<GithubApi["listInstallationRepositories"]>()
-      .mockResolvedValue([]),
-    listIssuesSince: vi.fn<GithubApi["listIssuesSince"]>().mockResolvedValue([]),
-    listIssueCommentsSince: vi.fn<GithubApi["listIssueCommentsSince"]>().mockResolvedValue([]),
-    listPullReviewCommentsSince: vi
-      .fn<GithubApi["listPullReviewCommentsSince"]>()
-      .mockResolvedValue([]),
+    getAuthenticatedUser: vi
+      .fn<GithubApi["getAuthenticatedUser"]>()
+      .mockResolvedValue({ login: "Acme-Agent", id: 999 }),
     listPullReviewComments: vi.fn<GithubApi["listPullReviewComments"]>().mockResolvedValue([]),
     listIssueComments: vi.fn<GithubApi["listIssueComments"]>().mockResolvedValue([]),
     createReviewCommentReaction: vi
@@ -155,9 +238,6 @@ function makeFakeClient(): FakeClient {
     deleteIssueComment: vi.fn<GithubApi["deleteIssueComment"]>().mockResolvedValue(undefined),
     createCommentReaction: vi.fn<GithubApi["createCommentReaction"]>().mockResolvedValue(undefined),
     createIssueReaction: vi.fn<GithubApi["createIssueReaction"]>().mockResolvedValue(undefined),
-    createScopedInstallationToken: vi
-      .fn<GithubApi["createScopedInstallationToken"]>()
-      .mockResolvedValue("scoped-token"),
     getRepository: vi
       .fn<GithubApi["getRepository"]>()
       .mockResolvedValue({ default_branch: "main" }),
@@ -175,7 +255,11 @@ function makeFakeClient(): FakeClient {
     findOpenPullRequestByBranch: vi
       .fn<GithubApi["findOpenPullRequestByBranch"]>()
       .mockResolvedValue(null),
-    listCheckRuns: vi.fn<GithubApi["listCheckRuns"]>().mockResolvedValue([]),
+    getCombinedStatus: vi
+      .fn<GithubApi["getCombinedStatus"]>()
+      .mockResolvedValue({ sha: "headsha", statuses: [] }),
+    listWorkflowRuns: vi.fn<GithubApi["listWorkflowRuns"]>().mockResolvedValue([]),
+    listWorkflowJobs: vi.fn<GithubApi["listWorkflowJobs"]>().mockResolvedValue([]),
     getJobLog: vi.fn<GithubApi["getJobLog"]>().mockResolvedValue(""),
     listPullRequestFiles: vi.fn<GithubApi["listPullRequestFiles"]>().mockResolvedValue([]),
     listIssues: vi.fn<GithubApi["listIssues"]>().mockResolvedValue([]),
@@ -241,6 +325,18 @@ describe("GitHub conversation ids", () => {
   });
 });
 
+function makePolicy(overrides: Partial<GithubPolicy> = {}): GithubPolicy {
+  return {
+    repos: ["octo/widgets"],
+    publicRepos: false,
+    users: null,
+    minPermission: "write",
+    triggers: new Set(["mention", "assign", "review", "followup"]),
+    capabilities: new Set(),
+    ...overrides,
+  };
+}
+
 describe("GithubMessagingBot", () => {
   let workingDir: string;
   let client: FakeClient;
@@ -261,71 +357,54 @@ describe("GithubMessagingBot", () => {
   });
 
   function makeBot(
-    overrides: {
-      handler?: MessagingEventHandler;
-      repos?: string[];
-    } = {},
+    overrides: { handler?: MessagingEventHandler; policy?: Partial<GithubPolicy> } = {},
   ) {
     return new GithubMessagingBot(
       overrides.handler ?? handler,
       {
-        appId: "1",
-        privateKey: "unused",
-        installationId: "2",
-        repos: overrides.repos ?? ["octo/widgets"],
-        pollIntervalMs: 60_000,
+        token: AGENT_TOKEN,
+        policy: makePolicy(overrides.policy),
         workspace: createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") }),
-        syncStatePath: join(workingDir, "state", "github-sync.json"),
       },
       client,
     );
   }
 
-  test("start resolves watched repos from the installation when none configured", async () => {
-    client.listInstallationRepositories.mockResolvedValue([
-      { name: "widgets", owner: { login: "octo", type: "Organization" } },
-    ]);
-    const bot = makeBot({ repos: [] });
+  async function startedBot(
+    overrides: { handler?: MessagingEventHandler; policy?: Partial<GithubPolicy> } = {},
+  ) {
+    const bot = makeBot(overrides);
     await bot.start();
-    await bot.poll();
-    expect(client.listIssueCommentsSince).toHaveBeenCalledWith(
-      "octo",
-      "widgets",
-      expect.any(String),
-    );
-  });
+    return bot;
+  }
 
-  test("start rejects malformed GITHUB_REPOS entries", async () => {
-    const bot = makeBot({ repos: ["not-a-repo"] });
-    await expect(bot.start()).rejects.toThrow(/Invalid GITHUB_REPOS entry/);
-  });
-
-  test("GITHUB_REPOS casing does not change conversation identity", async () => {
-    const bot = makeBot({ repos: ["Octo/Widgets"] });
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan hi" })]);
-
-    await bot.poll();
+  async function deliver(bot: GithubMessagingBot, ...deliveries: GithubWebhookDelivery[]) {
+    for (const delivery of deliveries) await bot.receive(delivery);
     await settleQueues();
+  }
 
-    expect(client.listIssueCommentsSince).toHaveBeenCalledWith(
-      "octo",
-      "widgets",
-      expect.any(String),
-    );
-    const [event] = firstHandledEvent(handler);
-    expect(event.address.conversationId).toBe(CONVERSATION_ID);
+  function participate(): void {
+    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
+    writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
+  }
+
+  test("start fails when the agent token is rejected", async () => {
+    client.getAuthenticatedUser.mockRejectedValue(new Error("Bad credentials"));
+    await expect(makeBot().start()).rejects.toThrow(/Bad credentials/);
   });
 
-  test("mentioned comment triggers a run with the mention stripped", async () => {
+  test("deliveries before start or after stop are ignored", async () => {
     const bot = makeBot();
+    await deliver(bot, commentDelivery("@acme-agent hi"));
     await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({ body: "@mikan please fix this" }),
-    ]);
+    await bot.stop();
+    await deliver(bot, commentDelivery("@acme-agent hi"));
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
 
-    await bot.poll();
-    await settleQueues();
+  test("a mentioned comment triggers a run with the mention stripped", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent please fix this"));
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const [event] = firstHandledEvent(handler);
@@ -337,17 +416,27 @@ describe("GithubMessagingBot", () => {
     expect(event.text).toBe("please fix this");
   });
 
-  test("first contact via comment logs the issue body before the comment", async () => {
-    client.getIssue.mockResolvedValue(
-      makeIssue({ created_at: "2020-01-01T00:00:00Z", updated_at: "2020-01-01T00:00:00Z" }),
-    );
-    const bot = makeBot();
-    await bot.start();
-    const comment = makeComment({ body: "@mikan thoughts?" });
-    client.listIssueCommentsSince.mockResolvedValue([comment]);
+  test("a longer login that starts with the agent login is not a mention", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent-two please fix this"));
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
 
-    await bot.poll();
-    await settleQueues();
+  test("repository casing does not change conversation identity", async () => {
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      commentDelivery("@acme-agent hi", {
+        repository: { name: "Widgets", private: true, owner: { login: "Octo" } },
+      }),
+    );
+    const [event] = firstHandledEvent(handler);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
+  });
+
+  test("first contact via comment logs the issue body before the comment", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent thoughts?"));
 
     const lines = readFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "utf-8")
       .trim()
@@ -355,107 +444,76 @@ describe("GithubMessagingBot", () => {
       .map((line) => JSON.parse(line));
     expect(lines[0].ts).toBe(GITHUB_ISSUE_BODY_TS);
     expect(lines[0].text).toContain("# Widget breaks");
-    expect(Date.parse(lines[0].date)).toBe(Date.parse(comment.created_at) - 1000);
+    expect(Date.parse(lines[0].date)).toBe(Date.parse(CREATED_AT) - 1000);
     expect(lines[1].ts).toBe("9001");
     expect(lines[1].text).toBe("thoughts?");
   });
 
-  test("unmentioned comment in an unknown issue is ignored without creating state", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "unrelated chatter" })]);
-
-    await bot.poll();
-    await settleQueues();
+  test("an unmentioned comment in an unknown issue is ignored without creating state", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("unrelated chatter"));
 
     expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(client.getCollaboratorPermission).not.toHaveBeenCalled();
     expect(existsSync(join(workingDir, CONVERSATION_OFFICE))).toBe(false);
   });
 
-  test("unmentioned comment in a participating conversation triggers", async () => {
-    mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "follow-up question" })]);
-
-    await bot.poll();
-    await settleQueues();
+  test("an unmentioned comment in a participating conversation triggers", async () => {
+    participate();
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("follow-up question"));
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     expect(client.getIssue).not.toHaveBeenCalled();
   });
 
-  test("bot comments and pre-baseline (edited) comments do not trigger", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({ id: 1, body: "@mikan hi", user: { login: "mikan[bot]", type: "Bot" } }),
-      makeComment({
-        id: 2,
-        body: "@mikan hi",
-        created_at: new Date(Date.now() - 60_000).toISOString(),
-        updated_at: futureIso(),
-      }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
+  test("bots and the agent account itself never trigger, even in a participating thread", async () => {
+    participate();
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      commentDelivery("@acme-agent hi", { sender: { login: "ci[bot]", type: "Bot" } }),
+      commentDelivery("Here is my answer", { sender: { login: "acme-agent", type: "User" } }),
+    );
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("a comment id seen once does not re-trigger on later polls", async () => {
-    const bot = makeBot();
-    await bot.start();
-    const comment = makeComment({ body: "@mikan ping" });
-    client.listIssueCommentsSince.mockResolvedValue([comment]);
-
-    await bot.poll();
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+  test("edited and deleted comments do not trigger", async () => {
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      commentDelivery("@acme-agent hi", { action: "edited" }),
+      commentDelivery("@acme-agent hi", { action: "deleted" }),
+    );
+    expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("newly opened issue mentioning the bot triggers with title and body", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssuesSince.mockResolvedValue([makeIssue({ body: "@mikan can you triage this?" })]);
+  test("malformed and unrelated deliveries are ignored", async () => {
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      { event: "issue_comment", payload: { action: "created" } },
+      { event: "push", payload: {} },
+    );
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+  });
 
-    await bot.poll();
-    await settleQueues();
+  test("a newly opened issue mentioning the agent triggers with title and body", async () => {
+    const bot = await startedBot();
+    await deliver(bot, openedDelivery("@acme-agent can you triage this?"));
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     const [event] = firstHandledEvent(handler);
     expect(event.ts).toBe(GITHUB_ISSUE_BODY_TS);
     expect(event.text).toContain("# Widget breaks");
     expect(event.text).toContain("can you triage this?");
-    expect(event.text).not.toContain("@mikan");
+    expect(event.text).not.toContain("@acme-agent");
   });
 
-  test("issues merely updated by comment activity are not treated as new", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssuesSince.mockResolvedValue([
-      makeIssue({
-        body: "@mikan old issue",
-        created_at: new Date(Date.now() - 60_000).toISOString(),
-        updated_at: futureIso(),
-      }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-  });
-
-  test("mentioned 'stop' comment stops the running session instead of starting a run", async () => {
+  test("a mentioned 'stop' comment stops the running session instead of starting a run", async () => {
     const stopHandler = makeHandler([CONVERSATION_ID]);
-    const bot = makeBot({ handler: stopHandler });
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan stop" })]);
-
-    await bot.poll();
-    await settleQueues();
+    const bot = await startedBot({ handler: stopHandler });
+    await deliver(bot, commentDelivery("@acme-agent stop"));
 
     expect(stopHandler.handleStop).toHaveBeenCalledWith(
       createOfficeAddress("github", CONVERSATION_ID),
@@ -465,295 +523,289 @@ describe("GithubMessagingBot", () => {
     expect(stopHandler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("first-contact 'stop' does not create participation state", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan stop" })]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(handler.handleEvent).not.toHaveBeenCalled();
+  test("a first-contact 'stop' does not create participation state", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent stop"));
     expect(existsSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"))).toBe(false);
 
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({ id: 991, body: "unrelated follow-up" }),
-    ]);
-    await bot.poll();
-    await settleQueues();
+    await deliver(bot, commentDelivery("unrelated follow-up", { id: 991 }));
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("start records the baseline watermark on disk", async () => {
-    const bot = makeBot();
-    await bot.start();
-    const statePath = join(workingDir, "state", "github-sync.json");
-    const state = JSON.parse(readFileSync(statePath, "utf-8"));
-    expect(state.repos["octo/widgets"].baseline).toBeTruthy();
-    expect(state.repos["octo/widgets"].seenComments).toEqual([]);
-  });
-
-  test("a comment handled before a restart does not re-trigger after it", async () => {
-    const bot1 = makeBot();
-    await bot1.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan ping" })]);
-    await bot1.poll();
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-
-    const handler2 = makeHandler();
-    const bot2 = makeBot({ handler: handler2 });
-    await bot2.start();
-    await bot2.poll();
-    await settleQueues();
-    expect(handler2.handleEvent).not.toHaveBeenCalled();
-  });
-
-  test("comments posted while mikan was down still trigger after restart", async () => {
-    const statePath = join(workingDir, "state", "github-sync.json");
-    mkdirSync(join(workingDir, "state"), { recursive: true });
-    const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    const cursor = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    writeFileSync(
-      statePath,
-      JSON.stringify({
-        repos: {
-          "octo/widgets": { baseline, cursor, seenComments: [], seenIssues: [] },
-        },
-      }),
-    );
-    const downtime = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({
-        body: "@mikan while you were away",
-        created_at: downtime,
-        updated_at: downtime,
-      }),
-    ]);
-
-    const bot = makeBot();
-    await bot.start();
-    await bot.poll();
-    await settleQueues();
+  test("assigning the agent triggers a run on the issue as the assigner", async () => {
+    const bot = await startedBot();
+    await deliver(bot, assignedDelivery("Acme-Agent"));
 
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const sinceCall = client.listIssueCommentsSince.mock.calls[0];
-    if (!sinceCall) throw new Error("listIssueCommentsSince was not called");
-    const since = sinceCall[2];
-    expect(Date.parse(since)).toBeLessThan(Date.parse(cursor));
+    const [event] = firstHandledEvent(handler);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
+    expect(event.ts).toBe(GITHUB_ISSUE_BODY_TS);
+    expect(event.user).toBe("alice");
+    expect(event.text).toContain("[Assigned to you by @alice]");
+    expect(event.text).toContain("# Widget breaks");
+    expect(event.text).toContain("Please handle this.");
+    expect(client.getIssue).not.toHaveBeenCalled();
   });
 
-  test("ids already in the persisted watermark never re-trigger", async () => {
-    const statePath = join(workingDir, "state", "github-sync.json");
-    mkdirSync(join(workingDir, "state"), { recursive: true });
-    const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    writeFileSync(
-      statePath,
-      JSON.stringify({
-        repos: {
-          "octo/widgets": { baseline, cursor: baseline, seenComments: [9001], seenIssues: [] },
-        },
-      }),
-    );
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan ping" })]);
-
-    const bot = makeBot();
-    await bot.start();
-    await bot.poll();
-    await settleQueues();
+  test("assigning someone else does not trigger", async () => {
+    const bot = await startedBot();
+    await deliver(bot, assignedDelivery("bob"));
     expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 
-  test("postMessage posts a comment and returns its id", async () => {
-    const bot = makeBot();
-    await bot.start();
-    expect(await bot.postMessage(CONVERSATION_ID, "hello")).toBe("555");
-    expect(client.createIssueComment).toHaveBeenCalledWith("octo", "widgets", 5, "hello");
-  });
+  test("requesting the agent's review triggers on the pull request", async () => {
+    const bot = await startedBot();
+    await deliver(bot, reviewRequestedDelivery("acme-agent"), reviewRequestedDelivery("bob"));
 
-  test("addReaction maps short names and routes issue-body vs comment", async () => {
-    const bot = makeBot();
-    await bot.start();
-
-    await bot.addReaction(CONVERSATION_ID, "9001", "eyes");
-    expect(client.createCommentReaction).toHaveBeenCalledWith("octo", "widgets", 9001, "eyes");
-
-    await bot.addReaction(CONVERSATION_ID, GITHUB_ISSUE_BODY_TS, "tada");
-    expect(client.createIssueReaction).toHaveBeenCalledWith("octo", "widgets", 5, "hooray");
-
-    await expect(bot.addReaction(CONVERSATION_ID, "9001", "sparkles")).rejects.toThrow(
-      /does not support reaction/,
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    const [event] = firstHandledEvent(handler);
+    expect(event.text).toContain("[Review requested by @alice]");
+    expect(event.text).toContain("# Rename widget");
+    expect(cloneRepo).toHaveBeenCalledWith(
+      expect.objectContaining({ prNumber: 5, prHeadBranch: "pi/fix-widget" }),
     );
   });
 
-  test("commenters below the trigger permission are ignored entirely", async () => {
-    client.getCollaboratorPermission.mockResolvedValue({ permission: "read" });
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan do things" })]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(client.getCollaboratorPermission).toHaveBeenCalledWith("octo", "widgets", "alice");
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-    expect(existsSync(join(workingDir, CONVERSATION_OFFICE))).toBe(false);
+  test("an issue opened with a mention and assigned to the agent triggers once", async () => {
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      openedDelivery("@acme-agent please take this"),
+      assignedDelivery("acme-agent"),
+    );
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
-  test("custom roles fall back to the stronger legacy permission field", async () => {
-    client.getCollaboratorPermission.mockResolvedValue({
-      permission: "write",
-      role_name: "custom-deployer",
+  describe("policy", () => {
+    test("repositories outside GITHUB_REPOS are ignored", async () => {
+      const bot = await startedBot();
+      await deliver(
+        bot,
+        commentDelivery("@acme-agent hi", {
+          repository: { name: "secrets", private: true, owner: { login: "octo" } },
+        }),
+      );
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+      expect(client.getCollaboratorPermission).not.toHaveBeenCalled();
     });
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan hi" })]);
 
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-  });
-
-  test("permission lookups are cached per repo+user", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([
-      makeComment({ id: 1, body: "@mikan one" }),
-      makeComment({ id: 2, body: "@mikan two" }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(2);
-    expect(client.getCollaboratorPermission).toHaveBeenCalledTimes(1);
-  });
-
-  test("a failed permission lookup denies the trigger (fails closed)", async () => {
-    client.getCollaboratorPermission.mockRejectedValue(new Error("boom"));
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan hi" })]);
-
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-  });
-
-  test("first contact clones the repo with a read-scoped token", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan look" })]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
-      contents: "read",
+    test("owner/* allows every repository of that owner", async () => {
+      const bot = await startedBot({ policy: { repos: ["octo/*"] } });
+      await deliver(
+        bot,
+        commentDelivery("@acme-agent hi", {
+          repository: { name: "gears", private: true, owner: { login: "octo" } },
+        }),
+        commentDelivery("@acme-agent hi", {
+          repository: { name: "gears", private: true, owner: { login: "other" } },
+        }),
+      );
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     });
+
+    test("public repositories need GITHUB_PUBLIC_REPOS", async () => {
+      const publicRepo = { ...REPOSITORY, private: false };
+      const closed = await startedBot();
+      await deliver(closed, commentDelivery("@acme-agent hi", { repository: publicRepo }));
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+
+      const open = await startedBot({ policy: { publicRepos: true } });
+      await deliver(open, commentDelivery("@acme-agent hi", { repository: publicRepo }));
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("GITHUB_USERS limits who can trigger", async () => {
+      const bot = await startedBot({ policy: { users: ["bob"] } });
+      await deliver(bot, commentDelivery("@acme-agent hi"));
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+
+      await deliver(
+        bot,
+        commentDelivery("@acme-agent hi", { id: 2, sender: { login: "Bob", type: "User" } }),
+      );
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("disabled triggers are ignored", async () => {
+      participate();
+      const bot = await startedBot({ policy: { triggers: new Set(["mention"]) } });
+      await deliver(bot, commentDelivery("follow-up"), assignedDelivery("acme-agent"));
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+
+      await deliver(bot, commentDelivery("@acme-agent now", { id: 2 }));
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("senders below the minimum permission are ignored entirely", async () => {
+      const bot = await startedBot({ policy: { minPermission: "maintain" } });
+      await deliver(bot, commentDelivery("@acme-agent do things"));
+
+      expect(client.getCollaboratorPermission).toHaveBeenCalledWith("octo", "widgets", "alice");
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+      expect(existsSync(join(workingDir, CONVERSATION_OFFICE))).toBe(false);
+    });
+
+    test("custom roles fall back to the stronger legacy permission field", async () => {
+      client.getCollaboratorPermission.mockResolvedValue({
+        permission: "write",
+        role_name: "custom-deployer",
+      });
+      const bot = await startedBot();
+      await deliver(bot, commentDelivery("@acme-agent hi"));
+      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    });
+
+    test("permission lookups are cached per repo and user", async () => {
+      const bot = await startedBot();
+      await deliver(
+        bot,
+        commentDelivery("@acme-agent one", { id: 1 }),
+        commentDelivery("@acme-agent two", { id: 2 }),
+      );
+      expect(handler.handleEvent).toHaveBeenCalledTimes(2);
+      expect(client.getCollaboratorPermission).toHaveBeenCalledTimes(1);
+    });
+
+    test("a failed permission lookup denies the trigger", async () => {
+      client.getCollaboratorPermission.mockRejectedValue(new Error("boom"));
+      const bot = await startedBot();
+      await deliver(bot, commentDelivery("@acme-agent hi"));
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+    });
+  });
+
+  test("first contact clones with the agent token as the agent's commit identity", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent look"));
+
     expect(cloneRepo).toHaveBeenCalledWith({
       url: "https://github.com/octo/widgets.git",
       dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
-      token: "scoped-token",
-      botLogin: "mikan[bot]",
-      botEmail: "999+mikan[bot]@users.noreply.github.com",
+      token: AGENT_TOKEN,
+      authorName: "Acme-Agent",
+      authorEmail: "999+Acme-Agent@users.noreply.github.com",
       prNumber: undefined,
+      prHeadBranch: undefined,
     });
   });
 
-  test("PR conversations check out the PR head under its real branch name on clone", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssuesSince.mockResolvedValue([
-      makeIssue({ body: "@mikan review this", pull_request: {} }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
+  test("a pull request opened with a mention checks out its head branch", async () => {
+    const bot = await startedBot();
+    await deliver(bot, openedDelivery("@acme-agent review this", { pullRequest: true }));
 
     expect(cloneRepo).toHaveBeenCalledWith(
       expect.objectContaining({ prNumber: 5, prHeadBranch: "pi/fix-widget" }),
     );
   });
 
-  test("fork PRs clone without a head branch name (checkout falls back to pr-<n>)", async () => {
+  test("fork PRs clone without a head branch name", async () => {
     client.getPullRequest.mockResolvedValue({
       number: 5,
       html_url: "https://github.com/octo/widgets/pull/5",
       head: { ref: "feature", sha: "headsha", repo: { full_name: "alice/widgets" } },
     });
-    const bot = makeBot();
-    await bot.start();
-    client.listIssuesSince.mockResolvedValue([
-      makeIssue({ body: "@mikan review this", pull_request: {} }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
+    const bot = await startedBot();
+    await deliver(bot, openedDelivery("@acme-agent review this", { pullRequest: true }));
 
     expect(cloneRepo).toHaveBeenCalledWith(
       expect.objectContaining({ prNumber: 5, prHeadBranch: undefined }),
     );
   });
 
-  test("a failed PR head lookup still clones, falling back to pr-<n>", async () => {
-    client.getPullRequest.mockRejectedValue(new Error("boom"));
-    const bot = makeBot();
-    await bot.start();
-    client.listIssuesSince.mockResolvedValue([
-      makeIssue({ body: "@mikan review this", pull_request: {} }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(cloneRepo).toHaveBeenCalledWith(
-      expect.objectContaining({ prNumber: 5, prHeadBranch: undefined }),
-    );
-  });
-
-  test("ignored comments never mint tokens or clone", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "unrelated" })]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(client.createScopedInstallationToken).not.toHaveBeenCalled();
+  test("ignored comments never clone", async () => {
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("unrelated"));
     expect(cloneRepo).not.toHaveBeenCalled();
   });
 
-  test("an existing clone is not re-cloned on later first-contact paths", async () => {
+  test("an existing clone is not cloned again", async () => {
     mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "@mikan again" })]);
-
-    await bot.poll();
-    await settleQueues();
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("@acme-agent again"));
     expect(cloneRepo).not.toHaveBeenCalled();
   });
 
   test("a participating conversation with a missing clone retries on the next trigger", async () => {
     mkdirSync(join(workingDir, CONVERSATION_OFFICE), { recursive: true });
     writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
-    client.getIssue.mockResolvedValue(makeIssue({ pull_request: {} }));
-    const bot = makeBot();
-    await bot.start();
-    client.listIssueCommentsSince.mockResolvedValue([makeComment({ body: "try again" })]);
-
-    await bot.poll();
-    await settleQueues();
+    const bot = await startedBot();
+    await deliver(bot, commentDelivery("try again", { issue: { pull_request: {} } }));
 
     expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
   });
 
-  test("pushAndCreatePr pushes the branch with a write token and opens the PR", async () => {
+  test("a mentioned review comment triggers with diff anchor context and rc- ts", async () => {
+    const bot = await startedBot();
+    await deliver(bot, reviewCommentDelivery());
+
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+    const [event] = firstHandledEvent(handler);
+    expect(event.address.conversationId).toBe(CONVERSATION_ID);
+    expect(event.ts).toBe("rc-8001");
+    expect(event.text).toContain("[PR review comment rc-8001 on src/widget.ts:42]");
+    expect(event.text).toContain("```diff");
+    expect(event.text).toContain("+const widgetCount = 1;");
+    expect(event.text).toContain("please rename this");
+    expect(event.text).not.toContain("@acme-agent");
+    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
+    expect(client.listPullReviewComments).not.toHaveBeenCalled();
+  });
+
+  test("a mid-thread review reply carries the thread's earlier turns", async () => {
+    client.listPullReviewComments.mockResolvedValue([
+      makeReviewComment({
+        id: 7000,
+        body: "root: why this name?",
+        user: { login: "bob", type: "User" },
+      }),
+      makeReviewComment({ id: 7500, body: "because clarity", in_reply_to_id: 7000 }),
+      makeReviewComment({ id: 8001, body: "@acme-agent settle this", in_reply_to_id: 7000 }),
+    ]);
+    const bot = await startedBot();
+    await deliver(
+      bot,
+      reviewCommentDelivery({ id: 8001, body: "@acme-agent settle this", in_reply_to_id: 7000 }),
+    );
+
+    const [event] = firstHandledEvent(handler);
+    expect(event.text).toContain("Thread so far:");
+    expect(event.text).toContain("@bob: root: why this name?");
+    expect(event.text).toContain("@alice: because clarity");
+    expect(event.text.indexOf("settle this")).toBe(event.text.lastIndexOf("settle this"));
+  });
+
+  test("postMessage posts a comment and returns its id", async () => {
+    const bot = await startedBot();
+    expect(await bot.postMessage(CONVERSATION_ID, "hello")).toBe("555");
+    expect(client.createIssueComment).toHaveBeenCalledWith("octo", "widgets", 5, "hello");
+  });
+
+  test("addReaction maps short names and routes issue-body, comment, and review comment", async () => {
+    const bot = await startedBot();
+
+    await bot.addReaction(CONVERSATION_ID, "9001", "saluting_face");
+    expect(client.createCommentReaction).toHaveBeenCalledWith("octo", "widgets", 9001, "eyes");
+
+    await bot.addReaction(CONVERSATION_ID, GITHUB_ISSUE_BODY_TS, "tada");
+    expect(client.createIssueReaction).toHaveBeenCalledWith("octo", "widgets", 5, "hooray");
+
+    await bot.addReaction(CONVERSATION_ID, "rc-8001", "eyes");
+    expect(client.createReviewCommentReaction).toHaveBeenCalledWith(
+      "octo",
+      "widgets",
+      8001,
+      "eyes",
+    );
+
+    await expect(bot.addReaction(CONVERSATION_ID, "9001", "sparkles")).rejects.toThrow(
+      /does not support reaction/,
+    );
+  });
+
+  test("pushAndCreatePr pushes the branch with the agent token and opens the PR", async () => {
     mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
       branch: "pi/fix-5",
@@ -762,14 +814,10 @@ describe("GithubMessagingBot", () => {
       draft: true,
     });
 
-    expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
-      contents: "write",
-      pull_requests: "write",
-    });
     expect(pushBranch).toHaveBeenCalledWith({
       dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
       branch: "pi/fix-5",
-      token: "scoped-token",
+      token: AGENT_TOKEN,
     });
     expect(client.createPullRequest).toHaveBeenCalledWith("octo", "widgets", {
       title: "Fix the widget",
@@ -791,8 +839,7 @@ describe("GithubMessagingBot", () => {
       number: 7,
       html_url: "https://github.com/octo/widgets/pull/7",
     });
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const result = await bot.ops.pushAndCreatePr(CONVERSATION_ID, {
       branch: "pi/fix-5",
@@ -807,45 +854,72 @@ describe("GithubMessagingBot", () => {
     });
   });
 
-  test("getChecks reads a branch's check runs, or the PR head when omitted", async () => {
-    client.listCheckRuns = vi.fn().mockResolvedValue([
+  test("getChecks merges Actions jobs and commit statuses for a branch or the PR head", async () => {
+    client.getCombinedStatus.mockResolvedValue({
+      sha: "abc123",
+      statuses: [
+        {
+          id: 3,
+          context: "ci/external",
+          state: "failure",
+          description: "2 tests failed",
+          target_url: "https://ci.example.com/3",
+        },
+        { id: 4, context: "lint", state: "pending", description: null, target_url: null },
+      ],
+    });
+    client.listWorkflowRuns.mockResolvedValue([{ id: 10, name: "CI" }]);
+    client.listWorkflowJobs.mockResolvedValue([
       {
         id: 42,
         name: "test",
         status: "completed",
         conclusion: "success",
-        html_url: "https://ci/1",
-        app: { slug: "github-actions" },
-        output: { title: "ok", summary: "all green" },
+        html_url: "https://github.com/octo/widgets/actions/runs/10/job/42",
       },
     ]);
-    client.getPullRequest = vi
-      .fn()
-      .mockResolvedValue({ number: 5, html_url: "u", head: { ref: "feat", sha: "abc123" } });
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     expect(await bot.ops.getChecks(CONVERSATION_ID, "pi/fix-5")).toEqual([
       {
         id: 42,
-        name: "test",
+        name: "CI / test",
         status: "completed",
         conclusion: "success",
-        url: "https://ci/1",
-        appSlug: "github-actions",
-        outputSummary: "all green",
+        url: "https://github.com/octo/widgets/actions/runs/10/job/42",
+        source: "actions",
+        outputSummary: null,
+      },
+      {
+        id: 3,
+        name: "ci/external",
+        status: "completed",
+        conclusion: "failure",
+        url: "https://ci.example.com/3",
+        source: "status",
+        outputSummary: "2 tests failed",
+      },
+      {
+        id: 4,
+        name: "lint",
+        status: "in_progress",
+        conclusion: null,
+        url: null,
+        source: "status",
+        outputSummary: null,
       },
     ]);
-    expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
+    expect(client.getCombinedStatus).toHaveBeenLastCalledWith("octo", "widgets", "pi/fix-5");
+    expect(client.listWorkflowRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
+    expect(client.listWorkflowJobs).toHaveBeenLastCalledWith("octo", "widgets", 10);
 
     await bot.ops.getChecks(CONVERSATION_ID);
-    expect(client.listCheckRuns).toHaveBeenLastCalledWith("octo", "widgets", "abc123");
+    expect(client.getCombinedStatus).toHaveBeenLastCalledWith("octo", "widgets", "headsha");
   });
 
   test("getJobLog truncates to the tail of huge logs", async () => {
     client.getJobLog = vi.fn().mockResolvedValue(`${"x".repeat(30000)}TAIL`);
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const logText = await bot.ops.getJobLog(CONVERSATION_ID, 42);
     expect(client.getJobLog).toHaveBeenCalledWith("octo", "widgets", 42);
@@ -861,8 +935,7 @@ describe("GithubMessagingBot", () => {
       .mockRejectedValue(
         new GithubApiError(404, "GET", "/repos/octo/widgets/actions/jobs/9/logs", "Not Found"),
       );
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await expect(bot.ops.getJobLog(CONVERSATION_ID, 0)).rejects.toThrow(/positive Actions job id/);
     expect(client.getJobLog).not.toHaveBeenCalled();
@@ -871,144 +944,12 @@ describe("GithubMessagingBot", () => {
 
   test("getChecks without a branch demands one when the conversation is a plain issue", async () => {
     client.getPullRequest = vi.fn().mockRejectedValue(new Error("404"));
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
     await expect(bot.ops.getChecks(CONVERSATION_ID)).rejects.toThrow(/pass the branch/);
   });
 
-  test("mentioned review comment triggers with diff anchor context and rc- ts", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listPullReviewCommentsSince.mockResolvedValue([makeReviewComment()]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const [event] = firstHandledEvent(handler);
-    expect(event.address.conversationId).toBe(CONVERSATION_ID);
-    expect(event.ts).toBe("rc-8001");
-    expect(event.text).toContain("[PR review comment rc-8001 on src/widget.ts:42]");
-    expect(event.text).toContain("```diff");
-    expect(event.text).toContain("+const widgetCount = 1;");
-    expect(event.text).toContain("please rename this");
-    expect(event.text).not.toContain("@mikan");
-    expect(cloneRepo).toHaveBeenCalledWith(expect.objectContaining({ prNumber: 5 }));
-  });
-
-  test("bot-authored and below-permission review comments do not trigger", async () => {
-    client.getCollaboratorPermission.mockResolvedValue({ permission: "read" });
-    const bot = makeBot();
-    await bot.start();
-    client.listPullReviewCommentsSince.mockResolvedValue([
-      makeReviewComment({ id: 1, user: { login: "mikan[bot]", type: "Bot" } }),
-      makeReviewComment({ id: 2, user: { login: "drive-by", type: "User" } }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-  });
-
-  test("a review comment id seen once does not re-trigger, even when edits re-list it", async () => {
-    const bot = makeBot();
-    await bot.start();
-    const comment = makeReviewComment();
-    client.listPullReviewCommentsSince.mockResolvedValue([comment]);
-    await bot.poll();
-
-    client.listPullReviewCommentsSince.mockResolvedValue([
-      { ...comment, updated_at: futureIso(120_000) },
-    ]);
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-  });
-
-  test("pre-baseline review comments never trigger", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listPullReviewCommentsSince.mockResolvedValue([
-      makeReviewComment({
-        created_at: new Date(Date.now() - 60_000).toISOString(),
-        updated_at: futureIso(),
-      }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-    expect(handler.handleEvent).not.toHaveBeenCalled();
-  });
-
-  test("sync state written before review polling loads and self-upgrades", async () => {
-    const statePath = join(workingDir, "state", "github-sync.json");
-    mkdirSync(join(workingDir, "state"), { recursive: true });
-    const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-    writeFileSync(
-      statePath,
-      JSON.stringify({
-        repos: {
-          "octo/widgets": { baseline, cursor: baseline, seenComments: [9001], seenIssues: [] },
-        },
-      }),
-    );
-    const downtime = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-    client.listPullReviewCommentsSince.mockResolvedValue([
-      makeReviewComment({ created_at: downtime, updated_at: downtime }),
-    ]);
-
-    const bot = makeBot();
-    await bot.start();
-    await bot.poll();
-    await settleQueues();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    const state = JSON.parse(readFileSync(statePath, "utf-8"));
-    expect(state.repos["octo/widgets"].seenComments).toEqual([9001]);
-    expect(state.repos["octo/widgets"].seenReviewComments).toEqual([8001]);
-  });
-
-  test("a mid-thread reply carries the thread's earlier turns", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listPullReviewComments.mockResolvedValue([
-      makeReviewComment({
-        id: 7000,
-        body: "root: why this name?",
-        user: { login: "bob", type: "User" },
-      }),
-      makeReviewComment({ id: 7500, body: "because clarity", in_reply_to_id: 7000 }),
-      makeReviewComment({ id: 8001, body: "@mikan settle this", in_reply_to_id: 7000 }),
-    ]);
-    client.listPullReviewCommentsSince.mockResolvedValue([
-      makeReviewComment({ id: 8001, body: "@mikan settle this", in_reply_to_id: 7000 }),
-    ]);
-
-    await bot.poll();
-    await settleQueues();
-
-    const [event] = firstHandledEvent(handler);
-    expect(event.text).toContain("Thread so far:");
-    expect(event.text).toContain("@bob: root: why this name?");
-    expect(event.text).toContain("@alice: because clarity");
-    expect(event.text.indexOf("settle this")).toBe(event.text.lastIndexOf("settle this"));
-  });
-
-  test("a thread-root review comment does not fetch thread context", async () => {
-    const bot = makeBot();
-    await bot.start();
-    client.listPullReviewCommentsSince.mockResolvedValue([makeReviewComment()]);
-
-    await bot.poll();
-    await settleQueues();
-
-    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    expect(client.listPullReviewComments).not.toHaveBeenCalled();
-  });
-
-  test("syncRepo requires a clone, mints a read token, and targets the PR head", async () => {
-    const bot = makeBot();
-    await bot.start();
+  test("syncRepo requires a clone and fetches the PR head with the agent token", async () => {
+    const bot = await startedBot();
 
     await expect(bot.ops.syncRepo(CONVERSATION_ID)).rejects.toThrow(/no \.\/repo clone/);
 
@@ -1017,12 +958,9 @@ describe("GithubMessagingBot", () => {
 
     const report = await bot.ops.syncRepo(CONVERSATION_ID);
 
-    expect(client.createScopedInstallationToken).toHaveBeenCalledWith("widgets", {
-      contents: "read",
-    });
     expect(syncRepo).toHaveBeenCalledWith({
       dir: join(workingDir, CONVERSATION_OFFICE, "repo"),
-      token: "scoped-token",
+      token: AGENT_TOKEN,
       branch: undefined,
       prNumber: 5,
       prHeadBranch: "pi/fix-widget",
@@ -1043,8 +981,7 @@ describe("GithubMessagingBot", () => {
       currentBranch: "main",
       localCommits: 2,
     });
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const report = await bot.ops.syncRepo(CONVERSATION_ID);
 
@@ -1060,8 +997,7 @@ describe("GithubMessagingBot", () => {
     client.getPullRequest = vi.fn().mockResolvedValue({ number: 5, html_url: "u" });
     client.listPullRequestFiles = vi.fn().mockResolvedValue([]);
     client.listIssues = vi.fn().mockResolvedValue([]);
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const prResult = await bot.ops.readGithub(CONVERSATION_ID, { action: "pr" });
     expect(client.getPullRequest).toHaveBeenCalledWith("octo", "widgets", 5);
@@ -1084,8 +1020,7 @@ describe("GithubMessagingBot", () => {
       .mockResolvedValue([
         { id: 1, user: { login: "bob", type: "User" }, state: "APPROVED", body: null },
       ]);
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const result = await bot.ops.readGithub(CONVERSATION_ID, { action: "pr_reviews" });
 
@@ -1100,8 +1035,7 @@ describe("GithubMessagingBot", () => {
     client.addIssueAssignees = vi.fn().mockResolvedValue(undefined);
     client.removeIssueAssignees = vi.fn().mockResolvedValue(undefined);
     client.updateIssueState = vi.fn().mockResolvedValue(undefined);
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await bot.ops.manageIssue(CONVERSATION_ID, { action: "add_labels", labels: ["bug", "p1"] });
     expect(client.addIssueLabels).toHaveBeenCalledWith("octo", "widgets", 5, ["bug", "p1"]);
@@ -1141,8 +1075,7 @@ describe("GithubMessagingBot", () => {
     client.updateIssueState = vi
       .fn()
       .mockRejectedValue(new GithubApiError(404, "PATCH", "/x", "Not Found"));
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await expect(bot.ops.manageIssue(CONVERSATION_ID, { action: "add_labels" })).rejects.toThrow(
       /requires a non-empty labels array/,
@@ -1157,8 +1090,7 @@ describe("GithubMessagingBot", () => {
 
   test("replyToReviewThread posts into the thread and returns the discussion url", async () => {
     client.replyToReviewComment = vi.fn().mockResolvedValue(makeReviewComment({ id: 9002 }));
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     const result = await bot.ops.replyToReviewThread(CONVERSATION_ID, 8001, "done");
 
@@ -1171,8 +1103,7 @@ describe("GithubMessagingBot", () => {
     client.replyToReviewComment = vi
       .fn()
       .mockRejectedValue(new GithubApiError(404, "POST", "/x", "Not Found"));
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await expect(bot.ops.replyToReviewThread(CONVERSATION_ID, 0, "x")).rejects.toThrow(
       /numeric id from an \[PR review comment/,
@@ -1184,15 +1115,13 @@ describe("GithubMessagingBot", () => {
   });
 
   test("addReaction shows the work acknowledgement as eyes, GitHub's closest reaction", async () => {
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
     await bot.addReaction(CONVERSATION_ID, "9001", "saluting_face");
     expect(client.createCommentReaction).toHaveBeenCalledWith("octo", "widgets", 9001, "eyes");
   });
 
   test("addReaction routes rc- ts to the review-comment reactions endpoint", async () => {
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await bot.addReaction(CONVERSATION_ID, "rc-8001", "eyes");
     expect(client.createReviewCommentReaction).toHaveBeenCalledWith(
@@ -1205,8 +1134,7 @@ describe("GithubMessagingBot", () => {
   });
 
   test("pushAndCreatePr refuses non-pi branches and missing clones", async () => {
-    const bot = makeBot();
-    await bot.start();
+    const bot = await startedBot();
 
     await expect(
       bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "pi/x", title: "t" }),
@@ -1217,136 +1145,5 @@ describe("GithubMessagingBot", () => {
       bot.ops.pushAndCreatePr(CONVERSATION_ID, { branch: "main", title: "t" }),
     ).rejects.toThrow(/not pushable/);
     expect(pushBranch).not.toHaveBeenCalled();
-  });
-
-  describe("with an agent machine user", () => {
-    beforeEach(() => {
-      client.getAgentLogin.mockResolvedValue("Acme-Agent");
-    });
-
-    test("a mention of the agent user triggers with the mention stripped", async () => {
-      const bot = makeBot();
-      await bot.start();
-      client.listIssueCommentsSince.mockResolvedValue([
-        makeComment({ body: "@acme-agent please look" }),
-      ]);
-
-      await bot.poll();
-      await settleQueues();
-
-      const [event] = firstHandledEvent(handler);
-      expect(event.text).toBe("please look");
-    });
-
-    test("the agent user's own comments never trigger, even in a participating thread", async () => {
-      mkdirSync(join(workingDir, CONVERSATION_OFFICE, "repo"), { recursive: true });
-      writeFileSync(join(workingDir, CONVERSATION_OFFICE, "log.jsonl"), "{}\n");
-      const bot = makeBot();
-      await bot.start();
-      client.listIssueCommentsSince.mockResolvedValue([
-        makeComment({ body: "Here is my answer", user: { login: "acme-agent", type: "User" } }),
-      ]);
-
-      await bot.poll();
-      await settleQueues();
-      expect(handler.handleEvent).not.toHaveBeenCalled();
-    });
-
-    test("assigning the agent user triggers a run on the issue as the assigner", async () => {
-      const bot = makeBot();
-      await bot.start();
-      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent()]);
-
-      await bot.poll();
-      await settleQueues();
-
-      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-      const [event] = firstHandledEvent(handler);
-      expect(event.address.conversationId).toBe(CONVERSATION_ID);
-      expect(event.ts).toBe(GITHUB_ISSUE_BODY_TS);
-      expect(event.user).toBe("alice");
-      expect(event.text).toContain("[Assigned to you by @alice]");
-      expect(event.text).toContain("# Widget breaks");
-      expect(event.text).toContain("Please handle this.");
-      expect(client.getIssue).not.toHaveBeenCalled();
-    });
-
-    test("an assignment triggers once across polls", async () => {
-      const bot = makeBot();
-      await bot.start();
-      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent()]);
-
-      await bot.poll();
-      await bot.poll();
-      await settleQueues();
-      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    });
-
-    test("old, foreign, bot-made, and below-permission assignments do not trigger", async () => {
-      client.getCollaboratorPermission.mockImplementation(async (_owner, _repo, user) => ({
-        permission: user === "drive-by" ? "read" : "write",
-      }));
-      const bot = makeBot();
-      await bot.start();
-      client.listIssueEventsRecent.mockResolvedValue([
-        makeAssignedEvent({ id: 1, created_at: new Date(Date.now() - 60_000).toISOString() }),
-        makeAssignedEvent({ id: 2, assignee: { login: "bob" } }),
-        makeAssignedEvent({ id: 3, event: "unassigned" }),
-        makeAssignedEvent({ id: 4, actor: { login: "mikan[bot]", type: "Bot" } }),
-        makeAssignedEvent({ id: 5, actor: { login: "drive-by", type: "User" } }),
-      ]);
-
-      await bot.poll();
-      await settleQueues();
-      expect(handler.handleEvent).not.toHaveBeenCalled();
-    });
-
-    test("a new issue that both mentions and is assigned to the agent triggers once", async () => {
-      const bot = makeBot();
-      await bot.start();
-      const issue = makeIssue({ body: "@acme-agent please take this" });
-      client.listIssuesSince.mockResolvedValue([issue]);
-      client.listIssueEventsRecent.mockResolvedValue([makeAssignedEvent({ issue })]);
-
-      await bot.poll();
-      await settleQueues();
-      expect(handler.handleEvent).toHaveBeenCalledTimes(1);
-    });
-
-    test("sync state written before assignment polling starts its own baseline", async () => {
-      const statePath = join(workingDir, "state", "github-sync.json");
-      mkdirSync(join(workingDir, "state"), { recursive: true });
-      const baseline = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
-      writeFileSync(
-        statePath,
-        JSON.stringify({
-          repos: {
-            "octo/widgets": { baseline, cursor: baseline, seenComments: [], seenIssues: [] },
-          },
-        }),
-      );
-      const beforeUpgrade = new Date(Date.now() - 30 * 60 * 1000).toISOString();
-      client.listIssueEventsRecent.mockResolvedValue([
-        makeAssignedEvent({ created_at: beforeUpgrade }),
-      ]);
-
-      const bot = makeBot();
-      await bot.start();
-      await bot.poll();
-      await settleQueues();
-
-      expect(handler.handleEvent).not.toHaveBeenCalled();
-      const state = JSON.parse(readFileSync(statePath, "utf-8"));
-      expect(Date.parse(state.repos["octo/widgets"].assignments.baseline)).toBeGreaterThan(
-        Date.parse(beforeUpgrade),
-      );
-    });
-  });
-
-  test("without an agent machine user, issue events are never polled", async () => {
-    const bot = makeBot();
-    await bot.start();
-    await bot.poll();
-    expect(client.listIssueEventsRecent).not.toHaveBeenCalled();
   });
 });

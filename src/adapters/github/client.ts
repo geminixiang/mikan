@@ -1,20 +1,18 @@
-import { createSign } from "node:crypto";
 import { withRetry } from "../shared.js";
 import type {
-  GithubCheckRun,
   GithubClientOptions,
   GithubCollaboratorPermission,
+  GithubCombinedStatus,
   GithubIssue,
   GithubIssueComment,
-  GithubIssueEvent,
   GithubPullRequest,
   GithubPullRequestFile,
   GithubPullRequestReview,
   GithubReactionContent,
-  GithubRepository,
   GithubRepositoryDetails,
   GithubReviewComment,
-  GithubTokenPermissions,
+  GithubWorkflowJob,
+  GithubWorkflowRun,
 } from "./types.js";
 
 export class GithubApiError extends Error {
@@ -39,130 +37,50 @@ export const githubRetry = <T>(fn: () => Promise<T>): Promise<T> =>
 
 export const GITHUB_MAX_COMMENT_LENGTH = 60000;
 
-function base64Url(data: string | Buffer): string {
-  return (typeof data === "string" ? Buffer.from(data) : data).toString("base64url");
-}
-
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
-
 interface GithubRequestOptions {
   body?: unknown;
-  conditional?: boolean;
   responseText?: boolean;
 }
 
 export class GithubClient {
-  private readonly appId: string;
-  private readonly privateKey: string;
-  private readonly installationId: string;
-  private readonly agentToken: string | undefined;
+  private readonly token: string;
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
-  private installationToken: { value: string; expiresAt: number } | null = null;
-  private etags = new Map<string, string>();
 
   constructor(options: GithubClientOptions) {
-    this.appId = options.appId;
-    this.privateKey = options.privateKey;
-    this.installationId = options.installationId;
-    this.agentToken = options.agentToken;
+    this.token = options.token;
     this.baseUrl = (options.baseUrl ?? "https://api.github.com").replace(/\/+$/, "");
     this.fetchImpl = options.fetchImpl ?? fetch;
-  }
-
-  private appJwt(): string {
-    const now = Math.floor(Date.now() / 1000);
-    const header = base64Url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-    const payload = base64Url(JSON.stringify({ iat: now - 60, exp: now + 540, iss: this.appId }));
-    const signature = base64Url(
-      createSign("RSA-SHA256").update(`${header}.${payload}`).sign(this.privateKey),
-    );
-    return `${header}.${payload}.${signature}`;
-  }
-
-  private async getInstallationToken(): Promise<string> {
-    const cached = this.installationToken;
-    if (cached && Date.now() < cached.expiresAt - TOKEN_REFRESH_MARGIN_MS) {
-      return cached.value;
-    }
-    const data = await this.rawRequestBody<{ token: string; expires_at: string }>(
-      "POST",
-      `/app/installations/${this.installationId}/access_tokens`,
-      { auth: `Bearer ${this.appJwt()}` },
-    );
-    this.installationToken = { value: data.token, expiresAt: Date.parse(data.expires_at) };
-    return this.installationToken.value;
   }
 
   private async send(
     method: string,
     path: string,
-    options: GithubRequestOptions & { auth: string },
+    options: GithubRequestOptions,
   ): Promise<Response> {
-    const headers: Record<string, string> = {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "mikan",
-      Authorization: options.auth,
-    };
-    if (options.conditional) {
-      const etag = this.etags.get(path);
-      if (etag) headers["If-None-Match"] = etag;
-    }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       method,
-      headers,
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "mikan",
+        Authorization: `Bearer ${this.token}`,
+      },
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     });
-    if (response.status === 304 && !options.responseText) {
-      return response;
-    }
     if (!response.ok) {
       const detail = (await response.text().catch(() => "")).slice(0, 300);
       throw new GithubApiError(response.status, method, path, detail || response.statusText);
     }
-    if (options.conditional) {
-      const etag = response.headers.get("etag");
-      if (etag) this.etags.set(path, etag);
-    }
     return response;
   }
 
-  private async readBody<T>(response: Response, responseText?: boolean): Promise<T | null> {
-    if (!responseText && (response.status === 204 || response.status === 304)) {
-      return null;
-    }
-    return (await (responseText ? response.text() : response.json())) as T;
-  }
-
-  private async rawRequest<T>(
-    method: string,
-    path: string,
-    options: GithubRequestOptions & { auth: string },
-  ): Promise<T | null> {
-    return this.readBody<T>(await this.send(method, path, options), options.responseText);
-  }
-
-  private async rawRequestBody<T>(
-    method: string,
-    path: string,
-    options: GithubRequestOptions & { auth: string },
-  ): Promise<T> {
-    const response = await this.send(method, path, options);
-    const body = await this.readBody<T>(response, options.responseText);
-    if (body === null) {
-      throw new Error(`GitHub ${method} ${path} returned no body (${response.status})`);
-    }
-    return body;
-  }
-
-  private async request<T>(
+  private async request(
     method: string,
     path: string,
     options: GithubRequestOptions = {},
-  ): Promise<T | null> {
-    const token = await this.getInstallationToken();
-    return this.rawRequest<T>(method, path, { ...options, auth: `Bearer ${token}` });
+  ): Promise<void> {
+    await this.send(method, path, options);
   }
 
   private async requestBody<T>(
@@ -170,58 +88,15 @@ export class GithubClient {
     path: string,
     options: GithubRequestOptions = {},
   ): Promise<T> {
-    const token = await this.getInstallationToken();
-    return this.rawRequestBody<T>(method, path, { ...options, auth: `Bearer ${token}` });
+    const response = await this.send(method, path, options);
+    if (!options.responseText && response.status === 204) {
+      throw new Error(`GitHub ${method} ${path} returned no body (${response.status})`);
+    }
+    return (await (options.responseText ? response.text() : response.json())) as T;
   }
 
-  private async speakerAuth(): Promise<string> {
-    return `Bearer ${this.agentToken ?? (await this.getInstallationToken())}`;
-  }
-
-  private async speak(method: string, path: string, body: unknown): Promise<void> {
-    await this.rawRequest(method, path, { body, auth: await this.speakerAuth() });
-  }
-
-  private async speakBody<T>(method: string, path: string, body: unknown): Promise<T> {
-    return this.rawRequestBody<T>(method, path, { body, auth: await this.speakerAuth() });
-  }
-
-  async getAgentLogin(): Promise<string | null> {
-    if (!this.agentToken) return null;
-    const user = await this.rawRequestBody<{ login: string }>("GET", "/user", {
-      auth: `Bearer ${this.agentToken}`,
-    });
-    return user.login;
-  }
-
-  async getAppSlug(): Promise<string> {
-    const app = await this.rawRequestBody<{ slug: string }>("GET", "/app", {
-      auth: `Bearer ${this.appJwt()}`,
-    });
-    return app.slug;
-  }
-
-  async getUserId(login: string): Promise<number> {
-    const user = await this.requestBody<{ id: number }>(
-      "GET",
-      `/users/${encodeURIComponent(login)}`,
-    );
-    return user.id;
-  }
-
-  async createScopedInstallationToken(
-    repoName: string,
-    permissions: GithubTokenPermissions,
-  ): Promise<string> {
-    const data = await this.rawRequestBody<{ token: string }>(
-      "POST",
-      `/app/installations/${this.installationId}/access_tokens`,
-      {
-        auth: `Bearer ${this.appJwt()}`,
-        body: { repositories: [repoName], permissions },
-      },
-    );
-    return data.token;
+  async getAuthenticatedUser(): Promise<{ login: string; id: number }> {
+    return this.requestBody<{ login: string; id: number }>("GET", "/user");
   }
 
   async getRepository(owner: string, repo: string): Promise<GithubRepositoryDetails> {
@@ -331,19 +206,38 @@ export class GithubClient {
     repo: string,
     branch: string,
   ): Promise<GithubPullRequest | null> {
-    const prs = await this.request<GithubPullRequest[]>(
+    const prs = await this.requestBody<GithubPullRequest[]>(
       "GET",
       `/repos/${owner}/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=1`,
     );
-    return prs?.[0] ?? null;
+    return prs[0] ?? null;
   }
 
-  async listCheckRuns(owner: string, repo: string, ref: string): Promise<GithubCheckRun[]> {
-    const data = await this.requestBody<{ check_runs: GithubCheckRun[] }>(
+  async getCombinedStatus(owner: string, repo: string, ref: string): Promise<GithubCombinedStatus> {
+    return this.requestBody<GithubCombinedStatus>(
       "GET",
-      `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs?per_page=50`,
+      `/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/status?per_page=100`,
     );
-    return data.check_runs;
+  }
+
+  async listWorkflowRuns(
+    owner: string,
+    repo: string,
+    headSha: string,
+  ): Promise<GithubWorkflowRun[]> {
+    const data = await this.requestBody<{ workflow_runs: GithubWorkflowRun[] }>(
+      "GET",
+      `/repos/${owner}/${repo}/actions/runs?head_sha=${encodeURIComponent(headSha)}&per_page=20`,
+    );
+    return data.workflow_runs;
+  }
+
+  async listWorkflowJobs(owner: string, repo: string, runId: number): Promise<GithubWorkflowJob[]> {
+    const data = await this.requestBody<{ jobs: GithubWorkflowJob[] }>(
+      "GET",
+      `/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100`,
+    );
+    return data.jobs;
   }
 
   async getJobLog(owner: string, repo: string, jobId: number): Promise<string> {
@@ -353,38 +247,6 @@ export class GithubClient {
       { responseText: true },
     );
     return text;
-  }
-
-  async listInstallationRepositories(): Promise<GithubRepository[]> {
-    const data = await this.requestBody<{ repositories: GithubRepository[] }>(
-      "GET",
-      "/installation/repositories?per_page=100",
-    );
-    return data.repositories;
-  }
-
-  async listIssueCommentsSince(
-    owner: string,
-    repo: string,
-    since: string,
-  ): Promise<GithubIssueComment[] | null> {
-    return this.request<GithubIssueComment[]>(
-      "GET",
-      `/repos/${owner}/${repo}/issues/comments?sort=updated&direction=asc&since=${encodeURIComponent(since)}&per_page=100`,
-      { conditional: true },
-    );
-  }
-
-  async listPullReviewCommentsSince(
-    owner: string,
-    repo: string,
-    since: string,
-  ): Promise<GithubReviewComment[] | null> {
-    return this.request<GithubReviewComment[]>(
-      "GET",
-      `/repos/${owner}/${repo}/pulls/comments?sort=updated&direction=asc&since=${encodeURIComponent(since)}&per_page=100`,
-      { conditional: true },
-    );
   }
 
   async listPullReviewComments(
@@ -397,22 +259,6 @@ export class GithubClient {
       `/repos/${owner}/${repo}/pulls/${number}/comments?per_page=100`,
     );
     return comments;
-  }
-
-  async listIssuesSince(owner: string, repo: string, since: string): Promise<GithubIssue[] | null> {
-    return this.request<GithubIssue[]>(
-      "GET",
-      `/repos/${owner}/${repo}/issues?state=all&sort=updated&direction=asc&since=${encodeURIComponent(since)}&per_page=100`,
-      { conditional: true },
-    );
-  }
-
-  async listIssueEventsRecent(owner: string, repo: string): Promise<GithubIssueEvent[] | null> {
-    return this.request<GithubIssueEvent[]>(
-      "GET",
-      `/repos/${owner}/${repo}/issues/events?per_page=100`,
-      { conditional: true },
-    );
   }
 
   async getIssue(owner: string, repo: string, number: number): Promise<GithubIssue> {
@@ -486,10 +332,10 @@ export class GithubClient {
     number: number,
     body: string,
   ): Promise<GithubIssueComment> {
-    return this.speakBody<GithubIssueComment>(
+    return this.requestBody<GithubIssueComment>(
       "POST",
       `/repos/${owner}/${repo}/issues/${number}/comments`,
-      { body },
+      { body: { body } },
     );
   }
 
@@ -499,11 +345,13 @@ export class GithubClient {
     commentId: number,
     body: string,
   ): Promise<void> {
-    await this.speak("PATCH", `/repos/${owner}/${repo}/issues/comments/${commentId}`, { body });
+    await this.request("PATCH", `/repos/${owner}/${repo}/issues/comments/${commentId}`, {
+      body: { body },
+    });
   }
 
   async deleteIssueComment(owner: string, repo: string, commentId: number): Promise<void> {
-    await this.speak("DELETE", `/repos/${owner}/${repo}/issues/comments/${commentId}`, undefined);
+    await this.request("DELETE", `/repos/${owner}/${repo}/issues/comments/${commentId}`);
   }
 
   async createCommentReaction(
@@ -512,8 +360,8 @@ export class GithubClient {
     commentId: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.speak("POST", `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
-      content,
+    await this.request("POST", `/repos/${owner}/${repo}/issues/comments/${commentId}/reactions`, {
+      body: { content },
     });
   }
 
@@ -524,10 +372,10 @@ export class GithubClient {
     commentId: number,
     body: string,
   ): Promise<GithubReviewComment> {
-    return this.speakBody<GithubReviewComment>(
+    return this.requestBody<GithubReviewComment>(
       "POST",
       `/repos/${owner}/${repo}/pulls/${number}/comments/${commentId}/replies`,
-      { body },
+      { body: { body } },
     );
   }
 
@@ -537,8 +385,8 @@ export class GithubClient {
     commentId: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.speak("POST", `/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`, {
-      content,
+    await this.request("POST", `/repos/${owner}/${repo}/pulls/comments/${commentId}/reactions`, {
+      body: { content },
     });
   }
 
@@ -548,6 +396,8 @@ export class GithubClient {
     number: number,
     content: GithubReactionContent,
   ): Promise<void> {
-    await this.speak("POST", `/repos/${owner}/${repo}/issues/${number}/reactions`, { content });
+    await this.request("POST", `/repos/${owner}/${repo}/issues/${number}/reactions`, {
+      body: { content },
+    });
   }
 }

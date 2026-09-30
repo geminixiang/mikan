@@ -5,12 +5,36 @@ import type { GithubWebhookOptions } from "./types.js";
 
 export const GITHUB_WEBHOOK_PATH = "/github/webhook";
 
-const POKE_EVENTS = new Set([
+const ACTIVITY_EVENTS = new Set([
   "issues",
   "issue_comment",
   "pull_request",
   "pull_request_review_comment",
 ]);
+
+const MAX_REMEMBERED_DELIVERIES = 1000;
+
+class GithubDeliveryLog {
+  private readonly seen = new Set<string>();
+
+  firstSighting(guid: string): boolean {
+    if (this.seen.has(guid)) return false;
+    this.seen.add(guid);
+    if (this.seen.size > MAX_REMEMBERED_DELIVERIES) {
+      const oldest = this.seen.values().next().value;
+      if (oldest !== undefined) this.seen.delete(oldest);
+    }
+    return true;
+  }
+}
+
+function parsePayload(body: Buffer): unknown {
+  try {
+    return JSON.parse(body.toString("utf-8"));
+  } catch {
+    return undefined;
+  }
+}
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
@@ -44,11 +68,23 @@ export function verifyWebhookSignature(
   return timingSafeEqual(Buffer.from(received, "utf-8"), Buffer.from(expected, "utf-8"));
 }
 
-export async function handleGithubWebhookRequest(
+export type GithubWebhookHandler = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+) => Promise<boolean>;
+
+export function createGithubWebhookHandler(options: GithubWebhookOptions): GithubWebhookHandler {
+  const deliveries = new GithubDeliveryLog();
+  return (req, res, url) => handleGithubWebhookRequest(req, res, url, options, deliveries);
+}
+
+async function handleGithubWebhookRequest(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   options: GithubWebhookOptions,
+  deliveries: GithubDeliveryLog,
 ): Promise<boolean> {
   if (url.pathname !== GITHUB_WEBHOOK_PATH) return false;
   if (req.method !== "POST") {
@@ -80,8 +116,14 @@ export async function handleGithubWebhookRequest(
     return true;
   }
   res.writeHead(202).end();
-  if (typeof event === "string" && POKE_EVENTS.has(event)) {
-    options.onPoke();
+  if (typeof event !== "string" || !ACTIVITY_EVENTS.has(event)) return true;
+  const guid = req.headers["x-github-delivery"];
+  if (typeof guid === "string" && !deliveries.firstSighting(guid)) return true;
+  const payload = parsePayload(body);
+  if (payload === undefined) {
+    log.logWarning(`GitHub webhook: ignoring ${event} delivery with a malformed body`);
+    return true;
   }
+  options.onDelivery({ event, payload });
   return true;
 }

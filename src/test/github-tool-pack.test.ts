@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
-import type { PlatformGithubOps } from "../adapters/github/types.js";
+import type { GithubCapability, PlatformGithubOps } from "../adapters/github/types.js";
 
 function mockOps(): PlatformGithubOps {
   return {
@@ -14,9 +14,11 @@ function mockOps(): PlatformGithubOps {
   };
 }
 
+const ALL_CAPABILITIES = new Set<GithubCapability>(["triage", "push"]);
+
 describe("createGithubToolPack", () => {
-  test("exposes the github tools", () => {
-    const pack = createGithubToolPack(mockOps());
+  test("exposes every github tool when all capabilities are enabled", () => {
+    const pack = createGithubToolPack(mockOps(), ALL_CAPABILITIES);
     expect(pack.tools.map((t) => t.name).toSorted()).toEqual([
       "github_checks",
       "github_issue",
@@ -27,9 +29,20 @@ describe("createGithubToolPack", () => {
     ]);
   });
 
+  test("withholds the push and triage tools unless their capability is enabled", () => {
+    const names = (capabilities: GithubCapability[]) =>
+      createGithubToolPack(mockOps(), new Set(capabilities)).tools.map((t) => t.name);
+    expect(names([])).not.toContain("github_pr");
+    expect(names([])).not.toContain("github_issue");
+    expect(names(["push"])).toContain("github_pr");
+    expect(names(["push"])).not.toContain("github_issue");
+    expect(names(["triage"])).toContain("github_issue");
+    expect(names(["triage"])).not.toContain("github_pr");
+  });
+
   test("bindRun enables tools only for github platform name", async () => {
     const ops = mockOps();
-    const pack = createGithubToolPack(ops);
+    const pack = createGithubToolPack(ops, ALL_CAPABILITIES);
     const pr = pack.tools.find((t) => t.name === "github_pr")!;
     const reviewReply = pack.tools.find((t) => t.name === "github_review_reply")!;
 
@@ -56,8 +69,8 @@ describe("createGithubToolPack", () => {
 
   test("packs from separate factory calls have independent bind state", async () => {
     const ops = mockOps();
-    const packA = createGithubToolPack(ops);
-    const packB = createGithubToolPack(ops);
+    const packA = createGithubToolPack(ops, ALL_CAPABILITIES);
+    const packB = createGithubToolPack(ops, ALL_CAPABILITIES);
     const prA = packA.tools.find((t) => t.name === "github_pr")!;
     const prB = packB.tools.find((t) => t.name === "github_pr")!;
 

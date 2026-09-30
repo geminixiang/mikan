@@ -120,12 +120,12 @@ OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTO
 
 正常 bot 模式至少需要一套完整的平台凭证：
 
-| 平台     | 必需环境变量                                                                                              | 可选变量                               |
-| -------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| Slack    | `SLACK_APP_TOKEN`、`SLACK_BOT_TOKEN`                                                                      | —                                      |
-| Telegram | `TELEGRAM_BOT_TOKEN`                                                                                      | —                                      |
-| Discord  | `DISCORD_BOT_TOKEN`                                                                                       | —                                      |
-| GitHub   | `GITHUB_APP_ID`、`GITHUB_INSTALLATION_ID`，以及 `GITHUB_APP_PRIVATE_KEY` 或 `GITHUB_APP_PRIVATE_KEY_PATH` | `GITHUB_REPOS`、`GITHUB_POLL_INTERVAL` |
+| 平台     | 必需环境变量                                                                    | 可选变量                                                                                                 |
+| -------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Slack    | `SLACK_APP_TOKEN`、`SLACK_BOT_TOKEN`                                            | —                                                                                                        |
+| Telegram | `TELEGRAM_BOT_TOKEN`                                                            | —                                                                                                        |
+| Discord  | `DISCORD_BOT_TOKEN`                                                             | —                                                                                                        |
+| GitHub   | `GITHUB_AGENT_TOKEN`、`GITHUB_WEBHOOK_SECRET`、`GITHUB_REPOS`，以及 `LINK_PORT` | `GITHUB_PUBLIC_REPOS`、`GITHUB_USERS`、`GITHUB_MIN_PERMISSION`、`GITHUB_TRIGGERS`、`GITHUB_CAPABILITIES` |
 
 有关各平台的设置和权限，请参阅[平台适配器](/zh-cn/platform-adapters/)。
 

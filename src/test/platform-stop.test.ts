@@ -81,11 +81,7 @@ function fakeTelegramClient(stop: TelegramClient["stop"] = async () => {}): Tele
 
 function fakeGithubApi(overrides: Partial<GithubApi> = {}): GithubApi {
   return {
-    getAppSlug: unexpectedCall,
-    getAgentLogin: unexpectedCall,
-    listIssueEventsRecent: unexpectedCall,
-    getUserId: unexpectedCall,
-    createScopedInstallationToken: unexpectedCall,
+    getAuthenticatedUser: unexpectedCall,
     getRepository: unexpectedCall,
     getCollaboratorPermission: unexpectedCall,
     createPullRequest: unexpectedCall,
@@ -95,13 +91,11 @@ function fakeGithubApi(overrides: Partial<GithubApi> = {}): GithubApi {
     listIssueComments: unexpectedCall,
     listIssues: unexpectedCall,
     findOpenPullRequestByBranch: unexpectedCall,
-    listCheckRuns: unexpectedCall,
+    getCombinedStatus: unexpectedCall,
+    listWorkflowRuns: unexpectedCall,
+    listWorkflowJobs: unexpectedCall,
     getJobLog: unexpectedCall,
-    listInstallationRepositories: unexpectedCall,
-    listIssueCommentsSince: unexpectedCall,
-    listPullReviewCommentsSince: unexpectedCall,
     listPullReviewComments: unexpectedCall,
-    listIssuesSince: unexpectedCall,
     getIssue: unexpectedCall,
     addIssueLabels: unexpectedCall,
     removeIssueLabel: unexpectedCall,
@@ -153,13 +147,16 @@ function githubBot(client: GithubApi = fakeGithubApi()): GithubMessagingBot {
   return new GithubMessagingBot(
     fakeHandler(),
     {
-      appId: "1",
-      privateKey: "unused",
-      installationId: "2",
-      repos: ["octo/widgets"],
-      pollIntervalMs: 60_000,
+      token: "agent-token",
+      policy: {
+        repos: ["octo/widgets"],
+        publicRepos: false,
+        users: null,
+        minPermission: "write",
+        triggers: new Set(),
+        capabilities: new Set(),
+      },
       workspace,
-      syncStatePath: join(root, "github-sync.json"),
     },
     client,
   );
@@ -256,57 +253,5 @@ describe("platform stop intake", () => {
     await bot.stop();
 
     expect(stop).toHaveBeenCalledOnce();
-  });
-
-  test("clears GitHub timers and waits for an active poll", async () => {
-    const gate = createDeferred();
-    const listIssuesSince = vi.fn<GithubApi["listIssuesSince"]>(async () => {
-      await gate.promise;
-      return [];
-    });
-    const bot = githubBot(
-      fakeGithubApi({
-        getAppSlug: async () => "mikan",
-        getAgentLogin: async () => null,
-        getUserId: async () => 1,
-        listIssuesSince,
-        listIssueCommentsSince: async () => [],
-        listPullReviewCommentsSince: async () => [],
-      }),
-    );
-    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
-    await bot.start();
-    expect(setIntervalSpy).toHaveBeenCalledOnce();
-    const interval = setIntervalSpy.mock.results[0]!.value;
-
-    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
-    bot.requestPoll(60_000);
-    expect(setTimeoutSpy).toHaveBeenCalledOnce();
-    const requestTimer = setTimeoutSpy.mock.results[0]!.value;
-    setTimeoutSpy.mockClear();
-
-    const polling = bot.poll();
-    await vi.waitFor(() => expect(listIssuesSince).toHaveBeenCalledOnce());
-    bot.requestPoll(0);
-
-    const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
-    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
-    let settled = false;
-    const stopping = bot.stop().then(() => {
-      settled = true;
-    });
-    await Promise.resolve();
-
-    expect(settled).toBe(false);
-    expect(clearIntervalSpy).toHaveBeenCalledWith(interval);
-    expect(clearTimeoutSpy).toHaveBeenCalledWith(requestTimer);
-
-    gate.resolve();
-    await Promise.all([polling, stopping]);
-    expect(settled).toBe(true);
-
-    setTimeoutSpy.mockClear();
-    bot.requestPoll(0);
-    expect(setTimeoutSpy).not.toHaveBeenCalled();
   });
 });

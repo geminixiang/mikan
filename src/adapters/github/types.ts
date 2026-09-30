@@ -18,40 +18,61 @@ export type GithubConversationBot = Pick<
   | "addReaction"
   | "logBotResponse"
   | "getMessagingInfo"
+  | "capabilities"
 >;
 
-export interface GithubBotConfig {
-  appId: string;
-  privateKey: string;
-  installationId: string;
-  agentToken?: string;
+export type GithubTrigger = "mention" | "assign" | "review" | "followup";
+
+export type GithubCapability = "triage" | "push";
+
+export type GithubTriggerPermission = "write" | "maintain" | "admin";
+
+export interface GithubPolicy {
   repos: string[];
-  pollIntervalMs: number;
+  publicRepos: boolean;
+  users: string[] | null;
+  minPermission: GithubTriggerPermission;
+  triggers: ReadonlySet<GithubTrigger>;
+  capabilities: ReadonlySet<GithubCapability>;
+}
+
+export interface GithubBotConfig {
+  token: string;
+  policy: GithubPolicy;
   workspace: Workspace;
-  syncStatePath: string;
 }
 
-interface GithubRepoSyncState {
-  baseline: string;
-  cursor: string;
-  seenComments: number[];
-  seenIssues: number[];
-  seenReviewComments?: number[];
-  assignments?: GithubAssignmentSyncState;
-}
-
-interface GithubAssignmentSyncState {
-  baseline: string;
-  seenEvents: number[];
-}
-
-export interface GithubSyncState {
-  repos: Record<string, GithubRepoSyncState>;
+export interface GithubAgentIdentity {
+  login: string;
+  email: string;
 }
 
 export interface GithubRepoRef {
   owner: string;
   repo: string;
+}
+
+export interface GithubActivity {
+  kind: "opened" | "comment" | "review_comment" | "assigned" | "review_requested";
+  repo: GithubRepoRef & { private: boolean };
+  number: number;
+  isPr: boolean;
+  sender: { login: string; isBot: boolean };
+  target: string | null;
+  ts: string;
+  text: string;
+  createdAt: string;
+  issueTitle: string;
+  issueBody: string;
+  review?: GithubReviewAnchor;
+}
+
+export interface GithubReviewAnchor {
+  commentId: number;
+  path: string;
+  line: number | null;
+  diffHunk: string;
+  inReplyToId?: number;
 }
 
 interface GithubUser {
@@ -71,15 +92,6 @@ export interface GithubIssue {
   state?: string;
   labels?: { name: string }[];
   assignees?: { login: string }[];
-}
-
-export interface GithubIssueEvent {
-  id: number;
-  event: string;
-  created_at: string;
-  actor: GithubUser | null;
-  assignee?: { login: string } | null;
-  issue?: GithubIssue;
 }
 
 export interface GithubIssueComment {
@@ -102,11 +114,6 @@ export interface GithubReviewComment {
   line: number | null;
   diff_hunk: string;
   in_reply_to_id?: number;
-}
-
-export interface GithubRepository {
-  name: string;
-  owner: GithubUser;
 }
 
 export interface GithubRepositoryDetails {
@@ -150,19 +157,29 @@ export interface GithubPullRequestReview {
   submitted_at?: string;
 }
 
-export interface GithubCheckRun {
+export interface GithubCombinedStatus {
+  sha: string;
+  statuses: {
+    id: number;
+    context: string;
+    state: string;
+    description: string | null;
+    target_url: string | null;
+  }[];
+}
+
+export interface GithubWorkflowRun {
+  id: number;
+  name: string | null;
+}
+
+export interface GithubWorkflowJob {
   id: number;
   name: string;
   status: string;
   conclusion: string | null;
   html_url: string | null;
-  app?: { slug?: string } | null;
-  output?: { title?: string | null; summary?: string | null } | null;
 }
-
-export type GithubTokenPermissions = Partial<
-  Record<"contents" | "pull_requests" | "issues", "read" | "write">
->;
 
 export type GithubReactionContent =
   | "+1"
@@ -178,8 +195,8 @@ export interface CloneRepoOptions {
   url: string;
   dir: string;
   token: string;
-  botLogin: string;
-  botEmail: string;
+  authorName: string;
+  authorEmail: string;
   prNumber?: number;
   prHeadBranch?: string;
 }
@@ -209,10 +226,7 @@ export interface SyncRepoResult {
 }
 
 export interface GithubClientOptions {
-  appId: string;
-  privateKey: string;
-  installationId: string;
-  agentToken?: string;
+  token: string;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
 }
@@ -237,7 +251,7 @@ export interface GithubCheckSummary {
   status: string;
   conclusion: string | null;
   url: string | null;
-  appSlug: string | null;
+  source: "actions" | "status";
   outputSummary: string | null;
 }
 
@@ -293,7 +307,12 @@ export interface PlatformGithubOps {
   manageIssue(conversationId: string, request: GithubIssueRequest): Promise<string>;
 }
 
+export interface GithubWebhookDelivery {
+  event: string;
+  payload: unknown;
+}
+
 export interface GithubWebhookOptions {
   secret: string;
-  onPoke: () => void;
+  onDelivery: (delivery: GithubWebhookDelivery) => void;
 }

@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { dirname } from "node:path";
-import { Type } from "typebox";
 import type {
   MessagingBot,
   MessagingEventHandler,
@@ -8,8 +6,6 @@ import type {
   ConversationEvent,
 } from "../../types.js";
 import * as log from "../../log.js";
-import { ensureDirExists, readJsonSchemaFileIfExists } from "../../file-guards.js";
-import { atomicWritePrivateFile } from "../../file-guards.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   appendBotResponseLog,
@@ -18,9 +14,11 @@ import {
   splitText,
 } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
+import { readGithubActivity } from "./activity.js";
 import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
 import { createGithubAdapters } from "./context.js";
-import { fetchIsPr, fetchPrHeadBranch, GithubOps } from "./github-ops.js";
+import { fetchPrHeadBranch, GithubOps } from "./github-ops.js";
+import { permissionMeets, repoIsAllowed, userIsAllowed } from "./policy.js";
 import { cloneRepo, conversationRepoDir } from "./repo.js";
 import {
   buildGithubConversationId,
@@ -31,65 +29,23 @@ import {
 import type { Office, GithubConversationRef } from "../../office/types.js";
 import { GITHUB_ISSUE_BODY_TS, githubReviewCommentTs, parseReviewCommentTs } from "./ids.js";
 import type {
+  GithubActivity,
+  GithubAgentIdentity,
   GithubApi,
   GithubBotConfig,
+  GithubCapability,
   GithubEvent,
   GithubIssue,
-  GithubIssueEvent,
   GithubReactionContent,
-  GithubRepoRef,
-  GithubSyncState,
+  GithubReviewAnchor,
+  GithubTrigger,
+  GithubWebhookDelivery,
 } from "./types.js";
 import { errorMessage } from "../../unknown-values.js";
 
-const SyncStateSchema = Type.Object({
-  repos: Type.Record(
-    Type.String(),
-    Type.Object({
-      baseline: Type.String(),
-      cursor: Type.String(),
-      seenComments: Type.Array(Type.Number()),
-      seenIssues: Type.Array(Type.Number()),
-      seenReviewComments: Type.Optional(Type.Array(Type.Number())),
-      assignments: Type.Optional(
-        Type.Object({ baseline: Type.String(), seenEvents: Type.Array(Type.Number()) }),
-      ),
-    }),
-  ),
-});
-
-const POLL_OVERLAP_MS = 5 * 60 * 1000;
-
-const MAX_SEEN_IDS = 5000;
-
-const REQUEST_POLL_DEBOUNCE_MS = 1500;
-
-const PERMISSION_RANK = {
-  none: 0,
-  read: 1,
-  triage: 2,
-  write: 3,
-  maintain: 4,
-  admin: 5,
-};
-
-const REQUIRED_TRIGGER_RANK = PERMISSION_RANK.write;
-
-function rankOfPermission(name: string): number {
-  return PERMISSION_RANK[name as keyof typeof PERMISSION_RANK] ?? 0;
-}
-
 const PERMISSION_CACHE_TTL_MS = 5 * 60 * 1000;
 
-interface RepoWatermark {
-  baseline: string;
-  cursor: string;
-  seenComments: Set<number>;
-  seenIssues: Set<number>;
-  seenReviewComments: Set<number>;
-  assignmentBaseline: string;
-  seenAssignments: Set<number>;
-}
+const BODY_TRIGGER_WINDOW_MS = 10 * 60 * 1000;
 
 export const formatGithubContinuation = (partNum: number): string => `*(continued ${partNum})*`;
 
@@ -115,168 +71,68 @@ interface IncomingItem {
   user: string;
   text: string;
   createdAt: string;
-  isPr?: boolean;
-  assigned?: boolean;
-  review?: {
-    commentId: number;
-    path: string;
-    line: number | null;
-    diffHunk: string;
-    inReplyToId?: number;
-  };
-}
-
-function parseRepoList(repos: string[]): GithubRepoRef[] {
-  return repos.map((entry) => {
-    const [owner, repo, ...rest] = entry.split("/");
-    if (!owner || !repo || rest.length > 0) {
-      throw new Error(`Invalid GITHUB_REPOS entry (expected owner/repo): ${entry}`);
-    }
-    return { owner: owner.toLowerCase(), repo: repo.toLowerCase() };
-  });
-}
-
-function pruneSeen(seen: Set<number>): void {
-  if (seen.size <= MAX_SEEN_IDS) return;
-  let toDrop = seen.size - MAX_SEEN_IDS / 2;
-  for (const id of seen) {
-    if (toDrop-- <= 0) break;
-    seen.delete(id);
-  }
-}
-
-function issueNumberFromUrl(issueUrl: string): number {
-  const match = /\/issues\/(\d+)$/.exec(issueUrl);
-  if (!match) {
-    throw new Error(`Cannot parse issue number from ${issueUrl}`);
-  }
-  return Number(match[1]);
-}
-
-function prNumberFromUrl(pullRequestUrl: string): number {
-  const match = /\/pulls\/(\d+)$/.exec(pullRequestUrl);
-  if (!match) {
-    throw new Error(`Cannot parse PR number from ${pullRequestUrl}`);
-  }
-  return Number(match[1]);
+  isPr: boolean;
+  addressed: boolean;
+  review?: GithubReviewAnchor;
 }
 
 const MAX_DIFF_HUNK_CHARS = 1500;
 const MAX_THREAD_TURNS = 10;
 const MAX_THREAD_TURN_CHARS = 500;
 
+function bodyTriggerNote(activity: GithubActivity): string | null {
+  switch (activity.kind) {
+    case "assigned":
+      return `[Assigned to you by @${activity.sender.login}]`;
+    case "review_requested":
+      return `[Review requested by @${activity.sender.login}]`;
+    case "opened":
+    case "comment":
+    case "review_comment":
+      return null;
+    default:
+      return activity.kind satisfies never;
+  }
+}
+
 export class GithubMessagingBot implements MessagingBot {
   private readonly client: GithubApi;
   private readonly handler: MessagingEventHandler;
   private readonly config: GithubBotConfig;
   readonly ops: GithubOps;
-  private appSlug: string | null = null;
-  private agentLogin: string | null = null;
-  private readonly issueBodiesTriggeredThisPoll = new Set<string>();
-  private botEmail: string | null = null;
-  private watchedRepos: GithubRepoRef[] = [];
+  private identity: GithubAgentIdentity | null = null;
   private queues = new Map<string, MessagingEventQueue>();
-  private repoState = new Map<string, RepoWatermark>();
-  private permissionCache = new Map<string, { rank: number; expiresAt: number }>();
+  private permissionCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+  private bodyTriggers = new Map<string, number>();
   private stopped = true;
-  private stopping = false;
-  private activePoll: Promise<void> | null = null;
-  private pollPending = false;
-  private pollIntervalTimer: NodeJS.Timeout | null = null;
-  private requestPollTimer: NodeJS.Timeout | null = null;
 
   constructor(handler: MessagingEventHandler, config: GithubBotConfig, client?: GithubApi) {
     this.handler = handler;
     this.config = config;
-    this.client =
-      client ??
-      new GithubClient({
-        appId: config.appId,
-        privateKey: config.privateKey,
-        installationId: config.installationId,
-        agentToken: config.agentToken,
-      });
-    this.ops = new GithubOps(this.client, { workspace: config.workspace });
+    this.client = client ?? new GithubClient({ token: config.token });
+    this.ops = new GithubOps(this.client, { workspace: config.workspace, token: config.token });
+  }
+
+  get capabilities(): ReadonlySet<GithubCapability> {
+    return this.config.policy.capabilities;
   }
 
   async start(): Promise<void> {
+    const user = await this.client.getAuthenticatedUser();
+    this.identity = {
+      login: user.login,
+      email: `${user.id}+${user.login}@users.noreply.github.com`,
+    };
     this.stopped = false;
-    this.stopping = false;
-    this.appSlug = await this.client.getAppSlug();
-    this.agentLogin = (await this.client.getAgentLogin())?.toLowerCase() ?? null;
-    try {
-      const botUserId = await this.client.getUserId(`${this.appSlug}[bot]`);
-      this.botEmail = `${botUserId}+${this.appSlug}[bot]@users.noreply.github.com`;
-    } catch {
-      this.botEmail = `${this.appSlug}[bot]@users.noreply.github.com`;
-    }
-    this.watchedRepos =
-      this.config.repos.length > 0
-        ? parseRepoList(this.config.repos)
-        : (await this.client.listInstallationRepositories()).map((repository) => ({
-            owner: repository.owner.login.toLowerCase(),
-            repo: repository.name.toLowerCase(),
-          }));
-    if (this.watchedRepos.length === 0) {
-      log.logWarning("GitHub: installation has no repositories; nothing to poll");
-    }
-
-    const persisted = this.loadSyncState();
-    const now = new Date().toISOString();
-    for (const repo of this.watchedRepos) {
-      const repoKey = `${repo.owner}/${repo.repo}`;
-      const saved = persisted?.repos[repoKey];
-      this.repoState.set(
-        repoKey,
-        saved
-          ? {
-              baseline: saved.baseline,
-              cursor: saved.cursor,
-              seenComments: new Set(saved.seenComments),
-              seenIssues: new Set(saved.seenIssues),
-              seenReviewComments: new Set(saved.seenReviewComments ?? []),
-              assignmentBaseline: saved.assignments?.baseline ?? now,
-              seenAssignments: new Set(saved.assignments?.seenEvents ?? []),
-            }
-          : {
-              baseline: now,
-              cursor: now,
-              seenComments: new Set(),
-              seenIssues: new Set(),
-              seenReviewComments: new Set(),
-              assignmentBaseline: now,
-              seenAssignments: new Set(),
-            },
-      );
-    }
-    this.persistSyncState();
-    if (this.stopping) return;
-
-    this.stopped = false;
-    this.pollIntervalTimer = setInterval(() => {
-      void this.poll();
-    }, this.config.pollIntervalMs);
-    this.pollIntervalTimer.unref();
-
     log.logConnected("GitHub");
     log.logInfo(
-      `GitHub bot started as @${this.appSlug}[bot]${this.agentLogin ? ` speaking as @${this.agentLogin}` : ""}, polling ${this.watchedRepos.length} repo(s) every ${Math.round(this.config.pollIntervalMs / 1000)}s`,
+      `GitHub bot started as @${user.login}, answering in ${this.config.policy.repos.join(", ")}`,
     );
   }
 
   async stop(): Promise<void> {
-    this.stopping = true;
-    this.pollPending = false;
-    if (this.pollIntervalTimer) clearInterval(this.pollIntervalTimer);
-    if (this.requestPollTimer) clearTimeout(this.requestPollTimer);
-    this.pollIntervalTimer = null;
-    this.requestPollTimer = null;
-    try {
-      if (this.activePoll) await this.activePoll;
-    } finally {
-      this.stopped = true;
-      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
-    }
+    this.stopped = true;
+    await Promise.all([...this.queues.values()].map((queue) => queue.close()));
   }
 
   async postMessage(channel: string, text: string): Promise<string> {
@@ -368,216 +224,95 @@ export class GithubMessagingBot implements MessagingBot {
     return queue;
   }
 
-  requestPoll(debounceMs = REQUEST_POLL_DEBOUNCE_MS): void {
-    if (this.stopped || this.stopping) return;
-    if (this.activePoll) {
-      this.pollPending = true;
-      return;
-    }
-    if (this.requestPollTimer) return;
-    this.requestPollTimer = setTimeout(() => {
-      this.requestPollTimer = null;
-      void this.poll();
-    }, debounceMs);
-    this.requestPollTimer.unref();
-  }
-
-  async poll(): Promise<void> {
-    if (this.stopped || this.stopping) return;
-    if (this.activePoll) {
-      this.pollPending = true;
-      return;
-    }
-    const activePoll = this.pollWatchedRepos();
-    this.activePoll = activePoll;
+  async receive(delivery: GithubWebhookDelivery): Promise<void> {
+    const identity = this.identity;
+    if (this.stopped || !identity) return;
+    const activity = readGithubActivity(delivery);
+    if (!activity) return;
     try {
-      await activePoll;
-    } finally {
-      this.activePoll = null;
-      if (this.pollPending) {
-        this.pollPending = false;
-        this.requestPoll();
-      }
+      await this.handleActivity(activity, identity);
+    } catch (err) {
+      log.logWarning(
+        `GitHub: failed to handle ${delivery.event} for ${activity.repo.owner}/${activity.repo.repo}#${activity.number}`,
+        errorMessage(err),
+      );
     }
-  }
-
-  private async pollWatchedRepos(): Promise<void> {
-    let changed = false;
-    for (const repo of this.watchedRepos) {
-      try {
-        changed = (await this.pollRepo(repo)) || changed;
-      } catch (err) {
-        log.logWarning(`GitHub poll failed for ${repo.owner}/${repo.repo}`, errorMessage(err));
-      }
-    }
-    if (changed) this.persistSyncState();
-  }
-
-  private async pollRepo(repo: GithubRepoRef): Promise<boolean> {
-    const repoKey = `${repo.owner}/${repo.repo}`;
-    const state = this.repoState.get(repoKey);
-    if (!state) return false;
-    const since = new Date(Date.parse(state.cursor) - POLL_OVERLAP_MS).toISOString();
-    let changed = false;
-    this.issueBodiesTriggeredThisPoll.clear();
-
-    const issues = (await this.client.listIssuesSince(repo.owner, repo.repo, since)) ?? [];
-    changed =
-      (await this.advanceFeed(state, state.seenIssues, issues, (issue) => ({
-        ref: { ...repo, number: issue.number },
-        ts: GITHUB_ISSUE_BODY_TS,
-        user: issue.user.login,
-        text: `# ${issue.title}\n\n${issue.body ?? ""}`.trim(),
-        createdAt: issue.created_at,
-        isPr: Boolean(issue.pull_request),
-      }))) || changed;
-
-    const comments = (await this.client.listIssueCommentsSince(repo.owner, repo.repo, since)) ?? [];
-    changed =
-      (await this.advanceFeed(state, state.seenComments, comments, (comment) => ({
-        ref: { ...repo, number: issueNumberFromUrl(comment.issue_url) },
-        ts: String(comment.id),
-        user: comment.user.login,
-        text: comment.body,
-        createdAt: comment.created_at,
-      }))) || changed;
-
-    const reviewComments =
-      (await this.client.listPullReviewCommentsSince(repo.owner, repo.repo, since)) ?? [];
-    changed =
-      (await this.advanceFeed(state, state.seenReviewComments, reviewComments, (comment) => ({
-        ref: { ...repo, number: prNumberFromUrl(comment.pull_request_url) },
-        ts: githubReviewCommentTs(comment.id),
-        user: comment.user.login,
-        text: comment.body,
-        createdAt: comment.created_at,
-        isPr: true,
-        review: {
-          commentId: comment.id,
-          path: comment.path,
-          line: comment.line,
-          diffHunk: comment.diff_hunk,
-          inReplyToId: comment.in_reply_to_id,
-        },
-      }))) || changed;
-
-    if (this.agentLogin) {
-      changed = (await this.pollAssignments(repo, state, this.agentLogin)) || changed;
-    }
-
-    pruneSeen(state.seenComments);
-    pruneSeen(state.seenIssues);
-    pruneSeen(state.seenReviewComments);
-    pruneSeen(state.seenAssignments);
-    return changed;
-  }
-
-  private async pollAssignments(
-    repo: GithubRepoRef,
-    state: RepoWatermark,
-    agentLogin: string,
-  ): Promise<boolean> {
-    const events = (await this.client.listIssueEventsRecent(repo.owner, repo.repo)) ?? [];
-    let changed = false;
-    for (const event of events.toSorted((a, b) => a.id - b.id)) {
-      if (!this.isAssignmentTo(event, agentLogin)) continue;
-      if (event.created_at < state.assignmentBaseline || state.seenAssignments.has(event.id)) {
-        continue;
-      }
-      state.seenAssignments.add(event.id);
-      changed = true;
-      const { actor, issue } = event;
-      if (!actor || !issue || actor.type === "Bot" || this.isAgent(actor.login)) continue;
-      const ref = { ...repo, number: issue.number };
-      if (this.issueBodiesTriggeredThisPoll.has(buildGithubConversationId(ref))) continue;
-      await this.handleIncoming({
-        ref,
-        ts: GITHUB_ISSUE_BODY_TS,
-        user: actor.login,
-        text: `[Assigned to you by @${actor.login}]\n\n# ${issue.title}\n\n${issue.body ?? ""}`.trim(),
-        createdAt: event.created_at,
-        isPr: Boolean(issue.pull_request),
-        assigned: true,
-      });
-    }
-    return changed;
-  }
-
-  private isAssignmentTo(event: GithubIssueEvent, agentLogin: string): boolean {
-    return event.event === "assigned" && event.assignee?.login.toLowerCase() === agentLogin;
   }
 
   private isAgent(login: string): boolean {
-    return this.agentLogin !== null && login.toLowerCase() === this.agentLogin;
+    return login.toLowerCase() === this.identity?.login.toLowerCase();
   }
 
-  private async advanceFeed<
-    T extends {
-      id: number;
-      created_at: string;
-      updated_at: string;
-      user: { login: string; type: string };
-    },
-  >(
-    state: RepoWatermark,
-    seen: Set<number>,
-    items: T[],
-    toIncoming: (item: T) => IncomingItem,
-  ): Promise<boolean> {
-    let changed = false;
-    for (const item of items) {
-      if (item.updated_at > state.cursor) {
-        state.cursor = item.updated_at;
-        changed = true;
-      }
-      if (item.created_at < state.baseline || seen.has(item.id)) continue;
-      seen.add(item.id);
-      changed = true;
-      if (item.user.type === "Bot" || this.isAgent(item.user.login)) continue;
-      await this.handleIncoming(toIncoming(item));
+  private triggerOf(activity: GithubActivity, conversationId: string): GithubTrigger | null {
+    switch (activity.kind) {
+      case "assigned":
+        return activity.target !== null && this.isAgent(activity.target) ? "assign" : null;
+      case "review_requested":
+        return activity.target !== null && this.isAgent(activity.target) ? "review" : null;
+      case "opened":
+        return this.isMentioned(activity.text) ? "mention" : null;
+      case "comment":
+      case "review_comment":
+        if (this.isMentioned(activity.text)) return "mention";
+        return this.isParticipating(conversationId) ? "followup" : null;
+      default:
+        return activity.kind satisfies never;
     }
-    return changed;
   }
 
-  private loadSyncState(): GithubSyncState | undefined {
-    try {
-      return readJsonSchemaFileIfExists(
-        this.config.syncStatePath,
-        SyncStateSchema,
-        (detail) => `Malformed GitHub sync state at ${this.config.syncStatePath}: ${detail}`,
+  private claimBodyTrigger(conversationId: string): boolean {
+    const now = Date.now();
+    for (const [key, expiresAt] of this.bodyTriggers) {
+      if (expiresAt <= now) this.bodyTriggers.delete(key);
+    }
+    if (this.bodyTriggers.has(conversationId)) return false;
+    this.bodyTriggers.set(conversationId, now + BODY_TRIGGER_WINDOW_MS);
+    return true;
+  }
+
+  private async handleActivity(
+    activity: GithubActivity,
+    identity: GithubAgentIdentity,
+  ): Promise<void> {
+    const { policy } = this.config;
+    if (activity.sender.isBot || this.isAgent(activity.sender.login)) return;
+    if (!repoIsAllowed(policy, activity.repo)) return;
+    const ref = { owner: activity.repo.owner, repo: activity.repo.repo, number: activity.number };
+    const conversationId = buildGithubConversationId(ref);
+    const trigger = this.triggerOf(activity, conversationId);
+    if (trigger === null || !policy.triggers.has(trigger)) return;
+    if (!userIsAllowed(policy, activity.sender.login)) {
+      log.logInfo(
+        `GitHub: ignoring ${conversationId} from ${activity.sender.login} (not in GITHUB_USERS)`,
       );
-    } catch (err) {
-      log.logWarning("GitHub: ignoring unreadable sync state", errorMessage(err));
-      return undefined;
+      return;
     }
-  }
-
-  syncStateSnapshot(): GithubSyncState {
-    const state: GithubSyncState = { repos: {} };
-    for (const [repoKey, watermark] of this.repoState) {
-      state.repos[repoKey] = {
-        baseline: watermark.baseline,
-        cursor: watermark.cursor,
-        seenComments: [...watermark.seenComments],
-        seenIssues: [...watermark.seenIssues],
-        seenReviewComments: [...watermark.seenReviewComments],
-        assignments: {
-          baseline: watermark.assignmentBaseline,
-          seenEvents: [...watermark.seenAssignments],
-        },
-      };
+    if (!(await this.hasTriggerPermission(ref, activity.sender.login))) {
+      log.logInfo(
+        `GitHub: ignoring ${conversationId} from ${activity.sender.login} (below ${policy.minPermission} permission)`,
+      );
+      return;
     }
-    return state;
-  }
-
-  private persistSyncState(): void {
-    ensureDirExists(dirname(this.config.syncStatePath));
-    atomicWritePrivateFile(this.config.syncStatePath, JSON.stringify(this.syncStateSnapshot()));
+    if (activity.ts === GITHUB_ISSUE_BODY_TS && !this.claimBodyTrigger(conversationId)) return;
+    const note = bodyTriggerNote(activity);
+    await this.handleIncoming(
+      {
+        ref,
+        ts: activity.ts,
+        user: activity.sender.login,
+        text: note ? `${note}\n\n${activity.text}` : activity.text,
+        createdAt: activity.createdAt,
+        isPr: activity.isPr,
+        addressed: trigger !== "followup",
+        review: activity.review,
+      },
+      identity,
+    );
   }
 
   private mentionPattern(): RegExp | null {
-    const handles = [this.appSlug, this.agentLogin].filter((handle) => handle !== null);
-    return handles.length > 0 ? new RegExp(`@(?:${handles.join("|")})(?![\\w-])`, "gi") : null;
+    const login = this.identity?.login;
+    return login ? new RegExp(`@${login}(?![\\w-])`, "gi") : null;
   }
 
   private isMentioned(text: string): boolean {
@@ -599,17 +334,15 @@ export class GithubMessagingBot implements MessagingBot {
   }
 
   private async hasTriggerPermission(ref: GithubConversationRef, user: string): Promise<boolean> {
-    const cacheKey = `${ref.owner}/${ref.repo}#${user}`;
+    const cacheKey = `${ref.owner}/${ref.repo}#${user.toLowerCase()}`;
     const cached = this.permissionCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.rank >= REQUIRED_TRIGGER_RANK;
-    }
-    let rank: number;
+    if (cached && Date.now() < cached.expiresAt) return cached.allowed;
+    let allowed: boolean;
     try {
       const role = await githubRetry(() =>
         this.client.getCollaboratorPermission(ref.owner, ref.repo, user),
       );
-      rank = Math.max(rankOfPermission(role.role_name ?? ""), rankOfPermission(role.permission));
+      allowed = permissionMeets(this.config.policy, role);
     } catch (err) {
       log.logWarning(
         `GitHub: permission lookup failed for ${user} on ${ref.owner}/${ref.repo}; denying trigger`,
@@ -618,26 +351,15 @@ export class GithubMessagingBot implements MessagingBot {
       return false;
     }
     this.permissionCache.set(cacheKey, {
-      rank,
+      allowed,
       expiresAt: Date.now() + PERMISSION_CACHE_TTL_MS,
     });
-    return rank >= REQUIRED_TRIGGER_RANK;
+    return allowed;
   }
 
-  private async handleIncoming(item: IncomingItem): Promise<void> {
+  private async handleIncoming(item: IncomingItem, identity: GithubAgentIdentity): Promise<void> {
     const conversationId = buildGithubConversationId(item.ref);
-    const mentioned = item.assigned === true || this.isMentioned(item.text);
     const participating = this.isParticipating(conversationId);
-    if (!mentioned && !participating) return;
-
-    if (!(await this.hasTriggerPermission(item.ref, item.user))) {
-      log.logInfo(
-        `GitHub: ignoring ${conversationId} comment from ${item.user} (below write permission)`,
-      );
-      return;
-    }
-
-    if (item.ts === GITHUB_ISSUE_BODY_TS) this.issueBodiesTriggeredThisPoll.add(conversationId);
     const cleanedText = this.stripMention(item.text);
     const sessionKey = resolveChatSessionKey({
       conversationId,
@@ -665,7 +387,7 @@ export class GithubMessagingBot implements MessagingBot {
     await processMessageIntake({
       eventBase,
       addressed: true,
-      magicWord: { text: cleanedText, addressed: mentioned, scopeFallback: "never" },
+      magicWord: { text: cleanedText, addressed: item.addressed, scopeFallback: "never" },
       busyPolicy: "queue",
       logEntryBase: {
         date: item.createdAt,
@@ -680,7 +402,7 @@ export class GithubMessagingBot implements MessagingBot {
         this.logToFile(conversationId, entry);
       },
       processAttachments: async () => {
-        await this.prepareConversation(item, conversationId, participating);
+        await this.prepareConversation(item, conversationId, participating, identity);
         return [];
       },
       queueKey: conversationId,
@@ -695,21 +417,19 @@ export class GithubMessagingBot implements MessagingBot {
     item: IncomingItem,
     conversationId: string,
     participating: boolean,
+    identity: GithubAgentIdentity,
   ): Promise<void> {
-    let isPrHint = item.isPr;
     if (!participating && item.ts !== GITHUB_ISSUE_BODY_TS) {
-      const issue = await this.logIssueContext(item.ref, conversationId, item.createdAt);
-      if (issue && isPrHint === undefined) isPrHint = Boolean(issue.pull_request);
+      await this.logIssueContext(item.ref, conversationId, item.createdAt);
     }
     if (!existsSync(conversationRepoDir(this.office(conversationId)))) {
-      const isPr = isPrHint ?? (await fetchIsPr(this.client, item.ref));
-      await this.ensureRepoClone(item.ref, conversationId, isPr);
+      await this.ensureRepoClone(item.ref, conversationId, item.isPr, identity);
     }
   }
 
   private async formatReviewMessage(
     ref: IncomingItem["ref"],
-    review: NonNullable<IncomingItem["review"]>,
+    review: GithubReviewAnchor,
     cleanedText: string,
   ): Promise<string> {
     const location = review.line !== null ? `${review.path}:${review.line}` : review.path;
@@ -766,7 +486,7 @@ export class GithubMessagingBot implements MessagingBot {
     ref: GithubConversationRef,
     conversationId: string,
     triggerCreatedAt: string,
-  ): Promise<GithubIssue | null> {
+  ): Promise<void> {
     let issue: GithubIssue;
     try {
       issue = await githubRetry(() => this.client.getIssue(ref.owner, ref.repo, ref.number));
@@ -775,7 +495,7 @@ export class GithubMessagingBot implements MessagingBot {
         `GitHub: could not fetch issue context for ${conversationId}`,
         errorMessage(err),
       );
-      return null;
+      return;
     }
     const triggerMs = Date.parse(triggerCreatedAt);
     const contextDate = new Date((Number.isFinite(triggerMs) ? triggerMs : Date.now()) - 1000);
@@ -788,29 +508,26 @@ export class GithubMessagingBot implements MessagingBot {
       attachments: [],
       isMessagingBot: false,
     });
-    return issue;
   }
 
   private async ensureRepoClone(
     ref: GithubConversationRef,
     conversationId: string,
     isPr: boolean,
+    identity: GithubAgentIdentity,
   ): Promise<void> {
     const office = this.office(conversationId);
     const dir = conversationRepoDir(office);
     if (existsSync(dir)) return;
     try {
       office.ensure();
-      const token = await this.client.createScopedInstallationToken(ref.repo, {
-        contents: "read",
-      });
       const prHeadBranch = isPr ? await fetchPrHeadBranch(this.client, ref) : undefined;
       await cloneRepo({
         url: `https://github.com/${ref.owner}/${ref.repo}.git`,
         dir,
-        token,
-        botLogin: `${this.appSlug}[bot]`,
-        botEmail: this.botEmail ?? `${this.appSlug}[bot]@users.noreply.github.com`,
+        token: this.config.token,
+        authorName: identity.login,
+        authorEmail: identity.email,
         prNumber: isPr ? ref.number : undefined,
         prHeadBranch,
       });

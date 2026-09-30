@@ -44,8 +44,8 @@ function prCheckoutName(prNumber: number, prHeadBranch?: string): string {
 
 export async function cloneRepo(options: CloneRepoOptions): Promise<void> {
   await git(["clone", "--depth", "50", options.url, options.dir], options.token);
-  await git(["-C", options.dir, "config", "user.name", options.botLogin]);
-  await git(["-C", options.dir, "config", "user.email", options.botEmail]);
+  await git(["-C", options.dir, "config", "user.name", options.authorName]);
+  await git(["-C", options.dir, "config", "user.email", options.authorEmail]);
   if (options.prNumber !== undefined) {
     await git(
       ["-C", options.dir, "fetch", "--depth", "50", "origin", `pull/${options.prNumber}/head`],
@@ -88,10 +88,17 @@ export async function syncRepo(options: SyncRepoOptions): Promise<SyncRepoResult
     currentBranch === target || (legacyPrBranch !== undefined && currentBranch === legacyPrBranch);
   let localCommits = 0;
   if (onTarget) {
-    const botEmail = (await git(["-C", dir, "config", "user.email"])).trim();
+    const authorEmail = (await git(["-C", dir, "config", "user.email"])).trim();
     localCommits = Number(
       (
-        await git(["-C", dir, "rev-list", "--count", `--committer=${botEmail}`, "FETCH_HEAD..HEAD"])
+        await git([
+          "-C",
+          dir,
+          "rev-list",
+          "--count",
+          `--committer=${authorEmail}`,
+          "FETCH_HEAD..HEAD",
+        ])
       ).trim(),
     );
   }

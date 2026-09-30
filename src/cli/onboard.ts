@@ -62,11 +62,6 @@ async function askAdapter(io: OnboardIo, env: Record<string, string>): Promise<v
   for (const spec of group.vars.filter((v) => v.required)) {
     env[spec.name] = await askRequired(io, `  ${spec.name} (${spec.doc}): `, spec.secret);
   }
-  if (group.anyOf) {
-    const name = group.anyOf.find((n) => n.endsWith("_PATH")) ?? group.anyOf[0]!;
-    const doc = group.vars.find((v) => v.name === name)?.doc ?? "";
-    env[name] = await askRequired(io, `  ${name} (${doc}): `);
-  }
 }
 
 async function askLlm(

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # GitHub runs through a bound agent account, driven by webhooks
@@ -23,14 +23,27 @@ Events arrive as signed GitHub webhooks. Delivery is best effort: a missed event
   - The sandbox stays credential-free, and git runs host-side with the token passed per invocation.
 - **Event source**: webhooks to `<LINK_URL>/github/webhook`, verified with `X-Hub-Signature-256` against `GITHUB_WEBHOOK_SECRET`.
   - The operator may register either an organization webhook or a GitHub App webhook. mikan receives the same payloads either way, and it uses no App credentials.
-  - The webhook subscribes to Issues, Issue comment, Pull request, Pull request review, and Pull request review comment.
+  - The webhook subscribes to Issues, Issue comment, Pull request, and Pull request review comment.
 - **Triggers**, read from the payload:
-  - an issue or PR body, a comment, a review, or a review comment that @-mentions the account;
+  - a new issue or PR body, a comment, or a review comment that @-mentions the account;
   - `issues.assigned` or `pull_request.assigned` to the account;
   - `pull_request.review_requested` for the account;
   - any new comment in a thread that already has a mikan conversation.
 
-  Every trigger ignores the account's own actions and requires the sender to hold write permission or better. Public repositories are ignored unless the operator enables them, based on `repository.private` in the payload.
+  Every trigger ignores bots and the account's own actions. A review whose summary body alone mentions the account does not trigger; its inline comments and review requests do.
+
+- **Restrictions**, default closed, from the environment:
+
+  | Setting                 | Default                          | Limits                                             |
+  | ----------------------- | -------------------------------- | -------------------------------------------------- |
+  | `GITHUB_REPOS`          | required                         | Repositories, as `owner/repo` or `owner/*`         |
+  | `GITHUB_PUBLIC_REPOS`   | `false`                          | Whether public repositories are answered           |
+  | `GITHUB_USERS`          | anyone                           | Which logins can trigger                           |
+  | `GITHUB_MIN_PERMISSION` | `write`                          | The sender's repository permission                 |
+  | `GITHUB_TRIGGERS`       | `mention,assign,review,followup` | Which kinds of activity trigger                    |
+  | `GITHUB_CAPABILITIES`   | none                             | `triage` (`github_issue`) and `push` (`github_pr`) |
+
+  A capability that is off removes its tool and its instructions from the agent. The token and the account's repository role stay the outer bound. Environment variables keep these next to the other platform settings; the global `settings.json` holds agent defaults, not platform access.
 
 - **Receiving**: verify the signature, answer 202, then process, so GitHub's 10-second timeout never waits on the agent.
   - A small in-memory set of recent delivery GUIDs (`X-GitHub-Delivery`) drops manual redeliveries.
@@ -47,10 +60,11 @@ Events arrive as signed GitHub webhooks. Delivery is best effort: a missed event
 
 ## Consequences
 
-- The GitHub adapter requires the link server with a public `LINK_URL`, a webhook secret, and an agent account with a fine-grained PAT.
+- The GitHub adapter requires the link server with a public `LINK_URL`, a webhook secret, a repository allowlist, and an agent account with a fine-grained PAT.
+- Deployments that relied on the App's defaults lose triage and pull requests until they set `GITHUB_CAPABILITIES`.
 - These are removed:
   - `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, and the App private key;
-  - `GITHUB_REPOS` and `GITHUB_POLL_INTERVAL`;
+  - `GITHUB_POLL_INTERVAL`, and `GITHUB_REPOS` as an optional poll list (it returns as the required allowlist);
   - polling and the sync watermark file.
 
   Mentions of `@<app-slug>` no longer trigger.
