@@ -278,7 +278,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
   }
 
-  const memory = await getMemory(projection);
+  const memory = getMemory(projection);
   const conversationSkillLoad = loadMikanSkills(
     office,
     pathContext.runtimeWorkspaceRoot,
@@ -379,7 +379,7 @@ async function buildInitialSystemPrompt(params: {
   sandboxConfig: CreateRunnerOptions["sandboxConfig"];
 }): Promise<string> {
   const { office, pathContext, projection, sandboxConfig } = params;
-  const memory = await getMemory(projection);
+  const memory = getMemory(projection);
   const { skills, skippedSkillLinks } = loadMikanSkills(
     office,
     pathContext.runtimeWorkspaceRoot,

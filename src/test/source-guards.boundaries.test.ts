@@ -36,6 +36,21 @@ const moduleLoaderCalls = new Set([
 ]);
 const entryPointImportAllowlist = new Set(["src/index.ts", "src/test/public-api.test.ts"]);
 const adapterImportAllowlist = ["src/main.ts", "src/index.ts", "src/cli/", "src/runtime/"];
+const linkFollowingFileCalls = new Set([
+  "readFile",
+  "readFileSync",
+  "readTextFileIfExists",
+  "appendFile",
+  "appendFileSync",
+  "writeFile",
+  "writeFileSync",
+  "openSync",
+  "open",
+  "createReadStream",
+  "createWriteStream",
+]);
+const officeAgentFileReference =
+  /\blogPath\b|\bOFFICE_LOG_FILENAME\b|\boffice\.memoryPath\b|\bconversationMemoryPath\b/;
 
 const sources = scanSourceTree();
 const productionFiles = sources.filter((source) => isProductionFile(source.file));
@@ -339,6 +354,54 @@ const rules: BoundaryRule[] = [
       {
         file: "src/adapters/discord/bot.ts",
         code: 'import { a } from "./components.js";',
+        violates: false,
+      },
+    ],
+  },
+  {
+    id: "office-files-open-without-following-links",
+    rule: "The agent can replace the conversation log and MEMORY.md with a link; read and append them with readTextFileNoFollowIfExists and appendFileNoFollow (ADR 0016)",
+    appliesTo: (file) => isProductionFile(file) && file !== "src/file-guards.ts",
+    violates: (_file, source) =>
+      collectNodes(source, ts.isCallExpression)
+        .filter(ts.isCallExpression)
+        .filter((call) => {
+          const callee = call.expression.getText(source).split(".").pop() ?? "";
+          return (
+            linkFollowingFileCalls.has(callee) &&
+            call.arguments.some((arg) => officeAgentFileReference.test(arg.getText(source)))
+          );
+        })
+        .map((call) => call.getStart(source)),
+    spellings: [
+      {
+        file: "src/adapters/x.ts",
+        code: "appendFileSync(office.logPath, line);",
+        violates: true,
+      },
+      {
+        file: "src/adapters/x.ts",
+        code: "readTextFileIfExists(join(dir, OFFICE_LOG_FILENAME));",
+        violates: true,
+      },
+      {
+        file: "src/memory-capture/x.ts",
+        code: 'await fs.readFile(run.office.memoryPath, "utf-8");',
+        violates: true,
+      },
+      {
+        file: "src/adapters/x.ts",
+        code: "appendFileNoFollow(office.logPath, line);",
+        violates: false,
+      },
+      {
+        file: "src/adapters/x.ts",
+        code: "readTextFileNoFollowIfExists(join(dir, OFFICE_LOG_FILENAME));",
+        violates: false,
+      },
+      {
+        file: "src/memory-capture/x.ts",
+        code: "atomicWritePrivateFile(run.office.memoryPath, content);",
         violates: false,
       },
     ],

@@ -3,6 +3,7 @@ import { Value } from "typebox/value";
 import {
   closeSync,
   constants as fsConstants,
+  fstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -24,6 +25,74 @@ const UNEXPECTED_JSON_SHAPE = "unexpected JSON shape";
 
 export function ensureDirExists(dir: string): void {
   mkdirSync(dir, { recursive: true });
+}
+
+function openRegularFileNoFollow(path: string, flags: number): number {
+  let fd: number;
+  try {
+    fd = openSync(path, flags | fsConstants.O_NOFOLLOW | fsConstants.O_NONBLOCK, 0o644);
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ELOOP") {
+      throw new Error(`Refusing to follow a symbolic link: ${path}`, { cause: err });
+    }
+    throw err;
+  }
+  if (!fstatSync(fd).isFile()) {
+    closeSync(fd);
+    throw new Error(`Expected a regular file: ${path}`);
+  }
+  return fd;
+}
+
+export function readTextFileNoFollowIfExists(path: string): string | undefined {
+  let fd: number;
+  try {
+    fd = openRegularFileNoFollow(path, fsConstants.O_RDONLY);
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") return undefined;
+    throw err;
+  }
+  try {
+    return readFileSync(fd, "utf-8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export interface PinnedDirectory {
+  pathOf(name: string): string;
+  close(): void;
+}
+
+export function pinDirectoryNoFollow(dir: string): PinnedDirectory {
+  let fd: number;
+  try {
+    fd = openSync(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  } catch (err) {
+    throw new Error(`Expected a directory that is not a symbolic link: ${dir}`, { cause: err });
+  }
+  const base = process.platform === "linux" ? `/proc/self/fd/${fd}` : dir;
+  return {
+    pathOf(name) {
+      if (basename(name) !== name || name === "." || name === "..") {
+        throw new Error(`Expected a plain file name: ${name}`);
+      }
+      return join(base, name);
+    },
+    close: () => closeSync(fd),
+  };
+}
+
+export function appendFileNoFollow(path: string, content: string): void {
+  const fd = openRegularFileNoFollow(
+    path,
+    fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT,
+  );
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function readTextFileIfExists(path: string): string | undefined {

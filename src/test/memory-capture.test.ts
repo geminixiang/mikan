@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -199,6 +208,26 @@ describe("MemoryCapture", () => {
     await capture.idle();
     expect(readMemory()).toContain("- Written by the agent meanwhile.");
     expect(readMemory()).toContain("- Captured rule.");
+  });
+
+  test("never reads or copies the target of a linked MEMORY.md", async () => {
+    const hostFile = join(root, "host-only.env");
+    writeFileSync(hostFile, "HOST_ONLY=value\n");
+    symlinkSync(hostFile, office.memoryPath);
+    const seen: string[] = [];
+    const capture = new MemoryCapture(models, {
+      gate: async () => 0.9,
+      extract: async (_captured, memory) => {
+        seen.push(memory);
+        return [{ op: "add", text: "Captured rule." }];
+      },
+      now: () => NOW,
+    });
+    capture.capture(run());
+    await capture.idle();
+    expect(seen.join("")).not.toContain("HOST_ONLY");
+    expect(lstatSync(office.memoryPath).isSymbolicLink()).toBe(true);
+    expect(readFileSync(hostFile, "utf-8")).toBe("HOST_ONLY=value\n");
   });
 
   test("redacts configured secret values before writing", async () => {

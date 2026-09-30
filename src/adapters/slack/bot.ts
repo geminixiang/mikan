@@ -2,7 +2,6 @@ import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
 import { existsSync, readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import type {
   MessagingBot,
@@ -50,7 +49,7 @@ import type {
   AssistantThreadPayload,
   SuggestedPrompt,
 } from "./types.js";
-import { readTextFileIfExists } from "../../file-guards.js";
+import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
 import {
   appendBotResponseLog,
@@ -891,7 +890,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   ownsBlockKitMessage(channel: string, ts: string, threadTs?: string): boolean {
-    const content = readTextFileIfExists(this.office(channel).logPath);
+    const content = readTextFileNoFollowIfExists(this.office(channel).logPath);
     if (content === undefined) return false;
     for (const line of content.trim().split("\n").toReversed()) {
       try {
@@ -2032,9 +2031,8 @@ export class SlackMessagingBot implements MessagingBot {
   private async getExistingTimestamps(channelId: string): Promise<Set<string>> {
     const { logPath } = this.office(channelId);
     const timestamps = new Set<string>();
-    if (!existsSync(logPath)) return timestamps;
-
-    const content = await readFile(logPath, "utf-8");
+    const content = readTextFileNoFollowIfExists(logPath);
+    if (content === undefined) return timestamps;
     const lines = content.trim().split("\n").filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
       try {

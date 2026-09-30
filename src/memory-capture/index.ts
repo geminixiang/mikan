@@ -1,5 +1,5 @@
 import { Type } from "typebox";
-import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
+import { atomicWritePrivateFile, readTextFileNoFollowIfExists } from "../file-guards.js";
 import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
 import { isEventTriggerAttribution } from "../harness/presenter.js";
 import { resolveTriggerAttribution } from "../harness/prompt.js";
@@ -174,10 +174,13 @@ export class MemoryCapture implements RunMemoryCapture {
     }
     if (probability < MEMORY_CAPTURE_THRESHOLD) return;
 
-    const ops = await this.deps.extract(run, readTextFileIfExists(run.office.memoryPath) ?? "");
+    const ops = await this.deps.extract(
+      run,
+      readTextFileNoFollowIfExists(run.office.memoryPath) ?? "",
+    );
     if (ops.length === 0) return;
     for (const op of ops) op.text = redactSecrets(op.text);
-    const latest = readTextFileIfExists(run.office.memoryPath) ?? "";
+    const latest = readTextFileNoFollowIfExists(run.office.memoryPath) ?? "";
     const applied = applyMemoryOps(latest, ops, captureStamp(this.deps.now(), run.message.id));
     if (applied.content === latest) return;
     atomicWritePrivateFile(run.office.memoryPath, applied.content);

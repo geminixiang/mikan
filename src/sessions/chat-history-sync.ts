@@ -4,7 +4,7 @@ import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
 import { join } from "node:path";
 import * as log from "../log.js";
-import { parseJsonValue, readTextFileIfExists } from "../file-guards.js";
+import { parseJsonValue, readTextFileNoFollowIfExists } from "../file-guards.js";
 import {
   formatHistoryLine,
   stripHistoryLinePrefix,
@@ -692,7 +692,7 @@ function zeroUsage(): object {
 
 function readConversationLog(conversationDir: string): LogRecord[] {
   const logFile = join(conversationDir, OFFICE_LOG_FILENAME);
-  const raw = readTextFileIfExists(logFile);
+  const raw = readTextFileNoFollowIfExists(logFile);
   if (raw === undefined) return [];
 
   const records: LogRecord[] = [];

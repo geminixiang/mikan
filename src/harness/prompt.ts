@@ -1,6 +1,6 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { existsSync, lstatSync } from "node:fs";
-import { chmod, mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import type { ConversationMessage } from "../types.js";
@@ -10,6 +10,7 @@ import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
 import type { BuildSystemPromptOptions } from "./types.js";
 
+import { readTextFileNoFollowIfExists } from "../file-guards.js";
 import * as log from "../log.js";
 
 function isWithinPathRoot(path: string, root: string): boolean {
@@ -172,14 +173,14 @@ export async function buildPromptPayload(
   return { userMessage, imageAttachments };
 }
 
-async function memorySection(
+function memorySection(
   path: string | undefined,
   heading: string,
   label: string,
-): Promise<string | undefined> {
-  if (!path || !isRegularFile(path)) return undefined;
+): string | undefined {
+  if (!path) return undefined;
   try {
-    const content = (await readFile(path, "utf-8")).trim();
+    const content = readTextFileNoFollowIfExists(path)?.trim();
     return content ? `### ${heading}\n${content}` : undefined;
   } catch (error) {
     log.logWarning(`Failed to read ${label}`, `${path}: ${error}`);
@@ -187,23 +188,14 @@ async function memorySection(
   }
 }
 
-export async function getMemory(projection: WorkspaceProjection): Promise<string> {
+export function getMemory(projection: WorkspaceProjection): string {
   const { globalMemoryPath, conversationMemoryPath } = projection.promptSources;
-  const sections = await Promise.all([
+  const sections = [
     memorySection(globalMemoryPath, "Global Workspace Memory", "workspace memory"),
     memorySection(conversationMemoryPath, "Conversation-Specific Memory", "conversation memory"),
-  ]);
+  ];
   const parts = sections.filter((section) => section !== undefined);
   return parts.length > 0 ? parts.join("\n\n") : "(no working memory yet)";
-}
-
-function isRegularFile(path: string): boolean {
-  try {
-    const stats = lstatSync(path);
-    return stats.isFile() && !stats.isSymbolicLink();
-  } catch {
-    return false;
-  }
 }
 
 function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: string): string {

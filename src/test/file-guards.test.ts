@@ -1,9 +1,19 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { Type } from "typebox";
 import {
+  appendFileNoFollow,
   assertStateDirOutsideWorkspace,
   ensureDirExists,
   parseJsonSchemaValue,
@@ -11,6 +21,7 @@ import {
   readJsonFileIfExists,
   readJsonSchemaFileIfExists,
   readTextFileIfExists,
+  readTextFileNoFollowIfExists,
 } from "../file-guards.js";
 import { isRecord } from "../unknown-values.js";
 
@@ -59,6 +70,53 @@ describe("readTextFileIfExists", () => {
 
   test("throws for non-ENOENT error", () => {
     expect(() => readTextFileIfExists("/tmp/")).toThrow();
+  });
+});
+
+describe("files inside agent-writable directories", () => {
+  let dir: string;
+  let outside: string;
+  let link: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "mikan-nofollow-"));
+    outside = join(dir, "host-only.txt");
+    writeFileSync(outside, "host secret\n");
+    mkdirSync(join(dir, "office"));
+    link = join(dir, "office", "log.jsonl");
+    symlinkSync(outside, link);
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("reading refuses a symbolic link instead of reading its target", () => {
+    expect(() => readTextFileNoFollowIfExists(link)).toThrow(/symbolic link.*log\.jsonl/);
+  });
+
+  test("reading refuses a directory", () => {
+    expect(() => readTextFileNoFollowIfExists(join(dir, "office"))).toThrow(/regular file/);
+  });
+
+  test("reading returns a regular file and undefined when missing", () => {
+    const file = join(dir, "office", "MEMORY.md");
+    writeFileSync(file, "remember\n");
+    expect(readTextFileNoFollowIfExists(file)).toBe("remember\n");
+    expect(readTextFileNoFollowIfExists(join(dir, "office", "missing"))).toBeUndefined();
+  });
+
+  test("appending refuses a symbolic link and leaves its target untouched", () => {
+    expect(() => appendFileNoFollow(link, "line\n")).toThrow(/symbolic link.*log\.jsonl/);
+    expect(readFileSync(outside, "utf-8")).toBe("host secret\n");
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+  });
+
+  test("appending creates and extends a regular file", () => {
+    const file = join(dir, "office", "new.jsonl");
+    appendFileNoFollow(file, "a\n");
+    appendFileNoFollow(file, "b\n");
+    expect(readFileSync(file, "utf-8")).toBe("a\nb\n");
   });
 });
 

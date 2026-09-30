@@ -1,12 +1,13 @@
-import { appendFileSync, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import { dirname, join } from "node:path";
 import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
 import { sameOffice } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import { appendFileNoFollow, pinDirectoryNoFollow } from "../file-guards.js";
+import type { PinnedDirectory } from "../file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";
 import type {
@@ -183,7 +184,7 @@ export function splitText(
 
 export function appendChannelLog(office: Office, entry: object): void {
   office.ensure();
-  appendFileSync(office.logPath, `${JSON.stringify(entry)}\n`);
+  appendFileNoFollow(office.logPath, `${JSON.stringify(entry)}\n`);
 }
 
 export async function saveIncomingAttachments(
@@ -193,25 +194,35 @@ export async function saveIncomingAttachments(
   if (items.length === 0) return { saved: [], failed: [] };
   office.ensure();
   await mkdir(office.attachmentsDir, { recursive: true });
+  let directory: PinnedDirectory;
+  try {
+    directory = pinDirectoryNoFollow(office.attachmentsDir);
+  } catch (error) {
+    return { saved: [], failed: items.map((item) => ({ name: item.name, error })) };
+  }
 
-  const results = await Promise.all(
-    items.map(async (item) => {
-      const sanitized = item.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filename = `${item.timestampMs ?? Date.now()}_${sanitized}`;
-      try {
-        await item.download(join(office.attachmentsDir, filename));
-        return {
-          saved: { original: item.name, localPath: `${office.key}/attachments/${filename}` },
-        };
-      } catch (error) {
-        return { failed: { name: item.name, error } };
-      }
-    }),
-  );
-  return {
-    saved: results.flatMap((result) => (result.saved ? [result.saved] : [])),
-    failed: results.flatMap((result) => (result.failed ? [result.failed] : [])),
-  };
+  try {
+    const results = await Promise.all(
+      items.map(async (item) => {
+        const sanitized = item.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const filename = `${item.timestampMs ?? Date.now()}_${sanitized}`;
+        try {
+          await item.download(directory.pathOf(filename));
+          return {
+            saved: { original: item.name, localPath: `${office.key}/attachments/${filename}` },
+          };
+        } catch (error) {
+          return { failed: { name: item.name, error } };
+        }
+      }),
+    );
+    return {
+      saved: results.flatMap((result) => (result.saved ? [result.saved] : [])),
+      failed: results.flatMap((result) => (result.failed ? [result.failed] : [])),
+    };
+  } finally {
+    directory.close();
+  }
 }
 
 export function appendBotResponseLog(
@@ -272,9 +283,8 @@ export async function writeResponseToFile(
     await response.body?.cancel();
     throw attachmentLimitError(maxBytes);
   }
-  await mkdir(dirname(destPath), { recursive: true });
   if (!response.body) {
-    await pipeline(Readable.from([]), createWriteStream(destPath));
+    await pipeline(Readable.from([]), createWriteStream(destPath, { flags: "wx" }));
     return;
   }
   let received = 0;
@@ -288,7 +298,7 @@ export async function writeResponseToFile(
     await pipeline(
       Readable.fromWeb(response.body as WebReadableStream<Uint8Array>),
       limit,
-      createWriteStream(destPath),
+      createWriteStream(destPath, { flags: "wx" }),
     );
   } catch (error) {
     await rm(destPath, { force: true });

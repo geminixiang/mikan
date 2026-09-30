@@ -1,7 +1,22 @@
-import { describe, expect, test, vi } from "vitest";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../types.js";
 import {
+  appendChannelLog,
   MAX_PENDING_EVENTS,
+  saveIncomingAttachments,
+  writeResponseToFile,
   MessagingEventQueue,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
@@ -13,9 +28,11 @@ import { formatToolArgs } from "../harness/tool-args.js";
 import {
   createConversationEvent,
   createOfficeAddress,
+  createWorkspace,
   officeKey,
   sameOffice,
 } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 const slack = createOfficeAddress("slack", "C123");
 
@@ -274,4 +291,84 @@ describe("shortNameToUnicodeEmoji", () => {
   test("passes through an already-Unicode emoji unchanged", () => {
     expect(shortNameToUnicodeEmoji("\u{1F440}")).toBe("\u{1F440}");
   });
+});
+
+describe("office files the agent can replace", () => {
+  let root: string;
+  let office: Office;
+  let hostFile: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "mikan-office-files-"));
+    const workspace = createWorkspace({
+      root: join(root, "workspace"),
+      stateDir: join(root, "state"),
+    });
+    office = workspace.office(slack);
+    office.ensure();
+    hostFile = join(root, "host-only.txt");
+    writeFileSync(hostFile, "host\n");
+  });
+
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("appending to the conversation log never writes through a link", () => {
+    symlinkSync(hostFile, office.logPath);
+    expect(() => appendChannelLog(office, { text: "hi" })).toThrow(/symbolic link/);
+    expect(readFileSync(hostFile, "utf-8")).toBe("host\n");
+  });
+
+  test("attachments are never written through a linked attachments directory", async () => {
+    const hostDir = join(root, "host-dir");
+    mkdirSync(hostDir);
+    symlinkSync(hostDir, office.attachmentsDir);
+    const result = await saveIncomingAttachments(office, [
+      {
+        name: "a.txt",
+        timestampMs: 1,
+        download: (destPath) => writeResponseToFile(new Response("data"), destPath),
+      },
+    ]);
+    expect(readdirSync(hostDir)).toEqual([]);
+    expect(result.saved).toEqual([]);
+    expect(result.failed).toHaveLength(1);
+  });
+
+  test("an attachment already present as a link is not written through", async () => {
+    mkdirSync(office.attachmentsDir);
+    symlinkSync(hostFile, join(office.attachmentsDir, "1_a.txt"));
+    const result = await saveIncomingAttachments(office, [
+      {
+        name: "a.txt",
+        timestampMs: 1,
+        download: (destPath) => writeResponseToFile(new Response("data"), destPath),
+      },
+    ]);
+    expect(readFileSync(hostFile, "utf-8")).toBe("host\n");
+    expect(result.failed).toHaveLength(1);
+  });
+
+  test.runIf(process.platform === "linux")(
+    "an attachments directory swapped for a link during download still receives the file",
+    async () => {
+      const hostDir = join(root, "host-dir");
+      mkdirSync(hostDir);
+      const result = await saveIncomingAttachments(office, [
+        {
+          name: "a.txt",
+          timestampMs: 1,
+          download: async (destPath) => {
+            renameSync(office.attachmentsDir, join(office.dir, "moved"));
+            symlinkSync(hostDir, office.attachmentsDir);
+            await writeResponseToFile(new Response("data"), destPath);
+          },
+        },
+      ]);
+      expect(readdirSync(hostDir)).toEqual([]);
+      expect(readdirSync(join(office.dir, "moved"))).toEqual(["1_a.txt"]);
+      expect(result.saved).toHaveLength(1);
+    },
+  );
 });

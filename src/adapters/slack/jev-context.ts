@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { readTextFileIfExists } from "../../file-guards.js";
+import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { OFFICE_LOG_FILENAME } from "../../office/index.js";
 import { isRecord } from "../../unknown-values.js";
 
@@ -31,7 +31,7 @@ export function readRecentScope(
 ): RecentLine[] {
   const limit = options.limit ?? 12;
   const humanize = options.humanize ?? ((text: string) => text);
-  const raw = readTextFileIfExists(join(conversationDir, OFFICE_LOG_FILENAME));
+  const raw = readTextFileNoFollowIfExists(join(conversationDir, OFFICE_LOG_FILENAME));
   if (raw === undefined) return [];
   const lines: RecentLine[] = [];
   for (const line of raw.split("\n")) {
