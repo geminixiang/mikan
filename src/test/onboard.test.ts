@@ -86,10 +86,7 @@ describe("runOnboardWizard", () => {
       "2",
       "",
     ]);
-    const code = await runOnboardWizard(dir, io, {
-      envFilePath: envFile,
-      modelsJsonPath: modelsFile,
-    });
+    const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
 
     const models = JSON.parse(readFileSync(modelsFile, "utf-8"));
@@ -154,7 +151,7 @@ describe("runOnboardWizard", () => {
       "model",
       "1",
     ]);
-    expect(await runOnboardWizard(dir, io, { modelsJsonPath: modelsFile })).toBe(1);
+    expect(await runOnboardWizard(dir, io)).toBe(1);
     expect(existsSync(join(dir, "settings.json"))).toBe(false);
     expect(existsSync(join(dir, "mikan.env"))).toBe(false);
     expect(readFileSync(modelsFile, "utf8")).toBe("{}");

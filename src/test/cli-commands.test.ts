@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -11,6 +11,7 @@ const roots: string[] = [];
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -63,6 +64,22 @@ describe("mikan migrate", () => {
 
     expect(await runMigrateCommand(args, missingDocker)).toBe(0);
     expect(output).toHaveBeenLastCalledWith("No pending migrations.");
+  });
+
+  test("copies Pi's models.json into the chosen state directory", async () => {
+    const root = tempRoot();
+    const stateDir = join(root, "state");
+    const piAgentDir = join(root, "pi-agent");
+    mkdirSync(stateDir);
+    mkdirSync(piAgentDir);
+    writeFileSync(join(piAgentDir, "models.json"), '{"providers":{}}');
+    vi.stubEnv("PI_CODING_AGENT_DIR", piAgentDir);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const args = ["--state-dir", stateDir, "--workspace", join(root, "workspace")];
+    expect(await runMigrateCommand([...args, "--sandbox", "host"], missingDocker)).toBe(0);
+
+    expect(readFileSync(join(stateDir, "models.json"), "utf-8")).toBe('{"providers":{}}');
   });
 
   test("a failing migration exits non-zero and names the problem", async () => {

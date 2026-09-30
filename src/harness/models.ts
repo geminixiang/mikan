@@ -1,4 +1,4 @@
-import { homedir } from "node:os";
+import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { join } from "node:path";
 import {
   createProvider,
@@ -65,7 +65,7 @@ interface ModelsJsonConfig {
 }
 
 export function defaultModelsJsonPath(): string {
-  return join(homedir(), ".mikan", "models.json");
+  return join(effectiveStateDir(), "models.json");
 }
 
 function isModelsJsonConfig(parsed: unknown): parsed is ModelsJsonConfig {

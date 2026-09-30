@@ -4,7 +4,6 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { InvalidArgumentError } from "commander";
 import { platformIsActive, readEnv } from "../env-manifest.js";
-import { defaultModelsJsonPath } from "../harness/models.js";
 import { runMigrations } from "../migrations/index.js";
 import { parseSandboxArg } from "../sandbox/registry.js";
 import type { DockerCli } from "../migrations/types.js";
@@ -73,7 +72,7 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
       sandbox,
       enabledPlatforms: PLATFORMS.filter((platform) => platformIsActive(platform)),
       piAgentDir: readEnv("PI_CODING_AGENT_DIR") ?? join(homedir(), ".pi", "agent"),
-      modelsPath: defaultModelsJsonPath(),
+      modelsPath: join(stateDir, "models.json"),
       docker,
       report: (line) => console.log(line),
     });

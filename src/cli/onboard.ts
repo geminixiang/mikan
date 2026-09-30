@@ -5,7 +5,6 @@ import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
 import { recordAllMigrations } from "../migrations/index.js";
 import type { OnboardLlmChoice } from "../types.js";
-import { defaultModelsJsonPath } from "../harness/models.js";
 import { atomicWritePrivateFile } from "../file-guards.js";
 import type { OnboardIo } from "./types.js";
 
@@ -157,7 +156,7 @@ function rewriteEnvLine(line: string, pending: Map<string, string>): string {
 export async function runOnboardWizard(
   stateDir: string,
   io: OnboardIo,
-  paths?: { envFilePath?: string; modelsJsonPath?: string },
+  paths?: { envFilePath?: string },
 ): Promise<number> {
   const settingsPath = join(stateDir, "settings.json");
   if (existsSync(settingsPath)) {
@@ -171,7 +170,7 @@ export async function runOnboardWizard(
   const { llm, modelsJson } = await askLlm(io, env);
   const sandboxArg = await askSandbox(io);
 
-  const modelsPath = paths?.modelsJsonPath ?? defaultModelsJsonPath();
+  const modelsPath = join(stateDir, "models.json");
   if (modelsJson && existsSync(modelsPath)) {
     io.print(
       `models.json already exists at ${modelsPath}. Add the provider manually before retrying; nothing was written.`,

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MikanModels } from "../harness/models.js";
+import { defaultModelsJsonPath, MikanModels } from "../harness/models.js";
 import { describe, expect, test, vi } from "vitest";
 
 function withTempRegistry(config: unknown): MikanModels {
@@ -181,5 +181,18 @@ describe("MikanModels.getAvailable", () => {
     expect(available.some((model) => model.provider === "broken")).toBe(false);
     expect(getAvailable).toHaveBeenCalledWith("available");
     expect(getAvailable).toHaveBeenCalledWith("broken");
+  });
+});
+
+describe("defaultModelsJsonPath", () => {
+  test("lives in the effective state directory", () => {
+    const stateDir = mkdtempSync(join(tmpdir(), "mikan-model-state-"));
+    vi.stubEnv("MIKAN_STATE_DIR", stateDir);
+    try {
+      expect(defaultModelsJsonPath()).toBe(join(stateDir, "models.json"));
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(stateDir, { recursive: true, force: true });
+    }
   });
 });
