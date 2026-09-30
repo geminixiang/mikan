@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.87]
+
 ### Fixed
 
 - `mikan migrate` moves the per-thread session directories that early versions left inside `sessions/` to the state directory intact, instead of stopping with `Unexpected entry in sessions directory`. Links inside them are moved as links and never followed.
