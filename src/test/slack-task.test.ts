@@ -465,7 +465,7 @@ test("a status question answered as the completion notice goes out does not say 
   vi.mocked(bot.postMessage).mockImplementation(async (channel, text, threadTs) => {
     if (text.includes("這一輪處理已結束")) {
       const [task] = await querySlackTasks(
-        office.dir,
+        office,
         "D123",
         runtime.getRunningSessions(),
         `D123:${root}`,
@@ -511,10 +511,10 @@ test("main DM task_status reads live work and persisted completion without reope
   hold.resolve();
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   const office = workspace.office(createOfficeAddress("slack", "D123"));
-  const result = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
+  const result = await querySlackTasks(office, "D123", [], `D123:${root}`);
   expect(result[0]?.status).toBe("completed");
   expect(result[0]?.endedAt).toBeDefined();
-  expect(await querySlackTasks(office.dir, "D123", [], "OTHER:123")).toEqual([]);
+  expect(await querySlackTasks(office, "D123", [], "OTHER:123")).toEqual([]);
 });
 
 test("ordinary task-thread followup without work does not send another completion mention", async () => {
@@ -655,7 +655,7 @@ test("status between admission and run start reports queued, not unknown", async
   const spy = vi
     .spyOn(MikanAgentSession.prototype, "reloadFromSession")
     .mockImplementation(async function (this: MikanAgentSession) {
-      if (readTaskRoots(office.dir).size) {
+      if (readTaskRoots(office).size) {
         preparing.resolve();
         await release.promise;
       }
@@ -663,15 +663,15 @@ test("status between admission and run start reports queued, not unknown", async
     });
   await dm("investigate this");
   await preparing.promise;
-  const root = [...readTaskRoots(office.dir).keys()][0]!;
-  const before = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
+  const root = [...readTaskRoots(office).keys()][0]!;
+  const before = await querySlackTasks(office, "D123", [], `D123:${root}`);
   expect(before[0]?.status).toBe("queued");
   spy.mockRestore();
   release.resolve();
   await vi.waitFor(() => expect(trace).toContain("tool:start"));
   hold.resolve();
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
-  const after = await querySlackTasks(office.dir, "D123", [], `D123:${root}`);
+  const after = await querySlackTasks(office, "D123", [], `D123:${root}`);
   expect(after[0]?.status).toBe("completed");
 });
 
@@ -689,7 +689,7 @@ test("recent status listing keeps an older active task even with ten newer task 
         text: `later ${i}`,
       }) + "\n",
     );
-  const observations = await querySlackTasks(office.dir, "D123", runtime.getRunningSessions());
+  const observations = await querySlackTasks(office, "D123", runtime.getRunningSessions());
   expect(observations.find((t) => t.threadTs === root)?.status).toBe("running");
 });
 
@@ -711,7 +711,7 @@ test("task membership parser tolerates malformed logs and status isolates platfo
   const office = workspace.office(createOfficeAddress("slack", "D123"));
   appendFileSync(office.logPath, "not-json\nnull\n");
   const observations = await querySlackTasks(
-    office.dir,
+    office,
     "D123",
     [
       {

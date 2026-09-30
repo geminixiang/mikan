@@ -5,6 +5,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -157,12 +158,13 @@ describe("migrating a 0.5.3 state directory", () => {
     expect(readAppliedMigrations(stateDir).map((entry) => entry.id)).toEqual(ran);
   });
 
-  test("converts the v3 session in place and keeps a backup", async () => {
+  test("converts the v3 session, keeps a backup, and moves sessions to the state dir", async () => {
     writeRelease053State();
 
     await runMigrations(context());
 
-    const sessions = join(workspaceRoot, dmKey, "sessions");
+    expect(existsSync(join(workspaceRoot, dmKey, "sessions"))).toBe(false);
+    const sessions = join(stateDir, "conversations", dmKey, "sessions");
     const file = join(sessions, readFileSync(join(sessions, "current"), "utf-8").trim());
     expect(existsSync(`${file}.v3.bak`)).toBe(true);
     const store = await SessionStore.open(file);
@@ -209,6 +211,49 @@ describe("migrating a partly upgraded state directory", () => {
     await runMigrations(context());
     expect(existsSync(join(workspaceRoot, dmKey, "settings.json"))).toBe(false);
     expect(existsSync(join(stateDir, "conversations", dmKey, "settings.json"))).toBe(true);
+  });
+});
+
+describe("moving sessions out of the office directory", () => {
+  function registerDm(): string {
+    new OfficeRegistry(stateDir).recordOffice(createOfficeAddress("slack", DM));
+    return join(workspaceRoot, dmKey);
+  }
+
+  test("leaves links behind instead of following them", async () => {
+    const officeDir = registerDm();
+    write(join(root, "host-only", "secret.jsonl"), "host\n");
+    write(join(officeDir, "sessions", "current"), "a.jsonl");
+    write(join(officeDir, "sessions", "a.jsonl"), "{}\n");
+    symlinkSync(join(root, "host-only", "secret.jsonl"), join(officeDir, "sessions", "b.jsonl"));
+
+    await runMigrations(context());
+
+    const target = join(stateDir, "conversations", dmKey, "sessions");
+    expect(readdirSync(target).toSorted()).toEqual(["a.jsonl", "current"]);
+    expect(existsSync(join(officeDir, "sessions"))).toBe(false);
+  });
+
+  test("skips a sessions directory that is itself a link", async () => {
+    const officeDir = registerDm();
+    mkdirSync(officeDir, { recursive: true });
+    write(join(root, "host-only", "current"), "x\n");
+    symlinkSync(join(root, "host-only"), join(officeDir, "sessions"));
+    const lines: string[] = [];
+
+    await runMigrations(context({ report: (line) => lines.push(line) }));
+
+    expect(existsSync(join(stateDir, "conversations", dmKey, "sessions"))).toBe(false);
+    expect(readFileSync(join(root, "host-only", "current"), "utf-8")).toBe("x\n");
+    expect(lines.join("\n")).toMatch(/skip.*link/i);
+  });
+
+  test("refuses to merge into existing state-dir sessions", async () => {
+    const officeDir = registerDm();
+    write(join(officeDir, "sessions", "a.jsonl"), "{}\n");
+    write(join(stateDir, "conversations", dmKey, "sessions", "b.jsonl"), "{}\n");
+
+    await expect(runMigrations(context())).rejects.toThrow(/merge/);
   });
 });
 

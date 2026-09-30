@@ -140,7 +140,7 @@ sequenceDiagram
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: read MEMORY.md / sessions/*.jsonl, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
@@ -168,17 +168,18 @@ sequenceDiagram
     ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # office-level skills
-    └── sessions/
-        ├── current            # top-level session pointer
-        ├── <timestamp>_<id>.jsonl
-        └── <scope_id>.jsonl   # thread / reply scoped sessions
+    └── skills/                # office-level skills
 
 <state-dir>/
 ├── settings.json              # required global settings
 ├── office-registry.json       # office inventory
 ├── conversations/
-│   └── <officeKey>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/
+│       ├── settings.json      # host-only conversation overrides
+│       └── sessions/          # host-only agent history
+│           ├── current        # top-level session pointer
+│           ├── <timestamp>_<id>.jsonl
+│           └── <scope_id>.jsonl  # thread / reply scoped sessions
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -190,7 +191,7 @@ sequenceDiagram
 - office key 在 host 上與 sandbox runtime 內命名的是同一個目錄，因此一個路徑跨越邊界時不會改變意義
 - office key 無法反推回原始平台 id，所以 `office-registry.json` 會在每個 office 第一次實體化時記下它的 `(platform, conversationId)`。面向 raw id 的介面——Admin portal、`mikan office claim`——都透過它來解析
 - `log.jsonl` 是平台對話紀錄：來源平台上實際發生過什麼
-- `sessions/*.jsonl` 是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
+- `sessions/*.jsonl` 只存在 host 上，是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
 - top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
 - thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
 - session key 維持原始平台值；runtime 狀態是以 office 加上 session key 來定址，因此一個 session key 絕不可能選到另一個 office 的 runner 或 queue

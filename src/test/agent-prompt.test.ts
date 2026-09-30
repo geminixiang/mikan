@@ -224,6 +224,23 @@ describe("host sandbox environment description", () => {
     expect(prompt).not.toMatch(/saluting_face/);
   });
 
+  test("points history questions at log.jsonl, never at host-only session files", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const prompt = buildSystemPrompt({
+      workspacePath: "/workspace",
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "image", image: "mikan-sandbox:latest" },
+      platform: PLATFORM,
+      skills: [],
+      projection: resolveWorkspaceProjection(office),
+    });
+
+    expect(prompt).toContain("log.jsonl");
+    expect(prompt).not.toMatch(/sessions\//);
+  });
+
   test("tells the agent bash starts in the runtime workspace root, not mikan's own cwd", () => {
     const workspace = createWorkspace({ root: workspaceDir, stateDir });
     const office = workspace.office(createOfficeAddress("slack", "C123"));

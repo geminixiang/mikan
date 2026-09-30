@@ -21,7 +21,6 @@ import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
@@ -65,7 +64,7 @@ function createOptions() {
     createOfficeAddress("slack", "C1"),
   );
   const conversationDir = office.ensure();
-  const sessionDir = officeSessionsDir(conversationDir);
+  const sessionDir = office.sessionsDir;
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
   (models.models as MutableModels).setProvider(fauxProvider().provider);

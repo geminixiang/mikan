@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { resolveStateDir } from "../../../src/cli/arg-grammar.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_POLL_MS = 2_000;
@@ -12,6 +13,7 @@ export interface SlackE2eEnv {
   timeoutMs: number;
   pollMs: number;
   workingDir: string;
+  stateDir: string;
   mikanText: string;
 }
 
@@ -28,6 +30,7 @@ export function readSlackE2eEnv(): SlackE2eEnv {
     timeoutMs: Number(env.SLACK_QA_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS),
     pollMs: Number(env.SLACK_QA_POLL_MS ?? DEFAULT_POLL_MS),
     workingDir,
+    stateDir: resolveStateDir([]),
     mikanText: env.SLACK_QA_BOT_TEXT ?? "hello，請簡短回答。",
   };
 }

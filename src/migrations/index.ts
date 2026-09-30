@@ -6,6 +6,7 @@ import { actorVaultsMigration } from "./actor-vaults.js";
 import { conversationSettingsMigration } from "./conversation-settings.js";
 import { modelsJsonMigration } from "./models-json.js";
 import { officeLayoutMigration } from "./office-layout.js";
+import { officeSessionsMigration } from "./office-sessions.js";
 import { sandboxContainersMigration } from "./sandbox-containers.js";
 import { sessionsV3Migration } from "./sessions-v3.js";
 import type { AppliedMigration, Migration, MigrationContext } from "./types.js";
@@ -19,6 +20,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   workspaceEventsMigration,
   sandboxContainersMigration,
   modelsJsonMigration,
+  officeSessionsMigration,
 ]);
 
 const RECORD_FILENAME = "migrations.json";

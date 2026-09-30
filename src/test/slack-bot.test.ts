@@ -996,7 +996,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const conversationDir = join(workingDir, C123_OFFICE);
     createManagedSessionFileAtPath(join(conversationDir, "session.jsonl"), conversationDir);
     createManagedSessionFileAtPath(
-      getThreadSessionFile(conversationDir, "C123:1000.0001"),
+      getThreadSessionFile(
+        workspace.office(createOfficeAddress("slack", "C123")).sessionsDir,
+        "C123:1000.0001",
+      ),
       conversationDir,
     );
 
@@ -1067,9 +1070,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       "2000.0001",
       expect.stringContaining("event done"),
     );
-    expect(existsSync(getThreadSessionFile(join(workingDir, C123_OFFICE), "C123:2000.0001"))).toBe(
-      true,
-    );
+    const sessionsDir = workspace.office(createOfficeAddress("slack", "C123")).sessionsDir;
+    expect(existsSync(getThreadSessionFile(sessionsDir, "C123:2000.0001"))).toBe(true);
   });
 
   test("postInThread wraps text in a markdown block", async () => {
@@ -1112,7 +1114,9 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect(postMessage).toHaveBeenNthCalledWith(1, "C123", "Working on it...");
     expect(handler.handleEvent).not.toHaveBeenCalled();
     expect(updateMessage).not.toHaveBeenCalled();
-    expect(existsSync(join(workingDir, "C123", "sessions"))).toBe(false);
+    expect(existsSync(workspace.office(createOfficeAddress("slack", "C123")).sessionsDir)).toBe(
+      false,
+    );
   });
 
   test("Slack event anchor thread replies queue behind the event anchor run", async () => {
@@ -1165,9 +1169,8 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       }),
     ]);
 
-    expect(existsSync(getThreadSessionFile(join(workingDir, C123_OFFICE), "C123:2000.0001"))).toBe(
-      true,
-    );
+    const sessionsDir = workspace.office(createOfficeAddress("slack", "C123")).sessionsDir;
+    expect(existsSync(getThreadSessionFile(sessionsDir, "C123:2000.0001"))).toBe(true);
     expect(eventRunFinished).toBe(false);
     const ack = makeAck();
 
@@ -1451,7 +1454,10 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     );
 
     createManagedSessionFileAtPath(
-      getThreadSessionFile(join(workingDir, "D123"), "D123:2000.0001"),
+      getThreadSessionFile(
+        workspace.office(createOfficeAddress("slack", "D123")).sessionsDir,
+        "D123:2000.0001",
+      ),
       join(workingDir, "D123"),
     );
 

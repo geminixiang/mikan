@@ -183,10 +183,6 @@ export const RESERVED_WORKSPACE_NAMES: ReadonlySet<string> = Object.freeze(
   new Set(["skills", "events", "agents", "MEMORY.md"]),
 );
 
-export function officeSessionsDir(dir: string): string {
-  return join(dir, "sessions");
-}
-
 export function createWorkspace(options: { root: string; stateDir: string }): Workspace {
   const { root, stateDir } = options;
   let registry: OfficeRegistry | undefined;
@@ -207,16 +203,17 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
       if (existing) return existing;
 
       const dir = join(root, key);
+      const conversationStateDir = join(stateDir, "conversations", key);
       const office: Office = Object.freeze({
         address: normalized,
         key,
         dir,
         memoryPath: join(dir, "MEMORY.md"),
         skillsDir: join(dir, "skills"),
-        sessionsDir: officeSessionsDir(dir),
+        sessionsDir: join(conversationStateDir, "sessions"),
         attachmentsDir: join(dir, "attachments"),
         logPath: join(dir, OFFICE_LOG_FILENAME),
-        stateDir: join(stateDir, "conversations", key),
+        stateDir: conversationStateDir,
         workspace,
         ensure(): string {
           if (!recorded.has(key)) {

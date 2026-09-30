@@ -308,7 +308,7 @@ export class SlackMessagingBot implements MessagingBot {
     if (event.conversationKind === "direct") {
       context.responder.getTaskStatus = (key) =>
         querySlackTasks(
-          this.conversationDir(event.channel),
+          this.office(event.channel),
           event.channel,
           this.handler
             .getRunningSessions()
@@ -348,7 +348,7 @@ export class SlackMessagingBot implements MessagingBot {
         const sessionKey = resolveSlackSessionKey(event.channel, root);
         try {
           registerThreadSession({
-            conversationDir: this.conversationDir(event.channel),
+            office: this.office(event.channel),
             sessionKey,
           });
           const child: SlackEvent = {
@@ -961,7 +961,7 @@ export class SlackMessagingBot implements MessagingBot {
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
         registerThreadSession({
-          conversationDir: this.conversationDir(conversationId),
+          office: this.office(conversationId),
           sessionKey: eventForRun.sessionKey,
         });
       }
@@ -1017,11 +1017,11 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private isTaskThread(channel: string, root: string): boolean {
-    return readTaskRoots(this.conversationDir(channel)).has(root);
+    return readTaskRoots(this.office(channel)).has(root);
   }
 
   private hasRunningTaskThread(channel: string): boolean {
-    const roots = readTaskRoots(this.conversationDir(channel));
+    const roots = readTaskRoots(this.office(channel));
     if (!roots.size) return false;
     return this.handler
       .getRunningSessions()
@@ -1035,7 +1035,7 @@ export class SlackMessagingBot implements MessagingBot {
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
     return hasMaterializedChatSession({
-      conversationDir: this.conversationDir(conversationId),
+      office: this.office(conversationId),
       sessionKey,
     });
   }

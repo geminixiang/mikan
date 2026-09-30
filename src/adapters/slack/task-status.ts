@@ -1,6 +1,5 @@
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
-import { join } from "node:path";
-import { OFFICE_LOG_FILENAME } from "../../office/index.js";
+import type { Office } from "../../office/types.js";
 import { resolveSlackSessionKey } from "./session.js";
 import { getThreadSessionFile } from "../../sessions/store.js";
 import { reportUserFacingError } from "../../observability/index.js";
@@ -13,8 +12,8 @@ export function isTaskStatusQuestion(text: string): boolean {
   );
 }
 
-export function readTaskRoots(conversationDir: string): Map<string, string> {
-  const raw = readTextFileNoFollowIfExists(join(conversationDir, OFFICE_LOG_FILENAME)) ?? "";
+export function readTaskRoots(office: Office): Map<string, string> {
+  const raw = readTextFileNoFollowIfExists(office.logPath) ?? "";
   const roots = new Map<string, string>();
   for (const line of raw.split("\n")) {
     try {
@@ -27,12 +26,12 @@ export function readTaskRoots(conversationDir: string): Map<string, string> {
 }
 
 export async function querySlackTasks(
-  conversationDir: string,
+  office: Office,
   channel: string,
   running: RunningSession[],
   sessionKey?: string,
 ): Promise<TaskStatus[]> {
-  const roots = readTaskRoots(conversationDir);
+  const roots = readTaskRoots(office);
   const matching = [...roots]
     .toReversed()
     .filter(([root]) => !sessionKey || resolveSlackSessionKey(channel, root) === sessionKey);
@@ -56,7 +55,9 @@ export async function querySlackTasks(
       status: "unknown",
     };
     try {
-      const state = await SessionStore.inspectExecution(getThreadSessionFile(conversationDir, key));
+      const state = await SessionStore.inspectExecution(
+        getThreadSessionFile(office.sessionsDir, key),
+      );
       const finishedThisRun =
         !state.open && state.result && (!active || state.result.endedAt >= active.startedAt);
       if (finishedThisRun && state.result) {

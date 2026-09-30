@@ -595,7 +595,6 @@ type MikanToolBindings = ReturnType<typeof createMikanTools>;
 
 interface RunnerInterfaceParams {
   conversationId: string;
-  conversationDir: string;
   sessionKey: string;
   office: Office;
   sessionUuid: string;
@@ -682,7 +681,6 @@ function prepareRunnerTurn(
 function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   const {
     conversationId,
-    conversationDir,
     sessionKey,
     office,
     sessionUuid,
@@ -705,7 +703,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     steer: (message) => steerRun(session, activeMessage, message),
     async syncChatHistory(currentMessageId?: string): Promise<void> {
       await chatSessionManager.syncSessionManager({
-        conversationDir,
+        office,
         sessionKey,
         sessionManager,
         currentMessageId,
@@ -774,7 +772,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
 async function finishRunnerCreation(params: {
   options: CreateRunnerOptions;
   conversationId: string;
-  conversationDir: string;
   workspaceDir: string;
   executor: Executor;
   resolveForRun: RunnerExecutionContext["resolveForRun"];
@@ -790,7 +787,6 @@ async function finishRunnerCreation(params: {
   const {
     options,
     conversationId,
-    conversationDir,
     workspaceDir,
     executor,
     resolveForRun,
@@ -826,7 +822,6 @@ async function finishRunnerCreation(params: {
 
     return createRunnerInterface({
       conversationId,
-      conversationDir,
       sessionKey,
       office,
       sessionUuid,
@@ -863,7 +858,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformToolPackFactories,
   } = options;
   const conversationId = office.address.conversationId;
-  const conversationDir = office.dir;
   const workspaceDir = office.workspace.root;
   await ensureDefaultMcpServers({
     office,
@@ -907,7 +901,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     {
       model,
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
-      outputDir: conversationDir,
+      outputDir: office.dir,
     },
   );
 
@@ -928,7 +922,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   return finishRunnerCreation({
     options,
     conversationId,
-    conversationDir,
     workspaceDir,
     executor,
     resolveForRun,

@@ -140,7 +140,7 @@ sequenceDiagram
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: read MEMORY.md / sessions/*.jsonl, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
@@ -168,17 +168,18 @@ sequenceDiagram
     ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # office-level skills
-    └── sessions/
-        ├── current            # top-level session pointer
-        ├── <timestamp>_<id>.jsonl
-        └── <scope_id>.jsonl   # thread / reply scoped sessions
+    └── skills/                # office-level skills
 
 <state-dir>/
 ├── settings.json              # required global settings
 ├── office-registry.json       # office inventory
 ├── conversations/
-│   └── <officeKey>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/
+│       ├── settings.json      # host-only conversation overrides
+│       └── sessions/          # host-only agent history
+│           ├── current        # top-level session pointer
+│           ├── <timestamp>_<id>.jsonl
+│           └── <scope_id>.jsonl  # thread / reply scoped sessions
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -190,7 +191,7 @@ sequenceDiagram
 - office key 在主机上和沙箱运行时内部命名同一个目录，因此路径跨越边界时含义不会改变
 - office key 无法反推回原始平台 id，所以 `office-registry.json` 会在办公室首次物化时记录其 `(platform, conversationId)`。面向原始 id 的接口——Admin portal、`mikan office claim`——都通过它解析
 - `log.jsonl` 是平台对话日志：源平台上实际发生的内容
-- `sessions/*.jsonl` 是 LLM 工作上下文/日志：mikan 提供给 LLM 的内容，以及 LLM/工具执行的操作
+- `sessions/*.jsonl` 仅存于主机，是 LLM 工作上下文/日志：mikan 提供给 LLM 的内容，以及 LLM/工具执行的操作
 - 顶层会话使用 `current` 指针，但 `current` 不是频道历史记录；缺失时，可以从 `log.jsonl` 重建近期顶层工作上下文
 - 话题/回复会话使用固定文件名，以便分别跟踪限定范围的会话
 - 会话密钥保持为原始平台值；运行时状态按办公室加会话密钥寻址，因此一个会话密钥永远不可能选中另一间办公室的 runner 或队列

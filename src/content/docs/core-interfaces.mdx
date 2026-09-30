@@ -295,10 +295,10 @@ Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, ho
 
 ### The two records
 
-| Record                      | Purpose                                                             |
-| --------------------------- | ------------------------------------------------------------------- |
-| `<office>/log.jsonl`        | Platform truth: user/bot messages and attachments                   |
-| `<office>/sessions/*.jsonl` | Agent truth: prompts, model/tool messages, branches, and compaction |
+| Record                                                | Purpose                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------- |
+| `<office>/log.jsonl`                                  | Platform truth: user/bot messages and attachments                   |
+| `<state-dir>/conversations/<office>/sessions/*.jsonl` | Agent truth: prompts, model/tool messages, branches, and compaction |
 
 Do not merge them. Chat history can rebuild a missing top-level agent session, while agent sessions contain data that never appeared on the platform.
 
@@ -331,19 +331,19 @@ The bus is shared and agent-writable by design. Ownership prefixes are cooperati
 
 ## 11. Persisted filesystem interface
 
-| Path                                                  | Owner                 | Visibility / compatibility               |
-| ----------------------------------------------------- | --------------------- | ---------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | Host-only global settings                |
-| `<state-dir>/office-registry.json`                    | office registry       | Host-only office inventory               |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides         |
-| `<state-dir>/models.json`                             | harness model catalog | Host-only custom providers/models        |
-| `<state-dir>/vaults/**`                               | vault/login           | Host-only secrets and mount files        |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox-visible durable memory           |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox-visible prompt instructions      |
-| `<workspace>/events/*.json`                           | event store/watcher   | Shared scheduling wire format            |
-| `<workspace>/agents/*.md`                             | subagent profiles     | Per-install model patches over built-ins |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only platform history             |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only agent history      |
+| Path                                                     | Owner                 | Visibility / compatibility               |
+| -------------------------------------------------------- | --------------------- | ---------------------------------------- |
+| `<state-dir>/settings.json`                              | config                | Host-only global settings                |
+| `<state-dir>/office-registry.json`                       | office registry       | Host-only office inventory               |
+| `<state-dir>/conversations/<officeKey>/settings.json`    | config/admin          | Host-only conversation overrides         |
+| `<state-dir>/models.json`                                | harness model catalog | Host-only custom providers/models        |
+| `<state-dir>/vaults/**`                                  | vault/login           | Host-only secrets and mount files        |
+| `<workspace>/MEMORY.md`                                  | agent/user            | Sandbox-visible durable memory           |
+| `<workspace>/skills/**/SKILL.md`                         | skills                | Sandbox-visible prompt instructions      |
+| `<workspace>/events/*.json`                              | event store/watcher   | Shared scheduling wire format            |
+| `<workspace>/agents/*.md`                                | subagent profiles     | Per-install model patches over built-ins |
+| `<workspace>/<officeKey>/log.jsonl`                      | platform adapters     | Append-only platform history             |
+| `<state-dir>/conversations/<officeKey>/sessions/*.jsonl` | session store         | Host-only versioned agent history        |
 
 `MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `<state-dir>/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
 

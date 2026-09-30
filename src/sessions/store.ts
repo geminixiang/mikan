@@ -3,7 +3,6 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } fro
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SessionStore } from "./session-store.js";
 import { atomicWritePrivateFile, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
-import { officeSessionsDir } from "../office/index.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 import type { MikanSessionHeader, ParentSessionRef } from "./types.js";
 import { isRecord } from "../unknown-values.js";
@@ -122,9 +121,8 @@ function writeSessionHeader(
   });
 }
 
-export function getThreadSessionFile(channelDir: string, sessionKey: string): string {
-  const sessionDir = officeSessionsDir(channelDir);
-  return resolveChildPath(sessionDir, `${extractSessionSuffix(sessionKey)}.jsonl`);
+export function getThreadSessionFile(sessionsDir: string, sessionKey: string): string {
+  return resolveChildPath(sessionsDir, `${extractSessionSuffix(sessionKey)}.jsonl`);
 }
 
 function isRegularSessionFile(sessionFile: string): boolean {
@@ -192,24 +190,20 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
   return isRegularSessionFile(sessionFile) && hasSessionHeader(sessionFile) ? sessionFile : null;
 }
 
-export function resolveChannelSessionFile(channelDir: string): string | null {
-  return tryResolveCurrentSession(officeSessionsDir(channelDir));
-}
-
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
 
 export function resolveParentSessionForThread(
-  channelDir: string,
+  sessionsDir: string,
   threadTs: string | undefined,
 ): ParentSessionRef | null {
   if (threadTs !== undefined) {
     const threadTimeMs = Number(threadTs) * 1000;
     if (Number.isFinite(threadTimeMs)) {
-      const best = findMainSessionActiveAtTime(channelDir, threadTimeMs);
+      const best = findMainSessionActiveAtTime(sessionsDir, threadTimeMs);
       if (best) return best;
     }
   }
-  const path = resolveChannelSessionFile(channelDir);
+  const path = tryResolveCurrentSession(sessionsDir);
   if (!path) return null;
   const id = readSessionHeaderSummary(path)?.id;
   return id ? { path, id } : null;
@@ -228,12 +222,11 @@ function mainSessionSummaries(
 }
 
 function findMainSessionActiveAtTime(
-  channelDir: string,
+  sessionsDir: string,
   targetMs: number,
 ): ParentSessionRef | null {
-  const sessionDir = officeSessionsDir(channelDir);
-  if (!existsSync(sessionDir)) return null;
-  const started = mainSessionSummaries(sessionDir).filter(
+  if (!existsSync(sessionsDir)) return null;
+  const started = mainSessionSummaries(sessionsDir).filter(
     (summary) => summary.timestampMs <= targetMs,
   );
   if (started.length === 0) return null;

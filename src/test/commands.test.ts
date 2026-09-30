@@ -27,7 +27,6 @@ import type {
   CommandHandler,
   CommandServices,
 } from "../adapters/commands/types.js";
-import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { SandboxConfig } from "../sandbox/types.js";
@@ -777,7 +776,10 @@ describe("SessionViewCommandHandler", () => {
       officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
-    createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir);
+    createManagedSessionFile(
+      testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
+      conversationDir,
+    );
 
     const postPrivate = vi.fn(
       async (_conversationId: string, _userId: string, _text: string) => {},
@@ -838,7 +840,7 @@ describe("SessionViewCommandHandler", () => {
     );
     mkdirSync(conversationDir, { recursive: true });
     const expectedFile = createManagedSessionFile(
-      officeSessionsDir(conversationDir),
+      testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
       conversationDir,
     );
 

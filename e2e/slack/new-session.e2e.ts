@@ -1,8 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createOfficeAddress, officeDir } from "../../src/office/index.js";
-import { resolveChannelSessionFile } from "../../src/sessions/store.js";
+import { createOfficeAddress, createWorkspace } from "../../src/office/index.js";
+import { tryResolveCurrentSession } from "../../src/sessions/store.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   LOCAL_DELIVERY_TIMEOUT_MS,
@@ -89,11 +88,13 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     });
     expect(setupReply, "no acknowledgement to the setup turn").not.toBeNull();
 
-    const conversationDir = officeDir(env.workingDir, createOfficeAddress("slack", dmChannel));
-    const memoryPath = join(conversationDir, "MEMORY.md");
+    const office = createWorkspace({ root: env.workingDir, stateDir: env.stateDir }).office(
+      createOfficeAddress("slack", dmChannel),
+    );
+    const memoryPath = office.memoryPath;
     const memoryAnchor = `# E2E Memory anchor\n\nStable nonce: ${nonce}\n`;
     writeFileSync(memoryPath, memoryAnchor);
-    const originalSession = resolveChannelSessionFile(conversationDir);
+    const originalSession = tryResolveCurrentSession(office.sessionsDir);
     expect(originalSession, "no active session before /new").not.toBeNull();
     expect(readFileSync(originalSession!, "utf-8")).toContain(scratchNonce);
 
@@ -116,7 +117,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(resetResult?.success, `reset failed: ${resetResult?.text ?? "no result"}`).toBe(true);
     expect(resetResult?.text.trim()).toBe(RESET_SUCCESS);
 
-    const cleanSession = resolveChannelSessionFile(conversationDir);
+    const cleanSession = tryResolveCurrentSession(office.sessionsDir);
     expect(cleanSession, "no active session after /new").not.toBeNull();
     expect(cleanSession).not.toBe(originalSession);
     expect(existsSync(originalSession!)).toBe(true);

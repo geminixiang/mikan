@@ -21,7 +21,6 @@ import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
-import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
@@ -92,7 +91,7 @@ async function createTestRunner(
       JSON.stringify({ mcpServers: options.mcpServers }),
     );
   }
-  const sessionDir = officeSessionsDir(conversationDir);
+  const sessionDir = office.sessionsDir;
   const contextFile = createManagedSessionFile(sessionDir, conversationDir);
 
   const runner = await createRunner({

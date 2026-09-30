@@ -193,7 +193,6 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
 └── <office-key>/                         one Conversation office
     ├── MEMORY.md
     ├── skills/
-    ├── sessions/
     ├── attachments/
     └── log.jsonl
 
@@ -203,7 +202,8 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
 ├── office-registry.json
 ├── vaults/
 └── conversations/<office-key>/
-    └── settings.json
+    ├── settings.json
+    └── sessions/                         agent history; host-only (ADR 0016)
 ```
 
 The exact paths are owned by the relevant modules, not by this diagram. Code must derive conversation paths from an `Office` value where one is available.

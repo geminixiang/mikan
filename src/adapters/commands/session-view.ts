@@ -22,7 +22,7 @@ export class SessionViewCommandHandler implements CommandHandler {
     }
 
     const sessionFile = resolveExistingSessionFile(
-      context.services.workspace.office(context.address).dir,
+      context.services.workspace.office(context.address),
       context.sessionKey,
     );
     if (!sessionFile) {

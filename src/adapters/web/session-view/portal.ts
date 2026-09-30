@@ -9,10 +9,11 @@ import { SessionStore } from "../../../sessions/session-store.js";
 import type { SessionEntry, SessionMessageEntry } from "../../../sessions/types.js";
 import {
   getThreadSessionFile,
-  resolveChannelSessionFile,
+  tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../../../sessions/store.js";
 import { isPlatformHistorySession } from "../../../sessions/store.js";
+import type { Office } from "../../../office/types.js";
 import type { SessionHeader } from "../../../sessions/types.js";
 import type {
   SessionViewItem,
@@ -1860,14 +1861,11 @@ function entryIsoTime(entry: SessionEntry | undefined): string | undefined {
   return new Date(entry.timestamp).toISOString();
 }
 
-export function resolveExistingSessionFile(
-  conversationDir: string,
-  sessionKey: string,
-): string | null {
+export function resolveExistingSessionFile(office: Office, sessionKey: string): string | null {
   if (isThreadSessionKey(sessionKey)) {
-    return tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey));
+    return tryResolveThreadSession(getThreadSessionFile(office.sessionsDir, sessionKey));
   }
-  return resolveChannelSessionFile(conversationDir);
+  return tryResolveCurrentSession(office.sessionsDir);
 }
 
 export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
@@ -1984,13 +1982,7 @@ async function buildSessionRelation(
   const header = sm.getHeader();
   if (
     kind === "thread" &&
-    !isChildThreadSession(
-      sessionFile,
-      header.parentSession,
-      expectedParent,
-      expectedParentId,
-      header.parentSessionId,
-    )
+    !isChildThreadSession(sessionFile, expectedParent, expectedParentId, header.parentSessionId)
   ) {
     return null;
   }
@@ -2023,15 +2015,9 @@ async function resolveParentRelation(
   sessionFile: string,
   header: SessionHeader,
 ): Promise<SessionViewRelation | undefined> {
-  if (header.parentSession) {
-    const parentPath = resolve(header.parentSession);
-    if (existsSync(parentPath)) {
-      return (await buildSessionRelation(parentPath, "parent")) ?? undefined;
-    }
-    if (header.parentSessionId) {
-      const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
-      if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
-    }
+  if (header.parentSessionId) {
+    const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
+    if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
   }
   return buildInferredThreadParentRelation(sessionFile);
 }
@@ -2055,7 +2041,7 @@ async function buildInferredThreadParentRelation(
 ): Promise<SessionViewRelation | undefined> {
   if (!getFixedThreadSessionId(sessionFile)) return undefined;
 
-  const parentSession = resolveChannelSessionFile(dirname(dirname(sessionFile)));
+  const parentSession = tryResolveCurrentSession(dirname(sessionFile));
   if (!parentSession || parentSession === sessionFile) return undefined;
 
   return (await buildSessionRelation(parentSession, "parent")) ?? undefined;
@@ -2063,29 +2049,24 @@ async function buildInferredThreadParentRelation(
 
 function isChildThreadSession(
   sessionFile: string,
-  parentSession: string | undefined,
   expectedParent: string | undefined,
   expectedParentId?: string,
   threadParentSessionId?: string,
 ): boolean {
   if (!expectedParent) return false;
 
-  if (parentSession) {
-    const resolvedParent = resolve(parentSession);
-    if (
-      resolvedParent === expectedParent ||
-      (isPlatformHistorySession(expectedParent) && isPlatformHistorySession(resolvedParent))
-    ) {
-      return true;
-    }
-    if (expectedParentId && threadParentSessionId) {
-      return threadParentSessionId === expectedParentId;
-    }
-    return false;
+  if (threadParentSessionId) {
+    if (threadParentSessionId === expectedParentId) return true;
+    const parent = findSessionFileById(dirname(sessionFile), threadParentSessionId);
+    return (
+      parent !== null &&
+      isPlatformHistorySession(expectedParent) &&
+      isPlatformHistorySession(parent)
+    );
   }
 
   if (!getFixedThreadSessionId(sessionFile)) return false;
-  return resolveChannelSessionFile(dirname(dirname(sessionFile))) === expectedParent;
+  return tryResolveCurrentSession(dirname(sessionFile)) === expectedParent;
 }
 
 function getFixedThreadSessionId(sessionFile: string): string | null {

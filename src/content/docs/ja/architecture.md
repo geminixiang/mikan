@@ -140,7 +140,7 @@ sequenceDiagram
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: MEMORY.md / sessions/*.jsonl を読む、必要なら log.jsonl を調べる
+  R->>W: MEMORY.md と session file を読む、必要なら log.jsonl を調べる
   R->>R: system prompt / skills / model / session context を作成
   R->>T: ツールを実行
   T->>X: read / bash / edit / write / event / attach
@@ -168,17 +168,18 @@ sequenceDiagram
     ├── log.jsonl              # grep 可能な人間可読メッセージ履歴
     ├── attachments/           # プラットフォーム添付ファイルのダウンロード
     ├── scratch/               # 実行中の作業領域
-    ├── skills/                # office レベルの skills
-    └── sessions/
-        ├── current            # top-level session pointer
-        ├── <timestamp>_<id>.jsonl
-        └── <scope_id>.jsonl   # thread / reply scoped sessions
+    └── skills/                # office レベルの skills
 
 <state-dir>/
 ├── settings.json              # 必須のグローバル設定
 ├── office-registry.json       # office 一覧
 ├── conversations/
-│   └── <officeKey>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/
+│       ├── settings.json      # host-only conversation overrides
+│       └── sessions/          # host-only agent history
+│           ├── current        # top-level session pointer
+│           ├── <timestamp>_<id>.jsonl
+│           └── <scope_id>.jsonl  # thread / reply scoped sessions
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -190,7 +191,7 @@ state directory の既定値は `~/.mikan` です。sandbox から見える work
 - office key は host 上でも sandbox runtime 内でも同じ directory を指すため、境界を越えても path の意味が変わりません
 - office key から生のプラットフォーム id へは逆変換できないため、`office-registry.json` が各 office の `(platform, conversationId)` を初回 materialize 時に記録します。生 id を扱う面 — Admin portal や `mikan office claim` — はこれを介して解決します
 - `log.jsonl` はプラットフォーム会話ログです。Slack/Discord/Telegram で実際に何が起きたかを記録します
-- `sessions/*.jsonl` は LLM の作業コンテキスト/作業記録です。mikan が LLM に何を渡し、LLM/tool が何をしたかを記録します
+- `sessions/*.jsonl` は host 専用で、LLM の作業コンテキスト/作業記録です。mikan が LLM に何を渡し、LLM/tool が何をしたかを記録します
 - top-level session は `current` ポインターを使いますが、`current` は channel history ではありません。欠落時は `log.jsonl` から最近の top-level 作業コンテキストを再構築できます
 - thread / reply session は固定ファイル名を使い、scoped session を個別に追跡できるようにします
 - session key は生のプラットフォーム値のままです。runtime state は office と session key の組で指し示されるため、ある session key が別の office の runner や queue を選ぶことはありません

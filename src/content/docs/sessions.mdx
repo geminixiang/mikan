@@ -10,8 +10,8 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
     `log.jsonl` keeps human-readable platform messages used to bootstrap thread or reply context.
   </Card>
   <Card title="Harness structured context" icon="rocket">
-    `sessions/*.jsonl` stores tool results and agent turns so the mikan agent harness can continue
-    work.
+    Host-only session files store tool results and agent turns so the mikan agent harness can
+    continue work.
   </Card>
   <Card title="Fixed scope" icon="lock">
     Threads, reply chains, and shared channels map to fixed session files so different conversations
@@ -32,11 +32,11 @@ A session key is `conversationId` on its own, or `conversationId:suffix` for a s
 
 ## Session keys and offices
 
-Session keys stay raw platform values — the grammar in `src/sessions/session-key.ts` never sees an office key. Runtime state is addressed by the conversation's office plus its session key, so two platforms that share a raw conversation id can never select each other's runners, queues, or stop state. Storage paths follow the office: session files live under `<workspace>/<officeKey>/sessions/`.
+Session keys stay raw platform values — the grammar in `src/sessions/session-key.ts` never sees an office key. Runtime state is addressed by the conversation's office plus its session key, so two platforms that share a raw conversation id can never select each other's runners, queues, or stop state. Storage paths follow the office: session files live under `<state-dir>/conversations/<officeKey>/sessions/`, which no sandbox sees.
 
 ## Session identity safety
 
-A session key always belongs to exactly one conversation. Platform adapters may supply a scoped key, but conversation intake and the runtime reject a key whose conversation prefix differs from the incoming conversation. Conversation identities and scoped suffixes also reject path separators, control characters, and the special `.` / `..` segments before they can influence session storage. Thread session files keep their existing names and persistence behavior; the sessions module additionally rejects symlink session targets and proves derived paths remain inside the office's `sessions/` directory.
+A session key always belongs to exactly one conversation. Platform adapters may supply a scoped key, but conversation intake and the runtime reject a key whose conversation prefix differs from the incoming conversation. Conversation identities and scoped suffixes also reject path separators, control characters, and the special `.` / `..` segments before they can influence session storage. Thread session files keep their existing names and persistence behavior; the sessions module additionally rejects symlink session targets and proves derived paths remain inside the office's sessions directory. Paths recorded in session headers are never opened; a parent is found by its session id.
 
 ## Files
 
@@ -45,6 +45,8 @@ A session key always belongs to exactly one conversation. Platform adapters may 
 - workspace/
   - v1-slack-c0aaaaaa1-…/ one office
     - **log.jsonl** platform message history
+- state-dir/conversations/
+  - v1-slack-c0aaaaaa1-…/ host-only office state
     - sessions/
       - **current** points to the active top-level session
       - **\*.jsonl** structured harness session context, including tool results

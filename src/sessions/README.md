@@ -2,7 +2,9 @@
 
 This directory manages synchronization between chat history and harness session files, plus session policy, lineage, and metadata.
 
-Session files live in the office's `sessions/` directory, and per-key runtime
+Session files live in `Office.sessionsDir`, under the office's State dir, which
+no sandbox sees (ADR 0016); paths stored in their headers are never opened.
+Per-key runtime
 state is office-keyed — but the **session key itself stays a raw platform
 value** (`conversationId[":"suffix]`). Office keys name directories; session
 keys name conversations as the platform reports them.

@@ -8,7 +8,6 @@ import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
 import type { SessionViewInteractiveOptions } from "../adapters/web/session-view/types.js";
 import { closeWebServer, startWebServer } from "../adapters/web/server.js";
-import { officeSessionsDir } from "../office/index.js";
 import { createManagedSessionFile } from "../sessions/store.js";
 import { FileVaultManager } from "../vault/index.js";
 
@@ -49,7 +48,7 @@ function idleInteractiveOptions(): SessionViewInteractiveOptions {
 test("closing the web server ends an open session stream instead of waiting for the viewer to leave", async () => {
   const conversationDir = join(root, "D123");
   mkdirSync(conversationDir, { recursive: true });
-  const sessionFile = createManagedSessionFile(officeSessionsDir(conversationDir), conversationDir);
+  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"), conversationDir);
   const sessionViewTokenStore = new InMemorySessionViewTokenStore();
   const { token } = sessionViewTokenStore.create({
     platform: "slack",

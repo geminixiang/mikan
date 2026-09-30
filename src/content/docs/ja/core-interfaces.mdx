@@ -252,10 +252,10 @@ const office = workspace.office(createOfficeAddress("slack", "C0AAAAAA1"));
 
 ### 2 つの記録
 
-| 記録                        | 目的                                                             |
-| --------------------------- | ---------------------------------------------------------------- |
-| `<office>/log.jsonl`        | Platform の真実: user/bot の messages と attachments             |
-| `<office>/sessions/*.jsonl` | Agent の真実: prompts、model/tool messages、branches、compaction |
+| 記録                                                  | 目的                                                             |
+| ----------------------------------------------------- | ---------------------------------------------------------------- |
+| `<office>/log.jsonl`                                  | Platform の真実: user/bot の messages と attachments             |
+| `<state-dir>/conversations/<office>/sessions/*.jsonl` | Agent の真実: prompts、model/tool messages、branches、compaction |
 
 これらを統合しないでください。Chat history は欠けている top-level agent session を再構築できますが、agent sessions には platform に現れなかったデータが含まれます。
 
@@ -288,19 +288,19 @@ type EventFilePayload =
 
 ## 11. 永続化されたファイルシステムのインターフェース
 
-| パス                                                  | 所有者                | 可視性 / 互換性                                |
-| ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | Host-only のグローバル設定                     |
-| `<state-dir>/office-registry.json`                    | office registry       | Host-only の office 一覧                       |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only の conversation override             |
-| `<state-dir>/models.json`                             | harness model catalog | Host-only のカスタム providers/models          |
-| `<state-dir>/vaults/**`                               | vault/login           | Host-only の secrets と mount files            |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox から見える永続 memory                  |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox から見える prompt instructions         |
-| `<workspace>/events/*.json`                           | event store/watcher   | 共有 scheduling の wire format                 |
-| `<workspace>/agents/*.md`                             | subagent profiles     | 組み込みに対するインストールごとの model patch |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only な platform history                |
-| `<workspace>/<officeKey>/sessions/*.jsonl`            | session store         | Versioned append-only な agent history         |
+| パス                                                     | 所有者                | 可視性 / 互換性                                |
+| -------------------------------------------------------- | --------------------- | ---------------------------------------------- |
+| `<state-dir>/settings.json`                              | config                | Host-only のグローバル設定                     |
+| `<state-dir>/office-registry.json`                       | office registry       | Host-only の office 一覧                       |
+| `<state-dir>/conversations/<officeKey>/settings.json`    | config/admin          | Host-only の conversation override             |
+| `<state-dir>/models.json`                                | harness model catalog | Host-only のカスタム providers/models          |
+| `<state-dir>/vaults/**`                                  | vault/login           | Host-only の secrets と mount files            |
+| `<workspace>/MEMORY.md`                                  | agent/user            | Sandbox から見える永続 memory                  |
+| `<workspace>/skills/**/SKILL.md`                         | skills                | Sandbox から見える prompt instructions         |
+| `<workspace>/events/*.json`                              | event store/watcher   | 共有 scheduling の wire format                 |
+| `<workspace>/agents/*.md`                                | subagent profiles     | 組み込みに対するインストールごとの model patch |
+| `<workspace>/<officeKey>/log.jsonl`                      | platform adapters     | Append-only な platform history                |
+| `<state-dir>/conversations/<officeKey>/sessions/*.jsonl` | session store         | host 専用の versioned agent history            |
 
 `MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`<state-dir>/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
 

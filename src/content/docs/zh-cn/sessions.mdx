@@ -10,7 +10,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
     `log.jsonl` 保存便于阅读的平台消息，用于初始化话题或回复上下文。
   </Card>
   <Card title="框架结构化上下文" icon="rocket">
-    `sessions/*.jsonl` 保存工具结果和代理轮次，使 mikan 代理框架可以继续工作。
+    仅存于主机的会话文件保存工具结果和代理轮次，使 mikan 代理框架可以继续工作。
   </Card>
   <Card title="固定范围" icon="lock">
     话题、回复链和共享频道映射到固定会话文件，避免不同对话相互污染。
@@ -30,11 +30,11 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 会话密钥与办公室
 
-会话密钥保持为原始平台值——`src/sessions/session-key.ts` 中的语法从不接触 office key。运行时状态按该对话的办公室加其会话密钥寻址，因此两个共用同一原始对话 id 的平台永远无法选中彼此的 runner、队列或 stop 状态。存储路径则跟随办公室：会话文件位于 `<workspace>/<officeKey>/sessions/` 下。
+会话密钥保持为原始平台值——`src/sessions/session-key.ts` 中的语法从不接触 office key。运行时状态按该对话的办公室加其会话密钥寻址，因此两个共用同一原始对话 id 的平台永远无法选中彼此的 runner、队列或 stop 状态。存储路径则跟随办公室：会话文件位于沙箱看不到的 `<state-dir>/conversations/<officeKey>/sessions/` 下。
 
 ## 会话身份安全
 
-一个会话密钥始终只属于一个对话。平台适配器可以提供带范围的密钥，但对话接收层和运行时会拒绝其对话前缀与传入对话不符的密钥。对话身份和范围后缀也会在影响会话存储之前拒绝路径分隔符、控制字符以及特殊的 `.` / `..` 段。话题会话文件保留其现有名称和持久化行为；会话模块另外会拒绝符号链接会话目标，并确保派生路径始终位于该办公室的 `sessions/` 目录内。
+一个会话密钥始终只属于一个对话。平台适配器可以提供带范围的密钥，但对话接收层和运行时会拒绝其对话前缀与传入对话不符的密钥。对话身份和范围后缀也会在影响会话存储之前拒绝路径分隔符、控制字符以及特殊的 `.` / `..` 段。话题会话文件保留其现有名称和持久化行为；会话模块另外会拒绝符号链接会话目标，并确保派生路径始终位于该办公室的 sessions 目录内。会话头中记录的路径从不被打开；父会话一律按会话 id 查找。
 
 ## 文件
 
@@ -43,6 +43,8 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 - workspace/
   - v1-slack-c0aaaaaa1-…/ 一间办公室
     - **log.jsonl** 平台消息历史记录
+- state-dir/conversations/
+  - v1-slack-c0aaaaaa1-…/ 仅限主机的办公室状态
     - sessions/
       - **current** 指向活动的顶层会话
       - **\*.jsonl** 结构化框架会话上下文，包括工具结果

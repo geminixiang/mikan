@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "vitest";
@@ -11,9 +11,14 @@ import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
 test("the run after a busy tool receives and answers the queued token, not the previous prompt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mikan-slack-busy-regression-"));
+  const office = createWorkspace({ root: dir, stateDir: join(dir, "state") }).office(
+    createOfficeAddress("slack", "C1"),
+  );
+  mkdirSync(office.dir, { recursive: true });
   const store = await SessionStore.create(join(dir, "session.jsonl"), dir);
   try {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
@@ -64,19 +69,16 @@ test("the run after a busy tool receives and answers the queued token, not the p
         isMessagingBot: false,
       },
     ];
-    writeFileSync(
-      join(dir, "log.jsonl"),
-      entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n",
-    );
+    writeFileSync(office.logPath, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
     await sync.syncSessionManager({
-      conversationDir: dir,
+      office,
       sessionKey: "C1",
       sessionManager: store,
       currentMessageId: "1000.1",
     });
     await session.prompt(`Use busy, then reply ${busy}`);
     await sync.syncSessionManager({
-      conversationDir: dir,
+      office,
       sessionKey: "C1",
       sessionManager: store,
       currentMessageId: "1000.2",

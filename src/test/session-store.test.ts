@@ -1,7 +1,9 @@
-import { officeSessionsDir } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import {
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -20,7 +22,6 @@ import {
   createNewSessionFile,
   getThreadSessionFile,
   openManagedSession,
-  resolveChannelSessionFile,
   resolveManagedSessionFile,
   resolveSessionFile,
   tryResolveCurrentSession,
@@ -28,20 +29,23 @@ import {
 } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 
+let root: string;
+let office: Office;
 let channelDir: string;
 let nextTimestamp = 1;
 
 beforeEach(() => {
   nextTimestamp = 1;
-  channelDir = join(
-    tmpdir(),
-    `session-store-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  root = mkdtempSync(join(tmpdir(), "session-store-test-"));
+  office = createWorkspace({ root: join(root, "workspace"), stateDir: join(root, "state") }).office(
+    createOfficeAddress("slack", "C123"),
   );
+  channelDir = office.dir;
   mkdirSync(channelDir, { recursive: true });
 });
 
 afterEach(() => {
-  rmSync(channelDir, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
 });
 
 function makeUserMessage(text: string): UserMessage {
@@ -129,41 +133,31 @@ function appendLogMessage(options: {
   );
 }
 
-describe("officeSessionsDir", () => {
-  test("channel session key uses shared sessions directory", () => {
-    expect(officeSessionsDir(channelDir)).toBe(join(channelDir, "sessions"));
-  });
-
-  test("thread session key also uses shared sessions directory", () => {
-    expect(officeSessionsDir(channelDir)).toBe(join(channelDir, "sessions"));
-  });
-});
-
 describe("getThreadSessionFile", () => {
   test("maps thread session key to a fixed jsonl file", () => {
-    expect(getThreadSessionFile(channelDir, "C123:1000.0001")).toBe(
-      join(channelDir, "sessions", "1000.0001.jsonl"),
+    expect(getThreadSessionFile(office.sessionsDir, "C123:1000.0001")).toBe(
+      join(office.sessionsDir, "1000.0001.jsonl"),
     );
   });
 
   test.each(["C123:../other", "C123:foo/bar", String.raw`C123:foo\bar`, "C123:bad\u0000id"])(
     "rejects path-dangerous thread session key %j",
     (sessionKey) => {
-      expect(() => getThreadSessionFile(channelDir, sessionKey)).toThrow();
+      expect(() => getThreadSessionFile(office.sessionsDir, sessionKey)).toThrow();
     },
   );
 });
 
 describe("resolveSessionFile", () => {
   test("creates new placeholder session file when none exists", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const file = resolveSessionFile(sessionDir);
     expect(existsSync(file)).toBe(true);
-    expect(file).toContain(join(channelDir, "sessions"));
+    expect(file).toContain(office.sessionsDir);
   });
 
   test("ignores a current pointer that escapes the session directory", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     mkdirSync(sessionDir, { recursive: true });
     const outside = join(channelDir, "outside.jsonl");
     createManagedSessionFileAtPath(outside, channelDir);
@@ -173,7 +167,7 @@ describe("resolveSessionFile", () => {
   });
 
   test("ignores a current pointer whose target is a symlink", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     mkdirSync(sessionDir, { recursive: true });
     const outside = join(channelDir, "outside.jsonl");
     createManagedSessionFileAtPath(outside, channelDir);
@@ -184,7 +178,7 @@ describe("resolveSessionFile", () => {
   });
 
   test("returns existing current session file on second call", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const file1 = resolveSessionFile(sessionDir);
     SessionStore.writeHeaderFile(file1, channelDir);
     const file2 = resolveSessionFile(sessionDir);
@@ -194,53 +188,53 @@ describe("resolveSessionFile", () => {
 
 describe("tryResolveThreadSession", () => {
   test("returns null when no thread session file exists", () => {
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     expect(tryResolveThreadSession(threadFile)).toBeNull();
   });
 
   test("ignores empty placeholder files without a valid header", () => {
-    const sessionDir = officeSessionsDir(channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const sessionDir = office.sessionsDir;
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(threadFile, "", "utf-8");
     expect(tryResolveThreadSession(threadFile)).toBeNull();
   });
 
   test("rejects a thread file symlink that targets another directory", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     mkdirSync(sessionDir, { recursive: true });
     const outside = join(channelDir, "outside-thread.jsonl");
     createManagedSessionFileAtPath(outside, channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     symlinkSync(outside, threadFile);
 
     expect(tryResolveThreadSession(threadFile)).toBeNull();
   });
 
   test("returns fixed thread file path when a valid session exists", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const sessionDir = office.sessionsDir;
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     const created = await seedManagedSession(threadFile, sessionDir, channelDir, "thread msg");
     expect(tryResolveThreadSession(threadFile)).toBe(created);
     expect(readFileSync(created, "utf-8")).toContain("thread msg");
   });
 });
 
-describe("resolveChannelSessionFile", () => {
+describe("tryResolveCurrentSession", () => {
   test("returns null when no channel session exists", () => {
-    expect(resolveChannelSessionFile(channelDir)).toBeNull();
+    expect(tryResolveCurrentSession(office.sessionsDir)).toBeNull();
   });
 
   test("returns current channel session file when it exists", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const created = createManagedSessionFile(sessionDir, channelDir);
-    expect(resolveChannelSessionFile(channelDir)).toBe(created);
+    expect(tryResolveCurrentSession(office.sessionsDir)).toBe(created);
   });
 });
 
 describe("managed session initialization", () => {
   test("channel session filename uses a short UUID suffix", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const sessionFile = createManagedSessionFile(sessionDir, channelDir);
     const filename = sessionFile.split("/").pop()!;
     const suffix = filename.replace(".jsonl", "").split("_").pop()!;
@@ -249,7 +243,7 @@ describe("managed session initialization", () => {
   });
 
   test("creates a channel session with the provided cwd", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const sessionFile = resolveManagedSessionFile(sessionDir, channelDir);
     const sessionManager = await openManagedSession(sessionFile, channelDir);
 
@@ -267,7 +261,7 @@ describe("managed session initialization", () => {
   });
 
   test("opens a missing managed session file with the provided cwd", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const sessionFile = join(sessionDir, "missing.jsonl");
     const sessionManager = await openManagedSession(sessionFile, channelDir);
 
@@ -282,7 +276,7 @@ describe("managed session initialization", () => {
   });
 
   test("top-level agent runs replace platform-history current with a live session", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     mkdirSync(sessionDir, { recursive: true });
     const historyFile = join(sessionDir, "history.jsonl");
     writeFileSync(
@@ -315,7 +309,7 @@ describe("managed session initialization", () => {
   });
 
   test("creates a fixed-path thread session with the provided cwd", async () => {
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const sessionManager = await openManagedSession(threadFile, channelDir);
 
@@ -335,14 +329,14 @@ describe("managed session initialization", () => {
 
 describe("fixed thread sessions", () => {
   test("thread session has a different session ID than channel session", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = await openManagedSession(channelFile, channelDir);
     await channelSM.appendMessage(makeUserMessage("hello channel"));
     await channelSM.appendMessage(makeAssistantMessage("hi there"));
     const channelSessionId = channelSM.getSessionId();
 
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = await openManagedSession(threadFile, channelDir);
     await threadSM.appendMessage(makeUserMessage("hello thread"));
@@ -353,7 +347,7 @@ describe("fixed thread sessions", () => {
   });
 
   test("second thread access reuses the same fixed thread file", async () => {
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = await openManagedSession(threadFile, channelDir);
     const threadSessionId = threadSM.getSessionId();
@@ -371,12 +365,12 @@ describe("fixed thread sessions", () => {
   });
 
   test("different threads get independent session IDs", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const channelFile = resolveManagedSessionFile(sessionDir, channelDir);
     const channelSM = await openManagedSession(channelFile, channelDir);
 
-    const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
-    const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
+    const thread1File = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
+    const thread2File = getThreadSessionFile(office.sessionsDir, "C123:1000.0002");
     createManagedSessionFileAtPath(thread1File, channelDir);
     createManagedSessionFileAtPath(thread2File, channelDir);
 
@@ -392,7 +386,7 @@ describe("fixed thread sessions", () => {
   });
 
   test("fresh thread file can be created without a channel source", async () => {
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile, channelDir);
     const threadSM = await openManagedSession(threadFile, channelDir);
     const entries = (await threadSM.getEntries()).filter((e) => e.type === "message");
@@ -402,7 +396,7 @@ describe("fixed thread sessions", () => {
 
 describe("long-lived session scopes", () => {
   test("scope resolution reuses an old top-level session", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const currentFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(currentFile, "2026-01-05T12:00:00.000Z");
 
@@ -411,7 +405,7 @@ describe("long-lived session scopes", () => {
       now: () => new Date("2026-03-01T12:00:00.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123",
       cwd: channelDir,
     });
@@ -421,8 +415,8 @@ describe("long-lived session scopes", () => {
   });
 
   test("scope resolution reuses stale thread sessions", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const sessionDir = office.sessionsDir;
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread context");
     rewriteSessionTimestamp(threadFile, "2026-01-05T12:00:00.000Z");
 
@@ -431,7 +425,7 @@ describe("long-lived session scopes", () => {
       now: () => new Date("2026-03-01T12:00:00.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123:1000.0001",
       cwd: channelDir,
     });
@@ -463,12 +457,12 @@ describe("long-lived session scopes", () => {
     });
 
     const created = await manager.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123:1771545600.000000",
       cwd: channelDir,
     });
     const reused = await manager.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123:1771545600.000000",
       cwd: channelDir,
     });
@@ -481,7 +475,7 @@ describe("long-lived session scopes", () => {
   });
 
   test("keeps old log messages out after a reset", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const oldFile = createManagedSessionFile(sessionDir, channelDir);
     rewriteSessionTimestamp(oldFile, "2026-01-05T12:00:00.000Z");
     appendLogMessage({
@@ -495,12 +489,12 @@ describe("long-lived session scopes", () => {
       now: () => new Date("2026-03-01T12:00:00.000Z"),
     });
     const resetFile = await manager.resetSession({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123",
       cwd: channelDir,
     });
     const reused = await manager.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123",
       cwd: channelDir,
     });
@@ -517,13 +511,13 @@ describe("long-lived session scopes", () => {
 
 describe("session-scoped /new reset", () => {
   test("channel /new rotates channel current pointer and keeps thread session intact", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
     const originalChannel = await openManagedSession(channelFile, channelDir);
     await originalChannel.appendMessage(makeUserMessage("channel"));
     await originalChannel.appendMessage(makeAssistantMessage("channel reply"));
 
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread");
 
     const newChannelFile = createManagedSessionFile(sessionDir, channelDir);
@@ -535,44 +529,44 @@ describe("session-scoped /new reset", () => {
   });
 
   test("thread /new recovers a corrupt fixed-path session while preserving the raw file", async () => {
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
-    mkdirSync(officeSessionsDir(channelDir), { recursive: true });
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
+    mkdirSync(office.sessionsDir, { recursive: true });
     writeFileSync(threadFile, "not a session\n");
 
     const sync = new ChatHistorySync({ isCommandText });
     await sync.resetSession({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123:1000.0001",
       cwd: channelDir,
     });
 
     expect(SessionStore.readHeader(threadFile)?.id).toBeDefined();
-    const corruptArchive = readdirSync(officeSessionsDir(channelDir)).find((name) =>
+    const corruptArchive = readdirSync(office.sessionsDir).find((name) =>
       name.endsWith(".jsonl.corrupt"),
     );
     expect(corruptArchive).toBeDefined();
-    expect(readFileSync(join(officeSessionsDir(channelDir), corruptArchive!), "utf-8")).toBe(
+    expect(readFileSync(join(office.sessionsDir, corruptArchive!), "utf-8")).toBe(
       "not a session\n",
     );
   });
 
   test("thread /new archives old evidence and keeps channel plus sibling thread intact", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const channelFile = createManagedSessionFile(sessionDir, channelDir);
     const channelSM = await openManagedSession(channelFile, channelDir);
     await channelSM.appendMessage(makeUserMessage("channel"));
     await channelSM.appendMessage(makeAssistantMessage("channel reply"));
     const channelId = SessionStore.readHeader(channelFile)!.id;
 
-    const thread1File = getThreadSessionFile(channelDir, "C123:1000.0001");
-    const thread2File = getThreadSessionFile(channelDir, "C123:1000.0002");
+    const thread1File = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
+    const thread2File = getThreadSessionFile(office.sessionsDir, "C123:1000.0002");
     await seedManagedSession(thread1File, sessionDir, channelDir, "thread1");
     await seedManagedSession(thread2File, sessionDir, channelDir, "thread2");
     const oldThreadId = SessionStore.readHeader(thread1File)!.id;
 
     const sync = new ChatHistorySync({ isCommandText });
     await sync.resetSession({
-      conversationDir: channelDir,
+      office,
       sessionKey: "C123:1000.0001",
       cwd: channelDir,
     });
@@ -590,7 +584,7 @@ describe("session-scoped /new reset", () => {
 
     const laterThreadKey = `C123:${(Date.now() / 1000 + 60).toFixed(4)}`;
     const later = await sync.resolveSessionScope({
-      conversationDir: channelDir,
+      office,
       sessionKey: laterThreadKey,
       cwd: channelDir,
     });
@@ -600,8 +594,8 @@ describe("session-scoped /new reset", () => {
 
 describe("persistence across restart", () => {
   test("thread session survives simulated restart via fixed file path", async () => {
-    const sessionDir = officeSessionsDir(channelDir);
-    const threadFile = getThreadSessionFile(channelDir, "C123:1000.0001");
+    const sessionDir = office.sessionsDir;
+    const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread specific");
 
     expect(tryResolveThreadSession(threadFile)).toBe(threadFile);
@@ -611,7 +605,7 @@ describe("persistence across restart", () => {
 
 describe("placeholder sessions", () => {
   test("createNewSessionFile still updates current pointer for channel placeholder files", () => {
-    const sessionDir = officeSessionsDir(channelDir);
+    const sessionDir = office.sessionsDir;
     const placeholder = createNewSessionFile(sessionDir);
     expect(tryResolveCurrentSession(sessionDir)).toBeNull();
     expect(existsSync(placeholder)).toBe(true);

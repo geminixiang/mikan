@@ -1,3 +1,4 @@
+import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
 import type { AgentMessage, Entry, MessageEntry } from "@earendil-works/pi-agent-core";
 import type { ConversationLogMessage } from "../types.js";
@@ -100,33 +101,33 @@ export interface ChatHistorySyncOptions {
 }
 
 export interface ResolveChatSessionScopeOptions {
-  conversationDir: string;
+  office: Office;
   sessionKey: string;
   cwd?: string;
   currentMessageId?: string;
 }
 
 export interface SyncChatSessionOptions {
-  conversationDir: string;
+  office: Office;
   sessionKey: string;
   sessionManager: SessionStore;
   currentMessageId?: string;
 }
 
 export interface ResetChatSessionOptions {
-  conversationDir: string;
+  office: Office;
   sessionKey: string;
   cwd?: string;
 }
 
 export interface RegisterThreadSessionOptions {
-  conversationDir: string;
+  office: Office;
   sessionKey: string;
   cwd?: string;
 }
 
 export interface HasMaterializedSessionOptions {
-  conversationDir: string;
+  office: Office;
   sessionKey: string;
 }
 

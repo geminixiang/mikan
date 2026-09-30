@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
-import { createOfficeAddress, createWorkspace, officeSessionsDir } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
 import type {
   MessagingBot,
@@ -20,7 +21,7 @@ import {
   createManagedSessionFile,
   getThreadSessionFile,
   openManagedSession,
-  resolveChannelSessionFile,
+  tryResolveCurrentSession,
 } from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
@@ -35,6 +36,7 @@ import { isCommandText } from "../adapters/commands/manifest.js";
 const testAddress = createOfficeAddress("slack", "C123");
 
 let workingDir: string;
+let office: Office;
 let conversationDir: string;
 
 beforeEach(() => {
@@ -47,7 +49,8 @@ beforeEach(() => {
   mkdirSync(stateDir, { recursive: true });
   process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
-  conversationDir = createWorkspace({ root: workingDir, stateDir }).office(testAddress).ensure();
+  office = createWorkspace({ root: workingDir, stateDir }).office(testAddress);
+  conversationDir = office.ensure();
 });
 
 afterEach(() => {
@@ -393,7 +396,7 @@ describe("ConversationRuntime handleEvent", () => {
 
     const first = makeEventAndContext("2");
     await runtime.handleEvent(first.event, bot, first.context);
-    const sessionFile = resolveChannelSessionFile(conversationDir)!;
+    const sessionFile = tryResolveCurrentSession(office.sessionsDir)!;
 
     writeFileSync(
       logPath,
@@ -475,10 +478,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new dispatched inside the session queue does not deadlock", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(
-      officeSessionsDir(conversationDir),
-      conversationDir,
-    );
+    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
     const { event, context } = makeEventAndContext("1000.25");
     event.conversationKind = "direct";
     event.text = "/new";
@@ -493,11 +493,11 @@ describe("ConversationRuntime lifecycle", () => {
         "Conversation reset. Send a new message to start fresh.",
       );
     });
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
   });
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
-    const sessionDir = officeSessionsDir(conversationDir);
+    const sessionDir = office.sessionsDir;
     const originalSession = createManagedSessionFile(sessionDir, conversationDir);
     let settle!: () => void;
     const runGate = new Promise<void>((resolve) => (settle = resolve));
@@ -514,7 +514,7 @@ describe("ConversationRuntime lifecycle", () => {
     const reset = runtime.handleNewCommand(newCommandOptions());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
 
-    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+    expect(tryResolveCurrentSession(office.sessionsDir)).toBe(originalSession);
     expect(runner.dispose).not.toHaveBeenCalled();
     expect(bot.postMessage).not.toHaveBeenCalledWith(
       "C123",
@@ -526,7 +526,7 @@ describe("ConversationRuntime lifecycle", () => {
     await reset;
 
     await vi.waitFor(() => {
-      expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+      expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
     });
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(bot.postMessage).toHaveBeenCalledWith(
@@ -594,13 +594,13 @@ describe("ConversationRuntime lifecycle", () => {
     const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
     const materialize = makeEventAndContext("2");
     await runtime.handleEvent(materialize.event, bot, materialize.context);
-    const originalSession = resolveChannelSessionFile(conversationDir)!;
+    const originalSession = tryResolveCurrentSession(office.sessionsDir)!;
     const memoryPath = join(conversationDir, "MEMORY.md");
     writeFileSync(memoryPath, "stable anchor\n");
 
     await runtime.handleNewCommand(newCommandOptions());
 
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
     expect(readFileSync(memoryPath, "utf-8")).toBe("stable anchor\n");
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(bot.postMessage).toHaveBeenCalledWith(
@@ -614,17 +614,14 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(newCommandOptions());
 
-    expect(resolveChannelSessionFile(conversationDir)).not.toBeNull();
+    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBeNull();
     expect(runtime.getRunningSessions()).toEqual([]);
   });
 
   test("an old shared top-level session keeps serving new messages", async () => {
     const runner = fakeRunner();
     const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
-    const originalSession = createManagedSessionFile(
-      officeSessionsDir(conversationDir),
-      conversationDir,
-    );
+    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
 
     const { event, context } = makeEventAndContext("3");
@@ -632,7 +629,7 @@ describe("ConversationRuntime lifecycle", () => {
 
     expect(runner.run).toHaveBeenCalledOnce();
     expect(runner.dispose).not.toHaveBeenCalled();
-    expect(resolveChannelSessionFile(conversationDir)).toBe(originalSession);
+    expect(tryResolveCurrentSession(office.sessionsDir)).toBe(originalSession);
   });
 
   test("hands each settled run and its final reply to memory capture", async () => {
@@ -676,13 +673,13 @@ describe("ConversationRuntime lifecycle", () => {
       ].join("\n") + "\n",
     );
     const sync = new ChatHistorySync({ isCommandText });
-    await sync.resetSession({ conversationDir, sessionKey: "C123" });
+    await sync.resetSession({ office, sessionKey: "C123" });
 
     const syncOnce = async (file: string) => {
       const session = await openManagedSession(file, conversationDir);
       try {
         await sync.syncSessionManager({
-          conversationDir,
+          office,
           sessionKey: "C123",
           sessionManager: session,
         });
@@ -691,7 +688,7 @@ describe("ConversationRuntime lifecycle", () => {
       }
     };
 
-    const freshFile = resolveChannelSessionFile(conversationDir);
+    const freshFile = tryResolveCurrentSession(office.sessionsDir);
     if (freshFile === null) throw new Error("resetSession did not create a channel session file");
     await syncOnce(freshFile);
     expect(readFileSync(freshFile, "utf-8")).not.toContain('"text":"old"');
@@ -708,10 +705,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new resets an idle session immediately", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(
-      officeSessionsDir(conversationDir),
-      conversationDir,
-    );
+    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
 
     await runtime.handleNewCommand(newCommandOptions());
 
@@ -721,13 +715,13 @@ describe("ConversationRuntime lifecycle", () => {
         "Conversation reset. Send a new message to start fresh.",
       );
     });
-    expect(resolveChannelSessionFile(conversationDir)).not.toBe(originalSession);
+    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
   });
 });
 
 describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
-    const sessionDir = officeSessionsDir(conversationDir);
+    const sessionDir = office.sessionsDir;
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
     const channelSession = await openManagedSession(channelFile, conversationDir);
     await channelSession.appendMessage({
@@ -737,18 +731,20 @@ describe("ChatHistorySync session scope", () => {
     });
     await channelSession.close();
     registerThreadSession({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
     });
 
     const sessionScope = await new ChatHistorySync({ isCommandText }).resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
     });
 
-    expect(sessionScope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
+    expect(sessionScope.contextFile).toBe(
+      getThreadSessionFile(office.sessionsDir, "C123:2000.0001"),
+    );
     expect(sessionScope.threadRootMessage).toBeNull();
     expect(readFileSync(sessionScope.contextFile, "utf-8")).not.toContain(
       "channel history should not leak",

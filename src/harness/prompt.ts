@@ -245,7 +245,7 @@ function mappingTable(rows: string[], empty: string): string {
 
 function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
   const { platform, sandboxConfig } = input;
-  const { workspaceRoot, conversationPath, scratchPath } = paths;
+  const { workspaceRoot, scratchPath } = paths;
   const channelMappings = mappingTable(
     platform.channels.map((c) => `${c.id}\t#${c.name}`),
     "(no channels loaded)",
@@ -260,7 +260,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
       ? `
 ## Slack Tasks
 - In top-level Slack DMs, use start_task for multi-step investigations, changes/tests, or long waits so the user can keep chatting. Write a short, casual acknowledgement like a helpful colleague (e.g. 好，我來整理一下，弄好再通知你), not a formal restatement of the task. Do not invent an ETA. Separately provide a self-contained task with constraints and attachment paths. Call it alone before executing the work.
-- For questions about task progress, always call task_status before answering. Its observations are the only authority for current task status. Never infer progress, completion, or an ETA from elapsed time or your earlier promises. acknowledgement is only the original task description, NOT live progress. Only currentTool describes a current operation; if absent, say it is still running without inventing a phase. Never translate subagent into a more specific activity than the observation supports. If multiple tasks match, ask which one. If status is unknown, say so. For status-only questions, report the task_status observation directly; do not read session files, run shell probes, or repeat the investigation just to reconfirm it. Only inspect the result content when the user asks for that content.
+- For questions about task progress, always call task_status before answering. Its observations are the only authority for current task status. Never infer progress, completion, or an ETA from elapsed time or your earlier promises. acknowledgement is only the original task description, NOT live progress. Only currentTool describes a current operation; if absent, say it is still running without inventing a phase. Never translate subagent into a more specific activity than the observation supports. If multiple tasks match, ask which one. If status is unknown, say so. For status-only questions, report the task_status observation directly; do not search history, run shell probes, or repeat the investigation just to reconfirm it. Only inspect the result content when the user asks for that content.
 - In a thread, continue the task directly; do not hand it off again. Other platforms and shared channels do not support start_task yet.
 
 ## Slack Rendering
@@ -276,10 +276,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
 - Each user message starts with its send time in \`[YYYY-MM-DD HH:MM:SS+ZZ:ZZ]\`; treat it as the current date and time instead of running \`date\`.
 - You have access to previous conversation context including tool results from prior turns.
 - For older human-readable history beyond your context, search \`log.jsonl\` (contains user messages and your final responses, but not tool results).
-- Structured session history with tool results lives in \`${conversationPath}/sessions/\`.
-- The active top-level session is selected by \`${conversationPath}/sessions/current\`, which points to a timestamped \`.jsonl\` file in the same directory.
-- Scoped/thread sessions use fixed files at \`${conversationPath}/sessions/<scope_id>.jsonl\` (for example \`${conversationPath}/sessions/1777386320.800769.jsonl\`).
-- If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search the thread session, top-level session, and \`log.jsonl\` before responding.
+- If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search \`log.jsonl\` before responding.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
 ${platform.formattingGuide}${slackBlockKitInstructions}
 
@@ -319,10 +316,6 @@ ${workspaceRoot}/
 └── ${office.key}/           # This conversation
     ├── MEMORY.md                # Conversation-specific memory
     ├── log.jsonl                # Human-readable message history (no tool results)
-    ├── sessions/                # Structured session history used for context reconstruction
-    │   ├── current              # Active top-level session pointer
-    │   ├── <timestamp>_<id>.jsonl  # Top-level session files
-    │   └── <scope_id>.jsonl        # Scoped thread/reply session files
     ├── attachments/             # User-shared files
     ├── scratch/                 # Working directory for clones/downloads/experiments: ${scratchPath}
     └── skills/                  # Conversation-specific tools
@@ -401,7 +394,7 @@ ${memory}
 ## Log Queries (for older history)
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isMessagingBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
-Use \`log.jsonl\` for quick grep-style history. Use \`${conversationPath}/sessions/\` when you need structured turns, tool outputs, or thread/session lineage.
+Use \`log.jsonl\` for grep-style history.
 ${isContainerLike ? "Install jq: apt-get install jq" : ""}
 \`\`\`bash
 # Recent messages
@@ -413,9 +406,6 @@ grep -i "topic" log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user
 # Messages from specific user
 grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], text}'
 
-# Inspect top-level session pointer and available session files
-cat sessions/current
-ls -1 sessions/
 \`\`\`
 
 ## Tools

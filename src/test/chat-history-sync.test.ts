@@ -2,6 +2,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -13,19 +14,24 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import { getThreadSessionFile, openManagedSession } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
+let root: string;
+let office: Office;
 let conversationDir: string;
 
 beforeEach(() => {
-  conversationDir = join(
-    tmpdir(),
-    `chat-session-manager-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  root = mkdtempSync(join(tmpdir(), "chat-session-manager-test-"));
+  office = createWorkspace({ root: join(root, "workspace"), stateDir: join(root, "state") }).office(
+    createOfficeAddress("slack", "C123"),
   );
+  conversationDir = office.dir;
   mkdirSync(conversationDir, { recursive: true });
 });
 
 afterEach(() => {
-  rmSync(conversationDir, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
 });
 
 function writeLog(entries: object[]): void {
@@ -74,15 +80,15 @@ function countJsonlEntries(
 
 async function syncViaRuntimePath(
   manager: ChatHistorySync,
-  dir: string,
+  target: Office,
   sessionKey: string,
   contextFile: string,
   currentMessageId?: string,
 ): Promise<void> {
-  const session = await openManagedSession(contextFile, dir);
+  const session = await openManagedSession(contextFile, target.dir);
   try {
     await manager.syncSessionManager({
-      conversationDir: dir,
+      office: target,
       sessionKey,
       sessionManager: session,
       ...(currentMessageId !== undefined ? { currentMessageId } : {}),
@@ -107,7 +113,7 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
+    const freshFile = await manager.resetSession({ office, sessionKey: "C123" });
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -129,7 +135,7 @@ describe("ChatHistorySync", () => {
       ].join("\n") + "\n",
     );
 
-    await syncViaRuntimePath(manager, conversationDir, "C123", freshFile, "1000.0003");
+    await syncViaRuntimePath(manager, office, "C123", freshFile, "1000.0003");
     let text = await readContextText(freshFile);
     expect(text).not.toContain("already logged old message");
     expect(text).not.toContain("late pre-reset message");
@@ -144,7 +150,7 @@ describe("ChatHistorySync", () => {
         isMessagingBot: false,
       }) + "\n",
     );
-    await syncViaRuntimePath(manager, conversationDir, "C123", freshFile, "1000.0004");
+    await syncViaRuntimePath(manager, office, "C123", freshFile, "1000.0004");
     text = await readContextText(freshFile);
     expect(text).toContain("new message");
     expect(text).not.toContain("late pre-reset message");
@@ -156,7 +162,7 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = await manager.resetSession({ conversationDir, sessionKey: "C123" });
+    const freshFile = await manager.resetSession({ office, sessionKey: "C123" });
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -185,7 +191,7 @@ describe("ChatHistorySync", () => {
     );
 
     await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       currentMessageId: "new-platform-id",
     });
@@ -237,7 +243,7 @@ describe("ChatHistorySync", () => {
     });
 
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0004",
@@ -282,7 +288,7 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     }).resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0002",
@@ -310,7 +316,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0001",
@@ -352,7 +358,7 @@ describe("ChatHistorySync", () => {
 
     const session = await openManagedSession(scope.contextFile, conversationDir);
     await manager.syncSessionManager({
-      conversationDir,
+      office,
       sessionKey: "C123",
       sessionManager: session,
       currentMessageId: "1000.0003",
@@ -406,7 +412,7 @@ describe("ChatHistorySync", () => {
     });
 
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
     });
@@ -462,13 +468,13 @@ describe("ChatHistorySync", () => {
     });
 
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
       currentMessageId: "2000.0003",
     });
 
-    expect(scope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
+    expect(scope.contextFile).toBe(getThreadSessionFile(office.sessionsDir, "C123:2000.0001"));
     expect(scope.threadRootMessage?.text).toBe("thread root");
     const text = await readContextText(scope.contextFile);
     expect(text).toContain("top-level context");
@@ -544,7 +550,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:07.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123:1000.0004",
       cwd: conversationDir,
       currentMessageId: "1000.0007",
@@ -635,7 +641,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:08.000Z"),
     });
     const firstScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0003",
@@ -667,7 +673,7 @@ describe("ChatHistorySync", () => {
     writeLog(logEntries);
 
     const secondScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0008",
@@ -675,7 +681,7 @@ describe("ChatHistorySync", () => {
     const syncSession = await openManagedSession(secondScope.contextFile, conversationDir);
     try {
       await manager.syncSessionManager({
-        conversationDir,
+        office,
         sessionKey: "C123",
         sessionManager: syncSession,
         currentMessageId: "1000.0008",
@@ -715,7 +721,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:04.000Z"),
     });
     const firstScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
     });
@@ -756,11 +762,11 @@ describe("ChatHistorySync", () => {
     ]);
 
     const secondScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
     });
-    await syncViaRuntimePath(manager, conversationDir, "C123", secondScope.contextFile);
+    await syncViaRuntimePath(manager, office, "C123", secondScope.contextFile);
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
     const text = await readContextText(secondScope.contextFile);
@@ -789,7 +795,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
     const firstScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
     });
@@ -818,11 +824,11 @@ describe("ChatHistorySync", () => {
     );
 
     const secondScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
     });
-    await syncViaRuntimePath(manager, conversationDir, "C123", secondScope.contextFile);
+    await syncViaRuntimePath(manager, office, "C123", secondScope.contextFile);
 
     expect(secondScope.contextFile).toBe(firstScope.contextFile);
     const text = await readContextText(secondScope.contextFile);
@@ -873,7 +879,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:04.000Z"),
     });
     const firstScope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0001",
@@ -905,7 +911,7 @@ describe("ChatHistorySync", () => {
     writeLog(logEntries);
 
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0004",
@@ -913,7 +919,7 @@ describe("ChatHistorySync", () => {
     const syncSession = await openManagedSession(scope.contextFile, conversationDir);
     try {
       await manager.syncSessionManager({
-        conversationDir,
+        office,
         sessionKey: "C123",
         sessionManager: syncSession,
         currentMessageId: "1000.0004",
@@ -964,7 +970,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123",
       cwd: conversationDir,
       currentMessageId: "1000.0003",
@@ -1040,7 +1046,7 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
       currentMessageId: "2000.0002",
@@ -1048,7 +1054,7 @@ describe("ChatHistorySync", () => {
     const session = await openManagedSession(scope.contextFile, conversationDir);
 
     const report = await manager.syncSessionManager({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       sessionManager: session,
       currentMessageId: "2000.0002",
@@ -1075,16 +1081,16 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    registerThreadSession({ conversationDir, sessionKey: "C123:2000.0001", cwd: conversationDir });
+    registerThreadSession({ office, sessionKey: "C123:2000.0001", cwd: conversationDir });
 
     const manager = new ChatHistorySync({ isCommandText });
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: "C123:2000.0001",
       cwd: conversationDir,
     });
 
-    expect(scope.contextFile).toBe(getThreadSessionFile(conversationDir, "C123:2000.0001"));
+    expect(scope.contextFile).toBe(getThreadSessionFile(office.sessionsDir, "C123:2000.0001"));
     expect(existsSync(scope.contextFile)).toBe(true);
     expect(readFileSync(scope.contextFile, "utf-8")).not.toContain(
       "channel history should not leak",

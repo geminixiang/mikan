@@ -140,7 +140,7 @@ sequenceDiagram
   M->>S: resolve session scope
   S-->>M: contextFile + sessionDir
   M->>R: getState() / run()
-  R->>W: read MEMORY.md / sessions/*.jsonl, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
@@ -168,17 +168,18 @@ sequenceDiagram
     ├── log.jsonl              # grep-friendly platform message history
     ├── attachments/           # platform attachment downloads
     ├── scratch/               # in-progress working area
-    ├── skills/                # office-level skills
-    └── sessions/
-        ├── current            # top-level session pointer
-        ├── <timestamp>_<id>.jsonl
-        └── <scope_id>.jsonl   # thread / reply scoped sessions
+    └── skills/                # office-level skills
 
 <state-dir>/
 ├── settings.json              # required global settings
 ├── office-registry.json       # office inventory + migration journal
 ├── conversations/
-│   └── <officeKey>/settings.json  # host-only conversation overrides
+│   └── <officeKey>/
+│       ├── settings.json      # host-only conversation overrides
+│       └── sessions/          # host-only agent history
+│           ├── current        # top-level session pointer
+│           ├── <timestamp>_<id>.jsonl
+│           └── <scope_id>.jsonl  # thread / reply scoped sessions
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -190,7 +191,7 @@ Design points:
 - the office key names the same directory on the host and inside the sandbox runtime, so a path does not change meaning when it crosses the boundary
 - office keys cannot be reversed to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)` when it is first materialized. Raw-id-facing surfaces — the Admin portal, `mikan office claim` — resolve through it
 - `log.jsonl` is the platform conversation log: what actually happened on the source platform
-- `sessions/*.jsonl` is the LLM working context/log: what mikan gave the LLM and what the LLM/tool did
+- `sessions/*.jsonl` is the LLM working context/log, kept host-only: what mikan gave the LLM and what the LLM/tool did
 - the top-level session uses the `current` pointer, but `current` is not channel history; when missing, recent top-level working context can be rebuilt from `log.jsonl`
 - thread / reply sessions use fixed file names so scoped sessions can be tracked separately
 - session keys stay raw platform values; runtime state is addressed by office plus session key, so a session key can never select another office's runner or queue

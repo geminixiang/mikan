@@ -780,7 +780,7 @@ function serveConversationSessionLink(
   }
 
   const sessionFile = resolveExistingSessionFile(
-    workspace.office(scope.address).dir,
+    workspace.office(scope.address),
     scope.conversationId,
   );
   if (!sessionFile) {

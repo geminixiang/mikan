@@ -22,7 +22,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 - **Conversation office** is the unit everything else hangs off: one conversation's working area plus its own sandbox runtime. An office is identified by its platform and raw conversation id, and its directory is named by an office key (`v1-<platform>-<readable-id>-<hash>`), so two platforms can never collide on the same raw id.
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
-- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context under `sessions/*.jsonl`.
+- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context in host-only session files under the State dir.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
 - **Sandbox runtime** is where tool commands execute: host, Docker container/image, or the experimental Cloudflare bridge.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
@@ -172,7 +172,8 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 ├── office-registry.json
 ├── conversations/
 │   └── <office-key>/
-│       └── settings.json
+│       ├── settings.json
+│       └── sessions/
 └── vaults/
 
 <working-directory>/
@@ -186,8 +187,7 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
     ├── log.jsonl
     ├── attachments/
     ├── scratch/
-    ├── skills/
-    └── sessions/
+    └── skills/
 ```
 
 Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`) and are not reversible to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)`. `mikan office list` prints the registered offices. `mikan migrate` upgrades a 0.5.3 install to this layout; see [State migrations](src/content/docs/deployment.mdx).

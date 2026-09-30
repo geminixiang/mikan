@@ -90,7 +90,6 @@ export {
   extractSessionUuid,
   getThreadSessionFile,
   openManagedSession,
-  resolveChannelSessionFile,
   resolveManagedSessionFile,
   resolveSessionFile,
   tryResolveCurrentSession,
@@ -104,12 +103,7 @@ export type {
   RunSessionOptions,
 } from "./runtime/types.js";
 export { createConversationEvent, createConversationMessage } from "./office/index.js";
-export {
-  createOfficeAddress,
-  createWorkspace,
-  officeKey,
-  officeSessionsDir,
-} from "./office/index.js";
+export { createOfficeAddress, createWorkspace, officeKey } from "./office/index.js";
 export type { Office, Workspace } from "./office/types.js";
 export type {
   ChatToolResult,

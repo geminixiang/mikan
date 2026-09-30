@@ -8,7 +8,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../types.js";
-import type { Workspace } from "../office/types.js";
+import type { Office, Workspace } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
@@ -34,7 +34,7 @@ import {
 } from "../sessions/chat-history-sync.js";
 import {
   getThreadSessionFile,
-  resolveChannelSessionFile,
+  tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../sessions/store.js";
 import {
@@ -236,9 +236,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     bot: MessagingBot,
   ): Promise<void> {
     const conversationId = address.conversationId;
-    const conversationDir = this.options.workspace.office(address).dir;
+    const office = this.options.workspace.office(address);
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    await this.chatSessionManager.resetSession({ conversationDir, sessionKey, cwd: runtimeCwd });
+    await this.chatSessionManager.resetSession({ office, sessionKey, cwd: runtimeCwd });
 
     await this.sessions.discardAndWait(address, sessionKey);
 
@@ -273,8 +273,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const address = event.address;
     const releaseConversationWork = await this.sessions.acquireConversationWork(address);
     try {
-      const conversationDir = this.options.workspace.office(address).dir;
-      await this.waitForParentSession(address, sessionKey, conversationDir);
+      await this.waitForParentSession(address, sessionKey);
 
       const lease = await this.acquireRunLease(options, sessionKey);
       const { state } = lease;
@@ -371,16 +370,13 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     }
   }
 
-  private async waitForParentSession(
-    address: OfficeAddress,
-    sessionKey: string,
-    conversationDir: string,
-  ): Promise<void> {
+  private async waitForParentSession(address: OfficeAddress, sessionKey: string): Promise<void> {
     const conversationId = address.conversationId;
+    const office = this.options.workspace.office(address);
     const waited = await waitForThreadSessionBootstrap({
       parentSessionKey: conversationId,
       sessionKey,
-      hasThreadSession: () => hasMaterializedChatSession({ conversationDir, sessionKey }),
+      hasThreadSession: () => hasMaterializedChatSession({ office, sessionKey }),
       isParentRunning: () => this.sessions.get(address, conversationId)?.running === true,
     });
     if (waited) {
@@ -564,28 +560,28 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
   private acquireState(options: SessionStateOptions & { currentMessageId?: string }) {
     const { address, sessionKey } = options;
-    const conversationDir = this.options.workspace.office(address).dir;
+    const office = this.options.workspace.office(address);
     return this.sessions.acquire(
       address,
       sessionKey,
       () =>
         sessionKey === address.conversationId
-          ? resolveChannelSessionFile(conversationDir)
-          : tryResolveThreadSession(getThreadSessionFile(conversationDir, sessionKey)),
-      (signal) => this.materializeState(options, conversationDir, signal),
+          ? tryResolveCurrentSession(office.sessionsDir)
+          : tryResolveThreadSession(getThreadSessionFile(office.sessionsDir, sessionKey)),
+      (signal) => this.materializeState(options, office, signal),
     );
   }
 
   private async materializeState(
     options: SessionStateOptions & { currentMessageId?: string },
-    conversationDir: string,
+    office: Office,
     signal: AbortSignal,
   ): Promise<ConversationState> {
     signal.throwIfAborted();
     const { address, sessionKey, currentMessageId } = options;
     const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey,
       cwd: runtimeCwd,
       currentMessageId,

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -7,23 +7,28 @@ import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { openManagedSession } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import type { Office } from "../office/types.js";
 
 const BUSY_TEXT = "busy-queue e2e: run `sleep 10`, then reply with this token: QA_BUSY_TOKEN";
 const QUEUED_TEXT = "queue test: reply with this token directly: QA_QUEUED_TOKEN";
 const SESSION_KEY = "C123";
 
+let root: string;
+let office: Office;
 let conversationDir: string;
 
 beforeEach(() => {
-  conversationDir = join(
-    tmpdir(),
-    `queued-message-context-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  root = mkdtempSync(join(tmpdir(), "queued-message-context-"));
+  office = createWorkspace({ root: join(root, "workspace"), stateDir: join(root, "state") }).office(
+    createOfficeAddress("slack", "C123"),
   );
+  conversationDir = office.dir;
   mkdirSync(conversationDir, { recursive: true });
 });
 
 afterEach(() => {
-  rmSync(conversationDir, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
 });
 
 const EARLIER_TURN = [
@@ -101,7 +106,7 @@ async function syncForTurn(
   const session = await openManagedSession(contextFile, conversationDir);
   try {
     await manager.syncSessionManager({
-      conversationDir,
+      office,
       sessionKey: SESSION_KEY,
       sessionManager: session,
       currentMessageId,
@@ -167,7 +172,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
   writeLog([...EARLIER_TURN, BUSY_RECORD]);
   const manager = newManager();
   const scope = await manager.resolveSessionScope({
-    conversationDir,
+    office,
     sessionKey: SESSION_KEY,
     cwd: conversationDir,
     currentMessageId: BUSY_RECORD.ts,
@@ -257,7 +262,7 @@ describe("queued message context", () => {
     writeLog([...EARLIER_TURN, BUSY_RECORD]);
     const manager = newManager();
     const scope = await manager.resolveSessionScope({
-      conversationDir,
+      office,
       sessionKey: SESSION_KEY,
       cwd: conversationDir,
       currentMessageId: BUSY_RECORD.ts,
