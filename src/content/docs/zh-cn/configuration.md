@@ -114,7 +114,7 @@ Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord�
 
 Admin 的 MCP 面板提供 repository-owned 的精选 Marketplace。安装前会显示完整 host command 或 remote endpoint、所需凭证、来源、目标 scope 和安全警告；确认后只会创建普通的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自动更新服务，也不把 catalog 收录视为安全认证。Local stdio preset 会在 mikan host 执行代码；remote preset 则会收到发往其工具的调用和数据。
 
-OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTOR_ENDPOINT` 指定默认的 `open-connector` server，`OPENCONNECTOR_ADMIN_TOKEN` 是 host-only 的凭证，用于为各 conversation 生成 runtime token。当 Slack conversation 未在 global 或 conversation 设置中声明 `open-connector` 时，mikan 会创建名为 `mikan:slack:<workspace-id>:<channel-id>` 的 token（复制当前 OpenConnector deployment 的 action／proxy policy），并以普通 `mcpServers` entry 的形式写入该 conversation 的 host-only settings。之后该 entry 会出现在 Admin MCP 面板，可像其他 server 一样测试、停用、移除，或替换为自建的 OpenConnector；移除后下次回复会重新生成默认 entry，停用则关闭集成。Admin token 只会发送到默认 endpoint 的 origin，不会进入 settings 或 sandbox。
+OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTOR_ENDPOINT` 指定默认的 `open-connector` server，`OPENCONNECTOR_ADMIN_TOKEN` 是 host-only 的凭证，用于为各 conversation 生成 runtime token。当 Slack 或 GitHub conversation 未在 global 或 conversation 设置中声明 `open-connector` 时，mikan 会创建名为 `mikan:slack:<workspace-id>:<channel-id>` 或 `mikan:github:<conversation-id>`（每个 issue／pull request 一个）的 token（复制当前 OpenConnector deployment 的 action／proxy policy），并以普通 `mcpServers` entry 的形式写入该 conversation 的 host-only settings。之后该 entry 会出现在 Admin MCP 面板，可像其他 server 一样测试、停用、移除，或替换为自建的 OpenConnector；移除后下次回复会重新生成默认 entry，停用则关闭集成。Admin token 只会发送到默认 endpoint 的 origin，不会进入 settings 或 sandbox。
 
 ## 平台凭证
 

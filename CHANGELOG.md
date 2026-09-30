@@ -18,6 +18,10 @@ any release.
 - **Session files move from `<workspace>/<office-key>/sessions/` to `<state-dir>/conversations/<office-key>/sessions/`, and sandboxes no longer see them.** Run `mikan migrate` before starting this version. The agent searches earlier history in `log.jsonl`, which stays in the office directory. See [ADR 0016](docs/adr/0016-host-sandbox-trust-boundary.md).
 - Library API: `officeSessionsDir` and `resolveChannelSessionFile` are removed; use `office.sessionsDir` and `tryResolveCurrentSession(office.sessionsDir)`. `getThreadSessionFile` and `resolveParentSessionForThread` take the sessions directory, and the `ChatHistorySync` options and `registerThreadSession`/`hasMaterializedChatSession` take `office` instead of `conversationDir`.
 
+### Added
+
+- GitHub issue and pull request conversations receive the default OpenConnector runtime token like Slack conversations, named `mikan:github:<conversation-id>`.
+
 ### Fixed
 
 - `models.json` follows `--state-dir` / `STATE_DIR` like `settings.json`; the daemon, `mikan migrate`, and `mikan onboard` no longer read or write `~/.mikan/models.json` for another state directory.

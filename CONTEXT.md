@@ -47,7 +47,7 @@ Default office runtimes are single-node by design. Moving a live office between 
 - **Runtime workspace root**: The path at which an authorized Workspace projection appears inside a conversation's Sandbox runtime. The model only ever sees runtime paths.
 - **State dir**: mikan's host-only private storage for settings, credentials, and office records. It is never part of a Workspace projection.
 - **Vault**: Host-only per-office store of development keys that R&D services need injected into the Sandbox runtime (env, and file mounts where required). It is not a general credential store; other external credentials go through OpenConnector ([ADR 0013](docs/adr/0013-vault-scoped-to-development-keys.md)).
-- **Conversation integration identity**: A host-side service credential that identifies one Conversation office while using a shared external account. For OpenConnector on Slack, the runtime token name is `mikan:slack:<workspace-id>:<channel-id>`; provider OAuth remains shared in OpenConnector. The identity distinguishes offices for audit and revocation; it does not by itself restrict which connections an office may use.
+- **Conversation integration identity**: A host-side service credential that identifies one Conversation office while using a shared external account. For OpenConnector, the runtime token name is `mikan:slack:<workspace-id>:<channel-id>` on Slack and `mikan:github:<conversation-id>` on GitHub, one per issue or pull request; provider OAuth remains shared in OpenConnector. The identity distinguishes offices for audit and revocation; it does not by itself restrict which connections an office may use.
 
 ## Security boundaries
 

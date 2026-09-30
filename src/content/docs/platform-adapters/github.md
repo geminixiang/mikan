@@ -75,7 +75,7 @@ Without `GITHUB_CAPABILITIES`, mikan comments, reacts, reads the repository and 
 
 A capability that is off removes its tool and its instructions from the agent entirely. It does not take credentials away: what the agent can push from its sandbox is decided by the sandbox's GitHub token, the account's repository role, and branch protection. Protect the default branch so that changes land only through reviewed pull requests.
 
-Only collaborators with at least write access trigger mikan, so GitHub reports `trustModel: "membership"`. GitHub conversations therefore receive `sandbox.defaultSharedVault` and settings-declared MCP servers like Slack conversations. See [Vault](/sandbox/vault/).
+Only collaborators with at least write access trigger mikan, so GitHub reports `trustModel: "membership"`. GitHub conversations therefore receive `sandbox.defaultSharedVault`, settings-declared MCP servers, and the default OpenConnector token like Slack conversations. See [Vault](/sandbox/vault/).
 
 ## Sessions and replies
 

@@ -88,6 +88,18 @@ function isDeclared(office: Office): boolean {
   );
 }
 
+function runtimeTokenName(office: Office, platformWorkspaceId?: string): string | undefined {
+  const { platform, conversationId } = office.address;
+  if (platform === "github") return `mikan:github:${conversationId}`;
+  if (platform !== "slack") return undefined;
+  if (platformWorkspaceId) return `mikan:slack:${platformWorkspaceId}:${conversationId}`;
+  log.logWarning(
+    `[${conversationId}] OpenConnector default skipped`,
+    "Slack workspace ID is unavailable",
+  );
+  return undefined;
+}
+
 export async function ensureDefaultOpenConnector({
   office,
   platformWorkspaceId,
@@ -96,21 +108,14 @@ export async function ensureDefaultOpenConnector({
   fetch: fetchFn = globalThis.fetch,
 }: EnsureDefaultOpenConnectorOptions): Promise<void> {
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
-  if (!defaultServer?.url || !adminToken || office.address.platform !== "slack") return;
-  if (!platformWorkspaceId) {
-    log.logWarning(
-      `[${office.address.conversationId}] OpenConnector default skipped`,
-      "Slack workspace ID is unavailable",
-    );
-    return;
-  }
-  if (isDeclared(office)) return;
+  if (!defaultServer?.url || !adminToken) return;
+  const name = runtimeTokenName(office, platformWorkspaceId);
+  if (!name || isDeclared(office)) return;
 
   const inflight = pending.get(office.stateDir);
   if (inflight) return inflight;
   const url = defaultServer.url;
   const task = (async () => {
-    const name = `mikan:slack:${platformWorkspaceId}:${office.address.conversationId}`;
     const token = await createRuntimeToken(new URL(url).origin, adminToken, name, fetchFn, signal);
     if (isDeclared(office)) return;
     const current = loadScopeMcpServers(office).conversation;

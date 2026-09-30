@@ -73,7 +73,7 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 
 無効なケイパビリティの tool と説明は agent に一切渡されませんが、認証情報は取り上げません。agent が sandbox から何を push できるかは、sandbox の GitHub token、アカウントの repository ロール、branch protection で決まります。default branch を保護し、agent の変更がレビュー済みの pull request 経由でしか入らないようにしてください。
 
-write 権限以上を持つ collaborator だけが mikan をトリガーできるため、GitHub は `trustModel: "membership"` を報告します。そのため GitHub conversation も Slack と同様に `sandbox.defaultSharedVault` と settings で宣言した MCP servers を受け取ります。[Vault](/ja/sandbox/vault/) を参照してください。
+write 権限以上を持つ collaborator だけが mikan をトリガーできるため、GitHub は `trustModel: "membership"` を報告します。そのため GitHub conversation も Slack と同様に `sandbox.defaultSharedVault`、settings で宣言した MCP servers、default の OpenConnector token を受け取ります。[Vault](/ja/sandbox/vault/) を参照してください。
 
 ## Session と返信
 

@@ -75,7 +75,7 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 
 沒開的能力，對應的 tool 和說明會完全不給 agent，但不會拿走憑證：agent 能從 sandbox 推什麼，取決於 sandbox 的 GitHub token、帳號在 repo 的角色，以及 branch protection。請保護預設 branch，讓 agent 的變更只能經由 review 過的 pull request 進入。
 
-只有至少具 write 權限的協作者能觸發 mikan，所以 GitHub 回報 `trustModel: "membership"`。GitHub 對話因此會像 Slack 對話一樣拿到 `sandbox.defaultSharedVault` 與 settings 宣告的 MCP servers。見 [Vault](/zh-tw/sandbox/vault/)。
+只有至少具 write 權限的協作者能觸發 mikan，所以 GitHub 回報 `trustModel: "membership"`。GitHub 對話因此會像 Slack 對話一樣拿到 `sandbox.defaultSharedVault`、settings 宣告的 MCP servers，以及預設的 OpenConnector token。見 [Vault](/zh-tw/sandbox/vault/)。
 
 ## Sessions 與回覆
 

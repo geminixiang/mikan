@@ -107,6 +107,21 @@ describe("ensureDefaultOpenConnector", () => {
     );
   });
 
+  test("names a GitHub conversation's token from its conversation id alone", async () => {
+    process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
+    const fetchMock = stubProvisioning();
+    const office = workspace().office(createOfficeAddress("github", "GH_acme_widgets_42"));
+
+    await ensureDefaultOpenConnector({ office, defaultServer, fetch: fetchMock });
+
+    const creation = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(creation.name).toBe("mikan:github:GH_acme_widgets_42");
+    expect(loadScopeMcpServers(office).conversation["open-connector"]).toEqual({
+      url: defaultServer.url,
+      headers: { Authorization: "Bearer oct_conversation-secret" },
+    });
+  });
+
   test("leaves a conversation-declared server alone", async () => {
     process.env.OPENCONNECTOR_ADMIN_TOKEN = "admin-secret";
     const fetchMock = stubProvisioning();

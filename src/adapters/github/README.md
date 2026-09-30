@@ -48,8 +48,8 @@ Restrictions (optional):
   core tools; the pack omits tools whose capability is off.
 - GitHub sets `MessagingInfo.trustModel: "membership"`: only collaborators
   with at least write access trigger it (`GITHUB_MIN_PERMISSION` accepts
-  nothing lower), so `sandbox.defaultSharedVault` and settings-declared MCP
-  servers apply as on Slack.
+  nothing lower), so `sandbox.defaultSharedVault`, settings-declared MCP
+  servers, and the default OpenConnector token apply as on Slack.
 
 ## Repo access and pull requests
 
