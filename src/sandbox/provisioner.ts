@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
+import { isAbsolute, relative } from "node:path";
 import { promisify } from "node:util";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";
@@ -226,7 +227,7 @@ export class DockerContainerManager {
     await Promise.all(toStop.map((containerKey) => this.stop(containerKey)));
   }
 
-  async reconcile(): Promise<void> {
+  async reconcile(workspaceRoot: string): Promise<void> {
     const names = await this.listContainerNamesByLabel();
     this.state.clear();
 
@@ -238,7 +239,7 @@ export class DockerContainerManager {
     );
 
     for (const { containerName, details } of inspected) {
-      if (!details) continue;
+      if (!details || !mountsWithin(details.bindSources, workspaceRoot)) continue;
       const containerKey = this.containerKeyFromContainerName(containerName);
       if (!containerKey) {
         log.logWarning(`Skipping unmanaged-style container without container key`, containerName);
@@ -583,19 +584,22 @@ export class DockerContainerManager {
 
   private async inspectContainerDetails(
     containerName: string,
-  ): Promise<{ running: boolean; startedAtMs?: number; conversationId?: string } | undefined> {
+  ): Promise<
+    | { running: boolean; startedAtMs?: number; conversationId?: string; bindSources: string[] }
+    | undefined
+  > {
     try {
       const { stdout } = await this.execFileImpl("docker", [
         "inspect",
         "-f",
-        `{{.State.Running}}\t{{.State.StartedAt}}\t{{index .Config.Labels "${DockerContainerManager.VAULT_ID_LABEL_KEY}"}}\t{{index .Config.Labels "${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}"}}`,
+        `{{.State.Running}}\t{{.State.StartedAt}}\t{{index .Config.Labels "${DockerContainerManager.VAULT_ID_LABEL_KEY}"}}\t{{index .Config.Labels "${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}"}}\t{{json .HostConfig.Binds}}`,
         containerName,
       ]);
-      const [runningRaw, startedAtRaw, , conversationIdRaw] = stdout.trim().split("\t");
+      const [runningRaw, startedAtRaw, , conversationIdRaw, bindsRaw] = stdout.trim().split("\t");
       const running = runningRaw === "true";
       const startedAtMs = this.parseDockerTimestamp(startedAtRaw);
       const conversationId = this.normalizeDockerValue(conversationIdRaw);
-      return { running, startedAtMs, conversationId };
+      return { running, startedAtMs, conversationId, bindSources: parseBindSources(bindsRaw) };
     } catch (err) {
       log.logWarning(
         `Failed to inspect container ${containerName} during reconcile`,
@@ -641,4 +645,19 @@ export class DockerContainerManager {
       return false;
     }
   }
+}
+
+function parseBindSources(raw: string | undefined): string[] {
+  const parsed: unknown = JSON.parse(raw && raw.length > 0 ? raw : "null");
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((bind) => typeof bind === "string")
+    .map((bind) => bind.split(":", 1)[0] ?? bind);
+}
+
+function mountsWithin(sources: readonly string[], root: string): boolean {
+  return sources.some((source) => {
+    const path = relative(root, source);
+    return path !== "" && !path.startsWith("..") && !isAbsolute(path);
+  });
 }

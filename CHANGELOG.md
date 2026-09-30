@@ -21,6 +21,7 @@ any release.
 ### Fixed
 
 - `models.json` follows `--state-dir` / `STATE_DIR` like `settings.json`; the daemon, `mikan migrate`, and `mikan onboard` no longer read or write `~/.mikan/models.json` for another state directory.
+- A daemon adopts at startup only the sandbox containers that mount its own workspace, so two mikan instances sharing one Docker engine no longer stop each other's containers.
 - The sandbox image now ships CJK fonts (`fonts-noto-cjk`, about 170 MB). Without them, `jev_browser` screenshots showed Chinese and Japanese text as blank space, and charts drawn in the sandbox could not use Chinese labels.
 - Python packages in the sandbox go through uv. The system pip still refuses installs, but its message now names the uv commands to use (`uv run --with <package>`), so the agent recovers after one attempt instead of trying pip, venvs, and apt in turn. The docs no longer claim that `pip install --user` works.
 - Creating or updating a periodic event now reports its next three runs in the event's timezone, so the agent no longer computes weekdays itself (it once announced a Monday reminder for a Tuesday). An invalid cron `schedule` or `timezone` is rejected before the event file is written instead of being saved and then skipped by the scheduler.

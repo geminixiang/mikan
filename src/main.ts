@@ -327,7 +327,7 @@ function portalBaseUrl(): string | undefined {
 const MANAGED_SANDBOX_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
 if (provisioner) {
-  await provisioner.reconcile();
+  await provisioner.reconcile(workspace.root);
   await provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
   setInterval(
     () => provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
