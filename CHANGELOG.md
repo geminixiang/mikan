@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.86]
+
 ### Breaking
 
 - **The GitHub adapter now runs as a bound GitHub account driven by webhooks, and no longer uses a GitHub App or polling.** People mention it with autocomplete, assign it issues and pull requests, and request its review. Set `GITHUB_AGENT_TOKEN` (a fine-grained PAT of that account), `GITHUB_WEBHOOK_SECRET` (an organization or App webhook to `<LINK_URL>/github/webhook`), and `GITHUB_REPOS` (now required: `owner/repo` or `owner/*`); the link server must run. `GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_PRIVATE_KEY_PATH`, and `GITHUB_POLL_INTERVAL` are removed, `@<app-slug>` no longer triggers, and `<state-dir>/github-sync.json` is no longer read and can be deleted. Deliveries are best effort: events sent while mikan is down are not replayed. See [ADR 0015](docs/adr/0015-github-agent-account-and-webhooks.md) and [Make mikan a GitHub teammate](src/content/docs/github-teammate-guide.md).
@@ -17,6 +19,12 @@ any release.
 - **mikan no longer runs git for GitHub conversations.** Nothing is cloned into `<office>/repo`, and `github_sync` is removed. The agent clones, commits, and pushes inside its sandbox with the sandbox's GitHub credentials, and `github_pr` only opens a pull request for a branch the agent already pushed. What the agent can push is now bounded by that token, the account's repository role, and branch protection instead of mikan's `pi/*` rule; protect the default branch. GitHub conversations now trust `membership`, because only collaborators with write access can trigger them, so they receive `sandbox.defaultSharedVault` and settings-declared MCP servers like Slack conversations.
 - **Session files move from `<workspace>/<office-key>/sessions/` to `<state-dir>/conversations/<office-key>/sessions/`, and sandboxes no longer see them.** Run `mikan migrate` before starting this version. The agent searches earlier history in `log.jsonl`, which stays in the office directory. See [ADR 0016](docs/adr/0016-host-sandbox-trust-boundary.md).
 - Library API: `officeSessionsDir` and `resolveChannelSessionFile` are removed; use `office.sessionsDir` and `tryResolveCurrentSession(office.sessionsDir)`. `getThreadSessionFile` and `resolveParentSessionForThread` take the sessions directory, and the `ChatHistorySync` options and `registerThreadSession`/`hasMaterializedChatSession` take `office` instead of `conversationDir`.
+- `jev_browser` no longer takes a `session` parameter. Each conversation thread has one browser that stays open across calls until `close: true`; a later `url` opens a new tab, and opening past three tabs closes the oldest inactive tabs and reports them in `closedOldTabs`. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out.
+
+### Changed
+
+- Pi is upgraded from 0.87 to 0.99 (`pi-agent-core`, `pi-ai`).
+- MCP servers now connect through Pi's `@earendil-works/pi-mcp` client instead of the official `@modelcontextprotocol/sdk`, which is removed along with `zod`. Stdio servers still receive only a minimal inherited environment plus their configured `env`. When an HTTP server rejects the connection, the error now carries the status and the start of the server's response body.
 
 ### Added
 
@@ -50,9 +58,6 @@ any release.
 
 ### Changed
 
-- Pi is upgraded from 0.87 to 0.99 (`pi-agent-core`, `pi-ai`).
-- MCP servers now connect through Pi's `@earendil-works/pi-mcp` client instead of the official `@modelcontextprotocol/sdk`, which is removed along with `zod`. Stdio servers still receive only a minimal inherited environment plus their configured `env`. When an HTTP server rejects the connection, the error now carries the status and the start of the server's response body.
-- **Breaking:** `jev_browser` no longer takes a `session` parameter. Each conversation thread has one browser that stays open across calls until `close: true`; a later `url` opens a new tab, and opening past three tabs closes the oldest inactive tabs and reports them in `closedOldTabs`. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out.
 - When a scheduled run hits its budget, the stop notice now says how long it ran, how many model and tool calls it made, the slowest steps with their durations, and which step was still running. Slow queries can be found from the notice alone.
 
 ### Fixed
