@@ -1,12 +1,14 @@
 import {
   constants as fsConstants,
   copyFileSync,
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   renameSync,
   rmdirSync,
+  rmSync,
   unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
@@ -15,13 +17,23 @@ import type { Migration, MigrationContext } from "./types.js";
 
 const SESSIONS_DIRNAME = "sessions";
 
-function moveFile(source: string, target: string): void {
+function moveEntry(source: string, target: string, isDirectory: boolean): void {
   try {
     renameSync(source, target);
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "EXDEV")) throw error;
-    copyFileSync(source, target, fsConstants.COPYFILE_EXCL);
-    unlinkSync(source);
+    if (isDirectory) {
+      cpSync(source, target, {
+        recursive: true,
+        verbatimSymlinks: true,
+        errorOnExist: true,
+        force: false,
+      });
+      rmSync(source, { recursive: true });
+    } else {
+      copyFileSync(source, target, fsConstants.COPYFILE_EXCL);
+      unlinkSync(source);
+    }
   }
 }
 
@@ -43,7 +55,9 @@ function moveSessions(context: MigrationContext, source: string, target: string)
   }
   context.report(`  sessions ${source} -> ${target}`);
   const entries = readdirSync(source, { withFileTypes: true });
-  const unexpected = entries.find((entry) => !entry.isFile() && !entry.isSymbolicLink());
+  const unexpected = entries.find(
+    (entry) => !entry.isFile() && !entry.isSymbolicLink() && !entry.isDirectory(),
+  );
   if (unexpected) {
     throw new Error(`Unexpected entry in sessions directory: ${join(source, unexpected.name)}`);
   }
@@ -52,7 +66,7 @@ function moveSessions(context: MigrationContext, source: string, target: string)
   for (const entry of entries) {
     const from = join(source, entry.name);
     if (entry.isSymbolicLink()) dropLink(context, from);
-    else moveFile(from, join(target, entry.name));
+    else moveEntry(from, join(target, entry.name), entry.isDirectory());
   }
   rmdirSync(source);
 }

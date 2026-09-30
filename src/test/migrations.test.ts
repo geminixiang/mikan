@@ -1,5 +1,6 @@
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -246,6 +247,37 @@ describe("moving sessions out of the office directory", () => {
     expect(existsSync(join(stateDir, "conversations", dmKey, "sessions"))).toBe(false);
     expect(readFileSync(join(root, "host-only", "current"), "utf-8")).toBe("x\n");
     expect(lines.join("\n")).toMatch(/skip.*link/i);
+  });
+
+  test("moves legacy per-thread session directories whole without following their links", async () => {
+    const officeDir = registerDm();
+    write(join(root, "host-only", "secret.jsonl"), "host\n");
+    write(join(officeDir, "sessions", "a.jsonl"), "{}\n");
+    write(join(officeDir, "sessions", "1700000000.000100", "context.jsonl"), "old\n");
+    symlinkSync(
+      join(root, "host-only", "secret.jsonl"),
+      join(officeDir, "sessions", "1700000000.000100", "link.jsonl"),
+    );
+
+    await runMigrations(context());
+
+    const legacy = join(stateDir, "conversations", dmKey, "sessions", "1700000000.000100");
+    expect(readFileSync(join(legacy, "context.jsonl"), "utf-8")).toBe("old\n");
+    expect(lstatSync(join(legacy, "link.jsonl")).isSymbolicLink()).toBe(true);
+    expect(existsSync(join(officeDir, "sessions"))).toBe(false);
+    expect(readFileSync(join(root, "host-only", "secret.jsonl"), "utf-8")).toBe("host\n");
+  });
+
+  test("a dry run accepts legacy session directories and changes nothing", async () => {
+    const officeDir = registerDm();
+    write(join(officeDir, "sessions", "1700000000.000100", "context.jsonl"), "old\n");
+
+    await runMigrations(context({ dryRun: true }));
+
+    expect(
+      readFileSync(join(officeDir, "sessions", "1700000000.000100", "context.jsonl"), "utf-8"),
+    ).toBe("old\n");
+    expect(existsSync(join(stateDir, "conversations", dmKey, "sessions"))).toBe(false);
   });
 
   test("refuses to merge into existing state-dir sessions", async () => {
