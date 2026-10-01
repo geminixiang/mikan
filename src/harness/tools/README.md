@@ -80,9 +80,19 @@ run's grants, including subagent grants; a tool-less session remains tool-less.
 Scripts cannot call `codemode` or `start_task`. Existing direct tools remain
 available. `ALL_TOOLS` lists only granted tools, `searchTools(query, options)`
 searches that same authorized catalog, and `describeTool(name)` supplies full
-declarations. MCP schemas are omitted from the inline description altogether;
-other declarations share its 12,000-character limit. Script discovery does not
-activate schemas in the model's direct tool set.
+declarations. Discovery helpers are asynchronous globals, not methods on
+`tools`. Their definitions supply both the sandbox and Pi's public
+`renderDeclarations({ globals })`, so the model-facing API cannot drift from
+the injected functions. Discovery returns Pi-generated `renderToolSample()`
+text, including argument and result declarations. Declared output schemas are
+preserved; tools without one use Pi's text-result default rather than `unknown`.
+Models inspect unknown declarations in one script before writing a later call
+script, instead of guessing arguments or treating JSON text as an object. The guide follows Pi's global-helper and nested-tool
+layout without importing private CLI modules or advertising unsupported APIs.
+MCP schemas are omitted from the inline description altogether; other tool
+declarations share its 12,000-character limit, separate from the complete global
+helper declarations. Script discovery does not activate schemas in the model's
+direct tool set.
 
 Pi 0.99.1's public `AgentHarness` has no nested-tool dispatch API, and its
 older `runToolCall` example does not apply to harness-native tools. The small

@@ -226,6 +226,131 @@ test("revoked grants cannot be searched, called, or restored from prior discover
   expect(JSON.stringify(session.messages)).toContain("grant returned but still deferred");
 });
 
+test("codemode exposes async global declarations before discovering deferred tools", async () => {
+  const { faux, file, wrap } = setup();
+  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
+  const session = wrap(await SessionStore.create(file, dir), [github.tool]);
+  faux.setResponses([
+    (context) => {
+      const tools = getCurrentTools(context.messages);
+      const description = tools.find((tool) => tool.name === "codemode")?.description ?? "";
+      expect(description).toContain("declare function searchTools(");
+      expect(description).toContain("Promise<Array<{ name: string; description: string }>>");
+      expect(description).toContain(
+        "declare function describeTool(name: string): Promise<string | undefined>",
+      );
+      expect(description).toContain("await searchTools(");
+      expect(description).not.toContain(github.tool.name);
+      return fauxAssistantMessage(
+        fauxToolCall("codemode", {
+          label: "Discover from declared globals",
+          code: 'const matches = await searchTools("issues", { namespace: "github" }); text(await describeTool(matches[0].name)); text(await tools[matches[0].name]({}));',
+        }),
+      );
+    },
+    (context) => {
+      expect(getCurrentTools(context.messages).map((tool) => tool.name)).not.toContain(
+        github.tool.name,
+      );
+      return fauxAssistantMessage("done");
+    },
+  ]);
+  await session.prompt("discover from the supplied API declarations");
+  expect(JSON.stringify(session.messages)).toContain("declare const tools");
+  expect(JSON.stringify(session.messages)).toContain("result-sentinel");
+});
+
+test("codemode discovery supplies Pi tool samples with resolved text return types", async () => {
+  const { faux, file, wrap } = setup();
+  const textTool = deferredTool("mcp__qa__read_text", "Read JSON text");
+  const session = wrap(await SessionStore.create(file, dir), [textTool.tool]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Inspect return types",
+        code: 'const matches = await searchTools("read_text", { namespace: "qa" }); text(matches[0].description); text(await describeTool(matches[0].name));',
+      }),
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("inspect the tool return type before writing a script");
+  const result = session.messages.find(
+    (message) => message.role === "toolResult" && message.toolName === "codemode",
+  );
+  expect(result).toMatchObject({
+    role: "toolResult",
+    content: [
+      { type: "text", text: expect.stringContaining("Promise<string>") },
+      { type: "text", text: expect.stringContaining("Promise<string>") },
+    ],
+  });
+});
+
+test("codemode preserves declared structured return types and values", async () => {
+  const { faux, file, wrap } = setup();
+  const count = deferredTool("mcp__qa__read_count", "Read a count");
+  const tool: AgentTool = {
+    ...count.tool,
+    outputSchema: { type: "number" },
+    execute: async () => ({ content: [], structuredContent: 7, details: {} }),
+  };
+  const session = wrap(await SessionStore.create(file, dir), [tool]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Read the declared count",
+        code: 'const matches = await searchTools("read_count", { namespace: "qa" }); text(matches[0].description); text(await tools[matches[0].name]({}));',
+      }),
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("inspect and use the declared structured result");
+  const result = session.messages.find(
+    (message) => message.role === "toolResult" && message.toolName === "codemode",
+  );
+  expect(result).toMatchObject({
+    role: "toolResult",
+    content: [
+      { type: "text", text: expect.stringContaining("Promise<number>") },
+      { type: "text", text: "7" },
+    ],
+  });
+});
+
+test("codemode keeps complete global declarations when the tool catalog exceeds its budget", async () => {
+  const { faux, file, wrap } = setup();
+  const verbose: AgentTool = {
+    name: "verbose",
+    label: "Verbose",
+    description: "catalog filler ".repeat(1000),
+    parameters: { type: "object", properties: {} },
+    execute: async () => ({ content: [], details: {} }),
+  };
+  const session = wrap(await SessionStore.create(file, dir), [verbose]);
+  faux.setResponses([
+    (context) => {
+      const description =
+        getCurrentTools(context.messages).find((tool) => tool.name === "codemode")?.description ??
+        "";
+      expect(description).toContain("declare function searchTools(");
+      expect(description).toContain("Promise<Array<{ name: string; description: string }>>");
+      expect(description).toContain(
+        "declare function describeTool(name: string): Promise<string | undefined>",
+      );
+      expect(description).toContain("Declarations may be shortened");
+      return fauxAssistantMessage(
+        fauxToolCall("codemode", {
+          label: "Inspect an omitted declaration",
+          code: 'const declaration = await describeTool("verbose"); text(declaration.includes("declare const tools"));',
+        }),
+      );
+    },
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("inspect the full API despite a large tool catalog");
+  expect(JSON.stringify(session.messages)).toContain('"text":"true"');
+});
+
 test("codemode discovers and calls deferred MCP tools without declaring their schemas", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");

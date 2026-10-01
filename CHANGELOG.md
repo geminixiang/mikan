@@ -14,6 +14,10 @@ any release.
 - `tool_search` discovers authorized MCP tools and loads matching schemas for the next model call. MCP connections still start as before, but tools are no longer all declared upfront. Loaded tools survive later prompts and session reopen, subject to current grants. Codemode gains `searchTools()` and omits MCP schemas from its inline description.
 - `codemode` runs JavaScript through Pi's official QuickJS sandbox to combine authorized tools and filter results before returning them to the model. Existing direct tools remain available; nested calls honor per-run grants, loop guards and cancellation, and appear in progress and tool-call counts. Sessions without tools stay tool-less.
 
+### Fixed
+
+- Codemode follows Pi's model-facing helper guidance and generates asynchronous global declarations from the same definitions used by the official sandbox. `searchTools` and `describeTool` are explicitly global functions called with `await`; their complete declarations remain available even when the nested tool catalog exceeds its inline budget. Discovery uses Pi-generated tool samples with declared output schemas and its text-result default, so scripts can distinguish JSON text from structured values.
+
 ## [1.0.0-beta.87]
 
 ### Fixed
