@@ -132,7 +132,10 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
   faux.setResponses([
     (context) => {
       expect(getCurrentSystemPrompt(context.messages)).toContain("first prompt");
-      expect(getCurrentTools(context.messages).map((item) => item.name)).toEqual(["temporary"]);
+      expect(getCurrentTools(context.messages).map((item) => item.name)).toEqual([
+        "temporary",
+        "codemode",
+      ]);
       return fauxAssistantMessage(fauxToolCall("temporary", {}));
     },
     fauxAssistantMessage("first done"),
@@ -147,6 +150,165 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
   await session.prompt("second request");
   expect(invoke).toHaveBeenCalledTimes(1);
   expect(faux.state.callCount).toBe(3);
+});
+
+test("codemode filters nested results and obeys per-prompt grants", async () => {
+  const { faux, file, wrap } = setup();
+  const invoke = vi.fn(async () => ({
+    content: [{ type: "text" as const, text: "large-result-sentinel" }],
+    details: {},
+  }));
+  const tool: AgentTool = {
+    name: "temporary",
+    label: "temporary",
+    description: "Temporary grant",
+    parameters: { type: "object", properties: {} },
+    execute: invoke,
+  };
+  const session = wrap(await SessionStore.create(file, dir));
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Summarize results",
+        code: "const results = await Promise.all([tools.temporary({}), tools.temporary({})]); text(results.length);",
+      }),
+    ),
+    (context) => {
+      expect(JSON.stringify(context.messages)).not.toContain("large-result-sentinel");
+      expect(JSON.stringify(context.messages)).toContain('"text":"2"');
+      return fauxAssistantMessage("done");
+    },
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Check revoked grant",
+        code: "await tools.temporary({});",
+      }),
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("summarize", { tools: [tool] });
+  expect(invoke).toHaveBeenCalledTimes(2);
+  expect(session.getLastRunStats().toolCallCounts).toMatchObject({ codemode: 1, temporary: 2 });
+  await session.prompt("try again");
+  expect(invoke).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  { code: 'await tools.probe({value: "bad"});', error: "Validation failed", executions: 0 },
+  { code: "await tools.start_task({});", error: "not a function", executions: 0 },
+  { code: "await tools.codemode({});", error: "not a function", executions: 0 },
+  {
+    code: "for (let i=0;i<5;i++) await tools.probe({value: 1});",
+    error: "was not executed",
+    executions: 4,
+  },
+  { code: '// @options: {"timeout_ms": 20}\nwhile (true) {}', error: "timed out", executions: 0 },
+  { code: "throw new Error(typeof process);", error: "undefined", executions: 0 },
+  {
+    code: 'await tools.probe({value: 1}); throw new Error("after effect");',
+    error: "after effect",
+    executions: 1,
+  },
+])("codemode protects nested calls: $code", async ({ code, error, executions }) => {
+  const { faux, file, wrap } = setup();
+  const invoke = vi.fn(async () => ({
+    content: [{ type: "text" as const, text: "ok" }],
+    details: {},
+  }));
+  const tool: AgentTool = {
+    name: "probe",
+    label: "probe",
+    description: "Probe",
+    parameters: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
+    execute: invoke,
+  };
+  const handoff: AgentTool = { ...tool, name: "start_task" };
+  const session = wrap(await SessionStore.create(file, dir), [tool, handoff]);
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code })),
+    (context) => {
+      expect(JSON.stringify(context.messages)).toContain(error);
+      return fauxAssistantMessage("done");
+    },
+  ]);
+  await session.prompt("check", { allowTaskHandoff: true });
+  expect(invoke).toHaveBeenCalledTimes(executions);
+  expect(JSON.stringify(session.messages)).toContain(error);
+});
+
+test("codemode forwards nested images only when the script emits them", async () => {
+  const { faux, file, wrap } = setup();
+  const tool: AgentTool = {
+    name: "picture",
+    label: "picture",
+    description: "Return an image",
+    parameters: { type: "object", properties: {} },
+    execute: async () => ({
+      content: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+      details: {},
+    }),
+  };
+  const session = wrap(await SessionStore.create(file, dir), [tool]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Show image",
+        code: "const result = await tools.picture({}); image(result.content[0]);",
+      }),
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("show image");
+  const result = session.messages.find(
+    (message) => message.role === "toolResult" && message.toolName === "codemode",
+  );
+  expect(result?.role === "toolResult" ? result.content : []).toContainEqual({
+    type: "image",
+    mimeType: "image/png",
+    data: "aGVsbG8=",
+  });
+});
+
+test("cancelling codemode aborts nested work and waits for its cleanup", async () => {
+  const { faux, file, wrap } = setup();
+  let started = false;
+  let cleaned = false;
+  const gateControl: { release?: () => void } = {};
+  const gate = new Promise<void>((resolve) => {
+    gateControl.release = resolve;
+  });
+  const tool: AgentTool = {
+    name: "wait",
+    label: "wait",
+    description: "Wait",
+    parameters: { type: "object", properties: {} },
+    execute: async (_id, _args, signal) => {
+      started = true;
+      await new Promise<void>((resolve) =>
+        signal?.addEventListener("abort", () => resolve(), { once: true }),
+      );
+      await gate;
+      cleaned = true;
+      return { content: [{ type: "text", text: "cleaned" }], details: {} };
+    },
+  };
+  const session = wrap(await SessionStore.create(file, dir), [tool]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Wait",
+        code: "await tools.wait({});",
+      }),
+    ),
+  ]);
+  const run = session.prompt("wait");
+  await vi.waitFor(() => expect(started).toBe(true));
+  session.abort();
+  expect(session.isActiveRun).toBe(true);
+  gateControl.release?.();
+  await run;
+  expect(cleaned).toBe(true);
+  expect(session.isActiveRun).toBe(false);
 });
 
 test("tool progress retains arguments and each committed message is presented once", async () => {

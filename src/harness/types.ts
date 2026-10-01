@@ -368,6 +368,14 @@ export interface RunEventPublisher {
 
 export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
 
+export interface CodemodeToolOptions {
+  tools: readonly MikanHarnessTool[];
+  executeNested: (
+    tool: MikanHarnessTool,
+    args: Parameters<MikanHarnessTool["execute"]>,
+  ) => ReturnType<MikanHarnessTool["execute"]>;
+}
+
 export type MikanToolInput = AgentTool | MikanHarnessTool;
 
 export interface MikanAgentSessionOptions {

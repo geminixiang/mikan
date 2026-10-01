@@ -70,6 +70,40 @@ for MCP tools; it does not scrub arguments, `details`, images or progress, and
 the runner adds `subagent` separately. Do not treat this as a universal secret
 filter.
 
+## Codemode
+
+`codemode.ts` uses the official `pi-codemode` QuickJS/WASM worker, not host
+`eval` or a second executor. `MikanAgentSession` adds it after resolving each
+run's grants, including subagent grants; a tool-less session remains tool-less.
+Scripts cannot call `codemode` or `start_task`. Existing direct tools remain
+available. `ALL_TOOLS` lists only granted tools and `describeTool(name)` supplies
+full declarations beyond the 12,000-character inline description limit.
+
+Pi 0.99.1's public `AgentHarness` has no nested-tool dispatch API, and its
+older `runToolCall` example does not apply to harness-native tools. The small
+local exception is `session.ts`'s `executeNestedTool`: it uses the same loop
+guard, cancellation, progress translation and tool-call accounting as direct
+calls, while `codemode.ts` uses Pi's public argument validator. It preserves
+the authorized execution context and scopes invocation memos to each nested
+call. Replace this bridge when Pi exposes native harness nested dispatch;
+it does not invoke arbitrary native `before_tool`/`after_tool` hooks or make
+nested calls independent durable operation steps.
+
+Nested calls/results are not appended to the model transcript; only script
+output is. Tool-only text becomes a string, structured results retain their
+shape, and image results return `{ content }` so scripts can forward blocks
+with `image(result.content[0])`. Calls still appear in live progress and run
+counts. A script failure does not roll back completed tool side effects.
+Cancellation closes the worker and waits for nested tools to settle, so tools
+must cooperate with their signal. Defaults are a 60-second script deadline,
+a 64-MiB VM heap, and up to 40,000 text characters of emitted output; the
+options header can request another deadline or a smaller output budget.
+
+This first integration does not implement durable `store`/`load`, classifier
+helpers, `searchTools`, or deferred tool exposure / `tool_search`. Store values
+last only for one script. MCP tools retain their existing direct exposure and
+bounded result behavior; codemode does not reconnect clients or expand grants.
+
 ## Browser reliability
 
 `jev_browser` carries a short, tool-specific native CLI guide instead of adding

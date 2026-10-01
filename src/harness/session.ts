@@ -37,6 +37,8 @@ import * as log from "../log.js";
 import { ToolLoopGuard } from "./loop-guard.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { createCodemodeTool } from "./tools/codemode.js";
+import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { errorMessage } from "../unknown-values.js";
 
 interface RunTally {
@@ -289,6 +291,15 @@ export class MikanAgentSession {
           (tool.name !== START_TASK_TOOL || options?.allowTaskHandoff === true) &&
           (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
       );
+      if (tools.length > 0)
+        tools.push(
+          withSecretRedaction(
+            createCodemodeTool({
+              tools,
+              executeNested: (tool, call) => this.executeNestedTool(tool, call),
+            }),
+          ),
+        );
       await harness.setTools(tools, TODO_CONTEXT);
       await lane.setActiveTools(
         tools.map((tool) => tool.name),
@@ -303,6 +314,63 @@ export class MikanAgentSession {
     } finally {
       await this.cleanupRun(runFailure);
     }
+  }
+
+  private async executeNestedTool(
+    tool: MikanHarnessTool,
+    call: Parameters<MikanHarnessTool["execute"]>,
+  ) {
+    const [id, args, _update, toolContext, invocation, context] = call;
+    if (this.runAborted || context.abortSignal?.aborted) throw new Error("Operation aborted");
+    const base = {
+      lane: "main",
+      runId: invocation.operationId,
+      turnId: invocation.turnId,
+      toolCallId: id,
+      toolName: tool.name,
+    };
+    await this.handlePiToolEvent({ ...base, type: "tool_start", args });
+    let result: Awaited<ReturnType<MikanHarnessTool["execute"]>>;
+    try {
+      const verdict = await this.checkToolLoop(id, tool.name, args as Record<string, unknown>);
+      if (verdict?.block) throw new Error(verdict.block.reason);
+      context.abortSignal?.throwIfAborted();
+      result = await tool.execute(
+        id,
+        args,
+        (partialResult) => this.handlePiToolEvent({ ...base, type: "tool_update", partialResult }),
+        toolContext,
+        {
+          ...invocation,
+          invocationId: id,
+          getMemo: (name) => invocation.getMemo(`${id}:${name}`),
+          setMemo: (name, value) => invocation.setMemo(`${id}:${name}`, value),
+        },
+        context,
+      );
+      const notice = this.loopNotices.get(id);
+      if (notice)
+        result = {
+          ...result,
+          content: [...result.content, { type: "text", text: notice }],
+        };
+    } catch (error) {
+      result = {
+        content: [{ type: "text", text: errorMessage(error) }],
+        details: undefined,
+        isError: true,
+      };
+    } finally {
+      this.loopNotices.delete(id);
+    }
+    await this.handlePiToolEvent({
+      ...base,
+      type: "tool_end",
+      result,
+      isError: result.isError === true,
+      terminate: false,
+    });
+    return result;
   }
 
   private async driveOperation(
@@ -544,23 +612,9 @@ export class MikanAgentSession {
       }
       return undefined;
     });
-    this.harness.hooks.on("before_tool", async (event) => {
-      const verdict = this.loopGuard.observe(event.toolName, event.args);
-      switch (verdict.kind) {
-        case "allow":
-          return undefined;
-        case "notice":
-          this.loopNotices.set(event.toolCallId, verdict.text);
-          return undefined;
-        case "block":
-          return { block: { reason: verdict.reason } };
-        case "stop":
-          await this.exceedBudget(verdict.reason);
-          return { block: { reason: verdict.reason, terminate: true } };
-        default:
-          return verdict satisfies never;
-      }
-    });
+    this.harness.hooks.on("before_tool", (event) =>
+      this.checkToolLoop(event.toolCallId, event.toolName, event.args),
+    );
     this.harness.hooks.on("after_tool", (event) => {
       const notice = this.loopNotices.get(event.toolCallId);
       if (notice === undefined) return undefined;
@@ -569,6 +623,24 @@ export class MikanAgentSession {
     });
     for (const type of FORWARDED_EVENTS) {
       this.harness.events.on(type, (event) => this.handlePiEvent(event));
+    }
+  }
+
+  private async checkToolLoop(toolCallId: string, toolName: string, args: Record<string, unknown>) {
+    const verdict = this.loopGuard.observe(toolName, args);
+    switch (verdict.kind) {
+      case "allow":
+        return undefined;
+      case "notice":
+        this.loopNotices.set(toolCallId, verdict.text);
+        return undefined;
+      case "block":
+        return { block: { reason: verdict.reason } };
+      case "stop":
+        await this.exceedBudget(verdict.reason);
+        return { block: { reason: verdict.reason, terminate: true } };
+      default:
+        return verdict satisfies never;
     }
   }
 
