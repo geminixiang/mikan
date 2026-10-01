@@ -13,6 +13,7 @@ import type {
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
+  Context,
   ExecutionToolContext,
   ThinkingLevel,
   CompactionSettings,
@@ -366,7 +367,23 @@ export interface RunEventPublisher {
   publish(address: OfficeAddress, sessionKey: string, event: RunEvent): void;
 }
 
-export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext>;
+export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext> & {
+  exposure?: "deferred";
+  namespace?: string;
+};
+
+export interface ToolSearchOptions {
+  tools: readonly MikanHarnessTool[];
+  query: string;
+  limit?: number;
+  namespace?: string;
+}
+
+export interface ToolSearchToolOptions {
+  tools: readonly MikanHarnessTool[];
+  loaded: ReadonlySet<string>;
+  load: (names: string[], context: Context) => Promise<void>;
+}
 
 export interface CodemodeToolOptions {
   tools: readonly MikanHarnessTool[];

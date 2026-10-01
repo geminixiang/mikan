@@ -35,20 +35,22 @@ error result in the session. Platform tools are present only when their pack is
 configured, `generate_image` only when image generation is configured, and MCP
 tools depend on the connected server's `listTools()` response.
 
-| Tool                    | Arguments | Final text/data | Image in result | `details` in session |                        Live progress                        | Data carried by the call/result                                                    |
-| ----------------------- | :-------: | :-------------: | :-------------: | :------------------: | :---------------------------------------------------------: | ---------------------------------------------------------------------------------- |
-| `read`                  |     ✓     |        ◇        |        ◇        |          ◇           |                              —                              | Path/range; file text or supported image content.                                  |
-| `write`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Full text to write in arguments; write confirmation.                               |
-| `edit`                  |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Original/replacement text in arguments; diff/patch in result.                      |
-| `bash`                  |     ✓     |        ✓        |        —        |          ◇           |                              ✓                              | Command in arguments; stdout/stderr and exit information.                          |
-| `event`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Event payload in arguments; list/read data or write/delete confirmation.           |
-| `sandbox`               |     ✓     |        ✓        |        —        |          —           |                              —                              | CPU/memory limits and status (supported on managed image sandboxes).               |
-| `attach`                |     ✓     |        ✓        |        —        |          —           |                              —                              | Path/title and attached filename; not the file bytes as a result.                  |
-| `generate_image`        |     ✓     |        ✓        |        —        |          —           |                              —                              | Generation request and attached filename; image stored/uploaded elsewhere.         |
-| `react`                 |     ✓     |        ✓        |        —        |          ◇           |                              —                              | Emoji and reaction confirmation.                                                   |
-| `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.                  |
-| `jev_browser`           |     ✓     |        ✓        |        —        |          —           |                              —                              | URL/commands in arguments; status, history, snapshot and raw command results.      |
-| `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                            |
+| Tool                    | Arguments | Final text/data | Image in result | `details` in session |                        Live progress                        | Data carried by the call/result                                                                         |
+| ----------------------- | :-------: | :-------------: | :-------------: | :------------------: | :---------------------------------------------------------: | ------------------------------------------------------------------------------------------------------- |
+| `read`                  |     ✓     |        ◇        |        ◇        |          ◇           |                              —                              | Path/range; file text or supported image content.                                                       |
+| `write`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Full text to write in arguments; write confirmation.                                                    |
+| `edit`                  |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Original/replacement text in arguments; diff/patch in result.                                           |
+| `bash`                  |     ✓     |        ✓        |        —        |          ◇           |                              ✓                              | Command in arguments; stdout/stderr and exit information.                                               |
+| `codemode`              |     ✓     |        ◇        |        ◇        |          —           |                              ✓                              | Script in arguments; only emitted output and return value enter model history, not nested tool results. |
+| `tool_search`           |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Query/namespace/limit; loaded names in the result and branch discovery state.                           |
+| `event`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Event payload in arguments; list/read data or write/delete confirmation.                                |
+| `sandbox`               |     ✓     |        ✓        |        —        |          —           |                              —                              | CPU/memory limits and status (supported on managed image sandboxes).                                    |
+| `attach`                |     ✓     |        ✓        |        —        |          —           |                              —                              | Path/title and attached filename; not the file bytes as a result.                                       |
+| `generate_image`        |     ✓     |        ✓        |        —        |          —           |                              —                              | Generation request and attached filename; image stored/uploaded elsewhere.                              |
+| `react`                 |     ✓     |        ✓        |        —        |          ◇           |                              —                              | Emoji and reaction confirmation.                                                                        |
+| `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.                                       |
+| `jev_browser`           |     ✓     |        ✓        |        —        |          —           |                              —                              | URL/commands in arguments; status, history, snapshot and raw command results.                           |
+| `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                                                 |
 | `task_status`           |     ✓     |        ✓        |        —        |          —           |              Session key and task status JSON.              |
 | `slack_blockkit`        |     ✓     |        ✓        |        —        |          —           | Blocks/text in arguments; posted/updated message timestamp. |
 | `github_pr`             |     ✓     |        ✓        |        —        |          —           |     PR request in arguments; operation status and URL.      |
@@ -56,8 +58,8 @@ tools depend on the connected server's `listTools()` response.
 | `github_review_reply`   |     ✓     |        ✓        |        —        |          —           |          Reply body in arguments; thread and URL.           |
 | `github_read`           |     ✓     |        ✓        |        —        |          —           |          Query and formatted PR/issue/review data.          |
 | `github_issue`          |     ✓     |        ✓        |        —        |          —           |             Issue request and operation report.             |
-| `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                        |
-| `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images. |
+| `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                                             |
+| `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images.                      |
 
 This is a **data-flow inventory**, not a guarantee that every result is small
 or safe. `jev_browser` bounds the goal-loop snapshot but does not impose one
@@ -76,8 +78,11 @@ filter.
 `eval` or a second executor. `MikanAgentSession` adds it after resolving each
 run's grants, including subagent grants; a tool-less session remains tool-less.
 Scripts cannot call `codemode` or `start_task`. Existing direct tools remain
-available. `ALL_TOOLS` lists only granted tools and `describeTool(name)` supplies
-full declarations beyond the 12,000-character inline description limit.
+available. `ALL_TOOLS` lists only granted tools, `searchTools(query, options)`
+searches that same authorized catalog, and `describeTool(name)` supplies full
+declarations. MCP schemas are omitted from the inline description altogether;
+other declarations share its 12,000-character limit. Script discovery does not
+activate schemas in the model's direct tool set.
 
 Pi 0.99.1's public `AgentHarness` has no nested-tool dispatch API, and its
 older `runToolCall` example does not apply to harness-native tools. The small
@@ -99,10 +104,41 @@ must cooperate with their signal. Defaults are a 60-second script deadline,
 a 64-MiB VM heap, and up to 40,000 text characters of emitted output; the
 options header can request another deadline or a smaller output budget.
 
-This first integration does not implement durable `store`/`load`, classifier
-helpers, `searchTools`, or deferred tool exposure / `tool_search`. Store values
-last only for one script. MCP tools retain their existing direct exposure and
-bounded result behavior; codemode does not reconnect clients or expand grants.
+Durable `store`/`load` and classifier helpers are not implemented. Store values
+last only for one script. MCP tools retain their existing bounded result
+behavior; codemode does not reconnect clients or expand grants.
+
+## Deferred MCP discovery
+
+MCP tools carry `exposure: "deferred"` and their server's `namespace` from
+`mcp.ts`; ordinary platform and execution tools remain direct. Connections and
+`listTools()` still happen during runner construction. Only schema declaration
+is deferred, not network connection or authorization.
+
+`tool-search.ts` owns keyword ranking and `tool_search`, which loads matches
+through Pi's public `AgentLane.setActiveTools()` for the next model call. The
+shared search considers names, descriptions and argument schemas, prioritizes
+exact names, and supports a namespace filter and a 1–20 match limit (default 5).
+It is a small local weighted-keyword ranker, not Pi CLI's private BM25
+implementation; the CLI extension cannot be imported into the native harness
+through a public ranker API. No private Pi imports or additional dependency are
+used. Search result summaries are bounded to 300 characters per tool.
+
+`tool_search` exists only when the current grants include deferred tools. It
+searches only not-yet-loaded tools; codemode's `searchTools()` searches all of
+its granted callable tools without loading anything. Neither can discover
+another office's tools or escape a subagent's profile grants. `tool_search` is
+model-only and not callable from codemode.
+
+Loading is serialized, so searches in one tool batch preserve the union of
+matches. `session.ts` records a snapshot in a branch-scoped `mikan.tool_search`
+custom entry; it stays out of the model's text and survives compaction and
+close/reopen. Resume also recovers Pi's persisted active selection if an
+interruption happened before queued discovery metadata entered the branch.
+Each run intersects the saved names with current grants and records any pruning, so restoring an earlier discovery cannot restore revoked
+access. A known MCP tool can still be called from codemode without loading its
+schema. Direct calls must wait until a later model request after discovery;
+loading is not a second permission grant.
 
 ## Browser reliability
 

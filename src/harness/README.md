@@ -127,7 +127,13 @@ system-prompt supplier composes the stored MCP guidance with each refreshed
 base prompt, so later turns cannot discard server instructions.
 
 MCP tools are harness-native tools, so each call receives the turn's execution
-env. `mcp-result.ts` converts a result's content blocks (`structuredContent`
+env. They connect at construction as before, but their schemas are deferred:
+`tool_search` discovers and declares matches for the next model call, while
+codemode can discover and call any currently granted MCP tool without declaring
+it. Loaded names follow the session branch and are intersected with current
+grants on every run; direct platform/execution tools remain declared. See
+[tools/README.md](tools/README.md#deferred-mcp-discovery) for discovery and recovery
+contracts. `mcp-result.ts` converts a result's content blocks (`structuredContent`
 only when `content` is empty; binary resources and audio become one-line
 descriptions), re-serializes JSON text compactly, and bounds the text by Pi's
 `DEFAULT_MAX_BYTES`/`DEFAULT_MAX_LINES`, the same limits as `read` and `bash`.

@@ -216,6 +216,9 @@ describe("loadMcpTools", () => {
     try {
       expect(result.errors).toEqual([]);
       const names = result.tools.map((tool) => tool.name);
+      expect(
+        result.tools.every((tool) => tool.exposure === "deferred" && tool.namespace === "test"),
+      ).toBe(true);
       expect(names).toContain("mcp__test__echo");
       expect(names).toContain("mcp__test__boom");
 

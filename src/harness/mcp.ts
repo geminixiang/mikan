@@ -231,6 +231,8 @@ async function connectServer(
       const ownsLabel = Object.hasOwn(schemaProperties(mcpTool.inputSchema), "label");
       return tagHarnessTool({
         name: `mcp__${name}__${mcpTool.name}`,
+        exposure: "deferred",
+        namespace: name,
         label: `${name}: ${mcpTool.name}`,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
         parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),

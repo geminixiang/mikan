@@ -38,6 +38,12 @@ import { ToolLoopGuard } from "./loop-guard.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { createCodemodeTool } from "./tools/codemode.js";
+import {
+  createToolSearchTool,
+  readLoadedToolNames,
+  TOOL_SEARCH_STATE,
+  TOOL_SEARCH_TOOL,
+} from "./tools/tool-search.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { errorMessage } from "../unknown-values.js";
 
@@ -48,6 +54,11 @@ interface RunTally {
   toolCallCounts: Record<string, number>;
   startedAt: number;
   endedAt?: number;
+}
+
+interface RunToolSelection {
+  tools: MikanHarnessTool[];
+  resumedNames: readonly string[];
 }
 
 interface ProviderRequestState {
@@ -284,27 +295,16 @@ export class MikanAgentSession {
         );
       await this.initialize();
       if (this.runAborted) return;
-      const harness = this.harness!;
       const lane = this.lane!;
       const tools = this.toHarnessTools(options?.tools ?? this.options.tools).filter(
         (tool) =>
           (tool.name !== START_TASK_TOOL || options?.allowTaskHandoff === true) &&
           (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
       );
-      if (tools.length > 0)
-        tools.push(
-          withSecretRedaction(
-            createCodemodeTool({
-              tools,
-              executeNested: (tool, call) => this.executeNestedTool(tool, call),
-            }),
-          ),
-        );
-      await harness.setTools(tools, TODO_CONTEXT);
-      await lane.setActiveTools(
-        tools.map((tool) => tool.name),
-        TODO_CONTEXT,
-      );
+      await this.setRunTools({
+        tools,
+        resumedNames: text === undefined ? await lane.getActiveTools(TODO_CONTEXT) : [],
+      });
       await this.reloadFromSession();
       if (!(await this.checkCallBudget())) return;
       await this.driveOperation(lane, text, options?.images);
@@ -314,6 +314,66 @@ export class MikanAgentSession {
     } finally {
       await this.cleanupRun(runFailure);
     }
+  }
+
+  private async setRunTools({ tools, resumedNames }: RunToolSelection): Promise<void> {
+    const harness = this.harness!;
+    const lane = this.lane!;
+    const deferred = tools.filter((tool) => tool.exposure === "deferred");
+    const entry = await lane.findEntry(
+      { type: "custom", customType: TOOL_SEARCH_STATE },
+      TODO_CONTEXT,
+    );
+    const restored = readLoadedToolNames(entry?.type === "custom" ? entry.data : undefined);
+    const authorized = new Set(deferred.map((tool) => tool.name));
+    const recovered = resumedNames.includes(TOOL_SEARCH_TOOL)
+      ? resumedNames.filter((name) => authorized.has(name))
+      : [];
+    const loaded = new Set([...restored, ...recovered].filter((name) => authorized.has(name)));
+    if (
+      restored.some((name) => !authorized.has(name)) ||
+      recovered.some((name) => !restored.includes(name))
+    ) {
+      await lane.appendCustomEntry(TOOL_SEARCH_STATE, { tools: [...loaded] }, TODO_CONTEXT);
+    }
+    if (tools.length > 0)
+      tools.push(
+        withSecretRedaction(
+          createCodemodeTool({
+            tools,
+            executeNested: (tool, call) => this.executeNestedTool(tool, call),
+          }),
+        ),
+      );
+    const activeNames = (names: ReadonlySet<string>) =>
+      tools
+        .filter((tool) => tool.exposure !== "deferred" || names.has(tool.name))
+        .map((tool) => tool.name);
+    if (deferred.length > 0) {
+      let loadQueue = Promise.resolve();
+      tools.push(
+        withSecretRedaction(
+          createToolSearchTool({
+            tools: deferred,
+            loaded,
+            load: (names, context) => {
+              const loading = loadQueue.then(async () => {
+                context.abortSignal?.throwIfAborted();
+                const next = new Set([...loaded, ...names.filter((name) => authorized.has(name))]);
+                await lane.appendCustomEntry(TOOL_SEARCH_STATE, { tools: [...next] }, context);
+                context.abortSignal?.throwIfAborted();
+                await lane.setActiveTools(activeNames(next), context);
+                for (const name of next) loaded.add(name);
+              });
+              loadQueue = loading.catch(() => undefined);
+              return loading;
+            },
+          }),
+        ),
+      );
+    }
+    await harness.setTools(tools, TODO_CONTEXT);
+    await lane.setActiveTools(activeNames(loaded), TODO_CONTEXT);
   }
 
   private async executeNestedTool(
