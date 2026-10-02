@@ -437,17 +437,7 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     sessionUuid,
     waitForQueue,
   } = ctx;
-  const lastAssistantMessage = session.messages.findLast(
-    (message): message is Extract<typeof message, { role: "assistant" }> =>
-      message.role === "assistant" && message.stopReason !== "aborted",
-  );
-
-  const contextTokens = lastAssistantMessage
-    ? lastAssistantMessage.usage.input +
-      lastAssistantMessage.usage.output +
-      lastAssistantMessage.usage.cacheRead +
-      lastAssistantMessage.usage.cacheWrite
-    : 0;
+  const contextTokens = await session.sessionStore.getContextTokens();
   const contextWindow = model.contextWindow || 200000;
 
   const { totalUsage } = runState;
@@ -474,11 +464,14 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   recordDistribution("agent.run.cost", totalUsage.cost.total, {
     attributes: runMetricAttributes,
   });
-  const contextUtilization = contextTokens / contextWindow;
-  recordGauge("agent.context.utilization", contextUtilization, {
-    unit: "ratio",
-    attributes: runMetricAttributes,
-  });
+  const contextUtilization =
+    contextTokens === undefined ? undefined : contextTokens / contextWindow;
+  if (contextUtilization !== undefined) {
+    recordGauge("agent.context.utilization", contextUtilization, {
+      unit: "ratio",
+      attributes: runMetricAttributes,
+    });
+  }
   updateActiveSpanAttribution({
     "gen_ai.request.model": model.id,
     "gen_ai.response.model": runState.responseModel ?? model.id,
@@ -488,7 +481,6 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     "gen_ai.usage.output_tokens": totalUsage.output,
     "gen_ai.usage.output_tokens.reasoning": runState.reasoningTokens,
     "mikan.usage.cost_usd": totalUsage.cost.total,
-    "mikan.context.utilization": contextUtilization,
     "mikan.llm.call_count": runState.llmCallCount,
     "mikan.tool.call_count": runState.toolCallCount,
     "mikan.tool.error_count": runState.toolErrorCount,
@@ -499,6 +491,9 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     "mikan.retry.count": runState.retryCount,
     "mikan.compaction.count": runState.compactionCount,
     "mikan.budget.exceeded": runState.budgetExceeded,
+    ...(contextUtilization === undefined
+      ? {}
+      : { "mikan.context.utilization": contextUtilization }),
     ...(runState.firstTokenLatencyMs === undefined
       ? {}
       : { "mikan.response.first_token_ms": runState.firstTokenLatencyMs }),

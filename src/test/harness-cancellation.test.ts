@@ -11,6 +11,7 @@ import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
 import * as log from "../log.js";
 import { SessionStore } from "../sessions/session-store.js";
+import { contextMessages } from "./session-context.js";
 
 let dir: string;
 beforeEach(() => {
@@ -65,7 +66,6 @@ async function seedHistory(session: MikanAgentSession) {
   previous.usage.input = 20;
   previous.usage.totalTokens = 20;
   await session.sessionStore.appendMessage(previous);
-  await session.reloadFromSession();
 }
 
 const retryError = () =>
@@ -198,7 +198,7 @@ describe("harness run cancellation", () => {
     });
     await session.prompt("history to compact");
     expect(events).toContainEqual(expect.objectContaining({ type: "compaction_start" }));
-    expect(JSON.stringify(session.messages)).not.toContain("must not answer");
+    expect(JSON.stringify(await contextMessages(session))).not.toContain("must not answer");
   });
 
   test("abort after initial compaction does not report a completed provider request", async () => {
@@ -220,7 +220,7 @@ describe("harness run cancellation", () => {
     expect(info.mock.calls.some(([message]) => message.startsWith("LLM request aborted "))).toBe(
       false,
     );
-    expect(JSON.stringify(session.messages)).toContain("new request");
+    expect(JSON.stringify(await contextMessages(session))).toContain("new request");
   });
 
   test("initial compaction exhausting the budget prevents a new model turn", async () => {
@@ -230,7 +230,7 @@ describe("harness run cancellation", () => {
     await session.prompt("new request", { budget: { maxTokens: 1 } });
     expect(faux.state.callCount).toBe(1);
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
-    expect(JSON.stringify(session.messages)).toContain("new request");
+    expect(JSON.stringify(await contextMessages(session))).toContain("new request");
   });
 
   test("abort before model output reports an aborted run without a fabricated answer", async () => {
@@ -449,7 +449,7 @@ describe("harness run cancellation", () => {
         /^LLM request aborted \{"abort_reason":"\d+ms >= 100ms limit","run_id":"[^"]+"\}$/,
       ),
     );
-    expect(JSON.stringify(session.messages)).toContain("new request");
+    expect(JSON.stringify(await contextMessages(session))).toContain("new request");
   });
 
   test("slow budget listeners cannot delay cancellation or leak into another prompt", async () => {

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { SessionStore, sessionStorageDir } from "../sessions/session-store.js";
 
 let dir: string;
@@ -41,7 +42,29 @@ function snapshotTree(root: string): Record<string, string> {
   return files;
 }
 
+function answer(text: string, totalTokens: number, stopReason: "stop" | "error" = "stop") {
+  const message = fauxAssistantMessage(text, { stopReason });
+  message.usage.totalTokens = totalTokens;
+  return message;
+}
+
 describe("SessionStore", () => {
+  test("context tokens come from the newest successful answer after compaction", async () => {
+    const store = SessionStore.inMemory("/work");
+    await store.appendMessage(user("old"));
+    await store.appendMessage(answer("old answer", 900));
+    expect(await store.getContextTokens()).toBe(900);
+
+    await store.appendCompactionSummary("summary", 2);
+    expect(await store.getContextTokens()).toBeUndefined();
+
+    await store.appendMessage(user("new"));
+    await store.appendMessage(answer("new answer", 120));
+    await store.appendMessage(answer("", 999, "error"));
+    expect(await store.getContextTokens()).toBe(120);
+    await store.close();
+  });
+
   test("inMemory keeps entries without creating a session file", async () => {
     const store = SessionStore.inMemory("/work");
     await store.appendMessage(user("ephemeral"));

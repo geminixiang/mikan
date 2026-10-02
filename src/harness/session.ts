@@ -97,7 +97,6 @@ export class MikanAgentSession {
   private readonly settings: HarnessSettings;
   private readonly listeners = new Set<HarnessEventListener>();
   private systemPrompt: string;
-  private transcript: AgentMessage[] = [];
   private attached: AttachedSessionHarness | undefined;
   private runActive = false;
   private runAborted = false;
@@ -134,10 +133,6 @@ export class MikanAgentSession {
     this.model = options.model;
     this.systemPrompt = options.systemPrompt;
     this.settings = resolveHarnessSettings(options.settings);
-  }
-
-  get messages(): AgentMessage[] {
-    return this.transcript;
   }
 
   get lastRunMessages(): readonly AgentMessage[] {
@@ -191,11 +186,6 @@ export class MikanAgentSession {
   subscribe(listener: HarnessEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
-  }
-
-  async reloadFromSession(): Promise<number> {
-    this.transcript = (await this.sessionStore.buildSessionContext()).messages;
-    return this.transcript.length;
   }
 
   async prompt(text: string, options?: RunOptions): Promise<void> {
@@ -259,7 +249,6 @@ export class MikanAgentSession {
           (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
       );
       await this.installRunTools(attached, tools);
-      await this.reloadFromSession();
       if (!(await this.checkCallBudget())) return;
       await this.sessionStore.recordRun({ startedAt: this.tally.startedAt });
       stream = await watchEvents(attached.harness, attached.root.id, context);
@@ -316,7 +305,6 @@ export class MikanAgentSession {
       await this.deadlineNotification;
       await stream?.stop();
       if (this.attached) {
-        await this.reloadFromSession();
         await this.sessionStore.recordRun({
           startedAt: this.tally.startedAt,
           endedAt: Date.now(),

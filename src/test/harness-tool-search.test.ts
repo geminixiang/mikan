@@ -16,6 +16,7 @@ import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
+import { contextMessages } from "./session-context.js";
 
 let dir: string;
 const stores: SessionStore[] = [];
@@ -121,7 +122,7 @@ test("tool_search declares only matching MCP tools on the next model call", asyn
   ]);
   await session.prompt("list issues");
   expect(execute).toHaveBeenCalledTimes(1);
-  expect(JSON.stringify(session.messages)).toContain("issue data");
+  expect(JSON.stringify(await contextMessages(session))).toContain("issue data");
 });
 
 test("loaded MCP schemas survive another prompt and close/reopen", async () => {
@@ -141,7 +142,7 @@ test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   ]);
   await session.prompt("find issues");
   await session.prompt("use them again");
-  expect(JSON.stringify(session.messages)).toContain('"text":"retained"');
+  expect(JSON.stringify(await contextMessages(session))).toContain('"text":"retained"');
   await store.close();
   const reopened = await SessionStore.open(file);
   faux.setResponses([
@@ -187,10 +188,12 @@ test("revoked grants cannot be searched, called, or restored from prior discover
   await session.prompt("discover");
   await session.prompt("try revoked", { tools: [calendar.tool] });
   expect(github.execute).not.toHaveBeenCalled();
-  expect(JSON.stringify(session.messages)).toContain("No matching unloaded tools");
-  expect(JSON.stringify(session.messages)).toContain("does not exist");
+  expect(JSON.stringify(await contextMessages(session))).toContain("No matching unloaded tools");
+  expect(JSON.stringify(await contextMessages(session))).toContain("does not exist");
   await session.prompt("default grants again");
-  expect(JSON.stringify(session.messages)).toContain("grant returned but still deferred");
+  expect(JSON.stringify(await contextMessages(session))).toContain(
+    "grant returned but still deferred",
+  );
 });
 
 test("codemode exposes async global declarations before discovering deferred tools", async () => {
@@ -224,8 +227,8 @@ test("codemode exposes async global declarations before discovering deferred too
     },
   ]);
   await session.prompt("discover from the supplied API declarations");
-  expect(JSON.stringify(session.messages)).toContain("declare const tools");
-  expect(JSON.stringify(session.messages)).toContain("result-sentinel");
+  expect(JSON.stringify(await contextMessages(session))).toContain("declare const tools");
+  expect(JSON.stringify(await contextMessages(session))).toContain("result-sentinel");
 });
 
 test("codemode discovery supplies Pi tool samples with resolved text return types", async () => {
@@ -243,7 +246,7 @@ test("codemode discovery supplies Pi tool samples with resolved text return type
     fauxAssistantMessage("done"),
   ]);
   await session.prompt("inspect the tool return type before writing a script");
-  const result = session.messages.find(
+  const result = (await contextMessages(session)).find(
     (message) => message.role === "toolResult" && message.toolName === "codemode",
   );
   expect(result).toMatchObject({
@@ -275,7 +278,7 @@ test("codemode preserves declared structured return types and values", async () 
     fauxAssistantMessage("done"),
   ]);
   await session.prompt("inspect and use the declared structured result");
-  const result = session.messages.find(
+  const result = (await contextMessages(session)).find(
     (message) => message.role === "toolResult" && message.toolName === "codemode",
   );
   expect(result).toMatchObject({
@@ -319,7 +322,7 @@ test("codemode keeps complete global declarations when the tool catalog exceeds 
     fauxAssistantMessage("done"),
   ]);
   await session.prompt("inspect the full API despite a large tool catalog");
-  expect(JSON.stringify(session.messages)).toContain('"text":"true"');
+  expect(JSON.stringify(await contextMessages(session))).toContain('"text":"true"');
 });
 
 test("codemode discovers and calls deferred MCP tools without declaring their schemas", async () => {
@@ -345,8 +348,8 @@ test("codemode discovers and calls deferred MCP tools without declaring their sc
   await session.prompt("discover via code");
   expect(github.execute).toHaveBeenCalledTimes(1);
   expect(calendar.execute).not.toHaveBeenCalled();
-  expect(JSON.stringify(session.messages)).toContain("result-sentinel");
-  expect(JSON.stringify(session.messages)).toContain('"text":"done"');
+  expect(JSON.stringify(await contextMessages(session))).toContain("result-sentinel");
+  expect(JSON.stringify(await contextMessages(session))).toContain('"text":"done"');
 });
 
 test("an unsearched MCP tool cannot be called directly in the model batch", async () => {
@@ -359,7 +362,7 @@ test("an unsearched MCP tool cannot be called directly in the model batch", asyn
   ]);
   await session.prompt("call without searching");
   expect(github.execute).not.toHaveBeenCalled();
-  expect(session.messages).toContainEqual(
+  expect(await contextMessages(session)).toContainEqual(
     expect.objectContaining({ role: "toolResult", toolName: github.tool.name, isError: true }),
   );
 });
@@ -391,7 +394,7 @@ test("multiple searches in one model batch retain the union of loaded tools", as
     },
   ]);
   await session.prompt("load both");
-  expect(JSON.stringify(session.messages)).toContain("union retained");
+  expect(JSON.stringify(await contextMessages(session))).toContain("union retained");
 });
 
 test("cancelling discovery before execution does not load tools", async () => {
@@ -418,7 +421,7 @@ test("cancelling discovery before execution does not load tools", async () => {
     },
   ]);
   await session.prompt("continue");
-  expect(JSON.stringify(session.messages)).toContain("still deferred");
+  expect(JSON.stringify(await contextMessages(session))).toContain("still deferred");
 });
 
 test("repeated identical searches cannot bypass the tool loop guard", async () => {
@@ -459,8 +462,8 @@ test.each([
     },
   ]);
   await session.prompt("invalid search");
-  expect(session.messages).toContainEqual(
+  expect(await contextMessages(session)).toContainEqual(
     expect.objectContaining({ role: "toolResult", toolName: "tool_search", isError: true }),
   );
-  expect(JSON.stringify(session.messages)).toContain("not loaded");
+  expect(JSON.stringify(await contextMessages(session))).toContain("not loaded");
 });

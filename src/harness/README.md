@@ -57,8 +57,10 @@ progress carries the latest `details`, and `agent_end` contains only the
 current run's messages. Pi writes an aborted assistant entry only when a
 partial was committed, and the model context omits errored and aborted answers,
 so read a run's answer from `lastRunMessages` and its outcome from
-`getLastRunStats().status`, never from the last assistant in `messages`, which
-may belong to an earlier run.
+`getLastRunStats().status`. The session keeps no transcript copy: read the model
+context and context size from `SessionStore` (`buildSessionContext`,
+`getContextTokens`). Context size follows Pi's rule: the usage of the newest
+successful answer after the latest compaction, unknown until one exists.
 
 Two provider-request facts are local because pi-durable does not expose them:
 mikan wraps the model catalog to pass the session ID as `sessionId` (provider

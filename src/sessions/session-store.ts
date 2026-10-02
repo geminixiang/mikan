@@ -16,6 +16,7 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Message, Models } from "@earendil-works/pi-ai";
+import { calculateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   AssistantEntry,
   CompactionEntry,
@@ -579,6 +580,21 @@ export class SessionStore implements SessionInspection {
     if (this.state.kind === "pending") return [];
     const view = await this.state.root.context(context);
     return toSessionEntries(view.entries, this.state.header.id);
+  }
+
+  async getContextTokens(): Promise<number | undefined> {
+    this.assertOpen();
+    if (this.state.kind === "pending") return undefined;
+    const view = await this.state.root.context(context);
+    const after = view.head?.id ?? Number.NEGATIVE_INFINITY;
+    for (const record of view.entries.toReversed()) {
+      const message = record.model?.[0];
+      if (record.id <= after || !AssistantEntry.is(record) || message?.role !== "assistant")
+        continue;
+      if (message.stopReason === "aborted" || message.stopReason === "error") continue;
+      return calculateContextTokens(message.usage);
+    }
+    return undefined;
   }
 
   async getSessionName(): Promise<string | undefined> {

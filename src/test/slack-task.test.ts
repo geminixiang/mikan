@@ -19,7 +19,6 @@ import {
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
-import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { JevNotConfiguredError } from "../harness/jev.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
@@ -40,6 +39,17 @@ const jev = vi.fn();
 vi.mock("../harness/jev.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../harness/jev.js")>();
   return { ...actual, evaluateWithJev: (...args: unknown[]) => jev(...args) };
+});
+const beforePromptPayload = vi.fn(async () => {});
+vi.mock("../harness/prompt.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../harness/prompt.js")>();
+  return {
+    ...actual,
+    buildPromptPayload: async (...args: Parameters<typeof actual.buildPromptPayload>) => {
+      await beforePromptPayload();
+      return actual.buildPromptPayload(...args);
+    },
+  };
 });
 const jevChoice = (choice: string) =>
   jev.mockResolvedValueOnce({ answers: { intent: { type: "choice", choice } } });
@@ -195,6 +205,7 @@ afterEach(async () => {
   await runtime.shutdown();
 
   vi.restoreAllMocks();
+  beforePromptPayload.mockReset();
   if (envBefore === undefined) delete process.env.MIKAN_STATE_DIR;
   else process.env.MIKAN_STATE_DIR = envBefore;
   rmSync(dir, { recursive: true, force: true });
@@ -630,14 +641,10 @@ test("stop during runner preparation prevents provider and tool execution", asyn
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   const preparing = deferred();
   const release = deferred();
-  const original = MikanAgentSession.prototype.reloadFromSession;
-  vi.spyOn(MikanAgentSession.prototype, "reloadFromSession").mockImplementationOnce(
-    async function (this: MikanAgentSession) {
-      preparing.resolve();
-      await release.promise;
-      return original.call(this);
-    },
-  );
+  beforePromptPayload.mockImplementationOnce(async () => {
+    preparing.resolve();
+    await release.promise;
+  });
   faux.setResponses([fauxAssistantMessage("SHOULD_NOT_RUN")]);
   await dm("continue with work", root);
   await preparing.promise;
@@ -652,22 +659,17 @@ test("status between admission and run start reports queued, not unknown", async
   const office = workspace.office(createOfficeAddress("slack", "D123"));
   const preparing = deferred();
   const release = deferred();
-  const original = MikanAgentSession.prototype.reloadFromSession;
-  const spy = vi
-    .spyOn(MikanAgentSession.prototype, "reloadFromSession")
-    .mockImplementation(async function (this: MikanAgentSession) {
-      if (readTaskRoots(office).size) {
-        preparing.resolve();
-        await release.promise;
-      }
-      return original.call(this);
-    });
+  beforePromptPayload.mockImplementation(async () => {
+    if (!readTaskRoots(office).size) return;
+    preparing.resolve();
+    await release.promise;
+  });
   await dm("investigate this");
   await preparing.promise;
   const root = [...readTaskRoots(office).keys()][0]!;
   const before = await querySlackTasks(office, "D123", [], `D123:${root}`);
   expect(before[0]?.status).toBe("queued");
-  spy.mockRestore();
+  beforePromptPayload.mockReset();
   release.resolve();
   await vi.waitFor(() => expect(trace).toContain("tool:start"));
   hold.resolve();

@@ -138,8 +138,6 @@ async function createConfiguredAgentSession(params: {
     models,
     sessionStore,
   });
-  const reloaded = await session.reloadFromSession();
-  if (reloaded > 0) log.logInfo(`Reloaded ${reloaded} messages from session context`);
   return session;
 }
 
@@ -274,11 +272,6 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     trustModel: platform.trustModel,
   });
   const { pathContext, projection } = decision;
-  const reloaded = await session.reloadFromSession();
-  if (reloaded > 0) {
-    log.logInfo(`[${conversationId}] Reloaded ${reloaded} messages from context`);
-  }
-
   const memory = getMemory(projection);
   const conversationSkillLoad = loadMikanSkills(
     office,

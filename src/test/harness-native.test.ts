@@ -10,6 +10,7 @@ import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent, MikanAgentSessionOptions } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
+import { contextMessages } from "./session-context.js";
 
 test("plain AgentTool integrations do not require an execution context", () => {
   expectTypeOf<
@@ -116,10 +117,10 @@ test("resume continues a run that a closed store left unfinished", async () => {
     },
   ]);
   await session.resume();
-  expect(JSON.stringify(session.messages)).toContain("recovered answer");
+  expect(JSON.stringify(await contextMessages(session))).toContain("recovered answer");
   faux.setResponses([fauxAssistantMessage("next answer")]);
   await session.prompt("next request");
-  expect(JSON.stringify(session.messages)).toContain("next answer");
+  expect(JSON.stringify(await contextMessages(session))).toContain("next answer");
 });
 
 test("per-prompt tools and system prompt update through Pi without leaking to later turns", async () => {
@@ -244,7 +245,7 @@ test.each([
   ]);
   await session.prompt("check", { allowTaskHandoff: true });
   expect(invoke).toHaveBeenCalledTimes(executions);
-  expect(JSON.stringify(session.messages)).toContain(error);
+  expect(JSON.stringify(await contextMessages(session))).toContain(error);
 });
 
 test("codemode forwards nested images only when the script emits them", async () => {
@@ -277,7 +278,7 @@ test("codemode forwards nested images only when the script emits them", async ()
     fauxAssistantMessage("done"),
   ]);
   await session.prompt("show image");
-  const result = session.messages.find(
+  const result = (await contextMessages(session)).find(
     (message) => message.role === "toolResult" && message.toolName === "codemode",
   );
   expect(result?.role === "toolResult" ? result.content : []).toContainEqual({
@@ -442,7 +443,7 @@ test("large tool progress snapshots stay out of persisted messages and later pro
   expect(persisted).toHaveLength(4);
   expect(JSON.stringify(persisted)).not.toContain(sentinel);
   expect(JSON.stringify(persisted)).toContain(finalResult);
-  expect(JSON.stringify(session.messages)).not.toContain(sentinel);
+  expect(JSON.stringify(await contextMessages(session))).not.toContain(sentinel);
 
   await store.close();
   const reopened = await SessionStore.open(file);
@@ -517,6 +518,6 @@ test("a successful native retry preserves reasoning and charges both requests on
     expect(events).toContainEqual(
       expect.objectContaining({ type: "auto_retry_end", success: true, attempt: 1 }),
     );
-    expect(JSON.stringify(session.messages)).toContain("reasoning survives");
+    expect(JSON.stringify(await contextMessages(session))).toContain("reasoning survives");
   }
 });

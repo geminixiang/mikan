@@ -12,6 +12,7 @@ import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import { contextMessages } from "./session-context.js";
 
 test("the run after a busy tool receives and answers the queued token, not the previous prompt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mikan-slack-busy-regression-"));
@@ -87,7 +88,9 @@ test("the run after a busy tool receives and answers the queued token, not the p
     expect(requested).toHaveLength(1);
     expect(requested[0]).toContain(queued);
     expect(
-      JSON.stringify(session.messages.findLast((message) => message.role === "assistant")),
+      JSON.stringify(
+        (await contextMessages(session)).findLast((message) => message.role === "assistant"),
+      ),
     ).toContain(queued);
   } finally {
     await store.close();

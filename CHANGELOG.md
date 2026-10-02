@@ -12,7 +12,7 @@ any release.
 ### Breaking
 
 - **Pi is upgraded to 1.0, and conversations now run on `@earendil-works/pi-durable`.** Pi 1.0 removed the harness, sessions, compaction, and coding tools from `pi-agent-core`; pi-durable is their first-party successor (see [ADR 0017](docs/adr/0017-pi-durable-harness.md)). Run `mikan migrate` before starting this version: it imports each v4 session file into a durable storage directory beside it (`<session>.durable/`) and moves the original to the office's `sessions-v4/` directory. An imported session keeps what the model could still see (the newest compaction summary and everything after it), its name, lineage, and mikan's bookkeeping; history an earlier compaction had already hidden stays only in the archived file. A tool call that was still running at upgrade is closed with an error result instead of being retried, and a run left unfinished is not resumed.
-- Library API: `SessionEntry` is mikan's own union of `message`, `custom`, and `compaction` entries, with IDs qualified by the session ID; `BranchSummaryEntry`, `CompactionEntry`, and `CustomEntry` are no longer exported. `SessionStore.createHarness` is replaced by `bindHarness`; `appendCustomMessageEntry`, the tree-era `getBranch`, `getLeafId`, `getEntry`, and `isPersisted`, and `SessionEntry.parentId` are removed; `SessionStore.getContextEntries()` returns the entries still in the model's context; and `MikanAgentSession.compactWhenNearLimit`/`cancelIdleCompaction`/`foldExternalUsage` are gone. Harness tools use pi-durable's `execute(args, api, context)`; plain `AgentTool`s are still adapted.
+- Library API: `SessionEntry` is mikan's own union of `message`, `custom`, and `compaction` entries, with IDs qualified by the session ID; `BranchSummaryEntry`, `CompactionEntry`, and `CustomEntry` are no longer exported. `SessionStore.createHarness` is replaced by `bindHarness`; `appendCustomMessageEntry`, the tree-era `getBranch`, `getLeafId`, `getEntry`, and `isPersisted`, and `SessionEntry.parentId` are removed; `SessionStore.getContextEntries()` returns the entries still in the model's context; and `MikanAgentSession.compactWhenNearLimit`/`cancelIdleCompaction`/`foldExternalUsage` are gone. `MikanAgentSession.messages` and `reloadFromSession` are removed: the session keeps no transcript copy, so read the context through `SessionStore`, and a run's own messages through `lastRunMessages`. Harness tools use pi-durable's `execute(args, api, context)`; plain `AgentTool`s are still adapted.
 
 ### Added
 
@@ -29,6 +29,7 @@ any release.
 - A run stopped before the model wrote anything no longer stores a made-up aborted answer, and its reply is never taken from the previous run.
 - Compaction entries in the session view and subagent parent context show the summary itself, without Pi's wrapper text, and a subagent's parent context keeps the messages Pi retained after compaction.
 - A run Pi settles with a model error is recorded as failed instead of completed.
+- The usage summary's context size follows Pi's rule, the newest successful answer after the latest compaction, so it no longer reports the pre-compaction size, and it is omitted until a new answer measures it.
 
 ## [1.0.0-beta.88]
 

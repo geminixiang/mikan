@@ -11,6 +11,7 @@ import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
 import { compactionSummaryOf } from "../sessions/compaction-summary.js";
 import { SessionStore } from "../sessions/session-store.js";
+import { contextMessages } from "./session-context.js";
 
 let dir: string;
 
@@ -116,7 +117,9 @@ describe("MikanAgentSession", () => {
 
     await session.prompt("hi");
 
-    const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
+    const lastAssistant = (await contextMessages(session)).findLast(
+      (message) => message.role === "assistant",
+    );
     expect(lastAssistant).toBeDefined();
     expect(JSON.stringify(lastAssistant)).toContain("hello from faux");
 
@@ -282,7 +285,7 @@ describe("MikanAgentSession", () => {
     expect(stats.usage.cacheWrite).toBeGreaterThanOrEqual(500);
     expect(stats.budgetExceededReason).toContain("cost");
     expect(events.some((event) => event.type === "budget_exceeded")).toBe(true);
-    expect(JSON.stringify(session.messages)).not.toContain("done");
+    expect(JSON.stringify(await contextMessages(session))).not.toContain("done");
   });
 
   test("a captured external usage sink cannot contaminate a later prompt", async () => {
@@ -374,7 +377,9 @@ describe("MikanAgentSession", () => {
 
     expect(session.getLastRunStats().llmCalls).toBe(2);
     expect(session.getLastRunStats().tokens).toBeGreaterThan(11);
-    expect(session.messages.map(compactionSummaryOf)).toContain("compacted history");
+    expect((await contextMessages(session)).map(compactionSummaryOf)).toContain(
+      "compacted history",
+    );
     expect(faux.state.callCount).toBe(2);
   });
 
@@ -400,7 +405,7 @@ describe("MikanAgentSession", () => {
     await session.prompt("history to compact", { budget: { maxTokens: 1 } });
 
     expect(session.getLastRunStats().llmCalls).toBe(1);
-    expect(JSON.stringify(session.messages)).not.toContain("must not answer");
+    expect(JSON.stringify(await contextMessages(session))).not.toContain("must not answer");
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
   });
 
@@ -435,7 +440,7 @@ describe("MikanAgentSession", () => {
     expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(20);
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
     expect(faux.state.callCount).toBe(2);
-    expect(JSON.stringify(session.messages)).not.toContain("retry must not run");
+    expect(JSON.stringify(await contextMessages(session))).not.toContain("retry must not run");
   });
 
   test("a model turn does not start once compaction reached the LLM-call cap", async () => {
@@ -481,7 +486,7 @@ describe("MikanAgentSession", () => {
 
     expect(session.getLastRunStats()).toMatchObject({ llmCalls: 1 });
     expect(session.getLastRunStats().budgetExceededReason).toBeUndefined();
-    expect(JSON.stringify(session.messages)).toContain("done in one");
+    expect(JSON.stringify(await contextMessages(session))).toContain("done in one");
   });
 
   test("throws a clear error when provider auth is missing", async () => {

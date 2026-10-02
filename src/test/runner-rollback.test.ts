@@ -6,10 +6,15 @@ import { fauxProvider } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  createConfiguredAgentSession: vi.fn(),
+  loadSubagentProfiles: vi.fn(),
   disposeMcp: vi.fn(),
   loadMcpTools: vi.fn(),
 }));
+
+vi.mock("../harness/subagent-profiles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../harness/subagent-profiles.js")>();
+  return { ...actual, loadSubagentProfiles: mocks.loadSubagentProfiles };
+});
 
 vi.mock("../harness/mcp.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../harness/mcp.js")>();
@@ -17,7 +22,6 @@ vi.mock("../harness/mcp.js", async (importOriginal) => {
 });
 
 import { createRunner } from "../harness/runner.js";
-import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
@@ -46,10 +50,7 @@ beforeEach(() => {
     instructions: [],
     dispose: mocks.disposeMcp,
   });
-  mocks.createConfiguredAgentSession.mockReset();
-  vi.spyOn(MikanAgentSession.prototype, "reloadFromSession").mockImplementation(
-    mocks.createConfiguredAgentSession,
-  );
+  mocks.loadSubagentProfiles.mockReset().mockReturnValue({ profiles: new Map(), diagnostics: [] });
 });
 
 afterEach(() => {
@@ -111,14 +112,16 @@ describe("createRunner rollback", () => {
 
   test("disposes acquired resources and permits immediate reconstruction after failure", async () => {
     const failure = new Error("agent session construction failed");
-    mocks.createConfiguredAgentSession.mockRejectedValue(failure);
+    mocks.loadSubagentProfiles.mockImplementation(() => {
+      throw failure;
+    });
     const options = createOptions();
 
     await expect(createRunner(options)).rejects.toBe(failure);
     expect(mocks.disposeMcp).toHaveBeenCalledOnce();
 
     await expect(createRunner(options)).rejects.toBe(failure);
-    expect(mocks.createConfiguredAgentSession).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSubagentProfiles).toHaveBeenCalledTimes(2);
     expect(mocks.disposeMcp).toHaveBeenCalledTimes(2);
   });
 
@@ -126,13 +129,13 @@ describe("createRunner rollback", () => {
     const controller = new AbortController();
     let releaseConstruction!: () => void;
     const constructionGate = new Promise<void>((resolve) => (releaseConstruction = resolve));
-    mocks.createConfiguredAgentSession.mockImplementation(async () => {
+    mocks.loadMcpTools.mockImplementation(async () => {
       await constructionGate;
-      return {};
+      return { tools: [], errors: [], instructions: [], dispose: mocks.disposeMcp };
     });
     const options = { ...createOptions(), signal: controller.signal };
     const construction = createRunner(options);
-    await vi.waitFor(() => expect(mocks.createConfiguredAgentSession).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(mocks.loadMcpTools).toHaveBeenCalledOnce());
 
     const reason = new Error("shutdown");
     controller.abort(reason);
@@ -143,20 +146,24 @@ describe("createRunner rollback", () => {
     expect(mocks.disposeMcp).toHaveBeenCalledOnce();
 
     const retryFailure = new Error("retry reached construction");
-    mocks.createConfiguredAgentSession.mockRejectedValue(retryFailure);
+    mocks.loadSubagentProfiles.mockImplementation(() => {
+      throw retryFailure;
+    });
     await expect(createRunner({ ...options, signal: undefined })).rejects.toBe(retryFailure);
   });
 
   test("preserves the construction error and releases the writer when MCP cleanup fails", async () => {
     const failure = new Error("agent session construction failed");
-    mocks.createConfiguredAgentSession.mockRejectedValue(failure);
+    mocks.loadSubagentProfiles.mockImplementation(() => {
+      throw failure;
+    });
     mocks.disposeMcp.mockRejectedValue(new Error("MCP cleanup failed"));
     const options = createOptions();
 
     await expect(createRunner(options)).rejects.toBe(failure);
     await expect(createRunner(options)).rejects.toBe(failure);
 
-    expect(mocks.createConfiguredAgentSession).toHaveBeenCalledTimes(2);
+    expect(mocks.loadSubagentProfiles).toHaveBeenCalledTimes(2);
     expect(mocks.disposeMcp).toHaveBeenCalledTimes(2);
   });
 });
