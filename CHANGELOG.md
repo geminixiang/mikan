@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.88]
+
 ### Added
 
 - `tool_search` discovers authorized MCP tools and loads matching schemas for the next model call. MCP connections still start as before, but tools are no longer all declared upfront. Loaded tools survive later prompts and session reopen, subject to current grants. Codemode gains `searchTools()` and omits MCP schemas from its inline description.
