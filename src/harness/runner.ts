@@ -9,6 +9,7 @@ import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./
 import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools } from "./tools/index.js";
 import { createSubagentTool } from "./tools/subagent.js";
+import { createHistoryTool } from "./tools/history.js";
 import { adaptAgentTool } from "./tools/pi-tools.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { createSandboxExecutionEnv } from "./execution-env.js";
@@ -805,7 +806,12 @@ async function finishRunnerCreation(params: {
       systemPrompt,
       model,
       agentConfig,
-      tools: toolBindings.tools,
+      tools: [
+        ...toolBindings.tools,
+        withSecretRedaction(
+          adaptAgentTool(createHistoryTool({ office, sessionFile: contextFile })),
+        ),
+      ],
       toolContext,
       sessionManager,
       modelRegistry,

@@ -63,7 +63,7 @@ Scoped session 會在自己的 header 中，以 `parentSessionId`（uuid）記�
 
 ## Bootstrap、Clean session 與記憶
 
-新的 scoped session 會帶入該 thread 目前的訊息，以及 thread 起點之前、過去 14 天內最多 10 則 top-level 訊息；更早的歷史仍可在 `log.jsonl` 查詢。Top-level session 會長期沿用：mikan 會持續使用目前的 session file，直到 `/new` 取代它；Pi 的自動 compaction 會讓模型 context 維持在上限內。
+新的 scoped session 會帶入該 thread 目前的訊息，以及 thread 起點之前、過去 14 天內最多 10 則 top-level 訊息；更早的歷史仍可在 `log.jsonl` 查詢，agent 也能用 `history` 工具搜尋同一對話的所有 session（較早的 session、各個 thread）與聊天紀錄，包含工具呼叫與其輸出。Top-level session 會長期沿用：mikan 會持續使用目前的 session file，直到 `/new` 取代它；Pi 的自動 compaction 會讓模型 context 維持在上限內。
 
 `/new` 會立即建立 **Clean session**。它不會摘要前一個 session、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
 

@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/pi-ai";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../types.js";
@@ -21,7 +22,11 @@ import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
-import { createManagedSessionFile } from "../sessions/store.js";
+import {
+  createManagedSessionFile,
+  createManagedSessionFileAtPath,
+  getThreadSessionFile,
+} from "../sessions/store.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { ThreadRootMessage } from "../sessions/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -83,6 +88,7 @@ async function createTestRunner(
     runEvents?: CreateRunnerOptions["runEvents"];
     sessionKey?: string;
     threadRootMessage?: ThreadRootMessage;
+    createSessionFile?: (sessionDir: string) => Promise<string>;
   } = {},
 ) {
   const { models, faux } = createFauxModels();
@@ -96,7 +102,9 @@ async function createTestRunner(
     );
   }
   const sessionDir = office.sessionsDir;
-  const contextFile = createManagedSessionFile(sessionDir);
+  const contextFile = options.createSessionFile
+    ? await options.createSessionFile(sessionDir)
+    : createManagedSessionFile(sessionDir);
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
@@ -158,6 +166,59 @@ const platform: MessagingInfo = {
 };
 
 describe("PiAgentWrapper.run", () => {
+  test("offers history everywhere, so a thread finds its channel's tool output", async () => {
+    const { runner, faux } = await createTestRunner({
+      sessionKey: "C1:1000.1",
+      createSessionFile: async (sessionDir) => {
+        const channelFile = createManagedSessionFile(sessionDir);
+        const channel = await SessionStore.open(channelFile);
+        await channel.appendMessage({
+          role: "toolResult",
+          content: [{ type: "text", text: "deployed build 4f2a to staging" }],
+          toolCallId: "call-1",
+          toolName: "bash",
+          isError: false,
+          timestamp: 1,
+        });
+        await channel.close();
+        return createManagedSessionFileAtPath(
+          getThreadSessionFile(sessionDir, "C1:1000.1"),
+          SessionStore.readHeader(channelFile)?.id,
+        );
+      },
+    });
+    let toolOutput = "";
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("history", { label: "check the deploy", action: "search", query: "STAGING" }),
+        { stopReason: "toolUse" },
+      ),
+      (context: Context) => {
+        const last = context.messages.at(-1);
+        toolOutput = last?.role === "toolResult" ? JSON.stringify(last.content) : "";
+        return fauxAssistantMessage("done");
+      },
+    ]);
+    await runner.run(makeMessage({ sessionKey: "C1:1000.1" }), makeResponder(), platform);
+    await runner.dispose();
+    expect(toolOutput).toContain("[bash] deployed build 4f2a to staging");
+    expect(toolOutput).toContain("main, current");
+
+    const { runner: channelRunner, faux: channelFaux } = await createTestRunner();
+    let channelTools: string[] = [];
+    channelFaux.setResponses([
+      (context: Context) => {
+        channelTools = context.messages.flatMap((message) =>
+          message.role === "system" ? (message.toolsAdded ?? []).map((tool) => tool.name) : [],
+        );
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+    await channelRunner.run(makeMessage(), makeResponder(), platform);
+    await channelRunner.dispose();
+    expect(channelTools).toContain("history");
+  });
+
   test("names a thread session after the first line of its root message", async () => {
     const { runner, contextFile } = await createTestRunner({
       sessionKey: "C1:1000.1",

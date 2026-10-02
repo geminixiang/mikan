@@ -66,7 +66,7 @@ original to the office's `sessions-v4/` directory; see [State migrations](/deplo
 
 ## Bootstrap, Clean sessions, and memory
 
-A new scoped session is seeded with its thread so far plus at most 10 top-level messages from before the thread root, within the previous 14 days; older history stays searchable in `log.jsonl`. Top-level sessions are long-lived: mikan keeps using the current session file until `/new` replaces it, and Pi's automatic compaction keeps the model context within the window.
+A new scoped session is seeded with its thread so far plus at most 10 top-level messages from before the thread root, within the previous 14 days; older history stays searchable in `log.jsonl`, and the agent's `history` tool searches every session of the conversation (earlier ones, its threads) and the chat log, including tool calls and their output. Top-level sessions are long-lived: mikan keeps using the current session file until `/new` replaces it, and Pi's automatic compaction keeps the model context within the window.
 
 `/new` immediately creates a **Clean session**. It does not summarize the predecessor, wait for memory processing, or delete older JSONL files. The existing conversation `MEMORY.md` remains available independently.
 

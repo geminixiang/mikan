@@ -8,6 +8,7 @@ import type {
   SessionMessageEntry,
 } from "../../../sessions/types.js";
 import {
+  findSessionFileById,
   getThreadSessionFile,
   tryResolveCurrentSession,
   tryResolveThreadSession,
@@ -2016,20 +2017,6 @@ async function resolveParentRelation(
     if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
   }
   return buildInferredThreadParentRelation(sessionFile);
-}
-
-function findSessionFileById(sessionDir: string, targetId: string): string | null {
-  if (!existsSync(sessionDir)) return null;
-  for (const name of readdirSync(sessionDir)) {
-    if (!name.endsWith(".jsonl")) continue;
-    try {
-      const filePath = join(sessionDir, name);
-      if (SessionStore.readHeader(filePath)?.id === targetId) return filePath;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 async function buildInferredThreadParentRelation(

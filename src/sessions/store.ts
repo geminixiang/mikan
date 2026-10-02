@@ -4,7 +4,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { SessionStore, sessionStorageDir } from "./session-store.js";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
-import type { SessionHeader } from "./types.js";
+import type { OfficeSessionInfo, SessionHeader } from "./types.js";
 
 export function extractSessionUuid(sessionFile: string): string {
   return basename(sessionFile).replace(".jsonl", "").split("_").pop()!;
@@ -33,6 +33,8 @@ export function createManagedSessionFile(sessionDir: string): string {
   return sessionFile;
 }
 
+const ARCHIVED_SESSION_PREFIX = "scoped-archive-";
+
 function createSessionFilename(sessionId: string = randomUUID()): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   return `${timestamp}_${sessionId.slice(0, 8)}.jsonl`;
@@ -44,9 +46,9 @@ export function archiveManagedSessionFile(sessionFile: string): string | null {
   try {
     const sessionId = SessionStore.readHeader(sessionFile)?.id;
     if (!sessionId) throw new Error("missing header");
-    archiveName = `scoped-archive-${createSessionFilename(sessionId)}`;
+    archiveName = `${ARCHIVED_SESSION_PREFIX}${createSessionFilename(sessionId)}`;
   } catch {
-    archiveName = `scoped-archive-${createSessionFilename()}.corrupt`;
+    archiveName = `${ARCHIVED_SESSION_PREFIX}${createSessionFilename()}.corrupt`;
   }
   const archive = join(dirname(sessionFile), archiveName);
   const storage = sessionStorageDir(sessionFile);
@@ -107,6 +109,47 @@ export function tryResolveThreadSession(sessionFile: string): string | null {
 }
 
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
+
+export function listOfficeSessions(sessionDir: string): OfficeSessionInfo[] {
+  if (!existsSync(sessionDir)) return [];
+  const current = getCurrentSessionPath(sessionDir);
+  return readdirSync(sessionDir)
+    .filter((name) => name.endsWith(".jsonl"))
+    .flatMap((name): OfficeSessionInfo[] => {
+      const file = join(sessionDir, name);
+      const header = isRegularSessionFile(file) ? SessionStore.readHeader(file) : null;
+      if (!header) return [];
+      const kind = name.startsWith(ARCHIVED_SESSION_PREFIX)
+        ? "archived"
+        : MAIN_SESSION_FILENAME.test(name)
+          ? "main"
+          : "scoped";
+      return [
+        {
+          file,
+          header,
+          kind,
+          current: file === current,
+          scopeId: kind === "scoped" ? name.slice(0, -".jsonl".length) : undefined,
+        },
+      ];
+    })
+    .toSorted((a, b) => b.header.createdAt - a.header.createdAt);
+}
+
+export function findSessionFileById(sessionDir: string, targetId: string): string | null {
+  if (!existsSync(sessionDir)) return null;
+  for (const name of readdirSync(sessionDir)) {
+    if (!name.endsWith(".jsonl")) continue;
+    try {
+      const filePath = join(sessionDir, name);
+      if (SessionStore.readHeader(filePath)?.id === targetId) return filePath;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 export function resolveParentSessionForThread(
   sessionsDir: string,

@@ -639,7 +639,7 @@ function zeroUsage(): object {
   };
 }
 
-function readConversationLog(office: Office): LogRecord[] {
+export function readConversationLog(office: Office): LogRecord[] {
   const logFile = office.logPath;
   const raw = readTextFileNoFollowIfExists(logFile);
   if (raw === undefined) return [];

@@ -17,6 +17,7 @@ any release.
 ### Added
 
 - Slack and Discord mark a message with ⏳ when it waits behind a task that is still running, so a queued message no longer looks ignored.
+- The agent gets a `history` tool, in every conversation, that lists the conversation's sessions (earlier ones replaced by `/new` and its threads), searches or reads them including tool calls and their output that `log.jsonl` does not keep, and searches the chat log. It never reaches another conversation.
 - `SENTRY_TRACES_SAMPLE_RATE` (0 to 1, default 1) sets how many traces go to Sentry when OTLP traces are not configured; an invalid value stops startup.
 
 ### Changed

@@ -80,6 +80,14 @@ export interface ResolvedSessionScope {
   threadRootMessage: ThreadRootMessage | null;
 }
 
+export interface OfficeSessionInfo {
+  file: string;
+  header: SessionHeader;
+  kind: "main" | "scoped" | "archived";
+  current: boolean;
+  scopeId: string | undefined;
+}
+
 export interface LogRecord {
   message: ConversationLogMessage;
   index: number;
