@@ -58,7 +58,6 @@ export type {
   SessionHeader,
   SessionMessageEntry,
 } from "./sessions/types.js";
-export { CURRENT_SESSION_VERSION } from "./sessions/types.js";
 
 export { isCommandText } from "./adapters/commands/manifest.js";
 export {
@@ -78,19 +77,15 @@ export type {
   ThreadBootstrapWaitOptions,
 } from "./sessions/types.js";
 export { isPlatformHistorySession } from "./sessions/store.js";
-export type { MikanSessionHeader } from "./sessions/types.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
 export type { ResolveSessionKeyOptions } from "./sessions/types.js";
 export {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
-  createNewSessionFile,
   extractSessionSuffix,
   extractSessionUuid,
   getThreadSessionFile,
-  openManagedSession,
   resolveManagedSessionFile,
-  resolveSessionFile,
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "./sessions/store.js";

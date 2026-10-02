@@ -20,7 +20,6 @@ import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history
 import {
   createManagedSessionFile,
   getThreadSessionFile,
-  openManagedSession,
   tryResolveCurrentSession,
 } from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
@@ -680,7 +679,7 @@ describe("ConversationRuntime lifecycle", () => {
     await sync.resetSession({ office, sessionKey: "C123" });
 
     const syncOnce = async (file: string) => {
-      const session = await openManagedSession(file, conversationDir);
+      const session = await SessionStore.open(file, conversationDir);
       try {
         await sync.syncSessionManager({
           office,
@@ -727,7 +726,7 @@ describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
     const sessionDir = office.sessionsDir;
     const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = await openManagedSession(channelFile, conversationDir);
+    const channelSession = await SessionStore.open(channelFile, conversationDir);
     await channelSession.appendMessage({
       role: "user",
       content: [{ type: "text", text: "channel history should not leak" }],

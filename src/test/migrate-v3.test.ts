@@ -11,9 +11,8 @@ function openV4(file: string) {
     getSessionId: () => session.header.id,
     getHeader: () => ({
       parentSessionId: session.header.parentSessionId,
-      parentSession: session.parentSessionPath,
-      timestamp: new Date(session.header.createdAt).toISOString(),
-      metadata: session.source ? { source: session.source } : undefined,
+      createdAt: session.header.createdAt,
+      source: session.source,
     }),
     getEntries: async () => session.branch,
     getEntry: async (id: string) => session.branch.find((entry) => entry.id === id),
@@ -87,8 +86,7 @@ describe("migrateSessionFile", () => {
     expect(store.getSessionId()).toBe(header.id);
     const storeHeader = store.getHeader();
     expect(storeHeader?.parentSessionId).toBe("parent-id");
-    expect(storeHeader?.parentSession).toBe("/old/parent.jsonl");
-    expect(storeHeader?.timestamp).toBe(header.timestamp);
+    expect(storeHeader?.createdAt).toBe(Date.parse(header.timestamp));
 
     const entries = await store.getEntries();
     expect(entries.map((entry) => entry.id)).toEqual(["a1", "b2"]);
@@ -163,7 +161,7 @@ describe("migrateSessionFile", () => {
     expect(entries.map((entry) => entry.id)).toEqual(["a", "cm"]);
   });
 
-  test("platform-history source marker survives into header metadata", async () => {
+  test("platform-history source marker survives into the header", async () => {
     const file = join(dir, "history.jsonl");
     writeJsonl(file, [
       { ...header, source: { kind: "platform-history", recentDays: 14 } },
@@ -172,7 +170,7 @@ describe("migrateSessionFile", () => {
 
     await migrateSessionFile(file);
     const migratedHeader = openV4(file).getHeader();
-    expect(migratedHeader?.metadata).toHaveProperty("source", {
+    expect(migratedHeader?.source).toEqual({
       kind: "platform-history",
       recentDays: 14,
     });

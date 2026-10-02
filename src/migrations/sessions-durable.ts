@@ -13,7 +13,7 @@ import {
 } from "./session-v4.js";
 import type { Migration, MigrationContext } from "./types.js";
 
-const TEMP_SUFFIX = ".v5.tmp";
+const TEMP_SUFFIX = ".importing";
 const ARCHIVE_DIR = "sessions-v4";
 const INTERRUPTED_RESULT =
   "This tool call was interrupted by the upgrade to Pi 1.0; its outcome is unknown.";
@@ -82,7 +82,6 @@ async function importSession(session: V4Session, temp: string): Promise<number> 
   const store = await SessionStore.create(temp, session.header.cwd, {
     id: session.header.id,
     parentSessionId: session.header.parentSessionId,
-    parentSession: session.parentSessionPath,
     source: session.source,
   });
   try {

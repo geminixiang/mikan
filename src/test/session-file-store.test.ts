@@ -75,14 +75,17 @@ describe("SessionStore", () => {
     await store.close();
   });
 
-  test("create writes a private v5 header beside private durable storage", async () => {
+  test("create writes a private header beside private durable storage", async () => {
     const file = join(dir, "session.jsonl");
     const store = await SessionStore.create(file, "/work", { id: "session-1" });
     await store.appendMessage(user("persisted"));
     await store.close();
 
-    const [header] = readFileSync(file, "utf-8").split("\n");
-    expect(JSON.parse(header!)).toMatchObject({ v: 5, kind: "header", id: "session-1" });
+    expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
+      id: "session-1",
+      createdAt: expect.any(Number),
+      cwd: "/work",
+    });
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(statSync(sessionStorageDir(file)).mode & 0o777).toBe(0o700);
   });
@@ -91,7 +94,6 @@ describe("SessionStore", () => {
     const file = join(dir, "session.jsonl");
     const store = await SessionStore.create(file, "/work", {
       id: "session-1",
-      parentSession: "/parent.jsonl",
       parentSessionId: "parent-1",
     });
     await store.appendMessage(user("hello"));
@@ -101,10 +103,7 @@ describe("SessionStore", () => {
     const reopened = await SessionStore.open(file);
     expect(reopened.getSessionId()).toBe("session-1");
     expect(reopened.getCwd()).toBe("/work");
-    expect(reopened.getHeader()).toMatchObject({
-      parentSession: "/parent.jsonl",
-      parentSessionId: "parent-1",
-    });
+    expect(reopened.getHeader()).toMatchObject({ parentSessionId: "parent-1" });
     const entries = await reopened.getEntries();
     expect(entries.map((entry) => entry.type)).toEqual(["message", "custom"]);
     expect(entries[1]).toMatchObject({ customType: "mikan.test", data: { cursor: 3 } });
@@ -128,27 +127,17 @@ describe("SessionStore", () => {
       parentSessionId: "parent-1",
       source: { kind: "platform-history" },
     });
-    expect(SessionStore.readHeader(file)).toMatchObject({
-      type: "session",
-      version: 5,
+    expect(SessionStore.readHeader(file)).toEqual({
       id: "session-1",
+      createdAt: expect.any(Number),
       cwd: "/work",
       parentSessionId: "parent-1",
-      metadata: { source: { kind: "platform-history" } },
+      source: { kind: "platform-history" },
     });
     expect(SessionStore.readHeader(join(dir, "missing.jsonl"))).toBeNull();
     const garbage = join(dir, "garbage.jsonl");
     writeFileSync(garbage, "not json\n");
     expect(SessionStore.readHeader(garbage)).toBeNull();
-  });
-
-  test("open of a v4 file asks for mikan migrate without rewriting it", async () => {
-    const file = join(dir, "old.jsonl");
-    const content = `${JSON.stringify({ v: 4, kind: "header", id: "old", storageVersion: 1, createdAt: 1, cwd: "/work" })}\n`;
-    writeFileSync(file, content);
-    await expect(SessionStore.open(file)).rejects.toThrow("mikan migrate");
-    expect(readFileSync(file, "utf-8")).toBe(content);
-    expect(existsSync(sessionStorageDir(file))).toBe(false);
   });
 
   test("open throws on content without a valid header instead of overwriting it", async () => {
@@ -158,20 +147,16 @@ describe("SessionStore", () => {
     expect(readFileSync(file, "utf-8")).toBe("garbage\n");
   });
 
-  test("a whitespace-only or missing file stays pending until the first append", async () => {
-    const blank = join(dir, "blank.jsonl");
-    writeFileSync(blank, "  \n");
-    const missing = join(dir, "missing.jsonl");
-    for (const file of [blank, missing]) {
-      const store = await SessionStore.open(file, "/work");
-      expect(existsSync(sessionStorageDir(file))).toBe(false);
-      await store.appendMessage(user("first"));
-      await store.close();
-      expect(SessionStore.readHeader(file)?.cwd).toBe("/work");
-      const reopened = await SessionStore.open(file);
-      expect(await reopened.getEntries()).toHaveLength(1);
-      await reopened.close();
-    }
+  test("a missing file stays pending until the first append", async () => {
+    const file = join(dir, "missing.jsonl");
+    const store = await SessionStore.open(file, "/work");
+    expect(existsSync(sessionStorageDir(file))).toBe(false);
+    await store.appendMessage(user("first"));
+    await store.close();
+    expect(SessionStore.readHeader(file)?.cwd).toBe("/work");
+    const reopened = await SessionStore.open(file);
+    expect(await reopened.getEntries()).toHaveLength(1);
+    await reopened.close();
   });
 
   test("read-only inspection never changes its source", async () => {

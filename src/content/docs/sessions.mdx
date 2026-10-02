@@ -56,11 +56,11 @@ A session key always belongs to exactly one conversation. Platform adapters may 
 
 ## Thread lineage
 
-A scoped session records the top-level session it was created from in its header, as `parentSession` (path) and `parentSessionId` (uuid). The link survives a reset: resetting a scoped session rebuilds its file but keeps the original parent rather than re-binding to whichever top-level session is current now. Sessions written before lineage metadata existed are left alone rather than recreated.
+A scoped session records the top-level session it was created from in its header as `parentSessionId` (uuid). The link survives a reset: resetting a scoped session rebuilds its file but keeps the original parent rather than re-binding to whichever top-level session is current now. Sessions written before lineage metadata existed are left alone rather than recreated.
 
 ## Operator migration
 
-Runtime opens only the current v5 format: a header file plus pi-durable storage. `mikan migrate` converts
+A session is a one-line header file plus pi-durable storage. `mikan migrate` converts
 0.5.3 v3 session files, keeping each original as `*.v3.bak`, and imports prerelease v4 files, moving each
 original to the office's `sessions-v4/` directory; see [State migrations](/deployment/#state-migrations).
 

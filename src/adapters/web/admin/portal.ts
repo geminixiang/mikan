@@ -433,7 +433,9 @@ async function readSessionUsage(
         fileName: basename(sessionFile),
         sessionId: header.id,
         updatedAt:
-          entries.length > 0 ? new Date(entries.at(-1)!.timestamp).toISOString() : header.timestamp,
+          entries.length > 0
+            ? new Date(entries.at(-1)!.timestamp).toISOString()
+            : new Date(header.createdAt).toISOString(),
         ...usage,
         total,
       },

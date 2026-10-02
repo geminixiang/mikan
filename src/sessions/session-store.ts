@@ -47,7 +47,6 @@ import type {
   SessionRunRecord,
   SessionRunStatus,
 } from "./types.js";
-import { CURRENT_SESSION_VERSION } from "./types.js";
 import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
@@ -56,17 +55,6 @@ import { errorMessage, isRecord } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
-
-interface CurrentSessionHeader {
-  v: typeof CURRENT_SESSION_VERSION;
-  kind: "header";
-  id: string;
-  createdAt: number;
-  cwd: string;
-  parentSessionId?: string;
-  parentSession?: string;
-  source?: JsonObject;
-}
 
 type SessionDocState = Partial<{
   name: string;
@@ -169,39 +157,26 @@ export function sessionStorageDir(sessionFile: string): string {
   return `${stem}.durable`;
 }
 
-function readHeaderText(filePath: string): string {
-  return readFileSync(filePath, "utf-8").split("\n", 1)[0] ?? "";
-}
-
-function parseCurrentHeader(filePath: string, firstLine: string): CurrentSessionHeader {
-  const trimmed = firstLine.trim();
-  if (!trimmed) throw new SessionFormatError(`Session file has a blank header line: ${filePath}`);
+function readHeader(filePath: string): SessionHeader {
+  const line = readFileSync(filePath, "utf-8").split("\n", 1)[0] ?? "";
   let parsed: unknown;
   try {
-    parsed = JSON.parse(trimmed);
+    parsed = JSON.parse(line);
   } catch {
     throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  if (!isRecord(parsed) || parsed.kind !== "header") {
+  if (!isRecord(parsed)) {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  if (parsed.v !== CURRENT_SESSION_VERSION) {
-    throw new SessionFormatError(
-      `Session file uses format v${String(parsed.v)}; run \`mikan migrate\`: ${filePath}`,
-    );
-  }
-  const { id, createdAt, cwd, parentSessionId, parentSession, source } = parsed;
+  const { id, createdAt, cwd, parentSessionId, source } = parsed;
   if (typeof id !== "string" || typeof createdAt !== "number" || typeof cwd !== "string") {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
   return {
-    v: CURRENT_SESSION_VERSION,
-    kind: "header",
     id,
     createdAt,
     cwd,
     parentSessionId: typeof parentSessionId === "string" ? parentSessionId : undefined,
-    parentSession: typeof parentSession === "string" ? parentSession : undefined,
     source: isRecord(source) ? toJsonObject(source) : undefined,
   };
 }
@@ -211,35 +186,19 @@ function toJsonObject(input: Record<string, unknown>): JsonObject {
   return copy;
 }
 
-function buildHeader(cwd: string, options?: SessionCreateInfo): CurrentSessionHeader {
+function buildHeader(cwd: string, options?: SessionCreateInfo): SessionHeader {
   return {
-    v: CURRENT_SESSION_VERSION,
-    kind: "header",
     id: options?.id ?? randomUUID(),
     createdAt: Date.now(),
     cwd,
     parentSessionId: options?.parentSessionId,
-    parentSession: options?.parentSession,
     source: options?.source,
   };
 }
 
-function writeHeader(path: string, header: CurrentSessionHeader): void {
+function writeHeader(path: string, header: SessionHeader): void {
   mkdirSync(dirname(path), { recursive: true });
   atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
-}
-
-function headerView(header: CurrentSessionHeader): SessionHeader {
-  return {
-    type: "session",
-    version: CURRENT_SESSION_VERSION,
-    id: header.id,
-    timestamp: new Date(header.createdAt).toISOString(),
-    cwd: header.cwd,
-    parentSessionId: header.parentSessionId,
-    parentSession: header.parentSession,
-    metadata: header.source ? { source: header.source } : undefined,
-  };
 }
 
 async function openPrivateJsonlStorage(directory: string): Promise<Storage> {
@@ -391,14 +350,14 @@ async function withSessionSnapshot<T>(
 
 interface LiveState {
   kind: "live";
-  header: CurrentSessionHeader;
+  header: SessionHeader;
   harness: Harness;
   root: Conversation;
 }
 
 interface PendingState {
   kind: "pending";
-  header: CurrentSessionHeader;
+  header: SessionHeader;
 }
 
 type StoreState = LiveState | PendingState;
@@ -447,8 +406,7 @@ export class SessionStore implements SessionInspection {
     const writer = acquireWriter(path);
     const writerPath = writer.path;
     try {
-      const firstLine = existsSync(writerPath) ? readHeaderText(writerPath) : "";
-      if (firstLine.trim().length === 0) {
+      if (!existsSync(writerPath)) {
         const cwd = cwdOverride ?? process.cwd();
         return new SessionStore(
           writerPath,
@@ -457,7 +415,7 @@ export class SessionStore implements SessionInspection {
           writer.key,
         );
       }
-      const header = parseCurrentHeader(writerPath, firstLine);
+      const header = readHeader(writerPath);
       const store = new SessionStore(
         writerPath,
         cwdOverride ?? header.cwd,
@@ -495,14 +453,14 @@ export class SessionStore implements SessionInspection {
 
   static async inspect(path: string): Promise<SessionInspection> {
     const resolvedPath = canonicalSessionPath(path);
-    const header = parseCurrentHeader(resolvedPath, readHeaderText(resolvedPath));
+    const header = readHeader(resolvedPath);
     return withSessionSnapshot(resolvedPath, async (root, harness) => {
       if (!root || !harness) {
-        return new CachedSessionInspection(headerView(header), [], undefined, { messages: [] });
+        return new CachedSessionInspection(header, [], undefined, { messages: [] });
       }
       const name = (await harness.snapshot(SessionDoc, root.id, context))?.name;
       return new CachedSessionInspection(
-        headerView(header),
+        header,
         await readEntries(root, header.id),
         name,
         await readContext(root),
@@ -533,9 +491,7 @@ export class SessionStore implements SessionInspection {
 
   static readHeader(path: string): SessionHeader | null {
     try {
-      const firstLine = readHeaderText(path);
-      if (firstLine.trim().length === 0) return null;
-      return headerView(parseCurrentHeader(path, firstLine));
+      return readHeader(path);
     } catch {
       return null;
     }
@@ -561,7 +517,7 @@ export class SessionStore implements SessionInspection {
 
   getHeader(): SessionHeader {
     this.assertOpen();
-    return headerView(this.state.header);
+    return structuredClone(this.state.header);
   }
 
   getSessionId(): string {
@@ -749,9 +705,7 @@ export class SessionStore implements SessionInspection {
     if (this.sessionFile === null) {
       storage = new MemoryStorage();
     } else {
-      if (!existsSync(this.sessionFile) || readHeaderText(this.sessionFile).trim() === "") {
-        writeHeader(this.sessionFile, header);
-      }
+      if (!existsSync(this.sessionFile)) writeHeader(this.sessionFile, header);
       if (this.writerKey === null) throw new Error("Persisted session must have a writer lease");
       this.writerKey = promotePendingWriter(this.writerKey, this.sessionFile);
       storage = await openPrivateJsonlStorage(sessionStorageDir(this.sessionFile));

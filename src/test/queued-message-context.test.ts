@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
-import { openManagedSession } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
@@ -103,7 +102,7 @@ async function syncForTurn(
   contextFile: string,
   currentMessageId: string,
 ) {
-  const session = await openManagedSession(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile, conversationDir);
   try {
     await manager.syncSessionManager({
       office,
@@ -122,7 +121,7 @@ async function appendTurn(
   answer: string | undefined,
   timestamp: number,
 ): Promise<void> {
-  const session = await openManagedSession(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile, conversationDir);
   try {
     await session.appendMessage({
       role: "user",
@@ -185,7 +184,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
 }
 
 async function appendToolCallTurn(contextFile: string): Promise<void> {
-  const session = await openManagedSession(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile, conversationDir);
   try {
     await session.appendMessage({
       role: "user",

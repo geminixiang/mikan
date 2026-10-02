@@ -6,8 +6,6 @@ import { isPlatformHistorySession } from "../sessions/store.js";
 
 function sessionHeader(source?: Record<string, unknown>): string {
   return `${JSON.stringify({
-    v: 5,
-    kind: "header",
     id: "abc",
     createdAt: 1704067200000,
     cwd: "/tmp",

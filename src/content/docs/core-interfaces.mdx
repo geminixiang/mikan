@@ -199,7 +199,7 @@ Owns the model turn loop, message persistence, retries, compaction, budget circu
 
 ### `SessionStore`
 
-Owns mikan's v5 session files. Each session is a header-only `<name>.jsonl` (`v: 5`, with id, cwd, lineage, and source) beside a private `<name>.durable/` directory that holds pi-durable JSONL storage; the session name and the last run record live in a durable document. Runtime opening accepts only this format; `mikan migrate` converts 0.5.3 v3 files and prerelease v4 files. `SessionHeader.version` is `5` (`CURRENT_SESSION_VERSION`). Entries form one linear transcript of message, custom, and compaction entries; read the model's view with `buildSessionContext()` and the entries still in context with `getContextEntries()` instead of reading the files.
+Owns mikan's session files. Each session is a one-line header `<name>.jsonl` (`SessionHeader`: id, createdAt, cwd, parentSessionId, source) beside a private `<name>.durable/` directory that holds pi-durable JSONL storage; the session name and the last run record live in a durable document. The header has no format version; `mikan migrate` converts 0.5.3 v3 files and prerelease v4 files. Entries form one linear transcript of message, custom, and compaction entries; read the model's view with `buildSessionContext()` and the entries still in context with `getContextEntries()` instead of reading the files.
 
 ### `MikanModels`
 

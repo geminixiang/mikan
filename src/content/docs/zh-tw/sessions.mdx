@@ -55,11 +55,11 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
 
 ## Thread 血緣
 
-Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
+Scoped session 會在自己的 header 中，以 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
 
 ## 維運遷移
 
-Runtime 只開啟目前的 v5 格式：一個 header 檔加上 pi-durable 儲存。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔並把原檔保留為 `*.v3.bak`，也會匯入預覽版的 v4 檔並把原檔移到該對話的 `sessions-v4/` 目錄；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
+一個 session 是一行的 header 檔加上 pi-durable 儲存。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔並把原檔保留為 `*.v3.bak`，也會匯入預覽版的 v4 檔並把原檔移到該對話的 `sessions-v4/` 目錄；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
 
 ## Bootstrap、Clean session 與記憶
 

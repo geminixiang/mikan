@@ -80,14 +80,12 @@ export interface V4SessionHeader {
   createdAt: number;
   cwd: string;
   parentSessionId?: string;
-  legacyParentSessionPath?: string;
 }
 
 export interface V4Session {
   header: V4SessionHeader;
   branch: V4Entry[];
   name?: string;
-  parentSessionPath?: string;
   source?: { [key: string]: JsonValue };
   open: boolean;
 }
@@ -160,8 +158,6 @@ export function readV4Header(path: string): V4SessionHeader | undefined {
     createdAt: value.createdAt,
     cwd: value.cwd,
     parentSessionId: typeof value.parentSessionId === "string" ? value.parentSessionId : undefined,
-    legacyParentSessionPath:
-      typeof value.legacyParentSessionPath === "string" ? value.legacyParentSessionPath : undefined,
   };
 }
 
@@ -226,10 +222,6 @@ export function readV4Session(path: string): V4Session {
     header,
     branch: branch.toReversed(),
     name: typeof name === "string" && name.trim() ? name.trim() : undefined,
-    parentSessionPath:
-      isRecord(metadata) && typeof metadata.parentSessionPath === "string"
-        ? metadata.parentSessionPath
-        : header.legacyParentSessionPath,
     source:
       isRecord(metadata) && isRecord(metadata.source)
         ? JSON.parse(JSON.stringify(metadata.source))

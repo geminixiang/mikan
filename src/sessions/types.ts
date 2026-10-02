@@ -5,20 +5,6 @@ import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
 
-export interface MikanSessionHeader {
-  type?: string;
-  version?: number;
-  id?: string;
-  timestamp?: string;
-  cwd?: string;
-  parentSession?: string;
-  source?: {
-    kind?: string;
-    file?: string;
-    recentDays?: number;
-  };
-}
-
 export interface ResolveSessionKeyOptions {
   conversationId: string;
   conversationKind: ConversationKind;
@@ -64,13 +50,10 @@ export interface SessionRunRecord {
   status?: SessionRunStatus;
 }
 
-export const CURRENT_SESSION_VERSION = 5;
-
 export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
 
 export interface SessionCreateInfo {
   id?: string;
-  parentSession?: string;
   parentSessionId?: string;
   source?: { [key: string]: JsonValue };
 }
@@ -83,19 +66,11 @@ export interface SessionInspection {
 }
 
 export interface SessionHeader {
-  type: "session";
-  version?: number;
   id: string;
-  timestamp: string;
+  createdAt: number;
   cwd: string;
-  parentSession?: string;
   parentSessionId?: string;
-  [extra: string]: unknown;
-}
-
-export interface ParentSessionRef {
-  path: string;
-  id: string;
+  source?: { [key: string]: JsonValue };
 }
 
 export interface ThreadRootMessage {

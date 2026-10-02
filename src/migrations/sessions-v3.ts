@@ -339,7 +339,6 @@ function buildV4Header(header: V3SessionHeader): Record<string, unknown> {
     createdAt: toEpochMillis(header.timestamp),
     cwd: header.cwd,
     parentSessionId: header.parentSessionId,
-    legacyParentSessionPath: header.parentSession,
   };
 }
 
@@ -387,12 +386,11 @@ function headerMetadata(header: V3SessionHeader): Record<string, JsonValue> | un
     id: _id,
     timestamp: _timestamp,
     cwd: _cwd,
-    parentSession,
+    parentSession: _parentSession,
     parentSessionId: _parentSessionId,
     ...extras
   } = header;
   const metadata: Record<string, JsonValue> = extras as Record<string, JsonValue>;
-  if (parentSession !== undefined) metadata.parentSessionPath = parentSession;
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 

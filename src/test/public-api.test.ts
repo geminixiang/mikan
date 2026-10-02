@@ -3,7 +3,6 @@ import { describe, expect, test } from "vitest";
 import * as publicApi from "../index.js";
 
 const EXPECTED_RUNTIME_EXPORTS = [
-  "CURRENT_SESSION_VERSION",
   "ChatHistorySync",
   "DEFAULT_BUDGET_SETTINGS",
   "DEFAULT_EVENT_BUDGET",
@@ -24,7 +23,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "createOfficeAddress",
   "createWorkspace",
   "createManagedSessionFileAtPath",
-  "createNewSessionFile",
   "defaultCommandHandlers",
   "defaultModelsJsonPath",
   "dispatchCommand",
@@ -40,7 +38,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "loadSkillsFromDir",
   "loadSubagentProfiles",
   "officeKey",
-  "openManagedSession",
   "parseEventPayload",
   "parseFrontmatter",
   "parseHttpIdleTimeoutMs",
@@ -49,7 +46,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "resolveChatSessionKey",
   "resolveHarnessSettings",
   "resolveManagedSessionFile",
-  "resolveSessionFile",
   "tryResolveCurrentSession",
   "tryResolveThreadSession",
   "validateSandbox",

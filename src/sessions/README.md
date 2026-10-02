@@ -9,14 +9,15 @@ state is office-keyed — but the **session key itself stays a raw platform
 value** (`conversationId[":"suffix]`). Office keys name directories; session
 keys name conversations as the platform reports them.
 
-A session is a private `v: 5` header file beside a pi-durable JSONL storage
-directory, `<session>.durable` (ADR 0017). The header carries what listing and
-lineage need without opening storage: session ID, working directory, creation
-time, parent session, and the legacy `source` marker. The session's thread is
+A session is a private one-line JSON header file beside a pi-durable JSONL
+storage directory, `<session>.durable` (ADR 0017). The header is an index of
+what listing and lineage need without opening storage: session ID, creation
+time, working directory, parent session ID, and the legacy `source` marker. It
+has no version of its own: the State migration record decides which format the
+files are in. The session's thread is
 the storage's root conversation; its name and last run record are the
 `mikan.session` document, and host bookkeeping entries are `mikan.custom`
-entries. Runtime opening accepts only this format; `mikan migrate` converts
-older files (see `src/migrations/`).
+entries. `mikan migrate` converts older files (see `src/migrations/`).
 
 ## Keeping up with Pi
 
@@ -43,5 +44,5 @@ compaction summary in; the wrapper text is not exported upstream, so
 - `history-line.ts` owns the prompt history-line grammar `[timestamp] [user] [in-thread:ts]: text`; its writer and parser are round-trip tested.
 - `session-key.ts` owns the session-key grammar. Nothing else may split on `:`, and conversation ids never contain `:`.
 - `SessionStore` holds the single live-writer lease for a session file. Closing disposes MCP connections, then the harness, Session, repository, and writer lease; a cleanup failure never skips writer release, and `close()` is single-flight. Runner construction closes the writer before reporting a later materialization failure, so the same session can be rebuilt immediately.
-- A thread's parent is the main session that was current at the thread's timestamp, stable across `/new`, recorded as `parentSession` + `parentSessionId`.
+- A thread's parent is the main session that was current at the thread's timestamp, stable across `/new`, recorded as `parentSessionId`; lineage is resolved by ID inside the same sessions directory, never by path.
 - The offline migrations verify each result before swapping it in, hard-link the original as `*.v3.bak` or `*.pi-084.bak`, and leave the original in place on any failure.

@@ -2,7 +2,7 @@ import type { Office, Workspace } from "../office/types.js";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
-import type { SessionStore } from "../sessions/session-store.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { CONTROL_INPUT_CUSTOM_TYPE, type ThreadRootMessage } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
@@ -48,7 +48,7 @@ import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import { extractSessionUuid, openManagedSession } from "../sessions/store.js";
+import { extractSessionUuid } from "../sessions/store.js";
 import type { PlatformToolPack, PlatformToolRunContext } from "./tools/types.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
@@ -412,7 +412,7 @@ async function openRunnerSessionManager(params: {
   threadRootMessage: ThreadRootMessage | null;
 }) {
   const { contextFile, runtimeWorkspaceRoot, sessionKey, threadRootMessage } = params;
-  const sessionManager = await openManagedSession(contextFile, runtimeWorkspaceRoot);
+  const sessionManager = await SessionStore.open(contextFile, runtimeWorkspaceRoot);
   try {
     const threadSessionName = buildThreadSessionName(threadRootMessage);
     if (
@@ -436,7 +436,7 @@ async function createRunnerAgentSession(params: {
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   tools: ReturnType<typeof createMikanTools>["tools"];
   toolContext: MikanToolContext;
-  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  sessionManager: SessionStore;
   modelRegistry: MikanModels;
   conversationId: string;
   signal?: AbortSignal;
@@ -601,7 +601,7 @@ interface RunnerInterfaceParams {
   session: MikanAgentSession;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
-  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  sessionManager: SessionStore;
   chatSessionManager: ChatHistorySync;
   toolBindings: MikanToolBindings;
 }
@@ -772,7 +772,7 @@ async function finishRunnerCreation(params: {
   modelRegistry: MikanModels;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   systemPrompt: string;
-  sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
+  sessionManager: SessionStore;
   toolBindings: MikanToolBindings;
   platformToolRoles: PlatformToolRoles;
   toolContext: MikanToolContext;

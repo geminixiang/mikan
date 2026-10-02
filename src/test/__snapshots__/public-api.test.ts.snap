@@ -20,15 +20,13 @@ export type { BudgetSettings, HarnessSettings, RetrySettings } from "./harness/t
 export type { EventConversationKind, EventFilePayload, EventPayloadInput, EventType, ImmediateEventPayload, OneShotEventPayload, PeriodicEventPayload, } from "./events/index.js";
 export type { SubagentModelSpec, SubagentParentContext, SubagentProfile, SubagentRunBudget, SubagentRunOutput, SubagentRunRequest, SubagentRunResult, SubagentRunStatus, SubagentUsage, SubagentUsageSink, } from "./harness/types.js";
 export type { SessionContext, SessionCompactionEntry, SessionCustomEntry, SessionEntry, SessionHeader, SessionMessageEntry, } from "./sessions/types.js";
-export { CURRENT_SESSION_VERSION } from "./sessions/types.js";
 export { isCommandText } from "./adapters/commands/manifest.js";
 export { ChatHistorySync, hasMaterializedChatSession, registerThreadSession, waitForThreadSessionBootstrap, } from "./sessions/chat-history-sync.js";
 export type { ChatHistorySyncOptions, ChatSyncReport, HasMaterializedSessionOptions, RegisterThreadSessionOptions, ResetChatSessionOptions, ResolveChatSessionScopeOptions, SyncChatSessionOptions, ThreadBootstrapWaitOptions, } from "./sessions/types.js";
 export { isPlatformHistorySession } from "./sessions/store.js";
-export type { MikanSessionHeader } from "./sessions/types.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
 export type { ResolveSessionKeyOptions } from "./sessions/types.js";
-export { createManagedSessionFile, createManagedSessionFileAtPath, createNewSessionFile, extractSessionSuffix, extractSessionUuid, getThreadSessionFile, openManagedSession, resolveManagedSessionFile, resolveSessionFile, tryResolveCurrentSession, tryResolveThreadSession, } from "./sessions/store.js";
+export { createManagedSessionFile, createManagedSessionFileAtPath, extractSessionSuffix, extractSessionUuid, getThreadSessionFile, resolveManagedSessionFile, tryResolveCurrentSession, tryResolveThreadSession, } from "./sessions/store.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./sessions/types.js";
 export { createConversationRuntime } from "./runtime/conversation-runtime.js";
 export type { ConversationRuntime, ConversationRuntimeOptions, RunSessionOptions, } from "./runtime/types.js";

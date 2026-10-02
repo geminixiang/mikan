@@ -1874,7 +1874,7 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
   const header = sm.getHeader();
 
   const entries = await sm.getEntries();
-  const updatedAt = entryIsoTime(entries.at(-1)) ?? header.timestamp;
+  const updatedAt = entryIsoTime(entries.at(-1)) ?? new Date(header.createdAt).toISOString();
   const title = (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`;
 
   const parent = await resolveParentRelation(resolvedFile, header);
@@ -1918,7 +1918,7 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
     sessionId: header.id,
     fileName: basename(resolvedFile),
     title,
-    createdAt: header.timestamp,
+    createdAt: new Date(header.createdAt).toISOString(),
     updatedAt,
     entryCount: entries.length,
     items,
@@ -1988,7 +1988,7 @@ async function buildSessionRelation(
   }
 
   const entries = await sm.getEntries();
-  const updatedAt = entryIsoTime(entries.at(-1)) ?? header.timestamp;
+  const updatedAt = entryIsoTime(entries.at(-1)) ?? new Date(header.createdAt).toISOString();
   const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
   const anchorEntryId =
     kind === "thread" && expectedParent

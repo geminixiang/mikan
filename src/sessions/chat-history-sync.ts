@@ -18,7 +18,6 @@ import {
   createManagedSessionFileAtPath,
   extractSessionSuffix,
   getThreadSessionFile,
-  openManagedSession,
   resolveParentSessionForThread,
   tryResolveCurrentSession,
   tryResolveThreadSession,
@@ -40,7 +39,6 @@ import type {
   ThreadBootstrapWaitOptions,
   ChatSyncReport,
   LogRecord,
-  ParentSessionRef,
   ResolvedSessionScope,
   ThreadRootMessage,
 } from "./types.js";
@@ -69,7 +67,7 @@ export function registerThreadSession(options: RegisterThreadSessionOptions): st
       resolveParentSessionForThread(
         options.office.sessionsDir,
         extractSessionSuffix(options.sessionKey),
-      ) ?? undefined,
+      ),
     )
   );
 }
@@ -164,7 +162,7 @@ export class ChatHistorySync {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
       isCommandText: this.isCommandText,
     });
-    const sessionManager = await openManagedSession(sessionFile, cwd);
+    const sessionManager = await SessionStore.open(sessionFile, cwd);
     try {
       await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
         source: OFFICE_LOG_FILENAME,
@@ -228,7 +226,7 @@ export class ChatHistorySync {
     createManagedSessionFileAtPath(
       threadFile,
       options.cwd,
-      resolveParentSessionForThread(options.sessionDir, threadId) ?? undefined,
+      resolveParentSessionForThread(options.sessionDir, threadId),
     );
     const bootstrapRecords = selectThreadBootstrapMessages(records, threadId, {
       recentDays: this.recentDays,
@@ -252,24 +250,11 @@ export class ChatHistorySync {
   }
 }
 
-function existingThreadParent(threadFile: string): ParentSessionRef | undefined {
-  let header;
-  try {
-    header = SessionStore.readHeader(threadFile);
-  } catch {
-    return undefined;
-  }
-  const path = header?.parentSession;
-  const id = header?.parentSessionId;
-  return path && id ? { path, id } : undefined;
-}
-
 function resetThreadSessionFile(sessionsDir: string, sessionKey: string, cwd: string): string {
   const threadFile = getThreadSessionFile(sessionsDir, sessionKey);
   const parent =
-    existingThreadParent(threadFile) ??
-    resolveParentSessionForThread(sessionsDir, extractSessionSuffix(sessionKey)) ??
-    undefined;
+    SessionStore.readHeader(threadFile)?.parentSessionId ??
+    resolveParentSessionForThread(sessionsDir, extractSessionSuffix(sessionKey));
   archiveManagedSessionFile(threadFile);
   return createManagedSessionFileAtPath(threadFile, cwd, parent);
 }
@@ -430,7 +415,7 @@ async function bootstrapSessionFromLog(
 ): Promise<void> {
   if (records.length === 0 && !lastMessageId) return;
 
-  const sessionManager = await openManagedSession(sessionFile, cwd);
+  const sessionManager = await SessionStore.open(sessionFile, cwd);
   try {
     await appendLogRecordsToSession(sessionManager, records);
     await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {

@@ -107,10 +107,7 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
     writer.entry({ type: "message", id: "e", parentId: "d", timestamp: 5, message: call });
     writer.set("pi.branch.tip", "main", "e");
     writer.set("pi.session.name", "", "Imported");
-    writer.set("mikan", "metadata", {
-      parentSessionPath: "/parent.jsonl",
-      source: { kind: "platform-history" },
-    });
+    writer.set("mikan", "metadata", { source: { kind: "platform-history" } });
   });
   const original = readFileSync(file, "utf-8");
 
@@ -132,8 +129,7 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
     id: "session-1",
     cwd: "/workspace",
     parentSessionId: "parent-1",
-    parentSession: "/parent.jsonl",
-    metadata: { source: { kind: "platform-history" } },
+    source: { kind: "platform-history" },
   });
   const inspection = await SessionStore.inspect(file);
   expect(await inspection.getSessionName()).toBe("Imported");
@@ -176,7 +172,7 @@ test("an interrupted publish finishes on the next run", async () => {
     });
     writer.set("pi.branch.tip", "main", "a");
   });
-  const store = await SessionStore.create(`${file}.v5.tmp`, "/workspace", { id: "session-1" });
+  const store = await SessionStore.create(`${file}.importing`, "/workspace", { id: "session-1" });
   await store.appendMessage(user("hello", 1));
   await store.close();
   const archive = join(stateDir, "conversations", "v1-slack-c1", "sessions-v4", "thread.jsonl");
@@ -188,5 +184,5 @@ test("an interrupted publish finishes on the next run", async () => {
 
   const inspection = await SessionStore.inspect(file);
   expect((await inspection.buildSessionContext()).messages.map(textOf)).toEqual(["hello"]);
-  expect(existsSync(`${file}.v5.tmp`)).toBe(false);
+  expect(existsSync(`${file}.importing`)).toBe(false);
 });
