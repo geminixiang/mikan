@@ -67,7 +67,11 @@ successful answer after the latest compaction, unknown until one exists.
 Two provider-request facts are local because pi-durable does not expose them:
 mikan wraps the model catalog to pass the session ID as `sessionId` (provider
 prompt caches key on it) and to know whether a request is in flight when it
-logs an abort.
+logs an abort. The abort log marks a request from its `onPayload` call, not
+from `pi.live.generation`: a generation exists while credentials resolve and
+before the transport starts, so it cannot tell whether a provider ever received
+the request, and an abort during auth, a tool, or retry backoff must not be
+reported as an aborted LLM request.
 
 ### Cancellation and budgets
 
