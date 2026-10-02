@@ -100,7 +100,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       excludeTs: new Set([rootA, tellATs, String(tellAReply!.ts), askATs]),
       timeoutMs: Math.max(env.timeoutMs, 45_000),
       pollMs: env.pollMs,
-      textMatches: new RegExp(`^\\s*${tokenA}\\s*(?:_?Triggered by|$)`),
+      textMatches: new RegExp(`^(?:[✓✗•] [^\\n]*\\n+)*\\s*${tokenA}\\s*(?:_?Triggered by|$)`),
     });
     expect(askAReply, `no thread A reply containing ${tokenA}`).not.toBeNull();
     expect(
