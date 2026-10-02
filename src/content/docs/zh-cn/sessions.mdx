@@ -58,7 +58,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 运维迁移
 
-运行时只打开当前的 Pi 0.85 v4 格式。`mikan migrate` 会转换 0.5.3 的 v3 会话文件，并把原文件保留为 `*.v3.bak`；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
+运行时只打开当前的 v5 格式：一个 header 文件加上 pi-durable 存储。`mikan migrate` 会转换 0.5.3 的 v3 会话文件并把原文件保留为 `*.v3.bak`，也会导入预览版的 v4 文件并把原文件移到该对话的 `sessions-v4/` 目录；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
 
 ## 初始化、Clean session 与记忆
 

@@ -61,7 +61,7 @@ scoped session は、それがどの top-level session から作られたかを 
 
 ## 運用者向けの移行
 
-runtime が開くのは現在の Pi 0.85 v4 形式だけです。`mikan migrate` が 0.5.3 の v3 session file を変換し、元のファイルを `*.v3.bak` として残します。[State マイグレーション](/ja/deployment/#state-マイグレーション)を参照してください。
+runtime が開くのは現在の v5 形式（header file と pi-durable storage）だけです。`mikan migrate` は 0.5.3 の v3 session file を変換して元のファイルを `*.v3.bak` として残し、プレリリースの v4 file を取り込んで元のファイルを会話の `sessions-v4/` directory へ移します。[State マイグレーション](/ja/deployment/#state-マイグレーション)を参照してください。
 
 ## Bootstrap、Clean session、メモリ
 

@@ -160,7 +160,7 @@ model turn loop、message 永続化、retries、compaction、budget circuit brea
 
 ### `SessionStore`
 
-Pi 0.85 の current v4 append-only session JSONL tree を所有します。永続化される header は `v: 4` と `storageVersion: 1` を持ち、mikan 固有の metadata は namespaced な durable value `mikan/metadata` として保存されます。runtime が受け付けるのはこの current format だけです。`mikan migrate` が 0.5.3 の v3 file を変換します。`SessionHeader.version` の compatibility view は現在 `4`（`CURRENT_SESSION_VERSION`）です。Session entries は分岐し得るため、consumers はファイルをフラットなチャットトランスクリプトと仮定せず、store/context helpers を使わなければなりません。
+mikan の v5 session file を所有します。各 session は header だけの `<name>.jsonl`（`v: 5`。id、cwd、lineage、source を持つ）と、その隣の private な `<name>.durable/` directory（pi-durable の JSONL storage）で構成されます。session 名と直近の run 記録は durable document に保存されます。runtime が受け付けるのはこの形式だけで、`mikan migrate` が 0.5.3 の v3 file とプレリリースの v4 file を変換します。`SessionHeader.version` は `5`（`CURRENT_SESSION_VERSION`）です。entries は message、custom、compaction からなる一本の線形トランスクリプトです。モデルが見る内容は `buildSessionContext()`、context に残っている entries は `getContextEntries()` で読み、ファイルを直接読まないでください。
 
 ### `MikanModels`
 

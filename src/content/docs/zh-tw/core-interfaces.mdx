@@ -160,7 +160,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### `SessionStore`
 
-擁有 Pi 0.85 目前 v4 的 append-only session JSONL tree。持久化 header 使用 `v: 4` 與 `storageVersion: 1`；mikan 專屬 metadata 會儲存為命名空間持久值 `mikan/metadata`。Runtime 只接受這個目前格式；`mikan migrate` 會轉換 0.5.3 的 v3 檔案。相容 view 中的 `SessionHeader.version` 目前為 `4`（`CURRENT_SESSION_VERSION`）。Session 項目可能分支；消費者必須使用 store/context helper，不得假設該檔案是扁平的聊天逐字稿。
+擁有 mikan 的 v5 session 檔。每個 session 是一個只有 header 的 `<name>.jsonl`（`v: 5`，含 id、cwd、lineage 與 source），旁邊是私有的 `<name>.durable/` 目錄，存放 pi-durable 的 JSONL 儲存；session 名稱與最近一次 run 紀錄放在 durable 文件裡。Runtime 只接受這個格式；`mikan migrate` 會轉換 0.5.3 的 v3 檔與預覽版的 v4 檔。`SessionHeader.version` 為 `5`（`CURRENT_SESSION_VERSION`）。項目是一條線性的逐字稿，包含 message、custom 與 compaction；請用 `buildSessionContext()` 讀模型看到的內容，用 `getContextEntries()` 讀仍在 context 內的項目，不要直接讀檔。
 
 ### `MikanModels`
 

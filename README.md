@@ -16,7 +16,7 @@ Self-hosted AI coding agent for organizations: every Slack channel and DM gets i
 
 mikan keeps the chat record, agent session, and execution runtime separate:
 
-[![mikan architecture — runtime ownership, Pi v4 sessions, authorized execution, and response delivery](src/content/docs/assets/architecture.png)](docs/architecture.html)
+[![mikan architecture — runtime ownership, pi-durable sessions, authorized execution, and response delivery](src/content/docs/assets/architecture.png)](docs/architecture.html)
 
 [Download the HTML/SVG source](docs/architecture.html) to view the full architecture diagram locally.
 

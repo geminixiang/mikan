@@ -59,7 +59,7 @@ Scoped session 會在自己的 header 中，以 `parentSession`（路徑）與 `
 
 ## 維運遷移
 
-Runtime 只開啟目前的 Pi 0.85 v4 格式。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔，並把原檔保留為 `*.v3.bak`；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
+Runtime 只開啟目前的 v5 格式：一個 header 檔加上 pi-durable 儲存。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔並把原檔保留為 `*.v3.bak`，也會匯入預覽版的 v4 檔並把原檔移到該對話的 `sessions-v4/` 目錄；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
 
 ## Bootstrap、Clean session 與記憶
 

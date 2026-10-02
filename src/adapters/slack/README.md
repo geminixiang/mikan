@@ -53,8 +53,8 @@ intake even though ordinary unmentioned thread messages do not trigger runs.
 
 `task_status` is bound to the current DM's recent task anchors (ten historical entries plus all active tasks).
 Active state comes from the existing runtime; terminal outcomes come from a
-read-only v4 snapshot, without claiming the live writer. An open operation with
-no active runtime is unknown, not claimed to be running. Task acknowledgement
+read-only snapshot of the durable session, without claiming the live writer. A run
+still recorded as open with no active runtime is unknown, not claimed to be running. Task acknowledgement
 text identifies the work, not its current progress. No ETA is inferred.
 
 Pure status questions (Jev `status`, or the regex shortcut without Jev) read

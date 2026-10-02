@@ -60,8 +60,9 @@ A scoped session records the top-level session it was created from in its header
 
 ## Operator migration
 
-Runtime opens only the current Pi 0.85 v4 format. `mikan migrate` converts 0.5.3 v3 session files
-and keeps each original as `*.v3.bak`; see [State migrations](/deployment/#state-migrations).
+Runtime opens only the current v5 format: a header file plus pi-durable storage. `mikan migrate` converts
+0.5.3 v3 session files, keeping each original as `*.v3.bak`, and imports prerelease v4 files, moving each
+original to the office's `sessions-v4/` directory; see [State migrations](/deployment/#state-migrations).
 
 ## Bootstrap, Clean sessions, and memory
 
