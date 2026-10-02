@@ -140,4 +140,5 @@ jobs:
             exit 1
           fi
 
-          npm run test:e2e:slack
+          # The tests inspect the daemon's sessions, which live in its state dir.
+          STATE_DIR="$STATE_DIR" npm run test:e2e:slack

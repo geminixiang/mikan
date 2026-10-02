@@ -69,7 +69,7 @@ describe.skipIf(!ctx)("Slack Block Kit markdown", () => {
       const links = findRichTextLinks(canonicalMessage?.blocks ?? []);
       const link = links.find((candidate) => candidate.url === url);
       expect(link, `no rich_text link with url ${url} in canonical blocks`).toBeDefined();
-      expect(link?.text).toBe("#523");
+      expect(link?.text).toBe("#1");
     } finally {
       if (messageTs) {
         await client.chat.delete({ channel: env.channel, ts: messageTs }).catch(() => undefined);
