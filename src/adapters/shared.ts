@@ -17,6 +17,7 @@ import type {
   RetryOptions,
   ResolveStopTargetInput,
   SavedAttachments,
+  QueueAdmission,
 } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
 
@@ -90,10 +91,15 @@ export class MessagingEventQueue {
   constructor(private readonly name: string = "") {}
 
   enqueue(work: () => Promise<void>): boolean {
-    if (!this.accepting) return false;
+    return this.admit(work) !== "closed";
+  }
+
+  admit(work: () => Promise<void>): QueueAdmission {
+    if (!this.accepting) return "closed";
+    const admission = this.processing || this.queue.length > 0 ? "waiting" : "started";
     this.queue.push(work);
     this.processNext();
-    return true;
+    return admission;
   }
 
   size(): number {
@@ -316,6 +322,7 @@ export async function downloadUrlToFile(url: string, destPath: string): Promise<
 
 const SHORT_NAME_TO_UNICODE_EMOJI: Record<string, string> = {
   saluting_face: "\u{1FAE1}",
+  hourglass_flowing_sand: "\u{23F3}",
   eyes: "\u{1F440}",
   white_check_mark: "\u{2705}",
   "+1": "\u{1F44D}",

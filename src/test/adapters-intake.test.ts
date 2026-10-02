@@ -106,6 +106,49 @@ describe("processMessageIntake identity", () => {
   });
 });
 
+describe("processMessageIntake queued reaction", () => {
+  test.each([
+    { admission: "waiting" as const, marked: true },
+    { admission: "started" as const, marked: false },
+    { admission: "closed" as const, marked: false },
+  ])("marks the message queued only when it waits: $admission", async ({ admission, marked }) => {
+    const react = vi.fn().mockResolvedValue(undefined);
+    await processMessageIntake(makeOptions({ enqueue: vi.fn(() => admission), react }));
+    expect(react.mock.calls).toEqual(marked ? [["hourglass_flowing_sand"]] : []);
+  });
+
+  test("marks deferred-attachment messages that wait", async () => {
+    const react = vi.fn().mockResolvedValue(undefined);
+    await processMessageIntake(
+      makeOptions({
+        deferAttachmentsUntilRun: true,
+        enqueue: vi.fn(() => "waiting" as const),
+        react,
+      }),
+    );
+    expect(react).toHaveBeenCalledOnce();
+  });
+
+  test("a failed reaction does not fail intake", async () => {
+    const react = vi.fn().mockRejectedValue(new Error("no permission"));
+    const outcome = await processMessageIntake(
+      makeOptions({ enqueue: vi.fn(() => "waiting" as const), react }),
+    );
+    expect(outcome).toBe("enqueued");
+    await vi.waitFor(() => expect(react).toHaveBeenCalledOnce());
+  });
+
+  test("stop and untriggered messages are never marked", async () => {
+    const react = vi.fn().mockResolvedValue(undefined);
+    const enqueue = vi.fn(() => "waiting" as const);
+    await processMessageIntake(
+      makeOptions({ eventBase: makeEvent({ text: "stop" }), enqueue, react }),
+    );
+    await processMessageIntake(makeOptions({ addressed: false, enqueue, react }));
+    expect(react).not.toHaveBeenCalled();
+  });
+});
+
 describe("matchMagicWord", () => {
   test.each(["stop", "/stop", "Stop", "STOP", " stop ", "/stop@mikan_bot", "stop@mikan_bot"])(
     "recognizes %j as the stop magic word",
@@ -347,7 +390,10 @@ describe("processMessageIntake", () => {
         logEntryBase: { text: "hello" },
         log,
         processAttachments: vi.fn().mockResolvedValue(attachments),
-        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        enqueue: (_queueKey, queuedWork) => {
+          work.push(queuedWork);
+          return "started";
+        },
         handler,
         bot,
         createContext,
@@ -377,7 +423,10 @@ describe("processMessageIntake", () => {
     const outcome = await processMessageIntake(
       makeOptions({
         processAttachments,
-        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        enqueue: (_queueKey, queuedWork) => {
+          work.push(queuedWork);
+          return "started";
+        },
         handler,
         deferAttachmentsUntilRun: true,
       }),
@@ -399,7 +448,10 @@ describe("processMessageIntake", () => {
     const options = makeOptions({
       eventBase: makeEvent({ sessionKey: "C1" }),
       busyPolicy: "reject",
-      enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+      enqueue: (_queueKey, queuedWork) => {
+        work.push(queuedWork);
+        return "started";
+      },
       handler,
       deferAttachmentsUntilRun: true,
     });
@@ -418,7 +470,10 @@ describe("processMessageIntake", () => {
     const intake = processMessageIntake(
       makeOptions({
         processAttachments: vi.fn().mockRejectedValue(failure),
-        enqueue: (_queueKey, queuedWork) => work.push(queuedWork),
+        enqueue: (_queueKey, queuedWork) => {
+          work.push(queuedWork);
+          return "started";
+        },
         deferAttachmentsUntilRun: deferred,
       }),
     );

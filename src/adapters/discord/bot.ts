@@ -614,7 +614,10 @@ export class DiscordMessagingBot implements MessagingBot {
       log: (entry) => this.logToFile(conversationId, entry),
       processAttachments: () => this.processAttachments(conversationId, msg.attachments),
       queueKey: sessionKey,
-      enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+      enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
+      react: async (emoji) => {
+        await msg.react(shortNameToUnicodeEmoji(emoji));
+      },
       handler: this.handler,
       bot: this,
       createContext: (event) => createDiscordAdapters(event, this),

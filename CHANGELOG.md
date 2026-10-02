@@ -14,6 +14,10 @@ any release.
 - **Pi is upgraded to 1.0, and conversations now run on `@earendil-works/pi-durable`.** Pi 1.0 removed the harness, sessions, compaction, and coding tools from `pi-agent-core`; pi-durable is their first-party successor (see [ADR 0017](docs/adr/0017-pi-durable-harness.md)). Run `mikan migrate` before starting this version: it imports each v4 session file into a durable storage directory beside it (`<session>.durable/`) and moves the original to the office's `sessions-v4/` directory. An imported session keeps what the model could still see (the newest compaction summary and everything after it), its name, lineage, and mikan's bookkeeping; history an earlier compaction had already hidden stays only in the archived file. A tool call that was still running at upgrade is closed with an error result instead of being retried, and a run left unfinished is not resumed.
 - Library API: `SessionEntry` is mikan's own union of `message`, `custom`, and `compaction` entries, with IDs qualified by the session ID; `BranchSummaryEntry`, `CompactionEntry`, and `CustomEntry` are no longer exported. `SessionStore.createHarness` is replaced by `bindHarness`, `appendCustomMessageEntry` is removed, and `MikanAgentSession.compactWhenNearLimit`/`cancelIdleCompaction` are gone. Harness tools use pi-durable's `execute(args, api, context)`; plain `AgentTool`s are still adapted.
 
+### Added
+
+- Slack and Discord mark a message with ⏳ when it waits behind a task that is still running, so a queued message no longer looks ignored.
+
 ### Changed
 
 - Compaction is Pi's: it runs in the background as the context grows and blocks the next request only near the limit, so mikan no longer starts its own compaction after a reply. Compaction summary requests now count toward a run's LLM-call and token budgets, and a request over the LLM-call budget is never sent.

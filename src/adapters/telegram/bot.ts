@@ -371,7 +371,7 @@ export class TelegramMessagingBot implements MessagingBot {
           log: (entry) => this.logToFile(mc.chatId, entry),
           processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
           queueKey: mc.sessionKey,
-          enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+          enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
           handler: this.handler,
           bot: this,
           createContext: (event) => createTelegramAdapters(event, this),

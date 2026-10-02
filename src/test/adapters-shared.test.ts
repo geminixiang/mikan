@@ -159,6 +159,25 @@ describe("withRetry", () => {
 });
 
 describe("MessagingEventQueue", () => {
+  test("admit reports whether work waits behind earlier work", async () => {
+    const queue = new MessagingEventQueue("test");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    expect(queue.admit(() => gate)).toBe("started");
+    expect(queue.admit(async () => {})).toBe("waiting");
+    release();
+    const closed = queue.close();
+    expect(queue.admit(async () => {})).toBe("closed");
+    await closed;
+    expect(queue.admit(async () => {})).toBe("closed");
+  });
+
+  test("admit starts work at once on an idle queue", async () => {
+    const queue = new MessagingEventQueue("test");
+    await new Promise<void>((resolve) => queue.admit(async () => resolve()));
+    expect(queue.admit(async () => {})).toBe("started");
+  });
+
   test("offerEvent rejects an event once the pending events reach the limit", async () => {
     const queue = new MessagingEventQueue("test");
     const event = createConversationEvent({

@@ -2,7 +2,11 @@ import { assertSessionKeyBelongsToConversation } from "../sessions/session-key.j
 import type { ConversationEvent } from "../types.js";
 import { formatAlreadyWorking, formatNothingRunning } from "./messages.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
+import * as log from "../log.js";
+import { errorMessage } from "../unknown-values.js";
 import type { MessageIntakeOptions, MessageIntakeOutcome } from "./types.js";
+
+const QUEUED_REACTION = "hourglass_flowing_sand";
 
 export function matchMagicWord(text: string): "stop" | null {
   return /^\/?stop(?:@\w+)?$/i.test(text.trim()) ? "stop" : null;
@@ -44,8 +48,15 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
     return options.handler.handleEvent(event, options.bot, context);
   }
 
+  function admit(work: () => Promise<void>): void {
+    if (options.enqueue(options.queueKey, work) !== "waiting" || !options.react) return;
+    options.react(QUEUED_REACTION).catch((error: unknown) => {
+      log.logWarning("Could not mark a queued message", errorMessage(error));
+    });
+  }
+
   if (options.deferAttachmentsUntilRun) {
-    options.enqueue(options.queueKey, async () => {
+    admit(async () => {
       const event = prepareEvent(await options.processAttachments());
       if (options.busyPolicy === "reject" && (await rejectedWhileBusy())) return;
       return dispatch(event);
@@ -55,7 +66,7 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
 
   const event = prepareEvent(await options.processAttachments());
   if (options.busyPolicy === "reject" && (await rejectedWhileBusy())) return "rejected-busy";
-  options.enqueue(options.queueKey, () => dispatch(event));
+  admit(() => dispatch(event));
   return "enqueued";
 }
 

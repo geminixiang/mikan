@@ -164,6 +164,7 @@ function makeDiscordMessage(
     mentions: { users: { has: (id: string) => id === "BOT" } },
     reference: null,
     attachments: new Map<string, DiscordAttachmentSource>(),
+    react: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -378,13 +379,17 @@ describe("DiscordMessagingBot message routing", () => {
       expect(handler.handleEvent).toHaveBeenCalledTimes(1);
     });
 
-    client.deliverMessage(
-      makeDiscordMessage({ id: "M2", channelId: "C1", content: "<@BOT> second request" }),
-    );
+    const second = makeDiscordMessage({
+      id: "M2",
+      channelId: "C1",
+      content: "<@BOT> second request",
+    });
+    client.deliverMessage(second);
     await vi.waitFor(() => {
       expect(readOfficeLog(workingDir, "C1")).toHaveLength(2);
     });
 
+    expect(second.react).toHaveBeenCalledWith("\u{23F3}");
     expect(client.channels.fetch).not.toHaveBeenCalled();
     expect(handler.handleEvent).toHaveBeenCalledTimes(1);
 

@@ -402,7 +402,7 @@ export class GithubMessagingBot implements MessagingBot {
         return [];
       },
       queueKey: conversationId,
-      enqueue: (queueKey, work) => this.getQueue(queueKey).enqueue(work),
+      enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
       handler: this.handler,
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),

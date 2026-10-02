@@ -44,6 +44,7 @@ export interface DiscordIncomingMessage {
   mentions: { users: { has(userId: string): boolean } };
   reference: Pick<MessageReference, "messageId"> | null;
   attachments: ReadonlyMap<string, DiscordAttachmentSource>;
+  react(emoji: string): Promise<unknown>;
 }
 
 interface DiscordReplyOptions {

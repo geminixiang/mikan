@@ -115,6 +115,8 @@ export interface ProgressiveRendererPlatform {
 
 export type MessageIntakeOutcome = "magic-word" | "not-triggered" | "rejected-busy" | "enqueued";
 
+export type QueueAdmission = "started" | "waiting" | "closed";
+
 export interface MagicWordIntakeOptions {
   text?: string;
   addressed: boolean;
@@ -141,7 +143,8 @@ export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   log?: (entry: Record<string, unknown>) => void;
   processAttachments: () => Promise<unknown[]>;
   queueKey: string;
-  enqueue: (queueKey: string, work: () => Promise<void>) => void;
+  enqueue: (queueKey: string, work: () => Promise<void>) => QueueAdmission;
+  react?: (emoji: string) => Promise<void>;
   handler: MessagingEventHandler;
   bot: MessagingBot;
   createContext: (event: TEvent) => ConversationContext;
