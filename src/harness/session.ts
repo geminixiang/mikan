@@ -33,6 +33,7 @@ import {
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { AttachedSessionHarness, SessionStore } from "../sessions/session-store.js";
+import type { SessionRunStatus } from "../sessions/types.js";
 import type {
   BudgetSettings,
   CompactionSettings,
@@ -115,11 +116,11 @@ export class MikanAgentSession {
   private readonly loopNotices = new Map<string, string>();
   private runStarted = false;
   private runEndSeen = false;
-  private abortReason: string | undefined;
   private observedUsage: Usage = createEmptyUsage();
   private requestRunId: string | undefined;
   private activeRequest: { token: symbol; runId: string } | undefined;
   private runEnded: Deferred = deferred();
+  private lastSessionRunStatus: SessionRunStatus | undefined;
   private tally: RunTally = {
     usage: createEmptyUsage(),
     llmCalls: 0,
@@ -137,6 +138,10 @@ export class MikanAgentSession {
 
   get messages(): AgentMessage[] {
     return this.transcript;
+  }
+
+  get lastRunMessages(): readonly AgentMessage[] {
+    return this.runMessages;
   }
 
   get isActiveRun(): boolean {
@@ -157,6 +162,7 @@ export class MikanAgentSession {
     toolCallCounts: Record<string, number>;
     durationMs: number;
     budgetExceededReason?: string;
+    status?: SessionRunStatus;
   }> {
     return {
       usage: copyUsage(this.tally.usage),
@@ -168,6 +174,7 @@ export class MikanAgentSession {
       durationMs:
         this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
       budgetExceededReason: this.budgetExceededReason || undefined,
+      status: this.lastSessionRunStatus,
     };
   }
 
@@ -213,7 +220,6 @@ export class MikanAgentSession {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
     this.runActive = true;
     this.runAborted = false;
-    this.abortReason = undefined;
     this.budgetExceededReason = undefined;
     this.cancellation = undefined;
     this.cancellationError = undefined;
@@ -229,6 +235,7 @@ export class MikanAgentSession {
     this.loopGuard = new ToolLoopGuard();
     this.loopNotices.clear();
     this.runBudget = { ...this.settings.budget, ...options?.budget };
+    this.lastSessionRunStatus = undefined;
     this.tally = {
       usage: createEmptyUsage(),
       llmCalls: 0,
@@ -238,7 +245,7 @@ export class MikanAgentSession {
     };
     let runFailure: { error: unknown } | undefined;
     let stream: AgentEventStream | undefined;
-    let status: "completed" | "aborted" | "failed" = "completed";
+    let status: SessionRunStatus = "completed";
     try {
       if (!(await this.checkCallBudget())) return;
       this.armDeadline();
@@ -294,7 +301,6 @@ export class MikanAgentSession {
     if (this.runAborted) this.requestCancellation();
     const settled = await submission.wait(context);
     if (this.runStarted) await this.runEnded.promise;
-    if (this.runAborted) await this.recordAbortedAnswer();
     if (settled.status === "unanswered" && !this.runAborted) {
       if (settled.reason !== "aborted" && settled.reason !== "model_error") {
         throw new Error(`Pi run failed: ${settled.reason}`);
@@ -302,19 +308,10 @@ export class MikanAgentSession {
     }
   }
 
-  private async recordAbortedAnswer(): Promise<void> {
-    if (!this.runStarted) return;
-    const last = this.runMessages.findLast((message) => message.role === "assistant");
-    if (last?.role === "assistant" && last.stopReason === "aborted") return;
-    const message = abortedAssistant(this.model, this.abortReason ?? "Operation aborted");
-    await this.sessionStore.appendMessage(message);
-    await this.endMessage(message);
-  }
-
   private async cleanupRun(
     runFailure: { error: unknown } | undefined,
     stream: AgentEventStream | undefined,
-    status: "completed" | "aborted" | "failed",
+    status: SessionRunStatus,
   ): Promise<void> {
     clearTimeout(this.deadlineTimer);
     this.deadlineTimer = undefined;
@@ -324,6 +321,7 @@ export class MikanAgentSession {
       await this.deadlineNotification;
       await stream?.stop();
       if (this.attached) {
+        await this.reloadFromSession();
         await this.sessionStore.recordRun({
           startedAt: this.tally.startedAt,
           endedAt: Date.now(),
@@ -339,6 +337,7 @@ export class MikanAgentSession {
       this.cancellation = undefined;
       this.deadlineNotification = undefined;
       this.tally.endedAt = Date.now();
+      this.lastSessionRunStatus = status;
       this.runActive = false;
     }
     if (!cleanupFailure) return;
@@ -356,7 +355,6 @@ export class MikanAgentSession {
     if (!this.runActive) return;
     const firstAbort = !this.runAborted;
     this.runAborted = true;
-    if (firstAbort) this.abortReason = reason;
     clearTimeout(this.deadlineTimer);
     this.deadlineTimer = undefined;
     if (firstAbort && this.activeRequest !== undefined) {
@@ -700,7 +698,6 @@ export class MikanAgentSession {
         return;
       case "compaction_end": {
         const outcome = await this.compactionOutcome(event.taskId);
-        await this.reloadFromSession();
         await this.emit({
           type: "compaction_end",
           reason: event.reason,
@@ -758,7 +755,6 @@ export class MikanAgentSession {
   private async endMessage(message: Message | undefined): Promise<void> {
     if (!message || message.role === "system") return;
     this.partial = undefined;
-    this.transcript.push(message);
     this.runMessages.push(message);
     await this.emit({ type: "message_end", message });
     if (message.role !== "assistant") return;

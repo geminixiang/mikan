@@ -18,7 +18,7 @@ import {
   runSubagent,
   SUBAGENT_ABORT_GRACE_MS,
 } from "../harness/subagent.js";
-import { wrapCompactionSummary } from "../sessions/compaction-summary.js";
+import type { SessionEntry } from "../sessions/types.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import { MikanModels } from "../harness/models.js";
@@ -37,6 +37,15 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
+
+async function sessionEntriesOf(items: (AgentMessage | string)[]): Promise<SessionEntry[]> {
+  const store = SessionStore.inMemory();
+  for (const item of items) {
+    if (typeof item === "string") await store.appendCompactionSummary(item, Date.now());
+    else await store.appendMessage(item);
+  }
+  return store.getEntries();
+}
 
 function createFauxSetup(): {
   models: MikanModels;
@@ -411,9 +420,9 @@ describe("runSubagent", () => {
   test("defaults to fresh context and validates normalized recentTurns", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("fresh")]);
-    const parentMessages: AgentMessage[] = [
+    const parentEntries = await sessionEntriesOf([
       { role: "user", content: [{ type: "text", text: "parent secret" }], timestamp: 1 },
-    ];
+    ]);
     await runSubagent({
       request: { task: "Fresh task" },
       defaultModel: model,
@@ -421,7 +430,7 @@ describe("runSubagent", () => {
       models,
       workspaceDir: dir,
       availableTools: [],
-      parentMessages,
+      parentEntries,
     });
     expect(faux.state.callCount).toBe(1);
 
@@ -432,7 +441,7 @@ describe("runSubagent", () => {
       models,
       workspaceDir: dir,
       availableTools: [],
-      parentMessages,
+      parentEntries,
     });
     expect(invalid).toMatchObject({ status: "failed", error: expect.stringContaining("1 to 8") });
     expect(faux.state.callCount).toBe(1);
@@ -447,14 +456,11 @@ describe("runSubagent", () => {
         return fauxAssistantMessage("normalized");
       },
     ]);
-    const parentMessages = [
-      {
-        role: "user",
-        content: [{ type: "text", text: wrapCompactionSummary("existing summary") }],
-        timestamp: 1,
-      },
+    const parentEntries = await sessionEntriesOf([
+      { role: "user", content: [{ type: "text", text: "pre-compaction turn" }], timestamp: 1 },
+      "existing summary",
       { role: "user", content: [{ type: "text", text: "old turn" }], timestamp: 2 },
-      { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 3 },
+      fauxAssistantMessage("old answer"),
       { role: "user", content: [{ type: "text", text: "recent turn" }], timestamp: 4 },
       {
         role: "assistant",
@@ -477,7 +483,7 @@ describe("runSubagent", () => {
         stopReason: "stop",
         timestamp: 5,
       },
-    ] as AgentMessage[];
+    ]);
     const result = await runSubagent({
       request: { task: "Use context", parentContext: { mode: "normalized", recentTurns: 1 } },
       defaultModel: model,
@@ -485,10 +491,12 @@ describe("runSubagent", () => {
       models,
       workspaceDir: dir,
       availableTools: [],
-      parentMessages,
+      parentEntries,
     });
     expect(result.status).toBe("completed");
-    expect(prompt).toContain("existing summary");
+    expect(prompt).toContain("Earlier summary: existing summary");
+    expect(prompt).not.toContain("compacted into the following summary");
+    expect(prompt).not.toContain("pre-compaction turn");
     expect(prompt).toContain("recent turn");
     expect(prompt).toContain("recent answer");
     expect(prompt).not.toContain("old turn");
@@ -520,7 +528,9 @@ describe("runSubagent", () => {
     await runSubagent({
       ...common,
       request: { task: "With parent", parentContext: { mode: "normalized" } },
-      parentMessages: [{ role: "user", content: [{ type: "text", text: "parent" }], timestamp: 1 }],
+      parentEntries: await sessionEntriesOf([
+        { role: "user", content: [{ type: "text", text: "parent" }], timestamp: 1 },
+      ]),
     });
     await runSubagent({
       ...common,

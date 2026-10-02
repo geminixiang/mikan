@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { getFinalAssistantText } from "../harness/presenter.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
@@ -230,6 +231,32 @@ describe("harness run cancellation", () => {
     expect(faux.state.callCount).toBe(1);
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
     expect(JSON.stringify(session.messages)).toContain("new request");
+  });
+
+  test("abort before model output reports an aborted run without a fabricated answer", async () => {
+    const { session, faux } = setup();
+    await seedHistory(session);
+    const ready = deferred();
+    const gate = deferred();
+    faux.setResponses([
+      async () => {
+        ready.resolve();
+        await gate.promise;
+        return fauxAssistantMessage("late answer");
+      },
+    ]);
+    const run = session.prompt("stop me");
+    await ready.promise;
+    session.abort("shutdown");
+    gate.resolve();
+    await run;
+
+    expect(session.getLastRunStats().status).toBe("aborted");
+    expect(getFinalAssistantText(session)).toBe("");
+    const answers = (await session.sessionStore.getEntries()).flatMap((entry) =>
+      entry.type === "message" && entry.message.role === "assistant" ? [entry.message] : [],
+    );
+    expect(answers.map((message) => message.stopReason)).toEqual(["stop"]);
   });
 
   test("duration budget logs and aborts an in-flight provider call before its response", async () => {

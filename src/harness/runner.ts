@@ -109,7 +109,7 @@ async function createConfiguredAgentSession(params: {
   );
   let session: MikanAgentSession | undefined;
   const subagentTool = createSubagentTool(
-    (request, hooks) =>
+    async (request, hooks) =>
       runSubagent({
         request,
         onActivity: hooks?.onActivity,
@@ -123,7 +123,7 @@ async function createConfiguredAgentSession(params: {
         profiles: runnableProfiles,
         slots: globalSubagentSlots,
         toolContext,
-        parentMessages: [...session!.messages],
+        parentEntries: await session!.sessionStore.getEntries(),
         onUsage: session!.captureExternalUsageSink(),
       }),
     runnableProfiles,
@@ -540,6 +540,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     budget: isEventRun ? DEFAULT_EVENT_BUDGET : undefined,
   });
   await presentation.wait();
+  if (session.getLastRunStats().status === "aborted") runState.stopReason = "aborted";
 
   const sessionViewTokenStore = sessionView?.tokenStore;
   const sessionViewPortalBaseUrl = sessionView?.portalBaseUrl;

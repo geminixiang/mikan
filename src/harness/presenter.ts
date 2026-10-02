@@ -181,7 +181,7 @@ export function activateRunPresentation(
 }
 
 export function getFinalAssistantText(session: MikanAgentSession): string {
-  const lastAssistant = session.messages.findLast((message) => message.role === "assistant");
+  const lastAssistant = session.lastRunMessages.findLast((message) => message.role === "assistant");
   return contentText(lastAssistant?.content ?? []);
 }
 

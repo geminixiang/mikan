@@ -204,8 +204,8 @@ test("codemode filters nested results and obeys per-prompt grants", async () => 
 
 test.each([
   { code: 'await tools.probe({value: "bad"});', error: "Validation failed", executions: 0 },
-  { code: "await tools.start_task({});", error: "not a function", executions: 0 },
-  { code: "await tools.codemode({});", error: "not a function", executions: 0 },
+  { code: "await tools.start_task({});", error: "tools.start_task does not exist", executions: 0 },
+  { code: "await tools.codemode({});", error: "tools.codemode does not exist", executions: 0 },
   {
     code: "for (let i=0;i<5;i++) await tools.probe({value: 1});",
     error: "was not executed",

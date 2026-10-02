@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { wrapCompactionSummary } from "../sessions/compaction-summary.js";
 import { SessionStore, sessionStorageDir } from "../sessions/session-store.js";
 import {
   branchSummaryMessage,
@@ -98,10 +97,7 @@ async function importSession(session: V4Session, temp: string): Promise<number> 
       switch (entry.type) {
         case "compaction":
           await importer.closeOpenCalls();
-          await store.appendCompactionSummary(
-            wrapCompactionSummary(entry.summary),
-            entry.timestamp,
-          );
+          await store.appendCompactionSummary(entry.summary, entry.timestamp);
           for (const message of entry.retainedTail) await importer.append(message);
           break;
         case "message":

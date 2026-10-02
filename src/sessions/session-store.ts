@@ -44,11 +44,13 @@ import type {
   SessionHeader,
   SessionInspection,
   SessionRunRecord,
+  SessionRunStatus,
 } from "./types.js";
 import { CURRENT_SESSION_VERSION } from "./types.js";
 import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
+import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
@@ -277,7 +279,7 @@ function toSessionEntry(
       id,
       parentId,
       timestamp: messageTimestamp(message),
-      summary: contentText(message),
+      summary: (message && compactionSummaryOf(message)) ?? contentText(message),
       firstKeptEntryId: record.head === undefined ? undefined : `${sessionId}:${record.head}`,
     };
   }
@@ -489,7 +491,7 @@ export class SessionStore implements SessionInspection {
   static async inspectExecution(path: string): Promise<{
     open: boolean;
     started: boolean;
-    result?: { status: "completed" | "aborted" | "failed"; endedAt: number };
+    result?: { status: SessionRunStatus; endedAt: number };
   }> {
     return withSessionSnapshot(path, async (root, harness) => {
       if (!root || !harness) return { open: false, started: false };
@@ -682,7 +684,8 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  async appendCompactionSummary(text: string, timestamp: number): Promise<string> {
+  async appendCompactionSummary(summary: string, timestamp: number): Promise<string> {
+    const text = wrapCompactionSummary(summary);
     return this.mutate(async () => {
       const { root } = await this.live();
       const entry = await root.commit(

@@ -5,7 +5,7 @@ import { contentText, type Api, type AssistantMessage, type Model } from "@earen
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { MikanModels } from "./models.js";
-import { compactionSummaryOf } from "../sessions/compaction-summary.js";
+import type { SessionEntry } from "../sessions/types.js";
 import type {
   MikanHarnessTool,
   MikanToolContext,
@@ -129,7 +129,7 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   profiles?: ReadonlyMap<string, SubagentProfile>;
   toolContext?: MikanToolContext;
   slots?: SubagentSlotPool;
-  parentMessages?: AgentMessage[];
+  parentEntries?: SessionEntry[];
   onUsage?: SubagentUsageSink;
   onActivity?: (activity: string) => void;
 }
@@ -240,26 +240,27 @@ function formatTask(task: string, input: unknown, parentContext?: string): strin
 }
 
 function messageText(message: AgentMessage): string {
-  const summary = compactionSummaryOf(message);
-  if (summary !== undefined) return summary;
   if (!("content" in message)) return "";
   return contentText(message.content, "");
 }
 
 function normalizedParentContext(
   request: SubagentRunRequest<TSchema | undefined>,
-  messages: AgentMessage[] | undefined,
+  entries: SessionEntry[] | undefined,
 ): string | undefined {
-  if (!request.parentContext || !messages) return undefined;
+  if (!request.parentContext || !entries) return undefined;
   const recentTurns = request.parentContext.recentTurns ?? 3;
   if (!Number.isInteger(recentTurns) || recentTurns < 1 || recentTurns > 8) {
     throw new Error("api.subagent.run parentContext.recentTurns must be an integer from 1 to 8");
   }
-  const conversation = messages.filter(
-    (message) =>
-      (message.role === "user" || message.role === "assistant") &&
-      compactionSummaryOf(message) === undefined &&
-      messageText(message),
+  const compaction = entries.findLast((entry) => entry.type === "compaction");
+  const visible = compaction ? entries.slice(entries.indexOf(compaction) + 1) : entries;
+  const conversation = visible.flatMap((entry) =>
+    entry.type === "message" &&
+    (entry.message.role === "user" || entry.message.role === "assistant") &&
+    messageText(entry.message)
+      ? [entry.message]
+      : [],
   );
   let first = conversation.length;
   let users = 0;
@@ -268,14 +269,9 @@ function normalizedParentContext(
     if (conversation[first]?.role === "user") users += 1;
   }
   const recent = conversation.slice(first);
-  const recentStart = recent[0] ? messages.indexOf(recent[0]) : messages.length;
-  const summary = messages
-    .slice(0, recentStart)
-    .map(compactionSummaryOf)
-    .findLast((text) => text !== undefined);
   return [
     "<parent_reference_context>",
-    summary !== undefined ? `Earlier summary: ${summary}` : "[Earlier parent context omitted]",
+    compaction ? `Earlier summary: ${compaction.summary}` : "[Earlier parent context omitted]",
     ...recent.map(
       (message) => `${message.role === "user" ? "User" : "Assistant"}: ${messageText(message)}`,
     ),
@@ -339,7 +335,7 @@ function baseRunResult(
   };
 }
 
-function finalAssistant(messages: AgentMessage[]): AssistantMessage | undefined {
+function finalAssistant(messages: readonly AgentMessage[]): AssistantMessage | undefined {
   return messages.findLast((message): message is AssistantMessage => message.role === "assistant");
 }
 
@@ -491,7 +487,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
   const task = formatTask(
     request.task,
     request.input,
-    normalizedParentContext(request, options.parentMessages),
+    normalizedParentContext(request, options.parentEntries),
   );
   const session = new MikanAgentSession({
     systemPrompt: buildSystemPrompt(
@@ -526,7 +522,7 @@ function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
 ): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
   const { session, request, budget } = run;
   const stats = session.getLastRunStats();
-  const assistant = finalAssistant(session.messages);
+  const assistant = finalAssistant(session.lastRunMessages);
   const text = assistant ? contentText(assistant.content, "") : "";
   const base = {
     ...baseRunResult(run.runId, run.modelSpec, run.startedAt, stats),

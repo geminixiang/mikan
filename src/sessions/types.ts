@@ -57,10 +57,12 @@ export interface SessionCompactionEntry extends SessionEntryBase {
 
 export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCompactionEntry;
 
+export type SessionRunStatus = "completed" | "aborted" | "failed";
+
 export interface SessionRunRecord {
   startedAt: number;
   endedAt?: number;
-  status?: "completed" | "aborted" | "failed";
+  status?: SessionRunStatus;
 }
 
 export const CURRENT_SESSION_VERSION = 5;

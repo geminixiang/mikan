@@ -54,8 +54,11 @@ rerun unless the tool is `replay: "safe"`.
 Platform events are translated from pi-durable's agent events, which are
 derived from commits: assistant `message_end` arrives after persistence, tool
 progress carries the latest `details`, and `agent_end` contains only the
-current run's messages. A run Pi aborted before any partial was committed gets
-a persisted aborted assistant message, so presenters still see why it ended.
+current run's messages. Pi writes an aborted assistant entry only when a
+partial was committed, and the model context omits errored and aborted answers,
+so read a run's answer from `lastRunMessages` and its outcome from
+`getLastRunStats().status`, never from the last assistant in `messages`, which
+may belong to an earlier run.
 
 Two provider-request facts are local because pi-durable does not expose them:
 mikan wraps the model catalog to pass the session ID as `sessionId` (provider

@@ -139,6 +139,9 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
   expect(await inspection.getSessionName()).toBe("Imported");
   const { messages } = await inspection.buildSessionContext();
   expect(compactionSummaryOf(messages[0]!)).toBe("earlier work");
+  expect(
+    (await inspection.getEntries()).find((entry) => entry.type === "compaction"),
+  ).toMatchObject({ summary: "earlier work" });
   expect(messages.slice(1).map((message) => [message.role, textOf(message)])).toEqual([
     ["user", "kept"],
     ["assistant", "old answer"],
