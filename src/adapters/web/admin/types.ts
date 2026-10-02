@@ -3,7 +3,6 @@ import type { Office, Workspace } from "../../../office/types.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../../sandbox/types.js";
 import type { EventStore } from "../../../events/index.js";
-import type { VaultManager } from "../../../vault/types.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/portal.js";
 import type { TokenRecord } from "../types.js";
 import type { InMemoryAdminTokenStore } from "./portal.js";
@@ -16,7 +15,6 @@ export interface AdminRuntimeBridge {
 }
 
 export interface AdminServices {
-  vaultManager: VaultManager;
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   adminTokenStore: InMemoryAdminTokenStore;

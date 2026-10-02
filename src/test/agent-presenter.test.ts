@@ -273,7 +273,6 @@ describe("presenter event routing", () => {
         toolCallId: "tool-1",
         toolName: "read",
         label: "Inspect file",
-        args: { label: "Inspect file" },
       },
     ]);
     expect(responder.replaceResponse).toHaveBeenCalledWith("• Inspect file");

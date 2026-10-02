@@ -411,7 +411,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       platform: platform.name,
       conversationKind: message.conversationKind,
       userId: message.userId,
-      userName: message.userName,
       threadTs: message.threadTs,
     });
 
@@ -425,7 +424,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         platform: platform.name,
         conversationKind: message.conversationKind,
         userId: message.userId,
-        userName: message.userName,
         threadTs: message.threadTs,
       },
       async () => {

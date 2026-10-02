@@ -57,14 +57,11 @@ export interface GithubActivity {
   kind: "opened" | "comment" | "review_comment" | "assigned" | "review_requested";
   repo: GithubRepoRef & { private: boolean };
   number: number;
-  isPr: boolean;
   sender: { login: string; isBot: boolean };
   target: string | null;
   ts: string;
   text: string;
   createdAt: string;
-  issueTitle: string;
-  issueBody: string;
   review?: GithubReviewAnchor;
 }
 

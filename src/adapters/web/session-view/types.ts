@@ -19,9 +19,7 @@ export interface SessionViewItem {
 }
 
 export interface SessionViewRelation {
-  kind: "parent" | "thread";
   fileName: string;
-  sessionId: string;
   title: string;
   updatedAt: string;
   entryCount: number;
@@ -38,7 +36,6 @@ export interface SessionViewModel {
   entryCount: number;
   items: SessionViewItem[];
   parent?: SessionViewRelation;
-  threads: SessionViewRelation[];
 }
 
 export interface SessionViewToken extends TokenRecord {

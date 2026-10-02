@@ -233,7 +233,6 @@ async function connectServer(
         name: `mcp__${name}__${mcpTool.name}`,
         exposure: "deferred",
         namespace: name,
-        label: `${name}: ${mcpTool.name}`,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
         parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),
         execute: async (params, api, context) => {

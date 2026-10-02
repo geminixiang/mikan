@@ -6,7 +6,6 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../harness/mcp.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { FileVaultManager } from "../vault/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import type { AdminServices } from "../adapters/web/admin/types.js";
 
@@ -54,7 +53,7 @@ interface McpListBody {
 }
 
 interface McpVerifyBody {
-  results: { name: string; tools?: number; error?: string }[];
+  results: { tools?: number; error?: string }[];
 }
 
 interface McpServerSetting {
@@ -117,7 +116,6 @@ beforeEach(async () => {
     conversationId: CONVERSATION_ID,
   }).token;
   const started = await startServer({
-    vaultManager: new FileVaultManager(stateDir),
     linkTokenStore: { create: () => ({ token: "x" }) },
     adminTokenStore,
     workspace,
@@ -307,7 +305,7 @@ describe("Admin MCP import API", () => {
       });
 
       expect(imported.status).toBe(200);
-      expect(imported.body.results).toEqual([{ name: "browser", tools: 2 }]);
+      expect(imported.body.results).toEqual([{ tools: 2 }]);
       expect(globalSettings().mcpServers?.browser).toEqual({
         url: fake.url,
         headers: { Authorization: "Bearer good-token" },
@@ -319,7 +317,7 @@ describe("Admin MCP import API", () => {
         name: "browser",
         conversationId: CONVERSATION_ID,
       });
-      expect(tested.body.results).toEqual([{ name: "browser", tools: 2 }]);
+      expect(tested.body.results).toEqual([{ tools: 2 }]);
     } finally {
       await new Promise<void>((resolve) => fake.server.close(() => resolve()));
     }
@@ -339,7 +337,7 @@ describe("Admin MCP import API", () => {
 
       expect(imported.status).toBe(200);
       expect(imported.body.results).toHaveLength(1);
-      expect(imported.body.results[0]?.name).toBe("browser");
+      expect(imported.body.results[0]).not.toHaveProperty("name");
       expect(imported.body.results[0]?.error).toContain("No API token provided");
       expect(JSON.stringify(imported.body)).not.toContain("wrong-secret");
       expect(globalSettings().mcpServers?.browser?.url).toBe(`${fake.url}?token=wrong-secret`);

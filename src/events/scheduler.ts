@@ -28,7 +28,6 @@ interface Scheduled {
 
 export class EventScheduler implements EventScheduleSink {
   private readonly scheduled = new Map<string, Scheduled>();
-  private startTime = Date.now();
 
   constructor(
     private readonly workspace: Workspace,
@@ -36,7 +35,6 @@ export class EventScheduler implements EventScheduleSink {
   ) {}
 
   start(): void {
-    this.startTime = Date.now();
     let loaded = 0;
     for (const record of listRegisteredOffices(this.workspace.stateDir)) {
       const office = this.workspace.office(record);
@@ -79,13 +77,10 @@ export class EventScheduler implements EventScheduleSink {
     for (const [key, entry] of this.scheduled) {
       if (!key.startsWith(prefix) || entry.event.type !== "periodic" || !entry.cron) continue;
       results.push({
-        filename: entry.filename,
         platform: entry.event.platform,
         conversationId: entry.event.conversationId,
-        conversationKind: entry.event.conversationKind,
         text: entry.event.text,
         schedule: entry.event.schedule,
-        timezone: entry.event.timezone,
         nextRun: entry.cron.nextRun()?.toISOString() ?? null,
       });
     }

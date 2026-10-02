@@ -64,9 +64,7 @@ function fakeStore(overrides: Partial<EventStore>): EventStore {
     async update() {
       throw new Error("not implemented");
     },
-    async delete() {
-      return { deleted: true };
-    },
+    async delete() {},
     ...overrides,
   };
 }

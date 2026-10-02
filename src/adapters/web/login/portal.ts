@@ -72,7 +72,6 @@ interface SecretPresetField {
 interface SecretPreset {
   id: string;
   label: string;
-  description: string;
   note?: string;
   fields: SecretPresetField[];
 }
@@ -83,8 +82,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "cloudflare_wrangler",
     label: "Cloudflare / Wrangler",
-    description:
-      "Store a Cloudflare API token and account ID for Wrangler, Workers, Pages, D1, and KV.",
     note: "Create a scoped API Token from Cloudflare Dashboard → My Profile → API Tokens. Do not use the Global API Key.",
     fields: [
       {
@@ -108,7 +105,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "openai",
     label: "OpenAI",
-    description: "Store an OpenAI API key for tools and SDKs that use OPENAI_API_KEY.",
     note: "Create a standard API key from the OpenAI dashboard. Paste the key exactly as issued.",
     fields: [
       {
@@ -123,7 +119,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "anthropic",
     label: "Anthropic",
-    description: "Store an Anthropic API key for Claude and tools that use ANTHROPIC_API_KEY.",
     note: "Create this key from the Anthropic Console. Use a workspace-scoped key when possible.",
     fields: [
       {
@@ -138,8 +133,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "gemini",
     label: "Gemini",
-    description:
-      "Store one Google AI Studio key and expose it as both GEMINI_API_KEY and GOOGLE_API_KEY.",
     note: "Create a Gemini / Google AI Studio API key, then paste it once here for compatibility with both env names.",
     fields: [
       {
@@ -155,7 +148,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "openrouter",
     label: "OpenRouter",
-    description: "Store an OpenRouter API key for tools that route models through OpenRouter.",
     note: "Create a key from the OpenRouter dashboard and paste it here.",
     fields: [
       {
@@ -170,8 +162,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "github_pat",
     label: "GitHub PAT",
-    description:
-      "Store one GitHub personal access token and expose it as both GH_TOKEN and GITHUB_TOKEN.",
     note: "Create a fine-grained or classic personal access token from GitHub Settings → Developer settings.",
     fields: [
       {
@@ -187,7 +177,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "vercel",
     label: "Vercel",
-    description: "Store a Vercel token plus optional org and project IDs for deployment tooling.",
     note: "Create a token from the Vercel dashboard. Org ID and Project ID are optional but useful for scripted deploys.",
     fields: [
       {
@@ -218,8 +207,6 @@ const SECRET_PRESETS: SecretPreset[] = [
   {
     id: "sentry",
     label: "Sentry",
-    description:
-      "Store a Sentry auth token plus optional org/project, and mount ~/.sentryclirc for sentry-cli.",
     note: "Create an auth token from Sentry Settings → Account → API → Auth Tokens. Saving this preset also writes /root/.sentryclirc for sentry-cli.",
     fields: [
       {

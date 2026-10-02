@@ -99,7 +99,6 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
       ...publicOfficeMounts(office),
     ],
     promptSources: {
-      conversationDir: office.dir,
       conversationMemoryPath: office.memoryPath,
       conversationSkillsDir: office.skillsDir,
       globalMemoryPath: workspace.memoryPath,

@@ -17,7 +17,6 @@ const IssueLike = Type.Object({
   body: Type.Union([Type.String(), Type.Null()]),
   user: User,
   created_at: Type.String(),
-  pull_request: Type.Optional(Type.Unknown()),
 });
 
 const Base = { repository: Repository, sender: User };
@@ -74,7 +73,6 @@ type IssueLikeValue = Static<typeof IssueLike>;
 function activityBase(
   payload: { repository: Static<typeof Repository>; sender: Static<typeof User> },
   issue: IssueLikeValue,
-  isPr: boolean,
 ): Omit<GithubActivity, "kind" | "target" | "ts" | "text" | "createdAt"> {
   return {
     repo: {
@@ -83,10 +81,7 @@ function activityBase(
       private: payload.repository.private,
     },
     number: issue.number,
-    isPr,
     sender: { login: payload.sender.login, isBot: payload.sender.type === "Bot" },
-    issueTitle: issue.title,
-    issueBody: issue.body ?? "",
   };
 }
 
@@ -97,10 +92,9 @@ function issueText(issue: IssueLikeValue): string {
 function fromIssueOrPr(
   payload: Static<typeof IssuesPayload> | Static<typeof PullRequestPayload>,
   issue: IssueLikeValue,
-  isPr: boolean,
   now: string,
 ): GithubActivity | null {
-  const base = activityBase(payload, issue, isPr);
+  const base = activityBase(payload, issue);
   const bodyTs = { ts: GITHUB_ISSUE_BODY_TS, text: issueText(issue) };
   switch (payload.action) {
     case "opened":
@@ -131,19 +125,17 @@ export function readGithubActivity(
   switch (delivery.event) {
     case "issues": {
       const payload = read(IssuesPayload, delivery.payload);
-      return payload
-        ? fromIssueOrPr(payload, payload.issue, Boolean(payload.issue.pull_request), now)
-        : null;
+      return payload ? fromIssueOrPr(payload, payload.issue, now) : null;
     }
     case "pull_request": {
       const payload = read(PullRequestPayload, delivery.payload);
-      return payload ? fromIssueOrPr(payload, payload.pull_request, true, now) : null;
+      return payload ? fromIssueOrPr(payload, payload.pull_request, now) : null;
     }
     case "issue_comment": {
       const payload = read(IssueCommentPayload, delivery.payload);
       if (!payload || payload.action !== "created") return null;
       return {
-        ...activityBase(payload, payload.issue, Boolean(payload.issue.pull_request)),
+        ...activityBase(payload, payload.issue),
         kind: "comment",
         sender: { login: payload.comment.user.login, isBot: payload.comment.user.type === "Bot" },
         target: null,
@@ -157,7 +149,7 @@ export function readGithubActivity(
       if (!payload || payload.action !== "created") return null;
       const { comment } = payload;
       return {
-        ...activityBase(payload, payload.pull_request, true),
+        ...activityBase(payload, payload.pull_request),
         kind: "review_comment",
         sender: { login: comment.user.login, isBot: comment.user.type === "Bot" },
         target: null,

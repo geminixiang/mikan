@@ -67,7 +67,7 @@ describe("applyConversationSettings", () => {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
-    expect(result).toEqual({ ok: false, reason: "busy" });
+    expect(result).toEqual({ ok: false });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(false);
   });
 
@@ -130,7 +130,7 @@ describe("applyOfficeVisibility", () => {
       refreshConversationEnvironment: vi.fn().mockReturnValue(false),
     };
     const result = applyOfficeVisibility(runtime, office, "private");
-    expect(result).toEqual({ ok: false, reason: "busy" });
+    expect(result).toEqual({ ok: false });
     expect(existsSync(conversationSettingsFile("C1"))).toBe(false);
   });
 });

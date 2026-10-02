@@ -1922,7 +1922,6 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
     entryCount: entries.length,
     items,
     parent: parent ?? undefined,
-    threads,
   };
 }
 
@@ -1999,9 +1998,7 @@ async function buildSessionRelation(
         )
       : undefined;
   return {
-    kind,
     fileName: basename(sessionFile),
-    sessionId: header.id,
     title: (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`,
     updatedAt,
     entryCount: entries.length,

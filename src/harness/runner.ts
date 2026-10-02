@@ -571,7 +571,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     responder,
     platform,
     model,
-    agentConfig,
     sessionConversation: prepared.sessionConversation,
     sessionUuid,
     waitForQueue: presentation.wait,
@@ -625,7 +624,7 @@ async function steerRun(
   return true;
 }
 
-async function publishRunLifecycle<T extends { stopReason: string }>(
+async function publishRunLifecycle<T>(
   publish: RunEventListener | undefined,
   message: ConversationMessage,
   run: () => Promise<T>,
@@ -635,13 +634,10 @@ async function publishRunLifecycle<T extends { stopReason: string }>(
     userName: message.userName ?? message.userId,
     text: message.text,
   });
-  let stopReason = "error";
   try {
-    const result = await run();
-    stopReason = result.stopReason;
-    return result;
+    return await run();
   } finally {
-    publish?.({ type: "run_ended", stopReason });
+    publish?.({ type: "run_ended" });
   }
 }
 

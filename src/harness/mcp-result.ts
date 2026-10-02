@@ -13,7 +13,6 @@ export interface McpTextLimits {
 
 export interface BoundedMcpText {
   text: string;
-  truncated: boolean;
   digest?: true;
 }
 
@@ -165,18 +164,16 @@ function formatSize(bytes: number): string {
 export function boundMcpText(text: string, limits: McpTextLimits): BoundedMcpText {
   const parsed = parseJson(text);
   if (!parsed) {
-    return fits(text, limits)
-      ? { text, truncated: false }
-      : { text: headTruncate(text, limits), truncated: true };
+    return fits(text, limits) ? { text } : { text: headTruncate(text, limits) };
   }
   const compact = JSON.stringify(parsed.value);
-  if (fits(compact, limits)) return { text: compact, truncated: false };
+  if (fits(compact, limits)) return { text: compact };
   for (const level of DIGEST_LEVELS) {
     const digested = JSON.stringify(digest(parsed.value, level));
-    if (fits(digested, limits)) return { text: digested, truncated: true, digest: true };
+    if (fits(digested, limits)) return { text: digested, digest: true };
   }
   const smallest = JSON.stringify(digest(parsed.value, DIGEST_LEVELS.at(-1)!));
-  return { text: sliceToBytes(smallest, limits.maxBytes), truncated: true, digest: true };
+  return { text: sliceToBytes(smallest, limits.maxBytes), digest: true };
 }
 
 function compactMcpText(text: string): string {

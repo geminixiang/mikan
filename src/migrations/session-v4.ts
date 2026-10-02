@@ -46,7 +46,6 @@ export type V4Message =
 interface V4EntryBase {
   id: string;
   parentId: string | null;
-  seq?: number;
   timestamp: number;
 }
 
@@ -60,7 +59,6 @@ export type V4Entry = V4EntryBase &
         tokensBefore: number;
         details?: JsonValue;
         usage?: Usage;
-        fromHook: boolean;
       }
     | {
         type: "branch_summary";
@@ -68,7 +66,6 @@ export type V4Entry = V4EntryBase &
         summary: string;
         details?: JsonValue;
         usage?: Usage;
-        fromHook: boolean;
       }
     | { type: "custom"; customType: string; data?: JsonValue }
   );

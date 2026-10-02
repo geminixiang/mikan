@@ -333,7 +333,7 @@ describe("PiAgentWrapper.run", () => {
     expect(published).toContainEqual(
       expect.objectContaining({ type: "assistant_message", text: "hello from the agent" }),
     );
-    expect(published.at(-1)).toEqual({ type: "run_ended", stopReason: "stop" });
+    expect(published.at(-1)).toEqual({ type: "run_ended" });
     expect(otherSession).toEqual([]);
   });
 

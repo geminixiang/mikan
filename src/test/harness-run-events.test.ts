@@ -24,7 +24,6 @@ describe("toRunEvent", () => {
       toolCallId: "t1",
       toolName: "bash",
       label: "List files",
-      args: { label: "  List files  ", command: "ls" },
     });
     expect(
       toRunEvent({ type: "tool_execution_start", toolCallId: "t2", toolName: "read", args: {} }),

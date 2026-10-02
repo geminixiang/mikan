@@ -96,7 +96,6 @@ export interface UsageReportContext {
   responder: ConversationResponder;
   platform: MessagingInfo;
   model: Model<Api>;
-  agentConfig: ReturnType<typeof resolveConversationSettings>;
   sessionConversation: string;
   sessionUuid: string;
   waitForQueue: () => Promise<void>;
@@ -350,7 +349,7 @@ export type HarnessEvent =
 export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>;
 
 export type RunEvent =
-  | { type: "tool_started"; toolCallId: string; toolName: string; label: string; args: unknown }
+  | { type: "tool_started"; toolCallId: string; toolName: string; label: string }
   | { type: "subagent_progress"; toolCallId: string; snapshot: SubagentProgressSnapshot }
   | {
       type: "tool_ended";
@@ -365,7 +364,7 @@ export type RunEvent =
   | { type: "retry_started"; attempt: number; maxAttempts: number }
   | { type: "budget_exceeded"; reason: string; llmCalls: number; durationMs: number }
   | { type: "run_started"; userName: string; text: string }
-  | { type: "run_ended"; stopReason: string };
+  | { type: "run_ended" };
 
 export type RunEventListener = (event: RunEvent) => void;
 
@@ -387,7 +386,6 @@ export interface MikanToolResult {
 }
 
 export type MikanHarnessTool = Omit<ToolRegistration, "execute"> & {
-  label: string;
   outputSchema?: TSchema;
   exposure?: "deferred";
   namespace?: string;

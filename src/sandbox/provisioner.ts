@@ -584,22 +584,18 @@ export class DockerContainerManager {
 
   private async inspectContainerDetails(
     containerName: string,
-  ): Promise<
-    | { running: boolean; startedAtMs?: number; conversationId?: string; bindSources: string[] }
-    | undefined
-  > {
+  ): Promise<{ running: boolean; startedAtMs?: number; bindSources: string[] } | undefined> {
     try {
       const { stdout } = await this.execFileImpl("docker", [
         "inspect",
         "-f",
-        `{{.State.Running}}\t{{.State.StartedAt}}\t{{index .Config.Labels "${DockerContainerManager.VAULT_ID_LABEL_KEY}"}}\t{{index .Config.Labels "${DockerContainerManager.CONVERSATION_ID_LABEL_KEY}"}}\t{{json .HostConfig.Binds}}`,
+        `{{.State.Running}}\t{{.State.StartedAt}}\t{{json .HostConfig.Binds}}`,
         containerName,
       ]);
-      const [runningRaw, startedAtRaw, , conversationIdRaw, bindsRaw] = stdout.trim().split("\t");
+      const [runningRaw, startedAtRaw, bindsRaw] = stdout.trim().split("\t");
       const running = runningRaw === "true";
       const startedAtMs = this.parseDockerTimestamp(startedAtRaw);
-      const conversationId = this.normalizeDockerValue(conversationIdRaw);
-      return { running, startedAtMs, conversationId, bindSources: parseBindSources(bindsRaw) };
+      return { running, startedAtMs, bindSources: parseBindSources(bindsRaw) };
     } catch (err) {
       log.logWarning(
         `Failed to inspect container ${containerName} during reconcile`,

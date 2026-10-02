@@ -205,9 +205,6 @@ export class FileVaultManager implements VaultManager {
     const env = envContent === undefined ? {} : parseEnvFile(envContent);
 
     return {
-      userId: key,
-      displayName: key,
-      dir,
       mounts,
       env,
     };

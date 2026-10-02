@@ -33,7 +33,6 @@ export interface Office {
 export type PlatformChannelKind = "public_channel" | "private_channel" | "im" | "external";
 
 interface WorkspacePromptSources {
-  conversationDir: string;
   conversationMemoryPath: string;
   conversationSkillsDir: string;
   globalMemoryPath: string;

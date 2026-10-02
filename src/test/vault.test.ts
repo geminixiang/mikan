@@ -78,8 +78,8 @@ describe("FileVaultManager", () => {
     mkdirSync(join(vaultsDir, "extensions", "agent-pm"), { recursive: true });
     writeFileSync(join(vaultsDir, "extensions", "agent-pm", "env"), "LINEAR_TOKEN=y\n");
 
-    const keys = new FileVaultManager(tmpDir).list().map((vault) => vault.userId);
-    expect(keys).toEqual(["U123"]);
+    const vaults = new FileVaultManager(tmpDir).list();
+    expect(vaults).toEqual([{ env: { TOKEN: "x" }, mounts: [] }]);
   });
 
   test("resolves a vault from directory contents", () => {
@@ -89,9 +89,7 @@ describe("FileVaultManager", () => {
 
     const vault = new FileVaultManager(tmpDir).resolve("U123");
 
-    expect(vault).toMatchObject({
-      userId: "U123",
-      displayName: "U123",
+    expect(vault).toEqual({
       env: { OPENAI_API_KEY: "sk-test" },
       mounts: [{ source: join(userDir, ".ssh"), target: "/root/.ssh" }],
     });

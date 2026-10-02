@@ -503,7 +503,7 @@ describe("DockerContainerManager", () => {
       .mockResolvedValueOnce({ stdout: "mikan-sandbox-slack-u123-d123\n" })
       .mockResolvedValueOnce({
         stdout:
-          'true\t2026-04-22T00:00:00.000000000Z\tslack-u123\tD123\t["/srv/mikan/workspace/slack-u123-d123:/workspace"]\n',
+          'true\t2026-04-22T00:00:00.000000000Z\t["/srv/mikan/workspace/slack-u123-d123:/workspace"]\n',
       });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
 
@@ -531,16 +531,13 @@ describe("DockerContainerManager", () => {
         stdout: "mikan-sandbox-slack-u1\nmikan-sandbox-slack-u2\nmikan-sandbox-slack-u3\n",
       })
       .mockResolvedValueOnce({
-        stdout:
-          'true\t2026-04-22T00:00:00Z\tslack-u1\tC1\t["/srv/a/workspace/slack-u1:/workspace"]\n',
+        stdout: 'true\t2026-04-22T00:00:00Z\t["/srv/a/workspace/slack-u1:/workspace"]\n',
       })
       .mockResolvedValueOnce({
-        stdout:
-          'true\t2026-04-22T00:00:00Z\tslack-u2\tC2\t["/srv/b/workspace/slack-u2:/workspace"]\n',
+        stdout: 'true\t2026-04-22T00:00:00Z\t["/srv/b/workspace/slack-u2:/workspace"]\n',
       })
       .mockResolvedValueOnce({
-        stdout:
-          'true\t2026-04-22T00:00:00Z\tslack-u3\tC3\t["/srv/a/workspace-old/slack-u3:/workspace"]\n',
+        stdout: 'true\t2026-04-22T00:00:00Z\t["/srv/a/workspace-old/slack-u3:/workspace"]\n',
       })
       .mockResolvedValue({ stdout: "" });
     const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });

@@ -15,7 +15,7 @@ import {
   optionalAnnotations,
   V4FileWriter,
 } from "./session-files.js";
-import type { Migration, MigrationContext, SessionMigrationResult } from "./types.js";
+import type { Migration, MigrationContext } from "./types.js";
 
 interface V3EntryBase {
   type: string;
@@ -172,7 +172,6 @@ function customMessageOf(entry: V3CustomMessage): AgentMessage {
 function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
   const base = {
     id: entry.id,
-    seq: 0,
     parentId: resolveV4Parent(entry, entries),
     timestamp: toEpochMillis(entry.timestamp),
   };
@@ -199,7 +198,6 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         summary: entry.summary,
         retainedTail: entry.retainedTail ?? compactionKeptMessages(entry, entries),
         tokensBefore: entry.tokensBefore,
-        fromHook: false,
         ...optionalAnnotations(entry),
       } as unknown as PiEntry;
     case "branch_summary":
@@ -208,7 +206,6 @@ function convertEntry(entry: V3Entry, entries: V3Entry[]): PiEntry | null {
         type: "branch_summary",
         fromId: entry.fromId ?? null,
         summary: entry.summary,
-        fromHook: false,
         ...optionalAnnotations(entry),
       } as unknown as PiEntry;
     case "custom":
@@ -272,13 +269,11 @@ function emptiedCompaction(entry: V3Compaction): PiEntry {
   return {
     type: "compaction",
     id: entry.id,
-    seq: 0,
     parentId: null,
     timestamp: toEpochMillis(entry.timestamp),
     summary: entry.summary,
     retainedTail: [],
     tokensBefore: entry.tokensBefore,
-    fromHook: false,
   };
 }
 
@@ -291,8 +286,7 @@ function referenceContextEntries(branch: V3Entry[]): PiEntry[] {
     if (piEntry) converted.push(piEntry);
   }
   let previousId: string | null = null;
-  for (const [index, entry] of converted.entries()) {
-    entry.seq = index;
+  for (const entry of converted) {
     entry.parentId = previousId;
     previousId = entry.id;
   }
@@ -433,11 +427,11 @@ async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promis
 export async function migrateSessionFile(
   filePath: string,
   options?: { dryRun?: boolean },
-): Promise<SessionMigrationResult> {
-  if (!isV3SessionFile(filePath)) return { file: filePath, status: "already-current" };
+): Promise<void> {
+  if (!isV3SessionFile(filePath)) return;
   const sourceBytes = readFileSync(filePath);
   const source = readV3SessionFile(filePath);
-  if (options?.dryRun) return { file: filePath, status: "migrated", detail: "dry run" };
+  if (options?.dryRun) return;
 
   await commitMigration({
     filePath,
@@ -447,7 +441,6 @@ export async function migrateSessionFile(
     backupPath: `${filePath}.v3.bak`,
     verify: (candidatePath) => verifyMigratedFile(candidatePath, source),
   });
-  return { file: filePath, status: "migrated" };
 }
 
 export function findV3SessionFiles(root: string): string[] {

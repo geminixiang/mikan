@@ -71,7 +71,6 @@ export function startWebServer(options: StartWebServerOptions): Server {
       if (
         adminOptions?.adminTokenStore &&
         (await handleAdminRequest(req, res, url, {
-          vaultManager: options.vaultManager,
           linkTokenStore: options.linkTokenStore,
           sessionViewTokenStore: options.sessionViewTokenStore,
           adminTokenStore: adminOptions.adminTokenStore,

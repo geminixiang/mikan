@@ -386,9 +386,7 @@ export interface GlobalRunnerCacheControl {
   refreshAllConversations(): { busy: OfficeAddress[] };
 }
 
-export type SettingsApplyResult =
-  | { ok: true; runtimeSwitched: boolean | null }
-  | { ok: false; reason: "busy" };
+export type SettingsApplyResult = { ok: true; runtimeSwitched: boolean | null } | { ok: false };
 
 export interface CreateRunnerOptions {
   sandboxConfig: SandboxConfig;

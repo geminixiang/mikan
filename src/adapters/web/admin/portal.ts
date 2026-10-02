@@ -345,7 +345,6 @@ interface SessionUsageRow {
   conversationId: string;
   label: string;
   fileName: string;
-  sessionId: string;
   updatedAt: string;
   input: number;
   output: number;
@@ -431,7 +430,6 @@ async function readSessionUsage(
         conversationId,
         label,
         fileName: basename(sessionFile),
-        sessionId: header.id,
         updatedAt:
           entries.length > 0
             ? new Date(entries.at(-1)!.timestamp).toISOString()
@@ -990,10 +988,7 @@ interface TreeNode {
   name: string;
   path: string;
   type: "dir" | "file";
-  size?: number;
-  mtimeMs?: number;
   children?: TreeNode[];
-  truncated?: boolean;
 }
 
 function buildTree(startDir: string, relPrefix: string): TreeNode | null {
@@ -1013,13 +1008,11 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
         name,
         path: rel,
         type: "file",
-        size: stats.size,
-        mtimeMs: stats.mtimeMs,
       };
     }
     counter.value += 1;
     if (depth >= WORKSPACE_TREE_MAX_DEPTH) {
-      return { name, path: rel, type: "dir", truncated: true };
+      return { name, path: rel, type: "dir" };
     }
     let entries;
     try {
@@ -1028,7 +1021,6 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
       return { name, path: rel, type: "dir" };
     }
     const children: TreeNode[] = [];
-    let truncated = false;
     for (const entry of entries.toSorted((a, b) => {
       if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -1036,7 +1028,6 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
       const childRel = rel === "" ? entry.name : `${rel}/${entry.name}`;
       if (!isWorkspacePathAllowed(childRel)) continue;
       if (counter.value >= WORKSPACE_TREE_MAX_ENTRIES) {
-        truncated = true;
         break;
       }
       const node = walk(join(dir, entry.name), childRel, depth + 1);
@@ -1047,7 +1038,6 @@ function buildTree(startDir: string, relPrefix: string): TreeNode | null {
       path: rel,
       type: "dir",
       children,
-      truncated: truncated ? true : undefined,
     };
   };
   const node = walk(startDir, relPrefix, 0);
@@ -1190,7 +1180,6 @@ interface SkillEntry {
   name: string;
   description: string;
   source: "global" | "conversation";
-  path: string;
   directory: string;
 }
 
@@ -1229,7 +1218,6 @@ export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"
       name: meta.name ?? entry.name,
       description: meta.description ?? "",
       source,
-      path: skillMd,
       directory: entry.name,
     });
   }
@@ -1285,7 +1273,7 @@ function mcpStringMap(value: unknown): Record<string, string> | undefined {
 
 const MCP_VERIFY_TIMEOUT_MS = 20_000;
 
-type McpVerifyResult = { name: string; tools: number } | { name: string; error: string };
+type McpVerifyResult = { tools: number } | { error: string };
 
 async function verifyMcpServers(
   servers: Record<string, McpServerConfig>,
@@ -1299,10 +1287,10 @@ async function verifyMcpServers(
       if (failure) {
         const url = servers[name]?.url;
         const error = url ? failure.error.split(url).join(redactMcpUrl(url)) : failure.error;
-        return { name, error };
+        return { error };
       }
       const prefix = `mcp__${name}__`;
-      return { name, tools: loaded.tools.filter((t) => t.name.startsWith(prefix)).length };
+      return { tools: loaded.tools.filter((t) => t.name.startsWith(prefix)).length };
     });
   } finally {
     await loaded.dispose();

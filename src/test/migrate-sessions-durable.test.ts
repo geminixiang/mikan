@@ -95,7 +95,6 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
       summary: "earlier work",
       retainedTail: [user("kept", 3), answered],
       tokensBefore: 100,
-      fromHook: false,
     });
     writer.entry({
       type: "message",

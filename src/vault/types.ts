@@ -4,9 +4,6 @@ export interface ResolvedVaultMount {
 }
 
 export interface ResolvedVault {
-  userId: string;
-  displayName: string;
-  dir: string;
   mounts: ResolvedVaultMount[];
   env: Record<string, string>;
 }

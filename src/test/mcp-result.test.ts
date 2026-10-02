@@ -84,21 +84,19 @@ describe("boundMcpText", () => {
     const pretty = JSON.stringify({ ok: true, data: { items: [1, 2, 3] } }, null, 2);
     expect(boundMcpText(pretty, limits)).toEqual({
       text: '{"ok":true,"data":{"items":[1,2,3]}}',
-      truncated: false,
     });
   });
 
   it("leaves small non-JSON text unchanged", () => {
     expect(boundMcpText("plain answer", limits)).toEqual({
       text: "plain answer",
-      truncated: false,
     });
   });
 
   it("digests oversized JSON while keeping keys, counts, and pagination", () => {
     const bounded = boundMcpText(JSON.stringify(githubLikeSearch(100), null, 2), limits);
 
-    expect(bounded.truncated).toBe(true);
+    expect(bounded.digest).toBe(true);
     expect(Buffer.byteLength(bounded.text)).toBeLessThanOrEqual(limits.maxBytes);
     const digest = JSON.parse(bounded.text);
     expect(digest.data.total_count).toBe(691);
@@ -112,14 +110,14 @@ describe("boundMcpText", () => {
   it("head-truncates oversized non-JSON text", () => {
     const text = Array.from({ length: 500 }, (_, index) => `line ${index}`).join("\n");
     const bounded = boundMcpText(text, limits);
-    expect(bounded.truncated).toBe(true);
+    expect(bounded.text).not.toBe(text);
     expect(bounded.text.startsWith("line 0\nline 1")).toBe(true);
     expect(bounded.text.split("\n").length).toBeLessThanOrEqual(limits.maxLines);
   });
 
   it("fits a single huge string within the byte limit", () => {
     const bounded = boundMcpText(JSON.stringify({ html: "<p>".repeat(100_000) }), limits);
-    expect(bounded.truncated).toBe(true);
+    expect(bounded.digest).toBe(true);
     expect(Buffer.byteLength(bounded.text)).toBeLessThanOrEqual(limits.maxBytes);
     expect(JSON.parse(bounded.text).html).toMatch(/…\[\+\d+ chars\]$/);
   });

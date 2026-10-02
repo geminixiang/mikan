@@ -125,7 +125,6 @@ describe("admin portal skills listing", () => {
         name: "deploy-prod",
         description: "Ship to production",
         source: "global",
-        path: join(skillsDir, "deploy", "SKILL.md"),
         directory: "deploy",
       },
     ]);

@@ -104,7 +104,7 @@ test("an open Session View streams a run started from the chat platform", async 
   });
   runEvents.publish(office, "C1", { type: "assistant_delta", delta: "Found " });
   runEvents.publish(office, "C1", { type: "assistant_delta", delta: "two files" });
-  runEvents.publish(office, "C1", { type: "run_ended", stopReason: "stop" });
+  runEvents.publish(office, "C1", { type: "run_ended" });
 
   const payloads = await stream.readUntil((seen) => seen.some((p) => p.type === "refresh"));
   await stream.cancel();

@@ -66,7 +66,6 @@ export function createCodemodeTool(options: CodemodeToolOptions): MikanHarnessTo
   ];
   return tagHarnessTool({
     name: "codemode",
-    label: "Codemode",
     description: `Run JavaScript code to orchestrate/compose authorized tool calls.
 - Evaluates raw JavaScript (not Markdown code fences) in a fresh QuickJS sandbox as an async function body: top-level await and return work.
 - Nested tools are on the global tools object: await tools.<name>(args). Each takes an object and resolves to text or a structured value; failed calls reject with an Error.

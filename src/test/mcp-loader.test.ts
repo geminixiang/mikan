@@ -284,6 +284,7 @@ describe("loadMcpTools", () => {
       const execute = result.tools.find(
         (tool) => tool.name === "mcp__open-connector__execute_action",
       )!;
+      expect(execute).not.toHaveProperty("label");
       expect(execute.parameters).toMatchObject({
         properties: { label: { type: "string" }, actionId: { type: "string" } },
         required: ["label", "actionId"],

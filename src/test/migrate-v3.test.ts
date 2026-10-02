@@ -78,9 +78,13 @@ describe("migrateSessionFile", () => {
       v3Message("b2", "a1", "world", "assistant"),
     ]);
 
-    const result = await migrateSessionFile(file);
-    expect(result.status).toBe("migrated");
+    await expect(migrateSessionFile(file)).resolves.toBeUndefined();
     expect(existsSync(`${file}.v3.bak`)).toBe(true);
+    const records = readFileSync(file, "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(records.slice(1, 3)).toMatchObject([{ seq: 1 }, { seq: 2 }]);
 
     const store = openV4(file);
     expect(store.getSessionId()).toBe(header.id);
@@ -125,6 +129,8 @@ describe("migrateSessionFile", () => {
     expect(compaction?.type).toBe("compaction");
     if (compaction?.type === "compaction") {
       expect(compaction.retainedTail.map(textOf)).toEqual(["B", "C"]);
+      expect(compaction).not.toHaveProperty("fromHook");
+      expect(readFileSync(file, "utf-8")).not.toContain("fromHook");
     }
   });
 
@@ -186,8 +192,7 @@ describe("migrateSessionFile", () => {
       v3Message("b2", "a1", "world", "assistant"),
     ]);
 
-    const result = await migrateSessionFile(file);
-    expect(result.status).toBe("migrated");
+    await migrateSessionFile(file);
 
     const store = openV4(file);
     const context = await store.buildSessionContext();
@@ -208,8 +213,7 @@ describe("migrateSessionFile", () => {
       },
     ]);
 
-    const result = await migrateSessionFile(file);
-    expect(result.status).toBe("migrated");
+    await migrateSessionFile(file);
 
     const store = openV4(file);
     const context = await store.buildSessionContext();
@@ -217,12 +221,15 @@ describe("migrateSessionFile", () => {
     expect(await store.getSessionName()).toBe("titled");
   });
 
-  test("is idempotent: a migrated file reports already-current", async () => {
+  test("is idempotent: a migrated file and backup stay unchanged", async () => {
     const file = join(dir, "idempotent.jsonl");
     writeJsonl(file, [header, v3Message("a", null, "A")]);
     await migrateSessionFile(file);
-    const second = await migrateSessionFile(file);
-    expect(second.status).toBe("already-current");
+    const migrated = readFileSync(file, "utf-8");
+    const backup = readFileSync(`${file}.v3.bak`, "utf-8");
+    await migrateSessionFile(file);
+    expect(readFileSync(file, "utf-8")).toBe(migrated);
+    expect(readFileSync(`${file}.v3.bak`, "utf-8")).toBe(backup);
   });
 
   test("refuses to overwrite an existing backup", async () => {
@@ -239,8 +246,7 @@ describe("migrateSessionFile", () => {
     const file = join(dir, "dry.jsonl");
     writeJsonl(file, [header, v3Message("a", null, "A")]);
     const before = readFileSync(file, "utf-8");
-    const result = await migrateSessionFile(file, { dryRun: true });
-    expect(result.status).toBe("migrated");
+    await migrateSessionFile(file, { dryRun: true });
     expect(readFileSync(file, "utf-8")).toBe(before);
     expect(isV3SessionFile(file)).toBe(true);
   });
@@ -250,8 +256,7 @@ describe("migrateSessionFile", () => {
     writeJsonl(file, [header, v3Message("a", null, "kept")]);
     writeFileSync(file, readFileSync(file, "utf-8") + '{"type":"message","id":"tor', "utf-8");
 
-    const result = await migrateSessionFile(file);
-    expect(result.status).toBe("migrated");
+    await migrateSessionFile(file);
 
     const store = openV4(file);
     const context = await store.buildSessionContext();

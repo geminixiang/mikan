@@ -1,13 +1,22 @@
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import { FileVaultManager } from "../vault/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import type { AdminServices } from "../adapters/web/admin/types.js";
+import { createManagedSessionFile } from "../sessions/store.js";
+import { SessionStore } from "../sessions/session-store.js";
 
 const CONVERSATION_ID = "C-SKILLS";
 const ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
@@ -84,7 +93,6 @@ beforeEach(async () => {
     conversationId: CONVERSATION_ID,
   }).token;
   const started = await startServer({
-    vaultManager: new FileVaultManager(stateDir),
     linkTokenStore: { create: () => ({ token: "x" }) },
     adminTokenStore,
     workspace,
@@ -96,6 +104,85 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   rmSync(base, { recursive: true, force: true });
+});
+
+describe("Admin response metadata", () => {
+  test("returns workspace tree navigation fields without unused metadata", async () => {
+    const scratch = join(workspaceDir, officeKey(ADDRESS), "scratch");
+    mkdirSync(join(scratch, "a", "b", "c"), { recursive: true });
+    writeFileSync(join(scratch, "file.txt"), "preview me");
+
+    const response = await get<{ tree: unknown }>(
+      `/admin/api/workspace/tree?conversationId=${CONVERSATION_ID}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.tree).toEqual({
+      name: ".",
+      path: "",
+      type: "dir",
+      children: [
+        {
+          name: "scratch",
+          path: "scratch",
+          type: "dir",
+          children: [
+            {
+              name: "a",
+              path: "scratch/a",
+              type: "dir",
+              children: [
+                {
+                  name: "b",
+                  path: "scratch/a/b",
+                  type: "dir",
+                  children: [{ name: "c", path: "scratch/a/b/c", type: "dir" }],
+                },
+              ],
+            },
+            { name: "file.txt", path: "scratch/file.txt", type: "file" },
+          ],
+        },
+      ],
+    });
+  });
+
+  test("returns session usage without an unused session id", async () => {
+    const office = createWorkspace({ root: workspaceDir, stateDir: join(base, "state") }).office(
+      ADDRESS,
+    );
+    const session = await SessionStore.open(createManagedSessionFile(office.sessionsDir));
+    await session.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "done" }],
+      api: "openai-responses",
+      provider: "openai",
+      model: "gpt-test",
+      usage: {
+        input: 1,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 3,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    });
+    await session.close();
+
+    const response = await get<{ sessions: unknown[] }>("/admin/api/session-usage");
+
+    expect(response.status).toBe(200);
+    expect(response.body.sessions).toHaveLength(1);
+    expect(response.body.sessions[0]).toMatchObject({
+      conversationId: CONVERSATION_ID,
+      input: 1,
+      output: 2,
+      total: 3,
+    });
+    expect(response.body.sessions[0]).not.toHaveProperty("sessionId");
+  });
 });
 
 describe("Admin skills mutation API", () => {

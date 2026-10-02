@@ -21,6 +21,6 @@ writes those files goes through this module; nothing else parses them.
 
 ## Writer contract
 
-Settings baked into a cached runner (model, thinking level, MCP servers, visibility) change only after the runtime has cleared or refused the cached runner; `apply.ts` performs the clear and the write in the same synchronous tick, and returns `{ ok: false, reason: "busy" }` instead of writing when the conversation is mid-turn. Other keys are re-read at use time and write directly.
+Settings baked into a cached runner (model, thinking level, MCP servers, visibility) change only after the runtime has cleared or refused the cached runner; `apply.ts` performs the clear and the write in the same synchronous tick, and returns `{ ok: false }` instead of writing when the conversation is mid-turn. Other keys are re-read at use time and write directly.
 
 Neighbors: `src/file-guards.ts` (schema-validated reads, atomic 0600 writes, state-dir placement guard), `src/env-manifest.ts` (environment variables, including `LINK_URL`), `src/office/` (office identity and the state directory the office file lives in).

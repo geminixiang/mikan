@@ -100,6 +100,13 @@ describe("resolveWorkspaceProjection", () => {
     const projection = resolveWorkspaceProjection(own);
 
     expect(projection.visibility).toBe("public");
+    expect(projection.promptSources).toEqual({
+      conversationMemoryPath: own.memoryPath,
+      conversationSkillsDir: own.skillsDir,
+      globalMemoryPath: workspace.memoryPath,
+      globalSkillsDir: workspace.skillsDir,
+      globalKnowledgeReadOnly: undefined,
+    });
     expect(projection.mounts).toEqual([
       { source: own.dir, target: `/workspace/${own.key}` },
       { source: workspace.memoryPath, target: "/workspace/MEMORY.md" },

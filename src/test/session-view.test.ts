@@ -198,7 +198,7 @@ describe("loadSessionViewModel", () => {
     expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant"]);
     expect(model.items[0]?.body).toContain("請幫我看一下測試結果");
     expect(model.items[1]?.body).toContain("好的，我正在查看");
-    expect(model.threads).toEqual([]);
+    expect(model).not.toHaveProperty("threads");
   });
 
   test("preserves assistant content block order", async () => {
@@ -255,13 +255,13 @@ describe("loadSessionViewModel", () => {
 
     const channelModel = await loadSessionViewModel(channelFile);
     expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
-    expect(channelModel.threads).toHaveLength(1);
-    expect(channelModel.threads[0]?.fileName).toBe(basename(threadFile));
     const rootItem = channelModel.items.find((item) => item.body?.includes("channel root"));
     expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
 
     const threadModel = await loadSessionViewModel(threadFile);
     expect(threadModel.parent?.fileName).toBe(basename(channelFile));
+    expect(threadModel.parent).not.toHaveProperty("kind");
+    expect(threadModel.parent).not.toHaveProperty("sessionId");
     expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
   });
 
@@ -310,7 +310,7 @@ describe("loadSessionViewModel", () => {
     const channelModel = await loadSessionViewModel(channelFile);
     const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
 
-    expect(channelModel.threads).toHaveLength(1);
+    expect(userAnchor?.threads).toHaveLength(1);
     expect(userAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
   });
 });

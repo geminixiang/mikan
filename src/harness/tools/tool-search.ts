@@ -57,7 +57,6 @@ export function createToolSearchTool(options: ToolSearchToolOptions): MikanHarne
   const namespaces = [...new Set(options.tools.map((tool) => tool.namespace).filter(Boolean))];
   return tagHarnessTool({
     name: TOOL_SEARCH_TOOL,
-    label: "Tool search",
     description: `Search authorized MCP tools that are not declared yet, then load matching schemas for the next model call. Use descriptive keywords or an exact tool name. Already loaded tools stay available. This searches tool metadata, not web pages or repository content. Available MCP namespaces: ${namespaces.join(", ") || "none"}.`,
     parameters: searchSchema,
     execute: async (params, api, context) => {

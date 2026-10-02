@@ -70,6 +70,7 @@ describe("withSecretRedaction identity preservation", () => {
   test("keeps the isHarnessTool marker intact after wrapping", () => {
     const bash = createSandboxBashTool();
     expect(isHarnessTool(bash)).toBe(true);
+    expect(bash).not.toHaveProperty("label");
     const wrapped = withSecretRedaction(bash);
     expect(isHarnessTool(wrapped)).toBe(true);
   });
@@ -89,6 +90,7 @@ describe("withSecretRedaction identity preservation", () => {
       }),
     };
     const harnessTool = adaptAgentTool(agentTool);
+    expect(harnessTool).not.toHaveProperty("label");
     const packTools = [harnessTool];
     const modelTools = [harnessTool].map(withSecretRedaction);
     expect(isHarnessTool(packTools[0])).toBe(true);

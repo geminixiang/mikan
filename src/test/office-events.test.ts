@@ -193,7 +193,7 @@ describe("EventScheduler", () => {
     await vi.advanceTimersByTimeAsync(61_000);
     expect(enqueueEvent).not.toHaveBeenCalled();
 
-    await store.delete("r.json");
+    await expect(store.delete("r.json")).resolves.toBeUndefined();
     expect(scheduler.scheduledCount()).toBe(0);
     await vi.advanceTimersByTimeAsync(120_000);
     expect(enqueueEvent).not.toHaveBeenCalled();
@@ -209,8 +209,14 @@ describe("EventScheduler", () => {
     await new OfficeEventStore(c1, scheduler).create("s.json", periodic("C1"));
     await new OfficeEventStore(c2, scheduler).create("s.json", periodic("C2"));
 
-    expect(scheduler.periodicEvents(c1.address).map((event) => event.conversationId)).toEqual([
-      "C1",
+    expect(scheduler.periodicEvents(c1.address)).toEqual([
+      {
+        platform: "slack",
+        conversationId: "C1",
+        text: "standup",
+        schedule: "0 9 * * *",
+        nextRun: expect.any(String),
+      },
     ]);
     expect(scheduler.periodicEvents(c1.address)[0]?.nextRun).toBeTruthy();
     scheduler.stop();

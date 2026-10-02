@@ -34,7 +34,6 @@ function withLabel(tool: ToolRegistration): MikanHarnessTool {
   const schema = tool.parameters as TObject;
   return tagHarnessTool({
     ...tool,
-    label: tool.name,
     parameters: {
       ...schema,
       properties: { ...schema.properties, label: LABEL_PARAMETER },
@@ -69,7 +68,6 @@ export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
     "namespace" in tool && typeof tool.namespace === "string" ? tool.namespace : undefined;
   return tagHarnessTool({
     name: tool.name,
-    label: tool.label,
     description: tool.description,
     parameters: tool.parameters,
     outputSchema: tool.outputSchema,

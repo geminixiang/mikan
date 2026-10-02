@@ -26,9 +26,3 @@ export interface AppliedMigration {
   readonly id: string;
   readonly appliedAt: string;
 }
-
-export interface SessionMigrationResult {
-  file: string;
-  status: "migrated" | "already-current";
-  detail?: string;
-}

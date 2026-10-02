@@ -299,7 +299,6 @@ describe("run attribution", () => {
     messageId: "M1",
     platform: "slack",
     userId: "U1",
-    userName: undefined,
     threadTs: "T1",
     provider: "openai",
     model: "gpt-5.5",
@@ -338,7 +337,6 @@ describe("run attribution", () => {
       messageId: "M1",
       platform: "slack",
       userId: "U1",
-      userName: "alice",
     });
 
     expect(scopeSpies.setTag).toHaveBeenCalledWith("conversation_id", "C1");

@@ -15,7 +15,7 @@ export interface EventStore {
   list(): Promise<Array<Omit<EventRecord, "payload"> & { payload: EventFilePayload | null }>>;
   read(filename: string): Promise<EventRecord>;
   update(filename: string, payload: EventFilePayload): Promise<{ path: string; size: number }>;
-  delete(filename: string): Promise<{ deleted: boolean }>;
+  delete(filename: string): Promise<void>;
 }
 
 export interface EventScheduleSink {
@@ -75,13 +75,10 @@ export type MikanEvent =
   | (PeriodicEventPayload & ResolvedEventFields);
 
 export interface PeriodicEventInfo {
-  filename: string;
   platform: string;
   conversationId: string;
-  conversationKind: EventConversationKind;
   text: string;
   schedule: string;
-  timezone: string;
   nextRun: string | null;
 }
 
@@ -351,7 +348,7 @@ export class OfficeEventStore implements EventStore {
     return this.writeRecord(safeFilename, payload);
   }
 
-  async delete(filename: string): Promise<{ deleted: boolean }> {
+  async delete(filename: string): Promise<void> {
     const safeFilename = validateEventFilename(filename);
     const filePath = join(this.eventsDir, safeFilename);
     if (!existsSync(filePath)) {
@@ -359,7 +356,6 @@ export class OfficeEventStore implements EventStore {
     }
     this.scheduler?.cancelRecord(this.address, safeFilename);
     await rm(filePath, { force: true });
-    return { deleted: true };
   }
 
   private assertOwnPayload(payload: EventPayload): void {

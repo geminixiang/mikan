@@ -63,7 +63,6 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         label: toolDisplayLabel(event.toolName, event.args),
-        args: event.args,
       };
     case "tool_execution_update": {
       const snapshot = subagentProgressOf(event.details);
