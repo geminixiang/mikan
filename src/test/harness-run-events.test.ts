@@ -48,8 +48,7 @@ describe("toRunEvent", () => {
         type: "tool_execution_update",
         toolCallId: "s1",
         toolName: "subagent",
-        args: {},
-        partialResult: { details: { progress: subagentSnapshot } },
+        details: { progress: subagentSnapshot },
       }),
     ).toMatchObject({
       type: "subagent_progress",
@@ -61,8 +60,7 @@ describe("toRunEvent", () => {
         type: "tool_execution_update",
         toolCallId: "b1",
         toolName: "bash",
-        args: {},
-        partialResult: { content: [{ type: "text", text: "partial" }] },
+        details: { other: true },
       }),
     ).toBeUndefined();
   });
@@ -85,39 +83,12 @@ describe("toRunEvent", () => {
     });
   });
 
-  test("reports assistant text deltas and drops empty or non-text updates", () => {
-    const message = fauxAssistantMessage("hi");
-    expect(
-      toRunEvent({
-        type: "message_update",
-        message,
-        assistantMessageEvent: {
-          type: "text_delta",
-          contentIndex: 0,
-          delta: "hi",
-          partial: message,
-        },
-      }),
-    ).toEqual({ type: "assistant_delta", delta: "hi" });
-    expect(
-      toRunEvent({
-        type: "message_update",
-        message,
-        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "", partial: message },
-      }),
-    ).toBeUndefined();
-    expect(
-      toRunEvent({
-        type: "message_update",
-        message,
-        assistantMessageEvent: {
-          type: "thinking_delta",
-          contentIndex: 0,
-          delta: "hmm",
-          partial: message,
-        },
-      }),
-    ).toBeUndefined();
+  test("reports assistant text deltas and drops empty ones", () => {
+    expect(toRunEvent({ type: "text_delta", delta: "hi" })).toEqual({
+      type: "assistant_delta",
+      delta: "hi",
+    });
+    expect(toRunEvent({ type: "text_delta", delta: "" })).toBeUndefined();
   });
 
   test("reports a finished assistant message with its thinking, text, and whether it calls tools", () => {

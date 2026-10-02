@@ -17,9 +17,7 @@ function toolDisplayLabel(toolName: string, args: unknown): string {
   return text;
 }
 
-function subagentProgressOf(partialResult: unknown) {
-  if (!partialResult || typeof partialResult !== "object") return undefined;
-  const details = (partialResult as { details?: unknown }).details;
+function subagentProgressOf(details: unknown) {
   if (!details || typeof details !== "object") return undefined;
   return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
 }
@@ -68,7 +66,7 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
         args: event.args,
       };
     case "tool_execution_update": {
-      const snapshot = subagentProgressOf(event.partialResult);
+      const snapshot = subagentProgressOf(event.details);
       return snapshot
         ? { type: "subagent_progress", toolCallId: event.toolCallId, snapshot }
         : undefined;
@@ -81,12 +79,8 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
         isError: event.isError,
         resultText: toolResultText(event.result),
       };
-    case "message_update": {
-      const update = event.assistantMessageEvent;
-      return update.type === "text_delta" && update.delta
-        ? { type: "assistant_delta", delta: update.delta }
-        : undefined;
-    }
+    case "text_delta":
+      return event.delta ? { type: "assistant_delta", delta: event.delta } : undefined;
     case "message_end":
       return event.message.role === "assistant"
         ? { type: "assistant_message", ...assistantMessageParts(event.message) }

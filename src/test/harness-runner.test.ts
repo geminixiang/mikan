@@ -131,7 +131,6 @@ describe("MikanAgentSession", () => {
 
     expect(events).toContain("message_start");
     expect(events).toContain("message_end");
-    expect(events).toContain("agent_end");
   });
 
   test("executes tool calls and persists tool results", async () => {

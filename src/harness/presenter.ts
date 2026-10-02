@@ -561,7 +561,7 @@ type ToolEndEvent = Extract<HarnessEvent, { type: "tool_execution_end" }>;
 
 type MessageStartEvent = Extract<HarnessEvent, { type: "message_start" }>;
 
-type MessageUpdateEvent = Extract<HarnessEvent, { type: "message_update" }>;
+type TextDeltaEvent = Extract<HarnessEvent, { type: "text_delta" }>;
 
 type MessageEndEvent = Extract<HarnessEvent, { type: "message_end" }>;
 
@@ -725,9 +725,7 @@ function observeMessageStart(event: MessageStartEvent, context: RunObserverConte
   log.logResponseStart(context.logCtx);
 }
 
-function observeMessageUpdate(event: MessageUpdateEvent, context: RunObserverContext): void {
-  const update = event.assistantMessageEvent;
-  if (update.type !== "text_delta" || !update.delta) return;
+function observeTextDelta(_event: TextDeltaEvent, context: RunObserverContext): void {
   const llmEntry = spansFor(context.runState).llm[0];
   if (llmEntry && llmEntry.firstTokenAt === undefined) {
     llmEntry.firstTokenAt = Date.now();
@@ -838,11 +836,9 @@ function observeLifecycleEvent(event: LifecycleEvent, context: RunObserverContex
     return;
   }
   if (event.type === "compaction_end") {
-    if (event.result) {
-      log.logInfo(`Auto-compaction complete: ${event.result.tokensBefore} tokens compacted`);
-    } else if (event.aborted) {
-      log.logInfo("Auto-compaction aborted");
-    }
+    if (event.aborted) log.logInfo("Auto-compaction aborted");
+    else if (event.errorMessage) log.logWarning("Auto-compaction failed", event.errorMessage);
+    else log.logInfo("Auto-compaction complete");
     return;
   }
   if (event.type === "auto_retry_start") {
@@ -868,8 +864,8 @@ function observeHarnessEvent(event: HarnessEvent, context: RunObserverContext): 
     case "message_start":
       observeMessageStart(event, context);
       return;
-    case "message_update":
-      observeMessageUpdate(event, context);
+    case "text_delta":
+      observeTextDelta(event, context);
       return;
     case "message_end":
       observeMessageEnd(event, context);

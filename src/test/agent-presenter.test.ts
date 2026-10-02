@@ -110,13 +110,10 @@ describe("presenter event routing", () => {
       type: "tool_execution_update",
       toolCallId: "subagent-1",
       toolName: "subagent",
-      args: {},
-      partialResult: {
-        details: {
-          progress: {
-            mode: "single",
-            nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-          },
+      details: {
+        progress: {
+          mode: "single",
+          nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
         },
       },
     });
@@ -178,16 +175,7 @@ describe("presenter event routing", () => {
     const complete = fauxAssistantMessage("Hello");
 
     await emit({ type: "message_start", message: partial });
-    await emit({
-      type: "message_update",
-      message: partial,
-      assistantMessageEvent: {
-        type: "text_delta",
-        contentIndex: 0,
-        delta: "Hel",
-        partial,
-      },
-    });
+    await emit({ type: "text_delta", delta: "Hel" });
     await emit({ type: "message_end", message: complete });
     await runQueue.wait();
 
@@ -227,11 +215,7 @@ describe("presenter event routing", () => {
     });
     await emit({ type: "message_start", message: partial });
     for (const delta of ["Do", "ne"]) {
-      await emit({
-        type: "message_update",
-        message: partial,
-        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta, partial },
-      });
+      await emit({ type: "text_delta", delta });
     }
     await runQueue.wait();
 
@@ -243,13 +227,7 @@ describe("presenter event routing", () => {
 
   test("re-attaches the checklist to the first answer delta after each later tool call", async () => {
     const { emit, responder, runQueue } = attachPresenter();
-    const partial = fauxAssistantMessage("x");
-    const streamDelta = (delta: string) =>
-      emit({
-        type: "message_update",
-        message: partial,
-        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta, partial },
-      });
+    const streamDelta = (delta: string) => emit({ type: "text_delta", delta });
 
     await streamDelta("Checking");
     await emit({
@@ -341,7 +319,7 @@ describe("presenter event routing", () => {
       type: "tool_execution_end",
       toolCallId: "tool-1",
       toolName: "read",
-      result: "contents",
+      result: { content: [{ type: "text", text: "contents" }] },
       isError: false,
     });
     await runQueue.wait();
@@ -350,7 +328,9 @@ describe("presenter event routing", () => {
     expect(runState.toolCallCount).toBe(1);
     expect(runState.toolErrorCount).toBe(0);
     expect(runState.toolInputCharacters).toBeGreaterThan(0);
-    expect(runState.toolOutputCharacters).toBe("contents".length);
+    expect(runState.toolOutputCharacters).toBe(
+      JSON.stringify({ content: [{ type: "text", text: "contents" }] }).length,
+    );
     expect(runState.toolProgress.get("tool-1")).toEqual({
       label: "Inspect file",
       status: "done",
@@ -377,7 +357,7 @@ describe("presenter event routing", () => {
       type: "tool_execution_end",
       toolCallId: "card-1",
       toolName: "post_card",
-      result: "posted",
+      result: { content: [{ type: "text", text: "posted" }] },
       isError: false,
     });
     await emit({ type: "message_end", message: fauxAssistantMessage("do not post this") });
@@ -397,14 +377,14 @@ describe("presenter event routing", () => {
       type: "tool_execution_end",
       toolCallId: "card-1",
       toolName: "post_card",
-      result: "failed",
+      result: { content: [{ type: "text", text: "failed" }] },
       isError: true,
     });
     await emit({
       type: "tool_execution_end",
       toolCallId: "other-1",
       toolName: "slack_blockkit",
-      result: "posted",
+      result: { content: [{ type: "text", text: "posted" }] },
       isError: false,
     });
 
@@ -497,7 +477,7 @@ describe("presenter event routing", () => {
         type: "tool_execution_end",
         toolCallId: "second",
         toolName: "read",
-        result: "failed",
+        result: { content: [{ type: "text", text: "failed" }] },
         isError: true,
       });
       await runQueue.wait();
@@ -508,7 +488,7 @@ describe("presenter event routing", () => {
         type: "tool_execution_end",
         toolCallId: "first",
         toolName: "read",
-        result: "contents",
+        result: { content: [{ type: "text", text: "contents" }] },
         isError: false,
       });
       await runQueue.wait();
@@ -528,7 +508,6 @@ describe("presenter event routing", () => {
 
   test("routes subagent updates and suppresses assistant deltas while progress is live", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
-    const partial = fauxAssistantMessage("hidden");
 
     await emit({
       type: "tool_execution_start",
@@ -540,13 +519,10 @@ describe("presenter event routing", () => {
       type: "tool_execution_update",
       toolCallId: "subagent-1",
       toolName: "subagent",
-      args: { label: "Delegate work" },
-      partialResult: {
-        details: {
-          progress: {
-            mode: "single",
-            nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-          },
+      details: {
+        progress: {
+          mode: "single",
+          nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
         },
       },
     });
@@ -564,16 +540,7 @@ describe("presenter event routing", () => {
       undefined,
     );
 
-    await emit({
-      type: "message_update",
-      message: partial,
-      assistantMessageEvent: {
-        type: "text_delta",
-        contentIndex: 0,
-        delta: "hidden",
-        partial,
-      },
-    });
+    await emit({ type: "text_delta", delta: "hidden" });
     expect(responder.appendResponseDelta).not.toHaveBeenCalled();
   });
 
@@ -679,7 +646,7 @@ describe("presenter event routing", () => {
         type: "tool_execution_end",
         toolCallId: "tool-1",
         toolName: "read",
-        result: "contents",
+        result: { content: [{ type: "text", text: "contents" }] },
         isError: false,
       });
       await emit({ type: "message_end", message: fauxAssistantMessage("first answer") });
@@ -698,13 +665,10 @@ describe("presenter event routing", () => {
         type: "tool_execution_update",
         toolCallId: "subagent-1",
         toolName: "subagent",
-        args: { label: "Delegate work" },
-        partialResult: {
-          details: {
-            progress: {
-              mode: "single",
-              nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-            },
+        details: {
+          progress: {
+            mode: "single",
+            nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
           },
         },
       });
@@ -712,7 +676,7 @@ describe("presenter event routing", () => {
         type: "tool_execution_end",
         toolCallId: "subagent-1",
         toolName: "subagent",
-        result: "done",
+        result: { content: [{ type: "text", text: "done" }] },
         isError: false,
       });
       await runQueue.wait();

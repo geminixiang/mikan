@@ -331,7 +331,7 @@ test("cancelling codemode aborts nested work and waits for its cleanup", async (
   expect(session.isActiveRun).toBe(false);
 });
 
-test("tool progress retains arguments and each committed message is presented once", async () => {
+test("tool progress reports details and each committed message is presented once", async () => {
   const { faux, file, wrap } = setup();
   const tool: AgentTool = {
     name: "progress",
@@ -362,29 +362,18 @@ test("tool progress retains arguments and each committed message is presented on
   });
   await session.prompt("report progress");
   expect(events).toContainEqual(
-    expect.objectContaining({ type: "tool_execution_update", args: { text: "original args" } }),
+    expect.objectContaining({ type: "tool_execution_update", toolName: "progress", details: {} }),
   );
   expect(events.filter((event) => event.type === "message_end")).toHaveLength(4);
-  expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
   expect(
     events
       .filter((event) =>
-        [
-          "agent_start",
-          "tool_execution_start",
-          "tool_execution_update",
-          "tool_execution_end",
-          "agent_end",
-        ].includes(event.type),
+        ["tool_execution_start", "tool_execution_update", "tool_execution_end"].includes(
+          event.type,
+        ),
       )
       .map((event) => event.type),
-  ).toEqual([
-    "agent_start",
-    "tool_execution_start",
-    "tool_execution_update",
-    "tool_execution_end",
-    "agent_end",
-  ]);
+  ).toEqual(["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
   expect(session.getLastRunStats()).toMatchObject({
     toolCalls: 1,
     toolCallCounts: { progress: 1 },
@@ -418,7 +407,7 @@ test("large tool progress snapshots stay out of persisted messages and later pro
   const session = wrap(store, [tool]);
   const updates: string[] = [];
   session.subscribe((event) => {
-    if (event.type === "tool_execution_update") updates.push(JSON.stringify(event.partialResult));
+    if (event.type === "tool_execution_update") updates.push(JSON.stringify(event.details));
   });
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("snapshot", {}), { stopReason: "toolUse" }),

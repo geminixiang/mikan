@@ -119,7 +119,7 @@ describe("harness run cancellation", () => {
       return { ...attached, root };
     });
     const unsubscribe = session.subscribe((event) => {
-      if (event.type === "agent_start") session.abort();
+      if (event.type === "message_start") session.abort();
     });
     faux.setResponses([fauxAssistantMessage("answer")]);
     const run = session.prompt("cancel", { budget: { maxDurationMs: 100 } });

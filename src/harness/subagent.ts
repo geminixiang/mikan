@@ -148,35 +148,33 @@ function reportSubagentActivity(
     }
   };
 
-  session.subscribe(async (event: { type: string; [key: string]: unknown }) => {
-    if (event.type === "tool_execution_start") {
-      const args = (event.args ?? {}) as { label?: string };
-      const name = String(event.toolName ?? "tool");
-      report(args.label ? `${name}: ${args.label}` : name);
-      return;
-    }
-    if (event.type === "tool_execution_end") {
-      report("thinking");
-      return;
-    }
-    if (event.type === "message_start") {
-      characters = 0;
-      reportedAt = 0;
-      report("thinking");
-      return;
-    }
-    if (event.type === "message_update") {
-      const delta = (event as { assistantMessageEvent?: { type?: string; delta?: string } })
-        .assistantMessageEvent;
-      if (delta?.type !== "text_delta" || !delta.delta) return;
-      characters += delta.delta.length;
-      if (characters - reportedAt < ACTIVITY_CHARS_STEP) return;
-      reportedAt = characters;
-      report(`writing · ${characters} chars`);
-      return;
-    }
-    if (event.type === "auto_retry_start") {
-      report("retrying after an error");
+  session.subscribe((event) => {
+    switch (event.type) {
+      case "tool_execution_start": {
+        const label =
+          isRecord(event.args) && typeof event.args.label === "string" ? event.args.label : "";
+        report(label ? `${event.toolName}: ${label}` : event.toolName);
+        return;
+      }
+      case "tool_execution_end":
+        report("thinking");
+        return;
+      case "message_start":
+        characters = 0;
+        reportedAt = 0;
+        report("thinking");
+        return;
+      case "text_delta":
+        characters += event.delta.length;
+        if (characters - reportedAt < ACTIVITY_CHARS_STEP) return;
+        reportedAt = characters;
+        report(`writing · ${characters} chars`);
+        return;
+      case "auto_retry_start":
+        report("retrying after an error");
+        return;
+      default:
+        return;
     }
   });
 }

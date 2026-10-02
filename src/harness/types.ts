@@ -6,7 +6,7 @@ import type { resolveConversationSettings } from "../settings/index.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
-import type { AgentEvent, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import type {
   CompactionPolicy,
@@ -310,19 +310,23 @@ export interface LoadSubagentProfilesResult {
 
 export type CompactionReason = "threshold" | "overflow" | "manual";
 
-interface CompactionResultSummary {
-  summary: string;
-  retainedMessages: number;
-  tokensBefore: number;
-}
-
 export type HarnessEvent =
-  | AgentEvent
+  | { type: "message_start"; message: AgentMessage }
+  | { type: "text_delta"; delta: string }
+  | { type: "message_end"; message: AgentMessage }
+  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: unknown }
+  | { type: "tool_execution_update"; toolCallId: string; toolName: string; details: JsonValue }
+  | {
+      type: "tool_execution_end";
+      toolCallId: string;
+      toolName: string;
+      result: { content: (TextContent | ImageContent)[]; details?: unknown };
+      isError: boolean;
+    }
   | { type: "compaction_start"; reason: CompactionReason }
   | {
       type: "compaction_end";
       reason: CompactionReason;
-      result?: CompactionResultSummary;
       aborted: boolean;
       errorMessage?: string;
     }

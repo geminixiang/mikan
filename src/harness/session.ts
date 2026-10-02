@@ -4,7 +4,6 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
   Api,
   AssistantMessage,
-  AssistantMessageEvent,
   AssistantMessageEventStream,
   ImageContent,
   Message,
@@ -12,7 +11,6 @@ import type {
   Models,
   ProviderRequestOptions,
   TextContent,
-  ToolResultMessage,
   Usage,
 } from "@earendil-works/pi-ai";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
@@ -28,7 +26,6 @@ import {
   watchEvents,
   type AgentEvent as DurableEvent,
   type AgentEventStream,
-  type MessageChange,
   type ToolExecutionApi,
   type UsageState,
 } from "@earendil-works/pi-durable";
@@ -108,8 +105,6 @@ export class MikanAgentSession {
   private budgetExceededReason: string | undefined;
   private retryAttempt = 0;
   private runMessages: AgentMessage[] = [];
-  private runToolResults: ToolResultMessage[] = [];
-  private partial: AssistantMessage | undefined;
   private readonly toolArgs = new Map<string, unknown>();
   private loopGuard = new ToolLoopGuard();
   private readonly loopNotices = new Map<string, string>();
@@ -211,8 +206,6 @@ export class MikanAgentSession {
     this.cancellationError = undefined;
     this.retryAttempt = 0;
     this.runMessages = [];
-    this.runToolResults = [];
-    this.partial = undefined;
     this.runStarted = false;
     this.runEndSeen = false;
     this.runEnded = deferred();
@@ -555,7 +548,12 @@ export class MikanAgentSession {
     } finally {
       this.loopNotices.delete(id);
     }
-    await this.emitToolEnd(id, tool.name, result, result.isError === true);
+    await this.emitToolEnd(
+      id,
+      tool.name,
+      { content: result.content ?? [], details: result.details },
+      result.isError === true,
+    );
     return result;
   }
 
@@ -606,31 +604,22 @@ export class MikanAgentSession {
     switch (event.type) {
       case "run_start":
         this.runStarted = true;
-        await this.emit({ type: "agent_start" });
         return;
       case "run_end":
         await this.endRetry(this.runAborted ? "Retry cancelled" : undefined);
-        await this.emit({ type: "agent_end", messages: this.runMessages });
         this.runEndSeen = true;
         return;
-      case "turn_start":
-        this.runToolResults = [];
-        await this.emit({ type: "turn_start" });
-        return;
-      case "turn_end": {
-        const message = this.runMessages.findLast((item) => item.role === "assistant");
-        if (message) {
-          await this.emit({ type: "turn_end", message, toolResults: this.runToolResults });
-        }
-        return;
-      }
       case "message_start":
         if (event.message.role === "system") return;
-        if (event.message.role === "assistant") this.partial = structuredClone(event.message);
         await this.emit({ type: "message_start", message: event.message });
         return;
       case "message_update":
-        return this.applyMessageChanges(event.changes);
+        for (const change of event.changes) {
+          if (change.type === "text_delta" && change.delta) {
+            await this.emit({ type: "text_delta", delta: change.delta });
+          }
+        }
+        return;
       case "message_end":
         return this.endMessage(event.entry.model?.[0]);
       case "tool_execution_start":
@@ -641,14 +630,12 @@ export class MikanAgentSession {
           type: "tool_execution_update",
           toolCallId: event.toolCallId,
           toolName: event.toolName,
-          args: this.toolArgs.get(event.toolCallId) ?? {},
-          partialResult: { content: [], details: event.details },
+          details: event.details,
         });
         return;
       case "tool_execution_end": {
         const message = event.entry?.model?.[0];
         const toolResult = message?.role === "toolResult" ? message : undefined;
-        if (toolResult) this.runToolResults.push(toolResult);
         await this.emitToolEnd(
           event.toolCallId,
           event.toolName,
@@ -725,19 +712,8 @@ export class MikanAgentSession {
     this.retryAttempt = 0;
   }
 
-  private async applyMessageChanges(changes: readonly MessageChange[]): Promise<void> {
-    const partial = this.partial;
-    if (!partial) return;
-    for (const change of changes) {
-      const update = applyMessageChange(partial, change);
-      if (!update) continue;
-      await this.emit({ type: "message_update", message: partial, assistantMessageEvent: update });
-    }
-  }
-
   private async endMessage(message: Message | undefined): Promise<void> {
     if (!message || message.role === "system") return;
-    this.partial = undefined;
     this.runMessages.push(message);
     await this.emit({ type: "message_end", message });
     if (message.role !== "assistant") return;
@@ -757,7 +733,7 @@ export class MikanAgentSession {
   private async emitToolEnd(
     toolCallId: string,
     toolName: string,
-    result: unknown,
+    result: Extract<HarnessEvent, { type: "tool_execution_end" }>["result"],
     isError: boolean,
   ): Promise<void> {
     this.toolArgs.delete(toolCallId);
@@ -846,42 +822,6 @@ function abortedStream(model: Model<Api>, reason: string): AssistantMessageEvent
   stream.push({ type: "error", reason: "aborted", error });
   stream.end(error);
   return stream;
-}
-
-function applyMessageChange(
-  partial: AssistantMessage,
-  change: MessageChange,
-): AssistantMessageEvent | undefined {
-  switch (change.type) {
-    case "text_start":
-    case "thinking_start":
-    case "toolcall_start":
-    case "block":
-      partial.content[change.contentIndex] = structuredClone(change.block);
-      return undefined;
-    case "text_delta": {
-      const block = partial.content[change.contentIndex];
-      if (block?.type === "text") block.text += change.delta;
-      return {
-        type: "text_delta",
-        contentIndex: change.contentIndex,
-        delta: change.delta,
-        partial,
-      };
-    }
-    case "thinking_delta": {
-      const block = partial.content[change.contentIndex];
-      if (block?.type === "thinking") block.thinking += change.delta;
-      return undefined;
-    }
-    case "toolcall_delta":
-      return undefined;
-    case "message":
-      Object.assign(partial, structuredClone(change.message));
-      return undefined;
-    default:
-      return change satisfies never;
-  }
 }
 
 export type { CompactionSettings };

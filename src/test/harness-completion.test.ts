@@ -27,7 +27,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-test.each(["assistant message listener", "terminal listener"] as const)(
+test.each(["assistant message listener"] as const)(
   "prompt remains active until %s completes",
   async (stage) => {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
@@ -55,10 +55,6 @@ test.each(["assistant message listener", "terminal listener"] as const)(
           entered.resolve();
           await release.promise;
         }
-      }
-      if (stage === "terminal listener" && event.type === "agent_end") {
-        entered.resolve();
-        await release.promise;
       }
     });
 

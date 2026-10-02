@@ -51,10 +51,12 @@ previous process left unfinished is aborted before a new prompt, never resumed
 implicitly; `resume()` continues it explicitly. Interrupted tool calls are not
 rerun unless the tool is `replay: "safe"`.
 
-Platform events are translated from pi-durable's agent events, which are
-derived from commits: assistant `message_end` arrives after persistence, tool
-progress carries the latest `details`, and `agent_end` contains only the
-current run's messages. Pi writes an aborted assistant entry only when a
+`HarnessEvent` is a thin, one-to-one projection of pi-durable's agent events,
+which are derived from commits: assistant `message_end` arrives after
+persistence, text arrives as `text_delta` appends, and tool progress carries the
+latest `details`. It adds only what Pi has no event for: budget stops, nested
+codemode tool calls, and retry bounds. It does not rebuild partial messages or
+emit run and turn boundaries; a run ends when `prompt()` settles. Pi writes an aborted assistant entry only when a
 partial was committed, and the model context omits errored and aborted answers,
 so read a run's answer from `lastRunMessages` and its outcome from
 `getLastRunStats().status`. The session keeps no transcript copy: read the model
