@@ -23,6 +23,7 @@ any release.
 
 - Compaction is Pi's: it runs in the background as the context grows and blocks the next request only near the limit, so mikan no longer starts its own compaction after a reply. Compaction summary requests now count toward a run's LLM-call and token budgets, and a request over the LLM-call budget is never sent.
 - A run left unfinished by a crash or restart is aborted before the next message in that conversation instead of answering first.
+- A thread session is named after the first line of its root message, cut to 80 characters, instead of the whole message; existing thread sessions take the short name on their next run.
 
 ### Fixed
 

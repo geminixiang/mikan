@@ -202,11 +202,21 @@ function createRunnerExecutionContext(
   };
 }
 
+const THREAD_SESSION_NAME_MAX_CHARS = 80;
+
 function buildThreadSessionName(message: ThreadRootMessage | null): string | undefined {
-  const text = message?.text?.trim();
-  if (!text) return undefined;
+  const firstLine = message?.text
+    ?.split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstLine) return undefined;
+  const chars = Array.from(firstLine);
+  const title =
+    chars.length > THREAD_SESSION_NAME_MAX_CHARS
+      ? `${chars.slice(0, THREAD_SESSION_NAME_MAX_CHARS).join("")}…`
+      : firstLine;
   const userLabel = message?.userName || message?.user || "unknown";
-  return `[${userLabel}]: ${text}`;
+  return `[${userLabel}]: ${title}`;
 }
 
 async function ensureDefaultMcpServers(options: {

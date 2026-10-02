@@ -22,6 +22,8 @@ import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
 import { createManagedSessionFile } from "../sessions/store.js";
+import { SessionStore } from "../sessions/session-store.js";
+import type { ThreadRootMessage } from "../sessions/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
@@ -79,6 +81,8 @@ async function createTestRunner(
     sessionView?: CreateRunnerOptions["sessionView"];
     platformToolPackFactories?: readonly PlatformToolPackFactory[];
     runEvents?: CreateRunnerOptions["runEvents"];
+    sessionKey?: string;
+    threadRootMessage?: ThreadRootMessage;
   } = {},
 ) {
   const { models, faux } = createFauxModels();
@@ -96,19 +100,19 @@ async function createTestRunner(
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
-    sessionKey: "C1",
+    sessionKey: options.sessionKey ?? "C1",
     office,
     trustModel: options.trustModel ?? "membership",
     platformWorkspaceId: options.platformWorkspaceId,
     openConnector: options.openConnector,
-    sessionScope: { contextFile, threadRootMessage: null },
+    sessionScope: { contextFile, threadRootMessage: options.threadRootMessage ?? null },
     chatHistory: new ChatHistorySync({ isCommandText }),
     models,
     sessionView: options.sessionView,
     platformToolPackFactories: options.platformToolPackFactories ?? [],
     runEvents: options.runEvents,
   });
-  return { runner, faux };
+  return { runner, faux, contextFile };
 }
 
 function makeResponder(): ConversationResponder & {
@@ -154,6 +158,22 @@ const platform: MessagingInfo = {
 };
 
 describe("PiAgentWrapper.run", () => {
+  test("names a thread session after the first line of its root message", async () => {
+    const { runner, contextFile } = await createTestRunner({
+      sessionKey: "C1:1000.1",
+      threadRootMessage: {
+        userName: "bot",
+        text: `  **今天**可確認一次 rebuild 後啟動，${"細節".repeat(60)}\n\n| 項目 | 資訊 |`,
+      },
+    });
+    await runner.dispose();
+
+    const firstLine = Array.from(`**今天**可確認一次 rebuild 後啟動，${"細節".repeat(60)}`);
+    expect(await (await SessionStore.inspect(contextFile)).getSessionName()).toBe(
+      `[bot]: ${firstLine.slice(0, 80).join("")}…`,
+    );
+  });
+
   test("gates configured stdio MCP commands by runner trust", async () => {
     const marker = join(dir, "mcp-launched");
     const markerScript = `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "launched");`;
