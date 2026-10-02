@@ -28,7 +28,8 @@ const historySchema = Type.Object({
   ),
   query: Type.Optional(
     Type.String({
-      description: "Case-insensitive text to find (search and chat; optional for chat)",
+      description:
+        "Case-insensitive words that must all appear in an entry (search and chat; optional for chat)",
     }),
   ),
   session: Type.Optional(
@@ -89,9 +90,9 @@ function messageText(
     case "assistant": {
       const parts = message.content.flatMap((part) => {
         if (part.type === "text") return [part.text];
-        if (part.type !== "toolCall") return [];
+        if (part.type !== "toolCall" || part.name === HISTORY_TOOL) return [];
         const call = `→ ${part.name} ${JSON.stringify(part.arguments)}`;
-        const result = part.name === HISTORY_TOOL ? undefined : results.get(part.id);
+        const result = results.get(part.id);
         return [result ? `${call}\n← ${toolResultText(result)}` : call];
       });
       return parts.length > 0 ? `[assistant] ${parts.join("\n")}` : undefined;
@@ -129,7 +130,9 @@ function historyEntries(entries: readonly SessionEntry[]): HistoryEntry[] {
 }
 
 function matches(text: string, query: string | undefined): boolean {
-  return !query || text.toLowerCase().includes(query);
+  if (!query) return true;
+  const lower = text.toLowerCase();
+  return query.split(/\s+/).every((word) => lower.includes(word));
 }
 
 function entryLine(entry: HistoryEntry): string {

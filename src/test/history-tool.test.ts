@@ -141,6 +141,21 @@ describe("history tool", () => {
     expect(text).not.toContain("lunch");
   });
 
+  test("matches every word of a query, wherever it appears", async () => {
+    const main = await sessionWith(createManagedSessionFile(office.sessionsDir), [
+      "ran date +%s%N | sha1sum | cut -c1-10",
+      "ran sha1sum alone",
+    ]);
+
+    const text = await runHistory(
+      { office, sessionFile: main },
+      { action: "search", query: "date +%s%N sha1sum" },
+    );
+
+    expect(text).toContain("1 matching entries");
+    expect(text).toContain("cut -c1-10");
+  });
+
   test("does not echo its own earlier results back into a search", async () => {
     const main = createManagedSessionFile(office.sessionsDir);
     const store = await SessionStore.open(main);
@@ -178,6 +193,9 @@ describe("history tool", () => {
     });
     await store.close();
 
+    expect(
+      await runHistory({ office, sessionFile: main }, { action: "search", query: "search x" }),
+    ).toBe('No session entries match "search x".');
     expect(await runHistory({ office, sessionFile: main }, { action: "search", query: "v9" })).toBe(
       'No session entries match "v9".',
     );

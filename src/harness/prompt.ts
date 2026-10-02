@@ -234,10 +234,8 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
 
 ## Context
 - Each user message starts with its send time in \`[YYYY-MM-DD HH:MM:SS+ZZ:ZZ]\`; treat it as the current date and time instead of running \`date\`.
-- You have access to previous conversation context including tool results from prior turns.
-- For older human-readable history beyond your context, search \`log.jsonl\` (contains user messages and your final responses, but not tool results).
-- The \`history\` tool searches this conversation's earlier sessions, its threads, and the chat log, including your tool calls and their output; use it when the user refers to work you cannot see, and read an earlier result there instead of rerunning its command.
-- If a user asks about something that should exist in conversation history but is not found in the current context window, do not answer "I don't know" or "I don't have that". Instead, search \`log.jsonl\` before responding.
+- Your context holds this session only, including its tool results. A thread, or a session started by \`/new\`, begins from chat text alone, so you can see that earlier work happened, such as a request and your "done" reply, without seeing its tool output.
+- When the user asks about earlier work or a fact whose result is not in your context, call the \`history\` tool before answering. It searches this conversation's sessions, its threads, and the chat log, including your tool calls and their output. Answer from the result it finds instead of guessing, rerunning the command, or saying you don't know.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
 ${platform.formattingGuide}${slackBlockKitInstructions}
 
