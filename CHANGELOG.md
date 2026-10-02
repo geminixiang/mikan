@@ -17,6 +17,7 @@ any release.
 ### Added
 
 - Slack and Discord mark a message with ⏳ when it waits behind a task that is still running, so a queued message no longer looks ignored.
+- `SENTRY_TRACES_SAMPLE_RATE` (0 to 1, default 1) sets how many traces go to Sentry when OTLP traces are not configured; an invalid value stops startup.
 
 ### Changed
 

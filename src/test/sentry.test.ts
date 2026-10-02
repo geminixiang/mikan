@@ -58,6 +58,30 @@ describe("Sentry initialization", () => {
     expect(options).not.toHaveProperty("dataCollection");
   });
 
+  test("samples every trace unless SENTRY_TRACES_SAMPLE_RATE lowers it", () => {
+    vi.stubEnv("SENTRY_TRACES_SAMPLE_RATE", "");
+    try {
+      expect(createSentryInitOptions("https://public@example.invalid/1").tracesSampleRate).toBe(1);
+
+      vi.stubEnv("SENTRY_TRACES_SAMPLE_RATE", "0.25");
+      expect(createSentryInitOptions("https://public@example.invalid/1").tracesSampleRate).toBe(
+        0.25,
+      );
+      expect(
+        createSentryInitOptions("https://public@example.invalid/1", true).tracesSampleRate,
+      ).toBeUndefined();
+
+      for (const invalid of ["abc", "-0.1", "1.5"]) {
+        vi.stubEnv("SENTRY_TRACES_SAMPLE_RATE", invalid);
+        expect(() => createSentryInitOptions("https://public@example.invalid/1")).toThrow(
+          "SENTRY_TRACES_SAMPLE_RATE",
+        );
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test("disables only OpenAI auto-instrumentation", () => {
     const options = createSentryInitOptions("https://public@example.invalid/1");
     const integrations = [{ name: "Http" }, { name: "OpenAI" }, { name: "OnUnhandledRejection" }];

@@ -164,6 +164,11 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         doc: "Sentry environment tag (default production)",
       },
       { name: "SENTRY_ENABLED", deploy: false, doc: "Set to false to disable Sentry errors" },
+      {
+        name: "SENTRY_TRACES_SAMPLE_RATE",
+        deploy: false,
+        doc: "Sentry trace sample rate, 0 to 1 (default 1; ignored with OTLP traces)",
+      },
       { name: "OTEL_SDK_DISABLED", doc: "Set to true to disable OpenTelemetry" },
       { name: "OTEL_SERVICE_NAME", doc: "OTLP service name (default mikan)" },
       {

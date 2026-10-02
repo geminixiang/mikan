@@ -68,13 +68,23 @@ import type {
   SentryRunScopeContext,
 } from "./types.js";
 
+function readTracesSampleRate(): number {
+  const raw = readEnv("SENTRY_TRACES_SAMPLE_RATE");
+  if (raw === undefined) return 1;
+  const rate = Number(raw);
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+    throw new Error(`SENTRY_TRACES_SAMPLE_RATE must be a number from 0 to 1, got "${raw}"`);
+  }
+  return rate;
+}
+
 export function createSentryInitOptions(dsn?: string, customOpenTelemetry = false) {
   return {
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
     enabled: Boolean(dsn) && readEnv("SENTRY_ENABLED") !== "false",
     sendDefaultPii: false,
-    tracesSampleRate: customOpenTelemetry ? undefined : 1.0,
+    tracesSampleRate: customOpenTelemetry ? undefined : readTracesSampleRate(),
     skipOpenTelemetrySetup: customOpenTelemetry,
     registerEsmLoaderHooks: customOpenTelemetry ? false : undefined,
     includeLocalVariables: false,
