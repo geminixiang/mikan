@@ -51,6 +51,24 @@ These rules have guards. When a guard fails, follow the owner or budget it names
 - Name the need a comment would explain in a file or function instead; the urge to comment signals a split responsibility or unclear name.
 - Solve the requested problem with the simplest design. Leave unrelated behavior unchanged, add no speculative abstraction or compatibility layer, and state consequential compatibility changes in the report.
 
+## Developing a change
+
+Take every change except a documentation-only one through these steps in order. When a step fails, return to step 1.
+
+1. **Research**: read the code, its history, the ADRs, and the Pi docs and source until every unknown is listed with an answer and its source.
+2. **Research again**: verify each answer against code or a measurement, and hunt the cases the first pass missed: other platforms, other message paths, concurrency, existing data. Done when a full pass finds nothing new.
+3. **POC**: prototype each candidate on real data, outside `src/`.
+4. **Compare** before and after with numbers: correctness, cost, latency, storage, code size.
+5. **Evaluate** each candidate against the best-design bar below and pick the best that passes. If none passes, return to step 1.
+6. **Implement and test**, failing test first for a behavior change.
+7. **Ship**: push to `main`, trigger the Slack E2E workflow (`slack-e2e.yml`) on GitHub, and see it pass. Only then is the change done.
+
+The best design is:
+
+- **Maintainable**: the least new code, state, and special cases; understandable from its README and ADR; unchanged by a Pi upgrade.
+- **Acceptable in its trade-offs**: every cost measured in step 4 and recorded in the report or ADR.
+- **Built on Pi and existing dependencies**: a public API where one exists; own code only where none does, with the reason recorded.
+
 ## Boundaries
 
 - This repository is public. Commits, docs, tests, issues, PRs, and release notes use placeholders such as `C0123456789`, `acme`, and `example.com` in place of real organizations, customers, people, hosts, and Slack workspace, channel, user, or message IDs or links; describe production evidence without identifiers.
