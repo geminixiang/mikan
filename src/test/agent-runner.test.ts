@@ -101,7 +101,7 @@ async function createTestRunner(
     trustModel: options.trustModel ?? "membership",
     platformWorkspaceId: options.platformWorkspaceId,
     openConnector: options.openConnector,
-    sessionScope: { sessionDir, contextFile, threadRootMessage: null },
+    sessionScope: { contextFile, threadRootMessage: null },
     chatHistory: new ChatHistorySync({ isCommandText }),
     models,
     sessionView: options.sessionView,

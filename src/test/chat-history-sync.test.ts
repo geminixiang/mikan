@@ -1059,14 +1059,13 @@ describe("ChatHistorySync", () => {
     });
     const session = await SessionStore.open(scope.contextFile);
 
-    const report = await manager.syncSessionManager({
+    await manager.syncSessionManager({
       office,
       sessionKey: "C123:2000.0001",
       sessionManager: session,
       currentMessageId: "2000.0002",
     });
 
-    expect(report).toEqual({ appended: 0 });
     expect(
       await countJsonlEntries(
         scope.contextFile,

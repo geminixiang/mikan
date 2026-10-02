@@ -69,7 +69,6 @@ describe("SessionStore", () => {
     const store = SessionStore.inMemory();
     await store.appendMessage(user("ephemeral"));
 
-    expect(store.getSessionFile()).toBeUndefined();
     expect(await store.getEntries()).toHaveLength(1);
     expect((await store.buildSessionContext()).messages).toHaveLength(1);
     await store.close();

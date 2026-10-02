@@ -68,7 +68,6 @@ export {
 } from "./sessions/chat-history-sync.js";
 export type {
   ChatHistorySyncOptions,
-  ChatSyncReport,
   HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,

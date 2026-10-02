@@ -74,7 +74,7 @@ function createOptions() {
     sessionKey: "C1",
     office,
     trustModel: "membership" as const,
-    sessionScope: { sessionDir, contextFile, threadRootMessage: null },
+    sessionScope: { contextFile, threadRootMessage: null },
     chatHistory: new ChatHistorySync({ isCommandText }),
     models,
   };

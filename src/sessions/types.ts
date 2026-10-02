@@ -37,7 +37,6 @@ export interface SessionCustomEntry extends SessionEntryBase {
 export interface SessionCompactionEntry extends SessionEntryBase {
   type: "compaction";
   summary: string;
-  firstKeptEntryId?: string;
 }
 
 export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCompactionEntry;
@@ -45,7 +44,6 @@ export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCom
 export type SessionRunStatus = "completed" | "aborted" | "failed";
 
 export interface SessionRunRecord {
-  startedAt: number;
   endedAt?: number;
   status?: SessionRunStatus;
 }
@@ -76,12 +74,9 @@ export interface ThreadRootMessage {
   text?: string;
   userName?: string;
   user?: string;
-  loggedAt?: number;
-  isMessagingBot?: boolean;
 }
 
 export interface ResolvedSessionScope {
-  sessionDir: string;
   contextFile: string;
   threadRootMessage: ThreadRootMessage | null;
 }
@@ -89,11 +84,6 @@ export interface ResolvedSessionScope {
 export interface LogRecord {
   message: ConversationLogMessage;
   index: number;
-}
-
-export interface ChatSyncReport {
-  appended: number;
-  lastMessageId?: string;
 }
 
 export interface ChatHistorySyncOptions {

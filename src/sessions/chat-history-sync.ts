@@ -1,5 +1,4 @@
 import { CONTROL_INPUT_CUSTOM_TYPE, type SessionEntry } from "./types.js";
-import { OFFICE_LOG_FILENAME } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
@@ -38,7 +37,6 @@ import type {
   ResolveChatSessionScopeOptions,
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
-  ChatSyncReport,
   LogRecord,
   ResolvedSessionScope,
   ThreadRootMessage,
@@ -121,7 +119,7 @@ export class ChatHistorySync {
         sessionDir,
         currentMessageId: options.currentMessageId,
       });
-      return { sessionDir, contextFile, threadRootMessage: null };
+      return { contextFile, threadRootMessage: null };
     }
 
     return this.resolveThreadSessionScope({
@@ -132,7 +130,7 @@ export class ChatHistorySync {
     });
   }
 
-  async syncSessionManager(options: SyncChatSessionOptions): Promise<ChatSyncReport> {
+  async syncSessionManager(options: SyncChatSessionOptions): Promise<void> {
     const records = readConversationLog(options.office);
     return syncSessionManagerFromLog(
       options.sessionManager,
@@ -161,8 +159,6 @@ export class ChatHistorySync {
     const sessionManager = await SessionStore.open(sessionFile);
     try {
       await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-        source: OFFICE_LOG_FILENAME,
-        messageCount: 0,
         resetAt: this.now().toISOString(),
         lastMessageId: lastMessageId ? lastMessageId : undefined,
       });
@@ -213,7 +209,7 @@ export class ChatHistorySync {
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
     const existing = tryResolveThreadSession(threadFile);
     if (existing) {
-      return { sessionDir: options.sessionDir, contextFile: existing, threadRootMessage };
+      return { contextFile: existing, threadRootMessage };
     }
 
     createManagedSessionFileAtPath(
@@ -236,7 +232,7 @@ export class ChatHistorySync {
       }),
     );
 
-    return { sessionDir: options.sessionDir, contextFile: threadFile, threadRootMessage };
+    return { contextFile: threadFile, threadRootMessage };
   }
 }
 
@@ -407,8 +403,6 @@ async function bootstrapSessionFromLog(
   try {
     await appendLogRecordsToSession(sessionManager, records);
     await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-      source: OFFICE_LOG_FILENAME,
-      messageCount: records.length,
       lastMessageId,
     });
   } finally {
@@ -426,8 +420,8 @@ async function syncSessionManagerFromLog(
   sessionManager: SessionStore,
   records: LogRecord[],
   historyWindow: HistoryWindow,
-): Promise<ChatSyncReport> {
-  if (records.length === 0) return { appended: 0 };
+): Promise<void> {
+  if (records.length === 0) return;
 
   const existingEntries = await sessionManager.getEntries();
   const resetAt = getLatestChatSyncResetAt(existingEntries);
@@ -454,25 +448,19 @@ async function syncSessionManagerFromLog(
     eligibleRecords.slice(lastSyncedIndex + 1),
     historyWindow,
   );
-  if (syncCandidates.length === 0) return { appended: 0 };
+  if (syncCandidates.length === 0) return;
 
   const represented = buildRepresentedMessageCounts(existingEntries);
   const newRecords = syncCandidates.filter(
     (record) => !consumeRepresentedLogMessage(record, represented),
   );
-  if (newRecords.length === 0) return { appended: 0 };
+  if (newRecords.length === 0) return;
 
   const lastMessageId = syncCandidates.at(-1)?.message.ts;
   await appendLogRecordsToSession(sessionManager, newRecords);
   await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-    source: OFFICE_LOG_FILENAME,
-    messageCount: newRecords.length,
     lastMessageId,
   });
-  return {
-    appended: newRecords.length,
-    lastMessageId,
-  };
 }
 
 async function appendLogRecordsToSession(
@@ -616,8 +604,6 @@ function buildThreadRootSeed(
     text: message.text,
     userName: message.userName,
     user: message.user,
-    loggedAt: message.date ? new Date(message.date).getTime() : undefined,
-    isMessagingBot: message.isMessagingBot,
   };
 }
 

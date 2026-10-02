@@ -58,7 +58,7 @@ const ENTRY_PAGE_SIZE = 500;
 
 type SessionDocState = Partial<{
   name: string;
-  run: Partial<Pick<SessionRunRecord, "endedAt" | "status">> & Pick<SessionRunRecord, "startedAt">;
+  run: Partial<SessionRunRecord>;
 }>;
 
 const SessionDoc = defineDoc<SessionDocState>({
@@ -233,7 +233,6 @@ function toSessionEntry(record: EntryRecord, sessionId: string): SessionEntry | 
       id,
       timestamp: messageTimestamp(message),
       summary: (message && compactionSummaryOf(message)) ?? contentText(message),
-      firstKeptEntryId: record.head === undefined ? undefined : `${sessionId}:${record.head}`,
     };
   }
   if (CustomSessionEntry.is(record)) {
@@ -485,11 +484,6 @@ export class SessionStore implements SessionInspection {
 
   static inMemory(): SessionStore {
     return new SessionStore(null, { kind: "pending", header: buildHeader() }, null);
-  }
-
-  getSessionFile(): string | undefined {
-    this.assertOpen();
-    return this.sessionFile ?? undefined;
   }
 
   getHeader(): SessionHeader {

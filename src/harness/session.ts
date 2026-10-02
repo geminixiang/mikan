@@ -243,7 +243,7 @@ export class MikanAgentSession {
       );
       await this.installRunTools(attached, tools);
       if (!(await this.checkCallBudget())) return;
-      await this.sessionStore.recordRun({ startedAt: this.tally.startedAt });
+      await this.sessionStore.recordRun({});
       stream = await watchEvents(attached.harness, attached.root.id, context);
       this.observedUsage = sumUsageState(stream.snapshot.usage);
       stream.start((events) => this.handleDurableEvents(events));
@@ -298,11 +298,7 @@ export class MikanAgentSession {
       await this.deadlineNotification;
       await stream?.stop();
       if (this.attached) {
-        await this.sessionStore.recordRun({
-          startedAt: this.tally.startedAt,
-          endedAt: Date.now(),
-          status,
-        });
+        await this.sessionStore.recordRun({ endedAt: Date.now(), status });
       }
       if (this.cancellationError) throw this.cancellationError;
     } catch (error) {
