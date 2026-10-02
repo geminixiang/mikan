@@ -61,8 +61,8 @@ jobs:
           # built-in openrouter catalog — and a same-named custom provider is
           # shadowed by the built-in — so it rides a custom "openrouter-ci"
           # provider pointed at the same base URL.
-          mkdir -p "$HOME/.mikan"
-          cat > "$HOME/.mikan/models.json" <<'MODELS'
+          # models.json lives in the state dir that the daemon reads.
+          cat > "$STATE_DIR/models.json" <<'MODELS'
           {
             "providers": {
               "openrouter-ci": {
