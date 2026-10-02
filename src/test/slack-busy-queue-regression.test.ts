@@ -20,7 +20,7 @@ test("the run after a busy tool receives and answers the queued token, not the p
     createOfficeAddress("slack", "C1"),
   );
   mkdirSync(office.dir, { recursive: true });
-  const store = await SessionStore.create(join(dir, "session.jsonl"), dir);
+  const store = await SessionStore.create(join(dir, "session.jsonl"));
   try {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
     const faux = fauxProvider();

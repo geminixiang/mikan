@@ -8,7 +8,7 @@ import type {
   PlatformName,
   RunningSession,
 } from "../types.js";
-import type { Office, Workspace } from "../office/types.js";
+import type { Office } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
@@ -48,7 +48,6 @@ import {
   formatStopped,
   formatStopping,
 } from "../adapters/messages.js";
-import { getUnresolvedSandboxPathContext } from "../sandbox/registry.js";
 import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
@@ -71,18 +70,6 @@ function portalNotConfiguredTokenStore(portal: string): { create: () => never } 
       throw new Error(`${portal} portal not configured`);
     },
   };
-}
-
-function runtimeCwdForSandbox(
-  sandbox: ConversationRuntimeOptions["sandbox"],
-  workspace: Workspace,
-  address: OfficeAddress,
-): string {
-  const runtimeWorkspaceRoot = getUnresolvedSandboxPathContext(
-    sandbox,
-    workspace.root,
-  ).runtimeWorkspaceRoot;
-  return `${runtimeWorkspaceRoot.replace(/\/+$/, "")}/${workspace.office(address).key}`;
 }
 
 function requestStop(state: ConversationRuntimeState): void {
@@ -237,8 +224,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<void> {
     const conversationId = address.conversationId;
     const office = this.options.workspace.office(address);
-    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
-    await this.chatSessionManager.resetSession({ office, sessionKey, cwd: runtimeCwd });
+    await this.chatSessionManager.resetSession({ office, sessionKey });
 
     await this.sessions.discardAndWait(address, sessionKey);
 
@@ -579,11 +565,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<ConversationState> {
     signal.throwIfAborted();
     const { address, sessionKey, currentMessageId } = options;
-    const runtimeCwd = runtimeCwdForSandbox(this.options.sandbox, this.options.workspace, address);
     const sessionScope = await this.chatSessionManager.resolveSessionScope({
       office,
       sessionKey,
-      cwd: runtimeCwd,
       currentMessageId,
     });
     signal.throwIfAborted();

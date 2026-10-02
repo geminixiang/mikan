@@ -81,7 +81,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: SessionStore.inMemory(dir),
+      sessionStore: SessionStore.inMemory(),
       settings: { retry: { enabled: false } },
     });
 
@@ -100,7 +100,7 @@ describe("MikanAgentSession", () => {
     faux.setResponses([fauxAssistantMessage("hello from faux")]);
 
     const sessionFile = join(dir, "session.jsonl");
-    const sessionStore = await SessionStore.create(sessionFile, dir);
+    const sessionStore = await SessionStore.create(sessionFile);
     const session = new MikanAgentSession({
       systemPrompt: "You are a test bot.",
       model,
@@ -140,7 +140,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("done"),
     ]);
 
-    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"));
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -171,7 +171,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [echoTool],
       models,
-      sessionStore: await SessionStore.create(join(dir, "usage.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "usage.jsonl")),
     });
 
     await session.prompt("run the tool");
@@ -193,7 +193,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("done"),
     ]);
 
-    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "session.jsonl"));
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model,
@@ -260,7 +260,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [delegateTool],
       models,
-      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl")),
     });
 
     const events: HarnessEvent[] = [];
@@ -333,7 +333,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [captureTool, holdTool],
       models,
-      sessionStore: await SessionStore.create(join(dir, "usage-owner.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "usage-owner.jsonl")),
     });
 
     await session.prompt("capture usage ownership");
@@ -360,7 +360,7 @@ describe("MikanAgentSession", () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("compacted history"), fauxAssistantMessage("answer")]);
 
-    const sessionStore = await SessionStore.create(join(dir, "compaction-usage.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "compaction-usage.jsonl"));
     await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
@@ -389,7 +389,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("must not answer"),
     ]);
 
-    const sessionStore = await SessionStore.create(join(dir, "compaction-budget.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "compaction-budget.jsonl"));
     await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
@@ -426,7 +426,7 @@ describe("MikanAgentSession", () => {
       tools: [],
       models,
       sessionStore: await (async () => {
-        const store = await SessionStore.create(join(dir, "overflow-budget.jsonl"), dir);
+        const store = await SessionStore.create(join(dir, "overflow-budget.jsonl"));
         await seedCompactableHistory(store);
         return store;
       })(),
@@ -449,7 +449,7 @@ describe("MikanAgentSession", () => {
       fauxAssistantMessage("answer must not run"),
     ]);
 
-    const sessionStore = await SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "compaction-call-cap.jsonl"));
     await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
@@ -478,7 +478,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl")),
     });
 
     await session.prompt("answer directly", { budget: { maxLlmCalls: 1 } });
@@ -512,7 +512,7 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "session.jsonl"), dir),
+      sessionStore: await SessionStore.create(join(dir, "session.jsonl")),
     });
 
     await expect(session.prompt("hi")).rejects.toThrow(/No credentials for provider/);

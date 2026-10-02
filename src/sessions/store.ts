@@ -10,10 +10,10 @@ export function isPlatformHistorySession(sessionFile: string): boolean {
   return SessionStore.readHeader(sessionFile)?.source?.kind === "platform-history";
 }
 
-export function resolveManagedSessionFile(sessionDir: string, cwd: string): string {
+export function resolveManagedSessionFile(sessionDir: string): string {
   const existingPath = getCurrentSessionPath(sessionDir);
   if (existingPath && !isPlatformHistorySession(existingPath)) return existingPath;
-  return createManagedSessionFile(sessionDir, cwd);
+  return createManagedSessionFile(sessionDir);
 }
 
 export function extractSessionUuid(sessionFile: string): string {
@@ -34,11 +34,11 @@ function resolveChildPath(root: string, child: string): string {
   return resolvedChild;
 }
 
-export function createManagedSessionFile(sessionDir: string, cwd: string): string {
+export function createManagedSessionFile(sessionDir: string): string {
   mkdirSync(sessionDir, { recursive: true });
   const sessionId = randomUUID();
   const sessionFile = join(sessionDir, createSessionFilename(sessionId));
-  writeSessionHeader(sessionFile, cwd, sessionId);
+  SessionStore.writeHeaderFile(sessionFile, { id: sessionId });
   setCurrentPointer(sessionDir, sessionFile);
   return sessionFile;
 }
@@ -73,20 +73,10 @@ function setCurrentPointer(sessionDir: string, sessionFilePath: string): void {
 
 export function createManagedSessionFileAtPath(
   sessionFile: string,
-  cwd: string,
   parentSessionId?: string,
 ): string {
-  writeSessionHeader(sessionFile, cwd, undefined, parentSessionId);
+  SessionStore.writeHeaderFile(sessionFile, { parentSessionId });
   return sessionFile;
-}
-
-function writeSessionHeader(
-  sessionFile: string,
-  cwd: string,
-  sessionId = randomUUID(),
-  parentSessionId?: string,
-): void {
-  SessionStore.writeHeaderFile(sessionFile, cwd, { id: sessionId, parentSessionId });
 }
 
 export function getThreadSessionFile(sessionsDir: string, sessionKey: string): string {

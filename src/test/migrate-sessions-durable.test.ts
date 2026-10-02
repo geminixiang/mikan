@@ -127,7 +127,6 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
   expect(existsSync(sessionStorageDir(file))).toBe(true);
   expect(SessionStore.readHeader(file)).toMatchObject({
     id: "session-1",
-    cwd: "/workspace",
     parentSessionId: "parent-1",
     source: { kind: "platform-history" },
   });
@@ -172,7 +171,7 @@ test("an interrupted publish finishes on the next run", async () => {
     });
     writer.set("pi.branch.tip", "main", "a");
   });
-  const store = await SessionStore.create(`${file}.importing`, "/workspace", { id: "session-1" });
+  const store = await SessionStore.create(`${file}.importing`, { id: "session-1" });
   await store.appendMessage(user("hello", 1));
   await store.close();
   const archive = join(stateDir, "conversations", "v1-slack-c1", "sessions-v4", "thread.jsonl");

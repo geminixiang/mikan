@@ -35,7 +35,7 @@ interface StreamPayload {
 async function openSessionStream(runEvents: RunEventHub, sessionKey: string) {
   const conversationDir = join(root, "C1");
   mkdirSync(conversationDir, { recursive: true });
-  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"), conversationDir);
+  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"));
   const sessionViewTokenStore = new InMemorySessionViewTokenStore();
   const { token } = sessionViewTokenStore.create({
     platform: "slack",

@@ -124,7 +124,6 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   defaultModel: Model<Api>;
   thinkingLevel: ThinkingLevel;
   models: MikanModels;
-  workspaceDir: string;
   availableTools: MikanHarnessTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
   toolContext?: MikanToolContext;
@@ -498,7 +497,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
     tools: granted,
     toolContext: options.toolContext,
     models: options.models,
-    sessionStore: SessionStore.inMemory(options.workspaceDir),
+    sessionStore: SessionStore.inMemory(),
     settings: { compaction: { enabled: false } },
   });
   if (options.onActivity) reportSubagentActivity(session, options.onActivity);

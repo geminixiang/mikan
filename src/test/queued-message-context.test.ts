@@ -102,7 +102,7 @@ async function syncForTurn(
   contextFile: string,
   currentMessageId: string,
 ) {
-  const session = await SessionStore.open(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile);
   try {
     await manager.syncSessionManager({
       office,
@@ -121,7 +121,7 @@ async function appendTurn(
   answer: string | undefined,
   timestamp: number,
 ): Promise<void> {
-  const session = await SessionStore.open(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile);
   try {
     await session.appendMessage({
       role: "user",
@@ -170,7 +170,6 @@ async function runBusyThenQueuedTurns(): Promise<string> {
   const scope = await manager.resolveSessionScope({
     office,
     sessionKey: SESSION_KEY,
-    cwd: conversationDir,
     currentMessageId: BUSY_RECORD.ts,
   });
 
@@ -184,7 +183,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
 }
 
 async function appendToolCallTurn(contextFile: string): Promise<void> {
-  const session = await SessionStore.open(contextFile, conversationDir);
+  const session = await SessionStore.open(contextFile);
   try {
     await session.appendMessage({
       role: "user",
@@ -260,7 +259,6 @@ describe("queued message context", () => {
     const scope = await manager.resolveSessionScope({
       office,
       sessionKey: SESSION_KEY,
-      cwd: conversationDir,
       currentMessageId: BUSY_RECORD.ts,
     });
     await syncForTurn(manager, scope.contextFile, BUSY_RECORD.ts);

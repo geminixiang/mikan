@@ -116,7 +116,6 @@ async function createConfiguredAgentSession(params: {
         defaultModel: model,
         thinkingLevel,
         models,
-        workspaceDir,
         availableTools: tools.filter(
           (tool) => ![START_TASK_TOOL, TASK_STATUS_TOOL].includes(tool.name),
         ),
@@ -407,12 +406,11 @@ async function rollbackRunnerResource(label: string, cleanup: () => Promise<void
 
 async function openRunnerSessionManager(params: {
   contextFile: string;
-  runtimeWorkspaceRoot: string;
   sessionKey: string;
   threadRootMessage: ThreadRootMessage | null;
 }) {
-  const { contextFile, runtimeWorkspaceRoot, sessionKey, threadRootMessage } = params;
-  const sessionManager = await SessionStore.open(contextFile, runtimeWorkspaceRoot);
+  const { contextFile, sessionKey, threadRootMessage } = params;
+  const sessionManager = await SessionStore.open(contextFile);
   try {
     const threadSessionName = buildThreadSessionName(threadRootMessage);
     if (
@@ -908,7 +906,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const { contextFile, threadRootMessage } = sessionScope;
   const sessionManager = await openRunnerSessionManager({
     contextFile,
-    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
     sessionKey,
     threadRootMessage,
   });

@@ -168,14 +168,13 @@ function readHeader(filePath: string): SessionHeader {
   if (!isRecord(parsed)) {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  const { id, createdAt, cwd, parentSessionId, source } = parsed;
-  if (typeof id !== "string" || typeof createdAt !== "number" || typeof cwd !== "string") {
+  const { id, createdAt, parentSessionId, source } = parsed;
+  if (typeof id !== "string" || typeof createdAt !== "number") {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
   return {
     id,
     createdAt,
-    cwd,
     parentSessionId: typeof parentSessionId === "string" ? parentSessionId : undefined,
     source: isRecord(source) ? toJsonObject(source) : undefined,
   };
@@ -186,11 +185,10 @@ function toJsonObject(input: Record<string, unknown>): JsonObject {
   return copy;
 }
 
-function buildHeader(cwd: string, options?: SessionCreateInfo): SessionHeader {
+function buildHeader(options?: SessionCreateInfo): SessionHeader {
   return {
     id: options?.id ?? randomUUID(),
     createdAt: Date.now(),
-    cwd,
     parentSessionId: options?.parentSessionId,
     source: options?.source,
   };
@@ -397,31 +395,19 @@ export class SessionStore implements SessionInspection {
 
   private constructor(
     private readonly sessionFile: string | null,
-    private readonly cwd: string,
     private state: StoreState,
     private writerKey: string | null,
   ) {}
 
-  static async open(path: string, cwdOverride?: string): Promise<SessionStore> {
+  static async open(path: string): Promise<SessionStore> {
     const writer = acquireWriter(path);
     const writerPath = writer.path;
     try {
       if (!existsSync(writerPath)) {
-        const cwd = cwdOverride ?? process.cwd();
-        return new SessionStore(
-          writerPath,
-          cwd,
-          { kind: "pending", header: buildHeader(cwd) },
-          writer.key,
-        );
+        return new SessionStore(writerPath, { kind: "pending", header: buildHeader() }, writer.key);
       }
       const header = readHeader(writerPath);
-      const store = new SessionStore(
-        writerPath,
-        cwdOverride ?? header.cwd,
-        { kind: "pending", header },
-        writer.key,
-      );
+      const store = new SessionStore(writerPath, { kind: "pending", header }, writer.key);
       if (existsSync(sessionStorageDir(writerPath))) await store.live();
       return store;
     } catch (error) {
@@ -468,19 +454,15 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  static async create(
-    path: string,
-    cwd: string,
-    options?: SessionCreateInfo,
-  ): Promise<SessionStore> {
+  static async create(path: string, options?: SessionCreateInfo): Promise<SessionStore> {
     const writer = acquireWriter(path);
     let leaseKey = writer.key;
     try {
       if (existsSync(writer.path)) throw new Error(`Session file already exists: ${writer.path}`);
-      const header = buildHeader(cwd, options);
+      const header = buildHeader(options);
       writeHeader(writer.path, header);
       leaseKey = promotePendingWriter(leaseKey, writer.path);
-      const store = new SessionStore(writer.path, cwd, { kind: "pending", header }, leaseKey);
+      const store = new SessionStore(writer.path, { kind: "pending", header }, leaseKey);
       await store.live();
       return store;
     } catch (error) {
@@ -497,22 +479,17 @@ export class SessionStore implements SessionInspection {
     }
   }
 
-  static writeHeaderFile(path: string, cwd: string, options?: SessionCreateInfo): void {
-    writeHeader(path, buildHeader(cwd, options));
+  static writeHeaderFile(path: string, options?: SessionCreateInfo): void {
+    writeHeader(path, buildHeader(options));
   }
 
-  static inMemory(cwd = process.cwd()): SessionStore {
-    return new SessionStore(null, cwd, { kind: "pending", header: buildHeader(cwd) }, null);
+  static inMemory(): SessionStore {
+    return new SessionStore(null, { kind: "pending", header: buildHeader() }, null);
   }
 
   getSessionFile(): string | undefined {
     this.assertOpen();
     return this.sessionFile ?? undefined;
-  }
-
-  getCwd(): string {
-    this.assertOpen();
-    return this.cwd;
   }
 
   getHeader(): SessionHeader {

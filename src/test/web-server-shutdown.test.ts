@@ -48,7 +48,7 @@ function idleInteractiveOptions(): SessionViewInteractiveOptions {
 test("closing the web server ends an open session stream instead of waiting for the viewer to leave", async () => {
   const conversationDir = join(root, "D123");
   mkdirSync(conversationDir, { recursive: true });
-  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"), conversationDir);
+  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"));
   const sessionViewTokenStore = new InMemorySessionViewTokenStore();
   const { token } = sessionViewTokenStore.create({
     platform: "slack",

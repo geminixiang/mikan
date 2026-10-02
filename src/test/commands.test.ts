@@ -778,7 +778,6 @@ describe("SessionViewCommandHandler", () => {
     mkdirSync(conversationDir, { recursive: true });
     createManagedSessionFile(
       testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
-      conversationDir,
     );
 
     const postPrivate = vi.fn(
@@ -841,7 +840,6 @@ describe("SessionViewCommandHandler", () => {
     mkdirSync(conversationDir, { recursive: true });
     const expectedFile = createManagedSessionFile(
       testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
-      conversationDir,
     );
 
     const sessionViewTokenStore = fakeSessionViewTokenStore();

@@ -34,7 +34,7 @@ test.each(["assistant message listener"] as const)(
     const faux = fauxProvider();
     (models.models as MutableModels).setProvider(faux.provider);
     faux.setResponses([fauxAssistantMessage("done")]);
-    const store = await SessionStore.create(join(dir, "session.jsonl"), dir);
+    const store = await SessionStore.create(join(dir, "session.jsonl"));
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model: faux.getModel() as Model<Api>,

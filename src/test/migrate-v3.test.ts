@@ -283,7 +283,7 @@ describe("findV3SessionFiles", () => {
     writeJsonl(join(dir, "top.jsonl"), [header, v3Message("a", null, "A")]);
     writeJsonl(v3File, [{ ...header, id: "99999999-2222-3333-4444-555555555555" }]);
     writeFileSync(join(dir, "notes.txt"), "not a session");
-    await SessionStore.create(join(dir, "v4.jsonl"), "/work");
+    await SessionStore.create(join(dir, "v4.jsonl"));
 
     const found = findV3SessionFiles(dir);
     expect(found.toSorted()).toEqual([join(dir, "top.jsonl"), v3File].toSorted());

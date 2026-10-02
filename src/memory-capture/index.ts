@@ -221,7 +221,6 @@ async function extractWithOfficeModel(
     defaultModel: models.resolve(settings.provider, settings.model),
     thinkingLevel: settings.thinkingLevel,
     models,
-    workspaceDir: run.office.dir,
     availableTools: [],
   });
   if (result.status !== "completed") {

@@ -50,7 +50,7 @@ function answer(text: string, totalTokens: number, stopReason: "stop" | "error" 
 
 describe("SessionStore", () => {
   test("context tokens come from the newest successful answer after compaction", async () => {
-    const store = SessionStore.inMemory("/work");
+    const store = SessionStore.inMemory();
     await store.appendMessage(user("old"));
     await store.appendMessage(answer("old answer", 900));
     expect(await store.getContextTokens()).toBe(900);
@@ -66,7 +66,7 @@ describe("SessionStore", () => {
   });
 
   test("inMemory keeps entries without creating a session file", async () => {
-    const store = SessionStore.inMemory("/work");
+    const store = SessionStore.inMemory();
     await store.appendMessage(user("ephemeral"));
 
     expect(store.getSessionFile()).toBeUndefined();
@@ -77,14 +77,13 @@ describe("SessionStore", () => {
 
   test("create writes a private header beside private durable storage", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work", { id: "session-1" });
+    const store = await SessionStore.create(file, { id: "session-1" });
     await store.appendMessage(user("persisted"));
     await store.close();
 
     expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
       id: "session-1",
       createdAt: expect.any(Number),
-      cwd: "/work",
     });
     expect(statSync(file).mode & 0o777).toBe(0o600);
     expect(statSync(sessionStorageDir(file)).mode & 0o777).toBe(0o700);
@@ -92,7 +91,7 @@ describe("SessionStore", () => {
 
   test("reopen preserves session id, lineage, entries, and cwd", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work", {
+    const store = await SessionStore.create(file, {
       id: "session-1",
       parentSessionId: "parent-1",
     });
@@ -102,7 +101,6 @@ describe("SessionStore", () => {
 
     const reopened = await SessionStore.open(file);
     expect(reopened.getSessionId()).toBe("session-1");
-    expect(reopened.getCwd()).toBe("/work");
     expect(reopened.getHeader()).toMatchObject({ parentSessionId: "parent-1" });
     const entries = await reopened.getEntries();
     expect(entries.map((entry) => entry.type)).toEqual(["message", "custom"]);
@@ -111,8 +109,8 @@ describe("SessionStore", () => {
   });
 
   test("entry ids are unique across sessions", async () => {
-    const first = await SessionStore.create(join(dir, "first.jsonl"), "/work");
-    const second = await SessionStore.create(join(dir, "second.jsonl"), "/work");
+    const first = await SessionStore.create(join(dir, "first.jsonl"));
+    const second = await SessionStore.create(join(dir, "second.jsonl"));
     const firstId = await first.appendMessage(user("one"));
     const secondId = await second.appendMessage(user("two"));
     expect(firstId).not.toBe(secondId);
@@ -122,7 +120,7 @@ describe("SessionStore", () => {
 
   test("readHeader exposes lineage and source, and null for absent or unrecognized files", () => {
     const file = join(dir, "session.jsonl");
-    SessionStore.writeHeaderFile(file, "/work", {
+    SessionStore.writeHeaderFile(file, {
       id: "session-1",
       parentSessionId: "parent-1",
       source: { kind: "platform-history" },
@@ -130,7 +128,6 @@ describe("SessionStore", () => {
     expect(SessionStore.readHeader(file)).toEqual({
       id: "session-1",
       createdAt: expect.any(Number),
-      cwd: "/work",
       parentSessionId: "parent-1",
       source: { kind: "platform-history" },
     });
@@ -149,11 +146,11 @@ describe("SessionStore", () => {
 
   test("a missing file stays pending until the first append", async () => {
     const file = join(dir, "missing.jsonl");
-    const store = await SessionStore.open(file, "/work");
+    const store = await SessionStore.open(file);
     expect(existsSync(sessionStorageDir(file))).toBe(false);
     await store.appendMessage(user("first"));
     await store.close();
-    expect(SessionStore.readHeader(file)?.cwd).toBe("/work");
+    expect(SessionStore.readHeader(file)).not.toBeNull();
     const reopened = await SessionStore.open(file);
     expect(await reopened.getEntries()).toHaveLength(1);
     await reopened.close();
@@ -161,7 +158,7 @@ describe("SessionStore", () => {
 
   test("read-only inspection never changes its source", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
+    const store = await SessionStore.create(file);
     await store.appendMessage(user("kept"));
     await store.setSessionName("named");
     const before = snapshotTree(dir);
@@ -174,7 +171,7 @@ describe("SessionStore", () => {
 
   test("enforces one writer while allowing read-only inspection", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
+    const store = await SessionStore.create(file);
     await expect(SessionStore.open(file)).rejects.toThrow("active writer");
     await expect(SessionStore.inspect(file)).resolves.toBeDefined();
     await store.close();
@@ -184,17 +181,17 @@ describe("SessionStore", () => {
 
   test("a leaked claim for a deleted file does not block an unrelated new file", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
+    const store = await SessionStore.create(file);
     rmSync(file);
     rmSync(sessionStorageDir(file), { recursive: true });
-    const replacement = await SessionStore.create(file, "/work");
+    const replacement = await SessionStore.create(file);
     await replacement.close();
     await store.close().catch(() => undefined);
   });
 
   test("hard-link aliases share one writer lease", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
+    const store = await SessionStore.create(file);
     const alias = join(dir, "alias.jsonl");
     linkSync(file, alias);
     await expect(SessionStore.open(alias)).rejects.toThrow("active writer");
@@ -203,7 +200,7 @@ describe("SessionStore", () => {
 
   test("close is idempotent, drains unawaited mutations, and closed methods fail", async () => {
     const file = join(dir, "session.jsonl");
-    const store = await SessionStore.create(file, "/work");
+    const store = await SessionStore.create(file);
     void store.appendMessage(user("unawaited"));
     await Promise.all([store.close(), store.close()]);
     expect(() => store.getSessionId()).toThrow("closed");
@@ -213,7 +210,7 @@ describe("SessionStore", () => {
   });
 
   test("session name comes from the latest set name", async () => {
-    const store = SessionStore.inMemory("/work");
+    const store = SessionStore.inMemory();
     await store.setSessionName("first");
     await store.setSessionName("  second  ");
     expect(await store.getSessionName()).toBe("second");

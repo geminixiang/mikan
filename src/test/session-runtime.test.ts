@@ -481,7 +481,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new dispatched inside the session queue does not deadlock", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
+    const originalSession = createManagedSessionFile(office.sessionsDir);
     const { event, context } = makeEventAndContext("1000.25");
     event.conversationKind = "direct";
     event.text = "/new";
@@ -501,7 +501,7 @@ describe("ConversationRuntime lifecycle", () => {
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
     const sessionDir = office.sessionsDir;
-    const originalSession = createManagedSessionFile(sessionDir, conversationDir);
+    const originalSession = createManagedSessionFile(sessionDir);
     let settle!: () => void;
     const runGate = new Promise<void>((resolve) => (settle = resolve));
     const runner = fakeRunner();
@@ -624,7 +624,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("an old shared top-level session keeps serving new messages", async () => {
     const runner = fakeRunner();
     const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
-    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
+    const originalSession = createManagedSessionFile(office.sessionsDir);
     rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
 
     const { event, context } = makeEventAndContext("3");
@@ -679,7 +679,7 @@ describe("ConversationRuntime lifecycle", () => {
     await sync.resetSession({ office, sessionKey: "C123" });
 
     const syncOnce = async (file: string) => {
-      const session = await SessionStore.open(file, conversationDir);
+      const session = await SessionStore.open(file);
       try {
         await sync.syncSessionManager({
           office,
@@ -708,7 +708,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new resets an idle session immediately", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(office.sessionsDir, conversationDir);
+    const originalSession = createManagedSessionFile(office.sessionsDir);
 
     await runtime.handleNewCommand(newCommandOptions());
 
@@ -725,8 +725,8 @@ describe("ConversationRuntime lifecycle", () => {
 describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = await SessionStore.open(channelFile, conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir);
+    const channelSession = await SessionStore.open(channelFile);
     await channelSession.appendMessage({
       role: "user",
       content: [{ type: "text", text: "channel history should not leak" }],
@@ -736,13 +736,11 @@ describe("ChatHistorySync session scope", () => {
     registerThreadSession({
       office,
       sessionKey: "C123:2000.0001",
-      cwd: conversationDir,
     });
 
     const sessionScope = await new ChatHistorySync({ isCommandText }).resolveSessionScope({
       office,
       sessionKey: "C123:2000.0001",
-      cwd: conversationDir,
     });
 
     expect(sessionScope.contextFile).toBe(

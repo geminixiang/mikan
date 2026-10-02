@@ -994,13 +994,12 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     const { bot, socket } = await startSlackHarness({ handler, workspace });
 
     const conversationDir = join(workingDir, C123_OFFICE);
-    createManagedSessionFileAtPath(join(conversationDir, "session.jsonl"), conversationDir);
+    createManagedSessionFileAtPath(join(conversationDir, "session.jsonl"));
     createManagedSessionFileAtPath(
       getThreadSessionFile(
         workspace.office(createOfficeAddress("slack", "C123")).sessionsDir,
         "C123:1000.0001",
       ),
-      conversationDir,
     );
 
     const ack = makeAck();
@@ -1458,7 +1457,6 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         workspace.office(createOfficeAddress("slack", "D123")).sessionsDir,
         "D123:2000.0001",
       ),
-      join(workingDir, "D123"),
     );
 
     const harness = await startSlackHarness({ handler, workspace });

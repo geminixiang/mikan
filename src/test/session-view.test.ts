@@ -90,7 +90,7 @@ describe("session view command grammar", () => {
 describe("resolveExistingSessionFile", () => {
   test("resolves the current channel session", () => {
     const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
+    const sessionFile = createManagedSessionFile(sessionDir);
 
     expect(resolveExistingSessionFile(office, "D123")).toBe(sessionFile);
   });
@@ -98,7 +98,7 @@ describe("resolveExistingSessionFile", () => {
   test("resolves a fixed-path thread session of the same office", () => {
     const shared = workspace.office(createOfficeAddress("slack", "C123"));
     const sessionFile = getThreadSessionFile(shared.sessionsDir, "C123:1000.0001");
-    createManagedSessionFileAtPath(sessionFile, shared.dir);
+    createManagedSessionFileAtPath(sessionFile);
 
     expect(resolveExistingSessionFile(shared, "C123:1000.0001")).toBe(sessionFile);
   });
@@ -129,8 +129,8 @@ async function requestSessionPage(
 describe("session view selection", () => {
   test("can select the active session without claiming its writer lease", async () => {
     const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const activeSession = await SessionStore.open(sessionFile, conversationDir);
+    const sessionFile = createManagedSessionFile(sessionDir);
+    const activeSession = await SessionStore.open(sessionFile);
     await activeSession.appendMessage(makeUserMessage("active"));
     const tokenStore = new InMemorySessionViewTokenStore();
     const token = tokenStore.create({
@@ -150,8 +150,8 @@ describe("session view selection", () => {
 
   test("can select the same historical session repeatedly without leaking a writer lease", async () => {
     const sessionDir = office.sessionsDir;
-    const currentFile = createManagedSessionFile(sessionDir, conversationDir);
-    const historicalFile = createManagedSessionFile(sessionDir, conversationDir);
+    const currentFile = createManagedSessionFile(sessionDir);
+    const historicalFile = createManagedSessionFile(sessionDir);
     const tokenStore = new InMemorySessionViewTokenStore();
     const token = tokenStore.create({
       platform: "slack",
@@ -167,7 +167,7 @@ describe("session view selection", () => {
 
   test("rejects a selected session with an invalid header", async () => {
     const sessionDir = office.sessionsDir;
-    const currentFile = createManagedSessionFile(sessionDir, conversationDir);
+    const currentFile = createManagedSessionFile(sessionDir);
     const invalidFile = join(sessionDir, "invalid.jsonl");
     writeFileSync(invalidFile, "not json\n");
     const tokenStore = new InMemorySessionViewTokenStore();
@@ -186,8 +186,8 @@ describe("session view selection", () => {
 describe("loadSessionViewModel", () => {
   test("maps session entries into a readable timeline", async () => {
     const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = await SessionStore.open(sessionFile, conversationDir);
+    const sessionFile = createManagedSessionFile(sessionDir);
+    const sessionManager = await SessionStore.open(sessionFile);
 
     await sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
     await sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
@@ -203,8 +203,8 @@ describe("loadSessionViewModel", () => {
 
   test("preserves assistant content block order", async () => {
     const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
-    const sessionManager = await SessionStore.open(sessionFile, conversationDir);
+    const sessionFile = createManagedSessionFile(sessionDir);
+    const sessionManager = await SessionStore.open(sessionFile);
 
     await sessionManager.appendMessage({
       role: "assistant",
@@ -235,8 +235,8 @@ describe("loadSessionViewModel", () => {
 
   test("keeps channel and thread sessions on separate pages while linking them", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = await SessionStore.open(channelFile, conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir);
+    const channelSession = await SessionStore.open(channelFile);
     await channelSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
@@ -244,8 +244,8 @@ describe("loadSessionViewModel", () => {
     await channelSession.appendMessage(makeAssistantMessage("channel reply"));
 
     const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = await SessionStore.open(threadFile, conversationDir);
+    createManagedSessionFileAtPath(threadFile);
+    const threadSession = await SessionStore.open(threadFile);
     await threadSession.appendMessage({
       ...makeUserMessage("channel root"),
       timestamp: Number("1000.0001") * 1000,
@@ -267,16 +267,16 @@ describe("loadSessionViewModel", () => {
 
   test("anchors fixed thread links to the root instead of earlier bootstrap context", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = await SessionStore.open(channelFile, conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir);
+    const channelSession = await SessionStore.open(channelFile);
     await channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
     await channelSession.appendMessage(makeAssistantMessage("prior reply"));
     await channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
     await channelSession.appendMessage(makeAssistantMessage("channel reply after root"));
 
     const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = await SessionStore.open(threadFile, conversationDir);
+    createManagedSessionFileAtPath(threadFile);
+    const threadSession = await SessionStore.open(threadFile);
     await threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
     await threadSession.appendMessage(makeAssistantMessage("prior reply"));
     await threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
@@ -292,8 +292,8 @@ describe("loadSessionViewModel", () => {
 
   test("anchors non-timestamp thread files by matching the root message", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir, conversationDir);
-    const channelSession = await SessionStore.open(channelFile, conversationDir);
+    const channelFile = createManagedSessionFile(sessionDir);
+    const channelSession = await SessionStore.open(channelFile);
     await channelSession.appendMessage(
       makeUserMessage(
         "[2026-04-28 18:18:59+08:00] [alice]: first\n\n<slack_attachments>\n/tmp/a.txt\n</slack_attachments>",
@@ -302,8 +302,8 @@ describe("loadSessionViewModel", () => {
     await channelSession.appendMessage(makeAssistantMessage("first reply"));
 
     const threadFile = getThreadSessionFile(office.sessionsDir, "D123:M1");
-    createManagedSessionFileAtPath(threadFile, conversationDir);
-    const threadSession = await SessionStore.open(threadFile, conversationDir);
+    createManagedSessionFileAtPath(threadFile);
+    const threadSession = await SessionStore.open(threadFile);
     await threadSession.appendMessage(makeUserMessage("[alice]: first"));
     await threadSession.appendMessage(makeAssistantMessage("thread reply"));
 
@@ -318,13 +318,9 @@ describe("loadSessionViewModel", () => {
 describe("session lineage", () => {
   test("resolves a parent session id only inside the thread's own sessions directory", async () => {
     const elsewhere = join(workspaceDir, "elsewhere");
-    const outsideFile = createManagedSessionFile(elsewhere, elsewhere);
+    const outsideFile = createManagedSessionFile(elsewhere);
     const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(
-      threadFile,
-      conversationDir,
-      SessionStore.readHeader(outsideFile)!.id,
-    );
+    createManagedSessionFileAtPath(threadFile, SessionStore.readHeader(outsideFile)!.id);
 
     const model = await loadSessionViewModel(threadFile);
 

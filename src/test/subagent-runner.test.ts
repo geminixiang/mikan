@@ -157,7 +157,6 @@ describe("runSubagent", () => {
         defaultModel: model,
         thinkingLevel: "off",
         models,
-        workspaceDir: dir,
         availableTools: [],
         profiles: new Map([
           [
@@ -204,13 +203,12 @@ describe("runSubagent", () => {
           defaultModel: model,
           thinkingLevel: "off",
           models,
-          workspaceDir: dir,
           availableTools: [],
           profiles: THINKER_PROFILES,
         }),
       THINKER_MENU,
     );
-    const sessionStore = await SessionStore.create(join(dir, "parent.jsonl"), dir);
+    const sessionStore = await SessionStore.create(join(dir, "parent.jsonl"));
     const parent = new MikanAgentSession({
       systemPrompt: "Delegate focused work when useful.",
       model,
@@ -250,7 +248,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
     await requestStarted;
@@ -287,7 +284,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [stuckTool],
       slots,
       onUsage: (usage) => {
@@ -330,7 +326,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [stuckTool],
       slots,
       onUsage: (usage) => {
@@ -377,7 +372,6 @@ describe("runSubagent", () => {
         defaultModel: model,
         thinkingLevel: "off",
         models,
-        workspaceDir: dir,
         availableTools: [stuckTool],
         slots,
         onUsage: (usage) => {
@@ -405,7 +399,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       slots,
     });
@@ -428,7 +421,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       parentEntries,
     });
@@ -439,7 +431,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       parentEntries,
     });
@@ -489,7 +480,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       parentEntries,
     });
@@ -507,7 +497,7 @@ describe("runSubagent", () => {
 
   test("keeps the parent's retained tail after a native compaction", async () => {
     const { models, faux, model } = createFauxSetup();
-    const parent = await SessionStore.create(join(dir, "parent.jsonl"), dir);
+    const parent = await SessionStore.create(join(dir, "parent.jsonl"));
     for (const turn of ["one", "two", "three"]) {
       await parent.appendMessage({
         role: "user",
@@ -542,7 +532,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       parentEntries: await parent.getContextEntries(),
     });
@@ -599,7 +588,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -647,7 +635,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -677,7 +664,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -702,7 +688,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -721,7 +706,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -744,7 +728,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
       onActivity: (line) => activity.push(line),
     });
@@ -762,7 +745,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       onActivity: () => {
         throw new Error("sink exploded");
@@ -784,7 +766,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
     });
 
@@ -809,7 +790,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
     });
 
@@ -829,7 +809,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -852,7 +831,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
       profiles: THINKER_PROFILES,
     });
@@ -878,7 +856,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
     });
 
@@ -898,7 +875,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [echoTool],
       profiles: new Map([
         [
@@ -928,7 +904,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -947,7 +922,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -964,7 +938,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
     });
 
@@ -984,7 +957,6 @@ describe("runSubagent", () => {
           defaultModel: model,
           thinkingLevel: "off",
           models,
-          workspaceDir: dir,
           availableTools: [],
           profiles: THINKER_PROFILES,
         }),
@@ -1020,7 +992,6 @@ describe("runSubagent", () => {
           defaultModel: model,
           thinkingLevel: "off",
           models,
-          workspaceDir: dir,
           availableTools: [],
         });
         if (nested.status === "failed") nestedError = nested.error ?? "";
@@ -1033,7 +1004,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [nestedTool],
     });
 
@@ -1051,7 +1021,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       onUsage: (usage) => {
         usageCalls.push(usage);
@@ -1066,7 +1035,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       onUsage: (usage) => {
         failureCalls.push(usage);
@@ -1085,7 +1053,6 @@ describe("runSubagent", () => {
       defaultModel: model,
       thinkingLevel: "off",
       models,
-      workspaceDir: dir,
       availableTools: [],
       onUsage: () => {
         throw new Error("listener boom");

@@ -12,7 +12,7 @@ keys name conversations as the platform reports them.
 A session is a private one-line JSON header file beside a pi-durable JSONL
 storage directory, `<session>.durable` (ADR 0017). The header is an index of
 what listing and lineage need without opening storage: session ID, creation
-time, working directory, parent session ID, and the legacy `source` marker. It
+time, parent session ID, and the legacy `source` marker. It
 has no version of its own: the State migration record decides which format the
 files are in. The session's thread is
 the storage's root conversation; its name and last run record are the

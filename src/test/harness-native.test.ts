@@ -51,7 +51,7 @@ function setup() {
 
 test("native lane includes host history writes and survives close/reopen without duplicates", async () => {
   const { faux, file, wrap } = setup();
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   const session = wrap(store);
   faux.setResponses([
     fauxAssistantMessage("first answer"),
@@ -86,7 +86,7 @@ test("native lane includes host history writes and survives close/reopen without
 
 test("resume continues a run that a closed store left unfinished", async () => {
   const { faux, file, wrap } = setup();
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   let markStarted!: () => void;
   const started = new Promise<void>((resolve) => {
     markStarted = resolve;
@@ -136,7 +136,7 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
     parameters: { type: "object", properties: {} },
     execute: invoke,
   };
-  const session = wrap(await SessionStore.create(file, dir));
+  const session = wrap(await SessionStore.create(file));
   faux.setResponses([
     (context) => {
       expect(getCurrentSystemPrompt(context.messages)).toContain("first prompt");
@@ -173,7 +173,7 @@ test("codemode filters nested results and obeys per-prompt grants", async () => 
     parameters: { type: "object", properties: {} },
     execute: invoke,
   };
-  const session = wrap(await SessionStore.create(file, dir));
+  const session = wrap(await SessionStore.create(file));
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -233,7 +233,7 @@ test.each([
     execute: invoke,
   };
   const handoff: AgentTool = { ...tool, name: "start_task" };
-  const session = wrap(await SessionStore.create(file, dir), [tool, handoff]);
+  const session = wrap(await SessionStore.create(file), [tool, handoff]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code }), {
       stopReason: "toolUse",
@@ -266,7 +266,7 @@ test("codemode forwards nested images only when the script emits them", async ()
       details: {},
     }),
   };
-  const session = wrap(await SessionStore.create(file, dir), [tool]);
+  const session = wrap(await SessionStore.create(file), [tool]);
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -311,7 +311,7 @@ test("cancelling codemode aborts nested work and waits for its cleanup", async (
       return { content: [{ type: "text", text: "cleaned" }], details: {} };
     },
   };
-  const session = wrap(await SessionStore.create(file, dir), [tool]);
+  const session = wrap(await SessionStore.create(file), [tool]);
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -348,7 +348,7 @@ test("tool progress reports details and each committed message is presented once
       return { content: [{ type: "text", text: "finished" }], details: {} };
     },
   };
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   const session = wrap(store, [tool]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("progress", { text: "original args" }), {
@@ -403,7 +403,7 @@ test("large tool progress snapshots stay out of persisted messages and later pro
       return { content: [{ type: "text", text: finalResult }], details: {} };
     },
   };
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   const session = wrap(store, [tool]);
   const updates: string[] = [];
   session.subscribe((event) => {
@@ -452,7 +452,7 @@ test("large tool progress snapshots stay out of persisted messages and later pro
 
 test("persisted provider thinking level survives close/reopen", async () => {
   const { faux, file, wrap } = setup();
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   const session = wrap(store);
   faux.setResponses([{ ...fauxAssistantMessage("deep answer"), providerThinkingLevel: "high" }]);
   await session.prompt("think hard");
@@ -474,7 +474,7 @@ test("persisted provider thinking level survives close/reopen", async () => {
 
 test("a successful native retry preserves reasoning and charges both requests once", async () => {
   const { faux, file, models, model } = setup();
-  const store = await SessionStore.create(file, dir);
+  const store = await SessionStore.create(file);
   stores.push(store);
   const session = new MikanAgentSession({
     model,

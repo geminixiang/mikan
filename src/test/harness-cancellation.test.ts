@@ -43,7 +43,7 @@ function setup(options: { tools?: AgentTool[]; compact?: boolean } = {}) {
     thinkingLevel: "off",
     tools: options.tools ?? [],
     models,
-    sessionStore: SessionStore.inMemory(dir),
+    sessionStore: SessionStore.inMemory(),
     settings: {
       compaction: { enabled: options.compact ?? false, reserveTokens: 5, keepRecentTokens: 1 },
       retry: { baseDelayMs: 5000 },

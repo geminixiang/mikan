@@ -83,7 +83,7 @@ async function createTestRunner(
 ) {
   const { models, faux } = createFauxModels();
   const office = testOffice();
-  const conversationDir = office.ensure();
+  office.ensure();
   if (options.mcpServers) {
     mkdirSync(office.stateDir, { recursive: true });
     writeFileSync(
@@ -92,7 +92,7 @@ async function createTestRunner(
     );
   }
   const sessionDir = office.sessionsDir;
-  const contextFile = createManagedSessionFile(sessionDir, conversationDir);
+  const contextFile = createManagedSessionFile(sessionDir);
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },

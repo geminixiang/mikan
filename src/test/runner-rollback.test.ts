@@ -64,9 +64,9 @@ function createOptions() {
   const office = createWorkspace({ root: join(dir, "workspace"), stateDir }).office(
     createOfficeAddress("slack", "C1"),
   );
-  const conversationDir = office.ensure();
+  office.ensure();
   const sessionDir = office.sessionsDir;
-  const contextFile = createManagedSessionFile(sessionDir, conversationDir);
+  const contextFile = createManagedSessionFile(sessionDir);
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
   (models.models as MutableModels).setProvider(fauxProvider().provider);
   return {

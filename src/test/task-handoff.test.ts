@@ -17,7 +17,7 @@ let dir: string;
 let store: SessionStore;
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "task-handoff-"));
-  store = await SessionStore.create(join(dir, "session.jsonl"), dir);
+  store = await SessionStore.create(join(dir, "session.jsonl"));
 });
 afterEach(async () => {
   await store.close();

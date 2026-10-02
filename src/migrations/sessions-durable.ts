@@ -79,7 +79,7 @@ class SessionImporter {
 }
 
 async function importSession(session: V4Session, temp: string): Promise<number> {
-  const store = await SessionStore.create(temp, session.header.cwd, {
+  const store = await SessionStore.create(temp, {
     id: session.header.id,
     parentSessionId: session.header.parentSessionId,
     source: session.source,

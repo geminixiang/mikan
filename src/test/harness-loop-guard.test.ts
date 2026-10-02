@@ -94,7 +94,7 @@ describe("MikanAgentSession tool loop guard", () => {
         return { content: [{ type: "text", text: "unchanged" }], details: {} };
       },
     };
-    const store = await SessionStore.create(join(dir, "session.jsonl"), dir);
+    const store = await SessionStore.create(join(dir, "session.jsonl"));
     stores.push(store);
     const session = new MikanAgentSession({
       model: faux.getModel() as Model<Api>,

@@ -68,7 +68,6 @@ export interface SessionInspection {
 export interface SessionHeader {
   id: string;
   createdAt: number;
-  cwd: string;
   parentSessionId?: string;
   source?: { [key: string]: JsonValue };
 }
@@ -107,7 +106,6 @@ export interface ChatHistorySyncOptions {
 export interface ResolveChatSessionScopeOptions {
   office: Office;
   sessionKey: string;
-  cwd?: string;
   currentMessageId?: string;
 }
 
@@ -121,13 +119,11 @@ export interface SyncChatSessionOptions {
 export interface ResetChatSessionOptions {
   office: Office;
   sessionKey: string;
-  cwd?: string;
 }
 
 export interface RegisterThreadSessionOptions {
   office: Office;
   sessionKey: string;
-  cwd?: string;
 }
 
 export interface HasMaterializedSessionOptions {
