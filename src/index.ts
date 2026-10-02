@@ -83,7 +83,6 @@ export {
   extractSessionSuffix,
   extractSessionUuid,
   getThreadSessionFile,
-  resolveManagedSessionFile,
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "./sessions/store.js";

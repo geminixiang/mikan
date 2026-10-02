@@ -30,13 +30,13 @@ describe("log context formatting", () => {
 
   test("formats DM conversations using the user name", () => {
     const ctx: LogContext = { conversationId: "D123", userName: "alice" };
-    log.logUserMessage(ctx, "hi there");
+    log.logResponse(ctx, "hi there");
     expect(cap.output()).toContain("[DM:alice]");
     expect(cap.output()).toContain("hi there");
   });
 
   test("falls back to the conversation id for DMs without a user name", () => {
-    log.logUserMessage({ conversationId: "D999" }, "anon");
+    log.logResponse({ conversationId: "D999" }, "anon");
     expect(cap.output()).toContain("[DM:D999]");
   });
 
@@ -47,18 +47,18 @@ describe("log context formatting", () => {
       userName: "bob",
       sessionId: "s7",
     };
-    log.logUserMessage(ctx, "hello");
+    log.logResponse(ctx, "hello");
     expect(cap.output()).toContain("[#general:bob:s7]");
   });
 
   test("does not double-prefix a conversation name already starting with #", () => {
-    log.logUserMessage({ conversationId: "C1", conversationName: "#ops", userName: "bob" }, "x");
+    log.logResponse({ conversationId: "C1", conversationName: "#ops", userName: "bob" }, "x");
     expect(cap.output()).toContain("[#ops:bob]");
     expect(cap.output()).not.toContain("##ops");
   });
 
   test("uses 'unknown' for a channel message without a user name", () => {
-    log.logUserMessage({ conversationId: "C1", conversationName: "general" }, "x");
+    log.logResponse({ conversationId: "C1", conversationName: "general" }, "x");
     expect(cap.output()).toContain("[#general:unknown]");
   });
 });
@@ -124,16 +124,6 @@ describe("log tool + response output", () => {
     expect(withName).toContain("anthropic/claude-x (Claude X)");
     expect(withoutName).toContain("anthropic/claude-y");
     expect(withoutName).not.toContain("(claude-y)");
-  });
-
-  test("routes agent errors for both a context and the system channel", () => {
-    log.logAgentError(ctx, "ctx failure");
-    log.logAgentError("system", "system failure");
-    const out = cap.output();
-    expect(out).toContain("[#general:bob]");
-    expect(out).toContain("[system]");
-    expect(out).toContain("ctx failure");
-    expect(out).toContain("system failure");
   });
 });
 
@@ -222,10 +212,9 @@ describe("log system + startup messages", () => {
     expect(cap.lines.length).toBe(1);
   });
 
-  test("startup, connect, disconnect and backfill lines render", () => {
+  test("startup, connect and backfill lines render", () => {
     log.logStartup("/work", "host");
     log.logConnected("slack");
-    log.logDisconnected();
     log.logBackfillStart(3);
     log.logBackfillChannel("general", 42);
     log.logBackfillComplete(100, 2500);
@@ -233,7 +222,6 @@ describe("log system + startup messages", () => {
     expect(out).toContain("Working directory: /work");
     expect(out).toContain("Sandbox: host");
     expect(out).toContain("connected to slack");
-    expect(out).toContain("Mikan disconnected.");
     expect(out).toContain("Backfilling 3 channels");
     expect(out).toContain("#general: 42 messages");
     expect(out).toContain("Backfill complete: 100 messages in 2.5s");

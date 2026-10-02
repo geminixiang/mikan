@@ -28,10 +28,6 @@ function truncate(text: string, maxLen: number): string {
   return `${text.substring(0, maxLen)}\n(truncated at ${maxLen} chars)`;
 }
 
-export function logUserMessage(ctx: LogContext, text: string): void {
-  console.log(chalk.green(`${timestamp()} ${formatContext(ctx)} ${text}`));
-}
-
 export function logToolStart(
   ctx: LogContext,
   toolName: string,
@@ -138,16 +134,6 @@ export function logWarning(message: string, details?: string): void {
   }
 }
 
-export function logAgentError(ctx: LogContext | "system", error: string): void {
-  const context = ctx === "system" ? "[system]" : formatContext(ctx);
-  console.log(chalk.yellow(`${timestamp()} ${context} ✗ Agent error`));
-  const indented = error
-    .split("\n")
-    .map((line) => `           ${line}`)
-    .join("\n");
-  console.log(chalk.dim(indented));
-}
-
 function formatTokenCount(count: number): string {
   if (count < 1000) return count.toString();
   if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
@@ -211,10 +197,6 @@ export function logStartup(workingDir: string, sandbox: string): void {
 export function logConnected(platform: string): void {
   console.log(`⚡️ Mikan connected to ${platform} and listening!`);
   console.log("");
-}
-
-export function logDisconnected(): void {
-  console.log("Mikan disconnected.");
 }
 
 export function logBackfillStart(channelCount: number): void {

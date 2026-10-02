@@ -6,12 +6,6 @@ import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js"
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 import type { SessionHeader } from "./types.js";
 
-export function resolveManagedSessionFile(sessionDir: string): string {
-  const existingPath = getCurrentSessionPath(sessionDir);
-  if (existingPath) return existingPath;
-  return createManagedSessionFile(sessionDir);
-}
-
 export function extractSessionUuid(sessionFile: string): string {
   return basename(sessionFile).replace(".jsonl", "").split("_").pop()!;
 }

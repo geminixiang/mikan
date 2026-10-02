@@ -84,7 +84,7 @@ test("native lane includes host history writes and survives close/reopen without
   expect(JSON.stringify(await inspected.buildSessionContext())).toContain("third answer");
 });
 
-test("resume continues a run that a closed store left unfinished", async () => {
+test("the next prompt aborts a run that a closed store left unfinished", async () => {
   const { faux, file, wrap } = setup();
   const store = await SessionStore.create(file);
   let markStarted!: () => void;
@@ -110,16 +110,11 @@ test("resume continues a run that a closed store left unfinished", async () => {
   const reopened = await SessionStore.open(file);
   stores.push(reopened);
   const session = wrap(reopened);
-  faux.setResponses([
-    (context) => {
-      expect(JSON.stringify(context.messages)).toContain("recover this request");
-      return fauxAssistantMessage("recovered answer");
-    },
-  ]);
-  await session.resume();
-  expect(JSON.stringify(await contextMessages(session))).toContain("recovered answer");
   faux.setResponses([fauxAssistantMessage("next answer")]);
   await session.prompt("next request");
+  const inspected = await SessionStore.inspectExecution(file);
+  expect(inspected).toMatchObject({ open: false, result: { status: "completed" } });
+  expect(faux.state.callCount).toBe(2);
   expect(JSON.stringify(await contextMessages(session))).toContain("next answer");
 });
 

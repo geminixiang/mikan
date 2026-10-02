@@ -4,7 +4,6 @@ import { createConversationEvent, createConversationMessage } from "../office/in
 import { officeDir } from "../office/index.js";
 import {
   assertConversationId,
-  assertOfficeKey,
   createOfficeAddress,
   createWorkspace,
   isOfficeKey,
@@ -67,7 +66,6 @@ describe("office address", () => {
         .slice(0, 16)}`,
     );
     expect(isOfficeKey(officeKey(address))).toBe(true);
-    expect(assertOfficeKey(officeKey(address))).toBe(officeKey(address));
   });
 
   test("separates same raw id across platforms", () => {
@@ -130,7 +128,6 @@ describe("office address", () => {
       /conversation id must be a string/,
     );
     expect(isOfficeKey("v1-slack-c123-not-a-key")).toBe(false);
-    expect(() => assertOfficeKey("v1-slack-c123-not-a-key")).toThrow(/Invalid office key/);
   });
 
   describe("office dir seam (office-key layout)", () => {

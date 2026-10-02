@@ -212,12 +212,6 @@ export function platformIsActive(key: string, env: EnvLookup = readEnv): boolean
   return group.vars.filter((spec) => spec.required).every((spec) => env(spec.name));
 }
 
-export function activePlatformKeys(env: EnvLookup = readEnv): string[] {
-  return ENV_MANIFEST.filter(
-    (group) => group.kind === "platform" && platformIsActive(group.key, env),
-  ).map((group) => group.key);
-}
-
 function platformRecipe(group: EnvGroup): string {
   const required = group.vars.filter((spec) => spec.required).map((spec) => spec.name);
   return `${group.title}: ${required.join(" + ")}`;
@@ -233,14 +227,6 @@ export function noPlatformsMessage(): string {
 export function envSummaryLines(): string[] {
   return ENV_MANIFEST.filter((group) => group.kind === "platform").map(
     (group) => `  ${platformRecipe(group)}`,
-  );
-}
-
-export function manifestVarNames(options?: { deployOnly?: boolean }): string[] {
-  return ENV_MANIFEST.flatMap((group) =>
-    group.vars
-      .filter((spec) => !options?.deployOnly || spec.deploy !== false)
-      .map((spec) => spec.name),
   );
 }
 

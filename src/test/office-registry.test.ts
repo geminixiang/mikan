@@ -62,7 +62,7 @@ describe("OfficeRegistry", () => {
   test("failed writes leave memory and disk unchanged", () => {
     const fixture = makeFixture();
     const registry = new OfficeRegistry(fixture.stateDir);
-    const before = registry.getState();
+    const before = registry.getOffices();
     const failing = new OfficeRegistry(fixture.stateDir, {
       writeState: throwRegistryWriteFailure,
     });
@@ -70,8 +70,8 @@ describe("OfficeRegistry", () => {
     expect(() => failing.recordOffice(createOfficeAddress("slack", "C123"))).toThrow(
       /injected registry write failure/,
     );
-    expect(failing.getState()).toEqual(before);
-    expect(new OfficeRegistry(fixture.stateDir).getState()).toEqual(before);
+    expect(failing.getOffices()).toEqual(before);
+    expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual(before);
   });
 
   test("records offices idempotently and separates platforms sharing a raw id", () => {
@@ -150,20 +150,6 @@ describe("OfficeRegistry", () => {
     );
 
     expect(new OfficeRegistry(fixture.stateDir).getOffices()).toEqual([office]);
-  });
-
-  test("reload picks up changes another process wrote to the journal", () => {
-    const fixture = makeFixture();
-    const reader = new OfficeRegistry(fixture.stateDir);
-    const writer = new OfficeRegistry(fixture.stateDir);
-
-    writer.recordOffice(createOfficeAddress("slack", "C123"));
-    expect(reader.getOffices()).toEqual([]);
-
-    reader.reload();
-    expect(reader.getOffices()).toContainEqual(
-      expect.objectContaining({ platform: "slack", conversationId: "C123" }),
-    );
   });
 
   describe("office.ensure()", () => {

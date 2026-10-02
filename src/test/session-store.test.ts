@@ -19,7 +19,6 @@ import {
   createManagedSessionFile,
   createManagedSessionFileAtPath,
   getThreadSessionFile,
-  resolveManagedSessionFile,
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../sessions/store.js";
@@ -75,6 +74,10 @@ function makeAssistantMessage(text: string): AssistantMessage {
 async function sessionText(sessionFile: string): Promise<string> {
   const inspection = await SessionStore.inspect(sessionFile);
   return JSON.stringify(await inspection.getEntries());
+}
+
+function currentChannelSessionFile(sessionDir: string): string {
+  return tryResolveCurrentSession(sessionDir) ?? createManagedSessionFile(sessionDir);
 }
 
 function sessionFileLineCount(sessionFile: string): number {
@@ -220,7 +223,7 @@ describe("managed session initialization", () => {
 
   test("a channel session keeps a one-line header after messages", async () => {
     const sessionDir = office.sessionsDir;
-    const sessionFile = resolveManagedSessionFile(sessionDir);
+    const sessionFile = currentChannelSessionFile(sessionDir);
     const sessionManager = await SessionStore.open(sessionFile);
 
     await sessionManager.appendMessage(makeUserMessage("hello"));
@@ -258,7 +261,7 @@ describe("managed session initialization", () => {
 describe("fixed thread sessions", () => {
   test("thread session has a different session ID than channel session", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = resolveManagedSessionFile(sessionDir);
+    const channelFile = currentChannelSessionFile(sessionDir);
     const channelSM = await SessionStore.open(channelFile);
     await channelSM.appendMessage(makeUserMessage("hello channel"));
     await channelSM.appendMessage(makeAssistantMessage("hi there"));
@@ -294,7 +297,7 @@ describe("fixed thread sessions", () => {
 
   test("different threads get independent session IDs", async () => {
     const sessionDir = office.sessionsDir;
-    const channelFile = resolveManagedSessionFile(sessionDir);
+    const channelFile = currentChannelSessionFile(sessionDir);
     const channelSM = await SessionStore.open(channelFile);
 
     const thread1File = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
@@ -498,7 +501,7 @@ describe("session-scoped /new reset", () => {
     expect(tryResolveThreadSession(thread1File)).toBe(thread1File);
     expect(await sessionText(thread1File)).not.toContain("thread1");
     expect(await sessionText(thread2File)).toContain("thread2");
-    expect(await sessionText(resolveManagedSessionFile(sessionDir))).toContain("channel");
+    expect(await sessionText(currentChannelSessionFile(sessionDir))).toContain("channel");
     expect(sessionFileLineCount(thread1File)).toBe(1);
 
     const laterThreadKey = `C123:${(Date.now() / 1000 + 60).toFixed(4)}`;

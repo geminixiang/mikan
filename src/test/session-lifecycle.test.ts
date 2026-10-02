@@ -322,19 +322,6 @@ describe("SessionLifecycle", () => {
       expect(lifecycle.clearConversation(telegram)).toBe(true);
     });
 
-    test("a raw conversation id resolves to every office behind it", () => {
-      const lifecycle = new SessionLifecycle();
-      lifecycle.set(state("900100", { address: discord }));
-      lifecycle.set(state("900100", { address: telegram }));
-      lifecycle.set(state("C1"));
-
-      expect(lifecycle.officesForConversationId("900100")).toEqual(
-        expect.arrayContaining([discord, telegram]),
-      );
-      expect(lifecycle.officesForConversationId("900100")).toHaveLength(2);
-      expect(lifecycle.officesForConversationId("C1")).toEqual([slack]);
-    });
-
     test("queues do not serialize across offices", async () => {
       const lifecycle = new SessionLifecycle();
       const order: string[] = [];

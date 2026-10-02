@@ -1,11 +1,4 @@
-import type { Event } from "@sentry/node";
-
 type SentryPrimitive = string | number | boolean;
-type SentrySpanAttributeValue =
-  | SentryPrimitive
-  | Array<null | undefined | string>
-  | Array<null | undefined | number>
-  | Array<null | undefined | boolean>;
 
 export interface RunScopeContext {
   conversationId: string;
@@ -25,18 +18,6 @@ export type ObservabilityAttributes = Record<string, SentryPrimitive>;
 export type SentryAttributionAttributes = ObservabilityAttributes;
 
 export type SentryRunScopeContext = RunScopeContext;
-
-export interface SentrySpanPayload {
-  trace_id: string;
-  span_id: string;
-  start_timestamp: number;
-  data: Record<string, SentrySpanAttributeValue | undefined>;
-}
-
-export interface SentryTransactionPayload extends Event {
-  type: "transaction";
-  entries?: Array<{ type?: string; data?: unknown }>;
-}
 
 type UserFacingErrorDomain =
   | "llm"

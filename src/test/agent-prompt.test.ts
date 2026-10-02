@@ -8,8 +8,7 @@ import {
   buildTurnInstructions,
   resolveTriggerAttribution,
 } from "../harness/prompt.js";
-import { translateAttachPathToHost } from "../harness/prompt.js";
-import { getUnresolvedSandboxPathContext } from "../sandbox/registry.js";
+import { normalizeAttachRuntimePath } from "../harness/prompt.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
@@ -118,70 +117,34 @@ describe("turn instructions", () => {
   });
 });
 
-describe("runtime path context", () => {
-  test("relative attach paths resolve from the runtime workspace", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "image", image: "ubuntu:24.04" },
-      "/host/workspace",
-    );
-
-    expect(translateAttachPathToHost("gpt-5-mini.md", pathContext)).toBe(
-      "/host/workspace/gpt-5-mini.md",
+describe("attach path validation", () => {
+  test("resolves relative attach paths from the runtime workspace", () => {
+    expect(normalizeAttachRuntimePath("gpt-5-mini.md", "/workspace")).toBe(
+      "/workspace/gpt-5-mini.md",
     );
   });
 
-  test("absolute attach paths still translate from runtime to host", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "image", image: "ubuntu:24.04" },
-      "/host/workspace",
-    );
-
-    expect(translateAttachPathToHost("/workspace/gpt-5-mini.md", pathContext)).toBe(
-      "/host/workspace/gpt-5-mini.md",
-    );
-  });
-
-  test("keeps an absolute host attach path inside the host workspace", () => {
-    const pathContext = getUnresolvedSandboxPathContext({ type: "host" }, "/host/workspace");
-
-    expect(translateAttachPathToHost("/host/workspace/report.txt", pathContext)).toBe(
-      "/host/workspace/report.txt",
+  test("keeps absolute attach paths inside the runtime workspace", () => {
+    expect(normalizeAttachRuntimePath("/workspace/C123/report.txt", "/workspace")).toBe(
+      "/workspace/C123/report.txt",
     );
   });
 
   test("rejects parent traversal in attach paths", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "image", image: "ubuntu:24.04" },
-      "/host/workspace",
-    );
-
-    expect(() => translateAttachPathToHost("../outside.txt", pathContext)).toThrow(
+    expect(() => normalizeAttachRuntimePath("../outside.txt", "/workspace")).toThrow(
       "parent-directory traversal",
     );
-    expect(() => translateAttachPathToHost("/workspace/C123/../outside.txt", pathContext)).toThrow(
-      "parent-directory traversal",
-    );
+    expect(() =>
+      normalizeAttachRuntimePath("/workspace/C123/../outside.txt", "/workspace"),
+    ).toThrow("parent-directory traversal");
   });
 
-  test("rejects absolute host paths outside the runtime workspace", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "image", image: "ubuntu:24.04" },
-      "/host/workspace",
-    );
-
-    expect(() => translateAttachPathToHost("/etc/passwd", pathContext)).toThrow(
+  test("rejects absolute paths outside the runtime workspace", () => {
+    expect(() => normalizeAttachRuntimePath("/etc/passwd", "/workspace")).toThrow(
       "runtime workspace",
     );
-  });
-
-  test("cloudflare rejects host uploads explicitly", () => {
-    const pathContext = getUnresolvedSandboxPathContext(
-      { type: "cloudflare", sandboxId: "slack-u123" },
-      "/host/workspace",
-    );
-
-    expect(() => translateAttachPathToHost("report.txt", pathContext)).toThrow(
-      "attachments are unavailable",
+    expect(() => normalizeAttachRuntimePath("/workspace-other/file.txt", "/workspace")).toThrow(
+      "runtime workspace",
     );
   });
 });

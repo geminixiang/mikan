@@ -31,10 +31,8 @@ import {
 } from "../observability/index.js";
 import {
   applyRunScope,
-  applySpanAttribution,
   createRunScopeAttributes,
   createSentryInitOptions,
-  registerTraceAttribution,
   captureSentryError,
   sanitizeBreadcrumb,
   sanitizeEvent,
@@ -350,52 +348,6 @@ describe("run attribution", () => {
     );
     expect(scopeSpies.setUser).toHaveBeenCalledWith({ id: "U1" });
     expect(scopeSpies.setConversationId).toHaveBeenCalledWith("C1:T1");
-  });
-
-  test("propagates root attribution onto child spans", () => {
-    const rootSpan = { setAttributes: vi.fn() };
-    registerTraceAttribution(rootSpan, { conversation_id: "C1", session_key: "C1:T1" });
-
-    expect(rootSpan.setAttributes).toHaveBeenCalledWith({
-      conversation_id: "C1",
-      session_key: "C1:T1",
-    });
-    expect(
-      applySpanAttribution({
-        trace_id: "trace-1",
-        span_id: "span-1",
-        start_timestamp: 1,
-        data: { "sentry.op": "gen_ai.chat" },
-      }),
-    ).toEqual({
-      trace_id: "trace-1",
-      span_id: "span-1",
-      start_timestamp: 1,
-      data: {
-        "sentry.op": "gen_ai.chat",
-        conversation_id: "C1",
-        session_key: "C1:T1",
-      },
-    });
-  });
-
-  test("drops expired trace attribution", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    try {
-      registerTraceAttribution({ setAttributes: vi.fn() }, { conversation_id: "C1" });
-      vi.setSystemTime(new Date("2026-01-01T00:06:00Z"));
-
-      const span = {
-        trace_id: "trace-1",
-        span_id: "span-1",
-        start_timestamp: 1,
-        data: { "sentry.op": "gen_ai.chat" },
-      };
-      expect(applySpanAttribution(span)).toEqual(span);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

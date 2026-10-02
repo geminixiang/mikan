@@ -6,7 +6,6 @@ const REDACTED = "[REDACTED]";
 const REDACTED_PATH = "[REDACTED_PATH]";
 const MAX_STRING_LENGTH = 256;
 const MAX_DEPTH = 4;
-const TRACE_ATTRIBUTION_TTL_MS = 5 * 60 * 1000;
 
 const SENSITIVE_KEYS = new Set([
   "accesstoken",
@@ -67,16 +66,7 @@ import type {
   ReportUserFacingErrorOptions,
   SentryAttributionAttributes,
   SentryRunScopeContext,
-  SentrySpanPayload,
-  SentryTransactionPayload,
 } from "./types.js";
-
-interface TraceAttributionEntry {
-  attributes: SentryAttributionAttributes;
-  expiresAt: number;
-}
-
-const traceAttribution = new Map<string, TraceAttributionEntry>();
 
 export function createSentryInitOptions(dsn?: string, customOpenTelemetry = false) {
   return {
@@ -105,8 +95,7 @@ export function createSentryInitOptions(dsn?: string, customOpenTelemetry = fals
       ];
     },
     beforeSend: sanitizeEvent,
-    beforeSendSpan: applySpanAttribution,
-    beforeSendTransaction: sanitizeTransactionEvent,
+    beforeSendTransaction: sanitizeEvent,
     beforeBreadcrumb: sanitizeBreadcrumb,
   };
 }
@@ -224,22 +213,6 @@ export function createRunScopeAttributes(
   });
 }
 
-export function registerTraceAttribution(
-  span: { setAttributes(attributes: SentryAttributionAttributes): unknown },
-  attributes: SentryAttributionAttributes,
-): void {
-  span.setAttributes(attributes);
-  const traceId = Sentry.spanToJSON(span as Parameters<typeof Sentry.spanToJSON>[0]).trace_id;
-  if (!traceId) return;
-
-  const now = Date.now();
-  pruneExpiredTraceAttributions(now);
-  traceAttribution.set(traceId, {
-    attributes: { ...traceAttribution.get(traceId)?.attributes, ...attributes },
-    expiresAt: now + TRACE_ATTRIBUTION_TTL_MS,
-  });
-}
-
 export function applyRunScope(scope: Scope, context: SentryRunScopeContext): void {
   const attributes = createRunScopeAttributes(context);
 
@@ -319,38 +292,6 @@ export function sanitizeEvent<T extends Event>(event: T, _hint?: EventHint): T |
   return sanitized;
 }
 
-export function applySpanAttribution<T extends SentrySpanPayload>(span: T): T {
-  const attributes = getTraceAttribution(span.trace_id);
-  if (!attributes) return span;
-  return {
-    ...span,
-    data: {
-      ...span.data,
-      ...attributes,
-    },
-  };
-}
-
-function sanitizeTransactionEvent<T extends SentryTransactionPayload>(event: T): T | null {
-  const sanitized = sanitizeEvent(event);
-  if (!sanitized) return null;
-
-  const traceContext = sanitized.contexts?.trace;
-  const traceId = traceContext?.trace_id;
-  if (typeof traceId !== "string") return sanitized;
-  const attributes = getTraceAttribution(traceId);
-  if (!attributes) return sanitized;
-
-  const entries = (sanitized as { entries?: Array<{ type?: string; data?: unknown }> }).entries;
-  for (const entry of entries ?? []) {
-    if (entry.type !== "spans" || !Array.isArray(entry.data)) continue;
-    entry.data = entry.data.map((span: SentrySpanPayload) => applySpanAttribution(span));
-  }
-
-  traceAttribution.delete(traceId);
-  return sanitized;
-}
-
 export function sanitizeBreadcrumb(breadcrumb: Breadcrumb): Breadcrumb | null {
   if (breadcrumb.category === "console") {
     return null;
@@ -398,20 +339,6 @@ function sanitizeRequest(request: Event["request"]): Event["request"] {
     headers: undefined,
     cookies: undefined,
   };
-}
-
-function getTraceAttribution(traceId: string): SentryAttributionAttributes | undefined {
-  const entry = traceAttribution.get(traceId);
-  if (!entry) return undefined;
-  if (entry.expiresAt > Date.now()) return entry.attributes;
-  traceAttribution.delete(traceId);
-  return undefined;
-}
-
-function pruneExpiredTraceAttributions(now: number): void {
-  for (const [traceId, entry] of traceAttribution) {
-    if (entry.expiresAt <= now) traceAttribution.delete(traceId);
-  }
 }
 
 function isSensitiveKey(key?: string): boolean {

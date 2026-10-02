@@ -2,11 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
-  activePlatformKeys,
   ENV_MANIFEST,
   envReport,
   envSummaryLines,
-  manifestVarNames,
   noPlatformsMessage,
   platformIsActive,
   resolveLinkListenHost,
@@ -38,13 +36,6 @@ describe("platform activation", () => {
     }
     expect(platformIsActive("github", lookup({ GITHUB_APP_ID: "1" }))).toBe(false);
   });
-
-  test("activePlatformKeys lists exactly the active groups", () => {
-    expect(activePlatformKeys(lookup({ TELEGRAM_BOT_TOKEN: "t", DISCORD_BOT_TOKEN: "d" }))).toEqual(
-      ["telegram", "discord"],
-    );
-    expect(activePlatformKeys(lookup({}))).toEqual([]);
-  });
 });
 
 describe("derived surfaces", () => {
@@ -75,7 +66,10 @@ describe("derived surfaces", () => {
       join(process.cwd(), "deploy", "pm2", "mikan.env.example"),
       "utf-8",
     );
-    const missing = manifestVarNames({ deployOnly: true }).filter(
+    const deployVars = ENV_MANIFEST.flatMap((group) =>
+      group.vars.filter((spec) => spec.deploy !== false).map((spec) => spec.name),
+    );
+    const missing = deployVars.filter(
       (name) => !example.includes(`${name}=`) && !example.includes(`MIKAN_${name}=`),
     );
     expect(missing).toEqual([]);

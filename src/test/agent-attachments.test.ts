@@ -1,9 +1,8 @@
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { buildPromptPayload } from "../harness/prompt.js";
-import { translateAttachPathToHost } from "../harness/prompt.js";
 import type { ConversationMessage } from "../types.js";
 import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 
@@ -65,24 +64,5 @@ describe("buildPromptPayload", () => {
 
     expect(payload.imageAttachments).toEqual([]);
     expect(payload.userMessage).toContain("/workspace/C123/attachments/notes.txt");
-  });
-
-  test("allows a symlink target after workspace containment validation", () => {
-    const linkPath = join(workspaceDir, "C123", "attachments", "secret.txt");
-    symlinkSync("/etc/passwd", linkPath);
-    const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
-
-    expect(translateAttachPathToHost("C123/attachments/secret.txt", pathContext)).toBe(linkPath);
-  });
-
-  test("allows an intermediate symlink after workspace containment validation", () => {
-    const aliasPath = join(workspaceDir, "alias");
-    symlinkSync(join(workspaceDir, "C123"), aliasPath);
-    writeFileSync(join(workspaceDir, "C123", "attachments", "image.png"), "png-bytes");
-    const pathContext = createMountedRuntimePathContext(workspaceDir, "/workspace");
-
-    expect(translateAttachPathToHost("alias/attachments/image.png", pathContext)).toBe(
-      join(aliasPath, "attachments", "image.png"),
-    );
   });
 });

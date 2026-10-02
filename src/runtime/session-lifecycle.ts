@@ -255,10 +255,6 @@ export class SessionLifecycle {
     return Array.from(offices.values());
   }
 
-  officesForConversationId(conversationId: string): OfficeAddress[] {
-    return this.offices().filter((address) => address.conversationId === conversationId);
-  }
-
   invalidateConversation(address: OfficeAddress): boolean {
     const key = officeKey(address);
     this.conversationGenerations.set(key, (this.conversationGenerations.get(key) ?? 0) + 1);

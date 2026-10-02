@@ -193,11 +193,7 @@ export class MikanAgentSession {
     return true;
   }
 
-  async resume(options?: { budget?: BudgetSettings; tools?: MikanToolInput[] }): Promise<void> {
-    await this.run(undefined, options);
-  }
-
-  private async run(text: string | undefined, options?: RunOptions): Promise<void> {
+  private async run(text: string, options?: RunOptions): Promise<void> {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
     this.runActive = true;
     this.runAborted = false;
@@ -260,14 +256,9 @@ export class MikanAgentSession {
 
   private async drive(
     { harness, root }: AttachedSessionHarness,
-    text: string | undefined,
+    text: string,
     images?: ImageContent[],
   ): Promise<SessionRunStatus> {
-    if (text === undefined) {
-      harness.resume();
-      await root.waitForIdle(context);
-      return "completed";
-    }
     const interrupted = (await harness.snapshot(LiveDoc, root.id, context))?.run;
     if (interrupted) {
       log.logWarning("Aborting a run interrupted before this process started");

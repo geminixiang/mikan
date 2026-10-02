@@ -44,7 +44,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "registerThreadSession",
   "resolveChatSessionKey",
   "resolveHarnessSettings",
-  "resolveManagedSessionFile",
   "tryResolveCurrentSession",
   "tryResolveThreadSession",
   "validateSandbox",

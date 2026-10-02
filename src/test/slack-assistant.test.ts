@@ -77,9 +77,8 @@ describe("assistant thread lifecycle", () => {
     expect(prompts).toHaveLength(1);
   });
 
-  test("context changes are remembered for the next turn", () => {
+  test("a context change marks its thread as an agent surface", () => {
     const registry = new AssistantThreadRegistry();
-    registry.remember("D1", "100.1", { channel_id: "C1" });
 
     handleAgentContextChanged(registry, {
       channel_id: "D1",
@@ -87,7 +86,8 @@ describe("assistant thread lifecycle", () => {
       context: { channel_id: "C2" },
     });
 
-    expect(registry.contextFor("D1", "100.1")?.channel_id).toBe("C2");
+    expect(registry.isAgentSurface("D1", "100.1")).toBe(true);
+    expect(registry.isAgentSurface("D1", "200.2")).toBe(false);
   });
 
   test("ignores payloads without a thread", async () => {
@@ -109,7 +109,7 @@ describe("agent_view: the app DM", () => {
     expect(posts).toHaveLength(0);
     expect(prompts).toHaveLength(1);
     expect(prompts[0]?.threadTs).toBeUndefined();
-    expect(registry.channelContext("D1")?.channel_id).toBe("C9");
+    expect(registry.isAgentSurface("D1", "any.thread")).toBe(true);
   });
 
   test("a DM known as the agent surface makes its threads titleable", async () => {
@@ -121,10 +121,9 @@ describe("agent_view: the app DM", () => {
     expect(titles).toEqual([{ threadTs: "100.1", title: "看一下昨天的部署" }]);
   });
 
-  test("app_context_changed without a thread updates the channel", () => {
+  test("app_context_changed without a thread marks the whole DM as an agent surface", () => {
     const registry = new AssistantThreadRegistry();
     handleAgentContextChanged(registry, { channel_id: "D1", context: { channel_id: "C5" } });
-    expect(registry.channelContext("D1")?.channel_id).toBe("C5");
     expect(registry.isAgentSurface("D1", "any.thread")).toBe(true);
   });
 });

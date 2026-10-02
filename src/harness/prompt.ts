@@ -2,7 +2,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { existsSync } from "node:fs";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
+import { basename, join, posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
@@ -13,48 +13,8 @@ import type { BuildSystemPromptOptions } from "./types.js";
 import { readTextFileNoFollowIfExists } from "../file-guards.js";
 import * as log from "../log.js";
 
-function isWithinPathRoot(path: string, root: string): boolean {
-  const pathRelative = relative(root, path);
-  return (
-    pathRelative === "" ||
-    (pathRelative !== ".." && !pathRelative.startsWith(`..${sep}`) && !isAbsolute(pathRelative))
-  );
-}
-
 function hasParentTraversal(path: string): boolean {
   return path.split(/[\\/]/).some((segment) => segment === "..");
-}
-
-export function translateAttachPathToHost(
-  filePath: string,
-  pathContext: RuntimePathContext,
-): string {
-  if (!pathContext.runtimeToHostPath) {
-    throw new Error(
-      "Cannot attach files: this sandbox has no host-backed runtime path mapping; attachments are unavailable for remote sandboxes such as Cloudflare",
-    );
-  }
-  if (hasParentTraversal(filePath)) {
-    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
-  }
-
-  const runtimeRoot = resolve(pathContext.runtimeWorkspaceRoot);
-  const runtimePath = posix.isAbsolute(filePath)
-    ? filePath
-    : posix.join(pathContext.runtimeWorkspaceRoot, filePath);
-  const normalizedRuntimePath = resolve(runtimePath);
-  if (!isWithinPathRoot(normalizedRuntimePath, runtimeRoot)) {
-    throw new Error("Cannot attach files: path must be within the runtime workspace");
-  }
-
-  const hostRoot = resolve(pathContext.hostWorkspaceRoot);
-  const translatedPath = pathContext.runtimeToHostPath(runtimePath);
-  const hostPath = resolve(translatedPath);
-  if (!isWithinPathRoot(hostPath, hostRoot)) {
-    throw new Error("Cannot attach files: path must be within the host workspace");
-  }
-
-  return hostPath;
 }
 
 export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {

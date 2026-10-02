@@ -27,28 +27,20 @@ function promptsFor(channel: string | undefined): SuggestedPrompt[] {
 }
 
 export class AssistantThreadRegistry {
-  private threads = new Map<string, AgentContext>();
-  private channels = new Map<string, AgentContext>();
+  private threads = new Set<string>();
+  private channels = new Set<string>();
   private titled = new Set<string>();
 
   private key(channelId: string, threadTs: string): string {
     return `${channelId}\n${threadTs}`;
   }
 
-  remember(channelId: string, threadTs: string, context?: AgentContext): void {
-    this.threads.set(this.key(channelId, threadTs), context ?? {});
+  remember(channelId: string, threadTs: string): void {
+    this.threads.add(this.key(channelId, threadTs));
   }
 
-  rememberChannel(channelId: string, context?: AgentContext): void {
-    this.channels.set(channelId, context ?? {});
-  }
-
-  contextFor(channelId: string, threadTs: string): AgentContext | undefined {
-    return this.threads.get(this.key(channelId, threadTs)) ?? this.channels.get(channelId);
-  }
-
-  channelContext(channelId: string): AgentContext | undefined {
-    return this.channels.get(channelId);
+  rememberChannel(channelId: string): void {
+    this.channels.add(channelId);
   }
 
   isAgentSurface(channelId: string, threadTs: string): boolean {
@@ -72,7 +64,7 @@ export async function handleAssistantThreadStarted(
   const threadTs = thread.thread_ts;
   if (!channelId || !threadTs) return;
 
-  registry.remember(channelId, threadTs, thread.context);
+  registry.remember(channelId, threadTs);
   const channel = thread.context?.channel_id
     ? ops.channelName(thread.context.channel_id)
     : undefined;
@@ -92,7 +84,7 @@ export async function handleAgentDmOpened(
   context?: AgentContext,
 ): Promise<void> {
   if (!channelId) return;
-  registry.rememberChannel(channelId, context);
+  registry.rememberChannel(channelId);
   const channel = context?.channel_id ? ops.channelName(context.channel_id) : undefined;
   log.logInfo(
     `[${channelId}] Slack agent DM opened${channel ? ` (viewing #${channel})` : ""}; refreshing suggested prompts`,
@@ -111,10 +103,10 @@ export function handleAgentContextChanged(
     `[${payload.channel_id}] Slack agent context changed${payload.context?.channel_id ? ` (viewing ${payload.context.channel_id})` : ""}`,
   );
   if (payload.thread_ts) {
-    registry.remember(payload.channel_id, payload.thread_ts, payload.context);
+    registry.remember(payload.channel_id, payload.thread_ts);
     return;
   }
-  registry.rememberChannel(payload.channel_id, payload.context);
+  registry.rememberChannel(payload.channel_id);
 }
 
 export async function titleAssistantThread(

@@ -158,13 +158,6 @@ export function parseGithubConversationId(conversationId: string): GithubConvers
   };
 }
 
-export function assertOfficeKey(value: string): OfficeKey {
-  if (!OFFICE_KEY_PATTERN.test(value)) {
-    throw new Error(`Invalid office key: ${JSON.stringify(value)}`);
-  }
-  return value as OfficeKey;
-}
-
 export function isOfficeKey(value: unknown): value is OfficeKey {
   return typeof value === "string" && OFFICE_KEY_PATTERN.test(value);
 }
@@ -275,15 +268,6 @@ export class OfficeRegistry {
     this.writeState = options.writeState ?? atomicWritePrivateFile;
     this.lockTimeoutMs = options.lockTimeoutMs ?? REGISTRY_LOCK_TIMEOUT_MS;
     this.state = this.readState();
-  }
-
-  reload(): OfficeRegistryState {
-    this.state = this.readState();
-    return this.state;
-  }
-
-  getState(): OfficeRegistryState {
-    return this.state;
   }
 
   recordOffice(address: OfficeAddress): OfficeRecord {
