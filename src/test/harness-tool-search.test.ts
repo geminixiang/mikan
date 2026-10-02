@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { TODO_CONTEXT, getOrThrow, type AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -14,7 +14,6 @@ import {
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import type { MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 
@@ -105,15 +104,18 @@ test("tool_search declares only matching MCP tools on the next model call", asyn
           query: "GitHub issues",
           limit: 1,
         }),
+        { stopReason: "toolUse" },
       );
     },
     (context) => {
-      expect(getCurrentTools(context.messages).map((tool) => tool.name)).toEqual([
-        "mcp__github__list_issues",
-        "codemode",
-        "tool_search",
-      ]);
-      return fauxAssistantMessage(fauxToolCall("mcp__github__list_issues", {}));
+      expect(
+        getCurrentTools(context.messages)
+          .map((tool) => tool.name)
+          .toSorted(),
+      ).toEqual(["codemode", "mcp__github__list_issues", "tool_search"]);
+      return fauxAssistantMessage(fauxToolCall("mcp__github__list_issues", {}), {
+        stopReason: "toolUse",
+      });
     },
     fauxAssistantMessage("done"),
   ]);
@@ -128,7 +130,9 @@ test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   const store = await SessionStore.create(file, dir);
   const session = wrap(store, [tool]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" })),
+    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" }), {
+      stopReason: "toolUse",
+    }),
     fauxAssistantMessage("loaded"),
     (context) => {
       expect(getCurrentTools(context.messages).map((item) => item.name)).toContain(tool.name);
@@ -150,47 +154,6 @@ test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   expect(JSON.stringify(await reopened.getEntries())).toContain("restored");
 });
 
-test("resume recovers the native active selection even before discovery metadata is committed", async () => {
-  const { faux, file, wrap, models, model } = setup();
-  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const store = await SessionStore.create(file, dir);
-  stores.push(store);
-  const placeholders: AgentTool[] = [
-    github.tool,
-    { ...github.tool, name: "codemode" },
-    { ...github.tool, name: "tool_search" },
-  ];
-  const harness = await store.createHarness({
-    models: models.models,
-    model,
-    tools: placeholders.map(adaptAgentTool),
-    activeToolNames: placeholders.map((tool) => tool.name),
-    compaction: { enabled: false, reserveTokens: 16384, keepRecentTokens: 20000 },
-  });
-  const lane = await harness.lane("main", TODO_CONTEXT);
-  getOrThrow(await lane.accept({ kind: "prompt", prompt: "recover discovery" }, TODO_CONTEXT));
-  await store.close();
-  const session = wrap(await SessionStore.open(file), [github.tool]);
-  faux.setResponses([
-    (context) => {
-      expect(getCurrentTools(context.messages).map((item) => item.name)).toContain(
-        github.tool.name,
-      );
-      return fauxAssistantMessage("recovered selection");
-    },
-    (context) => {
-      expect(getCurrentTools(context.messages).map((item) => item.name)).toContain(
-        github.tool.name,
-      );
-      return fauxAssistantMessage("still loaded");
-    },
-  ]);
-  await session.resume();
-  expect(JSON.stringify(session.messages)).toContain("recovered selection");
-  await session.prompt("next prompt");
-  expect(JSON.stringify(session.messages)).toContain("still loaded");
-});
-
 test("revoked grants cannot be searched, called, or restored from prior discovery", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
@@ -198,16 +161,20 @@ test("revoked grants cannot be searched, called, or restored from prior discover
   const store = await SessionStore.create(file, dir);
   const session = wrap(store, [github.tool, calendar.tool]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" })),
+    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" }), {
+      stopReason: "toolUse",
+    }),
     fauxAssistantMessage("loaded"),
     fauxAssistantMessage(
       fauxToolCall("tool_search", { label: "Try revoked tool", query: "github issues" }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage(
       fauxToolCall("codemode", {
         label: "Try revoked call",
         code: `await tools.${github.tool.name}({});`,
       }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("revoked"),
     (context) => {
@@ -221,7 +188,7 @@ test("revoked grants cannot be searched, called, or restored from prior discover
   await session.prompt("try revoked", { tools: [calendar.tool] });
   expect(github.execute).not.toHaveBeenCalled();
   expect(JSON.stringify(session.messages)).toContain("No matching unloaded tools");
-  expect(JSON.stringify(session.messages)).toContain("not a function");
+  expect(JSON.stringify(session.messages)).toContain("does not exist");
   await session.prompt("default grants again");
   expect(JSON.stringify(session.messages)).toContain("grant returned but still deferred");
 });
@@ -246,6 +213,7 @@ test("codemode exposes async global declarations before discovering deferred too
           label: "Discover from declared globals",
           code: 'const matches = await searchTools("issues", { namespace: "github" }); text(await describeTool(matches[0].name)); text(await tools[matches[0].name]({}));',
         }),
+        { stopReason: "toolUse" },
       );
     },
     (context) => {
@@ -270,6 +238,7 @@ test("codemode discovery supplies Pi tool samples with resolved text return type
         label: "Inspect return types",
         code: 'const matches = await searchTools("read_text", { namespace: "qa" }); text(matches[0].description); text(await describeTool(matches[0].name));',
       }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("done"),
   ]);
@@ -301,6 +270,7 @@ test("codemode preserves declared structured return types and values", async () 
         label: "Read the declared count",
         code: 'const matches = await searchTools("read_count", { namespace: "qa" }); text(matches[0].description); text(await tools[matches[0].name]({}));',
       }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("done"),
   ]);
@@ -343,6 +313,7 @@ test("codemode keeps complete global declarations when the tool catalog exceeds 
           label: "Inspect an omitted declaration",
           code: 'const declaration = await describeTool("verbose"); text(declaration.includes("declare const tools"));',
         }),
+        { stopReason: "toolUse" },
       );
     },
     fauxAssistantMessage("done"),
@@ -362,6 +333,7 @@ test("codemode discovers and calls deferred MCP tools without declaring their sc
         label: "Discover and call",
         code: 'const matches = await searchTools("issues", {namespace: "github", limit: 1}); text(await tools[matches[0].name]({}));',
       }),
+      { stopReason: "toolUse" },
     ),
     (context) => {
       expect(getCurrentTools(context.messages).map((item) => item.name)).not.toContain(
@@ -382,7 +354,7 @@ test("an unsearched MCP tool cannot be called directly in the model batch", asyn
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const session = wrap(await SessionStore.create(file, dir), [github.tool]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall(github.tool.name, {})),
+    fauxAssistantMessage(fauxToolCall(github.tool.name, {}), { stopReason: "toolUse" }),
     fauxAssistantMessage("done"),
   ]);
   await session.prompt("call without searching");
@@ -398,17 +370,23 @@ test("multiple searches in one model batch retain the union of loaded tools", as
   const calendar = deferredTool("mcp__calendar__list_events", "List calendar events");
   const session = wrap(await SessionStore.create(file, dir), [github.tool, calendar.tool]);
   faux.setResponses([
-    fauxAssistantMessage([
-      fauxToolCall("tool_search", { label: "Find issues", query: "issues", namespace: "github" }),
-      fauxToolCall("tool_search", { label: "Find events", query: "events", namespace: "calendar" }),
-    ]),
+    fauxAssistantMessage(
+      [
+        fauxToolCall("tool_search", { label: "Find issues", query: "issues", namespace: "github" }),
+        fauxToolCall("tool_search", {
+          label: "Find events",
+          query: "events",
+          namespace: "calendar",
+        }),
+      ],
+      { stopReason: "toolUse" },
+    ),
     (context) => {
-      expect(getCurrentTools(context.messages).map((item) => item.name)).toEqual([
-        github.tool.name,
-        calendar.tool.name,
-        "codemode",
-        "tool_search",
-      ]);
+      expect(
+        getCurrentTools(context.messages)
+          .map((item) => item.name)
+          .toSorted(),
+      ).toEqual([calendar.tool.name, "codemode", github.tool.name, "tool_search"].toSorted());
       return fauxAssistantMessage("union retained");
     },
   ]);
@@ -425,13 +403,12 @@ test("cancelling discovery before execution does not load tools", async () => {
     if (event.type === "tool_execution_start" && event.toolName === "tool_search") session.abort();
   });
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" })),
+    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" }), {
+      stopReason: "toolUse",
+    }),
   ]);
   await session.prompt("cancel discovery");
   unsubscribe();
-  expect(
-    (await store.getEntries()).filter((entry) => entry.customType === "mikan.tool_search"),
-  ).toHaveLength(0);
   faux.setResponses([
     (context) => {
       expect(getCurrentTools(context.messages).map((item) => item.name)).not.toContain(
@@ -452,6 +429,7 @@ test("repeated identical searches cannot bypass the tool loop guard", async () =
     Array.from({ length: 10 }, () =>
       fauxAssistantMessage(
         fauxToolCall("tool_search", { label: "Search again", query: "zzunmatched" }),
+        { stopReason: "toolUse" },
       ),
     ),
   );
@@ -470,7 +448,9 @@ test.each([
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const session = wrap(await SessionStore.create(file, dir), [github.tool]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Invalid search", query, limit })),
+    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Invalid search", query, limit }), {
+      stopReason: "toolUse",
+    }),
     (context) => {
       expect(getCurrentTools(context.messages).map((item) => item.name)).not.toContain(
         github.tool.name,

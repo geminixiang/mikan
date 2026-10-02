@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -9,6 +9,7 @@ import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
+import { compactionSummaryOf } from "../sessions/compaction-summary.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 let dir: string;
@@ -55,6 +56,18 @@ const echoTool: AgentTool<typeof echoParameters> = {
   }),
 };
 
+async function seedCompactableHistory(sessionStore: SessionStore): Promise<void> {
+  await sessionStore.appendMessage({
+    role: "user",
+    content: [{ type: "text", text: "old history" }],
+    timestamp: Date.now(),
+  });
+  const previous = fauxAssistantMessage("previous answer");
+  previous.usage.input = 20;
+  previous.usage.totalTokens = 20;
+  await sessionStore.appendMessage(previous);
+}
+
 describe("MikanAgentSession", () => {
   test("runs a prompt, persists messages, and reports the final text", async () => {
     const { models, faux, model } = createFauxSetup();
@@ -82,18 +95,10 @@ describe("MikanAgentSession", () => {
     expect(lastAssistant).toBeDefined();
     expect(JSON.stringify(lastAssistant)).toContain("hello from faux");
 
-    const persisted = readFileSync(sessionFile, "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .flatMap((line) => {
-        const parsed = JSON.parse(line) as
-          | { type?: string; message?: { role?: string } }
-          | Array<{ type?: string; message?: { role?: string } }>;
-        return Array.isArray(parsed) ? parsed : [parsed];
-      });
+    const persisted = await (await SessionStore.inspect(sessionFile)).getEntries();
     const roles = persisted
       .filter((entry) => entry.type === "message")
-      .map((entry) => entry.message?.role);
+      .map((entry) => entry.message.role);
     expect(roles).toEqual(["user", "assistant"]);
 
     expect(events).toContain("message_start");
@@ -104,7 +109,7 @@ describe("MikanAgentSession", () => {
   test("executes tool calls and persists tool results", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
 
@@ -129,7 +134,7 @@ describe("MikanAgentSession", () => {
   test("preserves the complete usage breakdown across assistant turns", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
 
@@ -157,7 +162,7 @@ describe("MikanAgentSession", () => {
   test("budget circuit breaker aborts a run that exceeds the LLM-call cap", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
 
@@ -191,7 +196,7 @@ describe("MikanAgentSession", () => {
   test("foldExternalUsage folds delegated spend and enforces the budget at the fold", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("delegate", {})),
+      fauxAssistantMessage(fauxToolCall("delegate", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
 
@@ -258,9 +263,9 @@ describe("MikanAgentSession", () => {
   test("a captured external usage sink cannot contaminate a later prompt", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("capture", {})),
+      fauxAssistantMessage(fauxToolCall("capture", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage("first done"),
-      fauxAssistantMessage(fauxToolCall("hold", {})),
+      fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage("second done"),
     ]);
 
@@ -324,17 +329,19 @@ describe("MikanAgentSession", () => {
     await secondPrompt;
   });
 
-  test("counts compaction completion usage in run stats", async () => {
+  test("counts compaction usage in run stats", async () => {
     const { models, faux, model } = createFauxSetup();
-    faux.setResponses([fauxAssistantMessage("initial"), fauxAssistantMessage("compacted history")]);
+    faux.setResponses([fauxAssistantMessage("compacted history"), fauxAssistantMessage("answer")]);
 
+    const sessionStore = await SessionStore.create(join(dir, "compaction-usage.jsonl"), dir);
+    await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "compaction-usage.jsonl"), dir),
+      sessionStore,
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
@@ -342,27 +349,33 @@ describe("MikanAgentSession", () => {
 
     expect(session.getLastRunStats().llmCalls).toBe(2);
     expect(session.getLastRunStats().tokens).toBeGreaterThan(11);
+    expect(session.messages.map(compactionSummaryOf)).toContain("compacted history");
     expect(faux.state.callCount).toBe(2);
   });
 
   test("compaction usage can trip the token budget", async () => {
     const { models, faux, model } = createFauxSetup();
-    faux.setResponses([fauxAssistantMessage("initial"), fauxAssistantMessage("compacted history")]);
+    faux.setResponses([
+      fauxAssistantMessage("compacted history"),
+      fauxAssistantMessage("must not answer"),
+    ]);
 
+    const sessionStore = await SessionStore.create(join(dir, "compaction-budget.jsonl"), dir);
+    await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "compaction-budget.jsonl"), dir),
+      sessionStore,
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 
-    await session.prompt("history to compact", { budget: { maxTokens: 30 } });
+    await session.prompt("history to compact", { budget: { maxTokens: 1 } });
 
-    expect(session.getLastRunStats().llmCalls).toBe(2);
-    expect(session.getLastRunStats().tokens).toBeGreaterThanOrEqual(30);
+    expect(session.getLastRunStats().llmCalls).toBe(1);
+    expect(JSON.stringify(session.messages)).not.toContain("must not answer");
     expect(session.getLastRunStats().budgetExceededReason).toContain("tokens");
   });
 
@@ -371,7 +384,7 @@ describe("MikanAgentSession", () => {
     faux.setResponses([
       fauxAssistantMessage("", {
         stopReason: "error",
-        errorMessage: "context length exceeded",
+        errorMessage: "prompt is too long: 120000 tokens > 100000 maximum",
       }),
       fauxAssistantMessage("compacted history"),
       fauxAssistantMessage("retry must not run"),
@@ -383,7 +396,11 @@ describe("MikanAgentSession", () => {
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "overflow-budget.jsonl"), dir),
+      sessionStore: await (async () => {
+        const store = await SessionStore.create(join(dir, "overflow-budget.jsonl"), dir);
+        await seedCompactableHistory(store);
+        return store;
+      })(),
       settings: { compaction: { reserveTokens: 50, keepRecentTokens: 1 } },
     });
 
@@ -396,20 +413,22 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(session.messages)).not.toContain("retry must not run");
   });
 
-  test("a compaction completion does not start at the LLM-call cap", async () => {
+  test("a model turn does not start once compaction reached the LLM-call cap", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage("initial"),
-      fauxAssistantMessage("compaction must not run"),
+      fauxAssistantMessage("compacted history"),
+      fauxAssistantMessage("answer must not run"),
     ]);
 
+    const sessionStore = await SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir);
+    await seedCompactableHistory(sessionStore);
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model: Object.assign(model, { contextWindow: 15 }),
       thinkingLevel: "off",
       tools: [],
       models,
-      sessionStore: await SessionStore.create(join(dir, "compaction-call-cap.jsonl"), dir),
+      sessionStore,
       settings: { compaction: { reserveTokens: 5, keepRecentTokens: 1 } },
     });
 

@@ -39,9 +39,6 @@ export type {
   PeriodicEventPayload,
 } from "./events/index.js";
 export type {
-  BranchSummaryEntry,
-  CompactionEntry,
-  CustomEntry,
   SubagentModelSpec,
   SubagentParentContext,
   SubagentProfile,
@@ -55,6 +52,8 @@ export type {
 } from "./harness/types.js";
 export type {
   SessionContext,
+  SessionCompactionEntry,
+  SessionCustomEntry,
   SessionEntry,
   SessionHeader,
   SessionMessageEntry,

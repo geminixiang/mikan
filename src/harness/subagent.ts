@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-  AgentMessage,
-  ExecutionToolContext,
-  ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
+import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { MikanModels } from "./models.js";
+import { compactionSummaryOf } from "../sessions/compaction-summary.js";
 import type {
   MikanHarnessTool,
+  MikanToolContext,
   SubagentProfile,
   SubagentModelSpec,
   SubagentRunOutput,
@@ -129,7 +127,7 @@ interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefin
   workspaceDir: string;
   availableTools: MikanHarnessTool[];
   profiles?: ReadonlyMap<string, SubagentProfile>;
-  toolContext?: ExecutionToolContext;
+  toolContext?: MikanToolContext;
   slots?: SubagentSlotPool;
   parentMessages?: AgentMessage[];
   onUsage?: SubagentUsageSink;
@@ -242,9 +240,8 @@ function formatTask(task: string, input: unknown, parentContext?: string): strin
 }
 
 function messageText(message: AgentMessage): string {
-  if (message.role === "compactionSummary" || message.role === "branchSummary") {
-    return message.summary;
-  }
+  const summary = compactionSummaryOf(message);
+  if (summary !== undefined) return summary;
   if (!("content" in message)) return "";
   return contentText(message.content, "");
 }
@@ -259,7 +256,10 @@ function normalizedParentContext(
     throw new Error("api.subagent.run parentContext.recentTurns must be an integer from 1 to 8");
   }
   const conversation = messages.filter(
-    (message) => (message.role === "user" || message.role === "assistant") && messageText(message),
+    (message) =>
+      (message.role === "user" || message.role === "assistant") &&
+      compactionSummaryOf(message) === undefined &&
+      messageText(message),
   );
   let first = conversation.length;
   let users = 0;
@@ -271,12 +271,11 @@ function normalizedParentContext(
   const recentStart = recent[0] ? messages.indexOf(recent[0]) : messages.length;
   const summary = messages
     .slice(0, recentStart)
-    .findLast(
-      (message) => message.role === "compactionSummary" || message.role === "branchSummary",
-    );
+    .map(compactionSummaryOf)
+    .findLast((text) => text !== undefined);
   return [
     "<parent_reference_context>",
-    summary ? `Earlier summary: ${messageText(summary)}` : "[Earlier parent context omitted]",
+    summary !== undefined ? `Earlier summary: ${summary}` : "[Earlier parent context omitted]",
     ...recent.map(
       (message) => `${message.role === "user" ? "User" : "Assistant"}: ${messageText(message)}`,
     ),

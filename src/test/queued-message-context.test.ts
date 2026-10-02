@@ -155,9 +155,6 @@ async function providerMessages(
 ): Promise<Array<{ role: string; text: string }>> {
   const context = await (await SessionStore.inspect(contextFile)).buildSessionContext();
   return context.messages.map((message) => {
-    if (!("content" in message)) {
-      throw new Error(`unexpected ${message.role} message without content in provider context`);
-    }
     return {
       role: message.role,
       text:

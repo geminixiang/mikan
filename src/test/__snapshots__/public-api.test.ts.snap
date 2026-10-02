@@ -18,8 +18,8 @@ export type { LoadSubagentProfilesResult, SubagentProfileDiagnostic } from "./ha
 export type { CompactionSettings } from "./harness/session.js";
 export type { BudgetSettings, HarnessSettings, RetrySettings } from "./harness/types.js";
 export type { EventConversationKind, EventFilePayload, EventPayloadInput, EventType, ImmediateEventPayload, OneShotEventPayload, PeriodicEventPayload, } from "./events/index.js";
-export type { BranchSummaryEntry, CompactionEntry, CustomEntry, SubagentModelSpec, SubagentParentContext, SubagentProfile, SubagentRunBudget, SubagentRunOutput, SubagentRunRequest, SubagentRunResult, SubagentRunStatus, SubagentUsage, SubagentUsageSink, } from "./harness/types.js";
-export type { SessionContext, SessionEntry, SessionHeader, SessionMessageEntry, } from "./sessions/types.js";
+export type { SubagentModelSpec, SubagentParentContext, SubagentProfile, SubagentRunBudget, SubagentRunOutput, SubagentRunRequest, SubagentRunResult, SubagentRunStatus, SubagentUsage, SubagentUsageSink, } from "./harness/types.js";
+export type { SessionContext, SessionCompactionEntry, SessionCustomEntry, SessionEntry, SessionHeader, SessionMessageEntry, } from "./sessions/types.js";
 export { CURRENT_SESSION_VERSION } from "./sessions/types.js";
 export { isCommandText } from "./adapters/commands/manifest.js";
 export { ChatHistorySync, hasMaterializedChatSession, registerThreadSession, waitForThreadSessionBootstrap, } from "./sessions/chat-history-sync.js";

@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
+import type { JsonValue } from "@earendil-works/chord";
 import {
-  createBranchSummaryMessage,
-  createCompactionSummaryMessage,
-  createCustomMessage,
-  type AgentMessage,
-  type Entry as PiEntry,
-  type JsonValue,
-} from "@earendil-works/pi-agent-core";
-import { SessionStore } from "../sessions/session-store.js";
+  branchSummaryMessage as createBranchSummaryMessage,
+  buildV4Context,
+  compactionSummaryMessage as createCompactionSummaryMessage,
+  customMessage as createCustomMessage,
+  readV4Session,
+  type V4Entry as PiEntry,
+  type V4Message as AgentMessage,
+} from "./session-v4.js";
 import {
   commitMigration,
   findSessionFiles,
@@ -413,15 +414,15 @@ function encodeV4File(file: V3SessionFile): string {
 }
 
 async function verifyMigratedFile(v4Path: string, source: V3SessionFile): Promise<void> {
-  const store = await SessionStore.inspect(v4Path);
-  const migratedContext = await store.buildSessionContext();
+  const migratedSession = readV4Session(v4Path);
+  const migratedContext = { messages: buildV4Context(migratedSession.branch) };
   const branch = v3Branch(source.entries, v3LeafId(source.entries));
   const migrated = JSON.stringify(migratedContext.messages);
   const reference = JSON.stringify(referenceContextMessages(referenceContextEntries(branch)));
   if (migrated !== reference) {
     throw new Error("migrated context does not match the v3 reference context");
   }
-  const migratedName = await store.getSessionName();
+  const migratedName = migratedSession.name;
   const v3Name = [...source.entries]
     .toReversed()
     .find((entry) => entry.type === "session_info")

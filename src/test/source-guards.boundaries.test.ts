@@ -59,7 +59,6 @@ const productionDoubleAssertionBudget: Record<string, number> = {
   "src/adapters/web/admin/portal.ts": 2,
   "src/adapters/web/session-view/portal.ts": 1,
   "src/migrations/sessions-v3.ts": 4,
-  "src/sessions/session-store.ts": 1,
 };
 
 const productionParsedJsonAssertionBudget: Record<string, number> = {
@@ -68,7 +67,6 @@ const productionParsedJsonAssertionBudget: Record<string, number> = {
   "src/migrations/session-files.ts": 1,
   "src/migrations/sessions-v3.ts": 2,
   "src/sandbox/cloudflare.ts": 1,
-  "src/sessions/session-store.ts": 1,
 };
 
 function publishedEntryPoints(): Map<string, string> {

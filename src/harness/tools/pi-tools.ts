@@ -1,10 +1,12 @@
+import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { JsonValue } from "@earendil-works/chord";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import {
   createBashTool,
   createEditTool,
   createReadTool,
   createWriteTool,
-  type AgentTool,
-} from "@earendil-works/pi-agent-core";
+} from "@earendil-works/pi-durable/tools";
 import type { TObject } from "typebox";
 import type { MikanHarnessTool } from "../types.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
@@ -22,59 +24,76 @@ export function tagHarnessTool(tool: MikanHarnessTool): MikanHarnessTool {
   return tool;
 }
 
-function withLabel(tool: MikanHarnessTool): MikanHarnessTool {
-  const schema = tool.parameters as TObject;
-  const parameters = {
-    ...schema,
-    properties: {
-      ...schema.properties,
-      label: LABEL_PARAMETER,
-    },
-  };
+function toJsonValue(input: unknown): JsonValue | undefined {
+  if (input === undefined) return undefined;
+  const copy: JsonValue = JSON.parse(JSON.stringify(input));
+  return copy;
+}
 
+function withLabel(tool: ToolRegistration): MikanHarnessTool {
+  const schema = tool.parameters as TObject;
   return tagHarnessTool({
     ...tool,
-    parameters,
-    execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
-      const [toolCallId, params, onUpdate, toolContext, invocation, context] = args;
-      if (!toolContext?.env) {
-        throw new Error(
-          `Tool ${tool.name} requires toolContext.env; supply an authorized execution env.`,
-        );
+    label: tool.name,
+    parameters: {
+      ...schema,
+      properties: { ...schema.properties, label: LABEL_PARAMETER },
+    },
+    execute: async (args, api, context) => {
+      if (!api.env) {
+        throw new Error(`Tool ${tool.name} requires an execution env; supply an authorized one.`);
       }
-      const { label: _label, ...rest } = params as Record<string, unknown>;
-      return tool.execute(
-        toolCallId,
-        rest as typeof params,
-        onUpdate,
-        toolContext,
-        invocation,
-        context,
-      );
+      const { label: _label, ...rest } = args as Record<string, unknown>;
+      return tool.execute(rest, api, context);
     },
   });
 }
 
 export function createSandboxTools(): MikanHarnessTool[] {
   const bash = createBashTool({
-    prepare: (execution, toolContext) => {
-      execution.cwd = toolContext.env.cwd;
+    prepare: (execution, api) => {
+      if (api.env) execution.cwd = api.env.cwd;
     },
   });
   return [
-    withLabel(createReadTool() as MikanHarnessTool),
-    withLabel(createWriteTool() as MikanHarnessTool),
-    withLabel(createEditTool() as MikanHarnessTool),
-    withLabel(bash as MikanHarnessTool),
+    withLabel(createReadTool() as ToolRegistration),
+    withLabel(createWriteTool() as ToolRegistration),
+    withLabel(createEditTool() as ToolRegistration),
+    withLabel(bash as ToolRegistration),
   ];
 }
 
 export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
+  const exposure = "exposure" in tool && tool.exposure === "deferred" ? "deferred" : undefined;
+  const namespace =
+    "namespace" in tool && typeof tool.namespace === "string" ? tool.namespace : undefined;
   return tagHarnessTool({
-    ...tool,
-    execute: (...args: Parameters<MikanHarnessTool["execute"]>) => {
-      const [toolCallId, params, onUpdate, , , context] = args;
-      return tool.execute(toolCallId, params, context.abortSignal, onUpdate);
+    name: tool.name,
+    label: tool.label,
+    description: tool.description,
+    parameters: tool.parameters,
+    outputSchema: tool.outputSchema,
+    prepareArguments: tool.prepareArguments,
+    executionMode: tool.executionMode,
+    exposure,
+    namespace,
+    replay: tool.replay === "safe" ? "safe" : "unsafe",
+    execute: async (args, api, context) => {
+      let updates = Promise.resolve();
+      const result = await tool.execute(api.callId, args, context.abortSignal, (partial) => {
+        const details = toJsonValue(partial.details);
+        if (details === undefined) return;
+        updates = updates.then(() => api.details(details, context)).catch(() => undefined);
+      });
+      await updates;
+      return {
+        content: result.content,
+        details: toJsonValue(result.details),
+        isError: result.isError,
+        structuredContent: result.structuredContent,
+        usage: result.usage,
+        control: result.terminate ? { terminate: true } : undefined,
+      };
     },
-  } as MikanHarnessTool);
+  });
 }

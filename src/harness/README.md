@@ -1,7 +1,7 @@
 # src/harness
 
-mikan's agent execution module, integrating Pi 0.85's native `AgentHarness` and
-`pi-ai` model catalog. Pi owns durable operations, the turn loop, tool execution,
+mikan's agent execution module, integrating the pi-durable `Harness` and the
+`pi-ai` model catalog (ADR 0017). Pi owns durable runs, the turn loop, tool execution,
 message persistence, retries, compaction, and recovery. mikan supplies prompt
 sources, authorized execution and tools, response presentation, per-request budgets,
 delegated-spend accounting, and platform-neutral event translation. Platform adapters and Sandbox backends stay outside
@@ -38,28 +38,39 @@ These responsibilities share the
 harness module with the native Pi session integration rather than forming a
 separate agent-runner module.
 
-The session-owned `SessionStore` in `src/sessions/` supplies the writable Pi
-Session and native `AgentHarness` lane consumed here. The harness drives that
-lane but does not own its persistence, writer lease, or lifecycle.
+The session-owned `SessionStore` in `src/sessions/` supplies the Harness and
+root conversation consumed here. The harness binds models, settings, and the
+execution environment to it but does not own its persistence, writer lease, or
+lifecycle.
 
-`MikanAgentSession.prompt()` resolves authentication, applies the current prompt
-and tool grants, then calls Pi's `lane.accept()` and `lane.drive()`. Pi alone
-executes the operation, retries, compacts, and persists results. Budget policy
-uses the native `before_request` hook and committed `usage` events. Compaction
-usage uses Pi's accounting events; there is no custom completion proxy.
+`MikanAgentSession.prompt()` resolves authentication, installs the run's tools,
+prompt section, and hooks as the `mikan` extension, configures the conversation's
+model and offered tools, then submits the input and waits for it to settle. Pi
+alone executes the run, retries, compacts, and persists results. A run that a
+previous process left unfinished is aborted before a new prompt, never resumed
+implicitly; `resume()` continues it explicitly. Interrupted tool calls are not
+rerun unless the tool is `replay: "safe"`.
 
-Platform events are translated from native Pi events. Assistant `message_end`
-is emitted from `entry_added`, after persistence, rather than Pi's earlier
-stream-completion notification. Tool progress retains invocation arguments.
-`agent_end` contains only the current operation's messages.
+Platform events are translated from pi-durable's agent events, which are
+derived from commits: assistant `message_end` arrives after persistence, tool
+progress carries the latest `details`, and `agent_end` contains only the
+current run's messages. A run Pi aborted before any partial was committed gets
+a persisted aborted assistant message, so presenters still see why it ended.
+
+Two provider-request facts are local because pi-durable does not expose them:
+mikan wraps the model catalog to pass the session ID as `sessionId` (provider
+prompt caches key on it) and to know whether a request is in flight when it
+logs an abort.
 
 ### Cancellation and budgets
 
 `abort()` requests Pi's durable operation cancellation. Before an operation
 exists, the adapter remembers cancellation across authentication and setup.
 A configured `maxDurationMs` requests cancellation at the deadline, including
-provider, tool, retry, and compaction waits. Budgets are checked before native
-requests, so exhausted budgets cannot start another paid request.
+provider, tool, retry, and compaction waits. Budgets are checked before every
+provider request, including compaction summaries; a request over the LLM-call
+budget is answered locally as aborted instead of being sent. Usage comes from
+the conversation's `pi.usage` document, so compaction spend counts too.
 
 Cancellation is cooperative: providers and tools must honor their abort signal.
 The session stays active until outstanding work and event listeners settle,
@@ -69,8 +80,8 @@ before initial compaction; that request remains in history after cancellation.
 
 ### Tool loop guard
 
-`loop-guard.ts` watches each run's tool calls through Pi's public `before_tool`
-and `after_tool` hooks. A call's identity is its tool name plus canonical JSON
+`loop-guard.ts` watches each run's tool calls through pi-durable's public
+`beforeTool` and `afterTool` hooks. A call's identity is its tool name plus canonical JSON
 arguments without the presentation `label`. The same call made 3–4 times in a
 row gets a notice appended to its result, the 5th through 9th are blocked
 without executing, and the 10th stops the run through the budget circuit breaker
@@ -79,19 +90,12 @@ distinct calls only gets a notice, once at 3 repetitions and again each time
 the count doubles. Subagents get the same guard because they run on
 `MikanAgentSession`. State resets on every `prompt()` and `resume()`.
 
-### Idle compaction
+### Compaction
 
-After a run ends with `stop` and its reply has been delivered, the runner calls
-`compactWhenNearLimit()`. When the estimated context has reached 80% of Pi's
-automatic threshold (`contextWindow - reserveTokens`), it starts Pi's manual
-`lane.compact()` in the background, so the next message does not wait for Pi's
-in-run threshold compaction. The next `prompt()`/`resume()` waits for this
-compaction first, so it never races Pi's busy lane. Host history appended in
-the meantime is ordered after the compaction entry. Runner `dispose()` calls
-`cancelIdleCompaction()`, which aborts through the lane and waits for it to
-settle before closing the store. An idle compaction that finishes before the
-next run starts is not counted in any run's usage tally; one still running
-when a run starts reports its events and usage to that run.
+Pi compacts in the background as context approaches its threshold, blocks the
+next request only above `contextWindow - reserveTokens`, and compacts once
+after a context-overflow error. mikan no longer starts a separate idle
+compaction between runs.
 
 ### Public integration API
 
@@ -100,17 +104,17 @@ Use `setSystemPrompt(text)` between prompts instead of mutating the removed
 is no longer exposed. Per-prompt tool grants use `prompt(text, { tools })`;
 subsequent prompts use the session's default tools unless overridden again.
 
-File and shell behavior comes from pi-agent-core's native tools. mikan's thin
-adapter preserves their schemas, adds the presentation `label`, and supplies
-an authorized sandbox `ExecutionEnv`. Native execution tools require
-`toolContext.env`; there is no implicit host fallback. Existing integrations
-using only plain `AgentTool`s may omit `toolContext`.
+File and shell behavior comes from `@earendil-works/pi-durable/tools`. mikan's
+thin adapter preserves their schemas, adds the presentation `label`, and the
+Harness supplies the run's authorized sandbox `ExecutionEnv` as `api.env`.
+Execution tools fail without one; there is no implicit host fallback.
+Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
+adapts them, forwarding progress `details` and awaiting the last update before
+the result.
 
-`resume({ budget, tools })` delegates recovery of an open operation to Pi's native
-lane. It can be used after reopening a store that contains an accepted or
-interrupted operation. A normal new `prompt()` preserves Pi's busy-lane rejection
-while an earlier operation is open. Compaction belongs to Pi; `SessionStore`
-does not expose a second structural compaction writer.
+`resume({ budget, tools })` lets Pi continue a run left unfinished in the store.
+Compaction belongs to Pi; `SessionStore` writes compaction entries only when
+`mikan migrate` imports older sessions.
 
 Runner reuse, conversation identity, eviction, and Sandbox topology
 remain in `src/runtime/` and `src/sessions/`.
@@ -262,15 +266,15 @@ queue admission; the task uses the existing independent session runner, not a
 nested subagent or a new execution loop.
 
 `PiAgentWrapper.steer` accepts text controls from the current actor only. It
-records a `mikan.control_input` custom entry before sending to the native lane so
+records a `mikan.control_input` custom entry before submitting a steer so
 chat-history sync cannot replay cancelled or rejected controls as ordinary input.
 Attachments require stopping and starting another turn. Native steering acceptance
 means queued for the next tool-batch boundary, not proof of model compliance.
 
 `task_status` is a responder-bound read-only query, advertised only when supported
 and excluded from subagent grants. It exposes no cross-office task lookup.
-`SessionStore.inspectExecution` reads the main lane/result from a temporary v4
-snapshot; it does not create a runner or acquire the original file's writer.
+`SessionStore.inspectExecution` reads the live run and mikan's run record from a
+copy of the storage; it does not create a runner or acquire the original writer.
 
 Runner cancellation is remembered across prompt preparation. Stop before Pi starts
 prevents a later prompt; preparation/settlement controls are rejected with a retry

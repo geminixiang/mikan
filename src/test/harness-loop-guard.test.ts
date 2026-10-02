@@ -107,7 +107,9 @@ describe("MikanAgentSession tool loop guard", () => {
     });
     faux.setResponses([
       ...Array.from({ length: 10 }, () =>
-        fauxAssistantMessage(fauxToolCall("probe", { path: "status.txt" })),
+        fauxAssistantMessage(fauxToolCall("probe", { path: "status.txt" }), {
+          stopReason: "toolUse",
+        }),
       ),
       fauxAssistantMessage("unreachable"),
     ]);

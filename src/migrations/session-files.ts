@@ -8,7 +8,8 @@ import {
   statSync,
 } from "node:fs";
 import { join } from "node:path";
-import type { Entry as PiEntry, JsonValue } from "@earendil-works/pi-agent-core";
+import type { JsonValue } from "@earendil-works/chord";
+import type { V4Entry } from "./session-v4.js";
 import type { Usage } from "@earendil-works/pi-ai";
 import { atomicWritePrivateFile } from "../file-guards.js";
 
@@ -34,7 +35,7 @@ export class V4FileWriter {
     this.#lines = [JSON.stringify(header)];
   }
 
-  entry(entry: PiEntry): void {
+  entry(entry: V4Entry): void {
     this.#lines.push(JSON.stringify({ kind: "entry", ...entry, seq: ++this.#seq }));
   }
 

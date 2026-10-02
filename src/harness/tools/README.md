@@ -94,15 +94,13 @@ declarations share its 12,000-character limit, separate from the complete global
 helper declarations. Script discovery does not activate schemas in the model's
 direct tool set.
 
-Pi 0.99.1's public `AgentHarness` has no nested-tool dispatch API, and its
-older `runToolCall` example does not apply to harness-native tools. The small
-local exception is `session.ts`'s `executeNestedTool`: it uses the same loop
-guard, cancellation, progress translation and tool-call accounting as direct
-calls, while `codemode.ts` uses Pi's public argument validator. It preserves
-the authorized execution context and scopes invocation memos to each nested
-call. Replace this bridge when Pi exposes native harness nested dispatch;
-it does not invoke arbitrary native `before_tool`/`after_tool` hooks or make
-nested calls independent durable operation steps.
+pi-durable has no nested-tool dispatch API. The small local exception is
+`session.ts`'s `executeNestedTool`: it uses the same loop guard, cancellation,
+progress translation and tool-call accounting as direct calls, while
+`codemode.ts` uses Pi's public argument validator. Each nested call gets the
+codemode call's tool API with its own call ID and captured output. Replace this
+bridge when Pi exposes nested dispatch; it does not run other extensions'
+`beforeTool`/`afterTool` hooks or make nested calls independent durable tasks.
 
 Nested calls/results are not appended to the model transcript; only script
 output is. Tool-only text becomes a string, structured results retain their
@@ -126,7 +124,8 @@ MCP tools carry `exposure: "deferred"` and their server's `namespace` from
 is deferred, not network connection or authorization.
 
 `tool-search.ts` owns keyword ranking and `tool_search`, which loads matches
-through Pi's public `AgentLane.setActiveTools()` for the next model call. The
+through pi-durable's `control.addTools` result for the next model call; Pi
+stores the offered names in the conversation's `pi.agent` document. The
 shared search considers names, descriptions and argument schemas, prioritizes
 exact names, and supports a namespace filter and a 1–20 match limit (default 5).
 It is a small local weighted-keyword ranker, not Pi CLI's private BM25
@@ -140,13 +139,11 @@ its granted callable tools without loading anything. Neither can discover
 another office's tools or escape a subagent's profile grants. `tool_search` is
 model-only and not callable from codemode.
 
-Loading is serialized, so searches in one tool batch preserve the union of
-matches. `session.ts` records a snapshot in a branch-scoped `mikan.tool_search`
-custom entry; it stays out of the model's text and survives compaction and
-close/reopen. Resume also recovers Pi's persisted active selection if an
-interruption happened before queued discovery metadata entered the branch.
-Each run intersects the saved names with current grants and records any pruning, so restoring an earlier discovery cannot restore revoked
-access. A known MCP tool can still be called from codemode without loading its
+Every search in one tool batch adds its matches, so the batch loads their
+union. The loaded names live in Pi's `pi.agent` document, out of the model's
+text, and survive compaction and close/reopen. Each run offers only the stored
+names that current grants still include, so an earlier discovery cannot
+restore revoked access. A known MCP tool can still be called from codemode without loading its
 schema. Direct calls must wait until a later model request after discovery;
 loading is not a second permission grant.
 

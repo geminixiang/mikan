@@ -193,6 +193,10 @@ function newCommandOptions() {
   };
 }
 
+async function sessionText(file: string): Promise<string> {
+  return JSON.stringify(await (await SessionStore.inspect(file)).getEntries());
+}
+
 describe("ConversationRuntime handleEvent", () => {
   test("single-flights concurrent runner creation for one runtime key", async () => {
     const runner = fakeRunner();
@@ -691,7 +695,7 @@ describe("ConversationRuntime lifecycle", () => {
     const freshFile = tryResolveCurrentSession(office.sessionsDir);
     if (freshFile === null) throw new Error("resetSession did not create a channel session file");
     await syncOnce(freshFile);
-    expect(readFileSync(freshFile, "utf-8")).not.toContain('"text":"old"');
+    expect(await sessionText(freshFile)).not.toContain('"text":"old"');
 
     writeFileSync(
       join(conversationDir, "log.jsonl"),
@@ -699,7 +703,7 @@ describe("ConversationRuntime lifecycle", () => {
       { flag: "a" },
     );
     await syncOnce(freshFile);
-    expect(readFileSync(freshFile, "utf-8")).toContain("new");
+    expect(await sessionText(freshFile)).toContain("new");
   });
 
   test("new resets an idle session immediately", async () => {

@@ -3,6 +3,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SessionStore } from "../sessions/session-store.js";
+import { buildV4Context, readV4Session } from "../migrations/session-v4.js";
+
+function openV4(file: string) {
+  const session = readV4Session(file);
+  return {
+    getSessionId: () => session.header.id,
+    getHeader: () => ({
+      parentSessionId: session.header.parentSessionId,
+      parentSession: session.parentSessionPath,
+      timestamp: new Date(session.header.createdAt).toISOString(),
+      metadata: session.source ? { source: session.source } : undefined,
+    }),
+    getEntries: async () => session.branch,
+    getEntry: async (id: string) => session.branch.find((entry) => entry.id === id),
+    getSessionName: async () => session.name,
+    buildSessionContext: async () => ({ messages: buildV4Context(session.branch) }),
+  };
+}
 import {
   findV3SessionFiles,
   isV3SessionFile,
@@ -65,7 +83,7 @@ describe("migrateSessionFile", () => {
     expect(result.status).toBe("migrated");
     expect(existsSync(`${file}.v3.bak`)).toBe(true);
 
-    const store = await SessionStore.open(file);
+    const store = openV4(file);
     expect(store.getSessionId()).toBe(header.id);
     const storeHeader = store.getHeader();
     expect(storeHeader?.parentSessionId).toBe("parent-id");
@@ -100,7 +118,7 @@ describe("migrateSessionFile", () => {
     ]);
 
     await migrateSessionFile(file);
-    const store = await SessionStore.open(file);
+    const store = openV4(file);
     const context = await store.buildSessionContext();
     expect(context.messages[0]?.role).toBe("compactionSummary");
     expect(context.messages.slice(1).map(textOf)).toEqual(["B", "C", "D"]);
@@ -136,7 +154,7 @@ describe("migrateSessionFile", () => {
     ]);
 
     await migrateSessionFile(file);
-    const store = await SessionStore.open(file);
+    const store = openV4(file);
     expect(await store.getSessionName()).toBe("My thread");
     const context = await store.buildSessionContext();
     expect(context.messages).toHaveLength(2);
@@ -153,7 +171,7 @@ describe("migrateSessionFile", () => {
     ]);
 
     await migrateSessionFile(file);
-    const migratedHeader = SessionStore.readHeader(file);
+    const migratedHeader = openV4(file).getHeader();
     expect(migratedHeader?.metadata).toHaveProperty("source", {
       kind: "platform-history",
       recentDays: 14,
@@ -173,7 +191,7 @@ describe("migrateSessionFile", () => {
     const result = await migrateSessionFile(file);
     expect(result.status).toBe("migrated");
 
-    const store = await SessionStore.inspect(file);
+    const store = openV4(file);
     const context = await store.buildSessionContext();
     expect(context.messages.map(textOf)).toEqual(["latest", "world"]);
   });
@@ -195,7 +213,7 @@ describe("migrateSessionFile", () => {
     const result = await migrateSessionFile(file);
     expect(result.status).toBe("migrated");
 
-    const store = await SessionStore.inspect(file);
+    const store = openV4(file);
     const context = await store.buildSessionContext();
     expect(context.messages.map(textOf)).toEqual(["hello"]);
     expect(await store.getSessionName()).toBe("titled");
@@ -237,7 +255,7 @@ describe("migrateSessionFile", () => {
     const result = await migrateSessionFile(file);
     expect(result.status).toBe("migrated");
 
-    const store = await SessionStore.inspect(file);
+    const store = openV4(file);
     const context = await store.buildSessionContext();
     expect(context.messages.map(textOf)).toEqual(["kept"]);
   });

@@ -18,6 +18,7 @@ import {
   runSubagent,
   SUBAGENT_ABORT_GRACE_MS,
 } from "../harness/subagent.js";
+import { wrapCompactionSummary } from "../sessions/compaction-summary.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import { MikanModels } from "../harness/models.js";
@@ -180,7 +181,10 @@ describe("runSubagent", () => {
   test("backs the normal agent's subagent tool", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "Delegate this", profile: "thinker" })),
+      fauxAssistantMessage(
+        fauxToolCall("subagent", { task: "Delegate this", profile: "thinker" }),
+        { stopReason: "toolUse" },
+      ),
       fauxAssistantMessage("delegated result"),
       fauxAssistantMessage("parent complete"),
     ]);
@@ -251,7 +255,7 @@ describe("runSubagent", () => {
 
   test("returns a bounded timeout while retaining the slot until active cleanup settles", async () => {
     const { models, faux, model } = createFauxSetup();
-    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}), { stopReason: "toolUse" })]);
     let releaseTool: (() => void) | undefined;
     const toolGate = new Promise<void>((resolve) => {
       releaseTool = resolve;
@@ -294,7 +298,7 @@ describe("runSubagent", () => {
 
   test("returns a bounded cancellation while retaining the slot until active cleanup settles", async () => {
     const { models, faux, model } = createFauxSetup();
-    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}), { stopReason: "toolUse" })]);
     let releaseTool: (() => void) | undefined;
     const toolGate = new Promise<void>((resolve) => {
       releaseTool = resolve;
@@ -339,7 +343,7 @@ describe("runSubagent", () => {
 
   test("catches late prompt rejection without releasing usage or the slot twice", async () => {
     const { models, faux, model } = createFauxSetup();
-    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}))]);
+    faux.setResponses([fauxAssistantMessage(fauxToolCall("stuck", {}), { stopReason: "toolUse" })]);
     let rejectTool: ((error: Error) => void) | undefined;
     const toolGate = new Promise<void>((_, reject) => {
       rejectTool = reject;
@@ -444,7 +448,11 @@ describe("runSubagent", () => {
       },
     ]);
     const parentMessages = [
-      { role: "compactionSummary", summary: "existing summary", timestamp: 1 },
+      {
+        role: "user",
+        content: [{ type: "text", text: wrapCompactionSummary("existing summary") }],
+        timestamp: 1,
+      },
       { role: "user", content: [{ type: "text", text: "old turn" }], timestamp: 2 },
       { role: "assistant", content: [{ type: "text", text: "old answer" }], timestamp: 3 },
       { role: "user", content: [{ type: "text", text: "recent turn" }], timestamp: 4 },
@@ -667,7 +675,7 @@ describe("runSubagent", () => {
   test("reports what the run is doing as it happens", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
     const activity: string[] = [];
@@ -708,7 +716,7 @@ describe("runSubagent", () => {
   test("grants only explicitly requested tools", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
 
@@ -733,7 +741,7 @@ describe("runSubagent", () => {
   test("stops when the subagent exceeds its turn budget", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "ping" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("should not run"),
     ]);
 
@@ -799,7 +807,7 @@ describe("runSubagent", () => {
     const { models, faux, model } = createFauxSetup();
     let systemPrompt = "";
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "hi" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "hi" }), { stopReason: "toolUse" }),
       (context) => {
         systemPrompt = getCurrentSystemPrompt(context.messages);
         return fauxAssistantMessage("done");
@@ -822,7 +830,7 @@ describe("runSubagent", () => {
   test("completes after invoking a profile-granted tool", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("echo", { text: "README" })),
+      fauxAssistantMessage(fauxToolCall("echo", { text: "README" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("verified"),
     ]);
 
@@ -938,7 +946,7 @@ describe("runSubagent", () => {
   test("prevents a subagent tool from recursively starting another subagent", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("nested", {})),
+      fauxAssistantMessage(fauxToolCall("nested", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage("outer complete"),
     ]);
     let nestedError = "";

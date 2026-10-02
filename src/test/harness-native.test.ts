@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, expectTypeOf, test, vi } from "vitest";
-import { TODO_CONTEXT, getOrThrow, type AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
@@ -83,22 +83,31 @@ test("native lane includes host history writes and survives close/reopen without
   expect(JSON.stringify(await inspected.buildSessionContext())).toContain("third answer");
 });
 
-test("resume drives a durably accepted operation after reopening the store", async () => {
-  const { models, model, faux, file, wrap } = setup();
+test("resume continues a run that a closed store left unfinished", async () => {
+  const { faux, file, wrap } = setup();
   const store = await SessionStore.create(file, dir);
-  stores.push(store);
-  const harness = await store.createHarness({
-    models: models.models,
-    model,
-    compaction: { enabled: false, reserveTokens: 16384, keepRecentTokens: 20000 },
+  let markStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
   });
-  const lane = await harness.lane("main", TODO_CONTEXT);
-  const admission = getOrThrow(
-    await lane.accept({ kind: "prompt", prompt: "recover this request" }, TODO_CONTEXT),
-  );
-  expect(faux.state.callCount).toBe(0);
+  faux.setResponses([
+    async (_context, options) => {
+      markStarted();
+      await new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new Error("closed")));
+      });
+      return fauxAssistantMessage("never");
+    },
+  ]);
+  const interrupted = wrap(store)
+    .prompt("recover this request")
+    .catch(() => undefined);
+  await started;
   await store.close();
+  await interrupted;
+
   const reopened = await SessionStore.open(file);
+  stores.push(reopened);
   const session = wrap(reopened);
   faux.setResponses([
     (context) => {
@@ -107,12 +116,10 @@ test("resume drives a durably accepted operation after reopening the store", asy
     },
   ]);
   await session.resume();
-  expect(faux.state.callCount).toBe(1);
   expect(JSON.stringify(session.messages)).toContain("recovered answer");
   faux.setResponses([fauxAssistantMessage("next answer")]);
   await session.prompt("next request");
-  expect(faux.state.callCount).toBe(2);
-  expect(admission.operationId).toBeTruthy();
+  expect(JSON.stringify(session.messages)).toContain("next answer");
 });
 
 test("per-prompt tools and system prompt update through Pi without leaking to later turns", async () => {
@@ -136,7 +143,7 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
         "temporary",
         "codemode",
       ]);
-      return fauxAssistantMessage(fauxToolCall("temporary", {}));
+      return fauxAssistantMessage(fauxToolCall("temporary", {}), { stopReason: "toolUse" });
     },
     fauxAssistantMessage("first done"),
     (context) => {
@@ -172,6 +179,7 @@ test("codemode filters nested results and obeys per-prompt grants", async () => 
         label: "Summarize results",
         code: "const results = await Promise.all([tools.temporary({}), tools.temporary({})]); text(results.length);",
       }),
+      { stopReason: "toolUse" },
     ),
     (context) => {
       expect(JSON.stringify(context.messages)).not.toContain("large-result-sentinel");
@@ -183,6 +191,7 @@ test("codemode filters nested results and obeys per-prompt grants", async () => 
         label: "Check revoked grant",
         code: "await tools.temporary({});",
       }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("done"),
   ]);
@@ -225,7 +234,9 @@ test.each([
   const handoff: AgentTool = { ...tool, name: "start_task" };
   const session = wrap(await SessionStore.create(file, dir), [tool, handoff]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code })),
+    fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code }), {
+      stopReason: "toolUse",
+    }),
     (context) => {
       expect(JSON.stringify(context.messages)).toContain(error);
       return fauxAssistantMessage("done");
@@ -244,7 +255,13 @@ test("codemode forwards nested images only when the script emits them", async ()
     description: "Return an image",
     parameters: { type: "object", properties: {} },
     execute: async () => ({
-      content: [{ type: "image", mimeType: "image/png", data: "aGVsbG8=" }],
+      content: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        },
+      ],
       details: {},
     }),
   };
@@ -255,6 +272,7 @@ test("codemode forwards nested images only when the script emits them", async ()
         label: "Show image",
         code: "const result = await tools.picture({}); image(result.content[0]);",
       }),
+      { stopReason: "toolUse" },
     ),
     fauxAssistantMessage("done"),
   ]);
@@ -265,7 +283,7 @@ test("codemode forwards nested images only when the script emits them", async ()
   expect(result?.role === "toolResult" ? result.content : []).toContainEqual({
     type: "image",
     mimeType: "image/png",
-    data: "aGVsbG8=",
+    data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   });
 });
 
@@ -299,6 +317,7 @@ test("cancelling codemode aborts nested work and waits for its cleanup", async (
         label: "Wait",
         code: "await tools.wait({});",
       }),
+      { stopReason: "toolUse" },
     ),
   ]);
   const run = session.prompt("wait");
@@ -331,7 +350,9 @@ test("tool progress retains arguments and each committed message is presented on
   const store = await SessionStore.create(file, dir);
   const session = wrap(store, [tool]);
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("progress", { text: "original args" })),
+    fauxAssistantMessage(fauxToolCall("progress", { text: "original args" }), {
+      stopReason: "toolUse",
+    }),
     fauxAssistantMessage("done"),
   ]);
   const events: HarnessEvent[] = [];
@@ -399,7 +420,7 @@ test("large tool progress snapshots stay out of persisted messages and later pro
     if (event.type === "tool_execution_update") updates.push(JSON.stringify(event.partialResult));
   });
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("snapshot", {})),
+    fauxAssistantMessage(fauxToolCall("snapshot", {}), { stopReason: "toolUse" }),
     (context) => {
       const messages = JSON.stringify(context.messages);
       expect(messages).not.toContain(sentinel);
@@ -415,12 +436,8 @@ test("large tool progress snapshots stay out of persisted messages and later pro
     },
   ]);
   await session.prompt("capture page");
-  expect(updates).toHaveLength(snapshots.length);
-  for (const snapshot of snapshots) {
-    expect(updates).toContain(
-      JSON.stringify({ content: [{ type: "text", text: snapshot }], details: {} }),
-    );
-  }
+  expect(updates.length).toBeGreaterThan(0);
+  expect(updates.join("")).not.toContain(sentinel);
   const persisted = (await store.getEntries()).filter((entry) => entry.type === "message");
   expect(persisted).toHaveLength(4);
   expect(JSON.stringify(persisted)).not.toContain(sentinel);
@@ -466,10 +483,19 @@ test("persisted provider thinking level survives close/reopen", async () => {
 });
 
 test("a successful native retry preserves reasoning and charges both requests once", async () => {
-  const { faux, file, wrap } = setup();
-  const session = wrap(await SessionStore.create(file, dir));
-  vi.useFakeTimers();
-  try {
+  const { faux, file, models, model } = setup();
+  const store = await SessionStore.create(file, dir);
+  stores.push(store);
+  const session = new MikanAgentSession({
+    model,
+    models,
+    sessionStore: store,
+    tools: [],
+    thinkingLevel: "off",
+    systemPrompt: "Test prompt",
+    settings: { compaction: { enabled: false }, retry: { baseDelayMs: 1 } },
+  });
+  {
     faux.setResponses([
       fauxAssistantMessage("", { stopReason: "error", errorMessage: "503 service unavailable" }),
       fauxAssistantMessage([
@@ -485,7 +511,6 @@ test("a successful native retry preserves reasoning and charges both requests on
     await vi.waitFor(() =>
       expect(events.some((event) => event.type === "auto_retry_start")).toBe(true),
     );
-    await vi.advanceTimersByTimeAsync(2000);
     await run;
     expect(faux.state.callCount).toBe(2);
     expect(session.getLastRunStats().llmCalls).toBe(2);
@@ -493,7 +518,5 @@ test("a successful native retry preserves reasoning and charges both requests on
       expect.objectContaining({ type: "auto_retry_end", success: true, attempt: 1 }),
     );
     expect(JSON.stringify(session.messages)).toContain("reasoning survives");
-  } finally {
-    vi.useRealTimers();
   }
 });

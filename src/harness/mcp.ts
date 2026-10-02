@@ -236,14 +236,13 @@ async function connectServer(
         label: `${name}: ${mcpTool.name}`,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
         parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),
-        execute: async (...args: Parameters<MikanHarnessTool["execute"]>) => {
-          const [, params, , toolContext, , context] = args;
+        execute: async (params, api, context) => {
           const result = await client.callTool(
             mcpTool.name,
             ownsLabel ? (params as Record<string, unknown>) : withoutLabel(params),
             { timeoutMs: CALL_TIMEOUT_MS, signal: context.abortSignal },
           );
-          return guardMcpToolResult(result, toolContext.env, context);
+          return guardMcpToolResult(result, api.env, context);
         },
       });
     });

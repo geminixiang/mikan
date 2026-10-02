@@ -9,33 +9,33 @@ state is office-keyed — but the **session key itself stays a raw platform
 value** (`conversationId[":"suffix]`). Office keys name directories; session
 keys name conversations as the platform reports them.
 
-Session files use Pi 0.85's current v4 JSONL format, whose persisted header
-has `v: 4` and `storageVersion: 1`. mikan-specific metadata is a durable
-namespaced value under `mikan/metadata`, not a header field. Runtime opening
-accepts only this current format; `mikan migrate` converts 0.5.3 v3 files
-(see `src/migrations/`).
+A session is a private `v: 5` header file beside a pi-durable JSONL storage
+directory, `<session>.durable` (ADR 0017). The header carries what listing and
+lineage need without opening storage: session ID, working directory, creation
+time, parent session, and the legacy `source` marker. The session's thread is
+the storage's root conversation; its name and last run record are the
+`mikan.session` document, and host bookkeeping entries are `mikan.custom`
+entries. Runtime opening accepts only this format; `mikan migrate` converts
+older files (see `src/migrations/`).
 
 ## Keeping up with Pi
 
-Session integration must stay easy to upgrade: use Pi's public session/harness
-interfaces, not private `dist` imports, copied execution logic, or speculative
-compatibility layers. Pi owns entries, transactions, live compaction, and recovery;
-mikan owns Office paths, platform history, and resource lifetime.
+Session integration must stay easy to upgrade: use pi-durable's public storage,
+Harness, and conversation interfaces, not private `dist` imports, copied
+execution logic, or speculative compatibility layers. Pi owns entries, commits,
+compaction, and recovery; mikan owns Office paths, platform history, and
+resource lifetime.
 
-Two small format-dependent readers remain because Pi 0.86 does not publicly
-export its JSONL header codec or session context projector:
+`SessionStore` opens one Harness per storage with late-bound models, settings,
+and execution environment, so stores opened before a run can read and write
+bookkeeping without a model. Entry IDs are qualified with the session ID because
+durable IDs restart at 1 in every storage. Inspection copies the storage
+directory first, because one process owns a storage and nothing may repair the
+live copy.
 
-- The synchronous header/metadata reader serves path and lineage
-  callers. Storage version and metadata types come from Pi's public exports;
-  the JSONL envelope stays local until Pi exposes it.
-- The read-only context projection serves inspection and mikan's transcript
-  view, never the LLM execution loop. `session-file-store.test.ts` compares it
-  with a real Pi harness's `transform_context` input, including compaction and
-  excluded assistant messages. Replace it with a public upstream projector
-  when one becomes available; do not add a private-import workaround.
-
-Tests seed structural entries through Pi's public mutation interface. There is
-no production `appendCompaction()` helper solely for test fixture construction.
+`compaction-summary.ts` recognizes the user message pi-durable wraps a
+compaction summary in; the wrapper text is not exported upstream, so
+`harness-runner.test.ts` checks it against a real compaction.
 
 ## Contracts
 

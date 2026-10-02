@@ -1,12 +1,10 @@
 import { Type, type Static } from "typebox";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import type { MikanHarnessTool, ToolSearchOptions, ToolSearchToolOptions } from "../types.js";
-import { isRecord } from "../../unknown-values.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 import { tagHarnessTool } from "./pi-tools.js";
 
 export const TOOL_SEARCH_TOOL = "tool_search";
-export const TOOL_SEARCH_STATE = "mikan.tool_search";
 
 const searchSchema = Type.Object({
   label: LABEL_PARAMETER,
@@ -55,16 +53,6 @@ export function searchTools(options: ToolSearchOptions): MikanHarnessTool[] {
     .map(({ tool }) => tool);
 }
 
-export function readLoadedToolNames(data: unknown): string[] {
-  if (
-    !isRecord(data) ||
-    !Array.isArray(data.tools) ||
-    !data.tools.every((name) => typeof name === "string")
-  )
-    return [];
-  return data.tools;
-}
-
 export function createToolSearchTool(options: ToolSearchToolOptions): MikanHarnessTool {
   const namespaces = [...new Set(options.tools.map((tool) => tool.namespace).filter(Boolean))];
   return tagHarnessTool({
@@ -72,8 +60,8 @@ export function createToolSearchTool(options: ToolSearchToolOptions): MikanHarne
     label: "Tool search",
     description: `Search authorized MCP tools that are not declared yet, then load matching schemas for the next model call. Use descriptive keywords or an exact tool name. Already loaded tools stay available. This searches tool metadata, not web pages or repository content. Available MCP namespaces: ${namespaces.join(", ") || "none"}.`,
     parameters: searchSchema,
-    execute: async (...call: Parameters<MikanHarnessTool["execute"]>) => {
-      const [id, params, , , , context] = call;
+    execute: async (params, api, context) => {
+      const id = api.callId;
       context.abortSignal?.throwIfAborted();
       const args: Static<typeof searchSchema> = validateToolArguments(
         { name: TOOL_SEARCH_TOOL, description: "", parameters: searchSchema },
@@ -103,6 +91,7 @@ export function createToolSearchTool(options: ToolSearchToolOptions): MikanHarne
           },
         ],
         details: { loaded },
+        control: loaded.length > 0 ? { addTools: loaded } : undefined,
       };
     },
   });

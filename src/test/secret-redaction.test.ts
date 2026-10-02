@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { TODO_CONTEXT, type AgentHarnessToolInvocation } from "@earendil-works/pi-agent-core";
+import { runTestTool } from "./tool-api.js";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { HostExecutor } from "../sandbox/host.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
@@ -12,14 +12,6 @@ import {
   withSecretRedaction,
   type SecretEntry,
 } from "../harness/tools/secret-redaction.js";
-
-const invocation: AgentHarnessToolInvocation = {
-  invocationId: "inv-1",
-  operationId: "op-1",
-  turnId: "turn-1",
-  getMemo: async () => undefined,
-  setMemo: async () => {},
-};
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content
@@ -100,14 +92,7 @@ describe("withSecretRedaction identity preservation", () => {
     const packTools = [harnessTool];
     const modelTools = [harnessTool].map(withSecretRedaction);
     expect(isHarnessTool(packTools[0])).toBe(true);
-    const result = await modelTools[0]!.execute(
-      "call-1",
-      {},
-      () => {},
-      undefined as never,
-      invocation,
-      TODO_CONTEXT,
-    );
+    const result = await runTestTool(modelTools[0]!, {}, {});
     const text = (result.content[0] as { text?: string }).text;
     expect(text).not.toContain(SENTINEL);
     expect(packTools[0]).toBe(modelTools[0]);
@@ -144,14 +129,7 @@ describe("withSecretRedaction", () => {
       arguments: { command: "echo $OPENROUTER_API_KEY", label: "print secret" },
     });
 
-    const result = await bash.execute(
-      "call-1",
-      validated,
-      () => {},
-      { env },
-      invocation,
-      TODO_CONTEXT,
-    );
+    const result = await runTestTool(bash, validated, { env });
 
     const text = textOf(result as never);
     expect(text).not.toContain(SENTINEL_VALUE);
@@ -168,14 +146,7 @@ describe("withSecretRedaction", () => {
       arguments: { command: "echo hello-from-bash", label: "say hi" },
     });
 
-    const result = await bash.execute(
-      "call-2",
-      validated,
-      () => {},
-      { env },
-      invocation,
-      TODO_CONTEXT,
-    );
+    const result = await runTestTool(bash, validated, { env });
 
     expect(textOf(result as never)).toContain("hello-from-bash");
   });
@@ -190,8 +161,6 @@ describe("withSecretRedaction", () => {
       arguments: { command: "exit 7", label: "fail" },
     });
 
-    await expect(
-      bash.execute("call-3", validated, () => {}, { env }, invocation, TODO_CONTEXT),
-    ).rejects.toThrow(/exit/i);
+    await expect(runTestTool(bash, validated, { env })).rejects.toThrow(/exit/i);
   });
 });

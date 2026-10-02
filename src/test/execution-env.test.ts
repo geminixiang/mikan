@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { TODO_CONTEXT } from "@earendil-works/pi-agent-core";
+import { TEST_CONTEXT as TODO_CONTEXT } from "./tool-api.js";
 import { HostExecutor } from "../sandbox/host.js";
 import type { Executor } from "../sandbox/types.js";
 import { execReadFile, execReadFileBase64, execWriteFile } from "../sandbox/utils.js";
@@ -191,7 +191,7 @@ describe("sandbox execution env", () => {
     expect(okResult.ok).toBe(true);
     if (okResult.ok) {
       expect(okResult.value.exitCode).toBe(0);
-      expect(okResult.value.truncation.truncated).toBe(false);
+      expect(okResult.value.spillPath).toBeUndefined();
     }
 
     const failure = await env.exec("exit 3", {}, TODO_CONTEXT);
@@ -199,15 +199,15 @@ describe("sandbox execution env", () => {
     if (failure.ok) expect(failure.value.exitCode).toBe(3);
   });
 
-  test("exec truncates to the tail and spills the full output", async () => {
+  test("exec streams output and spills it past the thresholds", async () => {
     const env = onlyShellEnv(dir);
     const updates: string[] = [];
     const result = await env.exec(
       "seq 1 5000",
       {
-        capture: { limits: { maxLines: 10, maxBytes: 1_000_000, retain: "tail" }, spill: true },
-        onUpdate: (update) => {
-          if (update.kind === "replace") updates.push(update.output.text);
+        spill: { afterLines: 10, afterBytes: 1_000_000 },
+        onOutput: (text) => {
+          updates.push(text);
         },
       },
       TODO_CONTEXT,
@@ -215,10 +215,8 @@ describe("sandbox execution env", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.truncation.truncated).toBe(true);
     expect(result.value.spillPath).toBeTruthy();
-    expect(updates.length).toBe(1);
-    expect(updates[0]).toContain("5000");
+    expect(updates.join("")).toContain("5000");
 
     const spilled = await env.readTextFile(result.value.spillPath!, TODO_CONTEXT);
     expect(spilled.ok).toBe(true);

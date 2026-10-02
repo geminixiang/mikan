@@ -76,6 +76,11 @@ function makeAssistantMessage(text: string): AssistantMessage {
   };
 }
 
+async function sessionText(sessionFile: string): Promise<string> {
+  const inspection = await SessionStore.inspect(sessionFile);
+  return JSON.stringify(await inspection.getEntries());
+}
+
 function countSessionHeaders(sessionFile: string): number {
   return parseSessionEntries(sessionFile).filter((entry) => entry.kind === "header").length;
 }
@@ -216,7 +221,7 @@ describe("tryResolveThreadSession", () => {
     const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     const created = await seedManagedSession(threadFile, sessionDir, channelDir, "thread msg");
     expect(tryResolveThreadSession(threadFile)).toBe(created);
-    expect(readFileSync(created, "utf-8")).toContain("thread msg");
+    expect(await sessionText(created)).toContain("thread msg");
   });
 });
 
@@ -275,26 +280,19 @@ describe("managed session initialization", () => {
     expect(countSessionHeaders(sessionFile)).toBe(1);
   });
 
-  test("top-level agent runs replace platform-history current with a live session", () => {
+  test("top-level agent runs replace platform-history current with a live session", async () => {
     const sessionDir = office.sessionsDir;
     mkdirSync(sessionDir, { recursive: true });
     const historyFile = join(sessionDir, "history.jsonl");
     writeFileSync(
       historyFile,
       `${JSON.stringify({
-        v: 4,
+        v: 5,
         kind: "header",
         id: "history",
-        storageVersion: 1,
         createdAt: Date.now(),
         cwd: channelDir,
-      })}\n${JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: 1,
-        namespace: "mikan",
-        key: "metadata",
-        value: { source: { kind: "platform-history", file: "log.jsonl" } },
+        source: { kind: "platform-history", file: "log.jsonl" },
       })}\n`,
     );
     writeFileSync(join(sessionDir, "current"), "history.jsonl");
@@ -305,7 +303,7 @@ describe("managed session initialization", () => {
     expect(readFileSync(join(sessionDir, "current"), "utf-8").trim()).toBe(
       liveFile.split("/").pop(),
     );
-    expect(readFileSync(liveFile, "utf-8")).not.toContain("platform-history");
+    expect(await sessionText(liveFile)).not.toContain("platform-history");
   });
 
   test("creates a fixed-path thread session with the provided cwd", async () => {
@@ -343,7 +341,7 @@ describe("fixed thread sessions", () => {
     await threadSM.appendMessage(makeAssistantMessage("thread reply"));
 
     expect(threadSM.getSessionId()).not.toBe(channelSessionId);
-    expect(readFileSync(threadFile, "utf-8")).not.toContain("hello channel");
+    expect(await sessionText(threadFile)).not.toContain("hello channel");
   });
 
   test("second thread access reuses the same fixed thread file", async () => {
@@ -361,7 +359,7 @@ describe("fixed thread sessions", () => {
 
     const reopened = await openManagedSession(existing!, channelDir);
     expect(reopened.getSessionId()).toBe(threadSessionId);
-    expect(readFileSync(existing!, "utf-8")).toContain("thread msg");
+    expect(await sessionText(existing!)).toContain("thread msg");
   });
 
   test("different threads get independent session IDs", async () => {
@@ -431,7 +429,7 @@ describe("long-lived session scopes", () => {
     });
 
     expect(scope.contextFile).toBe(threadFile);
-    expect(readFileSync(threadFile, "utf-8")).toContain("thread context");
+    expect(await sessionText(threadFile)).toContain("thread context");
   });
 
   test("keeps old top-level context out of thread sessions after bootstrap", async () => {
@@ -468,7 +466,7 @@ describe("long-lived session scopes", () => {
     });
 
     expect(reused.contextFile).toBe(created.contextFile);
-    const content = readFileSync(reused.contextFile, "utf-8");
+    const content = await sessionText(reused.contextFile);
     expect(content).toContain("thread root");
     expect(content).toContain("thread reply");
     expect(content).not.toContain("old top-level context");
@@ -500,11 +498,10 @@ describe("long-lived session scopes", () => {
     });
 
     expect(reused.contextFile).toBe(resetFile);
-    expect(readFileSync(reused.contextFile, "utf-8")).not.toContain("old log only");
+    expect(await sessionText(reused.contextFile)).not.toContain("old log only");
+    const entries = await (await SessionStore.inspect(reused.contextFile)).getEntries();
     expect(
-      parseSessionEntries(reused.contextFile).some(
-        (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
-      ),
+      entries.some((entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync"),
     ).toBe(true);
   });
 });
@@ -525,7 +522,7 @@ describe("session-scoped /new reset", () => {
     expect(newChannelFile).not.toBe(channelFile);
     expect(tryResolveCurrentSession(sessionDir)).toBe(newChannelFile);
     expect(tryResolveThreadSession(threadFile)).toBe(threadFile);
-    expect(readFileSync(threadFile, "utf-8")).toContain("thread");
+    expect(await sessionText(threadFile)).toContain("thread");
   });
 
   test("thread /new recovers a corrupt fixed-path session while preserving the raw file", async () => {
@@ -571,13 +568,15 @@ describe("session-scoped /new reset", () => {
       cwd: channelDir,
     });
 
-    const archive = readdirSync(sessionDir).find((name) => name.includes(oldThreadId.slice(0, 8)));
+    const archive = readdirSync(sessionDir).find(
+      (name) => name.includes(oldThreadId.slice(0, 8)) && name.endsWith(".jsonl"),
+    );
     expect(archive).toBeDefined();
-    expect(readFileSync(join(sessionDir, archive!), "utf-8")).toContain("thread1");
+    expect(await sessionText(join(sessionDir, archive!))).toContain("thread1");
     expect(tryResolveThreadSession(thread1File)).toBe(thread1File);
-    expect(readFileSync(thread1File, "utf-8")).not.toContain("thread1");
-    expect(readFileSync(thread2File, "utf-8")).toContain("thread2");
-    expect(readFileSync(resolveManagedSessionFile(sessionDir, channelDir), "utf-8")).toContain(
+    expect(await sessionText(thread1File)).not.toContain("thread1");
+    expect(await sessionText(thread2File)).toContain("thread2");
+    expect(await sessionText(resolveManagedSessionFile(sessionDir, channelDir))).toContain(
       "channel",
     );
     expect(countSessionHeaders(thread1File)).toBe(1);
@@ -599,7 +598,7 @@ describe("persistence across restart", () => {
     await seedManagedSession(threadFile, sessionDir, channelDir, "thread specific");
 
     expect(tryResolveThreadSession(threadFile)).toBe(threadFile);
-    expect(readFileSync(threadFile, "utf-8")).toContain("thread specific");
+    expect(await sessionText(threadFile)).toContain("thread specific");
   });
 });
 

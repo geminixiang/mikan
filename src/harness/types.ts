@@ -6,19 +6,16 @@ import type { resolveConversationSettings } from "../settings/index.js";
 import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
+import type { AgentEvent, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { Context, JsonValue } from "@earendil-works/chord";
 import type {
-  AgentEvent,
-  AgentHarnessTool,
-  AgentTool,
-  BranchSummaryEntry,
-  CompactionEntry,
-  CustomEntry,
-  Context,
-  ExecutionToolContext,
-  ThinkingLevel,
-  CompactionSettings,
-  Skill,
-} from "@earendil-works/pi-agent-core";
+  CompactionPolicy,
+  ToolControl,
+  ToolExecutionApi,
+  ToolRegistration,
+} from "@earendil-works/pi-durable";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { JsonValue as ModelJsonValue, TextContent } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
 import type { Static, TSchema } from "typebox";
@@ -161,8 +158,6 @@ export interface PreparedRunContext {
   triggerAttribution?: string;
 }
 
-export type { BranchSummaryEntry, CompactionEntry, CustomEntry };
-
 export interface SubagentModelSpec {
   provider: string;
   id: string;
@@ -256,7 +251,12 @@ export interface CreateMikanModelsOptions {
   modelsJsonPath?: string;
 }
 
-export interface MikanSkill extends Skill {
+export interface MikanSkill {
+  name: string;
+  description: string;
+  content: string;
+  filePath: string;
+  disableModelInvocation?: boolean;
   baseDir: string;
   source: string;
   inline?: boolean;
@@ -282,6 +282,8 @@ export interface BudgetSettings {
   maxDurationMs?: number;
   maxLlmCalls?: number;
 }
+
+export type CompactionSettings = CompactionPolicy;
 
 export interface HarnessSettings {
   compaction: CompactionSettings;
@@ -367,9 +369,25 @@ export interface RunEventPublisher {
   publish(address: OfficeAddress, sessionKey: string, event: RunEvent): void;
 }
 
-export type MikanHarnessTool = AgentHarnessTool<ExecutionToolContext> & {
+export interface MikanToolContext {
+  env: ExecutionEnv;
+}
+
+export interface MikanToolResult {
+  content?: (TextContent | ImageContent)[];
+  details?: JsonValue;
+  isError?: boolean;
+  structuredContent?: ModelJsonValue;
+  usage?: Usage;
+  control?: ToolControl;
+}
+
+export type MikanHarnessTool = Omit<ToolRegistration, "execute"> & {
+  label: string;
+  outputSchema?: TSchema;
   exposure?: "deferred";
   namespace?: string;
+  execute(args: unknown, api: ToolExecutionApi, context: Context): Promise<MikanToolResult>;
 };
 
 export interface ToolSearchOptions {
@@ -390,7 +408,7 @@ export interface CodemodeToolOptions {
   executeNested: (
     tool: MikanHarnessTool,
     args: Parameters<MikanHarnessTool["execute"]>,
-  ) => ReturnType<MikanHarnessTool["execute"]>;
+  ) => Promise<MikanToolResult>;
 }
 
 export type MikanToolInput = AgentTool | MikanHarnessTool;
@@ -400,7 +418,7 @@ export interface MikanAgentSessionOptions {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: MikanToolInput[];
-  toolContext?: ExecutionToolContext;
+  toolContext?: MikanToolContext;
   models: MikanModels;
   sessionStore: SessionStore;
   settings?: {

@@ -1,6 +1,7 @@
 import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
-import type { AgentMessage, Entry, MessageEntry } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
 
@@ -31,11 +32,38 @@ export interface SessionContext {
   messages: AgentMessage[];
 }
 
-export type SessionMessageEntry = MessageEntry;
+interface SessionEntryBase {
+  id: string;
+  parentId: string | null;
+  timestamp: number;
+}
 
-export type SessionEntry = Entry;
+export interface SessionMessageEntry extends SessionEntryBase {
+  type: "message";
+  message: AgentMessage;
+}
 
-export const CURRENT_SESSION_VERSION = 4;
+export interface SessionCustomEntry extends SessionEntryBase {
+  type: "custom";
+  customType: string;
+  data?: JsonValue;
+}
+
+export interface SessionCompactionEntry extends SessionEntryBase {
+  type: "compaction";
+  summary: string;
+  firstKeptEntryId?: string;
+}
+
+export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCompactionEntry;
+
+export interface SessionRunRecord {
+  startedAt: number;
+  endedAt?: number;
+  status?: "completed" | "aborted" | "failed";
+}
+
+export const CURRENT_SESSION_VERSION = 5;
 
 export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
 
@@ -43,13 +71,14 @@ export interface SessionCreateInfo {
   id?: string;
   parentSession?: string;
   parentSessionId?: string;
+  source?: { [key: string]: JsonValue };
 }
 
 export interface SessionInspection {
   getHeader(): SessionHeader;
-  getEntries(): Promise<Entry[]>;
+  getEntries(): Promise<SessionEntry[]>;
   getSessionName(): Promise<string | undefined>;
-  getBranch(fromId?: string): Promise<Entry[]>;
+  getBranch(fromId?: string): Promise<SessionEntry[]>;
   buildSessionContext(): Promise<SessionContext>;
 }
 

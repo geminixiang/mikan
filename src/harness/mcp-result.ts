@@ -1,14 +1,8 @@
 import { randomBytes } from "node:crypto";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
-  formatSize,
-  truncateHead,
-  type AgentToolResult,
-  type Context,
-  type ExecutionEnv,
-} from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/chord";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { MikanToolResult } from "./types.js";
 import { redactSecrets } from "./tools/secret-redaction.js";
 import { isRecord } from "../unknown-values.js";
 
@@ -32,9 +26,11 @@ export interface McpCallResult {
 const SPILL_DIR = [".mikan", "mcp-output"];
 const NOTICE_RESERVE_BYTES = 640;
 const NOTICE_RESERVE_LINES = 4;
+const TOOL_OUTPUT_MAX_BYTES = 50 * 1024;
+const TOOL_OUTPUT_MAX_LINES = 2000;
 const RESULT_LIMITS: McpTextLimits = {
-  maxBytes: DEFAULT_MAX_BYTES - NOTICE_RESERVE_BYTES,
-  maxLines: DEFAULT_MAX_LINES - NOTICE_RESERVE_LINES,
+  maxBytes: TOOL_OUTPUT_MAX_BYTES - NOTICE_RESERVE_BYTES,
+  maxLines: TOOL_OUTPUT_MAX_LINES - NOTICE_RESERVE_LINES,
 };
 
 interface DigestLevel {
@@ -149,10 +145,21 @@ function sliceToBytes(text: string, maxBytes: number): string {
 }
 
 function headTruncate(text: string, limits: McpTextLimits): string {
-  const truncation = truncateHead(text, limits);
-  return truncation.firstLineExceedsLimit
-    ? sliceToBytes(text, limits.maxBytes)
-    : truncation.content;
+  const kept: string[] = [];
+  let bytes = 0;
+  for (const line of text.split("\n").slice(0, limits.maxLines)) {
+    const lineBytes = Buffer.byteLength(line, "utf8") + (kept.length > 0 ? 1 : 0);
+    if (bytes + lineBytes > limits.maxBytes) break;
+    kept.push(line);
+    bytes += lineBytes;
+  }
+  return kept.length === 0 ? sliceToBytes(text, limits.maxBytes) : kept.join("\n");
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
 export function boundMcpText(text: string, limits: McpTextLimits): BoundedMcpText {
@@ -185,10 +192,11 @@ function readableSpill(text: string): { text: string; extension: "json" | "txt" 
 }
 
 async function spillFullResult(
-  env: ExecutionEnv,
+  env: ExecutionEnv | undefined,
   result: string,
   context: Context,
 ): Promise<string | undefined> {
+  if (!env) return undefined;
   const { text, extension } = readableSpill(result);
   const path = await env.joinPath(
     [env.cwd, ...SPILL_DIR, `${randomBytes(8).toString("hex")}.${extension}`],
@@ -215,9 +223,9 @@ function truncationNotice(
 
 export async function guardMcpToolResult(
   result: McpCallResult,
-  env: ExecutionEnv,
+  env: ExecutionEnv | undefined,
   context: Context,
-): Promise<AgentToolResult<undefined>> {
+): Promise<MikanToolResult> {
   const blocks = mcpResultContent(result).map((block) =>
     block.type === "text" ? Object.assign(block, { text: compactMcpText(block.text) }) : block,
   );

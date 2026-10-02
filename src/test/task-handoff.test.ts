@@ -55,7 +55,9 @@ function setup() {
 test("handoff terminates without a followup model call", async () => {
   const { session, faux, start } = setup();
   faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("start_task", { message: "On it", task: "investigate" })),
+    fauxAssistantMessage(fauxToolCall("start_task", { message: "On it", task: "investigate" }), {
+      stopReason: "toolUse",
+    }),
   ]);
   await session.prompt("work", { allowTaskHandoff: true });
   expect(start).toHaveBeenCalledWith("On it", "investigate");
@@ -65,8 +67,10 @@ test("mixed handoff batch blocks every effect before allowing a corrected single
   const { session, faux, start, effect } = setup();
   const handoff = fauxToolCall("start_task", { message: "On it", task: "investigate" });
   faux.setResponses([
-    fauxAssistantMessage([handoff, fauxToolCall("effect", {})]),
-    fauxAssistantMessage(fauxToolCall("start_task", { message: "On it", task: "investigate" })),
+    fauxAssistantMessage([handoff, fauxToolCall("effect", {})], { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("start_task", { message: "On it", task: "investigate" }), {
+      stopReason: "toolUse",
+    }),
   ]);
   await session.prompt("work", { allowTaskHandoff: true });
   expect(start).toHaveBeenCalledTimes(1);

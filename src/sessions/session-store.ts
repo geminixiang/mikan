@@ -1,70 +1,103 @@
 import {
-  closeSync,
+  chmodSync,
+  cpSync,
   existsSync,
-  fstatSync,
-  ftruncateSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
-  readSync,
   realpathSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { JsonValue } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Message, Models } from "@earendil-works/pi-ai";
 import {
-  AgentHarness,
-  laneState,
-  operationResult,
-  createBranchSummaryMessage,
-  createCompactionSummaryMessage,
-  createCustomMessage,
-  JsonlSessionRepo,
-  JSONL_STORAGE_VERSION,
-  MemorySessionRepo,
-  TODO_CONTEXT,
-  uuidv7,
-  value,
-} from "@earendil-works/pi-agent-core";
-import type {
-  AgentHarnessOptions,
-  AgentLane,
-  AgentMessage,
-  Branch,
-  Entry,
-  JsonlSessionMetadata,
-  JsonValue,
-  Session,
-  SessionMetadata,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+  AssistantEntry,
+  CompactionEntry,
+  Harness,
+  LiveDoc,
+  MemoryStorage,
+  ToolResultEntry,
+  UserEntry,
+  createRegistry,
+  defineDoc,
+  defineEntry,
+  type Conversation,
+  type EntryRecord,
+  type HarnessOptions,
+  type HarnessSettings,
+  type JsonObject,
+  type Registry,
+  type Storage,
+} from "@earendil-works/pi-durable";
+import { openNodeJsonlStorage } from "@earendil-works/pi-durable/storage/jsonl/node";
 import { atomicWritePrivateFile } from "../file-guards.js";
 import type {
   SessionContext,
   SessionCreateInfo,
+  SessionEntry,
   SessionHeader,
   SessionInspection,
+  SessionRunRecord,
 } from "./types.js";
 import { CURRENT_SESSION_VERSION } from "./types.js";
 import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
-import { isRecord } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
-interface CurrentSessionHeader extends SessionMetadata {
+const context = BACKGROUND_CONTEXT;
+const ENTRY_PAGE_SIZE = 500;
+
+interface CurrentSessionHeader {
   v: typeof CURRENT_SESSION_VERSION;
   kind: "header";
+  id: string;
+  createdAt: number;
   cwd: string;
-  nextSeq?: number;
+  parentSessionId?: string;
+  parentSession?: string;
+  source?: JsonObject;
 }
 
-type MikanSessionMetadata = Record<string, JsonValue>;
+type SessionDocState = Partial<{
+  name: string;
+  run: Partial<Pick<SessionRunRecord, "endedAt" | "status">> & Pick<SessionRunRecord, "startedAt">;
+}>;
 
-const MIKAN_METADATA = value<MikanSessionMetadata>("mikan", "metadata");
+const SessionDoc = defineDoc<SessionDocState>({
+  kind: "mikan.session",
+  version: 1,
+  scope: "conversation",
+  history: "latest",
+  fork: "initial",
+  initial: () => ({}),
+});
+
+const CustomSessionEntry = defineEntry<{
+  customType: string;
+  data: JsonValue;
+  timestamp: number;
+}>("mikan.custom");
+
+export interface SessionHarnessBinding {
+  models: Models;
+  env?: HarnessOptions["env"];
+  settings?: HarnessSettings;
+  onReport?: (error: unknown) => void;
+}
+
+export interface AttachedSessionHarness {
+  harness: Harness;
+  root: Conversation;
+  registry: Registry;
+}
+
 const activeWriterKeys = new Map<string, string>();
 
 function canonicalSessionPath(path: string): string {
@@ -113,39 +146,28 @@ function promotePendingWriter(pathKey: string, path: string): string {
   return inodeKey;
 }
 
-function toDurable<T>(input: T): T {
-  return input === undefined ? input : (JSON.parse(JSON.stringify(input)) as T);
+function toJson(input: unknown): JsonValue {
+  if (input === undefined) return null;
+  const copy: JsonValue = JSON.parse(JSON.stringify(input));
+  return copy;
+}
+
+function durableMessage(message: Message): Message {
+  const copy: Message = JSON.parse(JSON.stringify(message));
+  return copy;
 }
 
 class SessionFormatError extends Error {}
 
-const HEADER_CHUNK_SIZE = 4096;
-const MAX_HEADER_BYTES = 1024 * 1024;
+export function sessionStorageDir(sessionFile: string): string {
+  const stem = sessionFile.endsWith(".jsonl")
+    ? sessionFile.slice(0, -".jsonl".length)
+    : sessionFile;
+  return `${stem}.durable`;
+}
 
-function readHeaderLine(filePath: string): string {
-  const fd = openSync(filePath, "r");
-  const chunks: Buffer[] = [];
-  let total = 0;
-  try {
-    while (total < MAX_HEADER_BYTES) {
-      const chunk = Buffer.allocUnsafe(Math.min(HEADER_CHUNK_SIZE, MAX_HEADER_BYTES - total));
-      const bytesRead = readSync(fd, chunk, 0, chunk.length, null);
-      if (bytesRead === 0) break;
-      const data = chunk.subarray(0, bytesRead);
-      const newline = data.indexOf(0x0a);
-      chunks.push(newline < 0 ? data : data.subarray(0, newline));
-      total += newline < 0 ? bytesRead : newline;
-      if (newline >= 0) break;
-    }
-  } finally {
-    closeSync(fd);
-  }
-  if (total >= MAX_HEADER_BYTES) {
-    throw new SessionFormatError(
-      `Session file header exceeds ${MAX_HEADER_BYTES} bytes: ${filePath}`,
-    );
-  }
-  return Buffer.concat(chunks).toString("utf-8");
+function readHeaderText(filePath: string): string {
+  return readFileSync(filePath, "utf-8").split("\n", 1)[0] ?? "";
 }
 
 function parseCurrentHeader(filePath: string, firstLine: string): CurrentSessionHeader {
@@ -157,136 +179,54 @@ function parseCurrentHeader(filePath: string, firstLine: string): CurrentSession
   } catch {
     throw new SessionFormatError(`Session file header is not valid JSON: ${filePath}`);
   }
-  if (!isMetadataRecord(parsed)) {
+  if (!isRecord(parsed) || parsed.kind !== "header") {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  const record = parsed;
-  if (
-    record.kind !== "header" ||
-    record.v !== CURRENT_SESSION_VERSION ||
-    record.storageVersion !== JSONL_STORAGE_VERSION ||
-    typeof record.id !== "string" ||
-    typeof record.createdAt !== "number" ||
-    typeof record.cwd !== "string"
-  ) {
+  if (parsed.v !== CURRENT_SESSION_VERSION) {
+    throw new SessionFormatError(
+      `Session file uses format v${String(parsed.v)}; run \`mikan migrate\`: ${filePath}`,
+    );
+  }
+  const { id, createdAt, cwd, parentSessionId, parentSession, source } = parsed;
+  if (typeof id !== "string" || typeof createdAt !== "number" || typeof cwd !== "string") {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  return parsed as unknown as CurrentSessionHeader;
-}
-
-function metadataFromHeader(header: CurrentSessionHeader, path: string): JsonlSessionMetadata {
   return {
-    id: header.id,
-    createdAt: header.createdAt,
-    storageVersion: header.storageVersion,
-    cwd: header.cwd,
-    path,
-    modifiedAt: 0,
-    parentSessionId: header.parentSessionId,
-    legacyParentSessionPath: header.legacyParentSessionPath,
+    v: CURRENT_SESSION_VERSION,
+    kind: "header",
+    id,
+    createdAt,
+    cwd,
+    parentSessionId: typeof parentSessionId === "string" ? parentSessionId : undefined,
+    parentSession: typeof parentSession === "string" ? parentSession : undefined,
+    source: isRecord(source) ? toJsonObject(source) : undefined,
   };
 }
 
-function parseMikanMetadata(filePath: string): MikanSessionMetadata | undefined {
-  let current: MikanSessionMetadata | undefined;
-  for (const line of readFileSync(filePath, "utf-8").split("\n").slice(1)) {
-    for (const write of parseMetadataWrites(line)) {
-      if (write.op === "delete") current = undefined;
-      else if (write.op === "set" && isMetadataRecord(write.value)) current = write.value;
-    }
-  }
-  return current;
+function toJsonObject(input: Record<string, unknown>): JsonObject {
+  const copy: JsonObject = JSON.parse(JSON.stringify(input));
+  return copy;
 }
 
-function isMetadataRecord(input: unknown): input is MikanSessionMetadata {
-  return isRecord(input);
-}
-
-function parseMetadataWrites(line: string): MikanSessionMetadata[] {
-  let transaction: unknown;
-  try {
-    transaction = JSON.parse(line);
-  } catch {
-    return [];
-  }
-  const writes: unknown[] = Array.isArray(transaction) ? transaction : [transaction];
-  return writes.filter(
-    (write): write is MikanSessionMetadata =>
-      isMetadataRecord(write) &&
-      write.kind === "value" &&
-      write.namespace === "mikan" &&
-      write.key === "metadata",
-  );
-}
-
-function fileFingerprint(path: string): string {
-  const fd = openSync(path, "r");
-  try {
-    const stats = fstatSync(fd);
-    return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function materializePendingFile(
-  path: string,
-  header: CurrentSessionHeader,
-  expectedFingerprint: string | null,
-): void {
-  const content = `${JSON.stringify(header)}\n`;
-  if (expectedFingerprint === null) {
-    mkdirSync(dirname(path), { recursive: true });
-    const fd = openSync(path, "wx", 0o600);
-    try {
-      writeFileSync(fd, content);
-    } finally {
-      closeSync(fd);
-    }
-    return;
-  }
-  const fd = openSync(path, "r+");
-  try {
-    const stats = fstatSync(fd);
-    const actual = `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}`;
-    if (actual !== expectedFingerprint) {
-      throw new Error(`Session file changed before pending session materialization: ${path}`);
-    }
-    ftruncateSync(fd, 0);
-    writeFileSync(fd, content);
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function buildHeader(
-  cwd: string,
-  options?: SessionCreateInfo,
-): { header: CurrentSessionHeader; metadata?: MikanSessionMetadata } {
-  const metadata =
-    options?.parentSession === undefined
-      ? undefined
-      : ({ parentSessionPath: options.parentSession } satisfies MikanSessionMetadata);
+function buildHeader(cwd: string, options?: SessionCreateInfo): CurrentSessionHeader {
   return {
-    header: {
-      v: CURRENT_SESSION_VERSION,
-      kind: "header",
-      id: options?.id ?? uuidv7(),
-      storageVersion: JSONL_STORAGE_VERSION,
-      createdAt: Date.now(),
-      cwd,
-      parentSessionId: options?.parentSessionId,
-      legacyParentSessionPath: options?.parentSession,
-    },
-    metadata,
+    v: CURRENT_SESSION_VERSION,
+    kind: "header",
+    id: options?.id ?? randomUUID(),
+    createdAt: Date.now(),
+    cwd,
+    parentSessionId: options?.parentSessionId,
+    parentSession: options?.parentSession,
+    source: options?.source,
   };
 }
 
-function headerView(header: CurrentSessionHeader, metadata?: MikanSessionMetadata): SessionHeader {
-  const parentSession =
-    typeof metadata?.parentSessionPath === "string"
-      ? metadata.parentSessionPath
-      : header.legacyParentSessionPath;
+function writeHeader(path: string, header: CurrentSessionHeader): void {
+  mkdirSync(dirname(path), { recursive: true });
+  atomicWritePrivateFile(path, `${JSON.stringify(header)}\n`);
+}
+
+function headerView(header: CurrentSessionHeader): SessionHeader {
   return {
     type: "session",
     version: CURRENT_SESSION_VERSION,
@@ -294,101 +234,181 @@ function headerView(header: CurrentSessionHeader, metadata?: MikanSessionMetadat
     timestamp: new Date(header.createdAt).toISOString(),
     cwd: header.cwd,
     parentSessionId: header.parentSessionId,
-    parentSession,
-    metadata,
+    parentSession: header.parentSession,
+    metadata: header.source ? { source: header.source } : undefined,
   };
 }
 
-async function openFileSession(
-  path: string,
-  header: CurrentSessionHeader,
-): Promise<{ session: Session<JsonlSessionMetadata>; repo: JsonlSessionRepo }> {
-  const sessionRepo = new JsonlSessionRepo({
-    fileSystem: new NodeExecutionEnv({ cwd: process.cwd() }),
-    sessionsRoot: dirname(path),
-  });
-  try {
-    const session = await sessionRepo.open(metadataFromHeader(header, path), TODO_CONTEXT);
-    return { session, repo: sessionRepo };
-  } catch (error) {
-    await sessionRepo.close(TODO_CONTEXT);
-    throw error;
+async function openPrivateJsonlStorage(directory: string): Promise<Storage> {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  chmodSync(directory, 0o700);
+  return openNodeJsonlStorage(directory, context);
+}
+
+function messageTimestamp(message: Message | undefined): number {
+  return message && "timestamp" in message && typeof message.timestamp === "number"
+    ? message.timestamp
+    : 0;
+}
+
+function contentText(message: Message | undefined): string {
+  if (!message || !("content" in message)) return "";
+  if (typeof message.content === "string") return message.content;
+  return message.content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function toSessionEntry(
+  record: EntryRecord,
+  sessionId: string,
+  parentId: string | null,
+): SessionEntry | undefined {
+  const id = `${sessionId}:${record.id}`;
+  const message = record.model?.[0];
+  if (UserEntry.is(record) || AssistantEntry.is(record) || ToolResultEntry.is(record)) {
+    if (!message) return undefined;
+    return { type: "message", id, parentId, timestamp: messageTimestamp(message), message };
   }
+  if (CompactionEntry.is(record)) {
+    return {
+      type: "compaction",
+      id,
+      parentId,
+      timestamp: messageTimestamp(message),
+      summary: contentText(message),
+      firstKeptEntryId: record.head === undefined ? undefined : `${sessionId}:${record.head}`,
+    };
+  }
+  if (CustomSessionEntry.is(record)) {
+    return {
+      type: "custom",
+      id,
+      parentId,
+      timestamp: record.data.timestamp,
+      customType: record.data.customType,
+      data: record.data.data ?? undefined,
+    };
+  }
+  return undefined;
+}
+
+async function readEntries(root: Conversation, sessionId: string): Promise<SessionEntry[]> {
+  const records: EntryRecord[] = [];
+  let cursor: Parameters<Conversation["entries"]>[2];
+  do {
+    const page = await root.entries({}, ENTRY_PAGE_SIZE, cursor, context);
+    records.push(...page.items);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  const entries: SessionEntry[] = [];
+  for (const record of records.toReversed()) {
+    const entry = toSessionEntry(record, sessionId, entries.at(-1)?.id ?? null);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
+function branchUntil(entries: SessionEntry[], fromId: string | undefined): SessionEntry[] {
+  if (fromId === undefined) return entries;
+  const index = entries.findIndex((entry) => entry.id === fromId);
+  return index < 0 ? [] : entries.slice(0, index + 1);
+}
+
+async function readContext(root: Conversation): Promise<SessionContext> {
+  const view = await root.context(context);
+  const messages: AgentMessage[] = view.messages
+    .filter((message) => message.role !== "system")
+    .map(durableMessage);
+  return { messages };
+}
+
+function lateBoundOptions(
+  registry: Registry,
+  binding: () => SessionHarnessBinding | undefined,
+): HarnessOptions {
+  const settings = (): HarnessSettings | undefined => binding()?.settings;
+  const models = new Proxy({} as Models, {
+    get: (_target, property) => {
+      const bound = binding()?.models;
+      if (!bound) throw new Error("Session has no model binding; start a run to use the model");
+      const value = Reflect.get(bound, property, bound) as unknown;
+      return typeof value === "function" ? value.bind(bound) : value;
+    },
+  });
+  return {
+    models,
+    registry,
+    settings: {
+      get extensions() {
+        return settings()?.extensions;
+      },
+      get stream() {
+        return settings()?.stream;
+      },
+      get retry() {
+        return settings()?.retry;
+      },
+      get compaction() {
+        return settings()?.compaction;
+      },
+      get toolExecution() {
+        return settings()?.toolExecution;
+      },
+      get steeringMode() {
+        return settings()?.steeringMode;
+      },
+      get followUpMode() {
+        return settings()?.followUpMode;
+      },
+    },
+    env: (target, envContext) => binding()?.env?.(target, envContext),
+    onReport: (error) => {
+      const report = binding()?.onReport;
+      if (report) report(error);
+      else log.logWarning("Durable harness report", errorMessage(error));
+    },
+  };
 }
 
 async function withSessionSnapshot<T>(
   path: string,
-  read: (session: Session<JsonlSessionMetadata>, header: CurrentSessionHeader) => Promise<T>,
+  read: (root: Conversation | undefined, harness: Harness | undefined) => Promise<T>,
 ): Promise<T> {
-  const resolvedPath = canonicalSessionPath(path);
+  const storageDir = sessionStorageDir(canonicalSessionPath(path));
+  if (!existsSync(storageDir)) return read(undefined, undefined);
   const dir = mkdtempSync(join(tmpdir(), "mikan-session-inspect-"));
-  const snapshot = join(dir, basename(resolvedPath));
-  let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
+  let harness: Harness | undefined;
   try {
-    writeFileSync(snapshot, readFileSync(resolvedPath), { mode: 0o600, flag: "wx" });
-    const header = parseCurrentHeader(resolvedPath, readHeaderLine(snapshot));
-    opened = await openFileSession(snapshot, header);
-    return await read(opened.session, header);
+    const snapshot = join(dir, "storage");
+    cpSync(storageDir, snapshot, { recursive: true, verbatimSymlinks: true });
+    const storage = await openNodeJsonlStorage(snapshot, context);
+    harness = await Harness.open(
+      storage,
+      lateBoundOptions(createRegistry(), () => undefined),
+      context,
+    );
+    return await read(await harness.root(context), harness);
   } finally {
     try {
-      await opened?.session.close(TODO_CONTEXT);
+      await harness?.close(context);
     } finally {
-      try {
-        await opened?.repo.close(TODO_CONTEXT);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
-      }
+      rmSync(dir, { recursive: true, force: true });
     }
   }
-}
-
-async function mainBranch(session: Session, create: boolean): Promise<Branch | undefined> {
-  const existing = await session.branch("main", TODO_CONTEXT);
-  if (existing || !create) return existing;
-  return session.createBranch("main", null, TODO_CONTEXT);
-}
-
-function isContextMessage(message: AgentMessage): boolean {
-  return (
-    message.role !== "assistant" ||
-    (message.stopReason !== "error" &&
-      message.stopReason !== "aborted" &&
-      message.stopReason !== "deferred")
-  );
-}
-
-function buildContext(entries: Entry[]): SessionContext {
-  const compactionIndex = entries.findLastIndex((entry) => entry.type === "compaction");
-  const visibleEntries = entries.slice(Math.max(0, compactionIndex));
-  const messages: AgentMessage[] = [];
-  for (const entry of visibleEntries) {
-    if (entry.type === "message") {
-      if (isContextMessage(entry.message)) messages.push(entry.message);
-    } else if (entry.type === "compaction") {
-      messages.push(
-        createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp),
-        ...entry.retainedTail.filter(isContextMessage),
-      );
-    } else if (entry.type === "branch_summary" && entry.summary) {
-      messages.push(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
-    }
-  }
-  return { messages };
 }
 
 interface LiveState {
   kind: "live";
-  session: Session;
   header: CurrentSessionHeader;
-  metadata?: MikanSessionMetadata;
-  repo?: JsonlSessionRepo | MemorySessionRepo;
+  harness: Harness;
+  root: Conversation;
 }
 
 interface PendingState {
   kind: "pending";
   header: CurrentSessionHeader;
-  metadata?: MikanSessionMetadata;
-  fingerprint: string | null;
 }
 
 type StoreState = LiveState | PendingState;
@@ -396,17 +416,16 @@ type StoreState = LiveState | PendingState;
 class CachedSessionInspection implements SessionInspection {
   constructor(
     private readonly header: SessionHeader,
-    private readonly entries: Entry[],
+    private readonly entries: SessionEntry[],
     private readonly name: string | undefined,
-    private readonly branch: Entry[],
-    private readonly context: SessionContext,
+    private readonly sessionContext: SessionContext,
   ) {}
 
   getHeader(): SessionHeader {
     return structuredClone(this.header);
   }
 
-  async getEntries(): Promise<Entry[]> {
+  async getEntries(): Promise<SessionEntry[]> {
     return structuredClone(this.entries);
   }
 
@@ -414,20 +433,12 @@ class CachedSessionInspection implements SessionInspection {
     return this.name;
   }
 
-  async getBranch(fromId?: string): Promise<Entry[]> {
-    if (fromId === undefined) return structuredClone(this.branch);
-    const byId = new Map(this.entries.map((entry) => [entry.id, entry]));
-    const result: Entry[] = [];
-    let current = byId.get(fromId);
-    while (current) {
-      result.push(current);
-      current = current.parentId === null ? undefined : byId.get(current.parentId);
-    }
-    return result.toReversed();
+  async getBranch(fromId?: string): Promise<SessionEntry[]> {
+    return structuredClone(branchUntil(this.entries, fromId));
   }
 
   async buildSessionContext(): Promise<SessionContext> {
-    return structuredClone(this.context);
+    return structuredClone(this.sessionContext);
   }
 }
 
@@ -436,8 +447,8 @@ export class SessionStore implements SessionInspection {
   private mutationTail: Promise<void> = Promise.resolve();
   private closePromise: Promise<void> | undefined;
   private closed = false;
-  private harness: AgentHarness | undefined;
-  private harnessLane: AgentLane | undefined;
+  private binding: SessionHarnessBinding | undefined;
+  private readonly registry: Registry = createRegistry();
 
   private constructor(
     private readonly sessionFile: string | null,
@@ -450,36 +461,25 @@ export class SessionStore implements SessionInspection {
     const writer = acquireWriter(path);
     const writerPath = writer.path;
     try {
-      if (!existsSync(writerPath)) {
-        const cwd = cwdOverride ?? process.cwd();
-        const built = buildHeader(cwd);
-        return new SessionStore(
-          writerPath,
-          cwd,
-          { kind: "pending", ...built, fingerprint: null },
-          writer.key,
-        );
-      }
-      const firstLine = readHeaderLine(writerPath);
+      const firstLine = existsSync(writerPath) ? readHeaderText(writerPath) : "";
       if (firstLine.trim().length === 0) {
         const cwd = cwdOverride ?? process.cwd();
-        const built = buildHeader(cwd);
         return new SessionStore(
           writerPath,
           cwd,
-          { kind: "pending", ...built, fingerprint: fileFingerprint(writerPath) },
+          { kind: "pending", header: buildHeader(cwd) },
           writer.key,
         );
       }
       const header = parseCurrentHeader(writerPath, firstLine);
-      const opened = await openFileSession(writerPath, header);
-      const metadata = (await opened.session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
-      return new SessionStore(
+      const store = new SessionStore(
         writerPath,
         cwdOverride ?? header.cwd,
-        { kind: "live", header, metadata, ...opened },
+        { kind: "pending", header },
         writer.key,
       );
+      if (existsSync(sessionStorageDir(writerPath))) await store.live();
+      return store;
     } catch (error) {
       releaseWriter(writer.key);
       throw error;
@@ -489,37 +489,37 @@ export class SessionStore implements SessionInspection {
   static async inspectExecution(path: string): Promise<{
     open: boolean;
     started: boolean;
-    result?: { status: "completed" | "aborted" | "failed" | "declined"; endedAt: number };
+    result?: { status: "completed" | "aborted" | "failed"; endedAt: number };
   }> {
-    return withSessionSnapshot(path, async (session) => {
-      const state = (await session.getValue(laneState("main"), TODO_CONTEXT))?.value;
-      const result = state?.lastOperationId
-        ? (await session.getValue(operationResult(state.lastOperationId), TODO_CONTEXT))?.value
-        : undefined;
+    return withSessionSnapshot(path, async (root, harness) => {
+      if (!root || !harness) return { open: false, started: false };
+      const live = await harness.snapshot(LiveDoc, root.id, context);
+      const run = (await harness.snapshot(SessionDoc, root.id, context))?.run;
+      const open = live?.run !== undefined;
       return {
-        open: state?.currentOperationId != null,
-        started: state?.currentOperationId != null || state?.lastOperationId != null,
-        result: result ? { status: result.status, endedAt: result.endedAt } : undefined,
+        open,
+        started: open || run !== undefined,
+        result:
+          run?.endedAt !== undefined && run.status !== undefined
+            ? { status: run.status, endedAt: run.endedAt }
+            : undefined,
       };
     });
   }
 
   static async inspect(path: string): Promise<SessionInspection> {
-    return withSessionSnapshot(path, async (session, header) => {
-      const metadata = (await session.getValue(MIKAN_METADATA, TODO_CONTEXT))?.value;
-      const entries = await session.findEntries({ order: "asc" }, TODO_CONTEXT);
-      const name = await session.getName(TODO_CONTEXT);
-      const branchObject = await mainBranch(session, false);
-      const branch = branchObject
-        ? await branchObject.findEntries({ order: "oldestFirst" }, TODO_CONTEXT)
-        : [];
-      const context = buildContext(branch);
+    const resolvedPath = canonicalSessionPath(path);
+    const header = parseCurrentHeader(resolvedPath, readHeaderText(resolvedPath));
+    return withSessionSnapshot(resolvedPath, async (root, harness) => {
+      if (!root || !harness) {
+        return new CachedSessionInspection(headerView(header), [], undefined, { messages: [] });
+      }
+      const name = (await harness.snapshot(SessionDoc, root.id, context))?.name;
       return new CachedSessionInspection(
-        headerView(header, metadata),
-        entries,
+        headerView(header),
+        await readEntries(root, header.id),
         name,
-        branch,
-        context,
+        await readContext(root),
       );
     });
   }
@@ -530,54 +530,37 @@ export class SessionStore implements SessionInspection {
     options?: SessionCreateInfo,
   ): Promise<SessionStore> {
     const writer = acquireWriter(path);
-    const writerPath = writer.path;
     let leaseKey = writer.key;
-    let opened: Awaited<ReturnType<typeof openFileSession>> | undefined;
     try {
-      const built = buildHeader(cwd, options);
-      mkdirSync(dirname(writerPath), { recursive: true });
-      writeFileSync(writerPath, `${JSON.stringify(built.header)}\n`, { mode: 0o600, flag: "wx" });
-      leaseKey = promotePendingWriter(leaseKey, writerPath);
-      opened = await openFileSession(writerPath, built.header);
-      if (built.metadata) {
-        await opened.session.setValue(MIKAN_METADATA, built.metadata, TODO_CONTEXT);
-      }
-      return new SessionStore(writerPath, cwd, { kind: "live", ...built, ...opened }, leaseKey);
+      if (existsSync(writer.path)) throw new Error(`Session file already exists: ${writer.path}`);
+      const header = buildHeader(cwd, options);
+      writeHeader(writer.path, header);
+      leaseKey = promotePendingWriter(leaseKey, writer.path);
+      const store = new SessionStore(writer.path, cwd, { kind: "pending", header }, leaseKey);
+      await store.live();
+      return store;
     } catch (error) {
-      if (opened) {
-        await opened.session.close(TODO_CONTEXT).catch(() => undefined);
-        await opened.repo.close(TODO_CONTEXT).catch(() => undefined);
-      }
       releaseWriter(leaseKey);
       throw error;
     }
   }
 
   static readHeader(path: string): SessionHeader | null {
-    let firstLine: string;
     try {
-      firstLine = readHeaderLine(path);
-    } catch {
-      return null;
-    }
-    if (firstLine.trim().length === 0) return null;
-    try {
-      const header = parseCurrentHeader(path, firstLine);
-      return headerView(header, parseMikanMetadata(path));
+      const firstLine = readHeaderText(path);
+      if (firstLine.trim().length === 0) return null;
+      return headerView(parseCurrentHeader(path, firstLine));
     } catch {
       return null;
     }
   }
 
   static writeHeaderFile(path: string, cwd: string, options?: SessionCreateInfo): void {
-    mkdirSync(dirname(path), { recursive: true });
-    const built = buildHeader(cwd, options);
-    atomicWritePrivateFile(path, `${JSON.stringify(built.header)}\n`);
+    writeHeader(path, buildHeader(cwd, options));
   }
 
   static inMemory(cwd = process.cwd()): SessionStore {
-    const built = buildHeader(cwd);
-    return new SessionStore(null, cwd, { kind: "pending", ...built, fingerprint: null }, null);
+    return new SessionStore(null, cwd, { kind: "pending", header: buildHeader(cwd) }, null);
   }
 
   getSessionFile(): string | undefined {
@@ -597,7 +580,7 @@ export class SessionStore implements SessionInspection {
 
   getHeader(): SessionHeader {
     this.assertOpen();
-    return headerView(this.state.header, this.state.metadata);
+    return headerView(this.state.header);
   }
 
   getSessionId(): string {
@@ -606,41 +589,33 @@ export class SessionStore implements SessionInspection {
   }
 
   async getLeafId(): Promise<string | null> {
-    this.assertOpen();
-    if (this.state.kind === "pending") return null;
-    return (await mainBranch(this.state.session, false))?.getTipId(TODO_CONTEXT) ?? null;
+    return (await this.getEntries()).at(-1)?.id ?? null;
   }
 
-  async getEntry(id: string): Promise<Entry | undefined> {
-    this.assertOpen();
-    if (this.state.kind === "pending") return undefined;
-    return this.state.session.getEntry(id, TODO_CONTEXT);
+  async getEntry(id: string): Promise<SessionEntry | undefined> {
+    return (await this.getEntries()).find((entry) => entry.id === id);
   }
 
-  async getEntries(): Promise<Entry[]> {
+  async getEntries(): Promise<SessionEntry[]> {
     this.assertOpen();
     if (this.state.kind === "pending") return [];
-    return this.state.session.findEntries({ order: "asc" }, TODO_CONTEXT);
+    return readEntries(this.state.root, this.state.header.id);
   }
 
   async getSessionName(): Promise<string | undefined> {
     this.assertOpen();
     if (this.state.kind === "pending") return undefined;
-    return this.state.session.getName(TODO_CONTEXT);
+    return (await this.state.harness.snapshot(SessionDoc, this.state.root.id, context))?.name;
   }
 
-  async getBranch(fromId?: string): Promise<Entry[]> {
-    this.assertOpen();
-    if (this.state.kind === "pending") return [];
-    if (fromId !== undefined) {
-      return this.state.session.scanBranch({ start: fromId, order: "oldestFirst" }, TODO_CONTEXT);
-    }
-    const branchObject = await mainBranch(this.state.session, false);
-    return branchObject ? branchObject.findEntries({ order: "oldestFirst" }, TODO_CONTEXT) : [];
+  async getBranch(fromId?: string): Promise<SessionEntry[]> {
+    return branchUntil(await this.getEntries(), fromId);
   }
 
   async buildSessionContext(): Promise<SessionContext> {
-    return buildContext(await this.getBranch());
+    this.assertOpen();
+    if (this.state.kind === "pending") return { messages: [] };
+    return readContext(this.state.root);
   }
 
   async connectMcp(servers: Record<string, McpServerConfig>, signal?: AbortSignal) {
@@ -660,56 +635,79 @@ export class SessionStore implements SessionInspection {
     return instructions ? `${prompt}\n\n${instructions}` : prompt;
   }
 
-  async createHarness(options: Omit<AgentHarnessOptions, "session">): Promise<AgentHarness> {
+  async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {
     return this.mutate(async () => {
-      if (this.harness) throw new Error("SessionStore already has an attached harness");
-      const { session } = await this.live();
-      const { harness } = await AgentHarness.create({ ...options, session }, TODO_CONTEXT);
-      this.harness = harness;
-      this.harnessLane = await harness.lane("main", TODO_CONTEXT);
-      return harness;
+      if (this.binding) throw new Error("SessionStore already has an attached harness");
+      this.binding = binding;
+      const live = await this.live();
+      return { harness: live.harness, root: live.root, registry: this.registry };
     });
   }
 
   async appendMessage(message: AgentMessage): Promise<string> {
     return this.mutate(async () => {
-      if (this.harnessLane) return this.harnessLane.appendMessage(toDurable(message), TODO_CONTEXT);
-      const branchObject = await mainBranch((await this.live()).session, true);
-      if (!branchObject) throw new Error("Failed to create main session branch");
-      return branchObject.appendMessage(toDurable(message), TODO_CONTEXT);
+      const { root } = await this.live();
+      const model = [durableMessage(message)];
+      const entry = await root.commit((tx): Promise<EntryRecord> => {
+        switch (message.role) {
+          case "user":
+            return tx.appendEntry(UserEntry, root.id, { model });
+          case "assistant":
+            return tx.appendEntry(AssistantEntry, root.id, { model });
+          case "toolResult":
+            return tx.appendEntry(ToolResultEntry, root.id, { model, data: { diagnostics: [] } });
+          default:
+            throw new Error("Only user, assistant, and tool result messages enter a session");
+        }
+      }, context);
+      return `${this.state.header.id}:${entry.id}`;
     });
   }
 
-  async appendCustomEntry(customType: string, data?: unknown): Promise<string> {
-    return this.mutate(async () => {
-      if (this.harnessLane) {
-        return this.harnessLane.appendCustomEntry(
-          customType,
-          toDurable(data) as JsonValue,
-          TODO_CONTEXT,
-        );
-      }
-      const branchObject = await mainBranch((await this.live()).session, true);
-      if (!branchObject) throw new Error("Failed to create main session branch");
-      return branchObject.appendCustomEntry(customType, toDurable(data) as JsonValue, TODO_CONTEXT);
-    });
-  }
-
-  async appendCustomMessageEntry(
+  async appendCustomEntry(
     customType: string,
-    content: string | Array<TextContent | ImageContent>,
-    display: boolean,
-    details?: unknown,
+    data?: unknown,
+    timestamp = Date.now(),
   ): Promise<string> {
-    return this.appendMessage(
-      toDurable(createCustomMessage(customType, content, display, details, Date.now())),
-    );
+    return this.mutate(async () => {
+      const { root } = await this.live();
+      const entry = await root.commit(
+        (tx) =>
+          tx.appendEntry(CustomSessionEntry, root.id, {
+            data: { customType, data: toJson(data), timestamp },
+          }),
+        context,
+      );
+      return `${this.state.header.id}:${entry.id}`;
+    });
+  }
+
+  async appendCompactionSummary(text: string, timestamp: number): Promise<string> {
+    return this.mutate(async () => {
+      const { root } = await this.live();
+      const entry = await root.commit(
+        (tx) =>
+          tx.appendEntry(CompactionEntry, root.id, {
+            model: [{ role: "user", content: [{ type: "text", text }], timestamp }],
+            data: { reason: "manual" },
+            head: "self",
+          }),
+        context,
+      );
+      return `${this.state.header.id}:${entry.id}`;
+    });
   }
 
   async setSessionName(name: string): Promise<void> {
-    await this.mutate(async () =>
-      (await this.live()).session.setName(name.trim() || undefined, TODO_CONTEXT),
-    );
+    await this.updateSessionDoc((doc) => {
+      doc.name = name.trim() || undefined;
+    });
+  }
+
+  async recordRun(run: SessionRunRecord): Promise<void> {
+    await this.updateSessionDoc((doc) => {
+      doc.run = { ...run };
+    });
   }
 
   async close(): Promise<void> {
@@ -720,20 +718,22 @@ export class SessionStore implements SessionInspection {
         try {
           await this.mcp?.dispose();
         } finally {
-          if (this.state.kind === "live") {
-            try {
-              if (this.harness) await this.harness.close(TODO_CONTEXT);
-              else await this.state.session.close(TODO_CONTEXT);
-            } finally {
-              await this.state.repo?.close(TODO_CONTEXT);
-            }
-          }
+          if (this.state.kind === "live") await this.state.harness.close(context);
         }
       })
       .finally(() => {
         if (this.writerKey !== null) releaseWriter(this.writerKey);
       });
     return this.closePromise;
+  }
+
+  private async updateSessionDoc(change: (doc: SessionDocState) => void): Promise<void> {
+    await this.mutate(async () => {
+      const { root } = await this.live();
+      await root.commit(async (tx) => {
+        change(await tx.doc(SessionDoc, root.id));
+      }, context);
+    });
   }
 
   private assertOpen(): void {
@@ -752,41 +752,30 @@ export class SessionStore implements SessionInspection {
 
   private async live(): Promise<LiveState> {
     if (this.state.kind === "live") return this.state;
-    const pending = this.state;
-    const sessionFile = this.sessionFile;
-    if (sessionFile === null) {
-      const repo = new MemorySessionRepo();
-      const session = await repo.create(
-        {
-          id: pending.header.id,
-          parentSessionId: pending.header.parentSessionId,
-        },
-        TODO_CONTEXT,
-      );
-      const live: LiveState = {
-        kind: "live",
-        header: pending.header,
-        metadata: pending.metadata,
-        session,
-        repo,
-      };
+    const { header } = this.state;
+    let storage: Storage;
+    if (this.sessionFile === null) {
+      storage = new MemoryStorage();
+    } else {
+      if (!existsSync(this.sessionFile) || readHeaderText(this.sessionFile).trim() === "") {
+        writeHeader(this.sessionFile, header);
+      }
+      if (this.writerKey === null) throw new Error("Persisted session must have a writer lease");
+      this.writerKey = promotePendingWriter(this.writerKey, this.sessionFile);
+      storage = await openPrivateJsonlStorage(sessionStorageDir(this.sessionFile));
+    }
+    const harness = await Harness.open(
+      storage,
+      lateBoundOptions(this.registry, () => this.binding),
+      context,
+    );
+    try {
+      const live: LiveState = { kind: "live", header, harness, root: await harness.root(context) };
       this.state = live;
       return live;
+    } catch (error) {
+      await harness.close(context);
+      throw error;
     }
-    materializePendingFile(sessionFile, pending.header, pending.fingerprint);
-    if (this.writerKey === null) throw new Error("Pending session must have a writer lease");
-    this.writerKey = promotePendingWriter(this.writerKey, sessionFile);
-    const opened = await openFileSession(sessionFile, pending.header);
-    if (pending.metadata) {
-      await opened.session.setValue(MIKAN_METADATA, pending.metadata, TODO_CONTEXT);
-    }
-    const live: LiveState = {
-      kind: "live",
-      header: pending.header,
-      metadata: pending.metadata,
-      ...opened,
-    };
-    this.state = live;
-    return live;
   }
 }

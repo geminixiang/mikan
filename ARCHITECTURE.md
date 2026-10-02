@@ -372,9 +372,9 @@ Evidence: `src/settings/apply.ts`.
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — Harness sessions use the current Pi 0.85 v4 append-only JSONL tree. Persisted headers use `v: 4` and `storageVersion: 1`; mikan metadata is stored as the durable namespaced value `mikan/metadata`. Runtime opening accepts only this current format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. 0.5.3 v3 files are converted by `mikan migrate`, which keeps each original as `*.v3.bak`. Thread lineage remains stable across top-level `/new` resets.
+**`session-format-compatibility`** — A session is a private `v: 5` header file (session ID, working directory, creation time, lineage) beside a pi-durable JSONL storage directory named `<session>.durable` (ADR 0017). Runtime opening accepts only this format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. `mikan migrate` converts 0.5.3 v3 files to v4 (keeping `*.v3.bak`) and imports v4 files into durable storage (keeping originals under `sessions-v4/`). Thread lineage remains stable across top-level `/new` resets.
 
-Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/migrations/sessions-v3.ts`.
+Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/migrations/sessions-v3.ts`, `src/migrations/sessions-durable.ts`.
 
 ## Known deviations
 

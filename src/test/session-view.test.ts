@@ -191,28 +191,17 @@ describe("loadSessionViewModel", () => {
 
     await sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
     await sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
-    await sessionManager.appendMessage({
-      role: "bashExecution",
-      command: "npm test",
-      output: "1 passed",
-      exitCode: 0,
-      cancelled: false,
-      truncated: false,
-      timestamp: nextTimestamp++,
-    });
 
     const model = await loadSessionViewModel(sessionFile);
 
     expect(model.title).toContain("Session");
-    expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant", "Bash execution"]);
+    expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant"]);
     expect(model.items[0]?.body).toContain("請幫我看一下測試結果");
     expect(model.items[1]?.body).toContain("好的，我正在查看");
-    expect(model.items[2]?.body).toContain("npm test");
-    expect(model.items[2]?.body).toContain("1 passed");
     expect(model.threads).toEqual([]);
   });
 
-  test("preserves assistant content block order and bash execution status details", async () => {
+  test("preserves assistant content block order", async () => {
     const sessionDir = office.sessionsDir;
     const sessionFile = createManagedSessionFile(sessionDir, conversationDir);
     const sessionManager = await openManagedSession(sessionFile, conversationDir);
@@ -238,22 +227,10 @@ describe("loadSessionViewModel", () => {
       stopReason: "stop",
       timestamp: nextTimestamp++,
     });
-    await sessionManager.appendMessage({
-      role: "bashExecution",
-      command: "npm test",
-      output: "1 failed",
-      exitCode: 1,
-      cancelled: true,
-      truncated: true,
-      timestamp: nextTimestamp++,
-    });
 
     const model = await loadSessionViewModel(sessionFile);
 
     expect(model.items[0]?.body).toBe('before\n\n[toolCall] search\n{\n  "q": "raw"\n}\n\nafter');
-    expect(model.items[1]?.body).toContain("[exitCode] 1");
-    expect(model.items[1]?.body).toContain("[cancelled] true");
-    expect(model.items[1]?.body).toContain("[truncated] true");
   });
 
   test("keeps channel and thread sessions on separate pages while linking them", async () => {

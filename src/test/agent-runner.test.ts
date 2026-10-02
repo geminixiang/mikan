@@ -233,6 +233,7 @@ describe("PiAgentWrapper.run", () => {
             { label: "second", task: "second task", profile: "summarizer" },
           ],
         }),
+        { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("first result"),
       fauxAssistantMessage("second result"),
@@ -275,6 +276,7 @@ describe("PiAgentWrapper.run", () => {
             { label: "second", task: "second task", profile: "summarizer" },
           ],
         }),
+        { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("first result"),
       fauxAssistantMessage("second result"),
@@ -361,6 +363,7 @@ describe("PiAgentWrapper.run", () => {
           path: reportPath,
           title: "report.html",
         }),
+        { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("attached"),
     ]);
@@ -479,6 +482,7 @@ describe("PiAgentWrapper.run", () => {
           blocks: [{ type: "section", text: { type: "mrkdwn", text: "Choose" } }],
           text: "Choose",
         }),
+        { stopReason: "toolUse" },
       ),
       fauxAssistantMessage("This text must not be posted after the interactive message."),
     ]);
@@ -517,7 +521,9 @@ describe("PiAgentWrapper.run", () => {
       ],
     });
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("post_card", { label: "Post the card" })),
+      fauxAssistantMessage(fauxToolCall("post_card", { label: "Post the card" }), {
+        stopReason: "toolUse",
+      }),
       fauxAssistantMessage("This text must not be posted after the card."),
     ]);
     const responder = makeResponder();

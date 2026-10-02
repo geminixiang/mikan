@@ -3,13 +3,9 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  TODO_CONTEXT,
-  createReadTool,
-  type AgentHarnessToolInvocation,
-  type ExecutionToolContext,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+import { createReadTool } from "@earendil-works/pi-durable/tools";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { runTestTool } from "./tool-api.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
 import type { MikanHarnessTool } from "../harness/types.js";
@@ -185,23 +181,8 @@ function startHttpMcpServer(): Promise<{
   });
 }
 
-const invocation: AgentHarnessToolInvocation = {
-  invocationId: "inv",
-  operationId: "op",
-  turnId: "turn",
-  getMemo: async () => undefined,
-  setMemo: async () => {},
-};
-
 function callTool(tool: MikanHarnessTool, params: Record<string, unknown>, cwd = dir) {
-  return tool.execute(
-    "call",
-    params,
-    () => {},
-    { env: new NodeExecutionEnv({ cwd }) },
-    invocation,
-    TODO_CONTEXT,
-  );
+  return runTestTool(tool, params, { env: new NodeExecutionEnv({ cwd }) });
 }
 
 describe("loadMcpTools", () => {
@@ -338,14 +319,11 @@ describe("loadMcpTools", () => {
       expect(spillPath?.startsWith(join(cwd, ".mikan", "mcp-output"))).toBe(true);
       const spilled = JSON.parse(readFileSync(spillPath!, "utf-8"));
       expect(spilled.items).toHaveLength(100);
-      const readTool = createReadTool<ExecutionToolContext>();
-      const read = await readTool.execute(
-        "read",
+      const readTool = createReadTool();
+      const read = await runTestTool(
+        readTool,
         { path: spillPath!, limit: 20 },
-        () => {},
         { env: new NodeExecutionEnv({ cwd }) },
-        invocation,
-        TODO_CONTEXT,
       );
       const readText = read.content[0]?.type === "text" ? read.content[0].text : "";
       expect(readText).not.toContain("exceeds");

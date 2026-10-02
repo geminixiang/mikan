@@ -199,7 +199,7 @@ afterEach(async () => {
   else process.env.MIKAN_STATE_DIR = envBefore;
   rmSync(dir, { recursive: true, force: true });
 });
-const callHold = () => fauxAssistantMessage(fauxToolCall("hold", {}));
+const callHold = () => fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" });
 
 async function dm(text: string, thread_ts?: string) {
   await socket.deliver("message", {
@@ -222,6 +222,7 @@ async function startTask() {
 const handoff = () =>
   fauxAssistantMessage(
     fauxToolCall("start_task", { message: "On it, continuing here.", task: "LONG TASK CONTEXT" }),
+    { stopReason: "toolUse" },
   );
 
 test("DM handoff preserves acknowledgement, answers other chat, and steers active task", async () => {
@@ -486,7 +487,7 @@ test("main DM task_status reads live work and persisted completion without reope
   faux.setResponses([
     handoff(),
     callHold(),
-    fauxAssistantMessage(fauxToolCall("task_status", {})),
+    fauxAssistantMessage(fauxToolCall("task_status", {}), { stopReason: "toolUse" }),
     (context) => {
       const result = context.messages.findLast(
         (m) => m.role === "toolResult" && m.toolName === "task_status",

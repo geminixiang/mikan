@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { TODO_CONTEXT, type AgentHarnessToolInvocation } from "@earendil-works/pi-agent-core";
+import { runTestTool, TEST_CONTEXT as TODO_CONTEXT } from "./tool-api.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { createMikanTools } from "../harness/tools/index.js";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
@@ -62,24 +62,14 @@ describe("every agent-facing tool requires a label parameter", () => {
     const browser = tools.find((tool) => tool.name === "jev_browser");
     expect(browser).toBeDefined();
     expect((browser!.parameters as { required: string[] }).required).toContain("label");
-    const invocation: AgentHarnessToolInvocation = {
-      invocationId: "inv",
-      operationId: "op",
-      turnId: "turn",
-      getMemo: async () => undefined,
-      setMemo: async () => {},
-    };
-    await browser!.execute(
-      "call",
+    await runTestTool(
+      browser!,
       {
         label: "Capture sandbox browser",
         url: "https://example.com",
         commands: [["screenshot", "/workspace/scratch/page.png"]],
       },
-      () => {},
       { env: createSandboxExecutionEnv(executor, config.type, "/workspace") },
-      invocation,
-      TODO_CONTEXT,
     );
     expect(exec.mock.calls.map(([command]) => command)).toEqual([
       expect.stringMatching(

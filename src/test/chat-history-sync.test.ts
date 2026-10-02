@@ -1,12 +1,4 @@
-import {
-  appendFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../sessions/session-store.js";
@@ -47,9 +39,6 @@ async function readContextText(sessionFile: string): Promise<string> {
   const context = await session.buildSessionContext();
   return context.messages
     .map((message) => {
-      if (!("content" in message)) {
-        throw new Error(`unexpected ${message.role} message without content in session context`);
-      }
       return typeof message.content === "string"
         ? message.content
         : message.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
@@ -57,25 +46,21 @@ async function readContextText(sessionFile: string): Promise<string> {
     .join("\n---\n");
 }
 
-function countJsonlEntries(
+async function sessionRaw(sessionFile: string): Promise<string> {
+  const session = await SessionStore.inspect(sessionFile);
+  return JSON.stringify(await session.getEntries());
+}
+
+async function countJsonlEntries(
   sessionFile: string,
   predicate: (entry: { type?: string; customType?: string }) => boolean,
-): number {
-  return readFileSync(sessionFile, "utf-8")
-    .split("\n")
-    .filter(Boolean)
-    .flatMap((line) => {
-      const parsed = JSON.parse(line) as
-        | { kind?: string; type?: string; customType?: string }
-        | Array<{ kind?: string; type?: string; customType?: string }>;
-      return Array.isArray(parsed) ? parsed : [parsed];
-    })
-    .map((parsed) => {
-      if (parsed.kind === "entry") return parsed;
-      if (parsed.kind === "header") return { type: "session" };
-      return {};
-    })
-    .filter(predicate).length;
+): Promise<number> {
+  const session = await SessionStore.inspect(sessionFile);
+  const entries: Array<{ type?: string; customType?: string }> = [
+    { type: "session" },
+    ...(await session.getEntries()),
+  ];
+  return entries.filter(predicate).length;
 }
 
 async function syncViaRuntimePath(
@@ -420,7 +405,7 @@ describe("ChatHistorySync", () => {
     const text = await readContextText(scope.contextFile);
     expect(text).toContain("question");
     expect(text).toContain("One two three");
-    expect(countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
+    expect(await countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
   });
 
   test("bootstraps a thread session from recent top-level log history plus thread history", async () => {
@@ -698,8 +683,8 @@ describe("ChatHistorySync", () => {
     expect(text).toContain("thread1");
     expect(text).not.toContain("/pi-session");
     expect(text).not.toContain("current question");
-    expect(readFileSync(secondScope.contextFile, "utf-8").match(/next one is\?/g)).toHaveLength(1);
-    expect(readFileSync(secondScope.contextFile, "utf-8").match(/\bk2\b/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.contextFile)).match(/next one is\?/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.contextFile)).match(/\bk2\b/g)).toHaveLength(1);
   });
 
   test("applies the same message cap when syncing an existing top-level session", async () => {
@@ -835,7 +820,7 @@ describe("ChatHistorySync", () => {
     expect(text).toContain("seed");
     expect(text).toContain("rebuilt history");
     expect(text).toContain("after rebuild");
-    expect(readFileSync(secondScope.contextFile, "utf-8").match(/\bseed\b/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.contextFile)).match(/\bseed\b/g)).toHaveLength(1);
   });
 
   test("recognizes mikan's posted reply as the model's own and never feeds the signature back", async () => {
@@ -928,7 +913,7 @@ describe("ChatHistorySync", () => {
       await syncSession.close();
     }
 
-    const raw = readFileSync(scope.contextFile, "utf-8");
+    const raw = await sessionRaw(scope.contextFile);
     expect(raw.match(/What can I help you with/g)).toHaveLength(1);
     expect(raw).not.toContain("Look up the greeting");
     expect(raw).toContain("Scheduled digest ready.");
@@ -1000,14 +985,14 @@ describe("ChatHistorySync", () => {
       timestamp: 2,
     });
 
-    expect(countJsonlEntries(scope.contextFile, (entry) => entry.type === "session")).toBe(1);
+    expect(await countJsonlEntries(scope.contextFile, (entry) => entry.type === "session")).toBe(1);
     expect(
-      countJsonlEntries(
+      await countJsonlEntries(
         scope.contextFile,
         (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
       ),
     ).toBe(1);
-    expect(readFileSync(scope.contextFile, "utf-8").match(/\bu0\b/g)).toHaveLength(1);
+    expect((await sessionRaw(scope.contextFile)).match(/\bu0\b/g)).toHaveLength(1);
   });
 
   test("thread bootstrap sync is a no-op when only the represented root is in scope", async () => {
@@ -1062,7 +1047,7 @@ describe("ChatHistorySync", () => {
 
     expect(report).toEqual({ appended: 0 });
     expect(
-      countJsonlEntries(
+      await countJsonlEntries(
         scope.contextFile,
         (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
       ),
@@ -1092,8 +1077,6 @@ describe("ChatHistorySync", () => {
 
     expect(scope.contextFile).toBe(getThreadSessionFile(office.sessionsDir, "C123:2000.0001"));
     expect(existsSync(scope.contextFile)).toBe(true);
-    expect(readFileSync(scope.contextFile, "utf-8")).not.toContain(
-      "channel history should not leak",
-    );
+    expect(await sessionRaw(scope.contextFile)).not.toContain("channel history should not leak");
   });
 });

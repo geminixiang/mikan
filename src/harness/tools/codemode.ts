@@ -8,7 +8,8 @@ import {
   type CodemodeJsonSchema,
 } from "@earendil-works/pi-codemode";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
-import { withAbortSignal } from "@earendil-works/pi-agent-core";
+import { withAbortSignal } from "@earendil-works/chord/context";
+import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { CodemodeToolOptions, MikanHarnessTool } from "../types.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
@@ -92,7 +93,8 @@ Nested tool declarations:
 ${renderDeclarations({ tools: declarations.filter((tool) => tool.exposure !== "deferred") }).slice(0, 12_000)}
 Declarations may be shortened; use await describeTool(name) for the full schema.`,
     parameters: Type.Object({ label: LABEL_PARAMETER, code: Type.String() }),
-    execute: async (id, params, onUpdate, toolContext, invocation, context) => {
+    execute: async (params, api, context) => {
+      const id = api.callId;
       const { code } = validateToolArguments(
         { name: "codemode", description: "", parameters: Type.Object({ code: Type.String() }) },
         { type: "toolCall", id, name: "codemode", arguments: params as JsonObject },
@@ -112,28 +114,21 @@ Declarations may be shortened; use await describeTool(name) for the full schema.
               name: tool.name,
               arguments: args as JsonObject,
             });
+            const nested = nestedApi(api, `${id}:${randomUUID()}`);
             const result = await options.executeNested(tool, [
-              `${id}:${randomUUID()}`,
               validated,
-              onUpdate,
-              toolContext,
-              invocation,
+              nested.api,
               withAbortSignal(signal, context),
             ]);
-            if (result.isError)
-              throw new Error(
-                result.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => part.text)
-                  .join("\n"),
-              );
-            if (result.structuredContent !== undefined) return result.structuredContent;
-            if (result.content.some((part) => part.type === "image"))
-              return { content: result.content };
-            return result.content
+            const content = result.content ?? [{ type: "text" as const, text: nested.output() }];
+            const text = content
               .filter((part) => part.type === "text")
               .map((part) => part.text)
               .join("\n");
+            if (result.isError) throw new Error(text);
+            if (result.structuredContent !== undefined) return result.structuredContent;
+            if (content.some((part) => part.type === "image")) return { content };
+            return text;
           })();
           pending.add(call);
           void call.then(
@@ -172,4 +167,26 @@ Declarations may be shortened; use await describeTool(name) for the full schema.
       }
     },
   });
+}
+
+function nestedApi(
+  parent: ToolExecutionApi,
+  callId: string,
+): { api: ToolExecutionApi; output: () => string } {
+  const chunks: string[] = [];
+  const decoder = new TextDecoder();
+  return {
+    api: {
+      ...parent,
+      callId,
+      output: (chunk) => {
+        chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk));
+      },
+      diagnostic: (diagnostic) => {
+        chunks.push(`\n[${diagnostic.severity}] ${diagnostic.message}`);
+      },
+      details: async () => undefined,
+    },
+    output: () => chunks.join(""),
+  };
 }

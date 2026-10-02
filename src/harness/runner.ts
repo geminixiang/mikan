@@ -1,5 +1,5 @@
 import type { Office, Workspace } from "../office/types.js";
-import type { ExecutionToolContext, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
@@ -38,6 +38,7 @@ import type {
   RunPresentation,
   RunEventListener,
   RunnerSessionState,
+  MikanToolContext,
 } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
@@ -81,7 +82,7 @@ async function createConfiguredAgentSession(params: {
   model: Model<Api>;
   thinkingLevel: ThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  toolContext: ExecutionToolContext;
+  toolContext: MikanToolContext;
   sessionStore: SessionStore;
   models: MikanModels;
 }): Promise<MikanAgentSession> {
@@ -441,7 +442,7 @@ async function createRunnerAgentSession(params: {
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   tools: ReturnType<typeof createMikanTools>["tools"];
-  toolContext: ExecutionToolContext;
+  toolContext: MikanToolContext;
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   modelRegistry: MikanModels;
   conversationId: string;
@@ -583,7 +584,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     sessionUuid,
     waitForQueue: presentation.wait,
   });
-  if (runState.stopReason === "stop") session.compactWhenNearLimit();
   return {
     stopReason: runState.stopReason,
     errorMessage: runState.errorMessage,
@@ -754,7 +754,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     },
 
     async dispose(): Promise<void> {
-      await session.cancelIdleCompaction();
       await sessionManager.close();
     },
 
@@ -782,7 +781,7 @@ async function finishRunnerCreation(params: {
   sessionManager: Awaited<ReturnType<typeof openManagedSession>>;
   toolBindings: MikanToolBindings;
   platformToolRoles: PlatformToolRoles;
-  toolContext: ExecutionToolContext;
+  toolContext: MikanToolContext;
 }): Promise<PiAgentWrapper> {
   const {
     options,
@@ -882,7 +881,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     office.workspace,
   );
   const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
-  const toolContext: ExecutionToolContext = {
+  const toolContext: MikanToolContext = {
     env: createSandboxExecutionEnv(executor, sandboxConfig.type, pathContext.runtimeWorkspaceRoot),
   };
 

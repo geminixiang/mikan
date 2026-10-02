@@ -1,25 +1,21 @@
 import { randomBytes } from "node:crypto";
 import { posix } from "node:path";
+import type { Context } from "@earendil-works/chord";
 import {
-  DEFAULT_MAX_BYTES,
-  DEFAULT_MAX_LINES,
   ExecutionError,
   FileError,
   err,
   ok,
-  truncateHead,
-  truncateTail,
-  type Context,
   type ExecutionEnv,
   type FileInfo,
   type FileKind,
   type Result,
   type ShellExecOptions,
   type ShellExecResult,
-  type ShellOutputMetadata,
-  type TruncationResult,
-} from "@earendil-works/pi-agent-core";
-import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
+  type TextLine,
+  type TextLineReader,
+} from "@earendil-works/pi-durable/env";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import type { Executor, SandboxConfig } from "../sandbox/types.js";
 import { execAppendFile, execWriteFile, shellEscape } from "../sandbox/utils.js";
 import { errorMessage } from "../unknown-values.js";
@@ -37,22 +33,15 @@ export function createSandboxExecutionEnv(
   return new ShellExecutionEnv(executor, runtimeWorkspaceRoot);
 }
 
-type TextLineReader =
-  Awaited<ReturnType<ExecutionEnv["openTextLineReader"]>> extends Result<infer T, FileError>
-    ? T
-    : never;
-type TextLine =
-  Awaited<ReturnType<TextLineReader["readLine"]>> extends Result<infer T, FileError>
-    ? Exclude<T, undefined>
-    : never;
-
 class ShellExecutionEnv implements ExecutionEnv {
+  readonly id: string;
   readonly cwd: string;
 
   constructor(
     private readonly executor: Executor,
     runtimeWorkspaceRoot: string,
   ) {
+    this.id = `mikan-sandbox:${randomBytes(8).toString("hex")}`;
     this.cwd = runtimeWorkspaceRoot;
   }
 
@@ -117,6 +106,18 @@ class ShellExecutionEnv implements ExecutionEnv {
     return this.fileOp(() =>
       execAppendFile(this.executor, path, content, this.execOptions(context)),
     );
+  }
+
+  truncateFile(path: string, size: number, context: Context): Promise<Result<void, FileError>> {
+    return this.fileOp(async () => {
+      await this.run(`truncate -s ${Math.max(0, Math.floor(size))} ${shellEscape(path)}`, context);
+    });
+  }
+
+  flushFile(path: string, context: Context): Promise<Result<void, FileError>> {
+    return this.fileOp(async () => {
+      await this.run(`sync ${shellEscape(path)}`, context);
+    });
   }
 
   renameFile(
@@ -242,34 +243,29 @@ class ShellExecutionEnv implements ExecutionEnv {
         signal: context.abortSignal,
       });
       const combined = [result.stdout, result.stderr].filter((part) => part.length > 0).join("\n");
-      const limits = options?.capture?.limits ?? {
-        maxBytes: DEFAULT_MAX_BYTES,
-        maxLines: DEFAULT_MAX_LINES,
-        retain: "tail" as const,
-      };
-      const truncation =
-        limits.retain === "head"
-          ? truncateHead(combined, { maxLines: limits.maxLines, maxBytes: limits.maxBytes })
-          : truncateTail(combined, { maxLines: limits.maxLines, maxBytes: limits.maxBytes });
-
-      let spillPath: string | undefined;
-      if (options?.capture?.spill && truncation.truncated) {
-        try {
-          spillPath = posix.join(this.cwd, SPILL_DIR, `${randomBytes(8).toString("hex")}.log`);
-          await this.executor.writeFile(spillPath, combined, this.execOptions(context));
-        } catch {
-          spillPath = undefined;
-        }
-      }
-
-      const metadata = shellOutputMetadata(truncation, spillPath);
-      options?.onUpdate?.(
-        { kind: "replace", output: { text: truncation.content, ...metadata } },
-        context,
-      );
-      return ok({ exitCode: result.code, ...metadata });
+      if (combined.length > 0) options?.onOutput?.(combined, context);
+      return ok({ exitCode: result.code, spillPath: await this.spill(combined, options, context) });
     } catch (error) {
       return err(toExecutionError(error, context));
+    }
+  }
+
+  private async spill(
+    output: string,
+    options: ShellExecOptions | undefined,
+    context: Context,
+  ): Promise<string | undefined> {
+    const limits = options?.spill;
+    if (!limits) return undefined;
+    const lines = output.split("\n").length;
+    if (Buffer.byteLength(output, "utf8") <= limits.afterBytes && lines <= limits.afterLines)
+      return undefined;
+    try {
+      const spillPath = posix.join(this.cwd, SPILL_DIR, `${randomBytes(8).toString("hex")}.log`);
+      await this.executor.writeFile(spillPath, output, this.execOptions(context));
+      return spillPath;
+    } catch {
+      return undefined;
     }
   }
 
@@ -318,19 +314,6 @@ class ShellTextLineReader implements TextLineReader {
   async close(_context: Context): Promise<void> {
     this.offset = this.content.length;
   }
-}
-
-function shellOutputMetadata(
-  truncation: TruncationResult,
-  spillPath: string | undefined,
-): ShellOutputMetadata {
-  const { content: _content, ...metadata } = truncation;
-  const lastLine = truncation.content.split("\n").at(-1) ?? "";
-  return {
-    truncation: metadata,
-    spillPath: spillPath || undefined,
-    lastLineBytes: truncation.lastLinePartial ? Buffer.byteLength(lastLine, "utf8") : undefined,
-  };
 }
 
 function toFileError(error: unknown): FileError {

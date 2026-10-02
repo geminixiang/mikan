@@ -4,30 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { isPlatformHistorySession } from "../sessions/store.js";
 
-function v4Header(metadata?: Record<string, unknown>): string {
-  const lines = [
-    JSON.stringify({
-      v: 4,
-      kind: "header",
-      id: "abc",
-      storageVersion: 1,
-      createdAt: 1704067200000,
-      cwd: "/tmp",
-    }),
-  ];
-  if (metadata) {
-    lines.push(
-      JSON.stringify({
-        kind: "value",
-        op: "set",
-        seq: 1,
-        namespace: "mikan",
-        key: "metadata",
-        value: metadata,
-      }),
-    );
-  }
-  return `${lines.join("\n")}\n`;
+function sessionHeader(source?: Record<string, unknown>): string {
+  return `${JSON.stringify({
+    v: 5,
+    kind: "header",
+    id: "abc",
+    createdAt: 1704067200000,
+    cwd: "/tmp",
+    source,
+  })}\n`;
 }
 
 describe("isPlatformHistorySession", () => {
@@ -48,13 +33,13 @@ describe("isPlatformHistorySession", () => {
 
   test("returns false for non-platform-history session", () => {
     const sessionFile = join(dir, "session.jsonl");
-    writeFileSync(sessionFile, v4Header(), "utf-8");
+    writeFileSync(sessionFile, sessionHeader(), "utf-8");
     expect(isPlatformHistorySession(sessionFile)).toBe(false);
   });
 
   test("returns true for platform-history session", () => {
     const sessionFile = join(dir, "session.jsonl");
-    writeFileSync(sessionFile, v4Header({ source: { kind: "platform-history" } }), "utf-8");
+    writeFileSync(sessionFile, sessionHeader({ kind: "platform-history" }), "utf-8");
     expect(isPlatformHistorySession(sessionFile)).toBe(true);
   });
 
@@ -83,7 +68,7 @@ describe("isPlatformHistorySession", () => {
 
   test("returns false when the file cannot be read", () => {
     const sessionFile = join(dir, "session.jsonl");
-    writeFileSync(sessionFile, v4Header(), "utf-8");
+    writeFileSync(sessionFile, sessionHeader({ kind: "platform-history" }), "utf-8");
     chmodSync(sessionFile, 0o000);
     try {
       expect(isPlatformHistorySession(sessionFile)).toBe(false);

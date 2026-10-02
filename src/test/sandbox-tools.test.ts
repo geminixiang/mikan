@@ -3,26 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
-  TODO_CONTEXT,
   createReadTool,
   createWriteTool,
   createEditTool,
   createBashTool,
-  type AgentHarnessToolInvocation,
-  type ExecutionEnv,
-} from "@earendil-works/pi-agent-core";
+} from "@earendil-works/pi-durable/tools";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import { HostExecutor } from "../sandbox/host.js";
 import { createSandboxExecutionEnv } from "../harness/execution-env.js";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
-
-const invocation: AgentHarnessToolInvocation = {
-  invocationId: "inv-1",
-  operationId: "op-1",
-  turnId: "turn-1",
-  getMemo: async () => undefined,
-  setMemo: async () => {},
-};
+import { runTestTool } from "./tool-api.js";
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content
@@ -50,7 +41,7 @@ describe("sandbox tools", () => {
       name,
       arguments: params,
     });
-    return candidate.execute("call-1", validated, () => {}, { env }, invocation, TODO_CONTEXT);
+    return runTestTool(candidate, validated, { env });
   };
 
   beforeEach(() => {
@@ -95,16 +86,9 @@ describe("sandbox tools", () => {
   });
 
   test("rejects native tools without an explicit execution env", async () => {
-    await expect(
-      tool("read").execute(
-        "call-1",
-        { path: "README.md" },
-        () => {},
-        undefined!,
-        invocation,
-        TODO_CONTEXT,
-      ),
-    ).rejects.toThrow("requires toolContext.env");
+    await expect(runTestTool(tool("read"), { path: "README.md" })).rejects.toThrow(
+      "requires an execution env",
+    );
   });
 
   test("write then read round-trips content", async () => {

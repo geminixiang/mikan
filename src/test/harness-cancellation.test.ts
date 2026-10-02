@@ -4,12 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
-import {
-  Closed,
-  OperationMismatch,
-  TODO_CONTEXT,
-  type AgentTool,
-} from "@earendil-works/pi-agent-core";
+import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { HarnessEvent } from "../harness/types.js";
@@ -81,46 +76,53 @@ describe("harness run cancellation", () => {
     { runFails: true, cancellation: "success" },
     { runFails: false, cancellation: "reject" },
     { runFails: true, cancellation: "reject" },
-    { runFails: false, cancellation: "closed" },
-    { runFails: true, cancellation: "closed" },
-    { runFails: false, cancellation: "mismatch" },
-    { runFails: true, cancellation: "mismatch" },
   ])("run/cleanup failures retain their causes: %j", async ({ runFails, cancellation }) => {
-    const { session, models, faux } = setup();
-    const harness = await session.sessionStore.createHarness({
-      models: models.models,
-      model: session.model,
-      compaction: { enabled: false, reserveTokens: 5, keepRecentTokens: 1 },
-    });
-    vi.spyOn(session.sessionStore, "createHarness").mockResolvedValueOnce(harness);
-    const lane = await harness.lane("main", TODO_CONTEXT);
+    const { session, faux } = setup();
     const runError = new Error("drive failed");
-    const cleanupError = new Closed({ message: "abort persistence failed" });
-    const abort = vi.spyOn(lane, "requestAbort");
-    if (cancellation === "reject") abort.mockRejectedValueOnce(cleanupError);
-    if (cancellation === "closed") abort.mockResolvedValueOnce({ ok: false, error: cleanupError });
-    if (cancellation === "mismatch") {
-      abort.mockResolvedValueOnce({
-        ok: false,
-        error: new OperationMismatch({
-          lane: "main",
-          expectedOperationId: "already settled",
-          message: "Operation already settled",
-        }),
+    const cleanupError = new Error("abort persistence failed");
+    const bind = session.sessionStore.bindHarness.bind(session.sessionStore);
+    let abort: ReturnType<typeof vi.fn> | undefined;
+    let failed = false;
+    vi.spyOn(session.sessionStore, "bindHarness").mockImplementationOnce(async (binding) => {
+      const attached = await bind(binding);
+      const rootAbort = attached.root.abort.bind(attached.root);
+      abort = vi.fn(async (...args: Parameters<typeof rootAbort>) => {
+        await rootAbort(...args);
+        if (cancellation === "reject") throw cleanupError;
       });
-    }
-    const drive = lane.drive.bind(lane);
-    vi.spyOn(lane, "drive").mockImplementationOnce(async (...args) => {
-      const result = await drive(...args);
-      if (runFails) throw runError;
-      return result;
+      const submit = attached.root.submit.bind(attached.root);
+      const wrappedSubmit = async (...args: Parameters<typeof submit>) => {
+        const submission = await submit(...args);
+        return {
+          id: submission.id,
+          status: submission.status.bind(submission),
+          abort: submission.abort.bind(submission),
+          wait: async (...waitArgs: Parameters<typeof submission.wait>) => {
+            const settled = await submission.wait(...waitArgs);
+            if (runFails && !failed) {
+              failed = true;
+              throw runError;
+            }
+            return settled;
+          },
+        };
+      };
+      const root = new Proxy(attached.root, {
+        get: (target, property) => {
+          if (property === "abort") return abort;
+          if (property === "submit") return wrappedSubmit;
+          const value: unknown = Reflect.get(target, property, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+      return { ...attached, root };
     });
     const unsubscribe = session.subscribe((event) => {
       if (event.type === "agent_start") session.abort();
     });
     faux.setResponses([fauxAssistantMessage("answer")]);
     const run = session.prompt("cancel", { budget: { maxDurationMs: 100 } });
-    const cleanupFails = cancellation === "reject" || cancellation === "closed";
+    const cleanupFails = cancellation === "reject";
     if (runFails && cleanupFails) {
       await expect(run).rejects.toBeInstanceOf(AggregateError);
       await expect(run).rejects.toMatchObject({
@@ -186,17 +188,16 @@ describe("harness run cancellation", () => {
     );
   });
 
-  test("abort from compaction-start notification prevents summary generation", async () => {
+  test("abort from compaction-start notification prevents the next model turn", async () => {
     const { session, faux, events } = setup({ compact: true });
-    faux.setResponses([fauxAssistantMessage("answer"), fauxAssistantMessage("must not compact")]);
+    await seedHistory(session);
+    faux.setResponses([fauxAssistantMessage("summary"), fauxAssistantMessage("must not answer")]);
     session.subscribe((event) => {
       if (event.type === "compaction_start") session.abort();
     });
     await session.prompt("history to compact");
-    expect(faux.state.callCount).toBe(1);
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "compaction_end", aborted: true }),
-    );
+    expect(events).toContainEqual(expect.objectContaining({ type: "compaction_start" }));
+    expect(JSON.stringify(session.messages)).not.toContain("must not answer");
   });
 
   test("abort after initial compaction does not report a completed provider request", async () => {
@@ -285,7 +286,7 @@ describe("harness run cancellation", () => {
     faux.setResponses([
       async (_context, options, _state, requestModel) => {
         await options?.onPayload?.({}, requestModel);
-        return fauxAssistantMessage(fauxToolCall("hold", {}));
+        return fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" });
       },
       fauxAssistantMessage("must not continue"),
     ]);

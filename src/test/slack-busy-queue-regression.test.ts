@@ -28,7 +28,7 @@ test("the run after a busy tool receives and answers the queued token, not the p
     const queued = "QA_QUEUED_1789148623670";
     const requested: string[] = [];
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall("busy", {})),
+      fauxAssistantMessage(fauxToolCall("busy", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage(busy),
       (context) => {
         const latest = context.messages.findLast((message) => message.role === "user");

@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { existsSync, readdirSync } from "node:fs";
-import type {
-  BranchSummaryEntry as SessionBranchSummaryEntry,
-  CompactionEntry,
-} from "../../../harness/types.js";
 import { SessionStore } from "../../../sessions/session-store.js";
-import type { SessionEntry, SessionMessageEntry } from "../../../sessions/types.js";
+import type {
+  SessionCompactionEntry,
+  SessionEntry,
+  SessionMessageEntry,
+} from "../../../sessions/types.js";
 import {
   getThreadSessionFile,
   tryResolveCurrentSession,
@@ -2262,8 +2262,6 @@ function mapEntryToItem(entry: SessionEntry): SessionViewItem | null {
       return mapMessageEntry(entry);
     case "compaction":
       return mapCompactionEntry(entry);
-    case "branch_summary":
-      return mapSessionSummaryEntry(entry);
     case "custom":
       return {
         kind: "system",
@@ -2387,20 +2385,10 @@ function mapMessageEntry(entry: SessionMessageEntry): SessionViewItem {
   }
 }
 
-function mapCompactionEntry(entry: CompactionEntry): SessionViewItem {
+function mapCompactionEntry(entry: SessionCompactionEntry): SessionViewItem {
   return {
     kind: "system",
     title: "Context compacted",
-    body: entry.summary,
-    meta: `${entryIsoTime(entry) ?? ""} · ${entry.tokensBefore} tokens before compaction`,
-    tone: "muted",
-  };
-}
-
-function mapSessionSummaryEntry(entry: SessionBranchSummaryEntry): SessionViewItem {
-  return {
-    kind: "system",
-    title: "Session summary",
     body: entry.summary,
     meta: entryIsoTime(entry) ?? "",
     tone: "muted",

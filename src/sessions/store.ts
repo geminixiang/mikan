@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { SessionStore } from "./session-store.js";
+import { SessionStore, sessionStorageDir } from "./session-store.js";
 import { atomicWritePrivateFile, parseJsonValue, readTextFileIfExists } from "../file-guards.js";
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 import type { MikanSessionHeader, ParentSessionRef } from "./types.js";
@@ -89,6 +89,8 @@ export function archiveManagedSessionFile(sessionFile: string): string | null {
     archiveName = `scoped-archive-${createSessionFilename()}.corrupt`;
   }
   const archive = join(dirname(sessionFile), archiveName);
+  const storage = sessionStorageDir(sessionFile);
+  if (existsSync(storage)) renameSync(storage, sessionStorageDir(archive));
   renameSync(sessionFile, archive);
   return archive;
 }
@@ -138,6 +140,7 @@ function hasSessionHeader(sessionFile: string): boolean {
 }
 
 function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
+  if (existsSync(sessionStorageDir(sessionFile))) return false;
   try {
     const raw = readTextFileIfExists(sessionFile);
     if (raw === undefined) return false;
@@ -151,10 +154,10 @@ function shouldRecreatePreinitializedSession(sessionFile: string): boolean {
     const only = entries[0] as {
       kind?: unknown;
       parentSessionId?: unknown;
-      metadata?: { parentSessionPath?: unknown };
+      parentSession?: unknown;
     };
     if (only.kind !== "header") return false;
-    if (only.parentSessionId || only.metadata?.parentSessionPath) return false;
+    if (only.parentSessionId || only.parentSession) return false;
     return true;
   } catch {
     return false;

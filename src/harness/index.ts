@@ -20,6 +20,8 @@ export {
 export { SessionStore } from "../sessions/session-store.js";
 export type {
   SessionContext,
+  SessionCompactionEntry,
+  SessionCustomEntry,
   SessionEntry,
   SessionHeader,
   SessionMessageEntry,
@@ -64,7 +66,4 @@ export {
   type SubagentRunStatus,
   type SubagentUsage,
   type SubagentUsageSink,
-  type BranchSummaryEntry,
-  type CompactionEntry,
-  type CustomEntry,
 } from "./types.js";

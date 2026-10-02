@@ -1,6 +1,6 @@
 # mikan
 
-Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub (`@geminixiang/mikan`). Each conversation has an isolated Conversation office: a workspace directory and sandbox runtime. The harness in `src/harness/` is built on `pi-agent-core` / `pi-ai`.
+Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub (`@geminixiang/mikan`). Each conversation has an isolated Conversation office: a workspace directory and sandbox runtime. The harness in `src/harness/` is built on `pi-durable` / `pi-ai`.
 
 ## Where to look
 
@@ -46,7 +46,7 @@ These rules have guards. When a guard fails, follow the owner or budget it names
 - Put shared exported types in the module's `types.ts`. Use a named options interface when a signature spans several lines or crosses a module boundary; call the underlying function instead of adding a pass-through helper.
 - End a `switch` over a mikan-owned union that does not return a value with `default: value satisfies never;`, so adding a variant fails to compile instead of being silently skipped. Value-returning switches already get this from their return type.
 - Check preconditions first and return or throw early, keeping the happy path unnested; use EAFP when check-then-act would race or duplicate expensive work. For subprocesses, handle both the startup `error` event and exit, and keep the command or path in the error, because a missing executable otherwise escapes as an unhandled error.
-- Delegate session and agent semantics to public `pi-agent-core` interfaces so mikan upgrades with Pi. Deep imports of Pi's private `dist` paths and copies of Pi internals break on upgrade; where Pi lacks a public hook, document the small local exception, verify it against native Pi behavior, and remove it once upstream exposes the capability.
+- Delegate session and agent semantics to public `pi-durable` interfaces so mikan upgrades with Pi. Deep imports of Pi's private `dist` paths and copies of Pi internals break on upgrade; where Pi lacks a public hook, document the small local exception, verify it against native Pi behavior, and remove it once upstream exposes the capability.
 - Derive office paths and vault keys from an `Office` value, never from raw platform conversation IDs (ADRs 0003–0005). Keep credential and mount isolation intact across sandbox backends, set secret file permissions explicitly, and write state that must not be partially visible with `atomicWritePrivateFile`.
 - Name the need a comment would explain in a file or function instead; the urge to comment signals a split responsibility or unclear name.
 - Solve the requested problem with the simplest design. Leave unrelated behavior unchanged, add no speculative abstraction or compatibility layer, and state consequential compatibility changes in the report.

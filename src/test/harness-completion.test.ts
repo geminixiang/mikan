@@ -27,7 +27,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-test.each(["committed-entry delivery", "terminal listener"] as const)(
+test.each(["assistant message listener", "terminal listener"] as const)(
   "prompt remains active until %s completes",
   async (stage) => {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
@@ -48,22 +48,13 @@ test.each(["committed-entry delivery", "terminal listener"] as const)(
     let assistantPresented = false;
     let settled = false;
 
-    if (stage === "committed-entry delivery") {
-      const attach = store.createHarness.bind(store);
-      vi.spyOn(store, "createHarness").mockImplementation(async (options) => {
-        const harness = await attach(options);
-        harness.events.on("entry_added", async (event) => {
-          if (event.entry.type === "message" && event.entry.message.role === "assistant") {
-            entered.resolve();
-            await release.promise;
-          }
-        });
-        return harness;
-      });
-    }
     session.subscribe(async (event) => {
       if (event.type === "message_end" && event.message.role === "assistant") {
         assistantPresented = true;
+        if (stage === "assistant message listener") {
+          entered.resolve();
+          await release.promise;
+        }
       }
       if (stage === "terminal listener" && event.type === "agent_end") {
         entered.resolve();
@@ -84,7 +75,7 @@ test.each(["committed-entry delivery", "terminal listener"] as const)(
       await Promise.race([entered.promise, run]);
       expect(settled).toBe(false);
       expect(session.isActiveRun).toBe(true);
-      expect(assistantPresented).toBe(stage === "terminal listener");
+      expect(assistantPresented).toBe(true);
       expect(
         (await store.getEntries()).some(
           (entry) => entry.type === "message" && entry.message.role === "assistant",
