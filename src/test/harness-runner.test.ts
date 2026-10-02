@@ -218,7 +218,7 @@ describe("MikanAgentSession", () => {
     expect(JSON.stringify(await sessionStore.getEntries())).not.toContain("done");
   });
 
-  test("foldExternalUsage folds delegated spend and enforces the budget at the fold", async () => {
+  test("external usage sink folds delegated spend and enforces the budget at the fold", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("delegate", {}), { stopReason: "toolUse" }),
@@ -233,7 +233,7 @@ describe("MikanAgentSession", () => {
       parameters: Type.Object({}),
       execute: async () => {
         expect(session.isActiveRun).toBe(true);
-        await session.foldExternalUsage({
+        await session.captureExternalUsageSink()({
           input: 1000,
           output: 500,
           cacheRead: 3000,

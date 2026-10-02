@@ -188,10 +188,6 @@ export class MikanAgentSession {
     };
   }
 
-  async foldExternalUsage(usage: SubagentUsage): Promise<void> {
-    await this.captureExternalUsageSink()(usage);
-  }
-
   subscribe(listener: HarnessEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

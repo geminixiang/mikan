@@ -47,7 +47,6 @@ describe("SessionStore", () => {
     await store.appendMessage(user("ephemeral"));
 
     expect(store.getSessionFile()).toBeUndefined();
-    expect(store.isPersisted()).toBe(false);
     expect(await store.getEntries()).toHaveLength(1);
     expect((await store.buildSessionContext()).messages).toHaveLength(1);
     await store.close();
@@ -86,8 +85,6 @@ describe("SessionStore", () => {
     const entries = await reopened.getEntries();
     expect(entries.map((entry) => entry.type)).toEqual(["message", "custom"]);
     expect(entries[1]).toMatchObject({ customType: "mikan.test", data: { cursor: 3 } });
-    expect(entries[1]?.parentId).toBe(entries[0]?.id);
-    expect(await reopened.getBranch(entries[0]!.id)).toEqual([entries[0]]);
     await reopened.close();
   });
 

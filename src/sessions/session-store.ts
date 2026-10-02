@@ -262,22 +262,17 @@ function contentText(message: Message | undefined): string {
     .join("\n");
 }
 
-function toSessionEntry(
-  record: EntryRecord,
-  sessionId: string,
-  parentId: string | null,
-): SessionEntry | undefined {
+function toSessionEntry(record: EntryRecord, sessionId: string): SessionEntry | undefined {
   const id = `${sessionId}:${record.id}`;
   const message = record.model?.[0];
   if (UserEntry.is(record) || AssistantEntry.is(record) || ToolResultEntry.is(record)) {
     if (!message) return undefined;
-    return { type: "message", id, parentId, timestamp: messageTimestamp(message), message };
+    return { type: "message", id, timestamp: messageTimestamp(message), message };
   }
   if (CompactionEntry.is(record)) {
     return {
       type: "compaction",
       id,
-      parentId,
       timestamp: messageTimestamp(message),
       summary: (message && compactionSummaryOf(message)) ?? contentText(message),
       firstKeptEntryId: record.head === undefined ? undefined : `${sessionId}:${record.head}`,
@@ -287,7 +282,6 @@ function toSessionEntry(
     return {
       type: "custom",
       id,
-      parentId,
       timestamp: record.data.timestamp,
       customType: record.data.customType,
       data: record.data.data ?? undefined,
@@ -297,12 +291,7 @@ function toSessionEntry(
 }
 
 function toSessionEntries(records: readonly EntryRecord[], sessionId: string): SessionEntry[] {
-  const entries: SessionEntry[] = [];
-  for (const record of records) {
-    const entry = toSessionEntry(record, sessionId, entries.at(-1)?.id ?? null);
-    if (entry) entries.push(entry);
-  }
-  return entries;
+  return records.flatMap((record) => toSessionEntry(record, sessionId) ?? []);
 }
 
 async function readEntries(root: Conversation, sessionId: string): Promise<SessionEntry[]> {
@@ -314,12 +303,6 @@ async function readEntries(root: Conversation, sessionId: string): Promise<Sessi
     cursor = page.next;
   } while (cursor !== undefined);
   return toSessionEntries(records.toReversed(), sessionId);
-}
-
-function branchUntil(entries: SessionEntry[], fromId: string | undefined): SessionEntry[] {
-  if (fromId === undefined) return entries;
-  const index = entries.findIndex((entry) => entry.id === fromId);
-  return index < 0 ? [] : entries.slice(0, index + 1);
 }
 
 async function readContext(root: Conversation): Promise<SessionContext> {
@@ -437,10 +420,6 @@ class CachedSessionInspection implements SessionInspection {
 
   async getSessionName(): Promise<string | undefined> {
     return this.name;
-  }
-
-  async getBranch(fromId?: string): Promise<SessionEntry[]> {
-    return structuredClone(branchUntil(this.entries, fromId));
   }
 
   async buildSessionContext(): Promise<SessionContext> {
@@ -574,11 +553,6 @@ export class SessionStore implements SessionInspection {
     return this.sessionFile ?? undefined;
   }
 
-  isPersisted(): boolean {
-    this.assertOpen();
-    return this.sessionFile !== null;
-  }
-
   getCwd(): string {
     this.assertOpen();
     return this.cwd;
@@ -592,14 +566,6 @@ export class SessionStore implements SessionInspection {
   getSessionId(): string {
     this.assertOpen();
     return this.state.header.id;
-  }
-
-  async getLeafId(): Promise<string | null> {
-    return (await this.getEntries()).at(-1)?.id ?? null;
-  }
-
-  async getEntry(id: string): Promise<SessionEntry | undefined> {
-    return (await this.getEntries()).find((entry) => entry.id === id);
   }
 
   async getEntries(): Promise<SessionEntry[]> {
@@ -619,10 +585,6 @@ export class SessionStore implements SessionInspection {
     this.assertOpen();
     if (this.state.kind === "pending") return undefined;
     return (await this.state.harness.snapshot(SessionDoc, this.state.root.id, context))?.name;
-  }
-
-  async getBranch(fromId?: string): Promise<SessionEntry[]> {
-    return branchUntil(await this.getEntries(), fromId);
   }
 
   async buildSessionContext(): Promise<SessionContext> {

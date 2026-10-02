@@ -34,7 +34,6 @@ export interface SessionContext {
 
 interface SessionEntryBase {
   id: string;
-  parentId: string | null;
   timestamp: number;
 }
 
@@ -80,7 +79,6 @@ export interface SessionInspection {
   getHeader(): SessionHeader;
   getEntries(): Promise<SessionEntry[]>;
   getSessionName(): Promise<string | undefined>;
-  getBranch(fromId?: string): Promise<SessionEntry[]>;
   buildSessionContext(): Promise<SessionContext>;
 }
 
