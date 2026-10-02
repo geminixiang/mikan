@@ -28,3 +28,4 @@ Pi 1.0 removed the experimental harness from `@earendil-works/pi-agent-core`: `A
 - The session format changes. The v4 reader lives only in the migration; the daemon refuses unmigrated sessions like any other pending migration (ADR 0014).
 - An imported session shows only its visible context, not entries that an older compaction already hid; the original v4 file stays available for inspection.
 - Tool progress, retries, and compactions reach mikan's presenter through pi-durable's agent events instead of harness events.
+- Decision 2, one storage per session, is superseded by [ADR 0018](0018-one-durable-storage-per-office.md): each office has one SQLite storage, and the v4 import writes into it.
