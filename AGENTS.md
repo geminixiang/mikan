@@ -63,11 +63,11 @@ Take every change except a documentation-only one through these steps in order. 
 6. **Implement and test**, failing test first for a behavior change.
 7. **Ship**: push to `main`, trigger the Slack E2E workflow (`slack-e2e.yml`) on GitHub, and see it pass. Only then is the change done.
 
-The best design is:
+The best design meets these, and when they conflict, the earlier one wins:
 
+- **Built on Pi and existing dependencies**: hand each responsibility to pi-durable or another dependency through its public API; own code only where none offers it, with the reason recorded.
 - **Maintainable**: the least new code, state, and special cases; understandable from its README and ADR; unchanged by a Pi upgrade.
 - **Acceptable in its trade-offs**: every cost measured in step 4 and recorded in the report or ADR.
-- **Built on Pi and existing dependencies**: a public API where one exists; own code only where none does, with the reason recorded.
 
 ## Boundaries
 
