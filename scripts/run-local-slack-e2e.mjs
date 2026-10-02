@@ -11,7 +11,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const repo = new URL("../", import.meta.url).pathname;
 const source = process.env.SLACK_QA_CONFIG_DIR ?? join(homedir(), ".mikan");
@@ -47,7 +47,16 @@ const settings = JSON.parse(readFileSync(join(source, "settings.json"), "utf8"))
 settings.sandbox = { workspace: { doorPolicy: "trusted", layout: "full" } };
 delete settings.sentry;
 delete settings.observability;
+const onboard = spawnSync(process.execPath, ["dist/main.js", "--onboard", "--state-dir", base], {
+  cwd: repo,
+  stdio: ["ignore", "ignore", "inherit"],
+});
+if (onboard.status !== 0) throw new Error("Could not initialize the QA state directory");
 writeFileSync(join(base, "settings.json"), JSON.stringify(settings), { mode: 0o600 });
+const modelsJson = join(source, "models.json");
+if (existsSync(modelsJson)) {
+  writeFileSync(join(base, "models.json"), readFileSync(modelsJson), { mode: 0o600 });
+}
 mkdirSync(join(base, "workspace"));
 for (const key of Object.keys(env)) if (/^(SENTRY_|OTEL_|OTLP_)/.test(key)) delete env[key];
 Object.assign(env, {
