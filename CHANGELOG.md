@@ -23,7 +23,8 @@ any release.
 
 - Tool results that report `isError` reach the model as errors, so a failing codemode script is no longer recorded as a success.
 - A run stopped before the model wrote anything no longer stores a made-up aborted answer, and its reply is never taken from the previous run.
-- Compaction entries in the session view and subagent parent context show the summary itself, without Pi's wrapper text.
+- Compaction entries in the session view and subagent parent context show the summary itself, without Pi's wrapper text, and a subagent's parent context keeps the messages Pi retained after compaction.
+- A run Pi settles with a model error is recorded as failed instead of completed.
 
 ## [1.0.0-beta.88]
 

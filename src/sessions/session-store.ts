@@ -296,6 +296,15 @@ function toSessionEntry(
   return undefined;
 }
 
+function toSessionEntries(records: readonly EntryRecord[], sessionId: string): SessionEntry[] {
+  const entries: SessionEntry[] = [];
+  for (const record of records) {
+    const entry = toSessionEntry(record, sessionId, entries.at(-1)?.id ?? null);
+    if (entry) entries.push(entry);
+  }
+  return entries;
+}
+
 async function readEntries(root: Conversation, sessionId: string): Promise<SessionEntry[]> {
   const records: EntryRecord[] = [];
   let cursor: Parameters<Conversation["entries"]>[2];
@@ -304,12 +313,7 @@ async function readEntries(root: Conversation, sessionId: string): Promise<Sessi
     records.push(...page.items);
     cursor = page.next;
   } while (cursor !== undefined);
-  const entries: SessionEntry[] = [];
-  for (const record of records.toReversed()) {
-    const entry = toSessionEntry(record, sessionId, entries.at(-1)?.id ?? null);
-    if (entry) entries.push(entry);
-  }
-  return entries;
+  return toSessionEntries(records.toReversed(), sessionId);
 }
 
 function branchUntil(entries: SessionEntry[], fromId: string | undefined): SessionEntry[] {
@@ -602,6 +606,13 @@ export class SessionStore implements SessionInspection {
     this.assertOpen();
     if (this.state.kind === "pending") return [];
     return readEntries(this.state.root, this.state.header.id);
+  }
+
+  async getContextEntries(): Promise<SessionEntry[]> {
+    this.assertOpen();
+    if (this.state.kind === "pending") return [];
+    const view = await this.state.root.context(context);
+    return toSessionEntries(view.entries, this.state.header.id);
   }
 
   async getSessionName(): Promise<string | undefined> {

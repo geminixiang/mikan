@@ -505,6 +505,55 @@ describe("runSubagent", () => {
     expect(faux.state.callCount).toBe(1);
   });
 
+  test("keeps the parent's retained tail after a native compaction", async () => {
+    const { models, faux, model } = createFauxSetup();
+    const parent = await SessionStore.create(join(dir, "parent.jsonl"), dir);
+    for (const turn of ["one", "two", "three"]) {
+      await parent.appendMessage({
+        role: "user",
+        content: [{ type: "text", text: `ask ${turn} `.repeat(20) }],
+        timestamp: Date.now(),
+      });
+      const answer = fauxAssistantMessage(`answer ${turn} `.repeat(20));
+      answer.usage.input = 200;
+      answer.usage.totalTokens = 200;
+      await parent.appendMessage(answer);
+    }
+    faux.setResponses([fauxAssistantMessage("compacted history"), fauxAssistantMessage("done")]);
+    await new MikanAgentSession({
+      systemPrompt: "parent",
+      model: Object.assign(model, { contextWindow: 300 }),
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: parent,
+      settings: { compaction: { reserveTokens: 100, keepRecentTokens: 60 } },
+    }).prompt("compact now");
+
+    let prompt = "";
+    faux.setResponses([
+      (context) => {
+        prompt = JSON.stringify(context.messages);
+        return fauxAssistantMessage("child");
+      },
+    ]);
+    await runSubagent({
+      request: { task: "Use context", parentContext: { mode: "normalized", recentTurns: 8 } },
+      defaultModel: model,
+      thinkingLevel: "off",
+      models,
+      workspaceDir: dir,
+      availableTools: [],
+      parentEntries: await parent.getContextEntries(),
+    });
+    await parent.close();
+
+    expect(prompt).toContain("Earlier summary: compacted history");
+    expect(prompt).toContain("answer three");
+    expect(prompt).toContain("compact now");
+    expect(prompt).not.toContain("ask two");
+  });
+
   test("uses omitted marker without a summary and falls back to fresh without a parent", async () => {
     const { models, faux, model } = createFauxSetup();
     const prompts: string[] = [];

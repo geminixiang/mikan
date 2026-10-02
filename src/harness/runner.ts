@@ -123,7 +123,7 @@ async function createConfiguredAgentSession(params: {
         profiles: runnableProfiles,
         slots: globalSubagentSlots,
         toolContext,
-        parentEntries: await session!.sessionStore.getEntries(),
+        parentEntries: await session!.sessionStore.getContextEntries(),
         onUsage: session!.captureExternalUsageSink(),
       }),
     runnableProfiles,

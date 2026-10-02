@@ -269,7 +269,7 @@ export class MikanAgentSession {
       stream = await watchEvents(attached.harness, attached.root.id, context);
       this.observedUsage = sumUsageState(stream.snapshot.usage);
       stream.start((events) => this.handleDurableEvents(events));
-      await this.drive(attached, text, options?.images);
+      status = await this.drive(attached, text, options?.images);
     } catch (error) {
       runFailure = { error };
       status = "failed";
@@ -284,11 +284,11 @@ export class MikanAgentSession {
     { harness, root }: AttachedSessionHarness,
     text: string | undefined,
     images?: ImageContent[],
-  ): Promise<void> {
+  ): Promise<SessionRunStatus> {
     if (text === undefined) {
       harness.resume();
       await root.waitForIdle(context);
-      return;
+      return "completed";
     }
     const interrupted = (await harness.snapshot(LiveDoc, root.id, context))?.run;
     if (interrupted) {
@@ -301,11 +301,10 @@ export class MikanAgentSession {
     if (this.runAborted) this.requestCancellation();
     const settled = await submission.wait(context);
     if (this.runStarted) await this.runEnded.promise;
-    if (settled.status === "unanswered" && !this.runAborted) {
-      if (settled.reason !== "aborted" && settled.reason !== "model_error") {
-        throw new Error(`Pi run failed: ${settled.reason}`);
-      }
-    }
+    if (settled.status === "done") return "completed";
+    if (this.runAborted || settled.reason === "aborted") return "aborted";
+    if (settled.reason === "model_error") return "failed";
+    throw new Error(`Pi run failed: ${settled.reason}`);
   }
 
   private async cleanupRun(

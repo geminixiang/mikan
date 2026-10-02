@@ -69,6 +69,31 @@ async function seedCompactableHistory(sessionStore: SessionStore): Promise<void>
 }
 
 describe("MikanAgentSession", () => {
+  test("a run Pi settles with a model error reports a failed status", async () => {
+    const { models, faux, model } = createFauxSetup();
+    faux.setResponses([
+      fauxAssistantMessage("", { stopReason: "error", errorMessage: "400 bad request" }),
+    ]);
+    const session = new MikanAgentSession({
+      systemPrompt: "test",
+      model,
+      thinkingLevel: "off",
+      tools: [],
+      models,
+      sessionStore: SessionStore.inMemory(dir),
+      settings: { retry: { enabled: false } },
+    });
+
+    await session.prompt("hi");
+
+    expect(session.getLastRunStats().status).toBe("failed");
+    expect(
+      session.lastRunMessages.findLast((message) => message.role === "assistant"),
+    ).toMatchObject({
+      stopReason: "error",
+    });
+  });
+
   test("runs a prompt, persists messages, and reports the final text", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("hello from faux")]);
