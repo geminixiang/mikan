@@ -65,7 +65,7 @@ session は 1 行の header file と pi-durable storage からなります。`mi
 
 ## Bootstrap、Clean session、メモリ
 
-新しい scoped session には、過去 14 日間に該当するプラットフォームメッセージが最大 200 件取り込まれます。Top-level session は長期間使い続けられます。mikan は `/new` で置き換えられるまで現在の session file を使い続け、Pi の自動 compaction が model context を上限内に保ちます。
+新しい scoped session には、その thread のこれまでのメッセージと、thread の起点より前の過去 14 日間の top-level メッセージが最大 10 件取り込まれます。それより古い履歴は `log.jsonl` で検索できます。Top-level session は長期間使い続けられます。mikan は `/new` で置き換えられるまで現在の session file を使い続け、Pi の自動 compaction が model context を上限内に保ちます。
 
 `/new` は直ちに **Clean session** を作成します。前の session の要約、memory 処理の待機、古い JSONL files の削除は行いません。既存の conversation `MEMORY.md` は独立して利用できます。
 

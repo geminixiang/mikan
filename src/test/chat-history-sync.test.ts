@@ -408,6 +408,44 @@ describe("ChatHistorySync", () => {
     expect(await countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
   });
 
+  test("seeds a new thread with only the last few top-level messages before its root", async () => {
+    const topLevel = Array.from({ length: 30 }, (_, index) => ({
+      date: new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
+      ts: `1000.${String(index).padStart(4, "0")}`,
+      user: "U1",
+      userName: "alice",
+      text: `top-level ${index}`,
+      isMessagingBot: false,
+    }));
+    writeLog([
+      ...topLevel,
+      {
+        date: "2026-05-01T00:01:00.000Z",
+        ts: "2000.0001",
+        user: "U2",
+        userName: "bob",
+        text: "thread root",
+        isMessagingBot: false,
+      },
+    ]);
+
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-05-01T00:01:03.000Z"),
+    });
+    const scope = await manager.resolveSessionScope({
+      office,
+      sessionKey: "C123:2000.0001",
+      cwd: conversationDir,
+    });
+
+    const text = await readContextText(scope.contextFile);
+    expect(text).toContain("thread root");
+    expect(text).toContain("top-level 29");
+    expect(text).toContain("top-level 21");
+    expect(text).not.toContain("top-level 20");
+  });
+
   test("bootstraps a thread session from recent top-level log history plus thread history", async () => {
     writeLog([
       {

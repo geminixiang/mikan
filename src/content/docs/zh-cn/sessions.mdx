@@ -62,7 +62,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 初始化、Clean session 与记忆
 
-新的限定范围会话会从过去 14 天内最多 200 条适用的平台消息初始化。顶层会话会长期沿用：mikan 会持续使用当前会话文件，直到 `/new` 替换它；Pi 的自动 compaction 会让模型上下文保持在上限内。
+新的限定范围会话会带入该话题目前的消息，以及话题起点之前、过去 14 天内最多 10 条顶层消息；更早的历史仍可在 `log.jsonl` 中查询。顶层会话会长期沿用：mikan 会持续使用当前会话文件，直到 `/new` 替换它；Pi 的自动 compaction 会让模型上下文保持在上限内。
 
 `/new` 会立即创建 **Clean session**。它不会总结前一个会话、等待记忆处理或删除旧 JSONL 文件；现有对话 `MEMORY.md` 仍可独立使用。
 

@@ -25,6 +25,7 @@ import {
 
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
+const THREAD_SEED_TOP_LEVEL_MESSAGES = 10;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 
 type SessionAppendMessage = Parameters<SessionStore["appendMessage"]>[0];
@@ -230,7 +231,6 @@ export class ChatHistorySync {
     );
     const bootstrapRecords = selectThreadBootstrapMessages(records, threadId, {
       recentDays: this.recentDays,
-      maxTopLevelMessages: this.maxTopLevelMessages,
       now: this.now(),
       excludeMessageId: options.currentMessageId,
       isCommandText: this.isCommandText,
@@ -296,7 +296,6 @@ function selectThreadBootstrapMessages(
   threadId: string,
   options: {
     recentDays: number;
-    maxTopLevelMessages: number;
     now: Date;
     excludeMessageId?: string;
     isCommandText: (text: string) => boolean;
@@ -309,7 +308,7 @@ function selectThreadBootstrapMessages(
     : scopedRecords;
   const topLevelRecords = selectRecentTopLevelMessages(topLevelSource, {
     recentDays: options.recentDays,
-    maxMessages: options.maxTopLevelMessages,
+    maxMessages: THREAD_SEED_TOP_LEVEL_MESSAGES,
     now: options.now,
     excludeMessageId: options.excludeMessageId,
     isCommandText: options.isCommandText,
