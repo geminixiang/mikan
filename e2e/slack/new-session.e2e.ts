@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createOfficeAddress, createWorkspace } from "../../src/office/index.js";
+import { SessionStore } from "../../src/sessions/session-store.js";
 import { tryResolveCurrentSession } from "../../src/sessions/store.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
@@ -43,6 +44,10 @@ async function waitForResetResult(
     await sleep(pollMs);
   }
   return null;
+}
+
+async function sessionText(file: string): Promise<string> {
+  return JSON.stringify(await (await SessionStore.inspect(file)).getEntries());
 }
 
 describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
@@ -96,7 +101,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     writeFileSync(memoryPath, memoryAnchor);
     const originalSession = tryResolveCurrentSession(office.sessionsDir);
     expect(originalSession, "no active session before /new").not.toBeNull();
-    expect(readFileSync(originalSession!, "utf-8")).toContain(scratchNonce);
+    expect(await sessionText(originalSession!)).toContain(scratchNonce);
 
     const { ts: resetTs } = await postLocallyDeliveredMessage({
       client,
@@ -121,7 +126,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(cleanSession, "no active session after /new").not.toBeNull();
     expect(cleanSession).not.toBe(originalSession);
     expect(existsSync(originalSession!)).toBe(true);
-    expect(readFileSync(cleanSession!, "utf-8")).not.toContain(scratchNonce);
+    expect(await sessionText(cleanSession!)).not.toContain(scratchNonce);
     expect(readFileSync(memoryPath, "utf-8")).toBe(memoryAnchor);
   }, 300_000);
 });
