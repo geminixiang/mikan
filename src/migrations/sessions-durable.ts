@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { basename, dirname, join, relative, sep } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { SessionStore, sessionStorageDir } from "../sessions/session-store.js";
 import {
@@ -25,6 +25,12 @@ function archivePath(file: string): string {
   const office = file.slice(0, index);
   const sessionsRoot = file.slice(0, index + marker.length - 1);
   return join(office, ARCHIVE_DIR, relative(sessionsRoot, file));
+}
+
+function currentPointerPath(file: string): string | undefined {
+  const pointer = join(dirname(file), "current");
+  if (!existsSync(pointer)) return undefined;
+  return readFileSync(pointer, "utf-8").trim() === basename(file) ? pointer : undefined;
 }
 
 function finishPublish(file: string, temp: string): void {
@@ -81,8 +87,8 @@ class SessionImporter {
 async function importSession(session: V4Session, temp: string): Promise<number> {
   const store = await SessionStore.create(temp, {
     id: session.header.id,
+    createdAt: session.header.createdAt,
     parentSessionId: session.header.parentSessionId,
-    source: session.source,
   });
   try {
     const importer = new SessionImporter(store);
@@ -140,6 +146,10 @@ async function migrateV4SessionFile(file: string, context: MigrationContext): Pr
   }
   const session = readV4Session(file);
   if (session.open) context.report(`    interrupted run in ${file} is not resumed`);
+  const seedPointer =
+    session.source?.kind === "platform-history" ? currentPointerPath(file) : undefined;
+  if (seedPointer)
+    context.report(`    ${file} is a history seed; the next run starts a new session`);
   if (context.dryRun) return;
   if (existsSync(archive)) throw new Error(`Archived v4 session already exists: ${archive}`);
   rmSync(temp, { force: true });
@@ -155,6 +165,7 @@ async function migrateV4SessionFile(file: string, context: MigrationContext): Pr
   mkdirSync(dirname(archive), { recursive: true, mode: 0o700 });
   renameSync(file, archive);
   finishPublish(file, temp);
+  if (seedPointer) rmSync(seedPointer);
 }
 
 function collectPending(dir: string, found: Set<string>): void {

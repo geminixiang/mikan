@@ -9,7 +9,6 @@ import {
   stripHistoryLinePrefix,
   stripTriggerSignature,
 } from "./history-line.js";
-import { isPlatformHistorySession } from "./store.js";
 import { isThreadSessionKey } from "./session-key.js";
 import {
   archiveManagedSessionFile,
@@ -174,7 +173,7 @@ export class ChatHistorySync {
     currentMessageId?: string;
   }): Promise<string> {
     const existing = tryResolveCurrentSession(options.sessionDir);
-    if (existing && !isPlatformHistorySession(existing)) return existing;
+    if (existing) return existing;
     const records = readConversationLog(options.office);
 
     const sessionFile = createManagedSessionFile(options.sessionDir);

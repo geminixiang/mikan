@@ -34,7 +34,6 @@ const EXPECTED_RUNTIME_EXPORTS = [
   "hasMaterializedChatSession",
   "inferConversationKind",
   "isCommandText",
-  "isPlatformHistorySession",
   "loadSkillsFromDir",
   "loadSubagentProfiles",
   "officeKey",

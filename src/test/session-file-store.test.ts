@@ -117,18 +117,16 @@ describe("SessionStore", () => {
     await second.close();
   });
 
-  test("readHeader exposes lineage and source, and null for absent or unrecognized files", () => {
+  test("readHeader exposes lineage, and null for absent or unrecognized files", () => {
     const file = join(dir, "session.jsonl");
     SessionStore.writeHeaderFile(file, {
       id: "session-1",
       parentSessionId: "parent-1",
-      source: { kind: "platform-history" },
     });
     expect(SessionStore.readHeader(file)).toEqual({
       id: "session-1",
       createdAt: expect.any(Number),
       parentSessionId: "parent-1",
-      source: { kind: "platform-history" },
     });
     expect(SessionStore.readHeader(join(dir, "missing.jsonl"))).toBeNull();
     const garbage = join(dir, "garbage.jsonl");

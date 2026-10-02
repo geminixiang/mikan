@@ -52,8 +52,8 @@ export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
 
 export interface SessionCreateInfo {
   id?: string;
+  createdAt?: number;
   parentSessionId?: string;
-  source?: { [key: string]: JsonValue };
 }
 
 export interface SessionInspection {
@@ -67,7 +67,6 @@ export interface SessionHeader {
   id: string;
   createdAt: number;
   parentSessionId?: string;
-  source?: { [key: string]: JsonValue };
 }
 
 export interface ThreadRootMessage {

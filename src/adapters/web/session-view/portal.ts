@@ -12,7 +12,6 @@ import {
   tryResolveCurrentSession,
   tryResolveThreadSession,
 } from "../../../sessions/store.js";
-import { isPlatformHistorySession } from "../../../sessions/store.js";
 import type { Office } from "../../../office/types.js";
 import type { SessionHeader } from "../../../sessions/types.js";
 import type {
@@ -2055,15 +2054,7 @@ function isChildThreadSession(
 ): boolean {
   if (!expectedParent) return false;
 
-  if (threadParentSessionId) {
-    if (threadParentSessionId === expectedParentId) return true;
-    const parent = findSessionFileById(dirname(sessionFile), threadParentSessionId);
-    return (
-      parent !== null &&
-      isPlatformHistorySession(expectedParent) &&
-      isPlatformHistorySession(parent)
-    );
-  }
+  if (threadParentSessionId) return threadParentSessionId === expectedParentId;
 
   if (!getFixedThreadSessionId(sessionFile)) return false;
   return tryResolveCurrentSession(dirname(sessionFile)) === expectedParent;

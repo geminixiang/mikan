@@ -75,7 +75,6 @@ export type {
   SyncChatSessionOptions,
   ThreadBootstrapWaitOptions,
 } from "./sessions/types.js";
-export { isPlatformHistorySession } from "./sessions/store.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
 export type { ResolveSessionKeyOptions } from "./sessions/types.js";
 export {

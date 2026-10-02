@@ -107,7 +107,6 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
     writer.entry({ type: "message", id: "e", parentId: "d", timestamp: 5, message: call });
     writer.set("pi.branch.tip", "main", "e");
     writer.set("pi.session.name", "", "Imported");
-    writer.set("mikan", "metadata", { source: { kind: "platform-history" } });
   });
   const original = readFileSync(file, "utf-8");
 
@@ -125,10 +124,10 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
   );
   expect(readFileSync(archive, "utf-8")).toBe(original);
   expect(existsSync(sessionStorageDir(file))).toBe(true);
-  expect(SessionStore.readHeader(file)).toMatchObject({
+  expect(SessionStore.readHeader(file)).toEqual({
     id: "session-1",
+    createdAt: 1_000,
     parentSessionId: "parent-1",
-    source: { kind: "platform-history" },
   });
   const inspection = await SessionStore.inspect(file);
   expect(await inspection.getSessionName()).toBe("Imported");
@@ -157,6 +156,30 @@ test("imports the visible v4 context, bookkeeping, and name, and archives the or
   const before = reports.length;
   await sessionsDurableMigration.run(context());
   expect(reports).toHaveLength(before);
+});
+
+test("a current platform-history seed loses the current pointer so the next run starts fresh", async () => {
+  const seed = join(sessionsDir, "2026-01-01T00-00-00-000Z_aaaaaaaa.jsonl");
+  writeV4(seed, (writer) => {
+    writer.entry({
+      type: "message",
+      id: "a",
+      parentId: null,
+      timestamp: 1,
+      message: user("seed", 1),
+    });
+    writer.set("pi.branch.tip", "main", "a");
+    writer.set("mikan", "metadata", { source: { kind: "platform-history" } });
+  });
+  writeFileSync(join(sessionsDir, "current"), "2026-01-01T00-00-00-000Z_aaaaaaaa.jsonl");
+
+  await sessionsDurableMigration.run(context(true));
+  expect(existsSync(join(sessionsDir, "current"))).toBe(true);
+
+  await sessionsDurableMigration.run(context());
+
+  expect(existsSync(join(sessionsDir, "current"))).toBe(false);
+  expect(SessionStore.readHeader(seed)).not.toHaveProperty("source");
 });
 
 test("an interrupted publish finishes on the next run", async () => {

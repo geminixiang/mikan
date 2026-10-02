@@ -32,7 +32,6 @@ import {
   type EntryRecord,
   type HarnessOptions,
   type HarnessSettings,
-  type JsonObject,
   type Registry,
   type Storage,
 } from "@earendil-works/pi-durable";
@@ -168,7 +167,7 @@ function readHeader(filePath: string): SessionHeader {
   if (!isRecord(parsed)) {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
-  const { id, createdAt, parentSessionId, source } = parsed;
+  const { id, createdAt, parentSessionId } = parsed;
   if (typeof id !== "string" || typeof createdAt !== "number") {
     throw new SessionFormatError(`Session file has an unrecognized header: ${filePath}`);
   }
@@ -176,21 +175,14 @@ function readHeader(filePath: string): SessionHeader {
     id,
     createdAt,
     parentSessionId: typeof parentSessionId === "string" ? parentSessionId : undefined,
-    source: isRecord(source) ? toJsonObject(source) : undefined,
   };
-}
-
-function toJsonObject(input: Record<string, unknown>): JsonObject {
-  const copy: JsonObject = JSON.parse(JSON.stringify(input));
-  return copy;
 }
 
 function buildHeader(options?: SessionCreateInfo): SessionHeader {
   return {
     id: options?.id ?? randomUUID(),
-    createdAt: Date.now(),
+    createdAt: options?.createdAt ?? Date.now(),
     parentSessionId: options?.parentSessionId,
-    source: options?.source,
   };
 }
 

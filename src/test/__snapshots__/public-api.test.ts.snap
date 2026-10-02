@@ -23,7 +23,6 @@ export type { SessionContext, SessionCompactionEntry, SessionCustomEntry, Sessio
 export { isCommandText } from "./adapters/commands/manifest.js";
 export { ChatHistorySync, hasMaterializedChatSession, registerThreadSession, waitForThreadSessionBootstrap, } from "./sessions/chat-history-sync.js";
 export type { ChatHistorySyncOptions, HasMaterializedSessionOptions, RegisterThreadSessionOptions, ResetChatSessionOptions, ResolveChatSessionScopeOptions, SyncChatSessionOptions, ThreadBootstrapWaitOptions, } from "./sessions/types.js";
-export { isPlatformHistorySession } from "./sessions/store.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
 export type { ResolveSessionKeyOptions } from "./sessions/types.js";
 export { createManagedSessionFile, createManagedSessionFileAtPath, extractSessionSuffix, extractSessionUuid, getThreadSessionFile, resolveManagedSessionFile, tryResolveCurrentSession, tryResolveThreadSession, } from "./sessions/store.js";

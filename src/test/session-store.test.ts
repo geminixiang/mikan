@@ -242,30 +242,6 @@ describe("managed session initialization", () => {
     expect(sessionFileLineCount(sessionFile)).toBe(1);
   });
 
-  test("top-level agent runs replace platform-history current with a live session", async () => {
-    const sessionDir = office.sessionsDir;
-    mkdirSync(sessionDir, { recursive: true });
-    const historyFile = join(sessionDir, "history.jsonl");
-    writeFileSync(
-      historyFile,
-      `${JSON.stringify({
-        id: "history",
-        createdAt: Date.now(),
-        cwd: channelDir,
-        source: { kind: "platform-history", file: "log.jsonl" },
-      })}\n`,
-    );
-    writeFileSync(join(sessionDir, "current"), "history.jsonl");
-
-    const liveFile = resolveManagedSessionFile(sessionDir);
-
-    expect(liveFile).not.toBe(historyFile);
-    expect(readFileSync(join(sessionDir, "current"), "utf-8").trim()).toBe(
-      liveFile.split("/").pop(),
-    );
-    expect(await sessionText(liveFile)).not.toContain("platform-history");
-  });
-
   test("a fixed-path thread session keeps a one-line header after messages", async () => {
     const threadFile = getThreadSessionFile(office.sessionsDir, "C123:1000.0001");
     createManagedSessionFileAtPath(threadFile);

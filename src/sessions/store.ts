@@ -6,13 +6,9 @@ import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js"
 import { assertSessionSuffix, threadSuffixOf } from "./session-key.js";
 import type { SessionHeader } from "./types.js";
 
-export function isPlatformHistorySession(sessionFile: string): boolean {
-  return SessionStore.readHeader(sessionFile)?.source?.kind === "platform-history";
-}
-
 export function resolveManagedSessionFile(sessionDir: string): string {
   const existingPath = getCurrentSessionPath(sessionDir);
-  if (existingPath && !isPlatformHistorySession(existingPath)) return existingPath;
+  if (existingPath) return existingPath;
   return createManagedSessionFile(sessionDir);
 }
 
