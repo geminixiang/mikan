@@ -6,8 +6,7 @@ on:
 jobs:
   slack-e2e:
     runs-on: ubuntu-latest
-    # glm-5.3-flash reasons before most replies; the full suite runs well
-    # past the 10 minutes the previous non-reasoning lane model needed.
+    # The full suite runs well past ten minutes against a live model.
     timeout-minutes: 25
 
     steps:
@@ -27,19 +26,14 @@ jobs:
       - name: Run Slack E2E
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # The CI model rides a custom "openrouter-ci" provider (see the
-          # models.json below); custom providers resolve their key from
-          # <NAME>_API_KEY, so re-export the same secret under that name.
-          OPENROUTER_CI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           SLACK_APP_TOKEN: ${{ secrets.SLACK_APP_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_QA_USER_TOKEN: ${{ secrets.SLACK_QA_USER_TOKEN }}
           SLACK_QA_CHANNEL_ID: ${{ secrets.SLACK_QA_CHANNEL_ID || vars.SLACK_QA_CHANNEL_ID }}
           SLACK_QA_BOT_USER_ID: ${{ secrets.SLACK_QA_BOT_USER_ID || vars.SLACK_QA_BOT_USER_ID }}
           SLACK_QA_WORKING_DIR: ${{ github.workspace }}/.workspace/mikan-workspace
-          # glm-5.3-flash is a hybrid-reasoning model and can spend 30-40s
-          # thinking before its first tool call on the slower scenarios; the
-          # 30s default wait flakes on exactly those tests.
+          # Slower scenarios can take more than the 30s default wait before
+          # the first tool call.
           SLACK_QA_TIMEOUT_MS: "60000"
         run: |
           set -euo pipefail
@@ -51,39 +45,12 @@ jobs:
           mkdir -p "$WORKING_DIR"
 
           node dist/main.js --onboard --state-dir "$STATE_DIR"
-          # E2E runs on OpenRouter with glm-5.3-flash. Lane history:
-          # deepseek-v4-flash echoed stale tokens from polluted context;
-          # gpt-oss-120b's OpenRouter routing intermittently returned empty
-          # or corrupted content (mandatory-reasoning endpoints + per-provider
-          # harmony parsing); qwen3.7-flash intermittently omitted required
-          # tool parameters (the `label` field), and the retries pushed slow
-          # scenarios past their timeouts. The model is not in pi-ai's
-          # built-in openrouter catalog — and a same-named custom provider is
-          # shadowed by the built-in — so it rides a custom "openrouter-ci"
-          # provider pointed at the same base URL.
-          # models.json lives in the state dir that the daemon reads.
-          cat > "$STATE_DIR/models.json" <<'MODELS'
-          {
-            "providers": {
-              "openrouter-ci": {
-                "name": "OpenRouter (CI)",
-                "api": "openai-completions",
-                "baseUrl": "https://openrouter.ai/api/v1",
-                "models": [
-                  {
-                    "id": "z-ai/glm-5.3-flash",
-                    "name": "Z.AI: GLM 5.3 Flash",
-                    "reasoning": true,
-                    "thinkingLevelMap": { "off": null },
-                    "contextWindow": 1310720,
-                    "maxTokens": 131072,
-                    "cost": { "input": 0.075, "output": 0.25, "cacheRead": 0, "cacheWrite": 0 }
-                  }
-                ]
-              }
-            }
-          }
-          MODELS
+          # E2E runs on OpenRouter's built-in openai/gpt-6-luna. Lane
+          # history: deepseek-v4-flash echoed stale tokens from polluted
+          # context; gpt-oss-120b's routing returned empty or corrupted
+          # content; qwen3.7-flash omitted required tool parameters;
+          # glm-5.3-flash sometimes wrote a tool result as text instead of
+          # calling the tool, and answered with tokens from other threads.
           # The runner is a disposable single-tenant workspace on the host
           # sandbox, so opt into the trusted door policy explicitly — the
           # isolated default refuses host mode by design.
@@ -91,12 +58,8 @@ jobs:
             const fs = require("fs");
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
-            const model = { provider: "openrouter-ci", model: "z-ai/glm-5.3-flash" };
-            // glm-5.3-flash is a hybrid reasoning model behind the OpenRouter
-            // normalized reasoning param: effort none (the off mapping)
-            // returns empty responses, so run the lane at low effort and map
-            // off to null (omit the param) as the fallback.
-            s.llm = { ...s.llm, ...model, thinkingLevel: "low", autoReply: { ...model } };
+            const model = { provider: "openrouter", model: "openai/gpt-6-luna" };
+            s.llm = { ...s.llm, ...model, thinkingLevel: "off", autoReply: { ...model } };
             s.sandbox = {
               ...s.sandbox,
               workspace: { doorPolicy: "trusted", layout: "shared-support" },
