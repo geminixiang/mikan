@@ -106,8 +106,10 @@ export class EventScheduler implements EventScheduleSink {
       case "one-shot": {
         const delay = new Date(event.at).getTime() - Date.now();
         if (delay <= 0) {
-          log.logInfo(`One-shot event in the past, deleting: ${record.filename}`);
-          this.removeFile(address, record.filename);
+          log.logInfo(
+            `One-shot event is ${Math.round(-delay / 1000)}s late, firing now: ${record.filename}`,
+          );
+          this.execute(entry);
           return;
         }
         entry.timer = setTimeout(() => {

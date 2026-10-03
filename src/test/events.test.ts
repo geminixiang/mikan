@@ -121,7 +121,7 @@ describe("EventScheduler", () => {
     scheduler.stop();
   });
 
-  test("deletes a one-shot event scheduled in the past without executing", async () => {
+  test("fires a one-shot event whose time passed while mikan was not running", async () => {
     const { bot, enqueueEvent } = makeMessagingBot("slack");
     const scheduler = new EventScheduler(workspace(), { slack: bot });
     const own = office("slack", "D1");
@@ -140,7 +140,9 @@ describe("EventScheduler", () => {
     scheduler.start();
     expect(scheduler.scheduledCount()).toBe(0);
     expect(existsSync(path)).toBe(false);
-    expect(enqueueEvent).not.toHaveBeenCalled();
+    expect(enqueueEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining("too late") }),
+    );
   });
 
   test("stop cancels every pending timer and cron", async () => {

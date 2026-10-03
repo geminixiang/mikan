@@ -103,7 +103,8 @@ The agent's `event` tool fills routing fields automatically. Use it instead of h
 ## Lifecycle
 
 - **Immediate** and **one-shot** files are deleted after successful delivery.
-- Invalid, expired, undeliverable, or queue-overflow immediate/one-shot files are also deleted; inspect logs or Sentry for the failure.
+- A one-shot event whose time passed while mikan was stopped fires as soon as mikan starts, late rather than never.
+- Invalid, undeliverable, or queue-overflow immediate/one-shot files are also deleted; inspect logs or Sentry for the failure.
 - **Periodic** files stay in place. Delete the file to cancel the event.
 - At most 5 events can be queued at once. Additional immediate/one-shot files are discarded as described above.
 
