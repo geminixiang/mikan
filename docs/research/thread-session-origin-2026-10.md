@@ -319,6 +319,23 @@ The same POC on a copy of the production sessions (copied into a private trial d
 - 6 offices had no `current` pointer and got an empty root; `scanConversations` listed every imported conversation in all 188 offices.
 - The 128 s include reading every v4 file, so they bound the downtime of the session step.
 
+## Round 9: which conversation a request belongs to
+
+`MikanAgentSession` wraps the Harness's `Models` to add the session ID (prompt cache key and session affinity), to skip a request once a run's budget is spent, and to count and log requests. With one Harness per storage, that wrapper served one session. Shared, it must tell conversations apart, and pi-durable passes no conversation to `Models`:
+
+| Probe                                                                                                          | Result                                                                                 |
+| -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Arguments of `streamSimple`                                                                                    | The model, the messages, and `{ signal }`: no conversation                             |
+| `signal` from a hook                                                                                           | Not on the public `HookApi`                                                            |
+| Throw from `beforeRequest`                                                                                     | Reported; the request is still sent                                                    |
+| Await `abort()` from `beforeRequest`                                                                           | Deadlock: the abort waits for the hook                                                 |
+| Fire `abort()` from `beforeRequest`                                                                            | The run aborts, but the request is already sent                                        |
+| Return the messages from `beforeRequest` with a copied last message, and look that object up in `streamSimple` | 20 concurrent requests from two conversations, each attributed to its own conversation |
+
+`beforeRequest` may replace a request's messages, and generation hands the returned message objects to `Models.streamSimple`. A conversation's own extension tags its request this way, so the shared wrapper keeps per-session IDs, budgets, and counts exactly as today. That relies on generation passing message objects through without copying them, which is not a documented contract, so a test must pin it and the README must name it as a local exception until pi-durable passes conversation-scoped request options.
+
+Compaction summaries are built inside the compaction task, with no hook over their messages. Their requests use `cacheRetention: "none"`; a conversation's `beforeCompact` hook counts them and declines a compaction once the run's budget is spent.
+
 ## Open
 
 1. Whether the production provider reuses the cached prefix across session IDs.
