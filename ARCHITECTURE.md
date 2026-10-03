@@ -372,9 +372,9 @@ Evidence: `src/settings/apply.ts`.
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — A session is a private one-line JSON header (session ID, creation time, parent session ID) beside a pi-durable JSONL storage directory named `<session>.durable` (ADR 0017); the header has no version, because the State migration record decides the format. New session files become durable before the current pointer changes, and corrupt materialized headers fail instead of silently replacing history. `mikan migrate` converts 0.5.3 v3 files to v4 (keeping `*.v3.bak`) and imports v4 files into durable storage (keeping originals under `sessions-v4/`). Thread lineage remains stable across top-level `/new` resets.
+**`session-format-compatibility`** — Each office keeps its sessions in one pi-durable SQLite storage, `sessions.db` in its State dir (ADR 0018). The top-level session is the storage's root conversation, every other session is a conversation found through a session-key index, and lineage is pi-durable's fork parent. `/new` resets the conversation instead of replacing it, so earlier entries stay readable. Opening the storage aborts work a previous process left unfinished, before anything is submitted. `mikan migrate` converts 0.5.3 v3 files to v4 (keeping `*.v3.bak`) and imports v4 files into the office storage (keeping originals under `sessions-v4/`).
 
-Evidence: `src/sessions/session-store.ts`, `src/sessions/store.ts`, `src/migrations/sessions-v3.ts`, `src/migrations/sessions-durable.ts`.
+Evidence: `src/sessions/session-store.ts`, `src/migrations/sessions-v3.ts`, `src/migrations/sessions-sqlite.ts`.
 
 ## Known deviations
 

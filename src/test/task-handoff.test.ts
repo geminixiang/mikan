@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { openSessionAt } from "./session-context.js";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -17,7 +18,7 @@ let dir: string;
 let store: SessionStore;
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "task-handoff-"));
-  store = await SessionStore.create(join(dir, "session.jsonl"));
+  store = await openSessionAt(join(dir, "session.jsonl"));
 });
 afterEach(async () => {
   await store.close();

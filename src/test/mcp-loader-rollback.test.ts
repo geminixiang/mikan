@@ -28,7 +28,7 @@ describe("MCP connection rollback", () => {
     client.listTools.mockReset().mockResolvedValue([]);
     client.instructions.mockReset().mockReturnValue("Use the service safely");
     client.close.mockReset().mockResolvedValue(undefined);
-    const store = SessionStore.inMemory();
+    const store = await SessionStore.inMemory();
     await store.connectMcp({ service: { command: "unused" } });
     expect(store.withMcpInstructions("first")).toContain("Use the service safely");
     expect(store.withMcpInstructions("second")).toMatch(/^second\n\n/);
@@ -48,7 +48,7 @@ describe("MCP connection rollback", () => {
       .mockReset()
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("transport close failed"));
-    const store = SessionStore.inMemory();
+    const store = await SessionStore.inMemory();
     await store.connectMcp({ good: { command: "unused" }, bad: { command: "unused" } });
     expect(client.close).toHaveBeenCalledTimes(1);
     await store.close();

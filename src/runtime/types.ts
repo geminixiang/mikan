@@ -38,7 +38,6 @@ export interface ConversationRuntimeState {
   shutdownAborted?: boolean;
   stopNoticeOwned?: boolean;
   lastAccessedAt: number;
-  sessionFile: string;
   startedAt: number;
   lastActivityAt?: number;
 }

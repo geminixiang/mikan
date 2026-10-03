@@ -1,8 +1,11 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync, backup } from "node:sqlite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createOfficeAddress, createWorkspace } from "../../src/office/index.js";
+import type { Office } from "../../src/office/types.js";
 import { SessionStore } from "../../src/sessions/session-store.js";
-import { tryResolveCurrentSession } from "../../src/sessions/store.js";
 import { loadContextOrSkip } from "./helpers/client.js";
 import {
   LOCAL_DELIVERY_TIMEOUT_MS,
@@ -46,8 +49,30 @@ async function waitForResetResult(
   return null;
 }
 
-async function sessionText(file: string): Promise<string> {
-  return JSON.stringify(await (await SessionStore.inspect(file)).getEntries());
+async function sessionSnapshot(
+  live: Office,
+): Promise<{ entries: string; context: string } | undefined> {
+  const dir = mkdtempSync(join(tmpdir(), "mikan-e2e-sessions-"));
+  try {
+    const snapshot = createWorkspace({ root: join(dir, "workspace"), stateDir: dir }).office(
+      live.address,
+    );
+    mkdirSync(snapshot.stateDir, { recursive: true });
+    const source = new DatabaseSync(live.sessionsPath, { readOnly: true });
+    try {
+      await backup(source, snapshot.sessionsPath);
+    } finally {
+      source.close();
+    }
+    const inspection = await SessionStore.inspect(snapshot, live.address.conversationId);
+    if (!inspection) return undefined;
+    return {
+      entries: JSON.stringify(await inspection.getEntries()),
+      context: JSON.stringify((await inspection.buildSessionContext()).messages),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
@@ -99,9 +124,9 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     const memoryPath = office.memoryPath;
     const memoryAnchor = `# E2E Memory anchor\n\nStable nonce: ${nonce}\n`;
     writeFileSync(memoryPath, memoryAnchor);
-    const originalSession = tryResolveCurrentSession(office.sessionsDir);
-    expect(originalSession, "no active session before /new").not.toBeNull();
-    expect(await sessionText(originalSession!)).toContain(scratchNonce);
+    const before = await sessionSnapshot(office);
+    expect(before, "no active session before /new").toBeDefined();
+    expect(before?.context).toContain(scratchNonce);
 
     const { ts: resetTs } = await postLocallyDeliveredMessage({
       client,
@@ -122,11 +147,10 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack new DM session", () => {
     expect(resetResult?.success, `reset failed: ${resetResult?.text ?? "no result"}`).toBe(true);
     expect(resetResult?.text.trim()).toBe(RESET_SUCCESS);
 
-    const cleanSession = tryResolveCurrentSession(office.sessionsDir);
-    expect(cleanSession, "no active session after /new").not.toBeNull();
-    expect(cleanSession).not.toBe(originalSession);
-    expect(existsSync(originalSession!)).toBe(true);
-    expect(await sessionText(cleanSession!)).not.toContain(scratchNonce);
+    const after = await sessionSnapshot(office);
+    expect(after, "no session after /new").toBeDefined();
+    expect(after?.context).not.toContain(scratchNonce);
+    expect(after?.entries).toContain(scratchNonce);
     expect(readFileSync(memoryPath, "utf-8")).toBe(memoryAnchor);
   }, 300_000);
 });

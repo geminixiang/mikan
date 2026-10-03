@@ -16,6 +16,7 @@ import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js"
 import { isRecord } from "../unknown-values.js";
 
 export const OFFICE_LOG_FILENAME = "log.jsonl";
+const OFFICE_SESSIONS_FILENAME = "sessions.db";
 const OFFICE_KEY_VERSION = "v1";
 const OFFICE_KEY_DOMAIN = "office-address-v1";
 const OFFICE_KEY_DIGEST_LENGTH = 16;
@@ -203,7 +204,7 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
         dir,
         memoryPath: join(dir, "MEMORY.md"),
         skillsDir: join(dir, "skills"),
-        sessionsDir: join(conversationStateDir, "sessions"),
+        sessionsPath: join(conversationStateDir, OFFICE_SESSIONS_FILENAME),
         attachmentsDir: join(dir, "attachments"),
         logPath: join(dir, OFFICE_LOG_FILENAME),
         stateDir: conversationStateDir,

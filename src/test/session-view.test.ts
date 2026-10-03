@@ -1,27 +1,19 @@
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office, Workspace } from "../office/types.js";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AssistantMessage, UserMessage } from "@earendil-works/pi-ai";
 import { SessionStore } from "../sessions/session-store.js";
-import {
-  createManagedSessionFile,
-  createManagedSessionFileAtPath,
-  getThreadSessionFile,
-} from "../sessions/store.js";
 import {
   handleSessionViewRequest,
   InMemorySessionViewTokenStore,
   parseUserBody,
 } from "../adapters/web/session-view/portal.js";
 import { commandForms, matchCommand } from "../adapters/commands/manifest.js";
-import {
-  loadSessionViewModel,
-  resolveExistingSessionFile,
-} from "../adapters/web/session-view/portal.js";
+import { loadSessionViewModel } from "../adapters/web/session-view/portal.js";
 
 let workspaceDir: string;
 let workspace: Workspace;
@@ -87,27 +79,10 @@ describe("session view command grammar", () => {
   });
 });
 
-describe("resolveExistingSessionFile", () => {
-  test("resolves the current channel session", () => {
-    const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir);
-
-    expect(resolveExistingSessionFile(office, "D123")).toBe(sessionFile);
-  });
-
-  test("resolves a fixed-path thread session of the same office", () => {
-    const shared = workspace.office(createOfficeAddress("slack", "C123"));
-    const sessionFile = getThreadSessionFile(shared.sessionsDir, "C123:1000.0001");
-    createManagedSessionFileAtPath(sessionFile);
-
-    expect(resolveExistingSessionFile(shared, "C123:1000.0001")).toBe(sessionFile);
-  });
-});
-
 async function requestSessionPage(
   tokenStore: InMemorySessionViewTokenStore,
   token: string,
-  sessionFile: string,
+  sessionKey: string,
 ): Promise<number> {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -117,7 +92,7 @@ async function requestSessionPage(
   try {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("missing test server address");
-    const params = new URLSearchParams({ token, session: basename(sessionFile) });
+    const params = new URLSearchParams({ token, session: sessionKey });
     return (await fetch(`http://127.0.0.1:${address.port}/session?${params}`)).status;
   } finally {
     await new Promise<void>((resolve, reject) =>
@@ -126,73 +101,57 @@ async function requestSessionPage(
   }
 }
 
+function viewToken(tokenStore: InMemorySessionViewTokenStore, sessionKey = "D123") {
+  return tokenStore.create({
+    platform: "slack",
+    platformUserId: "U1",
+    conversationId: "D123",
+    sessionKey,
+    office,
+  });
+}
+
 describe("session view selection", () => {
   test("can select the active session without claiming its writer lease", async () => {
-    const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir);
-    const activeSession = await SessionStore.open(sessionFile);
+    const activeSession = await SessionStore.open(office, "D123");
     await activeSession.appendMessage(makeUserMessage("active"));
     const tokenStore = new InMemorySessionViewTokenStore();
-    const token = tokenStore.create({
-      platform: "slack",
-      platformUserId: "U1",
-      conversationId: "D123",
-      sessionKey: "D123",
-      sessionFile,
-    });
+    const token = viewToken(tokenStore);
 
     try {
-      expect(await requestSessionPage(tokenStore, token.token, sessionFile)).toBe(200);
+      expect(await requestSessionPage(tokenStore, token.token, "D123")).toBe(200);
     } finally {
       await activeSession.close();
     }
   });
 
-  test("can select the same historical session repeatedly without leaking a writer lease", async () => {
-    const sessionDir = office.sessionsDir;
-    const currentFile = createManagedSessionFile(sessionDir);
-    const historicalFile = createManagedSessionFile(sessionDir);
+  test("can select another session of the office repeatedly", async () => {
+    await (await SessionStore.open(office, "D123")).close();
+    await (await SessionStore.open(office, "D123:1000.0001")).close();
     const tokenStore = new InMemorySessionViewTokenStore();
-    const token = tokenStore.create({
-      platform: "slack",
-      platformUserId: "U1",
-      conversationId: "D123",
-      sessionKey: "D123",
-      sessionFile: currentFile,
-    });
+    const token = viewToken(tokenStore);
 
-    expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
-    expect(await requestSessionPage(tokenStore, token.token, historicalFile)).toBe(200);
+    expect(await requestSessionPage(tokenStore, token.token, "D123:1000.0001")).toBe(200);
+    expect(await requestSessionPage(tokenStore, token.token, "D123:1000.0001")).toBe(200);
   });
 
-  test("rejects a selected session with an invalid header", async () => {
-    const sessionDir = office.sessionsDir;
-    const currentFile = createManagedSessionFile(sessionDir);
-    const invalidFile = join(sessionDir, "invalid.jsonl");
-    writeFileSync(invalidFile, "not json\n");
+  test("rejects a session the office does not have", async () => {
+    await (await SessionStore.open(office, "D123")).close();
     const tokenStore = new InMemorySessionViewTokenStore();
-    const token = tokenStore.create({
-      platform: "slack",
-      platformUserId: "U1",
-      conversationId: "D123",
-      sessionKey: "D123",
-      sessionFile: currentFile,
-    });
+    const token = viewToken(tokenStore);
 
-    expect(await requestSessionPage(tokenStore, token.token, invalidFile)).toBe(500);
+    expect(await requestSessionPage(tokenStore, token.token, "C999:1000.0001")).toBe(400);
   });
 });
 
 describe("loadSessionViewModel", () => {
   test("maps session entries into a readable timeline", async () => {
-    const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir);
-    const sessionManager = await SessionStore.open(sessionFile);
-
+    const sessionManager = await SessionStore.open(office, "D123");
     await sessionManager.appendMessage(makeUserMessage("請幫我看一下測試結果"));
     await sessionManager.appendMessage(makeAssistantMessage("好的，我正在查看。"));
+    await sessionManager.close();
 
-    const model = await loadSessionViewModel(sessionFile);
+    const model = await loadSessionViewModel(office, "D123");
 
     expect(model.title).toContain("Session");
     expect(model.items.map((item) => item.title)).toEqual(["User", "Assistant"]);
@@ -202,129 +161,20 @@ describe("loadSessionViewModel", () => {
   });
 
   test("preserves assistant content block order", async () => {
-    const sessionDir = office.sessionsDir;
-    const sessionFile = createManagedSessionFile(sessionDir);
-    const sessionManager = await SessionStore.open(sessionFile);
-
+    const sessionManager = await SessionStore.open(office, "D123");
     await sessionManager.appendMessage({
-      role: "assistant",
+      ...makeAssistantMessage(""),
       content: [
         { type: "text", text: "before" },
         { type: "toolCall", id: "call-1", name: "search", arguments: { q: "raw" } },
         { type: "text", text: "after" },
       ],
-      api: "openai-responses",
-      provider: "openai",
-      model: "gpt-test",
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: nextTimestamp++,
     });
+    await sessionManager.close();
 
-    const model = await loadSessionViewModel(sessionFile);
+    const model = await loadSessionViewModel(office, "D123");
 
     expect(model.items[0]?.body).toBe('before\n\n[toolCall] search\n{\n  "q": "raw"\n}\n\nafter');
-  });
-
-  test("keeps channel and thread sessions on separate pages while linking them", async () => {
-    const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir);
-    const channelSession = await SessionStore.open(channelFile);
-    await channelSession.appendMessage({
-      ...makeUserMessage("channel root"),
-      timestamp: Number("1000.0001") * 1000,
-    });
-    await channelSession.appendMessage(makeAssistantMessage("channel reply"));
-
-    const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(threadFile);
-    const threadSession = await SessionStore.open(threadFile);
-    await threadSession.appendMessage({
-      ...makeUserMessage("channel root"),
-      timestamp: Number("1000.0001") * 1000,
-    });
-    await threadSession.appendMessage(makeUserMessage("thread only"));
-    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
-
-    const channelModel = await loadSessionViewModel(channelFile);
-    expect(channelModel.items.some((item) => item.body?.includes("thread only"))).toBe(false);
-    const rootItem = channelModel.items.find((item) => item.body?.includes("channel root"));
-    expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
-
-    const threadModel = await loadSessionViewModel(threadFile);
-    expect(threadModel.parent?.fileName).toBe(basename(channelFile));
-    expect(threadModel.parent).not.toHaveProperty("kind");
-    expect(threadModel.parent).not.toHaveProperty("sessionId");
-    expect(threadModel.items.some((item) => item.body?.includes("thread only"))).toBe(true);
-  });
-
-  test("anchors fixed thread links to the root instead of earlier bootstrap context", async () => {
-    const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir);
-    const channelSession = await SessionStore.open(channelFile);
-    await channelSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
-    await channelSession.appendMessage(makeAssistantMessage("prior reply"));
-    await channelSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
-    await channelSession.appendMessage(makeAssistantMessage("channel reply after root"));
-
-    const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(threadFile);
-    const threadSession = await SessionStore.open(threadFile);
-    await threadSession.appendMessage({ ...makeUserMessage("prior context"), timestamp: 1 });
-    await threadSession.appendMessage(makeAssistantMessage("prior reply"));
-    await threadSession.appendMessage({ ...makeUserMessage("thread root"), timestamp: 2 });
-    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
-
-    const channelModel = await loadSessionViewModel(channelFile);
-    const contextItem = channelModel.items.find((item) => item.body?.includes("prior context"));
-    const rootItem = channelModel.items.find((item) => item.body?.includes("thread root"));
-
-    expect(contextItem?.threads).toBeUndefined();
-    expect(rootItem?.threads?.[0]?.fileName).toBe(basename(threadFile));
-  });
-
-  test("anchors non-timestamp thread files by matching the root message", async () => {
-    const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir);
-    const channelSession = await SessionStore.open(channelFile);
-    await channelSession.appendMessage(
-      makeUserMessage(
-        "[2026-04-28 18:18:59+08:00] [alice]: first\n\n<slack_attachments>\n/tmp/a.txt\n</slack_attachments>",
-      ),
-    );
-    await channelSession.appendMessage(makeAssistantMessage("first reply"));
-
-    const threadFile = getThreadSessionFile(office.sessionsDir, "D123:M1");
-    createManagedSessionFileAtPath(threadFile);
-    const threadSession = await SessionStore.open(threadFile);
-    await threadSession.appendMessage(makeUserMessage("[alice]: first"));
-    await threadSession.appendMessage(makeAssistantMessage("thread reply"));
-
-    const channelModel = await loadSessionViewModel(channelFile);
-    const userAnchor = channelModel.items.find((item) => item.body?.includes("first"));
-
-    expect(userAnchor?.threads).toHaveLength(1);
-    expect(userAnchor?.threads?.[0]?.fileName).toBe(basename(threadFile));
-  });
-});
-
-describe("session lineage", () => {
-  test("resolves a parent session id only inside the thread's own sessions directory", async () => {
-    const elsewhere = join(workspaceDir, "elsewhere");
-    const outsideFile = createManagedSessionFile(elsewhere);
-    const threadFile = getThreadSessionFile(office.sessionsDir, "D123:1000.0001");
-    createManagedSessionFileAtPath(threadFile, SessionStore.readHeader(outsideFile)!.id);
-
-    const model = await loadSessionViewModel(threadFile);
-
-    expect(model.parent?.fileName).not.toBe(basename(outsideFile));
   });
 });
 

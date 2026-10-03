@@ -23,6 +23,7 @@ import {
 import type { Migration, MigrationContext } from "../migrations/types.js";
 import {
   createOfficeAddress,
+  createWorkspace,
   listRegisteredOffices,
   officeKey,
   OfficeRegistry,
@@ -165,12 +166,14 @@ describe("migrating a 0.5.3 state directory", () => {
     await runMigrations(context());
 
     expect(existsSync(join(workspaceRoot, dmKey, "sessions"))).toBe(false);
-    const sessions = join(stateDir, "conversations", dmKey, "sessions");
-    const file = join(sessions, readFileSync(join(sessions, "current"), "utf-8").trim());
+    const archive = join(stateDir, "conversations", dmKey, "sessions-v4");
+    const file = join(archive, readFileSync(join(archive, "current"), "utf-8").trim());
     expect(existsSync(`${file}.v3.bak`)).toBe(true);
-    const store = await SessionStore.open(file);
-    const built = await store.buildSessionContext();
-    expect(JSON.stringify(built.messages)).toContain("remember oranges");
+    const office = createWorkspace({ root: workspaceRoot, stateDir }).office(
+      createOfficeAddress("slack", DM),
+    );
+    const built = await (await SessionStore.inspect(office, DM))?.buildSessionContext();
+    expect(JSON.stringify(built?.messages)).toContain("remember oranges");
   });
 
   test("a second run finds nothing pending and changes nothing", async () => {

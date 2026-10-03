@@ -1,13 +1,12 @@
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { contentText, type ToolResultMessage } from "@earendil-works/pi-ai";
-import { resolve } from "node:path";
 import { Type, type Static } from "typebox";
 import type { Office } from "../../office/types.js";
 import { readConversationLog } from "../../sessions/chat-history-sync.js";
 import { formatHistoryLine, formatLocalTimestamp } from "../../sessions/history-line.js";
-import { SessionStore } from "../../sessions/session-store.js";
-import { listOfficeSessions } from "../../sessions/store.js";
-import type { OfficeSessionInfo, SessionEntry } from "../../sessions/types.js";
+import { SessionStore, isEarlierSessionKey } from "../../sessions/session-store.js";
+import { isThreadSessionKey, threadSuffixOf } from "../../sessions/session-key.js";
+import type { SessionEntry, SessionListing } from "../../sessions/types.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
 const HISTORY_TOOL = "history";
@@ -56,11 +55,15 @@ type HistoryArgs = Omit<Static<typeof historySchema>, "label">;
 
 interface HistoryScope {
   office: Office;
-  sessionFile: string;
+  sessionKey: string;
 }
 
-function isScopeSession(info: OfficeSessionInfo, scope: HistoryScope): boolean {
-  return resolve(info.file) === resolve(scope.sessionFile);
+function isScopeSession(info: SessionListing, scope: HistoryScope): boolean {
+  return info.key === scope.sessionKey;
+}
+
+async function listOfficeSessions(office: Office): Promise<SessionListing[]> {
+  return (await SessionStore.list(office)).toSorted((a, b) => b.createdAt - a.createdAt);
 }
 
 function clip(text: string, max = MAX_ENTRY_CHARS): string {
@@ -170,19 +173,18 @@ function bounded(header: string, lines: readonly string[], skip: number): string
   return [header, ...note, ...kept].join("\n\n");
 }
 
-const SESSION_KIND_LABELS: Record<OfficeSessionInfo["kind"], string> = {
-  main: "main",
-  scoped: "thread",
-  archived: "reset thread",
-};
+function sessionKind(info: SessionListing): string {
+  if (info.root) return "main, current";
+  return isEarlierSessionKey(info.key) ? "earlier session" : "thread";
+}
 
-function sessionLabel(info: OfficeSessionInfo, titles: ReadonlyMap<string, string>): string {
-  const kind = info.current ? "main, current" : SESSION_KIND_LABELS[info.kind];
-  const title = info.scopeId ? titles.get(info.scopeId) : undefined;
-  const parent = info.header.parentSessionId
-    ? ` parent=${info.header.parentSessionId.slice(0, SESSION_REF_MIN_CHARS)}`
+function sessionLabel(info: SessionListing, titles: ReadonlyMap<string, string>): string {
+  const suffix = isThreadSessionKey(info.key) ? threadSuffixOf(info.key) : undefined;
+  const title = suffix ? titles.get(suffix) : undefined;
+  const parent = info.parentSessionId
+    ? ` parent=${info.parentSessionId.slice(0, SESSION_REF_MIN_CHARS)}`
     : "";
-  return `${info.header.id} (${kind}, ${formatTime(info.header.createdAt)}${parent})${title ? ` ${clip(title, 120)}` : ""}`;
+  return `${info.id} (${sessionKind(info)}, ${formatTime(info.createdAt)}${parent})${title ? ` ${clip(title, 120)}` : ""}`;
 }
 
 function scopeTitles(office: Office): Map<string, string> {
@@ -200,19 +202,20 @@ function scopeTitles(office: Office): Map<string, string> {
 }
 
 function resolveSession(
-  sessions: readonly OfficeSessionInfo[],
+  sessions: readonly SessionListing[],
   scope: HistoryScope,
   ref: string,
-): OfficeSessionInfo | string {
+): SessionListing | string {
   if (ref === "current") {
     return (
-      sessions.find((info) => isScopeSession(info, scope)) ?? "The current session has no file yet."
+      sessions.find((info) => isScopeSession(info, scope)) ??
+      "The current session has not started yet."
     );
   }
   if (ref.length < SESSION_REF_MIN_CHARS) {
     return `Use at least ${SESSION_REF_MIN_CHARS} characters of a session id.`;
   }
-  const found = sessions.filter((info) => info.header.id.startsWith(ref));
+  const found = sessions.filter((info) => info.id.startsWith(ref));
   const [only] = found;
   if (found.length === 1 && only) return only;
   return found.length === 0
@@ -220,8 +223,8 @@ function resolveSession(
     : `"${ref}" matches ${found.length} sessions; use more characters.`;
 }
 
-function listSessions(scope: HistoryScope, args: HistoryArgs): string {
-  const sessions = listOfficeSessions(scope.office.sessionsDir);
+async function listSessions(scope: HistoryScope, args: HistoryArgs): Promise<string> {
+  const sessions = await listOfficeSessions(scope.office);
   if (sessions.length === 0) return "This conversation has no sessions yet.";
   const titles = scopeTitles(scope.office);
   const lines = sessions
@@ -234,16 +237,19 @@ function listSessions(scope: HistoryScope, args: HistoryArgs): string {
   );
 }
 
-async function sessionEntries(info: OfficeSessionInfo): Promise<HistoryEntry[]> {
-  return historyEntries(await (await SessionStore.inspect(info.file)).getEntries());
+async function sessionEntries(office: Office, info: SessionListing): Promise<HistoryEntry[]> {
+  const inspection = await SessionStore.inspect(office, info.key);
+  return inspection ? historyEntries(await inspection.getEntries()) : [];
 }
 
 async function readSession(scope: HistoryScope, args: HistoryArgs): Promise<string> {
-  const sessions = listOfficeSessions(scope.office.sessionsDir);
+  const sessions = await listOfficeSessions(scope.office);
   const info = resolveSession(sessions, scope, args.session ?? "current");
   if (typeof info === "string") return info;
   const query = args.query?.trim().toLowerCase();
-  const found = (await sessionEntries(info)).filter((entry) => matches(entry.text, query));
+  const found = (await sessionEntries(scope.office, info)).filter((entry) =>
+    matches(entry.text, query),
+  );
   if (found.length === 0) {
     return query ? `No entries match "${args.query}".` : "The session is empty.";
   }
@@ -258,13 +264,13 @@ async function readSession(scope: HistoryScope, args: HistoryArgs): Promise<stri
 async function searchSessions(scope: HistoryScope, args: HistoryArgs): Promise<string> {
   const query = args.query?.trim().toLowerCase();
   if (!query) return "search needs a query; use read to page through a session.";
-  const sessions = listOfficeSessions(scope.office.sessionsDir);
+  const sessions = await listOfficeSessions(scope.office);
   const selected = args.session ? resolveSession(sessions, scope, args.session) : undefined;
   if (typeof selected === "string") return selected;
   const titles = scopeTitles(scope.office);
-  const results: Array<HistoryEntry & { session: OfficeSessionInfo }> = [];
+  const results: Array<HistoryEntry & { session: SessionListing }> = [];
   for (const info of selected ? [selected] : sessions) {
-    for (const entry of await sessionEntries(info)) {
+    for (const entry of await sessionEntries(scope.office, info)) {
       if (matches(entry.text, query)) results.push({ ...entry, session: info });
     }
   }

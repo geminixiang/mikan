@@ -1,27 +1,18 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { dirname, join, resolve } from "node:path";
-import { existsSync, readdirSync } from "node:fs";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type {
   SessionCompactionEntry,
   SessionEntry,
   SessionMessageEntry,
 } from "../../../sessions/types.js";
-import {
-  findSessionFileById,
-  getThreadSessionFile,
-  tryResolveCurrentSession,
-  tryResolveThreadSession,
-} from "../../../sessions/store.js";
 import type { Office } from "../../../office/types.js";
-import type { SessionHeader } from "../../../sessions/types.js";
+import type { SessionListing } from "../../../sessions/types.js";
 import type {
   SessionViewItem,
   SessionViewRelation,
   SessionViewModel,
   SessionViewToken,
 } from "./types.js";
-import { basename } from "node:path";
 import { InMemoryTokenStore } from "../token-store.js";
 import MarkdownIt from "markdown-it";
 import type {
@@ -55,7 +46,7 @@ export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionVie
       platformUserName: options.platformUserName || undefined,
       conversationId: options.conversationId,
       sessionKey: options.sessionKey,
-      sessionFile: options.sessionFile,
+      office: options.office,
     });
   }
 }
@@ -154,10 +145,10 @@ export async function handleSessionViewRequest(
     res.end(renderStatusPage("Session unavailable", target.message));
     return true;
   }
-  const { activeSessionKey, entry, targetSessionFile } = target;
+  const { activeSessionKey, entry } = target;
 
   try {
-    const model = await loadSessionViewModel(targetSessionFile);
+    const model = await loadSessionViewModel(entry.office, activeSessionKey);
     const displayedSessionKey = activeSessionKey;
     const isRunning =
       interactive?.handler.isRunning(
@@ -180,7 +171,7 @@ export async function handleSessionViewRequest(
     );
   } catch (error) {
     log.logWarning(
-      `[${entry.conversationId}] Failed to render session ${entry.sessionFile}`,
+      `[${entry.conversationId}] Failed to render session ${activeSessionKey}`,
       errorMessage(error),
     );
     reportUserFacingError(error, {
@@ -191,8 +182,7 @@ export async function handleSessionViewRequest(
       platform: entry.platform,
       context: {
         conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(targetSessionFile),
+        sessionKey: activeSessionKey,
       },
     });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
@@ -206,7 +196,6 @@ type SessionRequestTarget =
   | {
       ok: true;
       entry: SessionViewToken;
-      targetSessionFile: string;
       activeSessionKey: string;
     }
   | {
@@ -228,54 +217,11 @@ async function resolveSessionRequestTarget(
   if (!entry) {
     return { ok: false, status: 400, message: "This session link is invalid or has expired." };
   }
-
-  let targetSessionFile: string | null;
-  try {
-    targetSessionFile = await resolveRequestedSessionFile(entry.sessionFile, requestedSession);
-  } catch (error) {
-    log.logWarning(
-      `[${entry.conversationId}] Corrupted session file referenced for ${entry.sessionFile}`,
-      errorMessage(error),
-    );
-    reportUserFacingError(error, {
-      domain: "session_view",
-      surface: "session_view",
-      operation: "resolve_requested_session",
-      severity: "error",
-      platform: entry.platform,
-      context: {
-        conversationId: entry.conversationId,
-        sessionKey: entry.sessionKey,
-        sessionFile: basename(entry.sessionFile),
-        requestedSession,
-      },
-    });
-    return { ok: false, status: 500, message: "The selected session file is corrupted." };
-  }
-  if (!targetSessionFile) {
+  const requested = requestedSession?.trim() || entry.sessionKey;
+  if (!(await SessionStore.exists(entry.office, requested))) {
     return { ok: false, status: 400, message: "The selected session is invalid." };
   }
-
-  return {
-    ok: true,
-    entry,
-    targetSessionFile,
-    activeSessionKey: resolveDisplayedSessionKey(entry, targetSessionFile),
-  };
-}
-
-function resolveDisplayedSessionKey(
-  entry: { platform: string; conversationId: string; sessionKey: string },
-  sessionFile: string,
-): string {
-  if (entry.platform === "slack") {
-    const fileName = basename(sessionFile, ".jsonl");
-    if (/^\d+\.\d+$/.test(fileName)) {
-      return `${entry.conversationId}:${fileName}`;
-    }
-    return entry.conversationId;
-  }
-  return entry.sessionKey;
+  return { ok: true, entry, activeSessionKey: requested };
 }
 
 function sessionStreamKey(entry: {
@@ -328,7 +274,7 @@ function renderSessionPage(options: {
 
     <div class="session-detail-row">
       <span class="session-detail"><span class="session-detail-label">Session</span><code>${esc(model.sessionId.slice(0, 8))}</code></span>
-      <span class="session-detail"><span class="session-detail-label">File</span><code>${esc(model.fileName)}</code></span>
+      <span class="session-detail"><span class="session-detail-label">Session</span><code>${esc(model.sessionKey)}</code></span>
       <span class="session-detail"><span class="session-detail-label">Expires</span><span>${esc(formatDate(new Date(expiresAt).toISOString()))}</span></span>
     </div>
 
@@ -345,7 +291,7 @@ function renderSessionPage(options: {
     <section class="composer-card">
       <form class="composer-form" data-session-composer>
         <input type="hidden" name="token" value="${esc(token)}">
-        <input type="hidden" name="session" value="${esc(model.fileName)}">
+        <input type="hidden" name="session" value="${esc(model.sessionKey)}">
         <input type="hidden" name="sessionKey" value="${esc(displayedSessionKey)}">
         <textarea name="text" rows="1" placeholder="Ask mikan in this session… (replies stay in Session View)" required></textarea>
         <div class="composer-actions">
@@ -359,13 +305,13 @@ function renderSessionPage(options: {
 }
 
 function renderRelationCard(relation: SessionViewRelation, token: string): string {
-  const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.fileName)}`;
+  const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.sessionKey)}`;
   const summary = relation.summary ? `<p class="related-summary">${esc(relation.summary)}</p>` : "";
   return `<a class="related-link" href="${href}">
     <span class="related-copy">
       <strong class="related-title">${esc(relation.title)}</strong>
       ${summary}
-      <span class="related-meta">${esc(formatDate(relation.updatedAt))} · ${esc(String(relation.entryCount))} entries · ${esc(relation.fileName)}</span>
+      <span class="related-meta">${esc(formatDate(relation.updatedAt))} · ${esc(String(relation.entryCount))} entries · ${esc(relation.sessionKey)}</span>
     </span>
     <span class="related-arrow" aria-hidden="true">→</span>
   </a>`;
@@ -375,7 +321,7 @@ function renderThreadLinks(relations: SessionViewRelation[] | undefined, token: 
   if (!relations || relations.length === 0) return "";
   return `<div class="thread-links">${relations
     .map((relation) => {
-      const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.fileName)}`;
+      const href = `/session?token=${encodeURIComponent(token)}&session=${encodeURIComponent(relation.sessionKey)}`;
       return `<a class="thread-link" href="${href}" title="Open ${esc(relation.title)}">
         <span class="thread-dot" aria-hidden="true"></span>
         <span class="thread-text">Thread</span>
@@ -585,7 +531,7 @@ async function handleSessionStreamRequest(
   const send = (event: SessionStreamEvent) => res.write(`data: ${JSON.stringify(event)}\n\n`);
   const unsubscribe = sessionViewStreamHub.subscribe(streamKey, send);
   const liveRun = createLiveRunProjection(send, async () => {
-    const model = await loadSessionViewModel(target.targetSessionFile);
+    const model = await loadSessionViewModel(target.entry.office, target.activeSessionKey);
     return {
       type: "refresh",
       timelineHtml: renderTimelineItems(model.items, url.searchParams.get("token") ?? ""),
@@ -1861,38 +1807,26 @@ function entryIsoTime(entry: SessionEntry | undefined): string | undefined {
   return new Date(entry.timestamp).toISOString();
 }
 
-export function resolveExistingSessionFile(office: Office, sessionKey: string): string | null {
-  if (isThreadSessionKey(sessionKey)) {
-    return tryResolveThreadSession(getThreadSessionFile(office.sessionsDir, sessionKey));
-  }
-  return tryResolveCurrentSession(office.sessionsDir);
-}
-
-export async function loadSessionViewModel(sessionFile: string): Promise<SessionViewModel> {
-  const resolvedFile = resolve(sessionFile);
-  const sm = await SessionStore.inspect(resolvedFile);
+export async function loadSessionViewModel(
+  office: Office,
+  sessionKey: string,
+): Promise<SessionViewModel> {
+  const sm = await SessionStore.inspect(office, sessionKey);
+  if (!sm) throw new Error(`Session not found: ${sessionKey}`);
   const header = sm.getHeader();
-
   const entries = await sm.getEntries();
   const updatedAt = entryIsoTime(entries.at(-1)) ?? new Date(header.createdAt).toISOString();
   const title = (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`;
 
-  const parent = await resolveParentRelation(resolvedFile, header);
-  const threadCandidates: SessionViewRelation[] = [];
-  for (const candidate of listRelatedSessionFiles(resolvedFile)) {
-    if (candidate === resolvedFile) continue;
-    const relation = await buildSessionRelation(
-      candidate,
-      "thread",
-      resolvedFile,
-      header.id,
-      entries,
-    );
-    if (relation) threadCandidates.push(relation);
+  const listing = await SessionStore.list(office);
+  const parentListing = listing.find((session) => session.id === header.parentSessionId);
+  const parent = parentListing ? await buildSessionRelation(office, parentListing) : undefined;
+  const threads: SessionViewRelation[] = [];
+  for (const child of listing.filter((session) => session.parentSessionId === header.id)) {
+    const relation = await buildSessionRelation(office, child);
+    if (relation) threads.push(relation);
   }
-  const threads = threadCandidates.toSorted((a, b) =>
-    a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0,
-  );
+  threads.sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
 
   const threadsByEntryId = new Map<string, SessionViewRelation[]>();
   for (const thread of threads) {
@@ -1905,18 +1839,14 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
   const items = entries.flatMap((entry) => {
     const item = mapEntryToItem(entry);
     if (!item) return [];
-    if (item.entryId) {
-      const anchoredThreads = threadsByEntryId.get(item.entryId);
-      if (anchoredThreads) {
-        item.threads = anchoredThreads;
-      }
-    }
+    const anchoredThreads = item.entryId ? threadsByEntryId.get(item.entryId) : undefined;
+    if (anchoredThreads) item.threads = anchoredThreads;
     return [item];
   });
 
   return {
     sessionId: header.id,
-    fileName: basename(resolvedFile),
+    sessionKey,
     title,
     createdAt: new Date(header.createdAt).toISOString(),
     updatedAt,
@@ -1926,294 +1856,22 @@ export async function loadSessionViewModel(sessionFile: string): Promise<Session
   };
 }
 
-async function resolveRequestedSessionFile(
-  baseSessionFile: string,
-  requestedFileName?: string | null,
-): Promise<string | null> {
-  const resolvedBase = resolve(baseSessionFile);
-  if (!requestedFileName) return resolvedBase;
-
-  const trimmed = requestedFileName.trim();
-  if (!trimmed) return resolvedBase;
-
-  const fileName = basename(trimmed);
-  if (fileName !== trimmed || !fileName.endsWith(".jsonl")) return null;
-
-  const candidate = join(dirname(resolvedBase), fileName);
-  if (!existsSync(candidate)) return null;
-
-  try {
-    if (!SessionStore.readHeader(candidate)) throw new Error("Invalid session header");
-  } catch (err) {
-    throw new Error(`Session file is corrupted: ${candidate}: ${errorMessage(err)}`, {
-      cause: err,
-    });
-  }
-  return candidate;
-}
-
-function listRelatedSessionFiles(sessionFile: string): string[] {
-  const dir = dirname(sessionFile);
-  if (!existsSync(dir)) return [];
-
-  return readdirSync(dir)
-    .filter((name) => name.endsWith(".jsonl"))
-    .map((fileName) => join(dir, fileName));
-}
-
 async function buildSessionRelation(
-  sessionFile: string,
-  kind: "parent" | "thread",
-  expectedParent?: string,
-  expectedParentId?: string,
-  expectedParentEntries?: SessionEntry[],
+  office: Office,
+  session: SessionListing,
 ): Promise<SessionViewRelation | null> {
-  let sm: Awaited<ReturnType<typeof SessionStore.inspect>>;
-  try {
-    sm = await SessionStore.inspect(sessionFile);
-  } catch (err) {
-    log.logWarning(
-      `Skipping corrupted session file while building ${kind} relation: ${sessionFile}`,
-      errorMessage(err),
-    );
-    return null;
-  }
+  const sm = await SessionStore.inspect(office, session.key);
+  if (!sm) return null;
   const header = sm.getHeader();
-  if (
-    kind === "thread" &&
-    !isChildThreadSession(sessionFile, expectedParent, expectedParentId, header.parentSessionId)
-  ) {
-    return null;
-  }
-
   const entries = await sm.getEntries();
-  const updatedAt = entryIsoTime(entries.at(-1)) ?? new Date(header.createdAt).toISOString();
-  const threadId = kind === "thread" ? getFixedThreadSessionId(sessionFile) : null;
-  const anchorEntryId =
-    kind === "thread" && expectedParent
-      ? findThreadAnchorEntryId(
-          expectedParentEntries ??
-            (await (await SessionStore.inspect(expectedParent)).getEntries()),
-          entries,
-          threadId,
-        )
-      : undefined;
   return {
-    fileName: basename(sessionFile),
+    sessionKey: session.key,
     title: (await sm.getSessionName()) || `Session ${header.id.slice(0, 8)}`,
-    updatedAt,
+    updatedAt: entryIsoTime(entries.at(-1)) ?? new Date(header.createdAt).toISOString(),
     entryCount: entries.length,
     summary: extractSessionSummary(entries),
-    anchorEntryId,
+    anchorEntryId: session.forkEntryId,
   };
-}
-
-async function resolveParentRelation(
-  sessionFile: string,
-  header: SessionHeader,
-): Promise<SessionViewRelation | undefined> {
-  if (header.parentSessionId) {
-    const found = findSessionFileById(dirname(sessionFile), header.parentSessionId);
-    if (found) return (await buildSessionRelation(found, "parent")) ?? undefined;
-  }
-  return buildInferredThreadParentRelation(sessionFile);
-}
-
-async function buildInferredThreadParentRelation(
-  sessionFile: string,
-): Promise<SessionViewRelation | undefined> {
-  if (!getFixedThreadSessionId(sessionFile)) return undefined;
-
-  const parentSession = tryResolveCurrentSession(dirname(sessionFile));
-  if (!parentSession || parentSession === sessionFile) return undefined;
-
-  return (await buildSessionRelation(parentSession, "parent")) ?? undefined;
-}
-
-function isChildThreadSession(
-  sessionFile: string,
-  expectedParent: string | undefined,
-  expectedParentId?: string,
-  threadParentSessionId?: string,
-): boolean {
-  if (!expectedParent) return false;
-
-  if (threadParentSessionId) return threadParentSessionId === expectedParentId;
-
-  if (!getFixedThreadSessionId(sessionFile)) return false;
-  return tryResolveCurrentSession(dirname(sessionFile)) === expectedParent;
-}
-
-function getFixedThreadSessionId(sessionFile: string): string | null {
-  const fileName = basename(sessionFile);
-  if (!fileName.endsWith(".jsonl")) return null;
-  if (/^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i.test(fileName)) return null;
-  return fileName.slice(0, -".jsonl".length);
-}
-
-function findThreadAnchorEntryId(
-  parentEntries: SessionEntry[],
-  childEntries: SessionEntry[],
-  threadId: string | null,
-): string | undefined {
-  const threadTimestamp = threadId ? Number(threadId) * 1000 : undefined;
-  if (threadTimestamp !== undefined && Number.isFinite(threadTimestamp)) {
-    const timestampAnchor = findEntryIdByMessageTimestamp(parentEntries, threadTimestamp);
-    if (timestampAnchor) return timestampAnchor;
-  }
-  let sharedCount = 0;
-  while (
-    sharedCount < parentEntries.length &&
-    sharedCount < childEntries.length &&
-    parentEntries[sharedCount]?.id === childEntries[sharedCount]?.id
-  ) {
-    sharedCount += 1;
-  }
-
-  if (sharedCount > 0) {
-    return parentEntries[sharedCount - 1]?.id;
-  }
-
-  const contentAnchor = findSharedContentAnchorEntryId(parentEntries, childEntries);
-  if (contentAnchor) return contentAnchor;
-
-  const childRoot = findComparableUserMessage(childEntries);
-  if (!childRoot) return undefined;
-
-  return findParentAnchorByRootMessage(parentEntries, childRoot);
-}
-
-function findEntryIdByMessageTimestamp(
-  entries: SessionEntry[],
-  timestamp: number,
-): string | undefined {
-  for (const entry of entries) {
-    if (entry.type !== "message") continue;
-    const messageTimestamp = (entry.message as { timestamp?: unknown }).timestamp;
-    if (messageTimestamp === timestamp) return entry.id;
-  }
-  return undefined;
-}
-
-function findSharedContentAnchorEntryId(
-  parentEntries: SessionEntry[],
-  childEntries: SessionEntry[],
-): string | undefined {
-  const parentMessages = parentEntries.flatMap((entry) => {
-    const comparable = getComparableSessionMessage(entry);
-    return comparable ? [comparable] : [];
-  });
-  const childMessages = childEntries.flatMap((entry) => {
-    const comparable = getComparableSessionMessage(entry);
-    return comparable ? [comparable] : [];
-  });
-  if (parentMessages.length === 0 || childMessages.length === 0) return undefined;
-
-  let bestParentEnd = -1;
-  let bestLength = 0;
-  for (let parentStart = 0; parentStart < parentMessages.length; parentStart++) {
-    let length = 0;
-    while (parentStart + length < parentMessages.length && length < childMessages.length) {
-      const parentMessage = parentMessages[parentStart + length];
-      const childMessage = childMessages[length];
-      if (
-        parentMessage === undefined ||
-        childMessage === undefined ||
-        parentMessage.role !== childMessage.role ||
-        parentMessage.normalizedText !== childMessage.normalizedText
-      ) {
-        break;
-      }
-      length += 1;
-    }
-    if (length > bestLength) {
-      bestLength = length;
-      bestParentEnd = parentStart + length - 1;
-    }
-  }
-
-  return bestLength > 0 ? parentMessages[bestParentEnd]?.entryId : undefined;
-}
-
-interface ComparableSessionMessage {
-  entryId: string;
-  role: "user" | "assistant";
-  normalizedText: string;
-}
-
-function getComparableSessionMessage(entry: SessionEntry): ComparableSessionMessage | null {
-  if (entry.type !== "message") return null;
-  const role = entry.message.role;
-  if (role !== "user" && role !== "assistant") return null;
-
-  const body = contentToText(entry.message.content);
-  const normalizedText = normalizeComparableSessionText(body, role);
-  if (!normalizedText) return null;
-
-  return { entryId: entry.id, role, normalizedText };
-}
-
-function normalizeComparableSessionText(text: string, role: "user" | "assistant"): string {
-  const normalized = role === "user" ? normalizeComparableUserText(text) : text.trim();
-  return normalized.replace(/\s+/g, " ").trim();
-}
-
-function findParentAnchorByRootMessage(
-  parentEntries: SessionEntry[],
-  childRoot: ComparableUserMessage,
-): string | undefined {
-  let textMatchId: string | undefined;
-
-  for (const entry of parentEntries) {
-    const comparable = getComparableUserMessage(entry);
-    if (!comparable) continue;
-    if (comparable.normalizedText !== childRoot.normalizedText) continue;
-    if (
-      childRoot.messageTimestamp !== undefined &&
-      comparable.messageTimestamp !== undefined &&
-      comparable.messageTimestamp === childRoot.messageTimestamp
-    ) {
-      return entry.id;
-    }
-    textMatchId ??= entry.id;
-  }
-
-  return textMatchId;
-}
-
-interface ComparableUserMessage {
-  normalizedText: string;
-  messageTimestamp?: number;
-}
-
-function findComparableUserMessage(entries: SessionEntry[]): ComparableUserMessage | null {
-  for (const entry of entries) {
-    const comparable = getComparableUserMessage(entry);
-    if (comparable) return comparable;
-  }
-  return null;
-}
-
-function getComparableUserMessage(entry: SessionEntry): ComparableUserMessage | null {
-  if (entry.type !== "message" || entry.message.role !== "user") return null;
-
-  const body = contentToText(entry.message.content);
-  const normalizedText = normalizeComparableUserText(body);
-  if (!normalizedText) return null;
-
-  const messageTimestamp =
-    typeof entry.message.timestamp === "number" ? entry.message.timestamp : undefined;
-  return { normalizedText, messageTimestamp };
-}
-
-function normalizeComparableUserText(text: string): string {
-  const withoutTimestamp = text.replace(
-    /^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}\]\s+(?=\[[^\]]+\](?:\s+\[in-thread:[^\]]+\])?:\s)/,
-    "",
-  );
-  return withoutTimestamp
-    .replace(/\n*<slack_attachments>\n[\s\S]*?\n<\/slack_attachments>\s*$/g, "")
-    .trim();
 }
 
 function extractSessionSummary(entries: SessionEntry[]): string | undefined {

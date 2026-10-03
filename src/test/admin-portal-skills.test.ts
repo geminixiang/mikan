@@ -15,7 +15,6 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import type { AdminServices } from "../adapters/web/admin/types.js";
-import { createManagedSessionFile } from "../sessions/store.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 const CONVERSATION_ID = "C-SKILLS";
@@ -151,7 +150,7 @@ describe("Admin response metadata", () => {
     const office = createWorkspace({ root: workspaceDir, stateDir: join(base, "state") }).office(
       ADDRESS,
     );
-    const session = await SessionStore.open(createManagedSessionFile(office.sessionsDir));
+    const session = await SessionStore.open(office, ADDRESS.conversationId);
     await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "done" }],

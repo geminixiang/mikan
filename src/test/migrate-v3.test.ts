@@ -1,8 +1,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { openSessionAt } from "./session-context.js";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SessionStore } from "../sessions/session-store.js";
 import { buildV4Context, readV4Session } from "../migrations/session-v4.js";
 
 function openV4(file: string) {
@@ -288,7 +288,7 @@ describe("findV3SessionFiles", () => {
     writeJsonl(join(dir, "top.jsonl"), [header, v3Message("a", null, "A")]);
     writeJsonl(v3File, [{ ...header, id: "99999999-2222-3333-4444-555555555555" }]);
     writeFileSync(join(dir, "notes.txt"), "not a session");
-    await SessionStore.create(join(dir, "v4.jsonl"));
+    await openSessionAt(join(dir, "v4.jsonl"));
 
     const found = findV3SessionFiles(dir);
     expect(found.toSorted()).toEqual([join(dir, "top.jsonl"), v3File].toSorted());

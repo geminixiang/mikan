@@ -5,7 +5,7 @@ description: 安装依赖、构建 mikan、运行针对性检查、预览文档�
 
 ## 本地设置
 
-mikan 需要 Node.js `>=22.19.0`。
+mikan 需要 Node.js `>=24.15.0`。
 
 ```bash
 git clone https://github.com/geminixiang/mikan.git

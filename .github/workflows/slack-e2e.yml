@@ -80,7 +80,7 @@ jobs:
             echo "----- workspace conversations -----"
             find "$WORKING_DIR" -maxdepth 2 2>/dev/null | head -80 || true
             echo "----- scoped intake and persisted QA markers -----"
-            node scripts/diagnose-slack-e2e.mjs "$WORKING_DIR" || true
+            node scripts/diagnose-slack-e2e.mjs "$WORKING_DIR" "$STATE_DIR" || true
             [ "$exit_code" -eq 0 ] && rm -rf "$WORKSPACE_TMP" || true
           }
           trap cleanup EXIT

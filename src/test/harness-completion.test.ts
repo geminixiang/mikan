@@ -1,12 +1,12 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { openSessionAt } from "./session-context.js";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { SessionStore } from "../sessions/session-store.js";
 
 let dir: string;
 
@@ -34,7 +34,7 @@ test.each(["assistant message listener"] as const)(
     const faux = fauxProvider();
     (models.models as MutableModels).setProvider(faux.provider);
     faux.setResponses([fauxAssistantMessage("done")]);
-    const store = await SessionStore.create(join(dir, "session.jsonl"));
+    const store = await openSessionAt(join(dir, "session.jsonl"));
     const session = new MikanAgentSession({
       systemPrompt: "test",
       model: faux.getModel() as Model<Api>,

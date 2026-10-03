@@ -77,15 +77,6 @@ export type {
 } from "./sessions/types.js";
 export { inferConversationKind, resolveChatSessionKey } from "./sessions/session-key.js";
 export type { ResolveSessionKeyOptions } from "./sessions/types.js";
-export {
-  createManagedSessionFile,
-  createManagedSessionFileAtPath,
-  extractSessionSuffix,
-  extractSessionUuid,
-  getThreadSessionFile,
-  tryResolveCurrentSession,
-  tryResolveThreadSession,
-} from "./sessions/store.js";
 export type { ResolvedSessionScope, ThreadRootMessage } from "./sessions/types.js";
 export { createConversationRuntime } from "./runtime/conversation-runtime.js";
 export type {

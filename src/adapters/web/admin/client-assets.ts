@@ -1018,7 +1018,7 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
           data.sessions.map((s, i) => '<tr>' +
             '<td>' + (i + 1) + '</td>' +
             '<td>' + escHtml(s.label || s.conversationId) + '</td>' +
-            '<td><code>' + escHtml(s.fileName) + '</code></td>' +
+            '<td><code>' + escHtml(s.sessionKey) + '</code></td>' +
             '<td>' + escHtml(new Date(s.updatedAt).toLocaleString()) + '</td>' +
             '<td>' + fmtNum(s.input) + '</td>' +
             '<td>' + fmtNum(s.output) + '</td>' +

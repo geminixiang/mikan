@@ -9,17 +9,7 @@ import {
   stripHistoryLinePrefix,
   stripTriggerSignature,
 } from "./history-line.js";
-import { isThreadSessionKey } from "./session-key.js";
-import {
-  archiveManagedSessionFile,
-  createManagedSessionFile,
-  createManagedSessionFileAtPath,
-  extractSessionSuffix,
-  getThreadSessionFile,
-  resolveParentSessionForThread,
-  tryResolveCurrentSession,
-  tryResolveThreadSession,
-} from "./store.js";
+import { extractSessionSuffix, isThreadSessionKey } from "./session-key.js";
 
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
@@ -42,31 +32,16 @@ import type {
 } from "./types.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 
-export function hasMaterializedChatSession(options: HasMaterializedSessionOptions): boolean {
-  if (!isThreadSessionKey(options.sessionKey)) {
-    return tryResolveCurrentSession(options.office.sessionsDir) !== null;
-  }
-  return (
-    tryResolveThreadSession(
-      getThreadSessionFile(options.office.sessionsDir, options.sessionKey),
-    ) !== null
-  );
+export async function hasMaterializedChatSession(
+  options: HasMaterializedSessionOptions,
+): Promise<boolean> {
+  return SessionStore.exists(options.office, options.sessionKey);
 }
 
-export function registerThreadSession(options: RegisterThreadSessionOptions): string | null {
-  if (!isThreadSessionKey(options.sessionKey)) return null;
-
-  const threadFile = getThreadSessionFile(options.office.sessionsDir, options.sessionKey);
-  return (
-    tryResolveThreadSession(threadFile) ??
-    createManagedSessionFileAtPath(
-      threadFile,
-      resolveParentSessionForThread(
-        options.office.sessionsDir,
-        extractSessionSuffix(options.sessionKey),
-      ),
-    )
-  );
+export async function registerThreadSession(options: RegisterThreadSessionOptions): Promise<void> {
+  if (!isThreadSessionKey(options.sessionKey)) return;
+  const store = await SessionStore.open(options.office, options.sessionKey);
+  await store.close();
 }
 
 export async function waitForThreadSessionBootstrap(
@@ -83,10 +58,10 @@ export async function waitForThreadSessionBootstrap(
 
   if (!isThreadSessionKey(sessionKey)) return false;
   if (sessionKey === parentSessionKey) return false;
-  if (hasThreadSession()) return false;
+  if (await hasThreadSession()) return false;
 
   let waited = false;
-  while (isParentRunning() && !hasThreadSession()) {
+  while (isParentRunning() && !(await hasThreadSession())) {
     waited = true;
     await sleep(pollMs);
   }
@@ -110,23 +85,11 @@ export class ChatHistorySync {
   async resolveSessionScope(
     options: ResolveChatSessionScopeOptions,
   ): Promise<ResolvedSessionScope> {
-    const sessionDir = options.office.sessionsDir;
-
     if (!isThreadSessionKey(options.sessionKey)) {
-      const contextFile = await this.resolveTopLevelSessionFile({
-        office: options.office,
-        sessionDir,
-        currentMessageId: options.currentMessageId,
-      });
-      return { contextFile, threadRootMessage: null };
+      await this.bootstrapTopLevelSession(options);
+      return { threadRootMessage: null };
     }
-
-    return this.resolveThreadSessionScope({
-      office: options.office,
-      sessionDir,
-      sessionKey: options.sessionKey,
-      currentMessageId: options.currentMessageId,
-    });
+    return this.resolveThreadSessionScope(options);
   }
 
   async syncSessionManager(options: SyncChatSessionOptions): Promise<void> {
@@ -146,17 +109,15 @@ export class ChatHistorySync {
     );
   }
 
-  async resetSession(options: ResetChatSessionOptions): Promise<string> {
-    const sessionFile = isThreadSessionKey(options.sessionKey)
-      ? resetThreadSessionFile(options.office.sessionsDir, options.sessionKey)
-      : createManagedSessionFile(options.office.sessionsDir);
+  async resetSession(options: ResetChatSessionOptions): Promise<void> {
     const records = readConversationLog(options.office);
     const lastMessageId = latestSyncMessageId(records, {
       sessionKey: isThreadSessionKey(options.sessionKey) ? options.sessionKey : null,
       isCommandText: this.isCommandText,
     });
-    const sessionManager = await SessionStore.open(sessionFile);
+    const sessionManager = await SessionStore.open(options.office, options.sessionKey);
     try {
+      await sessionManager.reset();
       await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
         resetAt: this.now().toISOString(),
         lastMessageId: lastMessageId ? lastMessageId : undefined,
@@ -164,19 +125,11 @@ export class ChatHistorySync {
     } finally {
       await sessionManager.close();
     }
-    return sessionFile;
   }
 
-  private async resolveTopLevelSessionFile(options: {
-    office: Office;
-    sessionDir: string;
-    currentMessageId?: string;
-  }): Promise<string> {
-    const existing = tryResolveCurrentSession(options.sessionDir);
-    if (existing) return existing;
+  private async bootstrapTopLevelSession(options: ResolveChatSessionScopeOptions): Promise<void> {
+    if (await SessionStore.exists(options.office, options.sessionKey)) return;
     const records = readConversationLog(options.office);
-
-    const sessionFile = createManagedSessionFile(options.sessionDir);
     const bootstrapRecords = selectRecentTopLevelMessages(records, {
       recentDays: this.recentDays,
       maxMessages: this.maxTopLevelMessages,
@@ -185,7 +138,7 @@ export class ChatHistorySync {
       isCommandText: this.isCommandText,
     });
     await bootstrapSessionFromLog(
-      sessionFile,
+      options,
       bootstrapRecords,
       latestSyncMessageId(records, {
         sessionKey: null,
@@ -193,28 +146,17 @@ export class ChatHistorySync {
         isCommandText: this.isCommandText,
       }),
     );
-    return sessionFile;
   }
 
-  private async resolveThreadSessionScope(options: {
-    office: Office;
-    sessionDir: string;
-    sessionKey: string;
-    currentMessageId?: string;
-  }): Promise<ResolvedSessionScope> {
-    const threadFile = getThreadSessionFile(options.sessionDir, options.sessionKey);
+  private async resolveThreadSessionScope(
+    options: ResolveChatSessionScopeOptions,
+  ): Promise<ResolvedSessionScope> {
     const threadId = extractSessionSuffix(options.sessionKey);
     const records = readConversationLog(options.office);
     const threadRootMessage = buildThreadRootSeed(findLogRecordById(records, threadId)?.message);
-    const existing = tryResolveThreadSession(threadFile);
-    if (existing) {
-      return { contextFile: existing, threadRootMessage };
+    if (await SessionStore.exists(options.office, options.sessionKey)) {
+      return { threadRootMessage };
     }
-
-    createManagedSessionFileAtPath(
-      threadFile,
-      resolveParentSessionForThread(options.sessionDir, threadId),
-    );
     const bootstrapRecords = selectThreadBootstrapMessages(records, threadId, {
       recentDays: this.recentDays,
       now: this.now(),
@@ -222,7 +164,7 @@ export class ChatHistorySync {
       isCommandText: this.isCommandText,
     });
     await bootstrapSessionFromLog(
-      threadFile,
+      options,
       bootstrapRecords,
       latestSyncMessageId(records, {
         sessionKey: options.sessionKey,
@@ -230,18 +172,8 @@ export class ChatHistorySync {
         isCommandText: this.isCommandText,
       }),
     );
-
-    return { contextFile: threadFile, threadRootMessage };
+    return { threadRootMessage };
   }
-}
-
-function resetThreadSessionFile(sessionsDir: string, sessionKey: string): string {
-  const threadFile = getThreadSessionFile(sessionsDir, sessionKey);
-  const parent =
-    SessionStore.readHeader(threadFile)?.parentSessionId ??
-    resolveParentSessionForThread(sessionsDir, extractSessionSuffix(sessionKey));
-  archiveManagedSessionFile(threadFile);
-  return createManagedSessionFileAtPath(threadFile, parent);
 }
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {
@@ -392,13 +324,11 @@ function sortTime(record: LogRecord): number {
 }
 
 async function bootstrapSessionFromLog(
-  sessionFile: string,
+  session: { office: Office; sessionKey: string },
   records: LogRecord[],
   lastMessageId = records.at(-1)?.message.ts,
 ): Promise<void> {
-  if (records.length === 0 && !lastMessageId) return;
-
-  const sessionManager = await SessionStore.open(sessionFile);
+  const sessionManager = await SessionStore.open(session.office, session.sessionKey);
   try {
     await appendLogRecordsToSession(sessionManager, records);
     await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {

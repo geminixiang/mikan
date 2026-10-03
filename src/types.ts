@@ -416,7 +416,7 @@ export interface SessionViewTokenCreateOptions {
   platformUserId: string;
   conversationId: string;
   sessionKey: string;
-  sessionFile: string;
+  office: Office;
   platformUserName?: string;
 }
 

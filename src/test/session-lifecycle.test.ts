@@ -28,7 +28,6 @@ function state(
     runner: fakeRunner(),
     stopRequested: false,
     lastAccessedAt: options.lastAccessedAt ?? 0,
-    sessionFile: "/session.jsonl",
     startedAt: 0,
   };
 }
@@ -80,7 +79,7 @@ describe("SessionLifecycle", () => {
     const materialized = state("C1");
     const create = vi.fn(async () => materialized);
 
-    const lease = await lifecycle.acquire(slack, "C1", () => undefined, create);
+    const lease = await lifecycle.acquire(slack, "C1", create);
 
     expect(lease.state).toBe(materialized);
     expect(create).toHaveBeenCalledOnce();
@@ -105,7 +104,7 @@ describe("SessionLifecycle", () => {
       })
       .mockResolvedValueOnce(secondState);
 
-    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    const acquisition = lifecycle.acquire(slack, "C1", create);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
     expect(lifecycle.invalidateConversation(slack)).toBe(true);
     releaseFirst();
@@ -121,12 +120,7 @@ describe("SessionLifecycle", () => {
   test("defers invalidation until settlement releases its runner lease", async () => {
     const lifecycle = new SessionLifecycle();
     const active = state("C1");
-    const lease = await lifecycle.acquire(
-      slack,
-      "C1",
-      () => undefined,
-      async () => active,
-    );
+    const lease = await lifecycle.acquire(slack, "C1", async () => active);
     let finish!: () => void;
     const gate = new Promise<void>((resolve) => (finish = resolve));
     const settlement = lifecycle.settle(active, () => gate);
@@ -151,7 +145,7 @@ describe("SessionLifecycle", () => {
       return materialized;
     });
 
-    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    const acquisition = lifecycle.acquire(slack, "C1", create);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
     const shutdown = lifecycle.shutdown(1_000);
     releaseCreate();
@@ -176,7 +170,7 @@ describe("SessionLifecycle", () => {
       throw signal.reason;
     });
 
-    const acquisition = lifecycle.acquire(slack, "C1", () => undefined, create);
+    const acquisition = lifecycle.acquire(slack, "C1", create);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
     let shutdownFinished = false;
     const shutdown = lifecycle.shutdown(0).then(() => {
@@ -195,7 +189,7 @@ describe("SessionLifecycle", () => {
   test("fails bounded shutdown when materialization ignores cancellation", async () => {
     const lifecycle = new SessionLifecycle();
     const create = vi.fn(() => new Promise<ConversationRuntimeState>(() => {}));
-    void lifecycle.acquire(slack, "C1", () => undefined, create);
+    void lifecycle.acquire(slack, "C1", create);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
 
     vi.useFakeTimers();
@@ -215,14 +209,9 @@ describe("SessionLifecycle", () => {
     const lifecycle = new SessionLifecycle();
     await lifecycle.shutdown(0);
 
-    await expect(
-      lifecycle.acquire(
-        slack,
-        "C1",
-        () => undefined,
-        async () => state("C1"),
-      ),
-    ).rejects.toThrow("Session lifecycle is shutting down");
+    await expect(lifecycle.acquire(slack, "C1", async () => state("C1"))).rejects.toThrow(
+      "Session lifecycle is shutting down",
+    );
   });
 
   test("clears idle conversation states and disposes runners through its interface", async () => {

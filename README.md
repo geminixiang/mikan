@@ -42,7 +42,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 ## Requirements
 
-- Node.js >= 22.19.0
+- Node.js >= 24.15.0
 
 ## Installation
 

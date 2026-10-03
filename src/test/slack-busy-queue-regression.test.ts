@@ -8,11 +8,10 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { contextMessages } from "./session-context.js";
+import { contextMessages, openSessionAt } from "./session-context.js";
 
 test("the run after a busy tool receives and answers the queued token, not the previous prompt", async () => {
   const dir = mkdtempSync(join(tmpdir(), "mikan-slack-busy-regression-"));
@@ -20,7 +19,7 @@ test("the run after a busy tool receives and answers the queued token, not the p
     createOfficeAddress("slack", "C1"),
   );
   mkdirSync(office.dir, { recursive: true });
-  const store = await SessionStore.create(join(dir, "session.jsonl"));
+  const store = await openSessionAt(join(dir, "session.jsonl"));
   try {
     const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
     const faux = fauxProvider();

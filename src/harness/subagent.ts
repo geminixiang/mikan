@@ -471,12 +471,12 @@ interface PreparedSubagentRun<TOutputSchema extends TSchema | undefined> {
   task: string;
 }
 
-function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
+async function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
   options: RunSubagentOptions<TOutputSchema>,
   request: SubagentRunRequest<TOutputSchema>,
   runId: string,
   startedAt: number,
-): PreparedSubagentRun<TOutputSchema> {
+): Promise<PreparedSubagentRun<TOutputSchema>> {
   const model = request.model
     ? options.models.resolve(request.model.provider, request.model.id)
     : options.defaultModel;
@@ -497,7 +497,7 @@ function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
     tools: granted,
     toolContext: options.toolContext,
     models: options.models,
-    sessionStore: SessionStore.inMemory(),
+    sessionStore: await SessionStore.inMemory(),
     settings: { compaction: { enabled: false } },
   });
   if (options.onActivity) reportSubagentActivity(session, options.onActivity);
@@ -663,7 +663,7 @@ async function executeSubagentRun<TOutputSchema extends TSchema | undefined = un
     if ((subagentRunDepth.getStore() ?? 0) >= 1) {
       throw new Error("Nested api.subagent.run calls are not allowed");
     }
-    run = prepareSubagentRun(options, request, runId, startedAt);
+    run = await prepareSubagentRun(options, request, runId, startedAt);
     request.signal?.addEventListener("abort", onAbort, { once: true });
     if (request.signal?.aborted) abort("cancelled");
     timeout = setTimeout(() => abort("timeout"), run.budget.maxDurationMs);

@@ -1,4 +1,4 @@
-import { resolveExistingSessionFile } from "../web/session-view/portal.js";
+import { SessionStore } from "../../sessions/session-store.js";
 import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
@@ -21,11 +21,8 @@ export class SessionViewCommandHandler implements CommandHandler {
       return true;
     }
 
-    const sessionFile = resolveExistingSessionFile(
-      context.services.workspace.office(context.address),
-      context.sessionKey,
-    );
-    if (!sessionFile) {
+    const office = context.services.workspace.office(context.address);
+    if (!(await SessionStore.exists(office, context.sessionKey))) {
       await replySummaryPrivately(context, "Session", [
         "目前還沒有可查看的 session。",
         "先和機器人對話一次，建立 session 後再試。",
@@ -43,7 +40,7 @@ export class SessionViewCommandHandler implements CommandHandler {
       platformUserId: context.platformUserId,
       conversationId: context.conversationId,
       sessionKey: context.sessionKey,
-      sessionFile,
+      office,
       platformUserName,
     });
 

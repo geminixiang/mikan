@@ -1,13 +1,13 @@
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SessionStore } from "../sessions/session-store.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
-import { getThreadSessionFile } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import type { ThreadRootMessage } from "../sessions/types.js";
 
 let root: string;
 let office: Office;
@@ -34,8 +34,22 @@ function writeLog(entries: object[]): void {
   );
 }
 
+async function inspectSession(sessionKey: string) {
+  const session = await SessionStore.inspect(office, sessionKey);
+  if (!session) throw new Error(`No session for ${sessionKey}`);
+  return session;
+}
+
+async function resolveScope(
+  manager: ChatHistorySync,
+  options: Parameters<ChatHistorySync["resolveSessionScope"]>[0],
+): Promise<{ key: string; threadRootMessage: ThreadRootMessage | null }> {
+  const scope = await manager.resolveSessionScope(options);
+  return { key: options.sessionKey, threadRootMessage: scope.threadRootMessage };
+}
+
 async function readContextText(sessionFile: string): Promise<string> {
-  const session = await SessionStore.inspect(sessionFile);
+  const session = await inspectSession(sessionFile);
   const context = await session.buildSessionContext();
   return context.messages
     .map((message) => {
@@ -47,7 +61,7 @@ async function readContextText(sessionFile: string): Promise<string> {
 }
 
 async function sessionRaw(sessionFile: string): Promise<string> {
-  const session = await SessionStore.inspect(sessionFile);
+  const session = await inspectSession(sessionFile);
   return JSON.stringify(await session.getEntries());
 }
 
@@ -55,7 +69,7 @@ async function countJsonlEntries(
   sessionFile: string,
   predicate: (entry: { type?: string; customType?: string }) => boolean,
 ): Promise<number> {
-  const session = await SessionStore.inspect(sessionFile);
+  const session = await inspectSession(sessionFile);
   const entries: Array<{ type?: string; customType?: string }> = [
     { type: "session" },
     ...(await session.getEntries()),
@@ -70,7 +84,7 @@ async function syncViaRuntimePath(
   contextFile: string,
   currentMessageId?: string,
 ): Promise<void> {
-  const session = await SessionStore.open(contextFile);
+  const session = await SessionStore.open(target, contextFile);
   try {
     await manager.syncSessionManager({
       office: target,
@@ -98,7 +112,8 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = await manager.resetSession({ office, sessionKey: "C123" });
+    await manager.resetSession({ office, sessionKey: "C123" });
+    const freshFile = "C123";
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -147,7 +162,8 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:10.000Z"),
     });
-    const freshFile = await manager.resetSession({ office, sessionKey: "C123" });
+    await manager.resetSession({ office, sessionKey: "C123" });
+    const freshFile = "C123";
 
     appendFileSync(
       join(conversationDir, "log.jsonl"),
@@ -227,13 +243,13 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
 
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0004",
     });
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("recent question");
     expect(text).toContain("recent answer");
     expect(text).not.toContain("too old");
@@ -268,7 +284,7 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    const scope = await new ChatHistorySync({
+    await new ChatHistorySync({
       isCommandText,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     }).resolveSessionScope({
@@ -277,7 +293,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0002",
     });
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText("C123");
     expect(text).toContain("completed history");
     expect(text).not.toContain("current message");
     expect(text).not.toContain("queued future message");
@@ -298,7 +314,7 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0001",
@@ -338,7 +354,7 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    const session = await SessionStore.open(scope.contextFile);
+    const session = await SessionStore.open(office, scope.key);
     await manager.syncSessionManager({
       office,
       sessionKey: "C123",
@@ -347,7 +363,7 @@ describe("ChatHistorySync", () => {
     });
     await session.close();
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("first answer");
     expect(text).not.toContain("current turn");
     expect(text).not.toContain("queued future turn");
@@ -393,15 +409,15 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
 
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
     });
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("question");
     expect(text).toContain("One two three");
-    expect(await countJsonlEntries(scope.contextFile, (entry) => entry.type === "message")).toBe(2);
+    expect(await countJsonlEntries(scope.key, (entry) => entry.type === "message")).toBe(2);
   });
 
   test("seeds a new thread with only the last few top-level messages before its root", async () => {
@@ -429,12 +445,12 @@ describe("ChatHistorySync", () => {
       isCommandText,
       now: () => new Date("2026-05-01T00:01:03.000Z"),
     });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123:2000.0001",
     });
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("thread root");
     expect(text).toContain("top-level 29");
     expect(text).toContain("top-level 21");
@@ -485,15 +501,15 @@ describe("ChatHistorySync", () => {
       now: () => new Date("2026-05-01T00:01:03.000Z"),
     });
 
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123:2000.0001",
       currentMessageId: "2000.0003",
     });
 
-    expect(scope.contextFile).toBe(getThreadSessionFile(office.sessionsDir, "C123:2000.0001"));
+    expect(await SessionStore.exists(office, "C123:2000.0001")).toBe(true);
     expect(scope.threadRootMessage?.text).toBe("thread root");
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("top-level context");
     expect(text).toContain("thread root");
     expect(text).toContain("thread bot reply");
@@ -566,13 +582,13 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:07.000Z"),
     });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123:1000.0004",
       currentMessageId: "1000.0007",
     });
 
-    const text = await readContextText(scope.contextFile);
+    const text = await readContextText(scope.key);
     expect(text).toContain("thread0");
     expect(text).toContain("thread1");
     expect(text).toContain("thread2");
@@ -656,12 +672,12 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:08.000Z"),
     });
-    const firstScope = await manager.resolveSessionScope({
+    const firstScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0003",
     });
-    const session = await SessionStore.open(firstScope.contextFile);
+    const session = await SessionStore.open(office, firstScope.key);
     await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:02+00:00] [alice]: next one is?" }],
@@ -687,12 +703,12 @@ describe("ChatHistorySync", () => {
     await session.close();
     writeLog(logEntries);
 
-    const secondScope = await manager.resolveSessionScope({
+    const secondScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0008",
     });
-    const syncSession = await SessionStore.open(secondScope.contextFile);
+    const syncSession = await SessionStore.open(office, secondScope.key);
     try {
       await manager.syncSessionManager({
         office,
@@ -704,7 +720,7 @@ describe("ChatHistorySync", () => {
       await syncSession.close();
     }
 
-    const text = await readContextText(secondScope.contextFile);
+    const text = await readContextText(secondScope.key);
     expect(text).toContain("k0");
     expect(text).toContain("k1");
     expect(text).toContain("k2");
@@ -712,8 +728,8 @@ describe("ChatHistorySync", () => {
     expect(text).toContain("thread1");
     expect(text).not.toContain("/pi-session");
     expect(text).not.toContain("current question");
-    expect((await sessionRaw(secondScope.contextFile)).match(/next one is\?/g)).toHaveLength(1);
-    expect((await sessionRaw(secondScope.contextFile)).match(/\bk2\b/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.key)).match(/next one is\?/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.key)).match(/\bk2\b/g)).toHaveLength(1);
   });
 
   test("applies the same message cap when syncing an existing top-level session", async () => {
@@ -734,7 +750,7 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 2,
       now: () => new Date("2026-05-01T00:00:04.000Z"),
     });
-    const firstScope = await manager.resolveSessionScope({
+    const firstScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
     });
@@ -774,14 +790,14 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    const secondScope = await manager.resolveSessionScope({
+    const secondScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
     });
-    await syncViaRuntimePath(manager, office, "C123", secondScope.contextFile);
+    await syncViaRuntimePath(manager, office, "C123", secondScope.key);
 
-    expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = await readContextText(secondScope.contextFile);
+    expect(secondScope.key).toBe(firstScope.key);
+    const text = await readContextText(secondScope.key);
     expect(text).toContain("seed");
     expect(text).not.toContain("sync0");
     expect(text).toContain("sync1");
@@ -806,7 +822,7 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
-    const firstScope = await manager.resolveSessionScope({
+    const firstScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
     });
@@ -834,18 +850,18 @@ describe("ChatHistorySync", () => {
       "utf-8",
     );
 
-    const secondScope = await manager.resolveSessionScope({
+    const secondScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
     });
-    await syncViaRuntimePath(manager, office, "C123", secondScope.contextFile);
+    await syncViaRuntimePath(manager, office, "C123", secondScope.key);
 
-    expect(secondScope.contextFile).toBe(firstScope.contextFile);
-    const text = await readContextText(secondScope.contextFile);
+    expect(secondScope.key).toBe(firstScope.key);
+    const text = await readContextText(secondScope.key);
     expect(text).toContain("seed");
     expect(text).toContain("rebuilt history");
     expect(text).toContain("after rebuild");
-    expect((await sessionRaw(secondScope.contextFile)).match(/\bseed\b/g)).toHaveLength(1);
+    expect((await sessionRaw(secondScope.key)).match(/\bseed\b/g)).toHaveLength(1);
   });
 
   test("recognizes mikan's posted reply as the model's own and never feeds the signature back", async () => {
@@ -888,12 +904,12 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:04.000Z"),
     });
-    const firstScope = await manager.resolveSessionScope({
+    const firstScope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0001",
     });
-    const session = await SessionStore.open(firstScope.contextFile);
+    const session = await SessionStore.open(office, firstScope.key);
     await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:00+00:00] [alice]: hi" }],
@@ -919,12 +935,12 @@ describe("ChatHistorySync", () => {
     await session.close();
     writeLog(logEntries);
 
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0004",
     });
-    const syncSession = await SessionStore.open(scope.contextFile);
+    const syncSession = await SessionStore.open(office, scope.key);
     try {
       await manager.syncSessionManager({
         office,
@@ -936,7 +952,7 @@ describe("ChatHistorySync", () => {
       await syncSession.close();
     }
 
-    const raw = await sessionRaw(scope.contextFile);
+    const raw = await sessionRaw(scope.key);
     expect(raw.match(/What can I help you with/g)).toHaveLength(1);
     expect(raw).not.toContain("Look up the greeting");
     expect(raw).toContain("Scheduled digest ready.");
@@ -977,13 +993,13 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123",
       currentMessageId: "1000.0003",
     });
 
-    const session = await SessionStore.open(scope.contextFile);
+    const session = await SessionStore.open(office, scope.key);
     await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[alice]: current message" }],
@@ -1007,14 +1023,14 @@ describe("ChatHistorySync", () => {
       timestamp: 2,
     });
 
-    expect(await countJsonlEntries(scope.contextFile, (entry) => entry.type === "session")).toBe(1);
+    expect(await countJsonlEntries(scope.key, (entry) => entry.type === "session")).toBe(1);
     expect(
       await countJsonlEntries(
-        scope.contextFile,
+        scope.key,
         (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
       ),
     ).toBe(1);
-    expect((await sessionRaw(scope.contextFile)).match(/\bu0\b/g)).toHaveLength(1);
+    expect((await sessionRaw(scope.key)).match(/\bu0\b/g)).toHaveLength(1);
   });
 
   test("thread bootstrap sync is a no-op when only the represented root is in scope", async () => {
@@ -1052,12 +1068,12 @@ describe("ChatHistorySync", () => {
       maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123:2000.0001",
       currentMessageId: "2000.0002",
     });
-    const session = await SessionStore.open(scope.contextFile);
+    const session = await SessionStore.open(office, scope.key);
 
     await manager.syncSessionManager({
       office,
@@ -1068,7 +1084,7 @@ describe("ChatHistorySync", () => {
 
     expect(
       await countJsonlEntries(
-        scope.contextFile,
+        scope.key,
         (entry) => entry.type === "custom" && entry.customType === "mikan.chat_sync",
       ),
     ).toBe(1);
@@ -1086,16 +1102,15 @@ describe("ChatHistorySync", () => {
       },
     ]);
 
-    registerThreadSession({ office, sessionKey: "C123:2000.0001" });
+    await registerThreadSession({ office, sessionKey: "C123:2000.0001" });
 
     const manager = new ChatHistorySync({ isCommandText });
-    const scope = await manager.resolveSessionScope({
+    const scope = await resolveScope(manager, {
       office,
       sessionKey: "C123:2000.0001",
     });
 
-    expect(scope.contextFile).toBe(getThreadSessionFile(office.sessionsDir, "C123:2000.0001"));
-    expect(existsSync(scope.contextFile)).toBe(true);
-    expect(await sessionRaw(scope.contextFile)).not.toContain("channel history should not leak");
+    expect(await SessionStore.exists(office, "C123:2000.0001")).toBe(true);
+    expect(await sessionRaw(scope.key)).not.toContain("channel history should not leak");
   });
 });

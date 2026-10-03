@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { openSessionAt } from "./session-context.js";
 import { join } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
@@ -39,7 +40,7 @@ afterEach(() => {
 });
 
 async function sessionEntriesOf(items: (AgentMessage | string)[]): Promise<SessionEntry[]> {
-  const store = SessionStore.inMemory();
+  const store = await SessionStore.inMemory();
   for (const item of items) {
     if (typeof item === "string") await store.appendCompactionSummary(item, Date.now());
     else await store.appendMessage(item);
@@ -208,7 +209,7 @@ describe("runSubagent", () => {
         }),
       THINKER_MENU,
     );
-    const sessionStore = await SessionStore.create(join(dir, "parent.jsonl"));
+    const sessionStore = await openSessionAt(join(dir, "parent.jsonl"));
     const parent = new MikanAgentSession({
       systemPrompt: "Delegate focused work when useful.",
       model,
@@ -497,7 +498,7 @@ describe("runSubagent", () => {
 
   test("keeps the parent's retained tail after a native compaction", async () => {
     const { models, faux, model } = createFauxSetup();
-    const parent = await SessionStore.create(join(dir, "parent.jsonl"));
+    const parent = await openSessionAt(join(dir, "parent.jsonl"));
     for (const turn of ["one", "two", "three"]) {
       await parent.appendMessage({
         role: "user",

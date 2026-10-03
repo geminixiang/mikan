@@ -120,3 +120,7 @@ export function inferConversationKind(platform: string, conversationId: string):
 
   return "shared";
 }
+
+export function extractSessionSuffix(sessionKey: string): string {
+  return assertSessionSuffix(threadSuffixOf(sessionKey) ?? sessionKey);
+}

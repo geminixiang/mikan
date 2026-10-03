@@ -49,7 +49,6 @@ import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import { extractSessionUuid } from "../sessions/store.js";
 import type { PlatformToolPack, PlatformToolRunContext } from "./tools/types.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
@@ -416,12 +415,12 @@ async function rollbackRunnerResource(label: string, cleanup: () => Promise<void
 }
 
 async function openRunnerSessionManager(params: {
-  contextFile: string;
+  office: Office;
   sessionKey: string;
   threadRootMessage: ThreadRootMessage | null;
 }) {
-  const { contextFile, sessionKey, threadRootMessage } = params;
-  const sessionManager = await SessionStore.open(contextFile);
+  const { office, sessionKey, threadRootMessage } = params;
+  const sessionManager = await SessionStore.open(office, sessionKey);
   try {
     const threadSessionName = buildThreadSessionName(threadRootMessage);
     if (
@@ -486,7 +485,7 @@ interface PreparedTurnParams {
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   sessionUuid: string;
   conversationId: string;
-  contextFile: string;
+  office: Office;
   sessionView: CreateRunnerOptions["sessionView"];
 }
 
@@ -507,7 +506,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     agentConfig,
     sessionUuid,
     conversationId,
-    contextFile,
+    office,
     sessionView,
   } = params;
   if (runState.logCtx) {
@@ -556,7 +555,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
               platformUserId: message.userId,
               conversationId,
               sessionKey: message.sessionKey,
-              sessionFile: contextFile,
+              office,
               platformUserName: message.userName,
             });
             sessionViewLink = `${sessionViewPortalBaseUrl}/session?token=${token.token}`;
@@ -600,7 +599,6 @@ interface RunnerInterfaceParams {
   sessionKey: string;
   office: Office;
   sessionUuid: string;
-  contextFile: string;
   sessionView: CreateRunnerOptions["sessionView"];
   runEvents: CreateRunnerOptions["runEvents"];
   runState: RunnerSessionState;
@@ -683,7 +681,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     sessionKey,
     office,
     sessionUuid,
-    contextFile,
     sessionView,
     runEvents,
     runState,
@@ -737,7 +734,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
             agentConfig,
             sessionUuid,
             conversationId,
-            contextFile,
+            office,
             sessionView,
           });
         } finally {
@@ -797,10 +794,9 @@ async function finishRunnerCreation(params: {
     platformToolRoles,
     toolContext,
   } = params;
-  const { sessionKey, office, sessionScope, sessionView, chatHistory, runEvents } = options;
-  const { contextFile } = sessionScope;
+  const { sessionKey, office, sessionView, chatHistory, runEvents } = options;
   try {
-    const sessionUuid = extractSessionUuid(contextFile);
+    const sessionUuid = sessionManager.getSessionId();
     const session = await createRunnerAgentSession({
       workspaceDir,
       systemPrompt,
@@ -808,9 +804,7 @@ async function finishRunnerCreation(params: {
       agentConfig,
       tools: [
         ...toolBindings.tools,
-        withSecretRedaction(
-          adaptAgentTool(createHistoryTool({ office, sessionFile: contextFile })),
-        ),
+        withSecretRedaction(adaptAgentTool(createHistoryTool({ office, sessionKey }))),
       ],
       toolContext,
       sessionManager,
@@ -828,7 +822,6 @@ async function finishRunnerCreation(params: {
       sessionKey,
       office,
       sessionUuid,
-      contextFile,
       sessionView,
       runEvents,
       runState,
@@ -915,9 +908,9 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     sandboxConfig,
   });
   options.signal?.throwIfAborted();
-  const { contextFile, threadRootMessage } = sessionScope;
+  const { threadRootMessage } = sessionScope;
   const sessionManager = await openRunnerSessionManager({
-    contextFile,
+    office,
     sessionKey,
     threadRootMessage,
   });

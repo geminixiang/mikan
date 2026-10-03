@@ -5,7 +5,7 @@ description: 安裝依賴、建置 mikan、執行聚焦檢查、預覽文件，�
 
 ## 本機設定
 
-mikan 需要 Node.js `>=22.19.0`。
+mikan 需要 Node.js `>=24.15.0`。
 
 ```bash
 git clone https://github.com/geminixiang/mikan.git

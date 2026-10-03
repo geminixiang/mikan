@@ -7,8 +7,8 @@ import { RunEventHub } from "../harness/run-events.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
 import { closeWebServer, startWebServer } from "../adapters/web/server.js";
-import { createOfficeAddress } from "../office/index.js";
-import { createManagedSessionFile } from "../sessions/store.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { FileVaultManager } from "../vault/index.js";
 
 let root: string;
@@ -35,14 +35,17 @@ interface StreamPayload {
 async function openSessionStream(runEvents: RunEventHub, sessionKey: string) {
   const conversationDir = join(root, "C1");
   mkdirSync(conversationDir, { recursive: true });
-  const sessionFile = createManagedSessionFile(join(conversationDir, "sessions"));
+  const office = createWorkspace({ root, stateDir: join(root, "state") }).office(
+    createOfficeAddress("slack", "C1"),
+  );
+  await (await SessionStore.open(office, "C1")).close();
   const sessionViewTokenStore = new InMemorySessionViewTokenStore();
   const { token } = sessionViewTokenStore.create({
     platform: "slack",
     platformUserId: "U1",
     conversationId: "C1",
     sessionKey,
-    sessionFile,
+    office,
   });
   server = startWebServer({
     port: 0,

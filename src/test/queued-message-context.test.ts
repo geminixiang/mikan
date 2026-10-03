@@ -102,7 +102,7 @@ async function syncForTurn(
   contextFile: string,
   currentMessageId: string,
 ) {
-  const session = await SessionStore.open(contextFile);
+  const session = await SessionStore.open(office, contextFile);
   try {
     await manager.syncSessionManager({
       office,
@@ -121,7 +121,7 @@ async function appendTurn(
   answer: string | undefined,
   timestamp: number,
 ): Promise<void> {
-  const session = await SessionStore.open(contextFile);
+  const session = await SessionStore.open(office, contextFile);
   try {
     await session.appendMessage({
       role: "user",
@@ -152,7 +152,9 @@ async function appendTurn(
 async function providerMessages(
   contextFile: string,
 ): Promise<Array<{ role: string; text: string }>> {
-  const context = await (await SessionStore.inspect(contextFile)).buildSessionContext();
+  const inspection = await SessionStore.inspect(office, contextFile);
+  if (!inspection) throw new Error(`No session ${contextFile}`);
+  const context = await inspection.buildSessionContext();
   return context.messages.map((message) => {
     return {
       role: message.role,
@@ -167,11 +169,12 @@ async function providerMessages(
 async function runBusyThenQueuedTurns(): Promise<string> {
   writeLog([...EARLIER_TURN, BUSY_RECORD]);
   const manager = newManager();
-  const scope = await manager.resolveSessionScope({
+  await manager.resolveSessionScope({
     office,
     sessionKey: SESSION_KEY,
     currentMessageId: BUSY_RECORD.ts,
   });
+  const scope = { contextFile: SESSION_KEY };
 
   await syncForTurn(manager, scope.contextFile, BUSY_RECORD.ts);
   await appendTurn(scope.contextFile, BUSY_TEXT, "QA_BUSY_TOKEN", 3);
@@ -183,7 +186,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
 }
 
 async function appendToolCallTurn(contextFile: string): Promise<void> {
-  const session = await SessionStore.open(contextFile);
+  const session = await SessionStore.open(office, contextFile);
   try {
     await session.appendMessage({
       role: "user",
@@ -256,11 +259,12 @@ describe("queued message context", () => {
   test("a busy turn answered through a tool call is still recognised as represented", async () => {
     writeLog([...EARLIER_TURN, BUSY_RECORD]);
     const manager = newManager();
-    const scope = await manager.resolveSessionScope({
+    await manager.resolveSessionScope({
       office,
       sessionKey: SESSION_KEY,
       currentMessageId: BUSY_RECORD.ts,
     });
+    const scope = { contextFile: SESSION_KEY };
     await syncForTurn(manager, scope.contextFile, BUSY_RECORD.ts);
     await appendToolCallTurn(scope.contextFile);
 

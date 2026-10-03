@@ -2,6 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+
+const OFFICE = createWorkspace({
+  root: "/tmp/mikan-token-test",
+  stateDir: "/tmp/mikan-token-state",
+}).office(createOfficeAddress("slack", "D1"));
 
 function makeStore() {
   const store = new InMemoryAdminTokenStore();
@@ -142,9 +148,9 @@ describe("InMemorySessionViewTokenStore", () => {
       platformUserId: "U1",
       conversationId: "D1",
       sessionKey: "D1",
-      sessionFile: "/path/session.jsonl",
+      office: OFFICE,
     });
-    expect(store.peek(t.token)).toMatchObject({ sessionFile: "/path/session.jsonl" });
+    expect(store.peek(t.token)).toMatchObject({ sessionKey: "D1", office: OFFICE });
   });
 
   test("multiple tokens coexist (no dedup on create)", () => {
@@ -154,14 +160,14 @@ describe("InMemorySessionViewTokenStore", () => {
       platformUserId: "U1",
       conversationId: "D1",
       sessionKey: "D1",
-      sessionFile: "/a.jsonl",
+      office: OFFICE,
     });
     const b = store.create({
       platform: "slack",
       platformUserId: "U1",
       conversationId: "D1",
       sessionKey: "D1",
-      sessionFile: "/b.jsonl",
+      office: OFFICE,
     });
 
     expect(store.peek(a.token)).toBeDefined();
@@ -177,7 +183,7 @@ describe("InMemorySessionViewTokenStore", () => {
       platformUserId: "U1",
       conversationId: "D1",
       sessionKey: "D1",
-      sessionFile: "/session.jsonl",
+      office: OFFICE,
     });
 
     vi.setSystemTime(new Date("2026-01-02T01:00:00Z"));

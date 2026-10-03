@@ -33,11 +33,6 @@ import {
   waitForThreadSessionBootstrap,
 } from "../sessions/chat-history-sync.js";
 import {
-  getThreadSessionFile,
-  tryResolveCurrentSession,
-  tryResolveThreadSession,
-} from "../sessions/store.js";
-import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
   threadSuffixOf,
@@ -224,9 +219,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<void> {
     const conversationId = address.conversationId;
     const office = this.options.workspace.office(address);
-    await this.chatSessionManager.resetSession({ office, sessionKey });
-
     await this.sessions.discardAndWait(address, sessionKey);
+    await this.chatSessionManager.resetSession({ office, sessionKey });
 
     log.logInfo(`[${conversationId}] Session reset: ${sessionKey}`);
     await bot.postMessage(conversationId, "Conversation reset. Send a new message to start fresh.");
@@ -545,14 +539,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private acquireState(options: SessionStateOptions & { currentMessageId?: string }) {
     const { address, sessionKey } = options;
     const office = this.options.workspace.office(address);
-    return this.sessions.acquire(
-      address,
-      sessionKey,
-      () =>
-        sessionKey === address.conversationId
-          ? tryResolveCurrentSession(office.sessionsDir)
-          : tryResolveThreadSession(getThreadSessionFile(office.sessionsDir, sessionKey)),
-      (signal) => this.materializeState(options, office, signal),
+    return this.sessions.acquire(address, sessionKey, (signal) =>
+      this.materializeState(options, office, signal),
     );
   }
 
@@ -576,7 +564,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       runner: await this.createCurrentRunner(options, sessionScope, signal),
       stopRequested: false,
       lastAccessedAt: Date.now(),
-      sessionFile: sessionScope.contextFile,
       startedAt: 0,
     };
   }

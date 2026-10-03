@@ -1,3 +1,4 @@
+import type { Office } from "../../../office/types.js";
 import type { RunEventHub } from "../../../harness/run-events.js";
 import type { MessagingEventHandler, MessagingBot, PlatformName } from "../../../types.js";
 import type { TokenRecord } from "../types.js";
@@ -19,7 +20,7 @@ export interface SessionViewItem {
 }
 
 export interface SessionViewRelation {
-  fileName: string;
+  sessionKey: string;
   title: string;
   updatedAt: string;
   entryCount: number;
@@ -29,7 +30,7 @@ export interface SessionViewRelation {
 
 export interface SessionViewModel {
   sessionId: string;
-  fileName: string;
+  sessionKey: string;
   title: string;
   createdAt: string;
   updatedAt: string;
@@ -44,5 +45,5 @@ export interface SessionViewToken extends TokenRecord {
   platformUserName?: string;
   conversationId: string;
   sessionKey: string;
-  sessionFile: string;
+  office: Office;
 }

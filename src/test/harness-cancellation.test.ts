@@ -32,7 +32,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-function setup(options: { tools?: AgentTool[]; compact?: boolean } = {}) {
+async function setup(options: { tools?: AgentTool[]; compact?: boolean } = {}) {
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
   const faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
@@ -43,7 +43,7 @@ function setup(options: { tools?: AgentTool[]; compact?: boolean } = {}) {
     thinkingLevel: "off",
     tools: options.tools ?? [],
     models,
-    sessionStore: SessionStore.inMemory(),
+    sessionStore: await SessionStore.inMemory(),
     settings: {
       compaction: { enabled: options.compact ?? false, reserveTokens: 5, keepRecentTokens: 1 },
       retry: { baseDelayMs: 5000 },
@@ -78,7 +78,7 @@ describe("harness run cancellation", () => {
     { runFails: false, cancellation: "reject" },
     { runFails: true, cancellation: "reject" },
   ])("run/cleanup failures retain their causes: %j", async ({ runFails, cancellation }) => {
-    const { session, faux } = setup();
+    const { session, faux } = await setup();
     const runError = new Error("drive failed");
     const cleanupError = new Error("abort persistence failed");
     const bind = session.sessionStore.bindHarness.bind(session.sessionStore);
@@ -86,12 +86,12 @@ describe("harness run cancellation", () => {
     let failed = false;
     vi.spyOn(session.sessionStore, "bindHarness").mockImplementationOnce(async (binding) => {
       const attached = await bind(binding);
-      const rootAbort = attached.root.abort.bind(attached.root);
+      const rootAbort = attached.conversation.abort.bind(attached.conversation);
       abort = vi.fn(async (...args: Parameters<typeof rootAbort>) => {
         await rootAbort(...args);
         if (cancellation === "reject") throw cleanupError;
       });
-      const submit = attached.root.submit.bind(attached.root);
+      const submit = attached.conversation.submit.bind(attached.conversation);
       const wrappedSubmit = async (...args: Parameters<typeof submit>) => {
         const submission = await submit(...args);
         return {
@@ -108,7 +108,7 @@ describe("harness run cancellation", () => {
           },
         };
       };
-      const root = new Proxy(attached.root, {
+      const conversation = new Proxy(attached.conversation, {
         get: (target, property) => {
           if (property === "abort") return abort;
           if (property === "submit") return wrappedSubmit;
@@ -116,7 +116,7 @@ describe("harness run cancellation", () => {
           return typeof value === "function" ? value.bind(target) : value;
         },
       });
-      return { ...attached, root };
+      return { ...attached, conversation };
     });
     const unsubscribe = session.subscribe((event) => {
       if (event.type === "message_start") session.abort();
@@ -148,7 +148,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort during auth prevents a model call and the next prompt can run", async () => {
-    const { session, models, faux } = setup();
+    const { session, models, faux } = await setup();
     faux.setResponses([fauxAssistantMessage("next prompt")]);
     const gate = deferred();
     const ready = deferred();
@@ -171,7 +171,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort from retry-start notification prevents the retry", async () => {
-    const { session, faux, events } = setup();
+    const { session, faux, events } = await setup();
     faux.setResponses([retryError(), fauxAssistantMessage("must not retry")]);
     session.subscribe((event) => {
       if (event.type === "auto_retry_start") session.abort();
@@ -190,7 +190,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort from compaction-start notification prevents the next model turn", async () => {
-    const { session, faux, events } = setup({ compact: true });
+    const { session, faux, events } = await setup({ compact: true });
     await seedHistory(session);
     faux.setResponses([fauxAssistantMessage("summary"), fauxAssistantMessage("must not answer")]);
     session.subscribe((event) => {
@@ -202,7 +202,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort after initial compaction does not report a completed provider request", async () => {
-    const { session, faux } = setup({ compact: true });
+    const { session, faux } = await setup({ compact: true });
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     await seedHistory(session);
     faux.setResponses([
@@ -224,7 +224,7 @@ describe("harness run cancellation", () => {
   });
 
   test("initial compaction exhausting the budget prevents a new model turn", async () => {
-    const { session, faux } = setup({ compact: true });
+    const { session, faux } = await setup({ compact: true });
     await seedHistory(session);
     faux.setResponses([fauxAssistantMessage("summary"), fauxAssistantMessage("must not start")]);
     await session.prompt("new request", { budget: { maxTokens: 1 } });
@@ -234,7 +234,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort before model output reports an aborted run without a fabricated answer", async () => {
-    const { session, faux } = setup();
+    const { session, faux } = await setup();
     await seedHistory(session);
     const ready = deferred();
     const gate = deferred();
@@ -260,7 +260,7 @@ describe("harness run cancellation", () => {
   });
 
   test("duration budget logs and aborts an in-flight provider call before its response", async () => {
-    const { session, faux, events } = setup();
+    const { session, faux, events } = await setup();
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     const gate = deferred();
@@ -308,7 +308,7 @@ describe("harness run cancellation", () => {
         return { content: [{ type: "text", text: "cleaned up" }], details: {} };
       },
     };
-    const { session, faux } = setup({ tools: [tool] });
+    const { session, faux } = await setup({ tools: [tool] });
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     faux.setResponses([
       async (_context, options, _state, requestModel) => {
@@ -334,7 +334,7 @@ describe("harness run cancellation", () => {
   });
 
   test("duration budget cancels retry backoff without reporting an LLM request", async () => {
-    const { session, faux, events } = setup();
+    const { session, faux, events } = await setup();
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     faux.setResponses([
@@ -361,7 +361,7 @@ describe("harness run cancellation", () => {
   });
 
   test("deadline during preflight auth does not report a provider stream", async () => {
-    const { session, models, faux, events } = setup();
+    const { session, models, faux, events } = await setup();
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     const gate = deferred();
@@ -385,7 +385,7 @@ describe("harness run cancellation", () => {
   });
 
   test("deadline during provider auth does not report a transport that never started", async () => {
-    const { session, models, events } = setup();
+    const { session, models, events } = await setup();
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     const ready = deferred();
     const gate = deferred();
@@ -415,7 +415,7 @@ describe("harness run cancellation", () => {
   });
 
   test("deadline logs and aborts an in-flight compaction without persisting a partial summary", async () => {
-    const { session, faux, events } = setup({ compact: true });
+    const { session, faux, events } = await setup({ compact: true });
     const info = vi.spyOn(log, "logInfo").mockImplementation(() => undefined);
     await seedHistory(session);
     const ready = deferred();
@@ -453,7 +453,7 @@ describe("harness run cancellation", () => {
   });
 
   test("slow budget listeners cannot delay cancellation or leak into another prompt", async () => {
-    const { session, faux } = setup();
+    const { session, faux } = await setup();
     const ready = deferred();
     const response = deferred();
     const notification = deferred();
@@ -486,7 +486,7 @@ describe("harness run cancellation", () => {
   });
 
   test("a deadline beyond Node's timer range does not expire after one millisecond", async () => {
-    const { session, faux } = setup();
+    const { session, faux } = await setup();
     const ready = deferred();
     const gate = deferred();
     let signal: AbortSignal | undefined;
@@ -514,7 +514,7 @@ describe("harness run cancellation", () => {
   test.each([{ maxLlmCalls: 0 }, { maxTokens: 0 }, { maxCostUsd: 0 }, { maxDurationMs: 0 }])(
     "an already-exhausted budget starts no model call: %j",
     async (budget) => {
-      const { session, faux } = setup();
+      const { session, faux } = await setup();
       faux.setResponses([fauxAssistantMessage("must not start")]);
       await session.prompt("no budget", { budget });
       expect(faux.state.callCount).toBe(0);
@@ -523,7 +523,7 @@ describe("harness run cancellation", () => {
   );
 
   test("completed run duration stays fixed and its deadline cannot abort a later run", async () => {
-    const { session, faux } = setup();
+    const { session, faux } = await setup();
     faux.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
     await session.prompt("first", { budget: { maxDurationMs: 100 } });
     const duration = session.getLastRunStats().durationMs;

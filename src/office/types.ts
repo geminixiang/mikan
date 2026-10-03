@@ -22,7 +22,7 @@ export interface Office {
   readonly dir: string;
   readonly memoryPath: string;
   readonly skillsDir: string;
-  readonly sessionsDir: string;
+  readonly sessionsPath: string;
   readonly attachmentsDir: string;
   readonly logPath: string;
   readonly stateDir: string;

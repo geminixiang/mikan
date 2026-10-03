@@ -5,7 +5,7 @@ description: 依存関係のインストール、mikan のビルド、対象を�
 
 ## ローカルセットアップ
 
-mikan には Node.js `>=22.19.0` が必要です。
+mikan には Node.js `>=24.15.0` が必要です。
 
 ```bash
 git clone https://github.com/geminixiang/mikan.git

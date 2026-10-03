@@ -347,7 +347,7 @@ export class SlackMessagingBot implements MessagingBot {
         });
         const sessionKey = resolveSlackSessionKey(event.channel, root);
         try {
-          registerThreadSession({
+          await registerThreadSession({
             office: this.office(event.channel),
             sessionKey,
           });
@@ -960,7 +960,7 @@ export class SlackMessagingBot implements MessagingBot {
       const eventPlan = planSlackEventAnchorRun(event, anchorTs);
       const eventForRun = eventPlan.event;
       if (eventPlan.initialMessageTs && eventForRun.sessionKey) {
-        registerThreadSession({
+        await registerThreadSession({
           office: this.office(conversationId),
           sessionKey: eventForRun.sessionKey,
         });
@@ -1008,12 +1008,14 @@ export class SlackMessagingBot implements MessagingBot {
     return queue;
   }
 
-  private resolveQueueKey(conversationId: string, sessionKey: string): string {
+  private async resolveQueueKey(conversationId: string, sessionKey: string): Promise<string> {
     if (!isSlackThreadSessionKey(sessionKey)) return sessionKey;
     if (this.handler.isRunning(createOfficeAddress("slack", conversationId), sessionKey)) {
       return sessionKey;
     }
-    return this.hasKnownThreadSession(conversationId, sessionKey) ? sessionKey : conversationId;
+    return (await this.hasKnownThreadSession(conversationId, sessionKey))
+      ? sessionKey
+      : conversationId;
   }
 
   private isTaskThread(channel: string, root: string): boolean {
@@ -1033,7 +1035,7 @@ export class SlackMessagingBot implements MessagingBot {
       );
   }
 
-  private hasKnownThreadSession(conversationId: string, sessionKey: string): boolean {
+  private hasKnownThreadSession(conversationId: string, sessionKey: string): Promise<boolean> {
     return hasMaterializedChatSession({
       office: this.office(conversationId),
       sessionKey,
@@ -1498,7 +1500,7 @@ export class SlackMessagingBot implements MessagingBot {
     const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
-      queueKey: this.resolveQueueKey(e.channel, sessionKey),
+      queueKey: await this.resolveQueueKey(e.channel, sessionKey),
       addressed: true,
     });
 
@@ -1725,7 +1727,7 @@ export class SlackMessagingBot implements MessagingBot {
     const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
-      queueKey: this.resolveQueueKey(e.channel, activeSessionKey),
+      queueKey: await this.resolveQueueKey(e.channel, activeSessionKey),
       addressed: isDM || autoReply,
       magicWordAddressed: isDM,
     });
@@ -1806,7 +1808,7 @@ export class SlackMessagingBot implements MessagingBot {
 
     if (!action.action_id?.startsWith("force_stop_")) {
       ack();
-      this.handleSlackInteraction(body, action);
+      await this.handleSlackInteraction(body, action);
       return;
     }
 
@@ -1836,7 +1838,10 @@ export class SlackMessagingBot implements MessagingBot {
     }
   }
 
-  private handleSlackInteraction(body: SlackBlockActionBody, action: SlackBlockAction): void {
+  private async handleSlackInteraction(
+    body: SlackBlockActionBody,
+    action: SlackBlockAction,
+  ): Promise<void> {
     const container = body.container ?? {};
     const channelId = container.channel_id;
     const userId = body.user?.id;
@@ -1897,7 +1902,7 @@ export class SlackMessagingBot implements MessagingBot {
       sessionKey,
     });
 
-    this.getQueue(this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
+    this.getQueue(await this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
       const slackEvent: SlackEvent = {
         ...createConversationEvent({
           platform: "slack",

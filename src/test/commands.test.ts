@@ -27,7 +27,7 @@ import type {
   CommandHandler,
   CommandServices,
 } from "../adapters/commands/types.js";
-import { createManagedSessionFile } from "../sessions/store.js";
+import { SessionStore } from "../sessions/session-store.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import type { VaultManager } from "../vault/types.js";
@@ -119,11 +119,11 @@ function fakeLinkTokenStore() {
 }
 
 function fakeSessionViewTokenStore() {
-  const created: { sessionFile: string }[] = [];
+  const created: { sessionKey: string }[] = [];
   return {
     created,
-    create(options: { sessionFile: string }) {
-      created.push({ sessionFile: options.sessionFile });
+    create(options: { sessionKey: string }) {
+      created.push({ sessionKey: options.sessionKey });
       return { token: "tok-sv" };
     },
   };
@@ -776,9 +776,12 @@ describe("SessionViewCommandHandler", () => {
       officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
-    createManagedSessionFile(
-      testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
-    );
+    await (
+      await SessionStore.open(
+        testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)),
+        conversationId,
+      )
+    ).close();
 
     const postPrivate = vi.fn(
       async (_conversationId: string, _userId: string, _text: string) => {},
@@ -818,7 +821,7 @@ describe("SessionViewCommandHandler", () => {
     expect(ctx.responder.responses[0]).toContain("私訊");
   });
 
-  test("reports missing session file", async () => {
+  test("reports a conversation without a session", async () => {
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({
       commandText: "/session",
@@ -838,9 +841,12 @@ describe("SessionViewCommandHandler", () => {
       officeKey(createOfficeAddress("slack", conversationId)),
     );
     mkdirSync(conversationDir, { recursive: true });
-    const expectedFile = createManagedSessionFile(
-      testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)).sessionsDir,
-    );
+    await (
+      await SessionStore.open(
+        testWorkspace(workingDir).office(createOfficeAddress("slack", conversationId)),
+        conversationId,
+      )
+    ).close();
 
     const sessionViewTokenStore = fakeSessionViewTokenStore();
     const ctx = buildContext({
@@ -850,7 +856,7 @@ describe("SessionViewCommandHandler", () => {
     });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(sessionViewTokenStore.created).toEqual([{ sessionFile: expectedFile }]);
+    expect(sessionViewTokenStore.created).toEqual([{ sessionKey: conversationId }]);
     expect(ctx.responder.responses[0]).toContain("https://portal.example/session?token=tok-sv");
   });
 });

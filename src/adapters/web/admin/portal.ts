@@ -66,7 +66,6 @@ import {
   readJsonBody,
   renderPortalShell,
 } from "../portal-shell.js";
-import { resolveExistingSessionFile } from "../session-view/portal.js";
 import { PRODUCT_NAME } from "../../messages.js";
 import { credentialAuthorizationKey } from "../../../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../../../office/projection.js";
@@ -344,7 +343,7 @@ function serveConversationsList(res: ServerResponse, services: AdminServices): v
 interface SessionUsageRow {
   conversationId: string;
   label: string;
-  fileName: string;
+  sessionKey: string;
   updatedAt: string;
   input: number;
   output: number;
@@ -381,29 +380,25 @@ async function listConversationSessionUsage(
   office: OfficeAddress,
   label: string,
 ): Promise<SessionUsageRow[]> {
-  const sessionDir = workspace.office(office).sessionsDir;
-  let files: string[];
-  try {
-    files = readdirSync(sessionDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-      .map((entry) => entry.name);
-  } catch {
-    return [];
-  }
+  const conversationOffice = workspace.office(office);
   const rows: SessionUsageRow[] = [];
-  for (const name of files) {
-    rows.push(...(await readSessionUsage(join(sessionDir, name), office.conversationId, label)));
+  for (const session of await SessionStore.list(conversationOffice)) {
+    rows.push(
+      ...(await readSessionUsage(conversationOffice, session.key, office.conversationId, label)),
+    );
   }
   return rows;
 }
 
 async function readSessionUsage(
-  sessionFile: string,
+  office: Office,
+  sessionKey: string,
   conversationId: string,
   label: string,
 ): Promise<SessionUsageRow[]> {
   try {
-    const manager = await SessionStore.inspect(sessionFile);
+    const manager = await SessionStore.inspect(office, sessionKey);
+    if (!manager) return [];
     const header = manager.getHeader();
 
     const entries = await manager.getEntries();
@@ -429,7 +424,7 @@ async function readSessionUsage(
       {
         conversationId,
         label,
-        fileName: basename(sessionFile),
+        sessionKey,
         updatedAt:
           entries.length > 0
             ? new Date(entries.at(-1)!.timestamp).toISOString()
@@ -515,13 +510,10 @@ async function serveConversationUsage(
   cutoff.setDate(today.getDate() - (days - 1));
 
   const flags = { hasOlder: false };
-  const sessionDir = workspace.office(office).sessionsDir;
-  try {
-    for (const entry of readdirSync(sessionDir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
-      await accumulateSessionUsageByDay(join(sessionDir, entry.name), cutoff, buckets, flags);
-    }
-  } catch {}
+  const conversationOffice = workspace.office(office);
+  for (const session of await SessionStore.list(conversationOffice)) {
+    await accumulateSessionUsageByDay(conversationOffice, session.key, cutoff, buckets, flags);
+  }
 
   const series = order.map((key) => buckets.get(key) ?? emptyBucket(key));
   const totals = series.reduce((sum, b) => {
@@ -553,13 +545,15 @@ async function serveConversationUsage(
 }
 
 async function accumulateSessionUsageByDay(
-  sessionFile: string,
+  office: Office,
+  sessionKey: string,
   cutoff: Date,
   buckets: Map<string, UsageBucket>,
   flags: { hasOlder: boolean },
 ): Promise<void> {
   try {
-    const manager = await SessionStore.inspect(sessionFile);
+    const manager = await SessionStore.inspect(office, sessionKey);
+    if (!manager) return;
 
     for (const entry of await manager.getEntries()) {
       if (entry.type !== "message" || entry.message.role !== "assistant") continue;
@@ -759,12 +753,12 @@ function serveConversationSlackUpdate(
   });
 }
 
-function serveConversationSessionLink(
+async function serveConversationSessionLink(
   res: ServerResponse,
   body: Record<string, unknown>,
   services: AdminServices,
   token: AdminToken,
-): void {
+): Promise<void> {
   const target = requireConversationWorkspace(res, body, services, token);
   if (!target) return;
   const { scope, workspace } = target;
@@ -779,12 +773,9 @@ function serveConversationSessionLink(
     return;
   }
 
-  const sessionFile = resolveExistingSessionFile(
-    workspace.office(scope.address),
-    scope.conversationId,
-  );
-  if (!sessionFile) {
-    jsonRes(res, 404, { error: "No session file found for this conversation" });
+  const office = workspace.office(scope.address);
+  if (!(await SessionStore.exists(office, scope.conversationId))) {
+    jsonRes(res, 404, { error: "No session found for this conversation" });
     return;
   }
 
@@ -794,7 +785,7 @@ function serveConversationSessionLink(
       platformUserId: token.platformUserId,
       conversationId: scope.conversationId,
       sessionKey: scope.conversationId,
-      sessionFile,
+      office,
       platformUserName: token.platformUserName,
     });
     const url = `${services.portalBaseUrl}/session?token=${encodeURIComponent(viewToken)}`;

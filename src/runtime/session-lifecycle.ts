@@ -58,29 +58,21 @@ export class SessionLifecycle {
   async acquire(
     address: OfficeAddress,
     sessionKey: string,
-    expectedFile: () => string | null | undefined,
     materialize: (signal: AbortSignal) => Promise<ConversationRuntimeState>,
   ): Promise<{ state: ConversationRuntimeState; release: () => void }> {
     if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
     return this.transition(address, sessionKey, async () => {
-      const state = await this.materializeExclusive(address, sessionKey, expectedFile, materialize);
+      const state = await this.materializeExclusive(address, sessionKey, materialize);
       const id = runtimeSessionId(address, sessionKey);
       this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
       return { state, release: this.createLeaseRelease(id, address) };
     });
   }
 
-  private reusableState(
-    id: string,
-    expectedFile: () => string | null | undefined,
-  ): ConversationRuntimeState | undefined {
+  private reusableState(id: string): ConversationRuntimeState | undefined {
     const existing = this.states.get(id);
-    if (!existing) return undefined;
-    if (expectedFile() === existing.sessionFile) {
-      existing.lastAccessedAt = this.now();
-      return existing;
-    }
-    return this.isStateActive(id, existing) ? existing : undefined;
+    if (existing) existing.lastAccessedAt = this.now();
+    return existing;
   }
 
   private async publishMaterialized(
@@ -101,16 +93,14 @@ export class SessionLifecycle {
   private async materializeExclusive(
     address: OfficeAddress,
     sessionKey: string,
-    expectedFile: () => string | null | undefined,
     materialize: (signal: AbortSignal) => Promise<ConversationRuntimeState>,
   ): Promise<ConversationRuntimeState> {
     const id = runtimeSessionId(address, sessionKey);
     while (true) {
       if (this.shuttingDown) throw new Error("Session lifecycle is shutting down");
       await this.waitForClose(address, sessionKey);
-      const reusable = this.reusableState(id, expectedFile);
+      const reusable = this.reusableState(id);
       if (reusable) return reusable;
-      if (this.states.has(id)) await this.discardAndWait(address, sessionKey);
 
       const generation = this.generation(address);
       const state = await materialize(this.materializationAbort.signal);

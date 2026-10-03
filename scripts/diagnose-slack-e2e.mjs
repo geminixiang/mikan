@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { OfficeRegistry, createWorkspace } from "../dist/office/index.js";
 import { SessionStore } from "../dist/sessions/session-store.js";
-const root = process.argv[2];
+const [root, stateDir] = process.argv.slice(2);
 if (!root || !existsSync(root)) process.exit(0);
 const markers = (value) => [
   ...new Set(
@@ -31,23 +32,28 @@ for (const office of readdirSync(root)) {
       );
     } catch {}
   }
-  const dir = join(root, office, "sessions");
-  if (!existsSync(dir)) continue;
-  for (const file of readdirSync(dir).filter((f) => f.endsWith(".jsonl"))) {
-    await inspectSession(dir, file, office);
+}
+
+if (stateDir && existsSync(stateDir)) {
+  const workspace = createWorkspace({ root, stateDir });
+  for (const record of new OfficeRegistry(stateDir).getOffices()) {
+    const office = workspace.office(record);
+    for (const session of await SessionStore.list(office)) {
+      await inspectSession(office, session.key);
+    }
   }
 }
 
-async function inspectSession(dir, file, office) {
+async function inspectSession(office, file) {
   try {
-    const inspection = await SessionStore.inspect(join(dir, file));
-    for (const entry of await inspection.getEntries()) {
+    const inspection = await SessionStore.inspect(office, file);
+    for (const entry of (await inspection?.getEntries()) ?? []) {
       if (entry.type !== "message") continue;
       const m = entry.message;
       console.log(
         JSON.stringify({
           kind: "session",
-          office,
+          office: office.key,
           file,
           id: entry.id,
           role: m.role,
@@ -64,6 +70,8 @@ async function inspectSession(dir, file, office) {
       );
     }
   } catch (e) {
-    console.log(JSON.stringify({ kind: "inspection_failed", office, file, errorType: e.name }));
+    console.log(
+      JSON.stringify({ kind: "inspection_failed", office: office.key, file, errorType: e.name }),
+    );
   }
 }

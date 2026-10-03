@@ -70,7 +70,7 @@ describe("workspace.office", () => {
     expect(office.dir).toBe(dir);
     expect(office.memoryPath).toBe(join(dir, "MEMORY.md"));
     expect(office.skillsDir).toBe(join(dir, "skills"));
-    expect(office.sessionsDir).toBe(join(fixture.stateDir, "conversations", key, "sessions"));
+    expect(office.sessionsPath).toBe(join(fixture.stateDir, "conversations", key, "sessions.db"));
     expect(office.attachmentsDir).toBe(join(dir, "attachments"));
     expect(office.logPath).toBe(join(dir, "log.jsonl"));
     expect(office.stateDir).toBe(join(fixture.stateDir, "conversations", key));

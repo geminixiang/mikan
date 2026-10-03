@@ -1,6 +1,7 @@
 import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
@@ -50,12 +51,6 @@ export interface SessionRunRecord {
 
 export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
 
-export interface SessionCreateInfo {
-  id?: string;
-  createdAt?: number;
-  parentSessionId?: string;
-}
-
 export interface SessionInspection {
   getHeader(): SessionHeader;
   getEntries(): Promise<SessionEntry[]>;
@@ -76,16 +71,30 @@ export interface ThreadRootMessage {
 }
 
 export interface ResolvedSessionScope {
-  contextFile: string;
   threadRootMessage: ThreadRootMessage | null;
 }
 
-export interface OfficeSessionInfo {
-  file: string;
-  header: SessionHeader;
-  kind: "main" | "scoped" | "archived";
-  current: boolean;
-  scopeId: string | undefined;
+export interface SessionListing {
+  key: string;
+  id: string;
+  createdAt: number;
+  root: boolean;
+  parentSessionId: string | undefined;
+  forkEntryId: string | undefined;
+}
+
+export type ImportedSessionEntry =
+  | { type: "message"; message: Message }
+  | { type: "compaction"; summary: string; timestamp: number }
+  | { type: "custom"; customType: string; data: unknown; timestamp: number };
+
+export interface ImportedSession {
+  key: string;
+  id: string;
+  createdAt: number;
+  root: boolean;
+  name: string | undefined;
+  entries: ImportedSessionEntry[];
 }
 
 export interface LogRecord {
@@ -131,7 +140,7 @@ export interface HasMaterializedSessionOptions {
 export interface ThreadBootstrapWaitOptions {
   parentSessionKey: string;
   sessionKey: string;
-  hasThreadSession: () => boolean;
+  hasThreadSession: () => Promise<boolean>;
   isParentRunning: () => boolean;
   sleep?: (ms: number) => Promise<void>;
   pollMs?: number;

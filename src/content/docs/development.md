@@ -5,7 +5,7 @@ description: Install dependencies, build mikan, run focused checks, preview docu
 
 ## Local setup
 
-mikan requires Node.js `>=22.19.0`.
+mikan requires Node.js `>=24.15.0`.
 
 ```bash
 git clone https://github.com/geminixiang/mikan.git

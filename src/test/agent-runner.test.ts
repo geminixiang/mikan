@@ -22,11 +22,6 @@ import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
-import {
-  createManagedSessionFile,
-  createManagedSessionFileAtPath,
-  getThreadSessionFile,
-} from "../sessions/store.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { ThreadRootMessage } from "../sessions/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -88,7 +83,7 @@ async function createTestRunner(
     runEvents?: CreateRunnerOptions["runEvents"];
     sessionKey?: string;
     threadRootMessage?: ThreadRootMessage;
-    createSessionFile?: (sessionDir: string) => Promise<string>;
+    prepareOffice?: (office: Office) => Promise<void>;
   } = {},
 ) {
   const { models, faux } = createFauxModels();
@@ -101,26 +96,24 @@ async function createTestRunner(
       JSON.stringify({ mcpServers: options.mcpServers }),
     );
   }
-  const sessionDir = office.sessionsDir;
-  const contextFile = options.createSessionFile
-    ? await options.createSessionFile(sessionDir)
-    : createManagedSessionFile(sessionDir);
+  await options.prepareOffice?.(office);
+  const sessionKey = options.sessionKey ?? "C1";
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
-    sessionKey: options.sessionKey ?? "C1",
+    sessionKey,
     office,
     trustModel: options.trustModel ?? "membership",
     platformWorkspaceId: options.platformWorkspaceId,
     openConnector: options.openConnector,
-    sessionScope: { contextFile, threadRootMessage: options.threadRootMessage ?? null },
+    sessionScope: { threadRootMessage: options.threadRootMessage ?? null },
     chatHistory: new ChatHistorySync({ isCommandText }),
     models,
     sessionView: options.sessionView,
     platformToolPackFactories: options.platformToolPackFactories ?? [],
     runEvents: options.runEvents,
   });
-  return { runner, faux, contextFile };
+  return { runner, faux, office, sessionKey };
 }
 
 function makeResponder(): ConversationResponder & {
@@ -169,9 +162,8 @@ describe("PiAgentWrapper.run", () => {
   test("offers history everywhere, so a thread finds its channel's tool output", async () => {
     const { runner, faux } = await createTestRunner({
       sessionKey: "C1:1000.1",
-      createSessionFile: async (sessionDir) => {
-        const channelFile = createManagedSessionFile(sessionDir);
-        const channel = await SessionStore.open(channelFile);
+      prepareOffice: async (office) => {
+        const channel = await SessionStore.open(office, "C1");
         await channel.appendMessage({
           role: "toolResult",
           content: [{ type: "text", text: "deployed build 4f2a to staging" }],
@@ -181,10 +173,6 @@ describe("PiAgentWrapper.run", () => {
           timestamp: 1,
         });
         await channel.close();
-        return createManagedSessionFileAtPath(
-          getThreadSessionFile(sessionDir, "C1:1000.1"),
-          SessionStore.readHeader(channelFile)?.id,
-        );
       },
     });
     let toolOutput = "";
@@ -220,7 +208,7 @@ describe("PiAgentWrapper.run", () => {
   });
 
   test("names a thread session after the first line of its root message", async () => {
-    const { runner, contextFile } = await createTestRunner({
+    const { runner, office, sessionKey } = await createTestRunner({
       sessionKey: "C1:1000.1",
       threadRootMessage: {
         userName: "bot",
@@ -230,7 +218,7 @@ describe("PiAgentWrapper.run", () => {
     await runner.dispose();
 
     const firstLine = Array.from(`**今天**可確認一次 rebuild 後啟動，${"細節".repeat(60)}`);
-    expect(await (await SessionStore.inspect(contextFile)).getSessionName()).toBe(
+    expect(await (await SessionStore.inspect(office, sessionKey))?.getSessionName()).toBe(
       `[bot]: ${firstLine.slice(0, 80).join("")}…`,
     );
   });

@@ -17,11 +17,6 @@ import type {
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
-import {
-  createManagedSessionFile,
-  getThreadSessionFile,
-  tryResolveCurrentSession,
-} from "../sessions/store.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
@@ -93,15 +88,19 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
   return { models, faux };
 }
 
-function rewriteSessionTimestamp(sessionFile: string, timestamp: string): void {
-  const lines = readFileSync(sessionFile, "utf-8").split("\n");
-  const headerLine = lines[0];
-  if (headerLine === undefined) throw new Error(`session file ${sessionFile} has no header line`);
-  const header = JSON.parse(headerLine) as Record<string, unknown>;
-  header.timestamp = timestamp;
-  header.createdAt = new Date(timestamp).getTime();
-  lines[0] = JSON.stringify(header);
-  writeFileSync(sessionFile, lines.join("\n"));
+async function resetCount(key = "C123"): Promise<number> {
+  const inspection = await SessionStore.inspect(office, key);
+  const entries = (await inspection?.getEntries()) ?? [];
+  return entries.filter(
+    (entry) =>
+      entry.type === "custom" &&
+      entry.customType === "mikan.chat_sync" &&
+      JSON.stringify(entry.data).includes("resetAt"),
+  ).length;
+}
+
+async function createSession(key = "C123"): Promise<void> {
+  await (await SessionStore.open(office, key)).close();
 }
 
 function makeResponder(): ConversationResponder {
@@ -192,8 +191,8 @@ function newCommandOptions() {
   };
 }
 
-async function sessionText(file: string): Promise<string> {
-  return JSON.stringify(await (await SessionStore.inspect(file)).getEntries());
+async function sessionText(key: string): Promise<string> {
+  return JSON.stringify(await (await SessionStore.inspect(office, key))?.getEntries());
 }
 
 describe("ConversationRuntime handleEvent", () => {
@@ -399,7 +398,6 @@ describe("ConversationRuntime handleEvent", () => {
 
     const first = makeEventAndContext("2");
     await runtime.handleEvent(first.event, bot, first.context);
-    const sessionFile = tryResolveCurrentSession(office.sessionsDir)!;
 
     writeFileSync(
       logPath,
@@ -422,9 +420,7 @@ describe("ConversationRuntime handleEvent", () => {
     const second = makeEventAndContext("4");
     await runtime.handleEvent(second.event, bot, second.context);
 
-    const reopened = await SessionStore.inspect(sessionFile);
-    const entries = await reopened.getEntries();
-    const serialized = JSON.stringify(entries);
+    const serialized = await sessionText("C123");
     expect(serialized.match(/between turns/g)).toHaveLength(1);
     expect(serialized).toContain("second reply");
   });
@@ -481,7 +477,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new dispatched inside the session queue does not deadlock", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(office.sessionsDir);
+    await createSession();
     const { event, context } = makeEventAndContext("1000.25");
     event.conversationKind = "direct";
     event.text = "/new";
@@ -496,12 +492,10 @@ describe("ConversationRuntime lifecycle", () => {
         "Conversation reset. Send a new message to start fresh.",
       );
     });
-    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
+    expect(await resetCount()).toBe(1);
   });
 
   test("new waits for the active run settlement before resetting and disposing", async () => {
-    const sessionDir = office.sessionsDir;
-    const originalSession = createManagedSessionFile(sessionDir);
     let settle!: () => void;
     const runGate = new Promise<void>((resolve) => (settle = resolve));
     const runner = fakeRunner();
@@ -517,7 +511,7 @@ describe("ConversationRuntime lifecycle", () => {
     const reset = runtime.handleNewCommand(newCommandOptions());
     await vi.waitFor(() => expect(runner.abort).toHaveBeenCalledOnce());
 
-    expect(tryResolveCurrentSession(office.sessionsDir)).toBe(originalSession);
+    expect(await resetCount()).toBe(0);
     expect(runner.dispose).not.toHaveBeenCalled();
     expect(bot.postMessage).not.toHaveBeenCalledWith(
       "C123",
@@ -528,8 +522,8 @@ describe("ConversationRuntime lifecycle", () => {
     await run;
     await reset;
 
-    await vi.waitFor(() => {
-      expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
+    await vi.waitFor(async () => {
+      expect(await resetCount()).toBe(1);
     });
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(bot.postMessage).toHaveBeenCalledWith(
@@ -597,13 +591,12 @@ describe("ConversationRuntime lifecycle", () => {
     const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
     const materialize = makeEventAndContext("2");
     await runtime.handleEvent(materialize.event, bot, materialize.context);
-    const originalSession = tryResolveCurrentSession(office.sessionsDir)!;
     const memoryPath = join(conversationDir, "MEMORY.md");
     writeFileSync(memoryPath, "stable anchor\n");
 
     await runtime.handleNewCommand(newCommandOptions());
 
-    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
+    expect(await resetCount()).toBe(1);
     expect(readFileSync(memoryPath, "utf-8")).toBe("stable anchor\n");
     expect(runner.dispose).toHaveBeenCalledOnce();
     expect(bot.postMessage).toHaveBeenCalledWith(
@@ -617,22 +610,21 @@ describe("ConversationRuntime lifecycle", () => {
 
     await runtime.handleNewCommand(newCommandOptions());
 
-    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBeNull();
+    expect(await resetCount()).toBe(1);
     expect(runtime.getRunningSessions()).toEqual([]);
   });
 
   test("an old shared top-level session keeps serving new messages", async () => {
     const runner = fakeRunner();
     const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
-    const originalSession = createManagedSessionFile(office.sessionsDir);
-    rewriteSessionTimestamp(originalSession, "2026-01-05T12:00:00.000Z");
+    await createSession();
 
     const { event, context } = makeEventAndContext("3");
     await runtime.handleEvent(event, bot, context);
 
     expect(runner.run).toHaveBeenCalledOnce();
     expect(runner.dispose).not.toHaveBeenCalled();
-    expect(tryResolveCurrentSession(office.sessionsDir)).toBe(originalSession);
+    expect(await resetCount()).toBe(0);
   });
 
   test("hands each settled run and its final reply to memory capture", async () => {
@@ -679,7 +671,7 @@ describe("ConversationRuntime lifecycle", () => {
     await sync.resetSession({ office, sessionKey: "C123" });
 
     const syncOnce = async (file: string) => {
-      const session = await SessionStore.open(file);
+      const session = await SessionStore.open(office, file);
       try {
         await sync.syncSessionManager({
           office,
@@ -691,8 +683,7 @@ describe("ConversationRuntime lifecycle", () => {
       }
     };
 
-    const freshFile = tryResolveCurrentSession(office.sessionsDir);
-    if (freshFile === null) throw new Error("resetSession did not create a channel session file");
+    const freshFile = "C123";
     await syncOnce(freshFile);
     expect(await sessionText(freshFile)).not.toContain('"text":"old"');
 
@@ -708,7 +699,7 @@ describe("ConversationRuntime lifecycle", () => {
   test("new resets an idle session immediately", async () => {
     const { models } = createFauxModels();
     const runtime = makeRuntime({ models });
-    const originalSession = createManagedSessionFile(office.sessionsDir);
+    await createSession();
 
     await runtime.handleNewCommand(newCommandOptions());
 
@@ -718,22 +709,20 @@ describe("ConversationRuntime lifecycle", () => {
         "Conversation reset. Send a new message to start fresh.",
       );
     });
-    expect(tryResolveCurrentSession(office.sessionsDir)).not.toBe(originalSession);
+    expect(await resetCount()).toBe(1);
   });
 });
 
 describe("ChatHistorySync session scope", () => {
   test("uses a pre-registered empty thread session for event anchors", async () => {
-    const sessionDir = office.sessionsDir;
-    const channelFile = createManagedSessionFile(sessionDir);
-    const channelSession = await SessionStore.open(channelFile);
+    const channelSession = await SessionStore.open(office, "C123");
     await channelSession.appendMessage({
       role: "user",
       content: [{ type: "text", text: "channel history should not leak" }],
       timestamp: 1,
     });
     await channelSession.close();
-    registerThreadSession({
+    await registerThreadSession({
       office,
       sessionKey: "C123:2000.0001",
     });
@@ -743,12 +732,7 @@ describe("ChatHistorySync session scope", () => {
       sessionKey: "C123:2000.0001",
     });
 
-    expect(sessionScope.contextFile).toBe(
-      getThreadSessionFile(office.sessionsDir, "C123:2000.0001"),
-    );
     expect(sessionScope.threadRootMessage).toBeNull();
-    expect(readFileSync(sessionScope.contextFile, "utf-8")).not.toContain(
-      "channel history should not leak",
-    );
+    expect(await sessionText("C123:2000.0001")).not.toContain("channel history should not leak");
   });
 });

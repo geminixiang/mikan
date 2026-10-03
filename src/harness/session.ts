@@ -17,6 +17,7 @@ import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
   AgentDoc,
   DEFAULT_COMPACTION_POLICY,
+  CompactionTask,
   GenerationTask,
   LiveDoc,
   ToolTask,
@@ -56,7 +57,7 @@ import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { errorMessage } from "../unknown-values.js";
 
 const context: Context = BACKGROUND_CONTEXT;
-const MIKAN_EXTENSION = "mikan";
+const COMPACTION_REQUEST = Symbol("compaction-request");
 
 interface RunTally {
   usage: SubagentUsage;
@@ -189,7 +190,10 @@ export class MikanAgentSession {
 
   async steer(text: string): Promise<boolean> {
     if (!this.runActive || this.runAborted || !this.attached) return false;
-    await this.attached.root.submit({ type: "input", content: text, whenBusy: "steer" }, context);
+    await this.attached.conversation.submit(
+      { type: "input", content: text, whenBusy: "steer" },
+      context,
+    );
     return true;
   }
 
@@ -240,7 +244,7 @@ export class MikanAgentSession {
       await this.installRunTools(attached, tools);
       if (!(await this.checkCallBudget())) return;
       await this.sessionStore.recordRun({});
-      stream = await watchEvents(attached.harness, attached.root.id, context);
+      stream = await watchEvents(attached.harness, attached.conversation.id, context);
       this.observedUsage = sumUsageState(stream.snapshot.usage);
       stream.start((events) => this.handleDurableEvents(events));
       status = await this.drive(attached, text, options?.images);
@@ -255,18 +259,21 @@ export class MikanAgentSession {
   }
 
   private async drive(
-    { harness, root }: AttachedSessionHarness,
+    { harness, conversation }: AttachedSessionHarness,
     text: string,
     images?: ImageContent[],
   ): Promise<SessionRunStatus> {
-    const interrupted = (await harness.snapshot(LiveDoc, root.id, context))?.run;
+    const interrupted = (await harness.snapshot(LiveDoc, conversation.id, context))?.run;
     if (interrupted) {
       log.logWarning("Aborting a run interrupted before this process started");
-      await root.abort(context);
+      await conversation.abort(context);
     }
     const content: string | (TextContent | ImageContent)[] =
       images && images.length > 0 ? [{ type: "text", text }, ...images] : text;
-    const submission = await root.submit({ type: "input", content, whenBusy: "reject" }, context);
+    const submission = await conversation.submit(
+      { type: "input", content, whenBusy: "reject" },
+      context,
+    );
     if (this.runAborted) this.requestCancellation();
     const settled = await submission.wait(context);
     if (this.runStarted) await this.runEnded.promise;
@@ -330,7 +337,7 @@ export class MikanAgentSession {
 
   private requestCancellation(): void {
     if (!this.attached || this.cancellation) return;
-    this.cancellation = this.attached.root.abort(context).catch((error: unknown) => {
+    this.cancellation = this.attached.conversation.abort(context).catch((error: unknown) => {
       this.cancellationError = error;
     });
   }
@@ -339,7 +346,8 @@ export class MikanAgentSession {
     if (this.attached) return this.attached;
     const { retry, compaction } = this.settings;
     this.attached = await this.sessionStore.bindHarness({
-      models: this.trackedModels(this.options.models.models),
+      models: this.options.models.models,
+      requestModels: this.trackedModels(this.options.models.models),
       env: () => this.options.toolContext?.env,
       settings: { retry, compaction },
       onReport: (error) => log.logWarning("Durable harness report", errorMessage(error)),
@@ -395,21 +403,6 @@ export class MikanAgentSession {
             );
           };
         }
-        if (property === "streamDeferred") {
-          return (...[model, handle, options]: Parameters<Models["streamDeferred"]>) =>
-            stream((token) => target.streamDeferred(model, handle, track(options, token)));
-        }
-        if (property === "completeSimple") {
-          return (...[model, request, options]: Parameters<Models["completeSimple"]>) => {
-            const over = this.runActive ? this.callOverBudgetReason() : undefined;
-            if (over) return this.exceedBudget(over).then(() => Promise.reject(new Error(over)));
-            if (this.runActive) this.tally.llmCalls += 1;
-            const token = Symbol("provider-request");
-            return target
-              .completeSimple(model, request, withSession(track(options, token)))
-              .finally(() => finish(token));
-          };
-        }
         const value = Reflect.get(target, property, target) as unknown;
         return typeof value === "function" ? value.bind(target) : value;
       },
@@ -421,13 +414,14 @@ export class MikanAgentSession {
   }
 
   private async installRunTools(
-    { harness, root, registry }: AttachedSessionHarness,
+    attached: AttachedSessionHarness,
     selected: MikanHarnessTool[],
   ): Promise<void> {
     const tools = [...selected];
     const deferredTools = tools.filter((tool) => tool.exposure === "deferred");
     const authorized = new Set(deferredTools.map((tool) => tool.name));
-    const stored = (await harness.snapshot(AgentDoc, root.id, context))?.tools;
+    const { harness, conversation, registry, extensionName } = attached;
+    const stored = (await harness.snapshot(AgentDoc, conversation.id, context))?.tools;
     const loaded = new Set(
       Array.isArray(stored) ? stored.filter((name) => authorized.has(name)) : [],
     );
@@ -456,7 +450,7 @@ export class MikanAgentSession {
     const registered = tools;
     registry.install(
       defineExtension({
-        name: MIKAN_EXTENSION,
+        name: extensionName,
         tools: registered,
         sections: [
           section("mikan", () => this.sessionStore.withMcpInstructions(this.systemPrompt), {
@@ -465,7 +459,13 @@ export class MikanAgentSession {
         ],
         hooks: [
           hook(GenerationTask, {
-            beforeRequest: (_request, api) => this.beforeRequest(String(api.taskId)),
+            beforeRequest: async (request, api) => {
+              await this.beforeRequest(String(api.taskId));
+              return { messages: attached.tagRequest(request.messages) };
+            },
+          }),
+          hook(CompactionTask, {
+            beforeCompact: (_compaction, api) => this.beforeCompact(String(api.taskId)),
           }),
           hook(ToolTask, {
             beforeTool: async (call, api) => this.beforeTool(call, api),
@@ -474,15 +474,25 @@ export class MikanAgentSession {
         ],
       }),
     );
-    await root.configure(
+    await conversation.configure(
       {
         model: { provider: this.model.provider, modelId: this.model.id },
         thinkingLevel: this.options.thinkingLevel,
-        extensions: [registry.snapshot().extension(MIKAN_EXTENSION)!],
+        extensions: [registry.snapshot().extension(extensionName)!],
         tools: registered.filter((tool) => tool.exposure !== "deferred" || loaded.has(tool.name)),
       },
       context,
     );
+  }
+
+  private beforeCompact(taskId: string): { decline: true } | undefined {
+    if (!this.runActive) return undefined;
+    if (this.runAborted || this.budgetExceededReason || this.callOverBudgetReason()) {
+      return { decline: true };
+    }
+    this.tally.llmCalls += 1;
+    this.activeRequest = { token: COMPACTION_REQUEST, runId: taskId };
+    return undefined;
   }
 
   private async beforeRequest(runId: string): Promise<undefined> {
@@ -654,6 +664,7 @@ export class MikanAgentSession {
         await this.emit({ type: "compaction_start", reason: event.reason });
         return;
       case "compaction_end": {
+        if (this.activeRequest?.token === COMPACTION_REQUEST) this.activeRequest = undefined;
         const outcome = await this.compactionOutcome(event.taskId);
         await this.emit({
           type: "compaction_end",

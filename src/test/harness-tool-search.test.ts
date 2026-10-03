@@ -16,7 +16,7 @@ import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import type { MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
-import { contextMessages } from "./session-context.js";
+import { contextMessages, openSessionAt } from "./session-context.js";
 
 let dir: string;
 const stores: SessionStore[] = [];
@@ -86,7 +86,7 @@ test("tool_search declares only matching MCP tools on the next model call", asyn
     { ...issue, name: "mcp__calendar__list_events", description: "List calendar events" },
     { namespace: "calendar" },
   );
-  const session = wrap(await SessionStore.create(file), [issue, calendar]);
+  const session = wrap(await openSessionAt(file), [issue, calendar]);
   faux.setResponses([
     (context) => {
       const tools = getCurrentTools(context.messages);
@@ -128,7 +128,7 @@ test("tool_search declares only matching MCP tools on the next model call", asyn
 test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   const { faux, file, wrap } = setup();
   const { tool } = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const store = await SessionStore.create(file);
+  const store = await openSessionAt(file);
   const session = wrap(store, [tool]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" }), {
@@ -144,7 +144,7 @@ test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   await session.prompt("use them again");
   expect(JSON.stringify(await contextMessages(session))).toContain('"text":"retained"');
   await store.close();
-  const reopened = await SessionStore.open(file);
+  const reopened = await openSessionAt(file);
   faux.setResponses([
     (context) => {
       expect(getCurrentTools(context.messages).map((item) => item.name)).toContain(tool.name);
@@ -159,7 +159,7 @@ test("revoked grants cannot be searched, called, or restored from prior discover
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const calendar = deferredTool("mcp__calendar__list_events", "List calendar events");
-  const store = await SessionStore.create(file);
+  const store = await openSessionAt(file);
   const session = wrap(store, [github.tool, calendar.tool]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("tool_search", { label: "Find issues", query: "issues" }), {
@@ -199,7 +199,7 @@ test("revoked grants cannot be searched, called, or restored from prior discover
 test("codemode exposes async global declarations before discovering deferred tools", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await SessionStore.create(file), [github.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool]);
   faux.setResponses([
     (context) => {
       const tools = getCurrentTools(context.messages);
@@ -234,7 +234,7 @@ test("codemode exposes async global declarations before discovering deferred too
 test("codemode discovery supplies Pi tool samples with resolved text return types", async () => {
   const { faux, file, wrap } = setup();
   const textTool = deferredTool("mcp__qa__read_text", "Read JSON text");
-  const session = wrap(await SessionStore.create(file), [textTool.tool]);
+  const session = wrap(await openSessionAt(file), [textTool.tool]);
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -266,7 +266,7 @@ test("codemode preserves declared structured return types and values", async () 
     outputSchema: { type: "number" },
     execute: async () => ({ content: [], structuredContent: 7, details: {} }),
   };
-  const session = wrap(await SessionStore.create(file), [tool]);
+  const session = wrap(await openSessionAt(file), [tool]);
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -299,7 +299,7 @@ test("codemode keeps complete global declarations when the tool catalog exceeds 
     parameters: { type: "object", properties: {} },
     execute: async () => ({ content: [], details: {} }),
   };
-  const session = wrap(await SessionStore.create(file), [verbose]);
+  const session = wrap(await openSessionAt(file), [verbose]);
   faux.setResponses([
     (context) => {
       const description =
@@ -329,7 +329,7 @@ test("codemode discovers and calls deferred MCP tools without declaring their sc
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const calendar = deferredTool("mcp__calendar__list_events", "List calendar events");
-  const session = wrap(await SessionStore.create(file), [github.tool, calendar.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool, calendar.tool]);
   faux.setResponses([
     fauxAssistantMessage(
       fauxToolCall("codemode", {
@@ -355,7 +355,7 @@ test("codemode discovers and calls deferred MCP tools without declaring their sc
 test("an unsearched MCP tool cannot be called directly in the model batch", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await SessionStore.create(file), [github.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall(github.tool.name, {}), { stopReason: "toolUse" }),
     fauxAssistantMessage("done"),
@@ -371,7 +371,7 @@ test("multiple searches in one model batch retain the union of loaded tools", as
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const calendar = deferredTool("mcp__calendar__list_events", "List calendar events");
-  const session = wrap(await SessionStore.create(file), [github.tool, calendar.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool, calendar.tool]);
   faux.setResponses([
     fauxAssistantMessage(
       [
@@ -400,7 +400,7 @@ test("multiple searches in one model batch retain the union of loaded tools", as
 test("cancelling discovery before execution does not load tools", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const store = await SessionStore.create(file);
+  const store = await openSessionAt(file);
   const session = wrap(store, [github.tool]);
   const unsubscribe = session.subscribe((event) => {
     if (event.type === "tool_execution_start" && event.toolName === "tool_search") session.abort();
@@ -427,7 +427,7 @@ test("cancelling discovery before execution does not load tools", async () => {
 test("repeated identical searches cannot bypass the tool loop guard", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await SessionStore.create(file), [github.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool]);
   faux.setResponses(
     Array.from({ length: 10 }, () =>
       fauxAssistantMessage(
@@ -449,7 +449,7 @@ test.each([
 ])("invalid search arguments never load tools: $query / $limit", async ({ query, limit }) => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await SessionStore.create(file), [github.tool]);
+  const session = wrap(await openSessionAt(file), [github.tool]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("tool_search", { label: "Invalid search", query, limit }), {
       stopReason: "toolUse",

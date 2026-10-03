@@ -1,5 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { openSessionAt } from "./session-context.js";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -94,7 +95,7 @@ describe("MikanAgentSession tool loop guard", () => {
         return { content: [{ type: "text", text: "unchanged" }], details: {} };
       },
     };
-    const store = await SessionStore.create(join(dir, "session.jsonl"));
+    const store = await openSessionAt(join(dir, "session.jsonl"));
     stores.push(store);
     const session = new MikanAgentSession({
       model: faux.getModel() as Model<Api>,

@@ -1,7 +1,6 @@
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import type { Office } from "../../office/types.js";
 import { resolveSlackSessionKey } from "./session.js";
-import { getThreadSessionFile } from "../../sessions/store.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import { SessionStore } from "../../sessions/session-store.js";
 import type { TaskStatus, RunningSession } from "../../types.js";
@@ -55,9 +54,7 @@ export async function querySlackTasks(
       status: "unknown",
     };
     try {
-      const state = await SessionStore.inspectExecution(
-        getThreadSessionFile(office.sessionsDir, key),
-      );
+      const state = await SessionStore.inspectExecution(office, key);
       const finishedThisRun =
         !state.open && state.result && (!active || state.result.endedAt >= active.startedAt);
       if (finishedThisRun && state.result) {

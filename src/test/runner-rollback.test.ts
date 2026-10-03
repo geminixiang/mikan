@@ -25,7 +25,6 @@ import { createRunner } from "../harness/runner.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
-import { createManagedSessionFile } from "../sessions/store.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 
@@ -65,8 +64,6 @@ function createOptions() {
     createOfficeAddress("slack", "C1"),
   );
   office.ensure();
-  const sessionDir = office.sessionsDir;
-  const contextFile = createManagedSessionFile(sessionDir);
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
   (models.models as MutableModels).setProvider(fauxProvider().provider);
   return {
@@ -74,7 +71,7 @@ function createOptions() {
     sessionKey: "C1",
     office,
     trustModel: "membership" as const,
-    sessionScope: { contextFile, threadRootMessage: null },
+    sessionScope: { threadRootMessage: null },
     chatHistory: new ChatHistorySync({ isCommandText }),
     models,
   };
@@ -96,7 +93,7 @@ describe("createRunner rollback", () => {
 
   test("failed MCP close is single-flight and still releases the writer", async () => {
     const options = createOptions();
-    const store = await SessionStore.open(options.sessionScope.contextFile);
+    const store = await SessionStore.open(options.office, options.sessionKey);
     await store.connectMcp({});
     const failure = new Error("MCP close failed");
     mocks.disposeMcp.mockRejectedValue(failure);
@@ -106,7 +103,7 @@ describe("createRunner rollback", () => {
       { status: "rejected", reason: failure },
     ]);
     expect(mocks.disposeMcp).toHaveBeenCalledOnce();
-    const reopened = await SessionStore.open(options.sessionScope.contextFile);
+    const reopened = await SessionStore.open(options.office, options.sessionKey);
     await reopened.close();
   });
 
