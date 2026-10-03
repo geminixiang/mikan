@@ -29,7 +29,7 @@ const historySchema = Type.Object({
   query: Type.Optional(
     Type.String({
       description:
-        "Case-insensitive words that must all appear in an entry (search and chat; optional for chat)",
+        "Case-insensitive words that must all appear in an entry; a Chinese or Japanese word also matches when most of its character pairs appear (search and chat; optional for chat)",
     }),
   ),
   session: Type.Optional(
@@ -129,10 +129,20 @@ function historyEntries(entries: readonly SessionEntry[]): HistoryEntry[] {
   });
 }
 
+const CJK_CHARACTER = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+
+function wordMatches(text: string, word: string): boolean {
+  if (text.includes(word)) return true;
+  const characters = Array.from(word);
+  if (characters.length < 3 || !CJK_CHARACTER.test(word)) return false;
+  const pairs = characters.slice(1).map((character, index) => `${characters[index]}${character}`);
+  return pairs.filter((pair) => text.includes(pair)).length * 2 >= pairs.length;
+}
+
 function matches(text: string, query: string | undefined): boolean {
   if (!query) return true;
   const lower = text.toLowerCase();
-  return query.split(/\s+/).every((word) => lower.includes(word));
+  return query.split(/\s+/).every((word) => wordMatches(lower, word));
 }
 
 function entryLine(entry: HistoryEntry): string {

@@ -156,6 +156,22 @@ describe("history tool", () => {
     expect(text).toContain("cut -c1-10");
   });
 
+  test("matches a Chinese query by most of its character pairs, not only verbatim", async () => {
+    const main = await sessionWith(createManagedSessionFile(office.sessionsDir), [
+      "這是暫時註記：代號 NEW_X1",
+      "完全無關的內容",
+    ]);
+    const scope = { office, sessionFile: main };
+
+    const text = await runHistory(scope, { action: "search", query: "暫時代號" });
+
+    expect(text).toContain("NEW_X1");
+    expect(text).not.toContain("完全無關");
+    expect(await runHistory(scope, { action: "search", query: "代號 無關" })).toBe(
+      'No session entries match "代號 無關".',
+    );
+  });
+
   test("does not echo its own earlier results back into a search", async () => {
     const main = createManagedSessionFile(office.sessionsDir);
     const store = await SessionStore.open(main);
