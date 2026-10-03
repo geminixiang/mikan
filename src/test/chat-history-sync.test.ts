@@ -98,6 +98,28 @@ async function syncViaRuntimePath(
 }
 
 describe("ChatHistorySync", () => {
+  test("/new resets only its own session and keeps the others' context", async () => {
+    writeLog([]);
+    for (const key of ["C123", "C123:1000.1", "C123:2000.1"]) {
+      const session = await SessionStore.open(office, key);
+      await session.appendMessage({
+        role: "user",
+        content: [{ type: "text", text: `work in ${key}` }],
+        timestamp: 1,
+      });
+      await session.close();
+    }
+    const manager = new ChatHistorySync({ isCommandText });
+
+    await manager.resetSession({ office, sessionKey: "C123" });
+    await manager.resetSession({ office, sessionKey: "C123:1000.1" });
+
+    expect(await readContextText("C123")).not.toContain("work in C123");
+    expect(await readContextText("C123:1000.1")).not.toContain("work in C123:1000.1");
+    expect(await readContextText("C123:2000.1")).toContain("work in C123:2000.1");
+    expect(await sessionRaw("C123")).toContain("work in C123");
+  });
+
   test("reset excludes pre-reset messages that are logged late", async () => {
     writeLog([
       {
