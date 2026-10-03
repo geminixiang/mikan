@@ -9,7 +9,8 @@ import type {
   MutableModels,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
@@ -115,4 +116,51 @@ test("opening an office aborts a session's unfinished run before another session
 
   expect(prompts).toEqual([expect.stringContaining("channel question")]);
   expect(await SessionStore.inspectExecution(office, "C1:1000.1")).toMatchObject({ open: false });
+});
+
+test("a message steered into a running session reaches its next request", async () => {
+  const { faux } = setup();
+  const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
+  (models.models as MutableModels).setProvider(faux.provider);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  let started!: () => void;
+  const toolStarted = new Promise<void>((resolve) => (started = resolve));
+  const slow = {
+    name: "slow",
+    label: "slow",
+    description: "Waits",
+    parameters: Type.Object({ label: Type.String() }),
+    execute: async () => {
+      started();
+      await gate;
+      return { content: [{ type: "text" as const, text: "slow done" }], details: undefined };
+    },
+  };
+  const store = await SessionStore.open(office, "D1:1000.1");
+  stores.push(store);
+  const session = new MikanAgentSession({
+    model: faux.getModel() as Model<Api>,
+    models,
+    sessionStore: store,
+    tools: [slow],
+    thinkingLevel: "off",
+    systemPrompt: "p",
+    settings: { compaction: { enabled: false } },
+  });
+  const requests: string[] = [];
+  faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("slow", { label: "wait" }), { stopReason: "toolUse" }),
+    (context: Context) => {
+      requests.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage("final");
+    },
+  ]);
+  const run = session.prompt("start the task");
+  await toolStarted;
+  expect(await session.steer("also add CODE_42")).toBe(true);
+  release();
+  await run;
+
+  expect(requests[0]).toContain("CODE_42");
 });
