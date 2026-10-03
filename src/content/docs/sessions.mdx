@@ -47,28 +47,25 @@ A session key always belongs to exactly one conversation. Platform adapters may 
     - **log.jsonl** platform message history
 - state-dir/conversations/
   - v1-slack-c0aaaaaa1-…/ host-only office state
-    - sessions/
-      - **current** points to the active top-level session
-      - **\*.jsonl** structured harness session context, including tool results
-      - **scope-derived files** fixed session files for thread / reply scopes
+    - **sessions.db** every session of the office, including tool results
 
 </FileTree>
 
-## Thread lineage
+## How a session starts
 
-A scoped session records the top-level session it was created from in its header as `parentSessionId` (uuid). The link survives a reset: resetting a scoped session rebuilds its file but keeps the original parent rather than re-binding to whichever top-level session is current now. Sessions written before lineage metadata existed are left alone rather than recreated.
+Each office keeps its sessions in one pi-durable SQLite storage: the top-level session and one session per thread or reply scope.
+
+A thread starts from what caused it. Each run records the message that started it, and the log records its answer together with that message and the session that ran it. A thread opened under a run's answer, or under the message that started the run, forks that run: it begins with the session's context up to the end of the run, including its tool calls and their output, so the agent can say what a command printed without running it again. Any other thread starts from its root message and its own replies. Threads that existed before this behavior keep the context they started with.
+
+A session's own answers are its memory. Chat sync adds other people's and other bots' messages, and mikan notices, as attributed chat lines; answers that a run in another session posted are left to that session. Older history stays searchable in `log.jsonl`, and the agent's `history` tool searches every session of the conversation and the chat log, including tool calls and their output.
 
 ## Operator migration
 
-A session is a one-line header file plus pi-durable storage. `mikan migrate` converts
-0.5.3 v3 session files, keeping each original as `*.v3.bak`, and imports prerelease v4 files, moving each
-original to the office's `sessions-v4/` directory; see [State migrations](/deployment/#state-migrations).
+`mikan migrate` converts 0.5.3 v3 session files, keeping each original as `*.v3.bak`, and imports prerelease v4 files into the office's `sessions.db`, moving the original `sessions/` directory to `sessions-v4/`; see [State migrations](/deployment/#state-migrations).
 
-## Bootstrap, Clean sessions, and memory
+## Clean sessions and memory
 
-A new scoped session is seeded with its thread so far plus at most 10 top-level messages from before the thread root, within the previous 14 days; older history stays searchable in `log.jsonl`, and the agent's `history` tool searches every session of the conversation (earlier ones, its threads) and the chat log, including tool calls and their output. Top-level sessions are long-lived: mikan keeps using the current session file until `/new` replaces it, and Pi's automatic compaction keeps the model context within the window.
-
-`/new` immediately creates a **Clean session**. It does not summarize the predecessor, wait for memory processing, or delete older JSONL files. The existing conversation `MEMORY.md` remains available independently.
+Top-level sessions are long-lived, and Pi's automatic compaction keeps the model context within the window. `/new` resets the session at once: the model starts from an empty context, and the earlier entries stay in storage, readable by the `history` tool and the session view. It does not summarize the predecessor or wait for memory processing. The conversation `MEMORY.md` remains available independently.
 
 **Memory capture** records knowledge as soon as it is stated. After a human-initiated run finishes, mikan asks Jev whether the user established durable knowledge, such as a standing rule, a delivery preference, a durable fact about a system or workflow, or a correction. When it did, the conversation's model adds or updates individual lines under `## Captured knowledge` in the conversation `MEMORY.md`, stamped with the capture date and source message. Scheduled-event runs are skipped, workspace-wide memory is never written, and capture is disabled when Jev (`OPENROUTER_API_KEY`) is not configured. Ask the agent to correct or remove a captured line as with any other memory.
 

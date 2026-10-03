@@ -155,7 +155,13 @@ export interface MessagingBot {
     options?: PlatformHistoryOptions,
   ): Promise<PlatformHistoryMessage[]>;
   listUsers?(): Promise<PlatformUserInfo[]>;
-  logBotResponse?(channel: string, text: string, ts: string, threadTs?: string): void;
+  logBotResponse?(
+    channel: string,
+    text: string,
+    ts: string,
+    threadTs?: string,
+    extra?: { answer?: RunAnswer },
+  ): void;
   enqueueEvent(event: ConversationEvent): boolean;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
@@ -263,10 +269,17 @@ export interface AgentConfig {
   mcpServers?: Record<string, McpServerConfig>;
 }
 
+export interface RunAnswer {
+  replyTo: string;
+  sessionKey: string;
+}
+
 export interface ConversationLogMessage {
   date?: string;
   ts?: string;
   threadTs?: string;
+  replyTo?: string;
+  sessionKey?: string;
   user?: string;
   userName?: string;
   text?: string;

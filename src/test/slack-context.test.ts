@@ -181,7 +181,9 @@ describe("respond() — non-threaded", () => {
     );
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", "final");
     expect(bot.logBotResponse).toHaveBeenCalledTimes(1);
-    expect(bot.logBotResponse).toHaveBeenCalledWith("C001", "final", "MSG1", undefined);
+    expect(bot.logBotResponse).toHaveBeenCalledWith("C001", "final", "MSG1", undefined, {
+      answer: { replyTo: "1000.0001", sessionKey: "C001" },
+    });
   });
 
   test.each(["# Heading", "| A | B |\n|---|---|\n| 1 | 2 |", "```\ncode"])(

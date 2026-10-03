@@ -50,6 +50,7 @@ export interface SessionRunRecord {
 }
 
 export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
+export const RUN_CAUSE_CUSTOM_TYPE = "mikan.run_cause";
 
 export interface SessionInspection {
   getHeader(): SessionHeader;

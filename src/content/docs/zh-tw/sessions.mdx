@@ -45,27 +45,26 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
   - v1-slack-c0aaaaaa1-…/ 一個 office
     - **log.jsonl** 平台訊息歷史
 - state-dir/conversations/
-  - v1-slack-c0aaaaaa1-…/ host 專用的 office 狀態
-    - sessions/
-      - **current** 指向使用中的 top-level session
-      - **\*.jsonl** 結構化 harness session context，包含 tool results
-      - **scope-derived files** thread / reply scopes 的固定 session files
+  - v1-slack-c0aaaaaa1-…/ 只在 host 上的 office 狀態
+    - **sessions.db** 這個 office 的所有 session，包含工具結果
 
 </FileTree>
 
-## Thread 血緣
+## Session 如何開始
 
-Scoped session 會在自己的 header 中，以 `parentSessionId`（uuid）記錄它是從哪個 top-level session 建立出來的。這個連結在 reset 後仍會保留：重設一個 scoped session 會重建它的檔案，但保留原本的 parent，而不是重新綁定到現在當下的 top-level session。在血緣 metadata 出現之前寫下的 session 會被原樣保留，不會被重建。
+每個 office 把所有 session 存在一個 pi-durable SQLite 儲存區：top-level session，以及每個 thread 或 reply 範圍各一個 session。
+
+Thread 從造成它的事情開始。每次 run 會記下觸發它的訊息，log 也會在 run 的回答旁記下那則訊息和執行它的 session。開在某次 run 的回答底下、或開在觸發那次 run 的訊息底下的 thread，會 fork 那次 run：它帶著該 session 到那次 run 結束為止的 context，包含工具呼叫與其輸出，所以 agent 不用重跑指令就能說出指令印了什麼。其他 thread 只帶起點訊息和自己的回覆。在這個行為之前就存在的 thread 維持原本的 context。
+
+Session 自己的回答才是它的記憶。聊天同步會把其他人、其他 bot 的訊息以及 mikan 的通知，以標明發言者的聊天紀錄加入；其他 session 的 run 貼出的回答則留給那個 session。更早的歷史仍可在 `log.jsonl` 查詢，agent 也能用 `history` 工具搜尋同一對話的所有 session 與聊天紀錄，包含工具呼叫與其輸出。
 
 ## 維運遷移
 
-一個 session 是一行的 header 檔加上 pi-durable 儲存。`mikan migrate` 會轉換 0.5.3 的 v3 session 檔並把原檔保留為 `*.v3.bak`，也會匯入預覽版的 v4 檔並把原檔移到該對話的 `sessions-v4/` 目錄；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
+`mikan migrate` 會轉換 0.5.3 的 v3 session 檔並把原檔保留為 `*.v3.bak`，也會把預覽版的 v4 檔匯入該 office 的 `sessions.db`，並把原本的 `sessions/` 目錄移到 `sessions-v4/`；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
 
-## Bootstrap、Clean session 與記憶
+## Clean session 與記憶
 
-新的 scoped session 會帶入該 thread 目前的訊息，以及 thread 起點之前、過去 14 天內最多 10 則 top-level 訊息；更早的歷史仍可在 `log.jsonl` 查詢，agent 也能用 `history` 工具搜尋同一對話的所有 session（較早的 session、各個 thread）與聊天紀錄，包含工具呼叫與其輸出。Top-level session 會長期沿用：mikan 會持續使用目前的 session file，直到 `/new` 取代它；Pi 的自動 compaction 會讓模型 context 維持在上限內。
-
-`/new` 會立即建立 **Clean session**。它不會摘要前一個 session、等待記憶處理，或刪除舊 JSONL 檔案；既有 conversation `MEMORY.md` 仍獨立可用。
+Top-level session 會長期沿用，Pi 的自動 compaction 會讓模型 context 維持在上限內。`/new` 會立即重設 session：模型從空的 context 開始，先前的紀錄仍留在儲存區，`history` 工具與 session view 都讀得到。它不會摘要前一段對話，也不會等待記憶處理；既有 conversation `MEMORY.md` 仍獨立可用。
 
 **Memory capture** 會在知識被說出來的當下就記錄。每次由真人觸發的 run 結束後，mikan 會請 Jev 判斷使用者是否建立了長期知識，例如長期規則、交付偏好、關於系統或流程的持久事實，或是一項更正。若是，對話所用的模型會在 conversation `MEMORY.md` 的 `## Captured knowledge` 底下新增或更新個別條目，並標註擷取日期與來源訊息。排程 event 的 run 會略過，永遠不寫入 workspace 共用記憶；未設定 Jev（`OPENROUTER_API_KEY`）時此功能停用。要更正或移除擷取的條目，和其他記憶一樣請 agent 修改即可。
 

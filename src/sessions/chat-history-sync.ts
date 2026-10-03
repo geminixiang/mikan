@@ -1,4 +1,9 @@
-import { CONTROL_INPUT_CUSTOM_TYPE, type SessionEntry } from "./types.js";
+import type { Message } from "@earendil-works/pi-ai";
+import {
+  CONTROL_INPUT_CUSTOM_TYPE,
+  type ImportedSessionEntry,
+  type SessionEntry,
+} from "./types.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
@@ -13,10 +18,7 @@ import { extractSessionSuffix, isThreadSessionKey } from "./session-key.js";
 
 const DEFAULT_RECENT_DAYS = 14;
 const DEFAULT_MAX_TOP_LEVEL_MESSAGES = 200;
-const THREAD_SEED_TOP_LEVEL_MESSAGES = 10;
 const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
-
-type SessionAppendMessage = Parameters<SessionStore["appendMessage"]>[0];
 
 import type {
   ChatHistorySyncOptions,
@@ -157,23 +159,46 @@ export class ChatHistorySync {
     if (await SessionStore.exists(options.office, options.sessionKey)) {
       return { threadRootMessage };
     }
-    const bootstrapRecords = selectThreadBootstrapMessages(records, threadId, {
-      recentDays: this.recentDays,
-      now: this.now(),
+    const filter = {
+      sessionKey: options.sessionKey,
       excludeMessageId: options.currentMessageId,
       isCommandText: this.isCommandText,
-    });
-    await bootstrapSessionFromLog(
-      options,
-      bootstrapRecords,
-      latestSyncMessageId(records, {
-        sessionKey: options.sessionKey,
-        excludeMessageId: options.currentMessageId,
-        isCommandText: this.isCommandText,
-      }),
-    );
+    };
+    const threadRecords = selectExistingSessionSyncMessages(records, filter);
+    const lastMessageId = latestSyncMessageId(records, filter);
+    const cause = findRunCause(records, threadId);
+    if (cause && cause.sessionKey !== options.sessionKey) {
+      const forked = await SessionStore.forkRun(options.office, options.sessionKey, cause, [
+        ...threadRecords.flatMap((record): ImportedSessionEntry[] => {
+          if (record.message.ts === threadId) return [];
+          const message = buildHistorySessionMessage(record.message);
+          return message ? [{ type: "message", message }] : [];
+        }),
+        {
+          type: "custom",
+          customType: CHAT_SYNC_CUSTOM_TYPE,
+          data: { lastMessageId },
+          timestamp: Date.now(),
+        },
+      ]);
+      if (forked) return { threadRootMessage };
+    }
+    await bootstrapSessionFromLog(options, threadRecords, lastMessageId);
     return { threadRootMessage };
   }
+}
+
+function findRunCause(
+  records: LogRecord[],
+  threadId: string,
+): { sessionKey: string; messageId: string } | undefined {
+  const root = findLogRecordById(records, threadId)?.message;
+  if (!root) return undefined;
+  const answer = root.isMessagingBot
+    ? root
+    : records.find((record) => record.message.replyTo === threadId)?.message;
+  if (!answer?.replyTo || !answer.sessionKey) return undefined;
+  return { sessionKey: answer.sessionKey, messageId: answer.replyTo };
 }
 
 function findLogRecordById(records: LogRecord[], messageId: string): LogRecord | undefined {
@@ -206,37 +231,6 @@ function selectRecentMessages(records: LogRecord[], options: HistoryWindow): Log
   return records
     .filter((record) => isRecentHistoryMessage(record.message, sinceMs))
     .slice(-options.maxMessages);
-}
-
-function selectThreadBootstrapMessages(
-  records: LogRecord[],
-  threadId: string,
-  options: {
-    recentDays: number;
-    now: Date;
-    excludeMessageId?: string;
-    isCommandText: (text: string) => boolean;
-  },
-): LogRecord[] {
-  const scopedRecords = recordsBeforeCurrentMessage(records, options.excludeMessageId);
-  const rootRecord = findLogRecordById(scopedRecords, threadId);
-  const topLevelSource = rootRecord
-    ? scopedRecords.filter((record) => record.index <= rootRecord.index)
-    : scopedRecords;
-  const topLevelRecords = selectRecentTopLevelMessages(topLevelSource, {
-    recentDays: options.recentDays,
-    maxMessages: THREAD_SEED_TOP_LEVEL_MESSAGES,
-    now: options.now,
-    excludeMessageId: options.excludeMessageId,
-    isCommandText: options.isCommandText,
-  });
-  const threadRecords = scopedRecords.filter(
-    (record) =>
-      isRenderableConversationMessage(record.message, options) &&
-      (record.message.ts === threadId || record.message.threadTs === threadId),
-  );
-
-  return dedupeAndSortRecords([...topLevelRecords, ...threadRecords]);
 }
 
 function isTopLevelHistoryMessage(
@@ -291,6 +285,7 @@ function isRenderableConversationMessage(
   filter: RenderableMessageFilter,
 ): boolean {
   if (filter.excludeMessageId && message.ts === filter.excludeMessageId) return false;
+  if (message.isMessagingBot && message.sessionKey) return false;
   if (!message.isMessagingBot && filter.isCommandText(message.text ?? "")) return false;
   return !!message.text?.trim();
 }
@@ -447,7 +442,10 @@ function consumeRepresentedLogMessage(record: LogRecord, counts: Map<string, num
   const comparable = comparableLogMessage(record.message);
   if (!comparable) return false;
 
-  const key = counts.get(comparable) ? comparable : presentedAnswerKey(comparable, counts);
+  const asChatLine = `user:${comparable.slice(comparable.indexOf(":") + 1)}`;
+  const key = counts.get(comparable)
+    ? comparable
+    : (presentedAnswerKey(comparable, counts) ?? (counts.get(asChatLine) ? asChatLine : undefined));
   if (!key) return false;
   counts.set(key, (counts.get(key) ?? 0) - 1);
   return true;
@@ -500,29 +498,14 @@ function getSessionMessageText(entry: SessionEntry): string {
 
 const normalizeComparableText = stripHistoryLinePrefix;
 
-function buildHistorySessionMessage(message: ConversationLogMessage): SessionAppendMessage | null {
+function buildHistorySessionMessage(message: ConversationLogMessage): Message | null {
   const text = historyMessageText(message);
   if (!text) return null;
-
-  const timestamp = parseMessageTimestamp(message);
-  if (!message.isMessagingBot) {
-    return {
-      role: "user",
-      content: [{ type: "text", text: formatHistoryMessage(message) }],
-      timestamp,
-    } as SessionAppendMessage;
-  }
-
   return {
-    role: "assistant",
-    content: [{ type: "text", text }],
-    api: "platform-history",
-    provider: "platform-history",
-    model: "platform-history",
-    usage: zeroUsage(),
-    stopReason: "stop",
-    timestamp,
-  } as SessionAppendMessage;
+    role: "user",
+    content: [{ type: "text", text: formatHistoryMessage({ ...message, text }) }],
+    timestamp: parseMessageTimestamp(message) ?? Date.now(),
+  };
 }
 
 function buildThreadRootSeed(
@@ -556,17 +539,6 @@ function formatHistoryMessage(message: ConversationLogMessage): string {
     userName: message.userName || message.user,
     text: message.text?.trim() ?? "",
   });
-}
-
-function zeroUsage(): object {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    totalTokens: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
 }
 
 export function readConversationLog(office: Office): LogRecord[] {

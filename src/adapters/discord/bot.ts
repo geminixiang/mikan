@@ -1,3 +1,4 @@
+import type { RunAnswer } from "../../types.js";
 import {
   ApplicationCommandOptionType,
   ChannelType,
@@ -276,11 +277,19 @@ export class DiscordMessagingBot implements MessagingBot {
     appendChannelLog(this.workspace.office(createOfficeAddress("discord", channelId)), entry);
   }
 
-  logBotResponse(channelId: string, text: string, ts: string): void {
+  logBotResponse(
+    channelId: string,
+    text: string,
+    ts: string,
+    threadTs?: string,
+    { answer }: { answer?: RunAnswer } = {},
+  ): void {
     appendBotResponseLog(
       this.workspace.office(createOfficeAddress("discord", channelId)),
       text,
       ts,
+      threadTs,
+      { ...answer },
     );
   }
 

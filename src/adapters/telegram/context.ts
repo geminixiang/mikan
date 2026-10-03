@@ -72,7 +72,10 @@ export function createTelegramAdapters(
     update: (id, text) => bot.updateMessage(conversationId, id, text),
     postExtra: (text) => bot.postMessageRaw(chatId, text),
     delete: (id) => bot.deleteMessageRaw(chatId, Number(id)),
-    logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
+    logBotResponse: (text, id) =>
+      bot.logBotResponse(conversationId, text, id, undefined, {
+        answer: { replyTo: message.id, sessionKey: message.sessionKey },
+      }),
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),
     react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
   });

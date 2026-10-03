@@ -20,6 +20,7 @@ import {
   defineEntry,
   type Conversation,
   type ConversationId,
+  type EntryId,
   type EntryRecord,
   type HarnessOptions,
   type HarnessSettings,
@@ -40,12 +41,13 @@ import type {
   SessionRunRecord,
   SessionRunStatus,
 } from "./types.js";
+import { RUN_CAUSE_CUSTOM_TYPE } from "./types.js";
 import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
 import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
 import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
 import { isThreadSessionKey } from "./session-key.js";
-import { errorMessage } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
@@ -405,6 +407,22 @@ async function parentSessionId(
   return records.find((record) => record.conversationId === parent.conversationId)?.id;
 }
 
+function isRunCause(record: EntryRecord, messageId?: string): boolean {
+  if (!CustomSessionEntry.is(record) || record.data.customType !== RUN_CAUSE_CUSTOM_TYPE) {
+    return false;
+  }
+  const { data } = record.data;
+  return messageId === undefined || (isRecord(data) && data.messageId === messageId);
+}
+
+function runEnd(records: readonly EntryRecord[], messageId: string): EntryId | undefined {
+  const start = records.findLastIndex((record) => isRunCause(record, messageId));
+  if (start < 0) return undefined;
+  const next = records.findIndex((record, index) => index > start && isRunCause(record));
+  const run = records.slice(start, next < 0 ? undefined : next);
+  return (run.findLast((record) => AssistantEntry.is(record)) ?? run.at(-1))?.id;
+}
+
 const EARLIER_SESSION_PREFIX = "earlier:";
 
 export function earlierSessionKey(sessionId: string): string {
@@ -577,6 +595,37 @@ export class SessionStore implements SessionInspection {
       await storage.release();
       throw error;
     }
+  }
+
+  static async forkRun(
+    office: Office,
+    key: string,
+    cause: { sessionKey: string; messageId: string },
+    entries: readonly ImportedSessionEntry[],
+  ): Promise<boolean> {
+    return withOfficeStorage(office, async (storage) => {
+      if ((await storage.index())[key]) return false;
+      const parent = await lookupSession(storage, cause.sessionKey);
+      if (!parent) return false;
+      const at = runEnd(await readRecords(parent.conversation), cause.messageId);
+      if (at === undefined) return false;
+      await parent.conversation.fork(
+        at,
+        {
+          ownership: { kind: "ownerless" },
+          init: async (tx, conversationId) => {
+            for (const entry of entries) await appendImportedEntry(tx, conversationId, entry);
+            await writeSessionIndex(tx, key, {
+              conversationId,
+              id: randomUUID(),
+              createdAt: Date.now(),
+            });
+          },
+        },
+        context,
+      );
+      return true;
+    });
   }
 
   static async inMemory(): Promise<SessionStore> {

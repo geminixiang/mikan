@@ -116,7 +116,10 @@ export function createGithubAdapters(
     delete: async (id) => {
       await bot.deleteComment(ref, Number(id));
     },
-    logBotResponse: (text, id) => bot.logBotResponse(conversationId, text, id),
+    logBotResponse: (text, id) =>
+      bot.logBotResponse(conversationId, text, id, undefined, {
+        answer: { replyTo: message.id, sessionKey: message.sessionKey },
+      }),
     uploadFallbackNote: (name) =>
       `*(file \`${name}\` was produced, but the GitHub adapter cannot attach files to comments)*`,
     react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),

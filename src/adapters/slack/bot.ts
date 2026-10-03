@@ -1,3 +1,4 @@
+import type { RunAnswer } from "../../types.js";
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
@@ -875,7 +876,7 @@ export class SlackMessagingBot implements MessagingBot {
     text: string,
     ts: string,
     threadTs?: string,
-    slackBlocks?: object[],
+    { slackBlocks, answer }: { slackBlocks?: object[]; answer?: RunAnswer } = {},
   ): void {
     appendBotResponseLog(
       this.workspace.office(createOfficeAddress("slack", channel)),
@@ -885,6 +886,7 @@ export class SlackMessagingBot implements MessagingBot {
       {
         platform: "slack",
         slackBlocks,
+        ...answer,
       },
     );
   }

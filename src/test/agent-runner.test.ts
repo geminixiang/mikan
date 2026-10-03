@@ -23,7 +23,7 @@ import { createRunner } from "../harness/runner.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
-import type { ThreadRootMessage } from "../sessions/types.js";
+import { RUN_CAUSE_CUSTOM_TYPE, type ThreadRootMessage } from "../sessions/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
@@ -205,6 +205,20 @@ describe("PiAgentWrapper.run", () => {
     await channelRunner.run(makeMessage(), makeResponder(), platform);
     await channelRunner.dispose();
     expect(channelTools).toContain("history");
+  });
+
+  test("records the message that started each run", async () => {
+    const { runner, faux, office, sessionKey } = await createTestRunner();
+    faux.setResponses([fauxAssistantMessage("first"), fauxAssistantMessage("second")]);
+    await runner.run(makeMessage({ id: "1000.1" }), makeResponder(), platform);
+    await runner.run(makeMessage({ id: "1000.2" }), makeResponder(), platform);
+    await runner.dispose();
+
+    const entries = (await (await SessionStore.inspect(office, sessionKey))?.getEntries()) ?? [];
+    const causes = entries.flatMap((entry) =>
+      entry.type === "custom" && entry.customType === RUN_CAUSE_CUSTOM_TYPE ? [entry.data] : [],
+    );
+    expect(causes).toEqual([{ messageId: "1000.1" }, { messageId: "1000.2" }]);
   });
 
   test("names a thread session after the first line of its root message", async () => {

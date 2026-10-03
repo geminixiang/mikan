@@ -1,3 +1,4 @@
+import type { RunAnswer } from "../../types.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
@@ -192,8 +193,20 @@ export class TelegramMessagingBot implements MessagingBot {
     appendChannelLog(this.workspace.office(createOfficeAddress("telegram", channel)), entry);
   }
 
-  logBotResponse(channel: string, text: string, ts: string): void {
-    appendBotResponseLog(this.workspace.office(createOfficeAddress("telegram", channel)), text, ts);
+  logBotResponse(
+    channel: string,
+    text: string,
+    ts: string,
+    threadTs?: string,
+    { answer }: { answer?: RunAnswer } = {},
+  ): void {
+    appendBotResponseLog(
+      this.workspace.office(createOfficeAddress("telegram", channel)),
+      text,
+      ts,
+      threadTs,
+      { ...answer },
+    );
   }
 
   async processAttachments(

@@ -134,7 +134,15 @@ describe("respond() — non-threaded", () => {
     await responder.finishResponse?.("canonical final");
 
     expect(bot.logBotResponse).toHaveBeenCalledOnce();
-    expect(bot.logBotResponse).toHaveBeenCalledWith("123456", "canonical final", "2001");
+    expect(bot.logBotResponse).toHaveBeenCalledWith(
+      "123456",
+      "canonical final",
+      "2001",
+      undefined,
+      {
+        answer: { replyTo: "1001", sessionKey: "123456:1001" },
+      },
+    );
   });
 
   test("passes the model's text through untouched", async () => {

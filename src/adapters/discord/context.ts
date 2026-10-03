@@ -87,7 +87,10 @@ export function createDiscordAdapters(
       return bot.postMessage(channelId, text);
     },
     delete: (id) => bot.deleteMessageRaw(channelId, id),
-    logBotResponse: (text, id) => bot.logBotResponse(channelId, text, id),
+    logBotResponse: (text, id) =>
+      bot.logBotResponse(channelId, text, id, undefined, {
+        answer: { replyTo: message.id, sessionKey: message.sessionKey },
+      }),
     uploadFile: (filePath, title) => bot.uploadFile(channelId, filePath, title),
     react: replyTargetId ? (emoji) => bot.addReaction(channelId, replyTargetId, emoji) : undefined,
   });

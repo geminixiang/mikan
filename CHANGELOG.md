@@ -24,6 +24,8 @@ any release.
 
 ### Changed
 
+- A new thread starts from what caused it. A thread under a channel answer, or under the message that triggered it, forks that run, so it carries the run's context up to its end, including tool calls and their output: asked what a command printed, the agent reads it instead of guessing or running it again. Any other thread starts from its root and its own replies, instead of ten earlier top-level messages copied from the chat log. Each run records the message that started it, and the chat log records each run answer with that message and its session.
+- Chat history never appears as the agent's own turn: synced messages from other people, other bots, and mikan's notices enter a session as attributed chat lines, and an answer a run posted is left to its own session, so a Discord or Telegram reply answered in another session no longer leaks into the channel session.
 - Compaction is Pi's: it runs in the background as the context grows and blocks the next request only near the limit, so mikan no longer starts its own compaction after a reply. Compaction summary requests now count toward a run's LLM-call and token budgets, and a request over the LLM-call budget is never sent.
 - A run left unfinished by a crash or restart is aborted before the next message in that conversation instead of answering first.
 - A thread session is named after the first line of its root message, cut to 80 characters, instead of the whole message; existing thread sessions take the short name on their next run.

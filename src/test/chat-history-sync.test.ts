@@ -1,7 +1,9 @@
 import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { SessionStore } from "../sessions/session-store.js";
+import { RUN_CAUSE_CUSTOM_TYPE } from "../sessions/types.js";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -442,44 +444,111 @@ describe("ChatHistorySync", () => {
     expect(await countJsonlEntries(scope.key, (entry) => entry.type === "message")).toBe(2);
   });
 
-  test("seeds a new thread with only the last few top-level messages before its root", async () => {
-    const topLevel = Array.from({ length: 30 }, (_, index) => ({
-      date: new Date(Date.UTC(2026, 4, 1, 0, 0, index)).toISOString(),
-      ts: `1000.${String(index).padStart(4, "0")}`,
-      user: "U1",
-      userName: "alice",
-      text: `top-level ${index}`,
-      isMessagingBot: false,
-    }));
+  async function channelWithRuns(): Promise<void> {
+    const channel = await SessionStore.open(office, "C123");
+    await channel.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: "1000.0001" });
+    await channel.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "[alice]: run the build" }],
+      timestamp: 1,
+    });
+    await channel.appendMessage(
+      fauxAssistantMessage(fauxToolCall("bash", { command: "make" }, { id: "call-1" }), {
+        stopReason: "toolUse",
+      }),
+    );
+    await channel.appendMessage({
+      role: "toolResult",
+      toolCallId: "call-1",
+      toolName: "bash",
+      content: [{ type: "text", text: "build hash 4f2a9c" }],
+      isError: false,
+      timestamp: 3,
+    });
+    await channel.appendMessage(fauxAssistantMessage("done"));
+    await channel.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: "1000.0003" });
+    await channel.appendMessage({
+      role: "user",
+      content: [{ type: "text", text: "[bob]: later unrelated work" }],
+      timestamp: 5,
+    });
+    await channel.close();
     writeLog([
-      ...topLevel,
       {
-        date: "2026-05-01T00:01:00.000Z",
-        ts: "2000.0001",
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "run the build",
+      },
+      {
+        date: "2026-05-01T00:00:01.000Z",
+        ts: "1000.0002",
+        user: "bot",
+        text: "done",
+        isMessagingBot: true,
+        replyTo: "1000.0001",
+        sessionKey: "C123",
+      },
+      {
+        date: "2026-05-01T00:00:02.000Z",
+        ts: "1000.0003",
         user: "U2",
         userName: "bob",
-        text: "thread root",
-        isMessagingBot: false,
+        text: "later unrelated work",
+      },
+      {
+        date: "2026-05-01T00:00:03.000Z",
+        ts: "1000.0004",
+        threadTs: "1000.0002",
+        user: "U1",
+        userName: "alice",
+        text: "what was that output?",
+      },
+      {
+        date: "2026-05-01T00:00:04.000Z",
+        ts: "1000.0005",
+        threadTs: "1000.0001",
+        user: "U3",
+        userName: "carol",
+        text: "earlier thread remark",
+      },
+      {
+        date: "2026-05-01T00:00:05.000Z",
+        ts: "1000.0006",
+        threadTs: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "and the hash?",
       },
     ]);
+  }
 
+  test("a thread under a channel run, or under its trigger, forks that run with its tool output", async () => {
+    await channelWithRuns();
     const manager = new ChatHistorySync({
       isCommandText,
-      now: () => new Date("2026-05-01T00:01:03.000Z"),
+      now: () => new Date("2026-05-01T00:00:06.000Z"),
     });
-    const scope = await resolveScope(manager, {
-      office,
-      sessionKey: "C123:2000.0001",
-    });
+    const channelId = (await SessionStore.list(office)).find((session) => session.root)?.id;
 
-    const text = await readContextText(scope.key);
-    expect(text).toContain("thread root");
-    expect(text).toContain("top-level 29");
-    expect(text).toContain("top-level 21");
-    expect(text).not.toContain("top-level 20");
+    for (const [key, current] of [
+      ["C123:1000.0002", "1000.0004"],
+      ["C123:1000.0001", "1000.0006"],
+    ] as const) {
+      await manager.resolveSessionScope({ office, sessionKey: key, currentMessageId: current });
+      const text = await readContextText(key);
+      expect(text).toContain("build hash 4f2a9c");
+      expect(text).not.toContain("later unrelated work");
+      expect(text).not.toContain("and the hash?");
+      expect(
+        (await SessionStore.list(office)).find((session) => session.key === key)?.parentSessionId,
+      ).toBe(channelId);
+    }
+    expect(await readContextText("C123:1000.0001")).toContain("[carol]: earlier thread remark");
   });
 
-  test("bootstraps a thread session from recent top-level log history plus thread history", async () => {
+  test("a thread no run caused starts from its root and its own replies alone", async () => {
     writeLog([
       {
         date: "2026-05-01T00:00:00.000Z",
@@ -487,7 +556,6 @@ describe("ChatHistorySync", () => {
         user: "U1",
         userName: "alice",
         text: "top-level context",
-        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:01:00.000Z",
@@ -495,15 +563,14 @@ describe("ChatHistorySync", () => {
         user: "U2",
         userName: "bob",
         text: "thread root",
-        isMessagingBot: false,
       },
       {
         date: "2026-05-01T00:01:01.000Z",
         ts: "2000.0002",
         threadTs: "2000.0001",
-        user: "bot",
-        text: "thread bot reply",
-        isMessagingBot: true,
+        user: "U3",
+        userName: "carol",
+        text: "thread remark",
       },
       {
         date: "2026-05-01T00:01:02.000Z",
@@ -512,14 +579,10 @@ describe("ChatHistorySync", () => {
         user: "U2",
         userName: "bob",
         text: "current thread message",
-        isMessagingBot: false,
       },
     ]);
-
     const manager = new ChatHistorySync({
       isCommandText,
-      recentDays: 7,
-      maxTopLevelMessages: 20,
       now: () => new Date("2026-05-01T00:01:03.000Z"),
     });
 
@@ -529,95 +592,56 @@ describe("ChatHistorySync", () => {
       currentMessageId: "2000.0003",
     });
 
-    expect(await SessionStore.exists(office, "C123:2000.0001")).toBe(true);
     expect(scope.threadRootMessage?.text).toBe("thread root");
     const text = await readContextText(scope.key);
-    expect(text).toContain("top-level context");
-    expect(text).toContain("thread root");
-    expect(text).toContain("thread bot reply");
+    expect(text).toContain("[bob]: thread root");
+    expect(text).toContain("[carol]: thread remark");
+    expect(text).not.toContain("top-level context");
     expect(text).not.toContain("current thread message");
   });
 
-  test("thread bootstrap excludes top-level messages after the thread root", async () => {
+  test("sync adds other bots' messages as chat lines and leaves run answers to their sessions", async () => {
+    await (await SessionStore.open(office, "C123")).close();
     writeLog([
       {
         date: "2026-05-01T00:00:00.000Z",
         ts: "1000.0001",
-        user: "U1",
-        userName: "alice",
-        text: "thread0",
-        isMessagingBot: false,
+        user: "bot:B1",
+        userName: "deploybot",
+        text: "deploy finished",
+        isMessagingBot: true,
       },
       {
         date: "2026-05-01T00:00:01.000Z",
         ts: "1000.0002",
-        user: "U1",
-        userName: "alice",
-        text: "thread1",
-        isMessagingBot: false,
+        user: "bot",
+        text: "answer from a thread run",
+        isMessagingBot: true,
+        replyTo: "999.0001",
+        sessionKey: "C123:999.0001",
       },
       {
         date: "2026-05-01T00:00:02.000Z",
         ts: "1000.0003",
-        user: "U1",
-        userName: "alice",
-        text: "thread2",
-        isMessagingBot: false,
-      },
-      {
-        date: "2026-05-01T00:00:03.000Z",
-        ts: "1000.0004",
-        user: "U1",
-        userName: "alice",
-        text: "thread3",
-        isMessagingBot: false,
-      },
-      {
-        date: "2026-05-01T00:00:04.000Z",
-        ts: "1000.0005",
-        user: "U1",
-        userName: "alice",
-        text: "next one is?",
-        isMessagingBot: false,
-      },
-      {
-        date: "2026-05-01T00:00:05.000Z",
-        ts: "1000.0006",
         user: "bot",
-        text: "thread4",
+        text: "Stopped.",
         isMessagingBot: true,
       },
-      {
-        date: "2026-05-01T00:00:06.000Z",
-        ts: "1000.0007",
-        threadTs: "1000.0004",
-        user: "U1",
-        userName: "alice",
-        text: "current thread question",
-        isMessagingBot: false,
-      },
     ]);
-
     const manager = new ChatHistorySync({
       isCommandText,
-      recentDays: 7,
-      maxTopLevelMessages: 20,
-      now: () => new Date("2026-05-01T00:00:07.000Z"),
-    });
-    const scope = await resolveScope(manager, {
-      office,
-      sessionKey: "C123:1000.0004",
-      currentMessageId: "1000.0007",
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
     });
 
-    const text = await readContextText(scope.key);
-    expect(text).toContain("thread0");
-    expect(text).toContain("thread1");
-    expect(text).toContain("thread2");
-    expect(text).toContain("thread3");
-    expect(text).not.toContain("next one is?");
-    expect(text).not.toContain("thread4");
-    expect(text).not.toContain("current thread question");
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+
+    const inspection = await inspectSession("C123");
+    const messages = (await inspection.buildSessionContext()).messages;
+    expect(messages.every((message) => message.role === "user")).toBe(true);
+    const text = await readContextText("C123");
+    expect(text).toContain("[deploybot]: deploy finished");
+    expect(text).toContain("[bot]: Stopped.");
+    expect(text).not.toContain("answer from a thread run");
   });
 
   test("syncs passive top-level chat messages into an existing session", async () => {

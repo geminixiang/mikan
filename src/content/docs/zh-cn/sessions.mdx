@@ -41,30 +41,29 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 <FileTree>
 
 - workspace/
-  - v1-slack-c0aaaaaa1-…/ 一间办公室
-    - **log.jsonl** 平台消息历史记录
+  - v1-slack-c0aaaaaa1-…/ 一个 office
+    - **log.jsonl** 平台消息历史
 - state-dir/conversations/
-  - v1-slack-c0aaaaaa1-…/ 仅限主机的办公室状态
-    - sessions/
-      - **current** 指向活动的顶层会话
-      - **\*.jsonl** 结构化框架会话上下文，包括工具结果
-      - **scope-derived files** 话题/回复范围的固定会话文件
+  - v1-slack-c0aaaaaa1-…/ 仅在 host 上的 office 状态
+    - **sessions.db** 该 office 的所有会话，包括工具结果
 
 </FileTree>
 
-## 话题谱系
+## 会话如何开始
 
-限定范围的会话会在其 header 中记录它由哪个顶层会话创建而来，字段为 `parentSessionId`（uuid）。该链接在重置后依然存在：重置一个限定范围会话会重建它的文件，但保留原来的父会话，而不是重新绑定到当前的那个顶层会话。在谱系元数据出现之前写入的会话会被原样保留，不会重建。
+每个 office 把所有会话存放在一个 pi-durable SQLite 存储中：顶层会话，以及每个话题或回复范围各一个会话。
+
+话题从引起它的事情开始。每次 run 会记录触发它的消息，log 也会在 run 的回答旁记录那条消息和执行它的会话。开在某次 run 的回答下、或开在触发那次 run 的消息下的话题，会 fork 那次 run：它带着该会话到那次 run 结束为止的上下文，包括工具调用及其输出，所以 agent 不必重跑命令就能说出命令输出了什么。其他话题只带起点消息和自己的回复。在此行为之前已存在的话题保留原有上下文。
+
+会话自己的回答才是它的记忆。聊天同步会把其他人、其他 bot 的消息以及 mikan 的通知，以标明发言者的聊天记录加入；其他会话的 run 发出的回答则留给那个会话。更早的历史仍可在 `log.jsonl` 中查询，agent 也能用 `history` 工具搜索同一对话的所有会话与聊天记录，包括工具调用及其输出。
 
 ## 运维迁移
 
-一个会话是一行的 header 文件加上 pi-durable 存储。`mikan migrate` 会转换 0.5.3 的 v3 会话文件并把原文件保留为 `*.v3.bak`，也会导入预览版的 v4 文件并把原文件移到该对话的 `sessions-v4/` 目录；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
+`mikan migrate` 会转换 0.5.3 的 v3 会话文件并把原文件保留为 `*.v3.bak`，也会把预览版的 v4 文件导入该 office 的 `sessions.db`，并把原来的 `sessions/` 目录移到 `sessions-v4/`；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
 
-## 初始化、Clean session 与记忆
+## Clean session 与记忆
 
-新的限定范围会话会带入该话题目前的消息，以及话题起点之前、过去 14 天内最多 10 条顶层消息；更早的历史仍可在 `log.jsonl` 中查询，agent 也能用 `history` 工具搜索同一对话的所有会话（较早的会话、各个话题）与聊天记录，包括工具调用及其输出。顶层会话会长期沿用：mikan 会持续使用当前会话文件，直到 `/new` 替换它；Pi 的自动 compaction 会让模型上下文保持在上限内。
-
-`/new` 会立即创建 **Clean session**。它不会总结前一个会话、等待记忆处理或删除旧 JSONL 文件；现有对话 `MEMORY.md` 仍可独立使用。
+顶层会话会长期沿用，Pi 的自动 compaction 会让模型上下文保持在上限内。`/new` 会立即重置会话：模型从空的上下文开始，之前的记录仍留在存储中，`history` 工具与 session view 都能读取。它不会总结前一段对话，也不会等待记忆处理；现有对话 `MEMORY.md` 仍可独立使用。
 
 **Memory capture** 会在知识被说出的当下就记录。每次由真人触发的 run 结束后，mikan 会请 Jev 判断用户是否建立了长期知识，例如长期规则、交付偏好、关于系统或流程的持久事实，或是一项更正。若是，对话所用的模型会在对话 `MEMORY.md` 的 `## Captured knowledge` 下新增或更新单独条目，并标注捕获日期与来源消息。计划 event 的 run 会被跳过，从不写入 workspace 共享记忆；未配置 Jev（`OPENROUTER_API_KEY`）时此功能停用。要更正或删除捕获的条目，和其他记忆一样请 agent 修改即可。
 

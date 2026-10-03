@@ -75,8 +75,13 @@ function formatTime(ms: number): string {
 }
 
 interface HistoryEntry {
+  record: string;
   timestamp: number;
   text: string;
+}
+
+function recordOf(entryId: string): string {
+  return entryId.slice(entryId.lastIndexOf(":") + 1);
 }
 
 function toolResultText(message: ToolResultMessage): string {
@@ -122,10 +127,16 @@ function historyEntries(entries: readonly SessionEntry[]): HistoryEntry[] {
         const { message } = entry;
         if (message.role === "toolResult" && calls.has(message.toolCallId)) return [];
         const text = messageText(message, results);
-        return text ? [{ timestamp: entry.timestamp, text }] : [];
+        return text ? [{ record: recordOf(entry.id), timestamp: entry.timestamp, text }] : [];
       }
       case "compaction":
-        return [{ timestamp: entry.timestamp, text: `[summary] ${entry.summary}` }];
+        return [
+          {
+            record: recordOf(entry.id),
+            timestamp: entry.timestamp,
+            text: `[summary] ${entry.summary}`,
+          },
+        ];
       case "custom":
         return [];
     }
@@ -269,8 +280,11 @@ async function searchSessions(scope: HistoryScope, args: HistoryArgs): Promise<s
   if (typeof selected === "string") return selected;
   const titles = scopeTitles(scope.office);
   const results: Array<HistoryEntry & { session: SessionListing }> = [];
-  for (const info of selected ? [selected] : sessions) {
+  const seen = new Set<string>();
+  for (const info of selected ? [selected] : sessions.toReversed()) {
     for (const entry of await sessionEntries(scope.office, info)) {
+      if (seen.has(entry.record)) continue;
+      seen.add(entry.record);
       if (matches(entry.text, query)) results.push({ ...entry, session: info });
     }
   }

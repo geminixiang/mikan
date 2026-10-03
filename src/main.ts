@@ -362,13 +362,13 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
         const ts = threadTs
           ? await bot.postInThreadBlocks(conversationId, threadTs, text, blocks)
           : await bot.postMessageBlocks(conversationId, text, blocks);
-        bot.logBotResponse(conversationId, text, ts, threadTs, blocks);
+        bot.logBotResponse(conversationId, text, ts, threadTs, { slackBlocks: blocks });
         return { ts };
       },
       updateBlocks: async (conversationId, { ts, text, blocks, threadTs }) => {
         const bot = requireSlackBot(SLACK_BLOCKKIT_TOOL);
         await bot.updateMessageBlocks(conversationId, ts, text, blocks);
-        bot.logBotResponse(conversationId, text, ts, threadTs, blocks);
+        bot.logBotResponse(conversationId, text, ts, threadTs, { slackBlocks: blocks });
       },
       ownsBlockKitMessage: (conversationId, ts, threadTs) =>
         requireSlackBot(SLACK_BLOCKKIT_TOOL).ownsBlockKitMessage(conversationId, ts, threadTs),

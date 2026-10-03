@@ -204,6 +204,7 @@ class SlackResponseLifecycle {
         text,
         responseId,
         replyInThread ? sessionPlan.rootTs : undefined,
+        { answer: { replyTo: event.ts, sessionKey: sessionPlan.sessionKey } },
       );
     }
     this.endStatus();

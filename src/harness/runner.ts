@@ -3,7 +3,11 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
-import { CONTROL_INPUT_CUSTOM_TYPE, type ThreadRootMessage } from "../sessions/types.js";
+import {
+  CONTROL_INPUT_CUSTOM_TYPE,
+  RUN_CAUSE_CUSTOM_TYPE,
+  type ThreadRootMessage,
+} from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
@@ -534,6 +538,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   });
 
   const isEventRun = message.id.startsWith("event:");
+  await session.sessionStore.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: message.id });
   await session.prompt(prepared.userMessage, {
     allowTaskHandoff: responder.startTask !== undefined,
     allowTaskStatus: responder.getTaskStatus !== undefined,

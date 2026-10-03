@@ -1,3 +1,4 @@
+import type { RunAnswer } from "../../types.js";
 import { existsSync } from "node:fs";
 import type {
   MessagingBot,
@@ -213,8 +214,14 @@ export class GithubMessagingBot implements MessagingBot {
     appendChannelLog(this.office(conversationId), entry);
   }
 
-  logBotResponse(conversationId: string, text: string, ts: string): void {
-    appendBotResponseLog(this.office(conversationId), text, ts);
+  logBotResponse(
+    conversationId: string,
+    text: string,
+    ts: string,
+    threadTs?: string,
+    { answer }: { answer?: RunAnswer } = {},
+  ): void {
+    appendBotResponseLog(this.office(conversationId), text, ts, threadTs, { ...answer });
   }
 
   private getQueue(conversationId: string): MessagingEventQueue {
