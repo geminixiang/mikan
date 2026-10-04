@@ -99,7 +99,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
     const firstTs = await postMessage(
       client,
       dmChannel,
-      `請記住這個 token：${token}。現在只需回覆 OK，不要重複 token。`,
+      `請記住這個代號：${token}。現在只需回覆 OK。`,
     );
     const firstReply = await waitForBotReply({
       client,
@@ -116,7 +116,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack DM", () => {
     const followupTs = await postMessage(
       client,
       dmChannel,
-      "請只回覆我上一則訊息要你記住的 token，不要加其他文字。",
+      "請只回覆我上一則訊息要你記住的代號，不要加其他文字。",
     );
     const reply = await waitForBotReply({
       client,

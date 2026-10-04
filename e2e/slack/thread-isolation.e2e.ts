@@ -37,8 +37,8 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       workingDir: env.workingDir,
       threadTs: rootA,
       text: (deliveryMarker) =>
-        `<@${botUserId}> 請記住這個 token：${tokenA}。` +
-        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
+        `<@${botUserId}> 請記住這個代號：${tokenA}。` +
+        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}。`,
       timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
@@ -62,8 +62,8 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       workingDir: env.workingDir,
       threadTs: rootB,
       text: (deliveryMarker) =>
-        `<@${botUserId}> 請記住這個 token：${tokenB}。` +
-        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}，不要重複 token。`,
+        `<@${botUserId}> 請記住這個代號：${tokenB}。` +
+        `現在只需回覆 OK 並原樣附上 ${deliveryMarker}。`,
       timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
@@ -87,7 +87,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack thread session isolation
       workingDir: env.workingDir,
       threadTs: rootA,
       text: () =>
-        `<@${botUserId}> 請只回覆我在這個 thread 要你記住、以 QA_ISOLATE_ 開頭的 token，不要加其他文字。`,
+        `<@${botUserId}> 請只回覆我在這個 thread 要你記住、以 QA_ISOLATE_ 開頭的代號，不要加其他文字。`,
       timeoutMs: LOCAL_DELIVERY_TIMEOUT_MS,
       pollMs: env.pollMs,
     });
