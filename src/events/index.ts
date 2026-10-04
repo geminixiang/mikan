@@ -371,7 +371,7 @@ export class OfficeEventStore implements EventStore {
     safeFilename: string,
     payload: EventPayload,
   ): Promise<{ path: string; size: number }> {
-    await mkdir(this.eventsDir, { recursive: true });
+    await mkdir(this.eventsDir, { recursive: true, mode: 0o700 });
     const filePath = join(this.eventsDir, safeFilename);
     atomicWritePrivateFile(filePath, JSON.stringify(payload) + "\n");
     const fileStat = await stat(filePath);

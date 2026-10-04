@@ -9,6 +9,14 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Run `mikan migrate` before starting this version. It deletes each office's `dream.json`, the checkpoint of the Dream maintenance removed in [ADR 0012](docs/adr/0012-remove-dream.md) that nothing reads, and makes every directory under `<state-dir>/conversations/` readable only by its owner (mode 700); links are not followed.
+
+### Security
+
+- An office's `events/` directory is created readable only by its owner (mode 700) instead of following the process umask.
+
 ## [1.0.0-beta.89]
 
 ### Breaking

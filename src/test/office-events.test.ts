@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -64,6 +64,7 @@ describe("OfficeEventStore", () => {
       at: future(),
     });
     expect(existsSync(join(own.stateDir, "events", "reminder.json"))).toBe(true);
+    expect(statSync(join(own.stateDir, "events")).mode & 0o777).toBe(0o700);
     expect(existsSync(join(dir, "workspace", "events"))).toBe(false);
     expect((await store.list()).map((event) => event.filename)).toEqual(["reminder.json"]);
   });
