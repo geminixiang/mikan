@@ -157,13 +157,20 @@ Global output helpers:
 Global discovery helpers (async functions, not methods on tools):
 ${renderDeclarations({ globals })}
 
-Tools declared to you are also callable from scripts; each one's description says what its call resolves to. Other tools, such as MCP tools, are not listed: find them with searchTools(), inspect them with describeTool() or describeNamespace(), or filter ALL_TOOLS, then call tools[name](args):
+Tools declared to you are also callable from scripts; each one's description says what its call resolves to. Other tools, such as MCP tools, are not listed: find them with searchTools(), inspect them with describeTool() or describeNamespace(), or filter ALL_TOOLS, then call tools[name](args).
+Discover in one script: inspect every namespace and tool the task may need together, then call them in the next script using the declared parameter and return types. Do not guess argument names. Discovery does not load schemas into the model's direct tool set.
 \`\`\`js
 const matches = await searchTools(query, { namespace });
-text(await describeTool(matches[0].name));
+text((await describeNamespace(namespace))?.instructions);
+for (const match of matches.slice(0, 3)) text(await describeTool(match.name));
 \`\`\`
-If declarations are not known yet, emit the discovered samples first, then write a later script using their parameter and return types. Do not guess argument names. Discovery does not load schemas into the model's direct tool set.
-MCP tools resolve to their complete CallToolResult { content, structuredContent?, isError? }, never truncated: text results are in content[i].text (often JSON to parse), and an MCP error resolves with isError: true instead of rejecting. Filter it in the script and emit only what is needed.`,
+MCP tools resolve to their complete CallToolResult { content, structuredContent?, isError? }, never truncated: text results are in content[i].text, usually JSON to parse, and an MCP error resolves with isError: true instead of rejecting. Never emit a whole result: everything you emit stays in the conversation and is sent again on every later model call. Parse it and emit only the fields the answer needs:
+\`\`\`js
+const result = await tools[name](args);
+if (result.isError) return result.content[0]?.text;
+const data = JSON.parse(result.content[0].text);
+return data.items.map(({ id, title }) => ({ id, title }));
+\`\`\``,
     parameters: Type.Object({ label: LABEL_PARAMETER, code: Type.String() }),
     execute: async (params, api, context) => {
       const id = api.callId;

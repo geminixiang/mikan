@@ -15,6 +15,7 @@ import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { createCodemodeTool } from "../harness/tools/codemode.js";
+import { searchTools } from "../harness/tools/tool-search.js";
 import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import type { MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -563,4 +564,26 @@ test("describeNamespace returns a server's instructions and tools to scripts", a
     { type: "text", text: "undefined" },
   ]);
   expect(codemode.description).toContain("declare function describeNamespace(");
+});
+
+test("searchTools matches a server name written as one word, as Pi's tokenizer does", () => {
+  const subagent = adaptAgentTool({
+    name: "subagent",
+    label: "Subagent",
+    description: "Run subagents to search, read, and summarize anything",
+    parameters: { type: "object", properties: {} },
+    execute: async () => ({ content: [], details: {} }),
+  });
+  const search = adaptAgentTool(
+    Object.assign(
+      { ...deferredTool("mcp__open-connector__search_actions", "Find catalog actions").tool },
+      { namespace: "open-connector" },
+    ),
+  );
+  expect(
+    searchTools({ tools: [subagent, search], query: "OpenConnector search arXiv papers" }).map(
+      (tool) => tool.name,
+    ),
+  ).toEqual(["mcp__open-connector__search_actions", "subagent"]);
+  expect(searchTools({ tools: [subagent, search], query: "OpenConnector" })).toEqual([search]);
 });

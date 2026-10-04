@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Codemode guides the model to discover every tool a task needs in one script and to parse MCP results and emit only the fields the answer needs, because everything a script emits is sent again on every later model call. `searchTools()` and `tool_search` rank with BM25 over names, descriptions, argument schemas, and the MCP server name, splitting camelCase like Pi, so a query such as `OpenConnector` finds `mcp__open-connector__*` tools; the default limit is 8.
+
 ## [1.0.0-beta.91]
 
 ### Changed

@@ -135,12 +135,12 @@ a direct call stays bounded and spilled as below.
 `tool-search.ts` owns keyword ranking and `tool_search`, which loads matches
 through pi-durable's `control.addTools` result for the next model call; Pi
 stores the offered names in the conversation's `pi.agent` document. The
-shared search considers names, descriptions and argument schemas, prioritizes
-exact names, and supports a namespace filter and a 1–20 match limit (default 5).
-It is a small local weighted-keyword ranker, not Pi CLI's private BM25
-implementation; the CLI extension cannot be imported into the native harness
-through a public ranker API. No private Pi imports or additional dependency are
-used. Search result summaries are bounded to 300 characters per tool.
+shared search ranks names, descriptions, argument schemas and the namespace with
+BM25, prioritizes exact names, and supports a namespace filter and a 1–20 match
+limit (default 8). The tokenizer splits camelCase and stems plurals like Pi CLI's
+private ranker, so `OpenConnector` finds `mcp__open-connector__*`; it is a small
+local copy because Pi exposes no public ranker. No private Pi imports or
+additional dependency are used. Search result summaries are bounded to 300 characters per tool.
 
 `tool_search` exists only when the current grants include `deferred` tools. It
 searches only not-yet-loaded tools; codemode's `searchTools()` searches all of
