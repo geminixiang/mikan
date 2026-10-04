@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import {
   CodemodeSandbox,
+  mcpStructuredContentSchema,
   parseCodemodeSource,
   renderDeclarations,
+  renderToolOutputType,
   renderToolSample,
+  toCodemodeIdentifier,
   type CodemodeTool,
   type CodemodeJsonSchema,
 } from "@earendil-works/pi-codemode";
@@ -11,26 +14,87 @@ import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
 import { withAbortSignal } from "@earendil-works/chord/context";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import type { CodemodeToolOptions, MikanHarnessTool } from "../types.js";
+import type { CodemodeToolOptions, MikanHarnessTool, MikanToolResult } from "../types.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 import { tagHarnessTool } from "./pi-tools.js";
 import { START_TASK_TOOL } from "./task.js";
-import { searchTools, TOOL_SEARCH_TOOL } from "./tool-search.js";
+import { mcpNamespaceKey, searchTools, TOOL_SEARCH_TOOL } from "./tool-search.js";
 import { isRecord } from "../../unknown-values.js";
 
-export function createCodemodeTool(options: CodemodeToolOptions): MikanHarnessTool {
-  const callable = options.tools.filter(
-    (tool) =>
-      tool.name !== "codemode" && tool.name !== START_TASK_TOOL && tool.name !== TOOL_SEARCH_TOOL,
+const TEXT_OUTPUT_SCHEMA: CodemodeJsonSchema = { type: "string" };
+
+export function isCodemodeCallable(tool: MikanHarnessTool): boolean {
+  return (
+    tool.name !== "codemode" && tool.name !== START_TASK_TOOL && tool.name !== TOOL_SEARCH_TOOL
   );
+}
+
+function outputSchemaOf(tool: MikanHarnessTool): CodemodeJsonSchema {
+  return (tool.outputSchema as CodemodeJsonSchema | undefined) ?? TEXT_OUTPUT_SCHEMA;
+}
+
+function describeOutput(schema: CodemodeJsonSchema): string {
+  const type = renderToolOutputType(schema);
+  if (type === "string") return "a string";
+  const properties =
+    isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
+  if (properties && mcpStructuredContentSchema(schema) === undefined) {
+    const required = new Set(
+      isRecord(schema) && Array.isArray(schema.required) ? schema.required : [],
+    );
+    const fields = Object.keys(properties).map((name) => (required.has(name) ? name : `${name}?`));
+    return `\`{ ${fields.join(", ")} }\``;
+  }
+  return `\`${type.replace(/\s+/g, " ")}\``;
+}
+
+export function withScriptCallNote(tool: MikanHarnessTool): MikanHarnessTool {
+  return tagHarnessTool({
+    ...tool,
+    description: `${tool.description.trim()}\n\nCodemode: \`tools.${toCodemodeIdentifier(tool.name)}(args)\` resolves to ${describeOutput(outputSchemaOf(tool))}.`,
+  });
+}
+
+function scriptValue(tool: MikanHarnessTool, result: MikanToolResult, output: string): unknown {
+  if (tool.outputSchema && result.structuredContent !== undefined) return result.structuredContent;
+  const content = result.content ?? [{ type: "text" as const, text: output }];
+  const text = content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  if (result.isError) throw new Error(text || `Tool "${tool.name}" failed`);
+  if (result.structuredContent !== undefined) return result.structuredContent;
+  if (content.some((part) => part.type === "image")) return { content };
+  return text;
+}
+
+export function createCodemodeTool(options: CodemodeToolOptions): MikanHarnessTool {
+  const callable = options.tools.filter(isCodemodeCallable);
   const declarations = callable.map((tool) => ({
     name: tool.name,
     description: tool.description,
     inputSchema: tool.parameters as CodemodeJsonSchema,
-    outputSchema: (tool.outputSchema as CodemodeJsonSchema | undefined) ?? { type: "string" },
-    exposure: tool.exposure,
+    outputSchema: outputSchemaOf(tool),
     execute: () => undefined,
   }));
+  const namespaces = (options.servers ?? []).flatMap((server) => {
+    const key = mcpNamespaceKey(server.name);
+    const tools = callable
+      .filter((tool) => tool.namespace !== undefined && mcpNamespaceKey(tool.namespace) === key)
+      .map((tool) => tool.name);
+    if (tools.length === 0) return [];
+    return [
+      {
+        key,
+        value: {
+          name: `mcp__${server.name}`,
+          description: server.description,
+          instructions: server.instructions,
+          tools,
+        },
+      },
+    ];
+  });
   const samples = new Map(declarations.map((tool) => [tool.name, renderToolSample(tool)]));
   const globals: CodemodeTool[] = [
     {
@@ -63,6 +127,18 @@ export function createCodemodeTool(options: CodemodeToolOptions): MikanHarnessTo
       signature: "(name: string): Promise<string | undefined>",
       execute: (name) => (typeof name === "string" ? samples.get(name) : undefined),
     },
+    {
+      name: "describeNamespace",
+      description:
+        "Return an MCP server's description, instructions, and tool names, or undefined. Accepts `mcp__<server>` or `<server>`.",
+      signature:
+        "(name: string): Promise<{ name: string; description?: string; instructions?: string; tools: string[] } | undefined>",
+      execute: (name) => {
+        if (typeof name !== "string") return undefined;
+        const key = mcpNamespaceKey(name);
+        return namespaces.find((namespace) => namespace.key === key)?.value;
+      },
+    },
   ];
   return tagHarnessTool({
     name: "codemode",
@@ -81,16 +157,13 @@ Global output helpers:
 Global discovery helpers (async functions, not methods on tools):
 ${renderDeclarations({ globals })}
 
-Some nested tools, including MCP tools, are omitted below but remain callable on tools and listed in ALL_TOOLS. Discover and inspect them before calling tools[matches[0].name](args):
+Tools declared to you are also callable from scripts; each one's description says what its call resolves to. Other tools, such as MCP tools, are not listed: find them with searchTools(), inspect them with describeTool() or describeNamespace(), or filter ALL_TOOLS, then call tools[name](args):
 \`\`\`js
 const matches = await searchTools(query, { namespace });
 text(await describeTool(matches[0].name));
 \`\`\`
 If declarations are not known yet, emit the discovered samples first, then write a later script using their parameter and return types. Do not guess argument names. Discovery does not load schemas into the model's direct tool set.
-
-Nested tool declarations:
-${renderDeclarations({ tools: declarations.filter((tool) => tool.exposure !== "deferred") }).slice(0, 12_000)}
-Declarations may be shortened; use await describeTool(name) for the full schema.`,
+MCP tools resolve to their complete CallToolResult { content, structuredContent?, isError? }, never truncated: text results are in content[i].text (often JSON to parse), and an MCP error resolves with isError: true instead of rejecting. Filter it in the script and emit only what is needed.`,
     parameters: Type.Object({ label: LABEL_PARAMETER, code: Type.String() }),
     execute: async (params, api, context) => {
       const id = api.callId;
@@ -119,15 +192,7 @@ Declarations may be shortened; use await describeTool(name) for the full schema.
               nested.api,
               withAbortSignal(signal, context),
             ]);
-            const content = result.content ?? [{ type: "text" as const, text: nested.output() }];
-            const text = content
-              .filter((part) => part.type === "text")
-              .map((part) => part.text)
-              .join("\n");
-            if (result.isError) throw new Error(text);
-            if (result.structuredContent !== undefined) return result.structuredContent;
-            if (content.some((part) => part.type === "image")) return { content };
-            return text;
+            return scriptValue(tool, result, nested.output());
           })();
           pending.add(call);
           void call.then(

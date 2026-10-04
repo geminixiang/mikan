@@ -110,7 +110,7 @@ Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord�
 }
 ```
 
-每个 entry 必须只使用一种 transport：`command`（可搭配 `args`、`env`）或 `url`（可搭配 `headers`）。`disabled: true` 可在不删除设置的情况下停用 server。全局和对话设置按 server name 合并；对话设置可以覆盖或停用同名的全局 server，其他全局 entries 仍会保留。
+每个 entry 必须只使用一种 transport：`command`（可搭配 `args`、`env`）或 `url`（可搭配 `headers`）。`disabled: true` 可在不删除设置的情况下停用 server。MCP 工具不会声明给模型：system prompt 只为每个 server 列一行（取 `description` 或 server 自身说明的第一行），模型通过 `codemode` 脚本调用工具，脚本拿到完整结果后只返回回答需要的部分。设置 `"exposure": "deferred"` 则改为让模型用 `tool_search` 加载该 server 的工具并直接调用。全局和对话设置按 server name 合并；对话设置可以覆盖或停用同名的全局 server，其他全局 entries 仍会保留。
 
 Admin 的 MCP 面板提供 repository-owned 的精选 Marketplace。安装前会显示完整 host command 或 remote endpoint、所需凭证、来源、目标 scope 和安全警告；确认后只会创建普通的 `mcpServers` entry。Local package 版本固定，不另建 installed database 或自动更新服务，也不把 catalog 收录视为安全认证。Local stdio preset 会在 mikan host 执行代码；remote preset 则会收到发往其工具的调用和数据。
 

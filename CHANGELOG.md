@@ -9,6 +9,11 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- MCP follows Pi's codemode design. MCP tools are reached from `codemode` scripts by default and `tool_search` exists only for servers configured with `"exposure": "deferred"`. A script receives each MCP tool's complete `CallToolResult` (`content`, `structuredContent`, `isError`) instead of the bounded view the model gets, so it can filter large results before they enter the context, and an MCP error resolves with `isError: true` instead of rejecting. The `codemode` description no longer repeats the declarations of tools already declared to the model; each of those tools' descriptions says what a script call resolves to. Server instructions are no longer copied into the system prompt: an `mcp_servers` section lists each server once with the first line of its new optional `description` or its instructions, and scripts read the rest with the new `describeNamespace()`. On a local request these changes cut the tool declarations from 38,274 to 26,538 characters and the codemode description from 14,232 to 2,803.
+- A direct MCP call that the server marks `isError` returns an error result instead of throwing, keeping the server's message.
+
 ## [1.0.0-beta.90]
 
 ### Changed

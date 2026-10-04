@@ -114,6 +114,8 @@ The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `vis
 
 Each entry uses exactly one transport: `command` (+ optional `args`, `env`) spawns a stdio server; `url` (+ optional `headers`) connects over streamable HTTP. `disabled: true` turns an entry off without deleting it.
 
+MCP tools are not declared to the model. The system prompt lists each server once, with the first line of its `description` or of the server's own instructions, and the model reaches the tools from `codemode` scripts, which receive each complete result and return only what the answer needs. `"exposure": "deferred"` instead lets the model load a server's tools with `tool_search` and call them directly.
+
 Global and per-conversation `mcpServers` merge per server name: a conversation entry overrides (or disables) the same-name global entry and other global entries stay available. The admin portal has panels for both scopes; changes take effect on the next response. An unreachable server logs a warning and the rest still load.
 
 The Admin MCP panels also include a small repository-owned Marketplace. Installing a reviewed preset shows its exact host command or remote endpoint, credential requirements, source, target scope, and security warning before writing an ordinary `mcpServers` entry. Local package versions are pinned. Marketplace installation does not create a separate installed database, run an automatic updater, or treat catalog inclusion as a security certification. Local stdio presets execute on the mikan host; remote presets receive the tool calls and data sent to them.

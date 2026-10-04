@@ -51,7 +51,8 @@ import * as log from "../log.js";
 import { ToolLoopGuard } from "./loop-guard.js";
 import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
-import { createCodemodeTool } from "./tools/codemode.js";
+import { createCodemodeTool, isCodemodeCallable, withScriptCallNote } from "./tools/codemode.js";
+import { renderMcpServersSection } from "./mcp.js";
 import { createToolSearchTool } from "./tools/tool-search.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { errorMessage } from "../unknown-values.js";
@@ -419,6 +420,7 @@ export class MikanAgentSession {
   ): Promise<void> {
     const tools = [...selected];
     const deferredTools = tools.filter((tool) => tool.exposure === "deferred");
+    const servers = this.sessionStore.mcpServers();
     const authorized = new Set(deferredTools.map((tool) => tool.name));
     const { harness, conversation, registry, extensionName } = attached;
     const stored = (await harness.snapshot(AgentDoc, conversation.id, context))?.tools;
@@ -430,6 +432,7 @@ export class MikanAgentSession {
         withSecretRedaction(
           createCodemodeTool({
             tools,
+            servers,
             executeNested: (tool, call) => this.executeNestedTool(tool, call),
           }),
         ),
@@ -447,15 +450,19 @@ export class MikanAgentSession {
         ),
       );
     }
-    const registered = tools;
+    const hasCodemode = tools.some((tool) => tool.name === "codemode");
+    const registered = tools.map((tool) =>
+      hasCodemode && tool.exposure === undefined && isCodemodeCallable(tool)
+        ? withScriptCallNote(tool)
+        : tool,
+    );
     registry.install(
       defineExtension({
         name: extensionName,
         tools: registered,
         sections: [
-          section("mikan", () => this.sessionStore.withMcpInstructions(this.systemPrompt), {
-            tag: false,
-          }),
+          section("mikan", () => this.systemPrompt, { tag: false }),
+          section("mcp_servers", () => renderMcpServersSection(servers) || undefined),
         ],
         hooks: [
           hook(GenerationTask, {
@@ -479,7 +486,7 @@ export class MikanAgentSession {
         model: { provider: this.model.provider, modelId: this.model.id },
         thinkingLevel: this.options.thinkingLevel,
         extensions: [registry.snapshot().extension(extensionName)!],
-        tools: registered.filter((tool) => tool.exposure !== "deferred" || loaded.has(tool.name)),
+        tools: registered.filter((tool) => tool.exposure === undefined || loaded.has(tool.name)),
       },
       context,
     );

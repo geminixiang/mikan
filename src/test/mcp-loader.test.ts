@@ -7,7 +7,7 @@ import { createReadTool } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { runTestTool } from "./tool-api.js";
 import { afterAll, describe, expect, it } from "vitest";
-import { formatMcpServerInstructions, loadMcpTools } from "../harness/mcp.js";
+import { loadMcpTools, renderMcpServersSection } from "../harness/mcp.js";
 import type { MikanHarnessTool } from "../harness/types.js";
 
 const SERVER_SCRIPT = `
@@ -198,7 +198,7 @@ describe("loadMcpTools", () => {
       expect(result.errors).toEqual([]);
       const names = result.tools.map((tool) => tool.name);
       expect(
-        result.tools.every((tool) => tool.exposure === "deferred" && tool.namespace === "test"),
+        result.tools.every((tool) => tool.exposure === "codemode" && tool.namespace === "test"),
       ).toBe(true);
       expect(names).toContain("mcp__test__echo");
       expect(names).toContain("mcp__test__boom");
@@ -213,7 +213,12 @@ describe("loadMcpTools", () => {
       expect(tagged.content).toEqual([{ type: "text", text: "tagged:urgent" }]);
 
       const boom = result.tools.find((tool) => tool.name === "mcp__test__boom")!;
-      await expect(callTool(boom, {})).rejects.toThrow("kaboom");
+      const failed = await callTool(boom, {});
+      expect(failed).toMatchObject({
+        isError: true,
+        content: [{ type: "text", text: "kaboom" }],
+        structuredContent: { isError: true, content: [{ type: "text", text: "kaboom" }] },
+      });
     } finally {
       await result.dispose();
     }
@@ -247,15 +252,13 @@ describe("loadMcpTools", () => {
     });
     try {
       expect(result.errors).toEqual([]);
-      expect(result.instructions).toEqual([
+      expect(result.servers).toEqual([
         {
-          server: "open-connector",
-          text: "Search for an action before executing it.",
+          name: "open-connector",
+          exposure: "codemode",
+          instructions: "Search for an action before executing it.",
         },
       ]);
-      expect(formatMcpServerInstructions(result.instructions)).toContain(
-        "### open-connector\nSearch for an action before executing it.",
-      );
       const execute = result.tools.find(
         (tool) => tool.name === "mcp__open-connector__execute_action",
       )!;
@@ -301,6 +304,73 @@ describe("loadMcpTools", () => {
       await new Promise<void>((resolve) => http.server.close(() => resolve()));
     }
   });
+
+  it("lists each server once in the prompt, not its tools or full instructions", async () => {
+    const section = renderMcpServersSection([
+      { name: "open-connector", exposure: "codemode", instructions: "Run actions.\nMore detail." },
+      { name: "docs", exposure: "deferred", description: "Search the product docs" },
+      { name: "quiet", exposure: "codemode" },
+    ]);
+    expect(section).toBe(
+      [
+        "MCP servers whose tools are not declared to you. Call the tools of `codemode` servers from codemode scripts. Load the tools of `tool_search` servers with `tool_search`.",
+        "- mcp__docs (tool_search): Search the product docs",
+        "- mcp__open-connector (codemode): Run actions.",
+        "- mcp__quiet (codemode)",
+      ].join("\n"),
+    );
+    expect(renderMcpServersSection([])).toBe("");
+    const many = Array.from({ length: 200 }, (_, index) => ({
+      name: `server-${String(index).padStart(3, "0")}`,
+      exposure: "codemode" as const,
+      description: "d".repeat(400),
+    }));
+    const bounded = renderMcpServersSection(many);
+    expect(bounded.length).toBeLessThanOrEqual(4096);
+    expect(bounded).toMatch(/- … \d+ more servers; find their tools with searchTools\(\)$/);
+  });
+
+  it("lets a server opt into tool_search and describe itself", async () => {
+    const result = await loadMcpTools({
+      test: {
+        command: process.execPath,
+        args: [serverPath],
+        exposure: "deferred",
+        description: "Test fixtures",
+      },
+    });
+    try {
+      expect(result.tools.every((tool) => tool.exposure === "deferred")).toBe(true);
+      expect(result.servers).toEqual([
+        { name: "test", exposure: "deferred", description: "Test fixtures" },
+      ]);
+    } finally {
+      await result.dispose();
+    }
+  }, 30_000);
+
+  it("gives scripts the whole result while the model sees a bounded one", async () => {
+    const result = await loadMcpTools({ test: { command: process.execPath, args: [serverPath] } });
+    const cwd = mkdtempSync(join(tmpdir(), "mikan-mcp-script-"));
+    try {
+      const big = result.tools.find((tool) => tool.name === "mcp__test__big")!;
+      expect(big.outputSchema).toMatchObject({
+        type: "object",
+        properties: { content: { type: "array" }, isError: { type: "boolean" } },
+        required: ["content"],
+      });
+      const output = await callTool(big, {}, cwd);
+      expect(output.structuredContent).toMatchObject({
+        content: [{ type: "text", text: expect.stringContaining('"number": 100,') }],
+      });
+      expect(output.content[0]?.type === "text" && output.content[0].text).toContain(
+        "MCP result truncated",
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      await result.dispose();
+    }
+  }, 30_000);
 
   it("bounds oversized results and spills the full result into the runtime workspace", async () => {
     const result = await loadMcpTools({ test: { command: process.execPath, args: [serverPath] } });
@@ -383,7 +453,7 @@ describe("loadMcpTools", () => {
     });
     expect(disabled.tools).toEqual([]);
     expect(disabled.errors).toEqual([]);
-    expect(disabled.instructions).toEqual([]);
+    expect(disabled.servers).toEqual([]);
     await disabled.dispose();
 
     const invalid = await loadMcpTools({

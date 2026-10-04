@@ -24,6 +24,10 @@ const searchSchema = Type.Object({
   namespace: Type.Optional(Type.String({ description: "Restrict matches to an MCP server name." })),
 });
 
+export function mcpNamespaceKey(name: string): string {
+  return name.replace(/^mcp__/, "").replace(/-/g, "_");
+}
+
 export function searchTools(options: ToolSearchOptions): MikanHarnessTool[] {
   const query = options.query.trim().toLowerCase();
   if (!query) throw new Error("query must not be empty");
@@ -32,7 +36,12 @@ export function searchTools(options: ToolSearchOptions): MikanHarnessTool[] {
     throw new Error("limit must be an integer from 1 to 20");
   const terms = [...new Set(query.match(/[\p{L}\p{N}]+/gu) ?? [])];
   return options.tools
-    .filter((tool) => options.namespace === undefined || tool.namespace === options.namespace)
+    .filter(
+      (tool) =>
+        options.namespace === undefined ||
+        (tool.namespace !== undefined &&
+          mcpNamespaceKey(tool.namespace) === mcpNamespaceKey(options.namespace)),
+    )
     .map((tool) => {
       const name = tool.name.toLowerCase();
       const description = tool.description.toLowerCase();

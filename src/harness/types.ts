@@ -387,7 +387,7 @@ export interface MikanToolResult {
 
 export type MikanHarnessTool = Omit<ToolRegistration, "execute"> & {
   outputSchema?: TSchema;
-  exposure?: "deferred";
+  exposure?: McpExposure;
   namespace?: string;
   execute(args: unknown, api: ToolExecutionApi, context: Context): Promise<MikanToolResult>;
 };
@@ -407,6 +407,7 @@ export interface ToolSearchToolOptions {
 
 export interface CodemodeToolOptions {
   tools: readonly MikanHarnessTool[];
+  servers?: readonly McpServerSummary[];
   executeNested: (
     tool: MikanHarnessTool,
     args: Parameters<MikanHarnessTool["execute"]>,
@@ -437,6 +438,17 @@ export interface McpServerConfig {
   url?: string;
   headers?: Record<string, string>;
   disabled?: boolean;
+  exposure?: McpExposure;
+  description?: string;
+}
+
+export type McpExposure = "codemode" | "deferred";
+
+export interface McpServerSummary {
+  name: string;
+  exposure: McpExposure;
+  description?: string;
+  instructions?: string;
 }
 
 type McpPresetCredentialTarget = "env" | "header" | "url";
@@ -468,15 +480,10 @@ export interface McpLoadError {
   error: string;
 }
 
-export interface McpServerInstruction {
-  server: string;
-  text: string;
-}
-
 export interface McpToolsResult {
   tools: MikanHarnessTool[];
   errors: McpLoadError[];
-  instructions: McpServerInstruction[];
+  servers: McpServerSummary[];
   dispose: () => Promise<void>;
 }
 

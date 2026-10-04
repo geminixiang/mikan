@@ -1,4 +1,15 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  type Api,
+  type Model,
+  type MutableModels,
+} from "@earendil-works/pi-ai";
+import { getCurrentSystemPrompt } from "@earendil-works/pi-ai/utils/transcript";
 
 const client = vi.hoisted(() => ({
   connect: vi.fn(),
@@ -20,18 +31,21 @@ vi.mock("@earendil-works/pi-mcp", async (importOriginal) => ({
 }));
 
 import { loadMcpTools } from "../harness/mcp.js";
+import { MikanModels } from "../harness/models.js";
+import { MikanAgentSession } from "../harness/session.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 describe("MCP connection rollback", () => {
-  test("the pending session owns connections and preserves guidance across prompt replacements", async () => {
+  test("the pending session owns connections and keeps each server's guidance", async () => {
     client.connect.mockReset().mockResolvedValue(undefined);
     client.listTools.mockReset().mockResolvedValue([]);
     client.instructions.mockReset().mockReturnValue("Use the service safely");
     client.close.mockReset().mockResolvedValue(undefined);
     const store = await SessionStore.inMemory();
     await store.connectMcp({ service: { command: "unused" } });
-    expect(store.withMcpInstructions("first")).toContain("Use the service safely");
-    expect(store.withMcpInstructions("second")).toMatch(/^second\n\n/);
+    expect(store.mcpServers()).toEqual([
+      { name: "service", exposure: "codemode", instructions: "Use the service safely" },
+    ]);
     await Promise.all([store.close(), store.close()]);
     expect(client.close).toHaveBeenCalledOnce();
     await expect(store.connectMcp({})).rejects.toThrow("closed");
@@ -95,4 +109,47 @@ describe("MCP connection rollback", () => {
     expect(result.errors).toEqual([{ server: "broken", error: failure.message }]);
     expect(client.close).toHaveBeenCalledOnce();
   });
+});
+
+test("each request lists connected servers in an mcp_servers section, not their full guidance", async () => {
+  client.connect.mockReset().mockResolvedValue(undefined);
+  client.listTools
+    .mockReset()
+    .mockResolvedValue([
+      { name: "search", description: "Search actions", inputSchema: { type: "object" } },
+    ]);
+  client.instructions.mockReset().mockReturnValue("Use the service safely.\nPage with cursors.");
+  client.close.mockReset().mockResolvedValue(undefined);
+  const dir = mkdtempSync(join(tmpdir(), "mikan-mcp-section-"));
+  const store = await SessionStore.inMemory();
+  try {
+    const tools = await store.connectMcp({ service: { command: "unused" } });
+    const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
+    const faux = fauxProvider();
+    (models.models as MutableModels).setProvider(faux.provider);
+    const session = new MikanAgentSession({
+      model: faux.getModel() as Model<Api>,
+      models,
+      sessionStore: store,
+      tools,
+      thinkingLevel: "off",
+      systemPrompt: "Test prompt",
+      settings: { compaction: { enabled: false } },
+    });
+    let systemPrompt = "";
+    faux.setResponses([
+      (context) => {
+        systemPrompt = getCurrentSystemPrompt(context.messages);
+        return fauxAssistantMessage("done");
+      },
+    ]);
+    await session.prompt("hello");
+    expect(systemPrompt).toContain(
+      "<mcp_servers>\nMCP servers whose tools are not declared to you. Call the tools of `codemode` servers from codemode scripts.\n- mcp__service (codemode): Use the service safely.\n</mcp_servers>",
+    );
+    expect(systemPrompt).not.toContain("Page with cursors.");
+  } finally {
+    await store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

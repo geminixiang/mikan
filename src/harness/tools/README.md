@@ -90,10 +90,11 @@ preserved; tools without one use Pi's text-result default rather than `unknown`.
 Models inspect unknown declarations in one script before writing a later call
 script, instead of guessing arguments or treating JSON text as an object. The guide follows Pi's global-helper and nested-tool
 layout without importing private CLI modules or advertising unsupported APIs.
-MCP schemas are omitted from the inline description altogether; other tool
-declarations share its 12,000-character limit, separate from the complete global
-helper declarations. Script discovery does not activate schemas in the model's
-direct tool set.
+The description lists no tool declarations, as in Pi's `on` mode: each declared
+tool's own description ends with what `tools.<name>(args)` resolves to
+(`withScriptCallNote`), and MCP tools are found with the discovery helpers,
+including `describeNamespace()`. Script discovery does not activate schemas in
+the model's direct tool set.
 
 pi-durable has no nested-tool dispatch API. The small local exception is
 `session.ts`'s `executeNestedTool`: it uses the same loop guard, cancellation,
@@ -114,15 +115,22 @@ a 64-MiB VM heap, and up to 40,000 text characters of emitted output; the
 options header can request another deadline or a smaller output budget.
 
 Durable `store`/`load` and classifier helpers are not implemented. Store values
-last only for one script. MCP tools retain their existing bounded result
-behavior; codemode does not reconnect clients or expand grants.
+last only for one script. Codemode does not reconnect MCP clients or expand grants.
 
-## Deferred MCP discovery
+## MCP exposure and deferred discovery
 
-MCP tools carry `exposure: "deferred"` and their server's `namespace` from
-`mcp.ts`; ordinary platform and execution tools remain direct. Connections and
-`listTools()` still happen during runner construction. Only schema declaration
-is deferred, not network connection or authorization.
+MCP tools carry their server's `exposure` and `namespace` from `mcp.ts`, as in
+Pi ([research](../../../docs/research/pi-codemode-mcp-design-2026-10.md)):
+`codemode` (default) tools are never declared and are reached only from
+scripts; `deferred` tools are declared after `tool_search` loads them. Ordinary
+platform and execution tools remain direct. Connections and `listTools()` still
+happen during runner construction; exposure changes declaration, not network
+connection or authorization.
+
+Every MCP tool declares a `CallToolResult` output schema. A script receives the
+complete result (`content`, `structuredContent`, `isError`) as the tool's
+`structuredContent`, which pi-durable never stores; the model-facing content of
+a direct call stays bounded and spilled as below.
 
 `tool-search.ts` owns keyword ranking and `tool_search`, which loads matches
 through pi-durable's `control.addTools` result for the next model call; Pi
@@ -134,7 +142,7 @@ implementation; the CLI extension cannot be imported into the native harness
 through a public ranker API. No private Pi imports or additional dependency are
 used. Search result summaries are bounded to 300 characters per tool.
 
-`tool_search` exists only when the current grants include deferred tools. It
+`tool_search` exists only when the current grants include `deferred` tools. It
 searches only not-yet-loaded tools; codemode's `searchTools()` searches all of
 its granted callable tools without loading anything. Neither can discover
 another office's tools or escape a subagent's profile grants. `tool_search` is

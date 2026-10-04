@@ -63,7 +63,10 @@ export function createSandboxTools(): MikanHarnessTool[] {
 }
 
 export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
-  const exposure = "exposure" in tool && tool.exposure === "deferred" ? "deferred" : undefined;
+  const exposure =
+    "exposure" in tool && (tool.exposure === "deferred" || tool.exposure === "codemode")
+      ? tool.exposure
+      : undefined;
   const namespace =
     "namespace" in tool && typeof tool.namespace === "string" ? tool.namespace : undefined;
   return tagHarnessTool({

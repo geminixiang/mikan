@@ -105,6 +105,8 @@ const SettingsFileSchema = Type.Object({
         url: Type.Optional(Type.String()),
         headers: Type.Optional(Type.Record(Type.String(), Type.String())),
         disabled: Type.Optional(Type.Boolean()),
+        exposure: Type.Optional(Type.Union([Type.Literal("codemode"), Type.Literal("deferred")])),
+        description: Type.Optional(Type.String()),
       }),
     ),
   ),

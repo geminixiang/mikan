@@ -134,20 +134,20 @@ remain in `src/runtime/` and `src/sessions/`.
 
 MCP belongs to the harness, not a separate integration module. `mcp.ts` connects
 stdio or streamable-HTTP servers, namespaces tools as `mcp__<server>__<tool>`,
-and preserves server instructions. The session-owned
+and keeps each server's description and instructions. The session-owned
 `SessionStore.connectMcp()` acquires these capabilities under the session writer's
 lifetime and returns only the tools; the agent runner does not retain a separate
-cleanup handle. The native harness
-system-prompt supplier composes the stored MCP guidance with each refreshed
-base prompt, so later turns cannot discard server instructions.
+cleanup handle. Each request carries Pi's `mcp_servers` prompt section, one line
+per server (`renderMcpServersSection`), in its own section so the base prompt
+stays cached; scripts read full instructions with `describeNamespace()`.
 
 MCP tools are harness-native tools, so each call receives the turn's execution
-env. They connect at construction as before, but their schemas are deferred:
-`tool_search` discovers and declares matches for the next model call, while
-codemode can discover and call any currently granted MCP tool without declaring
-it. Loaded names follow the session branch and are intersected with current
+env. They connect at construction as before and are never declared by default
+(`codemode` exposure): codemode discovers and calls any currently granted MCP
+tool. A server with `exposure: "deferred"` also gets `tool_search`, which
+declares matches for the next model call. Loaded names follow the session branch and are intersected with current
 grants on every run; direct platform/execution tools remain declared. See
-[tools/README.md](tools/README.md#deferred-mcp-discovery) for discovery and recovery
+[tools/README.md](tools/README.md#mcp-exposure-and-deferred-discovery) for discovery and recovery
 contracts. `mcp-result.ts` converts a result's content blocks (`structuredContent`
 only when `content` is empty; binary resources and audio become one-line
 descriptions), re-serializes JSON text compactly, and bounds the text by Pi's

@@ -14,9 +14,12 @@ import {
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
+import { createCodemodeTool } from "../harness/tools/codemode.js";
+import { adaptAgentTool } from "../harness/tools/pi-tools.js";
 import type { MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { contextMessages, openSessionAt } from "./session-context.js";
+import { runTestTool } from "./tool-api.js";
 
 let dir: string;
 const stores: SessionStore[] = [];
@@ -290,7 +293,7 @@ test("codemode preserves declared structured return types and values", async () 
   });
 });
 
-test("codemode keeps complete global declarations when the tool catalog exceeds its budget", async () => {
+test("codemode does not repeat declared tools; each declared tool says how scripts call it", async () => {
   const { faux, file, wrap } = setup();
   const verbose: AgentTool = {
     name: "verbose",
@@ -302,15 +305,17 @@ test("codemode keeps complete global declarations when the tool catalog exceeds 
   const session = wrap(await openSessionAt(file), [verbose]);
   faux.setResponses([
     (context) => {
-      const description =
-        getCurrentTools(context.messages).find((tool) => tool.name === "codemode")?.description ??
-        "";
+      const tools = getCurrentTools(context.messages);
+      const description = tools.find((tool) => tool.name === "codemode")?.description ?? "";
       expect(description).toContain("declare function searchTools(");
       expect(description).toContain("Promise<Array<{ name: string; description: string }>>");
       expect(description).toContain(
         "declare function describeTool(name: string): Promise<string | undefined>",
       );
-      expect(description).toContain("Declarations may be shortened");
+      expect(description).not.toContain("catalog filler");
+      expect(tools.find((tool) => tool.name === "verbose")?.description).toMatch(
+        /catalog filler\n\nCodemode: `tools\.verbose\(args\)` resolves to a string\.$/,
+      );
       return fauxAssistantMessage(
         fauxToolCall("codemode", {
           label: "Inspect an omitted declaration",
@@ -323,6 +328,63 @@ test("codemode keeps complete global declarations when the tool catalog exceeds 
   ]);
   await session.prompt("inspect the full API despite a large tool catalog");
   expect(JSON.stringify(await contextMessages(session))).toContain('"text":"true"');
+});
+
+test("MCP tools with codemode exposure are reachable only from scripts", async () => {
+  const { faux, file, wrap } = setup();
+  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
+  const scripted: AgentTool = Object.assign({ ...github.tool }, { exposure: "codemode" as const });
+  const session = wrap(await openSessionAt(file), [scripted]);
+  faux.setResponses([
+    (context) => {
+      expect(getCurrentTools(context.messages).map((tool) => tool.name)).toEqual(["codemode"]);
+      return fauxAssistantMessage(
+        fauxToolCall("codemode", {
+          label: "Call from a script",
+          code: `text(await tools.${github.tool.name}({}));`,
+        }),
+        { stopReason: "toolUse" },
+      );
+    },
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("list issues from a script");
+  expect(github.execute).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(await contextMessages(session))).toContain("result-sentinel");
+});
+
+test("a script receives a structured error result instead of a rejection", async () => {
+  const { faux, file, wrap } = setup();
+  const failing = deferredTool("mcp__qa__fail", "Fail with a structured result");
+  const tool: AgentTool = {
+    ...failing.tool,
+    outputSchema: { type: "object", properties: { isError: { type: "boolean" } } },
+    execute: async () => ({
+      content: [{ type: "text", text: "quota exceeded" }],
+      isError: true,
+      structuredContent: { isError: true, content: [{ type: "text", text: "quota exceeded" }] },
+      details: {},
+    }),
+  };
+  const session = wrap(await openSessionAt(file), [tool]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Inspect the failure",
+        code: `const result = await tools.${tool.name}({}); text("isError=" + result.isError);`,
+      }),
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  await session.prompt("inspect the failure");
+  const result = (await contextMessages(session)).find(
+    (message) => message.role === "toolResult" && message.toolName === "codemode",
+  );
+  expect(result).toMatchObject({
+    isError: false,
+    content: [{ type: "text", text: "isError=true" }],
+  });
 });
 
 test("codemode discovers and calls deferred MCP tools without declaring their schemas", async () => {
@@ -466,4 +528,39 @@ test.each([
     expect.objectContaining({ role: "toolResult", toolName: "tool_search", isError: true }),
   );
   expect(JSON.stringify(await contextMessages(session))).toContain("not loaded");
+});
+
+test("describeNamespace returns a server's instructions and tools to scripts", async () => {
+  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
+  const scripted = adaptAgentTool(
+    Object.assign({ ...github.tool }, { exposure: "codemode" as const }),
+  );
+  const codemode = createCodemodeTool({
+    tools: [scripted],
+    servers: [
+      {
+        name: "github",
+        exposure: "codemode",
+        description: "GitHub",
+        instructions: "Page with cursors.",
+      },
+    ],
+    executeNested: async (tool, call) => tool.execute(...call),
+  });
+  const result = await runTestTool(codemode, {
+    label: "Read the namespace",
+    code: 'for (const name of ["mcp__github", "github", "unknown"]) text(JSON.stringify(await describeNamespace(name)));',
+  });
+  const expected = {
+    name: "mcp__github",
+    description: "GitHub",
+    instructions: "Page with cursors.",
+    tools: ["mcp__github__list_issues"],
+  };
+  expect(result.content).toEqual([
+    { type: "text", text: JSON.stringify(expected) },
+    { type: "text", text: JSON.stringify(expected) },
+    { type: "text", text: "undefined" },
+  ]);
+  expect(codemode.description).toContain("declare function describeNamespace(");
 });

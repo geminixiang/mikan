@@ -110,7 +110,7 @@ visibility を強制できるのは `image:*` だけです。`host`、`container
 }
 ```
 
-各 entry は 1 種類の transport だけを使用します。`command` は `args`／`env`、`url` は `headers` と組み合わせられます。`disabled: true` は entry を削除せずに server を無効化します。global と conversation の設定は server name 単位で merge され、conversation 設定は同名の global server を上書きまたは無効化し、他の global entries はそのまま残ります。
+各 entry は 1 種類の transport だけを使用します。`command` は `args`／`env`、`url` は `headers` と組み合わせられます。`disabled: true` は entry を削除せずに server を無効化します。MCP ツールはモデルに宣言されません。system prompt は各 server を 1 行（`description` または server 自身の instructions の 1 行目）だけ列挙し、モデルは `codemode` スクリプトからツールを呼び出します。スクリプトは完全な結果を受け取り、回答に必要な部分だけを返します。`"exposure": "deferred"` を指定すると、モデルが `tool_search` でその server のツールを読み込み、直接呼び出せます。global と conversation の設定は server name 単位で merge され、conversation 設定は同名の global server を上書きまたは無効化し、他の global entries はそのまま残ります。
 
 Admin の MCP panel には repository-owned の curated Marketplace があります。install 前に完全な host command または remote endpoint、必要な credentials、source、target scope、security warning を表示し、確認後は通常の `mcpServers` entry だけを書き込みます。Local package version は pin され、別の installed database や automatic updater は作りません。また、catalog 掲載は security certification ではありません。Local stdio preset は mikan host 上で code を実行し、remote preset はその tool に送られた call と data を受信します。
 

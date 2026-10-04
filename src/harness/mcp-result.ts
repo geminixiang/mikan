@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { ImageContent, JsonValue, TextContent } from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { MikanToolResult } from "./types.js";
@@ -218,11 +218,23 @@ function truncationNotice(
   return `[MCP result truncated: showing ${view}. ${full}, or re-query with filters or smaller pages.]`;
 }
 
+function scriptResult(result: McpCallResult): JsonValue {
+  const copy: JsonValue = JSON.parse(
+    JSON.stringify({
+      content: Array.isArray(result.content) ? result.content : [],
+      structuredContent: result.structuredContent ?? undefined,
+      isError: result.isError === true ? true : undefined,
+    }),
+  );
+  return copy;
+}
+
 export async function guardMcpToolResult(
   result: McpCallResult,
   env: ExecutionEnv | undefined,
   context: Context,
 ): Promise<MikanToolResult> {
+  const structuredContent = scriptResult(result);
   const blocks = mcpResultContent(result).map((block) =>
     block.type === "text" ? Object.assign(block, { text: compactMcpText(block.text) }) : block,
   );
@@ -230,14 +242,17 @@ export async function guardMcpToolResult(
   const images = blocks.filter((block): block is ImageContent => block.type === "image");
   const combined = texts.map((block) => block.text).join("\n");
   if (result.isError) {
-    throw new Error(boundMcpText(combined, RESULT_LIMITS).text || "MCP tool call failed");
+    const text = boundMcpText(combined, RESULT_LIMITS).text || "MCP tool call failed";
+    return { content: [{ type: "text", text }], isError: true, structuredContent };
   }
-  if (fits(combined, RESULT_LIMITS)) return { content: blocks, details: undefined };
+  if (fits(combined, RESULT_LIMITS))
+    return { content: blocks, details: undefined, structuredContent };
   const bounded = boundMcpText(combined, RESULT_LIMITS);
   const spillPath = await spillFullResult(env, combined, context);
   const notice = truncationNotice(bounded, Buffer.byteLength(combined, "utf8"), spillPath);
   return {
     content: [{ type: "text", text: `${bounded.text}\n\n${notice}` }, ...images],
     details: undefined,
+    structuredContent,
   };
 }

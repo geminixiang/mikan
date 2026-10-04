@@ -42,8 +42,8 @@ import type {
   SessionRunStatus,
 } from "./types.js";
 import { RUN_CAUSE_CUSTOM_TYPE } from "./types.js";
-import { loadMcpTools, formatMcpServerInstructions } from "../harness/mcp.js";
-import type { McpServerConfig, McpToolsResult } from "../harness/types.js";
+import { loadMcpTools } from "../harness/mcp.js";
+import type { McpServerConfig, McpServerSummary, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
 import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
 import { isThreadSessionKey } from "./session-key.js";
@@ -770,9 +770,8 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  withMcpInstructions(prompt: string): string {
-    const instructions = formatMcpServerInstructions(this.mcp?.instructions ?? []);
-    return instructions ? `${prompt}\n\n${instructions}` : prompt;
+  mcpServers(): readonly McpServerSummary[] {
+    return this.mcp?.servers ?? [];
   }
 
   async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {
