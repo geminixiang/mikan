@@ -13,6 +13,10 @@ any release.
 
 - Embedding API: `MessagingBot` no longer declares the optional `addReaction`, `uploadFile`, `openDirectConversation`, `fetchHistory`, and `listUsers`, which nothing called through it since executable extensions were removed (ADR 0006); the Slack bot's unused `fetchHistory` and `listUsers` are removed with them.
 
+### Fixed
+
+- The startup log reports the HTTP idle timeout mikan applies, 300000ms by default, instead of `undefinedms` when `HTTP_IDLE_TIMEOUT` is not set.
+
 ## [1.0.0-beta.95]
 
 ### Removed

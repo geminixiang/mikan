@@ -45,6 +45,12 @@ describe("configureHttpDispatcher", () => {
     expect(getGlobalDispatcher()).toBeInstanceOf(EnvHttpProxyAgent);
   });
 
+  test("returns the idle timeout it applied, the default when none is given", () => {
+    expect(configureHttpDispatcher()).toBe(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
+    expect(configureHttpDispatcher(undefined)).toBe(DEFAULT_HTTP_IDLE_TIMEOUT_MS);
+    expect(configureHttpDispatcher(60_000)).toBe(60_000);
+  });
+
   test("swaps global fetch to undici's and keeps it on reconfigure", () => {
     configureHttpDispatcher();
     const installedFetch = globalThis.fetch;

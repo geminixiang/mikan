@@ -168,8 +168,9 @@ if (plan.mode === "migrate") {
   process.exit(await runMigrateCommand(plan.migrateArgs ?? []));
 }
 
-const httpIdleTimeoutMs = parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT"));
-configureHttpDispatcher(httpIdleTimeoutMs);
+const httpIdleTimeoutMs = configureHttpDispatcher(
+  parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT")),
+);
 
 if (plan.mode === "help") {
   console.log(helpText());

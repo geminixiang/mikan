@@ -18,7 +18,7 @@ export function parseHttpIdleTimeoutMs(value: unknown): number | undefined {
   return Math.floor(value);
 }
 
-export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): void {
+export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): number {
   const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
   if (normalizedTimeoutMs === undefined) {
     throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
@@ -40,4 +40,5 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
     (undici as { install?: () => void }).install?.();
     installedGlobalFetch = globalThis.fetch;
   }
+  return normalizedTimeoutMs;
 }
