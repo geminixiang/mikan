@@ -21,7 +21,6 @@ import { GITHUB_PR_TOOL } from "./adapters/github/tools/pr.js";
 import { GITHUB_READ_TOOL } from "./adapters/github/tools/read.js";
 import { GITHUB_REVIEW_REPLY_TOOL } from "./adapters/github/tools/review-reply.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
-import { downloadChannel } from "./cli/download.js";
 import { EventScheduler } from "./events/scheduler.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./cli/process-lifecycle.js";
@@ -200,15 +199,6 @@ if (plan.mode === "onboard") {
     console.error(errorMessage(err));
     process.exit(1);
   }
-}
-
-if (plan.mode === "download" && plan.downloadChannel) {
-  if (!SLACK_BOT_TOKEN) {
-    console.error("Missing env: SLACK_BOT_TOKEN");
-    process.exit(1);
-  }
-  await downloadChannel(plan.downloadChannel, SLACK_BOT_TOKEN);
-  process.exit(0);
 }
 
 const sandbox = plan.sandbox;

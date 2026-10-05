@@ -8,7 +8,6 @@ const SUBCOMMANDS = ["migrate", "office", "env"] as const;
 
 interface BootOptions {
   sandbox?: string;
-  download?: string;
   help?: boolean;
   version?: boolean;
   onboard?: boolean;
@@ -20,7 +19,6 @@ function bootCommand() {
     .helpOption(false)
     .argument("[working-directory...]", "Workspace directory (default: ~/.mikan/workspace)")
     .option("--sandbox <spec>", "host | container:<name> | image:<image[:tag]>", nonEmptyValue)
-    .option("--download <channel>", "Dump a Slack channel's history, then exit", nonEmptyValue)
     .option("--onboard", "Interactive first-run setup (also: mikan onboard)")
     .option("-v, --version", "Print version")
     .option("-V", "Print version")
@@ -36,7 +34,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   const options = command.opts<BootOptions & { V?: boolean }>();
   const onboardFirst = args[0] === "onboard";
   const workingDirArg = (onboardFirst ? command.args.slice(1) : command.args).at(-1);
-  const downloadChannel = options.download;
   const sandboxArg = options.sandbox;
   const stateDir = stateDirPath();
   return {
@@ -45,7 +42,6 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
     workingDir: workingDirArg ? resolve(workingDirArg) : join(stateDir, "workspace"),
     workingDirExplicit: workingDirArg !== undefined,
     sandbox: sandboxArg === undefined ? { type: "host" } : parseSandboxArg(sandboxArg),
-    downloadChannel,
   };
 }
 
@@ -68,7 +64,6 @@ function bootMode(options: BootOptions, onboardFirst: boolean): BootPlan["mode"]
   if (options.help) return "help";
   if (options.version) return "version";
   if (onboardFirst || options.onboard) return "onboard";
-  if (options.download) return "download";
   return "run";
 }
 

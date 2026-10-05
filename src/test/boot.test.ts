@@ -29,10 +29,9 @@ describe("resolveBoot", () => {
   });
 
   test("--flag value and --flag=value forms are equivalent", () => {
-    const a = resolveBoot(["--sandbox", "container:dev", "--download", "C1"]);
-    const b = resolveBoot(["--sandbox=container:dev", "--download=C1"]);
+    const a = resolveBoot(["--sandbox", "container:dev"]);
+    const b = resolveBoot(["--sandbox=container:dev"]);
     expect(a.sandbox).toEqual(b.sandbox);
-    expect(a.downloadChannel).toBe(b.downloadChannel);
   });
 
   test("the state dir is always ~/.mikan, whatever STATE_DIR says", () => {
@@ -51,10 +50,9 @@ describe("resolveBoot", () => {
   );
 
   test("flag values are never taken as the positional working dir", () => {
-    const plan = resolveBoot(["--sandbox", "host", "--download", "C123"]);
+    const plan = resolveBoot(["--sandbox", "host"]);
     expect(plan.workingDirExplicit).toBe(false);
-    expect(plan.mode).toBe("download");
-    expect(plan.downloadChannel).toBe("C123");
+    expect(plan.mode).toBe("run");
   });
 
   test("--sandbox parses the sandbox DSL", () => {
@@ -71,11 +69,10 @@ describe("resolveBoot", () => {
     expect(() => resolveBoot(["--sandbox=bogus:nope"])).toThrow();
   });
 
-  test("mode priority: help > version > onboard > download > run", () => {
+  test("mode priority: help > version > onboard > run", () => {
     expect(resolveBoot(["--version", "--help"]).mode).toBe("help");
     expect(resolveBoot(["--onboard", "--version"]).mode).toBe("version");
-    expect(resolveBoot(["--download=C1", "--onboard"]).mode).toBe("onboard");
-    expect(resolveBoot(["--download=C1"]).mode).toBe("download");
+    expect(resolveBoot(["--onboard"]).mode).toBe("onboard");
   });
 
   test("`onboard` subcommand selects onboard mode, but only in first position", () => {
@@ -113,7 +110,7 @@ describe("resolveBoot", () => {
 describe("helpText", () => {
   test("documents every flag the parser accepts", () => {
     const help = helpText();
-    for (const flag of ["--sandbox", "mikan onboard", "--download", "--version", "--help"]) {
+    for (const flag of ["--sandbox", "mikan onboard", "--version", "--help"]) {
       expect(help).toContain(flag);
     }
     expect(help).not.toContain("--worker-token");
@@ -122,7 +119,11 @@ describe("helpText", () => {
 });
 
 describe("arg-grammar", () => {
-  test.each([["--download"], ["--sandbox"]])("rejects missing option values: %j", (...args) => {
+  test("--download is an unknown option", () => {
+    expect(() => resolveBoot(["--download", "C0123456789"])).toThrow(/unknown option '--download'/);
+  });
+
+  test.each([["--sandbox"]])("rejects missing option values: %j", (...args) => {
     expect(() => resolveBoot(args)).toThrow();
   });
 });

@@ -139,7 +139,6 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 | `mikan onboard`                                                        | 必須のグローバル設定ファイルを作成                                                                      |
 | `mikan [--sandbox=<mode>] [working-directory]`                         | 設定済みの platform bots を起動。working directory の既定値は `~/.mikan/workspace`                      |
 | `mikan env`                                                            | 環境変数の完全なインベントリと、現在設定されている内容を表示                                            |
-| `mikan --download <channel-id>`                                        | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                                          |
 | `mikan --version`                                                      | インストール済み version を表示                                                                         |
 | `mikan --help`                                                         | CLI の使い方と platform-token のサマリーを表示                                                          |
 | `mikan office list`                                                    | 各 office key とそのプラットフォーム・conversation id を一覧表示                                        |

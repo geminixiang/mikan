@@ -197,12 +197,6 @@ Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`
 - [Sandbox](src/content/docs/sandbox.mdx)
 - [Embedding mikan](deploy/examples/embedder/README.md) — build your own agent on the published package interface
 
-## Slack: Download channel history
-
-```bash
-mikan --download C0123456789
-```
-
 ## Development
 
 ```bash

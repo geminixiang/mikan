@@ -10,12 +10,11 @@ export interface OnboardIo {
 }
 
 export interface BootPlan {
-  mode: "migrate" | "office" | "env" | "help" | "version" | "onboard" | "download" | "run";
+  mode: "migrate" | "office" | "env" | "help" | "version" | "onboard" | "run";
   migrateArgs?: string[];
   officeArgs?: string[];
   stateDir: string;
   workingDir: string;
   workingDirExplicit: boolean;
   sandbox: SandboxConfig;
-  downloadChannel?: string;
 }

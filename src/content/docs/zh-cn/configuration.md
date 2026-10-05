@@ -139,7 +139,6 @@ OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTO
 | `mikan onboard`                                                        | 创建必需的全局设置文件                                                   |
 | `mikan [--sandbox=<mode>] [working-directory]`                         | 启动已配置的平台 bot；工作目录默认为 `~/.mikan/workspace`                |
 | `mikan env`                                                            | 显示完整的环境变量清单及当前的设置状态                                   |
-| `mikan --download <channel-id>`                                        | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`                          |
 | `mikan --version`                                                      | 输出已安装版本                                                           |
 | `mikan --help`                                                         | 显示 CLI 用法与平台令牌摘要                                              |
 | `mikan office list`                                                    | 列出每个 office key 及其平台和对话 id                                    |

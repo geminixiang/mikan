@@ -146,7 +146,6 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 | `mikan [--sandbox=<mode>] [working-directory]`                         | Start configured platform bots; the working directory defaults to `~/.mikan/workspace`  |
 | `--sandbox=host \| container:<name> \| image:<image>`                  | Select tool execution mode; default is `host`                                           |
 | `mikan env`                                                            | Show the full environment-variable inventory and what is currently set                  |
-| `mikan --download <channel-id>`                                        | Download Slack channel history; requires `SLACK_BOT_TOKEN`                              |
 | `mikan --version`                                                      | Print the installed version                                                             |
 | `mikan --help`                                                         | Show CLI usage and the platform-token summary                                           |
 | `mikan office list`                                                    | List each office key with its platform and conversation id                              |
