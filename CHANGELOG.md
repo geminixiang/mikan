@@ -19,6 +19,7 @@ any release.
 
 ### Changed
 
+- `mikan onboard` asks fewer questions: Anthropic and OpenAI use their default model (change it later with `/pi-model` or `settings.json`), `image` uses `ghcr.io/geminixiang/mikan-sandbox:latest`, and the sandbox choice is host or image.
 - `mikan onboard` ends by listing only the variables that are set, instead of all 50-odd variables mikan reads; `mikan env` still prints the full inventory.
 - `mikan migrate` gains `0012-legacy-office-files`, which removes the `last_prompt.jsonl` debug prompt and the `auto-reply.disabled` marker that 0.5.3 left in office directories, where sandboxes could still read them. 1.0 writes neither.
 - `@earendil-works/pi-codemode` and `@earendil-works/pi-mcp` are pinned to the tested 1.0.0, like the other Pi packages, so `npm i -g` no longer installs a newer, untested release.

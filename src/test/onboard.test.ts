@@ -30,6 +30,7 @@ function scriptedIo(answers: string[]): OnboardIo & { transcript: string[] } {
     ask: next,
     askSecret: next,
     select: async (query, labels) => {
+      transcript.push(...labels);
       const index = Number(await next(query)) - 1;
       if (index < 0 || index >= labels.length) throw new Error("Invalid scripted selection");
       return index;
@@ -55,7 +56,7 @@ describe("renderEnvFile", () => {
 describe("runOnboardWizard", () => {
   test("slack + anthropic + host writes settings and env file", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "", "1"]);
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
 
@@ -72,9 +73,22 @@ describe("runOnboardWizard", () => {
     expect(pendingMigrations(dir)).toEqual([]);
   });
 
+  test("uses the provider's default model and image without asking, offering host or image", async () => {
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "2"]);
+    await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
+
+    const transcript = io.transcript.join("\n");
+    expect(transcript).not.toMatch(/Model \[|Image \[/);
+    expect(transcript).not.toContain("cloudflare");
+    expect(transcript).toContain("--sandbox image:ghcr.io/geminixiang/mikan-sandbox:latest");
+    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")).llm.model).toBe(
+      "claude-sonnet-4-6",
+    );
+  });
+
   test("ends by listing only the variables that are set", async () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "", "1"]);
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
 
     const transcript = io.transcript.join("\n");
@@ -98,7 +112,6 @@ describe("runOnboardWizard", () => {
       "gw-key",
       "chatgpt, gpt-5.6-sol",
       "2",
-      "",
     ]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
@@ -122,7 +135,7 @@ describe("runOnboardWizard", () => {
 
   test("github adapter asks the agent token, webhook secret, and repositories", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["4", "github_pat_x", "hush", "acme/*", "2", "sk-oai", "", "1"]);
+    const io = scriptedIo(["4", "github_pat_x", "hush", "acme/*", "2", "sk-oai", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
@@ -136,13 +149,13 @@ describe("runOnboardWizard", () => {
 
   test("re-prompts on empty required answers", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["3", "", "dc-token", "1", "sk-ant", "", "1"]);
+    const io = scriptedIo(["3", "", "dc-token", "1", "sk-ant", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: envFile })).toBe(0);
     expect(readFileSync(envFile, "utf-8")).toContain("DISCORD_BOT_TOKEN=dc-token");
   });
 
   test("declining confirmation leaves all files untouched and hides secrets", async () => {
-    const io = scriptedIo(["2", "tg-secret", "1", "api-secret", "", "1"]);
+    const io = scriptedIo(["2", "tg-secret", "1", "api-secret", "1"]);
     io.confirm = async () => false;
     expect(await runOnboardWizard(dir, io)).toBe(1);
     expect(existsSync(join(dir, "settings.json"))).toBe(false);
@@ -181,7 +194,7 @@ describe("runOnboardWizard", () => {
   test("preserves unrelated vars in an existing env file", async () => {
     const envFile = join(dir, "mikan.env");
     writeFileSync(envFile, "SENTRY_DSN=https://x@sentry.io/1\nSLACK_BOT_TOKEN=stale\n");
-    const io = scriptedIo(["1", "xapp-new", "xoxb-new", "1", "sk-ant", "", "1"]);
+    const io = scriptedIo(["1", "xapp-new", "xoxb-new", "1", "sk-ant", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: envFile })).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
     expect(envContent).toContain("SENTRY_DSN=https://x@sentry.io/1");

@@ -79,13 +79,11 @@ async function askLlm(
   );
   if (index === 0) {
     env.ANTHROPIC_API_KEY = await askRequired(io, "  ANTHROPIC_API_KEY: ", true);
-    const model = (await io.ask("  Model [claude-sonnet-4-6]: ")).trim() || "claude-sonnet-4-6";
-    return { llm: { provider: "anthropic", model } };
+    return { llm: { provider: "anthropic", model: "claude-sonnet-4-6" } };
   }
   if (index === 1) {
     env.OPENAI_API_KEY = await askRequired(io, "  OPENAI_API_KEY: ", true);
-    const model = (await io.ask("  Model [gpt-5.2]: ")).trim() || "gpt-5.2";
-    return { llm: { provider: "openai", model } };
+    return { llm: { provider: "openai", model: "gpt-5.2" } };
   }
   const provider = (await io.ask("  Provider name [custom]: ")).trim() || "custom";
   const baseUrl = await askRequired(io, "  Base URL (e.g. http://host:8080/v1): ");
@@ -116,21 +114,12 @@ async function askSandbox(io: OnboardIo): Promise<string | undefined> {
   const index = await askChoice(
     io,
     [
-      "host — run directly on this machine (default)",
-      "image — per-conversation Docker containers (needs Docker)",
-      "other — configure later via --sandbox (cloudflare)",
+      "host — run directly on this machine",
+      "image — one Docker container per conversation (needs Docker)",
     ],
     "Sandbox",
   );
-  if (index === 0) return undefined;
-  if (index === 1) {
-    const image =
-      (await io.ask("  Image [ghcr.io/geminixiang/mikan-sandbox:latest]: ")).trim() ||
-      "ghcr.io/geminixiang/mikan-sandbox:latest";
-    return `image:${image}`;
-  }
-  io.print("  See `mikan --help` for the --sandbox spec.");
-  return undefined;
+  return index === 1 ? "image:ghcr.io/geminixiang/mikan-sandbox:latest" : undefined;
 }
 
 export function renderEnvFile(existing: string | undefined, vars: Record<string, string>): string {
