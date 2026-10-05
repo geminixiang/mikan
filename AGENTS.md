@@ -61,7 +61,7 @@ Take every change except a documentation-only one through these steps in order. 
 4. **Compare** before and after with numbers: correctness, cost, latency, storage, code size.
 5. **Evaluate** each candidate against the best-design bar below and pick the best that passes. If none passes, return to step 1.
 6. **Implement and test**, failing test first for a behavior change.
-7. **Ship**: push to `main`, trigger the Slack E2E workflow (`slack-e2e.yml`) on GitHub, and see it pass. Only then is the change done.
+7. **Ship**: push to `main` and see CI pass. When the change can alter the path a Slack message takes through a running daemon, also trigger the Slack E2E workflow (`slack-e2e.yml`) and see it pass. That path covers boot and onboarding, settings and model loading, Slack intake and replies, session storage and routing, the run loop and its tools, scheduled events, and any dependency the daemon loads, such as Pi. Changes outside it, such as `mikan migrate` steps, other platform adapters, the Admin portal, and test-only changes, are done when CI passes. State in the report which case applied.
 
 The best design meets these, and when they conflict, the earlier one wins:
 
