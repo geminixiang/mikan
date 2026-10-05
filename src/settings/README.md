@@ -13,7 +13,7 @@ writes those files goes through this module; nothing else parses them.
 
 ## State directory
 
-The global file is found through the caller's state dir: `office.workspace.stateDir` for office readers, an explicit `stateDir` argument for global-only readers and writers. Nothing here reads `STATE_DIR`/`MIKAN_STATE_DIR`; those are CLI inputs that `src/cli/arg-grammar.ts` resolves once at boot. An embedder that builds its own `Workspace` therefore gets its own `settings.json` and `models.json`, never `~/.mikan`'s. Pass `office.workspace.stateDir`, not `office.stateDir`, which is the office's own state directory.
+The global file is found through the caller's state dir: `office.workspace.stateDir` for office readers, an explicit `stateDir` argument for global-only readers and writers. Only the CLI uses `~/.mikan` (`stateDirPath` in `src/cli/arg-grammar.ts`). An embedder that builds its own `Workspace` therefore gets its own `settings.json` and `models.json`, never `~/.mikan`'s. Pass `office.workspace.stateDir`, not `office.stateDir`, which is the office's own state directory.
 
 ## Scope rules
 

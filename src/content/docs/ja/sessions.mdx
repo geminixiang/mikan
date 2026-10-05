@@ -33,7 +33,7 @@ session key は `conversationId` 単体か、scoped session の場合は `conver
 
 ## Session key と office
 
-session key は生のプラットフォーム値のままです。`src/sessions/session-key.ts` の文法が office key を目にすることはありません。runtime state は、その conversation の office と session key の組で指し示されるため、生の conversation id を共有する 2 つのプラットフォームが互いの runner、queue、stop state を選ぶことは決してありません。ストレージの path は office に従い、session ファイルは sandbox から見えない `<state-dir>/conversations/<officeKey>/sessions/` 配下に置かれます。
+session key は生のプラットフォーム値のままです。`src/sessions/session-key.ts` の文法が office key を目にすることはありません。runtime state は、その conversation の office と session key の組で指し示されるため、生の conversation id を共有する 2 つのプラットフォームが互いの runner、queue、stop state を選ぶことは決してありません。ストレージの path は office に従い、session ファイルは sandbox から見えない `~/.mikan/conversations/<officeKey>/sessions/` 配下に置かれます。
 
 ## セッション識別子の安全性
 
@@ -46,7 +46,7 @@ session key は常にちょうど 1 つの会話に属します。プラット�
 - workspace/
   - v1-slack-c0aaaaaa1-…/ 1 つの office
     - **log.jsonl** プラットフォームのメッセージ履歴
-- state-dir/conversations/
+- ~/.mikan/conversations/
   - v1-slack-c0aaaaaa1-…/ host のみにある office の状態
     - **sessions.db** その office のすべての session（tool result を含む）
 

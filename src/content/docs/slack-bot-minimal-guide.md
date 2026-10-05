@@ -159,7 +159,7 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan
 ```
 
-The state directory defaults to `~/.mikan` and the working directory to `<state-dir>/workspace`; pass `--state-dir=<dir>` or a path argument to change them. `mikan --help` lists all flags, and `mikan env` shows which variables are currently set.
+mikan keeps its state in `~/.mikan`, and the working directory defaults to `~/.mikan/workspace`; pass a path argument to change it. `mikan --help` lists all flags, and `mikan env` shows which variables are currently set.
 
 The bot responds in DMs and when mentioned in channels. Triggered Slack thread work uses an isolated session whose key includes the thread timestamp. An ordinary unmentioned reply in a shared-channel thread is logged but does not start a run.
 

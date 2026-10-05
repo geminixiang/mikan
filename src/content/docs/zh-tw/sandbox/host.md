@@ -11,7 +11,7 @@ mikan --sandbox=host /path/to/workspace
 
 - commands 直接在宿主機執行
 - 不注入 vault env
-- `/pi-login` 仍可把 credential 存進 `state-dir/vaults`，以平台使用者為 key；env 項目只是不會被用到，但該 vault 中的 _file_ credential 會讓執行失敗並拋出 `Sandbox type "host" does not support vault file mounts`
+- `/pi-login` 仍可把 credential 存進 `~/.mikan/vaults`，以平台使用者為 key；env 項目只是不會被用到，但該 vault 中的 _file_ credential 會讓執行失敗並拋出 `Sandbox type "host" does not support vault file mounts`
 - bash commands 會在 mikan process 自己的工作目錄下啟動
 
 ## 不強制 private office

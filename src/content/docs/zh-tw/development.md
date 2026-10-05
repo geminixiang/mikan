@@ -68,13 +68,13 @@ npm run test:office:docker
 使用獨立的 state directory，以免開發環境覆寫 production instance：
 
 ```bash
-./dist/main.js --onboard --state-dir="$HOME/.mikan-dev"
-./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js onboard
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
 ```
 
 正常 bot 模式仍至少需要一組完整的平台憑證。
 
-該 workspace 中的對話目錄是以 office key 命名，而不是原始平台 id。`./dist/main.js office list --state-dir="$HOME/.mikan-dev"` 會印出 registry——每個 office 屬於哪個平台與哪個原始 conversation id——以及任何尚未完成的遷移。
+該 workspace 中的對話目錄是以 office key 命名，而不是原始平台 id。`HOME="$HOME/mikan-dev" ./dist/main.js office list` 會印出 registry——每個 office 屬於哪個平台與哪個原始 conversation id——以及任何尚未完成的遷移。
 
 ## 端對端測試
 

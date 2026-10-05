@@ -37,13 +37,15 @@ Rules enforced in code:
 - Conversation settings are read from the state dir only. They historically
   lived at `<office dir>/settings.json` — which is bind-mounted rw — so a
   sandboxed agent could widen its own visibility and remount the whole
-  workspace. `conversationSettingsPath(office)` migrates legacy files once
-  and never reads the mounted location again; malformed settings throw
-  rather than falling back to the mounted copy.
-- Startup refuses (fatal under sandboxed modes) a `--state-dir` located
-  inside the working directory (`assertStateDirOutsideWorkspace`).
-- Multi-instance hosts should give each instance its own `--state-dir`;
-  conversation settings, auth, and vaults are keyed per state dir.
+  workspace. `mikan migrate` moves 0.5.3 files out
+  (`0003-conversation-settings`), and `conversationSettingsPath(office)` never
+  reads the mounted location; malformed settings throw rather than falling
+  back to a mounted copy.
+- Startup refuses (fatal under sandboxed modes) a working directory that
+  contains `~/.mikan` (`assertStateDirOutsideWorkspace`).
+- Multi-instance hosts run each instance as its own user, because the state
+  dir is that user's `~/.mikan`; conversation settings, auth, and vaults are
+  keyed per state dir.
 
 ### Workspace mounts
 

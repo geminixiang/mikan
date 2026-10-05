@@ -167,7 +167,7 @@ sequenceDiagram
     ├── scratch/               # in-progress working area
     └── skills/                # office-level skills
 
-<state-dir>/
+~/.mikan/
 ├── settings.json              # global settings
 ├── models.json                # custom providers and models
 ├── office-registry.json       # office inventory
@@ -180,7 +180,7 @@ sequenceDiagram
 └── vaults/<vaultId>/          # credentials
 ```
 
-The default state directory is `~/.mikan`. It must remain outside sandbox-visible workspace paths. `MEMORY.md`, `skills`, `events`, and `agents` are reserved workspace-root names and are never office directories.
+The state directory is `~/.mikan`. It must remain outside sandbox-visible workspace paths. `MEMORY.md`, `skills`, `events`, and `agents` are reserved workspace-root names and are never office directories.
 
 Design points:
 
@@ -220,7 +220,7 @@ flowchart TD
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
-  VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
+  VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
@@ -228,7 +228,7 @@ flowchart TD
 Key points:
 
 - credentials do not go directly into the workspace
-- vaults live in `--state-dir`
+- vaults live in `~/.mikan`
 - at execution time, the office's vault is routed to the corresponding sandbox
 - `image` / `cloudflare` modes key the vault by office key — the same string that names the office in the workspace and the registry; `container:<name>` uses a shared container vault; `host` keys by user and does not inject vault env
 - sandbox resource names (container names and Cloudflare scopes) are still derived from the raw conversation id. A collision there costs a runtime recreate, never credential access

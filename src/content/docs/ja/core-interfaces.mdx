@@ -200,7 +200,7 @@ model turn loop、message 永続化、retries、compaction、budget circuit brea
 
 ### `MikanModels`
 
-`MikanModels` は組み込みの `pi-ai` models と `<state-dir>/models.json` のカスタム provider を解決します。provider credentials はそのファイルか環境変数から解決されます。Vault credentials は別の境界です。tool execution に注入されるものであり、host 側の model client を認証するために使われるものではありません。
+`MikanModels` は組み込みの `pi-ai` models と `~/.mikan/models.json` のカスタム provider を解決します。provider credentials はそのファイルか環境変数から解決されます。Vault credentials は別の境界です。tool execution に注入されるものであり、host 側の model client を認証するために使われるものではありません。
 
 ### Subagent profiles
 
@@ -292,10 +292,10 @@ Office key は**元に戻せません**。`OfficeRegistry`（`office-registry.js
 
 ### 2 つの記録
 
-| 記録                                             | 目的                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------- |
-| `<office>/log.jsonl`                             | Platform の真実: user/bot の messages と attachments          |
-| `<state-dir>/conversations/<office>/sessions.db` | Agent の真実: prompts、model/tool messages、forks、compaction |
+| 記録                                          | 目的                                                          |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| `<office>/log.jsonl`                          | Platform の真実: user/bot の messages と attachments          |
+| `~/.mikan/conversations/<office>/sessions.db` | Agent の真実: prompts、model/tool messages、forks、compaction |
 
 これらを統合しないでください。Chat history は欠けている top-level agent session を再構築できますが、agent sessions には platform に現れなかったデータが含まれます。
 
@@ -313,7 +313,7 @@ Session keys は `conversationId[:suffix]` を使い、**生の platform 値の�
 
 ソース: `src/events/index.ts`。
 
-各 office のスケジュールされた event は JSON ファイルで、その office の host 専用 State dir、`<state-dir>/conversations/<officeKey>/events/` に置かれます。正規の union は次のとおりです:
+各 office のスケジュールされた event は JSON ファイルで、その office の host 専用 State dir、`~/.mikan/conversations/<officeKey>/events/` に置かれます。正規の union は次のとおりです:
 
 ```ts
 type EventFilePayload =
@@ -328,21 +328,21 @@ type EventFilePayload =
 
 ## 11. 永続化されたファイルシステムのインターフェース
 
-| パス                                                  | 所有者                | 可視性 / 互換性                                |
-| ----------------------------------------------------- | --------------------- | ---------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | Host-only のグローバル設定                     |
-| `<state-dir>/office-registry.json`                    | office registry       | Host-only の office 一覧                       |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only の conversation override             |
-| `<state-dir>/models.json`                             | harness model catalog | Host-only のカスタム providers/models          |
-| `<state-dir>/vaults/**`                               | vault/login           | Host-only の secrets と mount files            |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox から見える永続 memory                  |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox から見える prompt instructions         |
-| `<workspace>/agents/*.md`                             | subagent profiles     | 組み込みに対するインストールごとの model patch |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only な platform history                |
-| `<state-dir>/conversations/<officeKey>/sessions.db`   | session store         | host 専用の agent history（pi-durable SQLite） |
-| `<state-dir>/conversations/<officeKey>/events/*.json` | event store           | host 専用のスケジュール event                  |
+| パス                                               | 所有者                | 可視性 / 互換性                                |
+| -------------------------------------------------- | --------------------- | ---------------------------------------------- |
+| `~/.mikan/settings.json`                           | config                | Host-only のグローバル設定                     |
+| `~/.mikan/office-registry.json`                    | office registry       | Host-only の office 一覧                       |
+| `~/.mikan/conversations/<officeKey>/settings.json` | config/admin          | Host-only の conversation override             |
+| `~/.mikan/models.json`                             | harness model catalog | Host-only のカスタム providers/models          |
+| `~/.mikan/vaults/**`                               | vault/login           | Host-only の secrets と mount files            |
+| `<workspace>/MEMORY.md`                            | agent/user            | Sandbox から見える永続 memory                  |
+| `<workspace>/skills/**/SKILL.md`                   | skills                | Sandbox から見える prompt instructions         |
+| `<workspace>/agents/*.md`                          | subagent profiles     | 組み込みに対するインストールごとの model patch |
+| `<workspace>/<officeKey>/log.jsonl`                | platform adapters     | Append-only な platform history                |
+| `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | host 専用の agent history（pi-durable SQLite） |
+| `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | host 専用のスケジュール event                  |
 
-`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`<state-dir>/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
+`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`~/.mikan/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
 
 state directory は sandbox から見える workspace 内に置いてはなりません。重要な state files は atomic な private write を使い、append-only logs は append セマンティクスを使います。
 

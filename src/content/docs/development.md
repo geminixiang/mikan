@@ -68,13 +68,13 @@ This one is not part of `npm test`: it needs a working Docker daemon. It creates
 Use a separate state directory so development does not overwrite a production instance:
 
 ```bash
-./dist/main.js --onboard --state-dir="$HOME/.mikan-dev"
-./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js onboard
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
 ```
 
 At least one complete platform credential set is still required for normal bot mode.
 
-Conversation directories in that workspace are named by office key, not by raw platform id. `./dist/main.js office list --state-dir="$HOME/.mikan-dev"` prints the registry — which platform and raw conversation id each office belongs to — plus any migration still pending.
+Conversation directories in that workspace are named by office key, not by raw platform id. `HOME="$HOME/mikan-dev" ./dist/main.js office list` prints the registry — which platform and raw conversation id each office belongs to — plus any migration still pending.
 
 ## End-to-end tests
 

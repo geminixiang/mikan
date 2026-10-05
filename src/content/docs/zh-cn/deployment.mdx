@@ -22,7 +22,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=24.15.0`
 - 至少一套完整的 Slack、Telegram、Discord 或 GitHub 凭证
-- 持久 state directory（默认 `~/.mikan`）；工作目录默认为 `<state-dir>/workspace`
+- PM2 用户持久存在的 `~/.mikan`，mikan 的状态都存放在这里；工作目录默认为 `~/.mikan/workspace`
 - 使用 `image:*` 或 `container:*` 时，PM2 用户可以使用 Docker
 
 发布的 `mikan-sandbox` 镜像是工具运行时，不是独立的 mikan 服务器镜像。PM2 在主机上运行 `mikan`；image 模式通过主机 Docker daemon 创建和管理容器。
@@ -37,29 +37,18 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. 在服务将使用的确切 state directory 中创建全局设置文件：
+2. 以 PM2 运行时的用户身份执行设置。它会询问聊天平台的 token、LLM provider 和沙箱模式，
+   然后写入 `~/.mikan/settings.json` 与 secrets 文件 `~/.mikan/mikan.env`（权限 `0600`）：
 
    ```bash
-   mkdir -p /srv/mikan/workspace
-   mikan onboard --state-dir=/srv/mikan/state
+   mikan onboard
    ```
 
-   检查 `/srv/mikan/state/settings.json`。该目录必须归 PM2 进程用户所有，且不能全局可写；
-   建议执行 `chmod 0700 /srv/mikan/state`。
+   所有 secret 都存放在 `~/.mikan/mikan.env`，ecosystem 文件会在启动时加载它；切勿把 secret 放进
+   ecosystem 文件或 PM2 自身的环境。之后要添加平台或变量时，直接编辑这个文件；`mikan env` 会列出
+   所有变量及当前的设置状态。
 
-3. 创建 secrets 文件。所有平台 token、provider key 及其他 secret 都存放在
-   `~/.mikan/mikan.env`——权限 `0600`、位于任何 repo 树之外——ecosystem 文件会在启动时加载它。
-   切勿把 secret 放进 ecosystem 文件或 PM2 自身的环境中：
-
-   ```bash
-   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
-   chmod 600 ~/.mikan/mikan.env
-   ```
-
-   至少填入一套完整的平台凭证以及一个 LLM provider key。运行 `mikan env`
-   可查看完整的带注释清单及当前的设置状态。
-
-4. 拉取管理的沙箱镜像：
+3. 拉取管理的沙箱镜像：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -67,24 +56,24 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    选择 `image:*` 模式时，不要另外启动长期运行的容器。只有 `container:<name>` 模式才需要预先存在的容器。
 
-5. 下载 ecosystem 文件：
+4. 下载 ecosystem 文件：
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
    ```
 
    ecosystem 文件仅用于进程监管：进程名称、重启策略、优雅关闭超时以及 `mikan.env` 加载器。
-   行为（模型、沙箱限制、回复模式）仍保留在 `<state-dir>/settings.json` 中。
+   行为（模型、沙箱限制、回复模式）仍保留在 `~/.mikan/settings.json` 中。
 
-6. 编辑 `args`，使用绝对路径和一种沙箱模式（运行 `mikan --help` 查看参数参考）：
+5. 在 `args` 中设置沙箱模式（运行 `mikan --help` 查看参数参考）：
 
    ```js
-   args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
+   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
    ```
 
-   工作目录参数是可选的；不提供时 mikan 会使用 `<state-dir>/workspace` 并在首次启动时创建它。
+   工作目录参数是可选的；不提供时 mikan 会使用 `~/.mikan/workspace` 并在首次启动时创建它。
 
-7. 启动并持久保存进程：
+6. 启动并持久保存进程：
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -92,7 +81,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-8. 运行 `pm2 startup` 输出的命令，启用开机启动。
+7. 运行 `pm2 startup` 输出的命令，启用开机启动。
 
 </Steps>
 
@@ -121,19 +110,19 @@ pm2 reload ecosystem.config.cjs
 
 ### State 迁移
 
-会改变持久化文件格式的版本会附带一个有编号的迁移。只要还有待应用的迁移，daemon 就会拒绝启动，并打印应执行的完整 `mikan migrate` 命令；它不会自行转换任何文件。已应用的迁移记录在 `<state-dir>/migrations.json`。
+会改变持久化文件格式的版本会附带一个有编号的迁移。只要还有待应用的迁移，daemon 就会拒绝启动，并打印应执行的完整 `mikan migrate` 命令；它不会自行转换任何文件。已应用的迁移记录在 `~/.mikan/migrations.json`。
 
-安装新版本后，先检查有没有待应用的迁移。`--dry-run` 只读取，daemon 运行时也可以安全使用。请传入与 daemon 相同的 `--sandbox`、`--state-dir` 和工作区：
+安装新版本后，先检查有没有待应用的迁移。`--dry-run` 只读取，daemon 运行时也可以安全使用。请传入与 daemon 相同的 `--sandbox` 和工作区：
 
 ```bash
-mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace --dry-run
+mikan migrate --sandbox=image:mikan-sandbox:latest --dry-run
 ```
 
 如果输出 `No pending migrations.`，按上面的方式重新加载即可。否则先停止 daemon、应用迁移，再重新启动：
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace
+mikan migrate --sandbox=image:mikan-sandbox:latest
 pm2 start mikan
 ```
 
@@ -145,8 +134,8 @@ pm2 start mikan
 
 - 把对话目录及其 vault 从原始对话 id 重命名为 office key；
 - 把 `host` 模式的每用户 vault 和 `container:*` 的 vault 重命名为哈希后的 identity key；
-- 把每个对话的 `settings.json` 移到 `<state-dir>/conversations/<office-key>/`；
-- 把每个对话的会话文件导入它的 `sessions.db`，原文件保留在 `<state-dir>/conversations/<office-key>/sessions-v3/`；
+- 把每个对话的 `settings.json` 移到 `~/.mikan/conversations/<office-key>/`；
+- 把每个对话的会话文件导入它的 `sessions.db`，原文件保留在 `~/.mikan/conversations/<office-key>/sessions-v3/`；
 - 把 `<workspace>/events/*.json` 移到各对话仅主机可见的事件存储；
 - 删除 0.5.3 的沙盒容器；下一条消息到来时会用当前镜像重建，`/root` 从空开始；
 - 如果 mikan 还没有 `~/.mikan/models.json`，就复制 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）。
@@ -154,7 +143,7 @@ pm2 start mikan
 Provider API key 来自 `models.json` 或环境变量。0.5.3 从 `~/.pi/mikan/auth.json` 读取的 key 不会被迁移；请在启动前设置到 `~/.mikan/mikan.env`。
 
 <Aside type="caution" title="请先备份 state directory">
-  迁移会同时重命名工作区和 state directory 下的目录。迁移前请先复制一份 `<state-dir>` 和工作区。
+  迁移会同时重命名工作区和 state directory 下的目录。迁移前请先复制一份 `~/.mikan` 和工作区。
 </Aside>
 
 ## 健康端点

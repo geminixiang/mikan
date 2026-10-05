@@ -98,7 +98,7 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan
 ```
 
-state directory は既定で `~/.mikan`、working directory は既定で `<state-dir>/workspace` になります。`--state-dir=<dir>` またはパス引数で変更できます。`mikan --help` はすべてのフラグを、`mikan env` は現在設定されている変数を表示します。
+mikan の state は常に `~/.mikan` に置かれ、working directory は既定で `~/.mikan/workspace` になります。パス引数で変更できます。`mikan --help` はすべてのフラグを、`mikan env` は現在設定されている変数を表示します。
 
 Bot は DM で応答し、channel では mention されたときに応答します。起動された Slack thread の作業は、thread timestamp を key に含む隔離された session を使います。共有 channel の thread にある通常の mention なしの reply は記録されますが、実行を開始しません。
 

@@ -160,7 +160,7 @@ For every provider call, prompt authorization and filesystem authorization consu
 ### Scheduled execution
 
 Scheduled events are host-only per-office state under
-`<state-dir>/conversations/<office-key>/events/`. No sandbox layout mounts
+`~/.mikan/conversations/<office-key>/events/`. No sandbox layout mounts
 them: the agent's `event` tool (`src/harness/tools/event.ts`) and the Admin
 HTTP surface are the only writers, and both go through an office-confined
 `OfficeEventStore` from `src/events/`. The store never overwrites on create,
@@ -196,7 +196,7 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
     ├── attachments/
     └── log.jsonl
 
-<state-dir>/                              host-private authority
+~/.mikan/                                 host-private authority
 ├── settings.json
 ├── migrations.json                       applied State migrations
 ├── office-registry.json

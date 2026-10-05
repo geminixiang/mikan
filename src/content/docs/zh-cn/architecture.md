@@ -167,7 +167,7 @@ sequenceDiagram
     ├── scratch/               # in-progress working area
     └── skills/                # office-level skills
 
-<state-dir>/
+~/.mikan/
 ├── settings.json              # global settings
 ├── models.json                # custom providers and models
 ├── office-registry.json       # office inventory
@@ -180,7 +180,7 @@ sequenceDiagram
 └── vaults/<vaultId>/          # credentials
 ```
 
-默认 state directory 为 `~/.mikan`。它必须位于沙箱可见的工作区路径之外。`MEMORY.md`、`skills`、`events` 和 `agents` 是工作区根目录的保留名称，永远不会是办公室目录。
+state directory 为 `~/.mikan`。它必须位于沙箱可见的工作区路径之外。`MEMORY.md`、`skills`、`events` 和 `agents` 是工作区根目录的保留名称，永远不会是办公室目录。
 
 设计要点：
 
@@ -220,7 +220,7 @@ flowchart TD
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
-  VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
+  VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
@@ -228,7 +228,7 @@ flowchart TD
 要点：
 
 - 凭证不会直接进入工作区
-- vault 位于 `--state-dir`
+- vault 位于 `~/.mikan`
 - 执行时，办公室的 vault 会路由到相应沙箱
 - `image` / `cloudflare` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
 

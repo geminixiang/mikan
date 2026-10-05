@@ -98,7 +98,7 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan
 ```
 
-state directory 默认为 `~/.mikan`，working directory 默认为 `<state-dir>/workspace`；可用 `--state-dir=<dir>` 或路径参数更改。`mikan --help` 列出所有标志，`mikan env` 显示当前已设置的变量。
+mikan 的状态固定存放在 `~/.mikan`，working directory 默认为 `~/.mikan/workspace`；可用路径参数更改。`mikan --help` 列出所有标志，`mikan env` 显示当前已设置的变量。
 
 Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack 话题工作使用隔离会话，其 key 包含话题时间戳。共享频道话题中普通的未提及回复只会被记录，不会启动运行。
 

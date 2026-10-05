@@ -68,13 +68,13 @@ npm run test:office:docker
 使用独立的 state directory，避免开发环境覆盖生产实例：
 
 ```bash
-./dist/main.js --onboard --state-dir="$HOME/.mikan-dev"
-./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js onboard
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
 ```
 
 正常 bot 模式仍至少需要一套完整的平台凭证。
 
-该工作区中的对话目录按 office key 命名，而不是按原始平台 id。`./dist/main.js office list --state-dir="$HOME/.mikan-dev"` 会打印注册表——每间办公室属于哪个平台和哪个原始对话 id——以及任何仍待处理的迁移。
+该工作区中的对话目录按 office key 命名，而不是按原始平台 id。`HOME="$HOME/mikan-dev" ./dist/main.js office list` 会打印注册表——每间办公室属于哪个平台和哪个原始对话 id——以及任何仍待处理的迁移。
 
 ## 端到端测试
 

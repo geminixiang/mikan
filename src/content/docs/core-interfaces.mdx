@@ -200,7 +200,7 @@ Owns an office's sessions: one pi-durable SQLite storage, `sessions.db` in the o
 
 ### `MikanModels`
 
-`MikanModels` resolves built-in `pi-ai` models and the custom providers in `<state-dir>/models.json`; provider credentials come from that file or from environment variables. Vault credentials are a different boundary: they are injected into tool execution, not used to authenticate the host-side model client.
+`MikanModels` resolves built-in `pi-ai` models and the custom providers in `~/.mikan/models.json`; provider credentials come from that file or from environment variables. Vault credentials are a different boundary: they are injected into tool execution, not used to authenticate the host-side model client.
 
 ### Subagent profiles
 
@@ -292,10 +292,10 @@ Office keys are **not reversible**. `OfficeRegistry` (`office-registry.json`, ho
 
 ### The two records
 
-| Record                                           | Purpose                                                          |
-| ------------------------------------------------ | ---------------------------------------------------------------- |
-| `<office>/log.jsonl`                             | Platform truth: user/bot messages and attachments                |
-| `<state-dir>/conversations/<office>/sessions.db` | Agent truth: prompts, model/tool messages, forks, and compaction |
+| Record                                        | Purpose                                                          |
+| --------------------------------------------- | ---------------------------------------------------------------- |
+| `<office>/log.jsonl`                          | Platform truth: user/bot messages and attachments                |
+| `~/.mikan/conversations/<office>/sessions.db` | Agent truth: prompts, model/tool messages, forks, and compaction |
 
 Do not merge them. Chat history can rebuild a missing top-level agent session, while agent sessions contain data that never appeared on the platform.
 
@@ -313,7 +313,7 @@ Session keys use `conversationId[:suffix]` and stay **raw platform values** — 
 
 Source: `src/events/index.ts`.
 
-Each office's scheduled events are JSON files in its host-only State dir, `<state-dir>/conversations/<officeKey>/events/`. The canonical union is:
+Each office's scheduled events are JSON files in its host-only State dir, `~/.mikan/conversations/<officeKey>/events/`. The canonical union is:
 
 ```ts
 type EventFilePayload =
@@ -328,21 +328,21 @@ Common optional fields are `platform`, `conversationKind`, and `userId`. `channe
 
 ## 11. Persisted filesystem interface
 
-| Path                                                  | Owner                 | Visibility / compatibility                  |
-| ----------------------------------------------------- | --------------------- | ------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | Host-only global settings                   |
-| `<state-dir>/office-registry.json`                    | office registry       | Host-only office inventory                  |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides            |
-| `<state-dir>/models.json`                             | harness model catalog | Host-only custom providers/models           |
-| `<state-dir>/vaults/**`                               | vault/login           | Host-only secrets and mount files           |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox-visible durable memory              |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox-visible prompt instructions         |
-| `<workspace>/agents/*.md`                             | subagent profiles     | Per-install model patches over built-ins    |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapters     | Append-only platform history                |
-| `<state-dir>/conversations/<officeKey>/sessions.db`   | session store         | Host-only agent history (pi-durable SQLite) |
-| `<state-dir>/conversations/<officeKey>/events/*.json` | event store           | Host-only scheduled events                  |
+| Path                                               | Owner                 | Visibility / compatibility                  |
+| -------------------------------------------------- | --------------------- | ------------------------------------------- |
+| `~/.mikan/settings.json`                           | config                | Host-only global settings                   |
+| `~/.mikan/office-registry.json`                    | office registry       | Host-only office inventory                  |
+| `~/.mikan/conversations/<officeKey>/settings.json` | config/admin          | Host-only conversation overrides            |
+| `~/.mikan/models.json`                             | harness model catalog | Host-only custom providers/models           |
+| `~/.mikan/vaults/**`                               | vault/login           | Host-only secrets and mount files           |
+| `<workspace>/MEMORY.md`                            | agent/user            | Sandbox-visible durable memory              |
+| `<workspace>/skills/**/SKILL.md`                   | skills                | Sandbox-visible prompt instructions         |
+| `<workspace>/agents/*.md`                          | subagent profiles     | Per-install model patches over built-ins    |
+| `<workspace>/<officeKey>/log.jsonl`                | platform adapters     | Append-only platform history                |
+| `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | Host-only agent history (pi-durable SQLite) |
+| `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | Host-only scheduled events                  |
 
-`MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `<state-dir>/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
+`MEMORY.md`, `skills`, `events`, and `agents` are the reserved workspace-root names (`RESERVED_WORKSPACE_NAMES`); every other workspace-root entry is an office directory. Conversation-scoped vault directories under `~/.mikan/vaults/` are named by office key for conversation-scoped sandboxes; `host` mode keys by user and `container` mode by container name.
 
 The state directory must not be inside the sandbox-visible workspace. Important state files use atomic private writes; append-only logs use append semantics.
 

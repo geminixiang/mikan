@@ -32,7 +32,7 @@ A session key is `conversationId` on its own, or `conversationId:suffix` for a s
 
 ## Session keys and offices
 
-Session keys stay raw platform values — the grammar in `src/sessions/session-key.ts` never sees an office key. Runtime state is addressed by the conversation's office plus its session key, so two platforms that share a raw conversation id can never select each other's runners, queues, or stop state. Storage paths follow the office: session files live under `<state-dir>/conversations/<officeKey>/sessions/`, which no sandbox sees.
+Session keys stay raw platform values — the grammar in `src/sessions/session-key.ts` never sees an office key. Runtime state is addressed by the conversation's office plus its session key, so two platforms that share a raw conversation id can never select each other's runners, queues, or stop state. Storage paths follow the office: session files live under `~/.mikan/conversations/<officeKey>/sessions/`, which no sandbox sees.
 
 ## Session identity safety
 
@@ -45,7 +45,7 @@ A session key always belongs to exactly one conversation. Platform adapters may 
 - workspace/
   - v1-slack-c0aaaaaa1-…/ one office
     - **log.jsonl** platform message history
-- state-dir/conversations/
+- ~/.mikan/conversations/
   - v1-slack-c0aaaaaa1-…/ host-only office state
     - **sessions.db** every session of the office, including tool results
 

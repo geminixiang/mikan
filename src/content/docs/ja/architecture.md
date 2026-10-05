@@ -168,7 +168,7 @@ sequenceDiagram
     ├── scratch/               # 実行中の作業領域
     └── skills/                # office レベルの skills
 
-<state-dir>/
+~/.mikan/
 ├── settings.json              # 必須のグローバル設定
 ├── office-registry.json       # office 一覧
 ├── conversations/
@@ -179,7 +179,7 @@ sequenceDiagram
 └── vaults/<vaultId>/          # credentials
 ```
 
-state directory の既定値は `~/.mikan` です。sandbox から見える workspace paths の外に置く必要があります。`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名であり、office directory になることはありません。
+state directory は `~/.mikan` です。sandbox から見える workspace paths の外に置く必要があります。`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名であり、office directory になることはありません。
 
 設計上のポイント:
 
@@ -219,7 +219,7 @@ flowchart TD
   Browser --> OAuth["OAuth provider / API key form"]
   OAuth --> WebServer
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
-  VaultManager --> VaultDir["state-dir/vaults/<vaultId>/"]
+  VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
   Resolver --> Sandbox["host / container / image / cloudflare"]
 ```
@@ -227,7 +227,7 @@ flowchart TD
 ポイント:
 
 - 認証情報は workspace に直接入りません
-- vault は `--state-dir` に保存されます
+- vault は `~/.mikan` に保存されます
 - 実行時にだけ office の vault から対応する sandbox へルーティングされます
 - `image` / `cloudflare` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
 

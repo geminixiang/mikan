@@ -33,7 +33,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
 - **Sandbox execution** — host, shared container, per-conversation managed container, or Cloudflare bridge (experimental)
-- **Credential vaults** — `/login` stores credentials under `--state-dir` and injects env into sandbox runs
+- **Credential vaults** — `/login` stores credentials under `~/.mikan` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
 - **Skills** — drop CLI tools into `skills/`
@@ -63,17 +63,14 @@ Run mikan under [PM2](https://pm2.keymetrics.io/) so it stays up, restarts after
 ```bash
 npm i -g @geminixiang/mikan pm2
 
-# One-time setup: create the state directory and settings
-mikan --onboard --state-dir=~/.mikan
-
-# Secrets live in ~/.mikan/mikan.env (0600), outside any repo tree
-curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
-chmod 600 ~/.mikan/mikan.env   # then fill in your tokens
+# One-time setup: platform tokens, LLM provider, and sandbox mode,
+# written to ~/.mikan/settings.json and ~/.mikan/mikan.env (0600)
+mikan onboard
 
 # Pull the sandbox image the default deployment runs tools in
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
-# Grab the maintained ecosystem file (supervision only), edit `args`
+# Grab the maintained ecosystem file (supervision only)
 curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
 
 pm2 start ecosystem.config.cjs
@@ -81,13 +78,13 @@ pm2 save
 pm2 startup   # run the printed command to enable boot autostart
 ```
 
-Each file has one job: `settings.json` holds behavior (model, sandbox limits, reply modes — the Admin surface), `~/.mikan/mikan.env` holds secrets and platform tokens, and `ecosystem.config.cjs` holds process supervision only. In `ecosystem.config.cjs`, point `args` at your state dir, sandbox mode, and working directory (`mikan --help` documents the flags):
+Each file has one job: `settings.json` holds behavior (model, sandbox limits, reply modes — the Admin surface), `~/.mikan/mikan.env` holds secrets and platform tokens, and `ecosystem.config.cjs` holds process supervision only. mikan keeps all of them in `~/.mikan`. In `ecosystem.config.cjs`, `args` holds the sandbox mode and an optional working directory (`mikan --help` documents the flags):
 
 ```js
-args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
+args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
 ```
 
-Set the platform tokens you need in `~/.mikan/mikan.env`; you can run multiple platforms at once. `mikan env` prints the full inventory and what is currently set:
+To add a platform later, set its tokens in `~/.mikan/mikan.env`; you can run multiple platforms at once. `mikan env` prints the full inventory and what is currently set:
 
 ```bash
 SLACK_APP_TOKEN=xapp-...
@@ -104,10 +101,10 @@ Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan`, che
 For a one-off foreground run, the same CLI works directly:
 
 ```bash
-mikan [--state-dir=~/.mikan] [--sandbox=<mode>] [<working-directory>]
+mikan [--sandbox=<mode>] [<working-directory>]
 ```
 
-The working directory is optional: it defaults to `<state-dir>/workspace` (so `~/.mikan/workspace` with the default state dir) and is created on first run.
+The working directory is optional: it defaults to `~/.mikan/workspace` and is created on first run.
 
 ## Platforms
 
@@ -150,7 +147,7 @@ For routing, mounts, vault behavior, managed container details, and Cloudflare n
 
 ## Configuration
 
-mikan reads global settings from `<state-dir>/settings.json`; host-only per-conversation overrides live at `<state-dir>/conversations/<office-key>/settings.json`. Legacy workspace settings are migrated once, then ignored.
+mikan reads global settings from `~/.mikan/settings.json`; host-only per-conversation overrides live at `~/.mikan/conversations/<office-key>/settings.json`. Legacy workspace settings are migrated once, then ignored.
 
 ```json
 {
@@ -167,7 +164,7 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 ## Data layout
 
 ```text
-<state-dir>/
+~/.mikan/
 ├── settings.json
 ├── office-registry.json
 ├── conversations/

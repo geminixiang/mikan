@@ -68,13 +68,13 @@ npm run test:office:docker
 開発環境が本番 instance を上書きしないよう、別の state directory を使用します：
 
 ```bash
-./dist/main.js --onboard --state-dir="$HOME/.mikan-dev"
-./dist/main.js --state-dir="$HOME/.mikan-dev" --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js onboard
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
 ```
 
 通常の bot mode には、少なくとも 1 組の完全な platform credentials が必要です。
 
-その workspace の conversation directory は、生の platform id ではなく office key で命名されます。`./dist/main.js office list --state-dir="$HOME/.mikan-dev"` は registry — 各 office がどの platform とどの生 conversation id に属するか — と、保留中の migration を表示します。
+その workspace の conversation directory は、生の platform id ではなく office key で命名されます。`HOME="$HOME/mikan-dev" ./dist/main.js office list` は registry — 各 office がどの platform とどの生 conversation id に属するか — と、保留中の migration を表示します。
 
 ## エンドツーエンドテスト
 

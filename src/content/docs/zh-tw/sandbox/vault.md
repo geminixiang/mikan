@@ -5,7 +5,7 @@ description: mikan 如何把 credentials 存在 state directory，並依 sandbox
 
 ## State directory 與 vault 位置
 
-state directory 預設是：
+state directory 是：
 
 ```text
 ~/.mikan/
@@ -25,21 +25,9 @@ state directory 預設是：
     └── extensions/            # 舊版保留 namespace；不會載入或掛載
 ```
 
-也可以用 `--state-dir` 指定：
+全域設定檔位於 `~/.mikan/settings.json`。Conversation overrides 是僅限 host 的 `~/.mikan/conversations/<office-key>/settings.json`。舊版 `<working-directory>/<conversationId>/settings.json` 會移轉一次，之後忽略——conversation 目錄會以可讀寫的方式掛進 sandbox，所以設定是刻意放在它們之外的。
 
-```bash
-mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
-```
-
-此時 credential 會存在：
-
-```text
-/secure/mikan-state/vaults/
-```
-
-全域設定檔位於 `<state-dir>/settings.json`。Conversation overrides 是僅限 host 的 `<state-dir>/conversations/<office-key>/settings.json`。舊版 `<working-directory>/<conversationId>/settings.json` 會移轉一次，之後忽略——conversation 目錄會以可讀寫的方式掛進 sandbox，所以設定是刻意放在它們之外的。
-
-啟動時，mikan 會拒絕 world-writable 或不由目前使用者擁有的 `--state-dir`。新建立的 state/vault directories 與 credential files 使用 private modes，但既有、group/world-readable 的 state directory 不會自動收緊權限；請執行 `chmod 0700 <state-dir>`。
+啟動時，mikan 會拒絕 world-writable 或不由目前使用者擁有的 `~/.mikan`。新建立的 state/vault directories 與 credential files 使用 private modes，但既有、group/world-readable 的 state directory 不會自動收緊權限；請執行 `chmod 0700 ~/.mikan`。
 
 ## Vault 內容
 

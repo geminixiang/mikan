@@ -98,7 +98,7 @@ export SLACK_BOT_TOKEN=xoxb-...
 mikan
 ```
 
-state directory 預設為 `~/.mikan`，working directory 預設為 `<state-dir>/workspace`；可用 `--state-dir=<dir>` 或路徑引數改變。`mikan --help` 列出所有旗標，`mikan env` 顯示目前已設定的變數。
+mikan 的狀態固定放在 `~/.mikan`，working directory 預設為 `~/.mikan/workspace`；可用路徑引數改變。`mikan --help` 列出所有旗標，`mikan env` 顯示目前已設定的變數。
 
 Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的 Slack thread 工作會使用隔離的 session，其 key 包含 thread timestamp。共享頻道 thread 中未 mention 的一般回覆會被記錄，但不會開始執行。
 

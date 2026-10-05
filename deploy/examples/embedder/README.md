@@ -25,8 +25,7 @@ embedder adopts one of mikan's supported platforms; this example drives a
 
 Requires a configured state dir: the `stateDir` you pass to `createWorkspace`
 holds `settings.json` (required) and `models.json` (optional). Every global
-setting and the model list are read from there; mikan does not consult
-`MIKAN_STATE_DIR` or `STATE_DIR` once you own the `Workspace`. Pass your own
+setting and the model list are read from there, not from `~/.mikan`. Pass your own
 `MikanModels` as the `models` option to replace the model list, as the test does.
 
 ```sh

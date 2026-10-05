@@ -5,7 +5,7 @@ description: How mikan stores credentials in the state directory and injects env
 
 ## State directory and vault location
 
-The default state directory is:
+The state directory is:
 
 ```text
 ~/.mikan/
@@ -25,21 +25,9 @@ Important contents include:
     └── extensions/           # legacy reserved namespace; never loaded or mounted
 ```
 
-You can also specify it with `--state-dir`:
+The global settings file is at `~/.mikan/settings.json`. Conversation overrides are host-only at `~/.mikan/conversations/<office-key>/settings.json`. A legacy `<working-directory>/<conversationId>/settings.json` is migrated once, then ignored — conversation directories are mounted read-write into the sandbox, so settings deliberately live outside them.
 
-```bash
-mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
-```
-
-Credentials are then stored in:
-
-```text
-/secure/mikan-state/vaults/
-```
-
-The global settings file is at `<state-dir>/settings.json`. Conversation overrides are host-only at `<state-dir>/conversations/<office-key>/settings.json`. A legacy `<working-directory>/<conversationId>/settings.json` is migrated once, then ignored — conversation directories are mounted read-write into the sandbox, so settings deliberately live outside them.
-
-At startup, mikan refuses a `--state-dir` that is world-writable or not owned by the current user. Newly created state/vault directories and credential files use private modes, but an existing group/world-readable state directory is not automatically tightened; use `chmod 0700 <state-dir>`.
+At startup, mikan refuses a `~/.mikan` that is world-writable or not owned by the current user. Newly created state/vault directories and credential files use private modes, but an existing group/world-readable state directory is not automatically tightened; use `chmod 0700 ~/.mikan`.
 
 ## Vault contents
 

@@ -12,21 +12,14 @@ mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
-The default state directory is `~/.mikan`. Use the same `--state-dir` for onboarding and normal startup when you choose another location:
-
-```bash
-mikan onboard --state-dir=/secure/mikan-state
-mikan --state-dir=/secure/mikan-state /path/to/workspace
-```
-
 mikan creates a missing state directory with mode `0700`. An existing directory must be owned by the current user and must not be world-writable. For sandboxed modes, keep it outside the workspace so tools cannot reach credentials or administrator settings.
 
 ## Settings locations
 
-| Scope        | Path                                                  | Purpose                                  |
-| ------------ | ----------------------------------------------------- | ---------------------------------------- |
-| Global       | `<state-dir>/settings.json`                           | Required defaults for every conversation |
-| Conversation | `<state-dir>/conversations/<officeKey>/settings.json` | Partial overrides for one conversation   |
+| Scope        | Path                                               | Purpose                                  |
+| ------------ | -------------------------------------------------- | ---------------------------------------- |
+| Global       | `~/.mikan/settings.json`                           | Required defaults for every conversation |
+| Conversation | `~/.mikan/conversations/<officeKey>/settings.json` | Partial overrides for one conversation   |
 
 Conversation settings are host-authoritative. Older `<workspace>/<officeKey>/settings.json` files are migrated on first access and are not read again from the sandbox-visible workspace.
 
@@ -34,7 +27,7 @@ Conversation settings are host-authoritative. Older `<workspace>/<officeKey>/set
 
 Every conversation is an _office_, identified by its platform plus the platform's raw conversation id. Storage paths use the office key derived from both — `v1-<platform>-<readable-id>-<hash>`, for example `v1-slack-c0aaaaaa1-1f4b9c0d2e3a5b7c` — so two platforms that happen to share a raw conversation id can never address each other's files, settings, or credentials. The same key names the office directory in the workspace, its state directory, and its vault.
 
-Office keys are not reversible to a raw platform id, so the host keeps a registry at `<state-dir>/office-registry.json` recording each office's platform and conversation id. Use `mikan office list` to read it.
+Office keys are not reversible to a raw platform id, so the host keeps a registry at `~/.mikan/office-registry.json` recording each office's platform and conversation id. Use `mikan office list` to read it.
 
 Upgrading from a release that stored conversations under raw platform ids migrates those directories, vaults, and state trees to the office-key layout on the next start; see [Deployment](/deployment/#upgrading-across-the-office-layout-migration).
 
@@ -147,19 +140,19 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 
 ## CLI reference
 
-| Command or option                                                        | Purpose                                                                                   |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                      | Create the required global settings file                                                  |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`       | Start configured platform bots; the working directory defaults to `<state-dir>/workspace` |
-| `--sandbox=host \| container:<name> \| image:<image> \| cloudflare:<id>` | Select tool execution mode; default is `host`                                             |
-| `mikan env`                                                              | Show the full environment-variable inventory and what is currently set                    |
-| `mikan --download <channel-id>`                                          | Download Slack channel history; requires `SLACK_BOT_TOKEN`                                |
-| `mikan --version`                                                        | Print the installed version                                                               |
-| `mikan --help`                                                           | Show CLI usage and the platform-token summary                                             |
-| `mikan office list`                                                      | List each office key with its platform and conversation id                                |
-| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]`   | Apply pending [State migrations](/deployment/#state-migrations) with the daemon stopped   |
+| Command or option                                                        | Purpose                                                                                 |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `mikan onboard`                                                          | Create the required global settings file                                                |
+| `mikan [--sandbox=<mode>] [working-directory]`                           | Start configured platform bots; the working directory defaults to `~/.mikan/workspace`  |
+| `--sandbox=host \| container:<name> \| image:<image> \| cloudflare:<id>` | Select tool execution mode; default is `host`                                           |
+| `mikan env`                                                              | Show the full environment-variable inventory and what is currently set                  |
+| `mikan --download <channel-id>`                                          | Download Slack channel history; requires `SLACK_BOT_TOKEN`                              |
+| `mikan --version`                                                        | Print the installed version                                                             |
+| `mikan --help`                                                           | Show CLI usage and the platform-token summary                                           |
+| `mikan office list`                                                      | List each office key with its platform and conversation id                              |
+| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]`   | Apply pending [State migrations](/deployment/#state-migrations) with the daemon stopped |
 
-`mikan office` and `mikan migrate` accept `--state-dir <dir>`; `mikan migrate` also accepts `--workspace <dir>`, which defaults to `<state-dir>/workspace`.
+`mikan migrate` accepts `--workspace <dir>`, which defaults to `~/.mikan/workspace`.
 
 ## Observability: OTLP, Sentry, and Phoenix
 

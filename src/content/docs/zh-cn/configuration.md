@@ -12,21 +12,14 @@ mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
-默认 state directory 是 `~/.mikan`。选择其他位置时，初始化和正常启动必须使用相同的 `--state-dir`：
-
-```bash
-mikan onboard --state-dir=/secure/mikan-state
-mikan --state-dir=/secure/mikan-state /path/to/workspace
-```
-
 mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必须归当前用户所有，且不能全局可写。对于沙箱模式，请将其放在工作区之外，使工具无法访问凭证或管理员设置。
 
 ## 设置位置
 
-| 范围 | 路径                                                  | 用途                   |
-| ---- | ----------------------------------------------------- | ---------------------- |
-| 全局 | `<state-dir>/settings.json`                           | 所有对话必需的默认设置 |
-| 对话 | `<state-dir>/conversations/<officeKey>/settings.json` | 一个对话的部分覆盖     |
+| 范围 | 路径                                               | 用途                   |
+| ---- | -------------------------------------------------- | ---------------------- |
+| 全局 | `~/.mikan/settings.json`                           | 所有对话必需的默认设置 |
+| 对话 | `~/.mikan/conversations/<officeKey>/settings.json` | 一个对话的部分覆盖     |
 
 对话设置以主机为准。旧版 `<workspace>/<officeKey>/settings.json` 文件会在首次访问时迁移，之后不再从沙箱可见的工作区读取。
 
@@ -34,7 +27,7 @@ mikan 创建缺失的 state directory 时使用 `0700` 模式。现有目录必�
 
 每个对话都是一间**办公室**，由其平台加上该平台的原始对话 id 标识。存储路径使用由两者派生的 office key——`v1-<platform>-<readable-id>-<hash>`，例如 `v1-slack-c0aaaaaa1-1f4b9c0d2e3a5b7c`——因此两个恰好共用同一原始对话 id 的平台，永远无法访问彼此的文件、设置或凭证。同一个 key 同时命名工作区中的办公室目录、它的 state directory 和它的 vault。
 
-office key 无法反推回原始平台 id，因此主机会在 `<state-dir>/office-registry.json` 维护一个注册表，记录每间办公室的平台和对话 id。用 `mikan office list` 可以读取它。
+office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-registry.json` 维护一个注册表，记录每间办公室的平台和对话 id。用 `mikan office list` 可以读取它。
 
 从以原始平台 id 存储对话的版本升级时，这些目录、vault 和 state 树会在下次启动时迁移到 office key 布局；参阅[部署](/zh-cn/deployment/#跨办公室布局迁移升级)。
 
@@ -143,8 +136,8 @@ OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTO
 
 | 命令或选项                                                             | 用途                                                                     |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `mikan onboard [--state-dir=<dir>]`                                    | 创建必需的全局设置文件                                                   |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`     | 启动已配置的平台 bot；工作目录默认为 `<state-dir>/workspace`             |
+| `mikan onboard`                                                        | 创建必需的全局设置文件                                                   |
+| `mikan [--sandbox=<mode>] [working-directory]`                         | 启动已配置的平台 bot；工作目录默认为 `~/.mikan/workspace`                |
 | `mikan env`                                                            | 显示完整的环境变量清单及当前的设置状态                                   |
 | `mikan --download <channel-id>`                                        | 下载 Slack 频道历史记录；需要 `SLACK_BOT_TOKEN`                          |
 | `mikan --version`                                                      | 输出已安装版本                                                           |
@@ -152,7 +145,7 @@ OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTO
 | `mikan office list`                                                    | 列出每个 office key 及其平台和对话 id                                    |
 | `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | 在 daemon 停止时应用待处理的 [State 迁移](/zh-cn/deployment/#state-迁移) |
 
-`mikan office` 和 `mikan migrate` 接受 `--state-dir <dir>`；`mikan migrate` 还接受 `--workspace <dir>`，默认为 `<state-dir>/workspace`。
+`mikan migrate` 接受 `--workspace <dir>`，默认为 `~/.mikan/workspace`。
 
 ## Observability：OTLP、Sentry 与 Phoenix
 

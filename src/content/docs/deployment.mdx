@@ -24,7 +24,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
 - Node.js `>=24.15.0`
 - at least one complete Slack, Telegram, Discord, or GitHub credential set
-- a persistent state directory (default `~/.mikan`); the working directory defaults to `<state-dir>/workspace`
+- a persistent `~/.mikan` for the PM2 user, where mikan keeps its state; the working directory defaults to `~/.mikan/workspace`
 - Docker available to the PM2 user when using `image:*` or `container:*`
 
 The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
@@ -39,29 +39,19 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. Create the global settings file in the exact state directory the service will use:
+2. Run the setup as the user PM2 runs under. It asks for the chat platform's tokens, the LLM
+   provider, and the sandbox mode, then writes `~/.mikan/settings.json` and the secrets file
+   `~/.mikan/mikan.env` (mode `0600`):
 
    ```bash
-   mkdir -p /srv/mikan/workspace
-   mikan onboard --state-dir=/srv/mikan/state
+   mikan onboard
    ```
 
-   Review `/srv/mikan/state/settings.json`. The directory must be owned by the PM2 process user and
-   must not be world-writable; `chmod 0700 /srv/mikan/state` is recommended.
+   Every secret lives in `~/.mikan/mikan.env`, which the ecosystem file loads at start; never put
+   secrets in the ecosystem file or PM2's own environment. To add a platform or variable later, edit
+   that file; `mikan env` lists every variable and what is currently set.
 
-3. Create the secrets file. All platform tokens, provider keys, and other secrets live in
-   `~/.mikan/mikan.env` — mode `0600`, outside any repo tree — and the ecosystem file loads it at
-   start. Never put secrets in the ecosystem file or PM2's own environment:
-
-   ```bash
-   curl -o ~/.mikan/mikan.env https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/mikan.env.example
-   chmod 600 ~/.mikan/mikan.env
-   ```
-
-   Fill in at least one complete platform credential set plus an LLM provider key. Run `mikan env`
-   to see the full annotated inventory and what is currently set.
-
-4. Pull the managed sandbox image:
+3. Pull the managed sandbox image:
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
@@ -70,7 +60,7 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    Do not also start a long-lived container when the selected mode is `image:*`. A pre-existing
    container is needed only for `container:<name>` mode.
 
-5. Download the ecosystem file:
+4. Download the ecosystem file:
 
    ```bash
    curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
@@ -78,19 +68,18 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
 
    The ecosystem file is supervision-only: process name, restart policy, graceful-shutdown timeout,
    and the `mikan.env` loader. Behavior (model, sandbox limits, reply modes) stays in
-   `<state-dir>/settings.json`.
+   `~/.mikan/settings.json`.
 
-6. Edit `args` to use absolute paths and one sandbox mode (run `mikan --help` for the flag
-   reference):
+5. Set the sandbox mode in `args` (run `mikan --help` for the flag reference):
 
    ```js
-   args: "--state-dir=/srv/mikan/state --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /srv/mikan/workspace",
+   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
    ```
 
-   The working-directory argument is optional; without it mikan uses `<state-dir>/workspace` and
+   The working-directory argument is optional; without it mikan uses `~/.mikan/workspace` and
    creates it on first start.
 
-7. Start and persist the process:
+6. Start and persist the process:
 
    ```bash
    pm2 start ecosystem.config.cjs
@@ -98,7 +87,7 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    pm2 startup
    ```
 
-8. Run the command printed by `pm2 startup` to enable boot startup.
+7. Run the command printed by `pm2 startup` to enable boot startup.
 
 </Steps>
 
@@ -132,13 +121,13 @@ pm2 reload ecosystem.config.cjs
 
 A release that changes the format of persisted files ships a numbered migration. The daemon refuses
 to start while one is pending and prints the exact `mikan migrate` command to run; it never converts
-files on its own. `<state-dir>/migrations.json` records which migrations have been applied.
+files on its own. `~/.mikan/migrations.json` records which migrations have been applied.
 
 Check for pending migrations after installing a new version. `--dry-run` only reads, so it is safe
-while the daemon runs. Pass the same `--sandbox`, `--state-dir`, and workspace the daemon uses:
+while the daemon runs. Pass the same `--sandbox` and workspace the daemon uses:
 
 ```bash
-mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace --dry-run
+mikan migrate --sandbox=image:mikan-sandbox:latest --dry-run
 ```
 
 If it prints `No pending migrations.`, reload as above. Otherwise stop the daemon, apply them, and
@@ -146,7 +135,7 @@ start it again:
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=image:mikan-sandbox:latest --workspace=/srv/mikan/workspace
+mikan migrate --sandbox=image:mikan-sandbox:latest
 pm2 start mikan
 ```
 
@@ -162,8 +151,8 @@ migrations that already succeeded stay applied.
 
 - renames conversation directories and their vaults from raw conversation ids to office keys;
 - renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
-- moves each conversation's `settings.json` into `<state-dir>/conversations/<office-key>/`;
-- imports each conversation's session files into its `sessions.db` and keeps the original files under `<state-dir>/conversations/<office-key>/sessions-v3/`;
+- moves each conversation's `settings.json` into `~/.mikan/conversations/<office-key>/`;
+- imports each conversation's session files into its `sessions.db` and keeps the original files under `~/.mikan/conversations/<office-key>/sessions-v3/`;
 - moves `<workspace>/events/*.json` into each conversation's host-only event store;
 - removes the 0.5.3 sandbox containers, which are recreated from the current image on the next
   message, with an empty `/root`;
@@ -175,7 +164,7 @@ Provider API keys come from `models.json` or environment variables. Keys that 0.
 
 <Aside type="caution" title="Back up the state directory first">
   Migrations rename directories under both the workspace and the state directory. Take a copy of
-  `<state-dir>` and the workspace before migrating.
+  `~/.mikan` and the workspace before migrating.
 </Aside>
 
 ## Health endpoint

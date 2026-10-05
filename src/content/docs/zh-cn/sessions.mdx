@@ -30,7 +30,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 会话密钥与办公室
 
-会话密钥保持为原始平台值——`src/sessions/session-key.ts` 中的语法从不接触 office key。运行时状态按该对话的办公室加其会话密钥寻址，因此两个共用同一原始对话 id 的平台永远无法选中彼此的 runner、队列或 stop 状态。存储路径则跟随办公室：会话文件位于沙箱看不到的 `<state-dir>/conversations/<officeKey>/sessions/` 下。
+会话密钥保持为原始平台值——`src/sessions/session-key.ts` 中的语法从不接触 office key。运行时状态按该对话的办公室加其会话密钥寻址，因此两个共用同一原始对话 id 的平台永远无法选中彼此的 runner、队列或 stop 状态。存储路径则跟随办公室：会话文件位于沙箱看不到的 `~/.mikan/conversations/<officeKey>/sessions/` 下。
 
 ## 会话身份安全
 
@@ -43,7 +43,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 - workspace/
   - v1-slack-c0aaaaaa1-…/ 一个 office
     - **log.jsonl** 平台消息历史
-- state-dir/conversations/
+- ~/.mikan/conversations/
   - v1-slack-c0aaaaaa1-…/ 仅在 host 上的 office 状态
     - **sessions.db** 该 office 的所有会话，包括工具结果
 

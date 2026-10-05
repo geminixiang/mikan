@@ -31,7 +31,7 @@ Session key 要嘛是單獨的 `conversationId`，要嘛是代表 scoped session
 
 ## Session key 與 office
 
-Session key 維持原始平台值——`src/sessions/session-key.ts` 中的文法從不接觸 office key。Runtime 狀態是以該對話的 office 加上它的 session key 來定址，因此兩個共用同一個 raw conversation id 的平台，絕不可能選到對方的 runner、queue 或 stop 狀態。儲存路徑則跟著 office 走：session 檔案位於 sandbox 看不到的 `<state-dir>/conversations/<officeKey>/sessions/`。
+Session key 維持原始平台值——`src/sessions/session-key.ts` 中的文法從不接觸 office key。Runtime 狀態是以該對話的 office 加上它的 session key 來定址，因此兩個共用同一個 raw conversation id 的平台，絕不可能選到對方的 runner、queue 或 stop 狀態。儲存路徑則跟著 office 走：session 檔案位於 sandbox 看不到的 `~/.mikan/conversations/<officeKey>/sessions/`。
 
 ## 工作階段身分安全
 
@@ -44,7 +44,7 @@ session key 一律只屬於單一對話。平台 adapter 可以提供 scoped key
 - workspace/
   - v1-slack-c0aaaaaa1-…/ 一個 office
     - **log.jsonl** 平台訊息歷史
-- state-dir/conversations/
+- ~/.mikan/conversations/
   - v1-slack-c0aaaaaa1-…/ 只在 host 上的 office 狀態
     - **sessions.db** 這個 office 的所有 session，包含工具結果
 

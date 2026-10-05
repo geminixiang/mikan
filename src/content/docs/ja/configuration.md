@@ -12,21 +12,14 @@ mikan onboard
 mikan --sandbox=host /path/to/workspace
 ```
 
-state directory の既定値は `~/.mikan` です。別の場所を選ぶ場合、onboarding と通常起動で同じ `--state-dir` を使用してください：
-
-```bash
-mikan onboard --state-dir=/secure/mikan-state
-mikan --state-dir=/secure/mikan-state /path/to/workspace
-```
-
 存在しない state directory は mode `0700` で作成されます。既存 directory は現在のユーザーが所有し、world-writable でないことが必要です。sandbox mode では、tools が認証情報や管理者設定へアクセスできないよう、workspace の外に置いてください。
 
 ## 設定の場所
 
-| Scope        | Path                                                  | 用途                                   |
-| ------------ | ----------------------------------------------------- | -------------------------------------- |
-| Global       | `<state-dir>/settings.json`                           | すべての conversation に必須の既定値   |
-| Conversation | `<state-dir>/conversations/<officeKey>/settings.json` | 1 つの conversation 用の部分的な上書き |
+| Scope        | Path                                               | 用途                                   |
+| ------------ | -------------------------------------------------- | -------------------------------------- |
+| Global       | `~/.mikan/settings.json`                           | すべての conversation に必須の既定値   |
+| Conversation | `~/.mikan/conversations/<officeKey>/settings.json` | 1 つの conversation 用の部分的な上書き |
 
 Conversation settings は host-authoritative です。古い `<workspace>/<officeKey>/settings.json` files は初回アクセス時に移行され、それ以降 sandbox から見える workspace では読み込まれません。
 
@@ -34,7 +27,7 @@ Conversation settings は host-authoritative です。古い `<workspace>/<offic
 
 すべての conversation は _office_ であり、その platform とプラットフォームの生の conversation id の組で識別されます。ストレージの path は両者から導出した office key — `v1-<platform>-<readable-id>-<hash>`、たとえば `v1-slack-c0aaaaaa1-1f4b9c0d2e3a5b7c` — を使うため、生の conversation id がたまたま一致する 2 つのプラットフォームが互いの files・settings・認証情報を指すことは決してありません。同じ key が workspace 内の office directory、その state directory、その vault を指します。
 
-Office key は生のプラットフォーム id へ逆変換できないため、host は `<state-dir>/office-registry.json` に registry を保持し、各 office の platform と conversation id を記録します。読み出しには `mikan office list` を使ってください。
+Office key は生のプラットフォーム id へ逆変換できないため、host は `~/.mikan/office-registry.json` に registry を保持し、各 office の platform と conversation id を記録します。読み出しには `mikan office list` を使ってください。
 
 conversation を生のプラットフォーム id 配下に保存していたリリースからアップグレードすると、それらの directory・vault・state tree は次回起動時に office key 配置へ移行されます。[デプロイ](/ja/deployment/#office-layout-migration-をまたぐアップグレード) を参照してください。
 
@@ -143,8 +136,8 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 
 | コマンドまたはオプション                                               | 用途                                                                                                    |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `mikan onboard [--state-dir=<dir>]`                                    | 必須のグローバル設定ファイルを作成                                                                      |
-| `mikan [--state-dir=<dir>] [--sandbox=<mode>] [working-directory]`     | 設定済みの platform bots を起動。working directory の既定値は `<state-dir>/workspace`                   |
+| `mikan onboard`                                                        | 必須のグローバル設定ファイルを作成                                                                      |
+| `mikan [--sandbox=<mode>] [working-directory]`                         | 設定済みの platform bots を起動。working directory の既定値は `~/.mikan/workspace`                      |
 | `mikan env`                                                            | 環境変数の完全なインベントリと、現在設定されている内容を表示                                            |
 | `mikan --download <channel-id>`                                        | Slack channel history をダウンロード。`SLACK_BOT_TOKEN` が必要                                          |
 | `mikan --version`                                                      | インストール済み version を表示                                                                         |
@@ -152,7 +145,7 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 | `mikan office list`                                                    | 各 office key とそのプラットフォーム・conversation id を一覧表示                                        |
 | `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | daemon を停止した状態で未適用の [State マイグレーション](/ja/deployment/#state-マイグレーション) を適用 |
 
-`mikan office` と `mikan migrate` は `--state-dir <dir>` を受け付けます。`mikan migrate` はさらに `--workspace <dir>` を受け付け、既定値は `<state-dir>/workspace` です。
+`mikan migrate` は `--workspace <dir>` を受け付け、既定値は `~/.mikan/workspace` です。
 
 ## Observability：OTLP、Sentry、Phoenix
 

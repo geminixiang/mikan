@@ -25,21 +25,9 @@ state directory のデフォルトは次のとおりです：
     └── extensions/            # legacy reserved namespace。load/mount されない
 ```
 
-`--state-dir` で指定することもできます：
+グローバル設定ファイルは `~/.mikan/settings.json` にあります。Conversation overrides は host-only の `~/.mikan/conversations/<office-key>/settings.json` にあります。従来の `<working-directory>/<conversationId>/settings.json` は一度移行され、その後は無視されます。conversation directory は sandbox に読み書き可能で mount されるため、settings は意図的にその外側に置かれています。
 
-```bash
-mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
-```
-
-この場合、credentials は次に保存されます：
-
-```text
-/secure/mikan-state/vaults/
-```
-
-グローバル設定ファイルは `<state-dir>/settings.json` にあります。Conversation overrides は host-only の `<state-dir>/conversations/<office-key>/settings.json` にあります。従来の `<working-directory>/<conversationId>/settings.json` は一度移行され、その後は無視されます。conversation directory は sandbox に読み書き可能で mount されるため、settings は意図的にその外側に置かれています。
-
-起動時、mikan は world-writable または現在のユーザー所有でない `--state-dir` の使用を拒否します。新しく作成される state/vault directories と credential files には private modes が使われますが、既存の group/world-readable state directory は自動的には制限されません。`chmod 0700 <state-dir>` を使用してください。
+起動時、mikan は world-writable または現在のユーザー所有でない `~/.mikan` の使用を拒否します。新しく作成される state/vault directories と credential files には private modes が使われますが、既存の group/world-readable state directory は自動的には制限されません。`chmod 0700 ~/.mikan` を使用してください。
 
 ## Vault の内容
 

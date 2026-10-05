@@ -200,7 +200,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### `MikanModels`
 
-`MikanModels` 會解析內建的 `pi-ai` model 與 `<state-dir>/models.json` 裡的自訂 provider；provider 憑證來自該檔案或環境變數。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
+`MikanModels` 會解析內建的 `pi-ai` model 與 `~/.mikan/models.json` 裡的自訂 provider；provider 憑證來自該檔案或環境變數。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
 
 ### Subagent profile
 
@@ -292,10 +292,10 @@ Office key **不可逆**。`OfficeRegistry`（`office-registry.json`，僅限 ho
 
 ### 兩份紀錄
 
-| 紀錄                                             | 用途                                                        |
-| ------------------------------------------------ | ----------------------------------------------------------- |
-| `<office>/log.jsonl`                             | 平台真實紀錄：user/bot 訊息與 attachment                    |
-| `<state-dir>/conversations/<office>/sessions.db` | agent 真實紀錄：prompt、model/tool 訊息、fork 與 compaction |
+| 紀錄                                          | 用途                                                        |
+| --------------------------------------------- | ----------------------------------------------------------- |
+| `<office>/log.jsonl`                          | 平台真實紀錄：user/bot 訊息與 attachment                    |
+| `~/.mikan/conversations/<office>/sessions.db` | agent 真實紀錄：prompt、model/tool 訊息、fork 與 compaction |
 
 不要合併它們。聊天歷史可以重建遺失的 top-level agent session，而 agent session 則包含從未出現在平台上的資料。
 
@@ -313,7 +313,7 @@ Session key 使用 `conversationId[:suffix]`，而且維持**原始平台值**�
 
 來源：`src/events/index.ts`。
 
-每個 office 的排程 event 是 JSON 檔，放在它僅限 host 的 State dir：`<state-dir>/conversations/<officeKey>/events/`。正規 union 為：
+每個 office 的排程 event 是 JSON 檔，放在它僅限 host 的 State dir：`~/.mikan/conversations/<officeKey>/events/`。正規 union 為：
 
 ```ts
 type EventFilePayload =
@@ -328,21 +328,21 @@ type EventFilePayload =
 
 ## 11. 持久化檔案系統介面
 
-| 路徑                                                  | 擁有者                | 可見性 / 相容性                              |
-| ----------------------------------------------------- | --------------------- | -------------------------------------------- |
-| `<state-dir>/settings.json`                           | config                | 僅限 host 的全域設定                         |
-| `<state-dir>/office-registry.json`                    | office registry       | 僅限 host 的 office 清單                     |
-| `<state-dir>/conversations/<officeKey>/settings.json` | config/admin          | 僅限 host 的對話覆寫                         |
-| `<state-dir>/models.json`                             | harness model catalog | 僅限 host 的自訂 provider/model              |
-| `<state-dir>/vaults/**`                               | vault/login           | 僅限 host 的 secret 與 mount file            |
-| `<workspace>/MEMORY.md`                               | agent/user            | Sandbox 可見的持久記憶                       |
-| `<workspace>/skills/**/SKILL.md`                      | skills                | Sandbox 可見的 prompt 指示                   |
-| `<workspace>/agents/*.md`                             | subagent profile      | 疊在內建之上、每個安裝各自的 model 修補      |
-| `<workspace>/<officeKey>/log.jsonl`                   | platform adapter      | Append-only 的平台歷史                       |
-| `<state-dir>/conversations/<officeKey>/sessions.db`   | session store         | 僅限 host 的 agent 歷史（pi-durable SQLite） |
-| `<state-dir>/conversations/<officeKey>/events/*.json` | event store           | 僅限 host 的排程 event                       |
+| 路徑                                               | 擁有者                | 可見性 / 相容性                              |
+| -------------------------------------------------- | --------------------- | -------------------------------------------- |
+| `~/.mikan/settings.json`                           | config                | 僅限 host 的全域設定                         |
+| `~/.mikan/office-registry.json`                    | office registry       | 僅限 host 的 office 清單                     |
+| `~/.mikan/conversations/<officeKey>/settings.json` | config/admin          | 僅限 host 的對話覆寫                         |
+| `~/.mikan/models.json`                             | harness model catalog | 僅限 host 的自訂 provider/model              |
+| `~/.mikan/vaults/**`                               | vault/login           | 僅限 host 的 secret 與 mount file            |
+| `<workspace>/MEMORY.md`                            | agent/user            | Sandbox 可見的持久記憶                       |
+| `<workspace>/skills/**/SKILL.md`                   | skills                | Sandbox 可見的 prompt 指示                   |
+| `<workspace>/agents/*.md`                          | subagent profile      | 疊在內建之上、每個安裝各自的 model 修補      |
+| `<workspace>/<officeKey>/log.jsonl`                | platform adapter      | Append-only 的平台歷史                       |
+| `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | 僅限 host 的 agent 歷史（pi-durable SQLite） |
+| `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | 僅限 host 的排程 event                       |
 
-`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。對於以對話為範圍的 sandbox，`<state-dir>/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名；`host` 模式以使用者為 key，`container` 模式則以 container 名稱為 key。
+`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。對於以對話為範圍的 sandbox，`~/.mikan/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名；`host` 模式以使用者為 key，`container` 模式則以 container 名稱為 key。
 
 state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態檔使用 atomic 私有寫入；append-only log 使用 append 語意。
 

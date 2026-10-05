@@ -11,7 +11,7 @@ Features:
 
 - commands run directly on the host machine
 - vault env is not injected
-- `/pi-login` can still store credentials in `state-dir/vaults`, keyed by platform user; env entries simply go unused, but a _file_ credential in that vault fails the run with `Sandbox type "host" does not support vault file mounts`
+- `/pi-login` can still store credentials in `~/.mikan/vaults`, keyed by platform user; env entries simply go unused, but a _file_ credential in that vault fails the run with `Sandbox type "host" does not support vault file mounts`
 - bash commands start in the mikan process's own working directory
 
 ## Private offices are not enforced

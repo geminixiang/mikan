@@ -5,7 +5,7 @@ description: mikan 如何在 state directory 中存储凭证，并按沙箱模�
 
 ## State directory 和 vault 位置
 
-默认 state directory 为：
+state directory 为：
 
 ```text
 ~/.mikan/
@@ -25,21 +25,9 @@ description: mikan 如何在 state directory 中存储凭证，并按沙箱模�
     └── extensions/            # 旧版保留 namespace；不会加载或挂载
 ```
 
-也可以使用 `--state-dir` 指定：
+全局设置文件位于 `~/.mikan/settings.json`。对话覆盖位于仅主机可见的 `~/.mikan/conversations/<office-key>/settings.json`。旧版 `<working-directory>/<conversationId>/settings.json` 会迁移一次，之后被忽略——对话目录会以可读写方式挂载进沙箱，因此设置有意存放在它们之外。
 
-```bash
-mikan --state-dir=/secure/mikan-state --sandbox=container:mikan-tools /path/to/workspace
-```
-
-凭证随后存储在：
-
-```text
-/secure/mikan-state/vaults/
-```
-
-全局设置文件位于 `<state-dir>/settings.json`。对话覆盖位于仅主机可见的 `<state-dir>/conversations/<office-key>/settings.json`。旧版 `<working-directory>/<conversationId>/settings.json` 会迁移一次，之后被忽略——对话目录会以可读写方式挂载进沙箱，因此设置有意存放在它们之外。
-
-启动时，mikan 会拒绝全局可写或不归当前用户所有的 `--state-dir`。新创建的 state/vault 目录和凭证文件使用私有模式，但现有的组/全局可读 state directory 不会自动收紧权限；请使用 `chmod 0700 <state-dir>`。
+启动时，mikan 会拒绝全局可写或不归当前用户所有的 `~/.mikan`。新创建的 state/vault 目录和凭证文件使用私有模式，但现有的组/全局可读 state directory 不会自动收紧权限；请使用 `chmod 0700 ~/.mikan`。
 
 ## Vault 内容
 
