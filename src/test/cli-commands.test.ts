@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -19,6 +19,15 @@ function tempRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "mikan-cli-migrate-"));
   roots.push(root);
   return root;
+}
+
+function legacyInstall(root: string): { stateDir: string; workspace: string } {
+  const stateDir = join(root, "state");
+  const workspace = join(root, "workspace");
+  mkdirSync(stateDir);
+  mkdirSync(workspace);
+  writeFileSync(join(stateDir, "settings.json"), "{}");
+  return { stateDir, workspace };
 }
 
 async function missingDocker(): Promise<string> {
@@ -44,16 +53,14 @@ describe("mikan migrate", () => {
     expect(await runMigrateCommand(args, missingDocker)).toBe(1);
   });
 
-  test("applies every migration to an empty state directory, then has nothing pending", async () => {
-    const root = tempRoot();
-    const stateDir = join(root, "state");
-    mkdirSync(stateDir);
+  test("applies every migration to an install with nothing to convert, then has nothing pending", async () => {
+    const { stateDir, workspace } = legacyInstall(tempRoot());
     const output = vi.spyOn(console, "log").mockImplementation(() => {});
     const args = [
       "--state-dir",
       stateDir,
       "--workspace",
-      join(root, "workspace"),
+      workspace,
       "--sandbox",
       "image:mikan-sandbox:latest",
     ];
@@ -68,27 +75,23 @@ describe("mikan migrate", () => {
 
   test("copies Pi's models.json into the chosen state directory", async () => {
     const root = tempRoot();
-    const stateDir = join(root, "state");
+    const { stateDir, workspace } = legacyInstall(root);
     const piAgentDir = join(root, "pi-agent");
-    mkdirSync(stateDir);
     mkdirSync(piAgentDir);
     writeFileSync(join(piAgentDir, "models.json"), '{"providers":{}}');
     vi.stubEnv("PI_CODING_AGENT_DIR", piAgentDir);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const args = ["--state-dir", stateDir, "--workspace", join(root, "workspace")];
+    const args = ["--state-dir", stateDir, "--workspace", workspace];
     expect(await runMigrateCommand([...args, "--sandbox", "host"], missingDocker)).toBe(0);
 
     expect(readFileSync(join(stateDir, "models.json"), "utf-8")).toBe('{"providers":{}}');
   });
 
   test("a failing migration exits non-zero and names the problem", async () => {
-    const root = tempRoot();
-    const stateDir = join(root, "state");
-    const workspace = join(root, "workspace");
-    mkdirSync(join(workspace, "123456"), { recursive: true });
+    const { stateDir, workspace } = legacyInstall(tempRoot());
+    mkdirSync(join(workspace, "123456"));
     writeFileSync(join(workspace, "123456", "log.jsonl"), "{}\n");
-    mkdirSync(stateDir);
     vi.spyOn(console, "log").mockImplementation(() => {});
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
@@ -99,6 +102,45 @@ describe("mikan migrate", () => {
 
     expect(code).toBe(1);
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("123456"));
+  });
+
+  test.each([[[]], [["--dry-run"]]])(
+    "refuses a state directory without settings.json before touching the workspace %j",
+    async (extra) => {
+      const root = tempRoot();
+      const { workspace } = legacyInstall(root);
+      const mistyped = join(root, "stat");
+      mkdirSync(join(workspace, "C0123456789"));
+      writeFileSync(join(workspace, "C0123456789", "log.jsonl"), "{}\n");
+      vi.spyOn(console, "log").mockImplementation(() => {});
+      const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const code = await runMigrateCommand(
+        ["--state-dir", mistyped, "--workspace", workspace, "--sandbox", "host", ...extra],
+        missingDocker,
+      );
+
+      expect(code).toBe(1);
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(mistyped, "settings.json")));
+      expect(existsSync(join(workspace, "C0123456789", "log.jsonl"))).toBe(true);
+      expect(existsSync(mistyped)).toBe(false);
+    },
+  );
+
+  test("refuses a workspace that does not exist and records nothing", async () => {
+    const { stateDir } = legacyInstall(tempRoot());
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const code = await runMigrateCommand(
+      ["--state-dir", stateDir, "--sandbox", "host"],
+      missingDocker,
+    );
+
+    expect(code).toBe(1);
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(stateDir, "workspace")));
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining("--workspace"));
+    expect(pendingMigrations(stateDir)).toEqual(MIGRATIONS);
   });
 });
 

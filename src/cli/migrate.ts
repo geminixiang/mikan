@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { InvalidArgumentError } from "commander";
 import { platformIsActive, readEnv } from "../env-manifest.js";
-import { runMigrations } from "../migrations/index.js";
+import { pendingMigrations, runMigrations } from "../migrations/index.js";
 import { parseSandboxArg } from "../sandbox/registry.js";
+import { globalSettingsPath } from "../settings/index.js";
 import type { DockerCli } from "../migrations/types.js";
 import { assertPlatformName } from "../office/index.js";
 import type { PlatformName } from "../types.js";
@@ -27,6 +29,20 @@ function collectOwner(value: string, owners: Map<string, PlatformName>): Map<str
     throw new InvalidArgumentError(errorMessage(error));
   }
   return owners;
+}
+
+function assertInstallPaths(stateDir: string, workspaceRoot: string): void {
+  const settingsPath = globalSettingsPath(stateDir);
+  if (!existsSync(settingsPath)) {
+    throw new Error(
+      `No settings at ${settingsPath}; pass the state directory the daemon ran with as --state-dir`,
+    );
+  }
+  if (!existsSync(workspaceRoot)) {
+    throw new Error(
+      `Workspace ${workspaceRoot} does not exist; pass the working directory the daemon ran with as --workspace`,
+    );
+  }
 }
 
 interface MigrateOptions {
@@ -62,10 +78,14 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
   const options = command.opts<MigrateOptions>();
   const stateDir = resolveStateDir(argv);
   const dryRun = options.dryRun ?? false;
+  const workspaceRoot = options.workspace
+    ? resolve(options.workspace)
+    : join(stateDir, "workspace");
   try {
     const sandbox = parseSandboxArg(options.sandbox);
+    if (pendingMigrations(stateDir).length > 0) assertInstallPaths(stateDir, workspaceRoot);
     const ran = await runMigrations({
-      workspaceRoot: options.workspace ? resolve(options.workspace) : join(stateDir, "workspace"),
+      workspaceRoot,
       stateDir,
       dryRun,
       owners: options.owner,

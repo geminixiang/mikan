@@ -158,7 +158,7 @@ function mergeSandboxSettings(
   };
 }
 
-function globalSettingsPath(stateDir: string): string {
+export function globalSettingsPath(stateDir: string): string {
   return join(stateDir, "settings.json");
 }
 
