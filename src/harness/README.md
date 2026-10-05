@@ -64,10 +64,11 @@ context and context size from `SessionStore` (`buildSessionContext`,
 `getContextTokens`). Context size follows Pi's rule: the usage of the newest
 successful answer after the latest compaction, unknown until one exists.
 
-Two provider-request facts are local because pi-durable does not expose them:
-mikan wraps the model catalog to pass the session ID as `sessionId` (provider
-prompt caches key on it) and to know whether a request is in flight when it
-logs an abort. The abort log marks a request from its `onPayload` call, not
+Pi supplies each conversation's provider `sessionId`; mikan does not replace it
+with the platform-facing session ID. mikan still wraps the model catalog for
+budgets and to know whether a request is in flight when it logs an abort,
+because pi-durable does not expose provider transport admission. The abort log
+marks a request from its `onPayload` call, not
 from `pi.live.generation`: a generation exists while credentials resolve and
 before the transport starts, so it cannot tell whether a provider ever received
 the request, and an abort during auth, a tool, or retry backoff must not be

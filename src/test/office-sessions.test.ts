@@ -9,7 +9,14 @@ import type {
   MutableModels,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+  createModels,
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+} from "@earendil-works/pi-ai";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { GenerationTask, ProviderDoc, defineExtension, hook } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
@@ -80,9 +87,10 @@ test("each concurrent session's requests carry its own session id and budget", a
   expect(seen).toEqual([
     {
       prompt: expect.stringContaining("from channel"),
-      sessionId: channel.sessionStore.getSessionId(),
+      sessionId: expect.any(String),
     },
   ]);
+  expect(seen[0]?.sessionId).not.toBe(channel.sessionStore.getSessionId());
   expect(thread.getLastRunStats().budgetExceededReason).toContain("LLM calls");
 });
 
@@ -163,4 +171,99 @@ test("a message steered into a running session reaches its next request", async 
   await run;
 
   expect(requests[0]).toContain("CODE_42");
+});
+
+test("native identity routes cloned generation and compaction requests to their own models", async () => {
+  const context = BACKGROUND_CONTEXT;
+  const seen: Array<{ owner: string; sessionId: string | undefined }> = [];
+  const attach = async (key: string) => {
+    const store = await SessionStore.open(office, key);
+    stores.push(store);
+    const faux = fauxProvider();
+    const models = createModels();
+    models.setProvider(faux.provider);
+    faux.setResponses(
+      Array.from({ length: 8 }, () => (_request: Context, options?: SimpleStreamOptions) => {
+        seen.push({ owner: key, sessionId: options?.sessionId });
+        return fauxAssistantMessage(`answer from ${key}`);
+      }),
+    );
+    const attached = await store.bindHarness({
+      models,
+      settings: { compaction: { enabled: false, keepRecentTokens: 1 } },
+    });
+    const extension = defineExtension({
+      name: attached.extensionName,
+      hooks: [
+        hook(GenerationTask, {
+          beforeRequest: (request) => ({ messages: structuredClone(request.messages) }),
+        }),
+      ],
+    });
+    attached.registry.install(extension);
+    const model = faux.getModel();
+    await attached.conversation.configure(
+      { model: { provider: model.provider, modelId: model.id }, extensions: [extension] },
+      context,
+    );
+    return attached;
+  };
+  const channel = await attach("C1");
+  const thread = await attach("C1:1000.1");
+  const prompts = await Promise.all([
+    channel.conversation.submit({ type: "input", content: "channel" }, context),
+    thread.conversation.submit({ type: "input", content: "thread" }, context),
+  ]);
+  await Promise.all(prompts.map((prompt) => prompt.wait(context)));
+  await (
+    await channel.conversation.submit({ type: "input", content: "channel follow-up" }, context)
+  ).wait(context);
+  const compact = await channel.conversation.compact(undefined, context);
+  expect((await channel.harness.waitForTask(compact, context)).state.outcome.status).toBe(
+    "completed",
+  );
+  const channelId = (await channel.harness.snapshot(ProviderDoc, channel.conversation.id, context))
+    ?.sessionId;
+  const threadId = (await thread.harness.snapshot(ProviderDoc, thread.conversation.id, context))
+    ?.sessionId;
+  expect(channelId).toEqual(expect.any(String));
+  expect(threadId).toEqual(expect.any(String));
+  expect(channelId).not.toBe(threadId);
+  expect(seen).toEqual(
+    expect.arrayContaining([
+      { owner: "C1", sessionId: channelId },
+      { owner: "C1:1000.1", sessionId: threadId },
+    ]),
+  );
+  expect(seen.filter((request) => request.owner === "C1")).toHaveLength(3);
+  expect(
+    seen.every((request) => request.sessionId === (request.owner === "C1" ? channelId : threadId)),
+  ).toBe(true);
+});
+
+test("binding backfills native identity once and preserves it across reset and reopen", async () => {
+  const context = BACKGROUND_CONTEXT;
+  const models = createModels();
+  const store = await SessionStore.open(office, "C1");
+  stores.push(store);
+  const seed = await store.bindHarness({ models });
+  await seed.harness.commit((tx) => tx.retireDoc(ProviderDoc, seed.conversation.id), context);
+  expect(await seed.harness.snapshot(ProviderDoc, seed.conversation.id, context)).toBeUndefined();
+  await store.close();
+  const legacy = await SessionStore.open(office, "C1");
+  stores.push(legacy);
+  const attached = await legacy.bindHarness({ models });
+  const before = await attached.harness.snapshot(ProviderDoc, attached.conversation.id, context);
+  expect(before?.sessionId).toEqual(expect.any(String));
+  await legacy.reset();
+  expect(await attached.harness.snapshot(ProviderDoc, attached.conversation.id, context)).toEqual(
+    before,
+  );
+  await legacy.close();
+  const reopened = await SessionStore.open(office, "C1");
+  stores.push(reopened);
+  const rebound = await reopened.bindHarness({ models });
+  expect(await rebound.harness.snapshot(ProviderDoc, rebound.conversation.id, context)).toEqual(
+    before,
+  );
 });

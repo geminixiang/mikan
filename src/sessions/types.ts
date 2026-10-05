@@ -1,7 +1,14 @@
 import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Message } from "@earendil-works/pi-ai";
+import type { Message, Models } from "@earendil-works/pi-ai";
+import type {
+  Conversation,
+  Harness,
+  HarnessOptions,
+  HarnessSettings,
+  Registry,
+} from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
@@ -13,6 +20,21 @@ export interface ResolveSessionKeyOptions {
   threadTs?: string;
   persistentTopLevel?: boolean;
   scopeDirectThreads?: boolean;
+}
+
+export interface SessionHarnessBinding {
+  models: Models;
+  requestModels?: Models;
+  env?: HarnessOptions["env"];
+  settings?: HarnessSettings;
+  onReport?: (error: unknown) => void;
+}
+
+export interface AttachedSessionHarness {
+  harness: Harness;
+  conversation: Conversation;
+  registry: Registry;
+  extensionName: string;
 }
 
 export interface SessionContext {

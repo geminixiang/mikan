@@ -12,6 +12,7 @@ import {
   Harness,
   LiveDoc,
   MemoryStorage,
+  ProviderDoc,
   ROOT_CONVERSATION_ID,
   ToolResultEntry,
   UserEntry,
@@ -31,8 +32,10 @@ import {
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Office } from "../office/types.js";
 import type {
+  AttachedSessionHarness,
   ImportedSession,
   ImportedSessionEntry,
+  SessionHarnessBinding,
   SessionContext,
   SessionEntry,
   SessionHeader,
@@ -87,20 +90,9 @@ const CustomSessionEntry = defineEntry<{
   timestamp: number;
 }>("mikan.custom");
 
-export interface SessionHarnessBinding {
-  models: Models;
-  requestModels?: Models;
-  env?: HarnessOptions["env"];
-  settings?: HarnessSettings;
-  onReport?: (error: unknown) => void;
-}
-
-export interface AttachedSessionHarness {
-  harness: Harness;
-  conversation: Conversation;
-  registry: Registry;
-  extensionName: string;
-  tagRequest(messages: readonly Message[]): readonly Message[];
+interface BoundSessionHarness {
+  binding: SessionHarnessBinding;
+  providerSessionId: string;
 }
 
 function toJson(input: unknown): JsonValue {
@@ -184,12 +176,8 @@ function bindModels(models: Models, property: PropertyKey): unknown {
   return typeof value === "function" ? value.bind(models) : value;
 }
 
-function requestOwnerKey(request: unknown): object | undefined {
-  if (typeof request !== "object" || request === null || !("messages" in request)) return undefined;
-  const { messages } = request;
-  if (!Array.isArray(messages)) return undefined;
-  const last: unknown = messages.at(-1);
-  return typeof last === "object" && last !== null ? last : undefined;
+function requestSessionId(options: unknown): string | undefined {
+  return isRecord(options) && typeof options.sessionId === "string" ? options.sessionId : undefined;
 }
 
 function protectStorageFiles(path: string): void {
@@ -205,8 +193,7 @@ class OfficeStorage {
   readonly registry: Registry = createRegistry();
   private opened: Harness | undefined;
   private refs = 0;
-  private readonly bindings = new Map<ConversationId, SessionHarnessBinding>();
-  private readonly owners = new WeakMap<object, ConversationId>();
+  private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
   private readonly writers = new Set<ConversationId>();
 
   private constructor(private readonly path: string | null) {}
@@ -249,7 +236,8 @@ class OfficeStorage {
   }
 
   private harnessOptions(): HarnessOptions {
-    const latest = (): SessionHarnessBinding | undefined => [...this.bindings.values()].at(-1);
+    const latest = (): SessionHarnessBinding | undefined =>
+      [...this.bindings.values()].at(-1)?.binding;
     const fallback = (): Models => {
       const models = latest()?.models;
       if (!models) throw new Error("Session has no model binding; start a run to use the model");
@@ -259,10 +247,12 @@ class OfficeStorage {
       get: (_target, property) => {
         if (!REQUEST_METHODS.has(property)) return bindModels(fallback(), property);
         return (...args: unknown[]) => {
-          const key = requestOwnerKey(args[1]);
-          const owner = key ? this.owners.get(key) : undefined;
-          const binding = owner === undefined ? undefined : this.bindings.get(owner);
-          const target = binding?.requestModels ?? binding?.models ?? fallback();
+          const sessionId = requestSessionId(args[2]);
+          const binding = [...this.bindings.values()].find(
+            (bound) => bound.providerSessionId === sessionId,
+          )?.binding;
+          if (!binding) throw new Error("Provider request has no active session binding");
+          const target = binding.requestModels ?? binding.models;
           const method = Reflect.get(target, property, target) as (...input: unknown[]) => unknown;
           return method.apply(target, args);
         };
@@ -294,7 +284,7 @@ class OfficeStorage {
         },
       },
       env: (target, envContext) =>
-        this.bindings.get(target.conversationId)?.env?.(target, envContext),
+        this.bindings.get(target.conversationId)?.binding.env?.(target, envContext),
       onReport: (error) => {
         const report = latest()?.onReport;
         if (report) report(error);
@@ -328,23 +318,21 @@ class OfficeStorage {
     this.writers.delete(conversationId);
   }
 
-  bind(conversationId: ConversationId, binding: SessionHarnessBinding): void {
+  async bind(conversationId: ConversationId, binding: SessionHarnessBinding): Promise<void> {
     if (this.bindings.has(conversationId)) {
       throw new Error("Session already has an attached harness");
     }
-    this.bindings.set(conversationId, binding);
+    const providerSessionId =
+      (await this.harness.snapshot(ProviderDoc, conversationId, context))?.sessionId ??
+      (await this.harness.commit(
+        async (tx) => (await tx.doc(ProviderDoc, conversationId)).sessionId,
+        context,
+      ));
+    this.bindings.set(conversationId, { binding, providerSessionId });
   }
 
   unbind(conversationId: ConversationId): void {
     this.bindings.delete(conversationId);
-  }
-
-  tag(conversationId: ConversationId, messages: readonly Message[]): readonly Message[] {
-    const last = messages.at(-1);
-    if (!last) return messages;
-    const tagged = { ...last };
-    this.owners.set(tagged, conversationId);
-    return [...messages.slice(0, -1), tagged];
   }
 
   async release(): Promise<void> {
@@ -776,7 +764,7 @@ export class SessionStore implements SessionInspection {
 
   async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {
     return this.mutate(async () => {
-      this.storage.bind(this.conversation.id, binding);
+      await this.storage.bind(this.conversation.id, binding);
       this.bound = true;
       const conversationId = this.conversation.id;
       return {
@@ -784,7 +772,6 @@ export class SessionStore implements SessionInspection {
         conversation: this.conversation,
         registry: this.storage.registry,
         extensionName: `mikan.${conversationId}`,
-        tagRequest: (messages) => this.storage.tag(conversationId, messages),
       };
     });
   }

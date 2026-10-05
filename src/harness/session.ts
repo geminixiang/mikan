@@ -30,8 +30,8 @@ import {
   type ToolExecutionApi,
   type UsageState,
 } from "@earendil-works/pi-durable";
-import type { AttachedSessionHarness, SessionStore } from "../sessions/session-store.js";
-import type { SessionRunStatus } from "../sessions/types.js";
+import type { SessionStore } from "../sessions/session-store.js";
+import type { AttachedSessionHarness, SessionRunStatus } from "../sessions/types.js";
 import type {
   BudgetSettings,
   CompactionSettings,
@@ -376,10 +376,6 @@ export class MikanAgentSession {
       } as TOptions;
       return tracked;
     };
-    const withSession = <TOptions extends { sessionId?: string }>(options: TOptions): TOptions => ({
-      ...options,
-      sessionId: options.sessionId ?? this.sessionStore.getSessionId(),
-    });
     const finish = (token: symbol) => {
       if (this.activeRequest?.token === token) this.activeRequest = undefined;
     };
@@ -399,9 +395,7 @@ export class MikanAgentSession {
             const over = this.runActive ? this.callOverBudgetReason() : undefined;
             if (over || this.runAborted) return abortedStream(model, over ?? "Operation aborted");
             if (this.runActive) this.tally.llmCalls += 1;
-            return stream((token) =>
-              target.streamSimple(model, request, withSession(track(options, token))),
-            );
+            return stream((token) => target.streamSimple(model, request, track(options, token)));
           };
         }
         const value = Reflect.get(target, property, target) as unknown;
@@ -466,10 +460,7 @@ export class MikanAgentSession {
         ],
         hooks: [
           hook(GenerationTask, {
-            beforeRequest: async (request, api) => {
-              await this.beforeRequest(String(api.taskId));
-              return { messages: attached.tagRequest(request.messages) };
-            },
+            beforeRequest: (_request, api) => this.beforeRequest(String(api.taskId)),
           }),
           hook(CompactionTask, {
             beforeCompact: (_compaction, api) => this.beforeCompact(String(api.taskId)),
