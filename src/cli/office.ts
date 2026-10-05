@@ -1,16 +1,14 @@
 import { officeKey, OfficeRegistry } from "../office/index.js";
-import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
+import { cliCommand, commandExitCode, stateDirPath } from "./arg-grammar.js";
 
 export function runOfficeCommand(argv: string[]): number {
-  const command = cliCommand("mikan office")
-    .description("Inspect conversation offices")
-    .option("--state-dir <dir>", "State directory", nonEmptyValue);
+  const command = cliCommand("mikan office").description("Inspect conversation offices");
   let result = 1;
   command
     .command("list")
     .description("List each registered office key with its platform and conversation id")
     .action(() => {
-      result = listOffices(resolveStateDir(argv));
+      result = listOffices(stateDirPath());
     });
   try {
     command.parse(argv, { from: "user" });

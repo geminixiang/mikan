@@ -207,7 +207,7 @@ export function assertStateDirOutsideWorkspace(
 ): void {
   if (!isPathInside(stateDir, workingDir)) return;
   const message =
-    `--state-dir (${stateDir}) must not be inside the working directory (${workingDir}): ` +
+    `The state directory (${stateDir}) must not be inside the working directory (${workingDir}): ` +
     `sandbox containers mount the working directory, and a mounted state dir ` +
     `would expose settings, office records, vaults, and credentials to sandboxed code.`;
   if (sandboxType === "host") {

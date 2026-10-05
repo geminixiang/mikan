@@ -34,7 +34,7 @@ module.exports = {
       name: "mikan",
       script: "mikan",
 
-      args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest ./workspace",
+      args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
 
       env: loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")),
 

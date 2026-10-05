@@ -1,7 +1,6 @@
 import { Command, CommanderError, InvalidArgumentError } from "commander";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { readEnv } from "../env-manifest.js";
+import { join } from "node:path";
 
 export function cliCommand(name: string): Command {
   return new Command(name)
@@ -26,24 +25,6 @@ export function commandExitCode(error: unknown, command: Command): number {
   return error.exitCode;
 }
 
-export function defaultStateDir(): string {
+export function stateDirPath(): string {
   return join(homedir(), ".mikan");
-}
-
-export function resolveStateDir(
-  args: string[] = process.argv.slice(2),
-  envValue: string | undefined = readEnv("STATE_DIR"),
-): string {
-  const command = cliCommand("mikan")
-    .helpOption(false)
-    .allowUnknownOption()
-    .allowExcessArguments()
-    .option("--state-dir <dir>", "State directory", nonEmptyValue);
-  command.parse(args, { from: "user" });
-  const { stateDir } = command.opts<{ stateDir?: string }>();
-  return stateDir !== undefined
-    ? resolve(stateDir)
-    : envValue
-      ? resolve(envValue)
-      : defaultStateDir();
 }

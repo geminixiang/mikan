@@ -40,33 +40,27 @@ jobs:
 
           WORKSPACE_TMP="$GITHUB_WORKSPACE/.workspace"
           LOG_FILE="$WORKSPACE_TMP/mikan-slack-e2e.log"
-          STATE_DIR="$WORKSPACE_TMP/mikan-state"
+          MIKAN_HOME="$WORKSPACE_TMP/home"
+          STATE_DIR="$MIKAN_HOME/.mikan"
           WORKING_DIR="$WORKSPACE_TMP/mikan-workspace"
-          mkdir -p "$WORKING_DIR"
+          mkdir -p "$WORKING_DIR" "$MIKAN_HOME"
 
-          node dist/main.js --onboard --state-dir "$STATE_DIR"
+          HOME="$MIKAN_HOME" node dist/main.js onboard
           # E2E runs on OpenRouter's built-in openai/gpt-6-luna. Lane
           # history: deepseek-v4-flash echoed stale tokens from polluted
           # context; gpt-oss-120b's routing returned empty or corrupted
           # content; qwen3.7-flash omitted required tool parameters;
           # glm-5.3-flash sometimes wrote a tool result as text instead of
           # calling the tool, and answered with tokens from other threads.
-          # The runner is a disposable single-tenant workspace on the host
-          # sandbox, so opt into the trusted door policy explicitly — the
-          # isolated default refuses host mode by design.
           node -e '
             const fs = require("fs");
             const p = process.argv[1];
             const s = JSON.parse(fs.readFileSync(p, "utf8"));
             const model = { provider: "openrouter", model: "openai/gpt-6-luna" };
-            s.llm = { ...s.llm, ...model, thinkingLevel: "off", autoReply: { ...model } };
-            s.sandbox = {
-              ...s.sandbox,
-              workspace: { doorPolicy: "trusted", layout: "shared-support" },
-            };
+            s.llm = { ...s.llm, ...model, thinkingLevel: "off" };
             fs.writeFileSync(p, JSON.stringify(s, null, 2));
           ' "$STATE_DIR/settings.json"
-          node dist/main.js --state-dir "$STATE_DIR" "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
+          HOME="$MIKAN_HOME" node dist/main.js "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 
           cleanup() {
@@ -103,5 +97,5 @@ jobs:
             exit 1
           fi
 
-          # The tests inspect the daemon's sessions, which live in its state dir.
-          STATE_DIR="$STATE_DIR" npm run test:e2e:slack
+          # The tests inspect the daemon's sessions, which live in its ~/.mikan.
+          HOME="$MIKAN_HOME" npm run test:e2e:slack

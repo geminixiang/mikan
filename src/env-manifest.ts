@@ -194,7 +194,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     title: "Runtime",
     kind: "feature",
     vars: [
-      { name: "STATE_DIR", deploy: false, doc: "State dir override (same as --state-dir)" },
       {
         name: "HTTP_IDLE_TIMEOUT",
         deploy: false,

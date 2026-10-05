@@ -105,18 +105,18 @@ function ensureSecureStateDir(path: string): void {
       mkdirSync(path, { recursive: true, mode: 0o700 });
       return;
     }
-    console.error(`Error: cannot access --state-dir ${path}: ${(err as Error).message}`);
+    console.error(`Error: cannot access state directory ${path}: ${(err as Error).message}`);
     process.exit(1);
   }
 
   if (!stat.isDirectory()) {
-    console.error(`Error: --state-dir ${path} exists but is not a directory`);
+    console.error(`Error: state directory ${path} exists but is not a directory`);
     process.exit(1);
   }
 
   if (stat.mode & WORLD_WRITABLE_MODE) {
     console.error(
-      `Error: --state-dir ${path} is world-writable (mode ${(stat.mode & 0o777).toString(8)}). ` +
+      `Error: state directory ${path} is world-writable (mode ${(stat.mode & 0o777).toString(8)}). ` +
         `Credentials stored there would be exposed to other local users. ` +
         `Fix with: chmod 0700 ${path}`,
     );
@@ -126,8 +126,8 @@ function ensureSecureStateDir(path: string): void {
   const euid = typeof process.geteuid === "function" ? process.geteuid() : undefined;
   if (euid !== undefined && stat.uid !== euid) {
     console.error(
-      `Error: --state-dir ${path} is owned by uid ${stat.uid} but mikan is running as uid ${euid}. ` +
-        `Run mikan as the directory owner or point --state-dir at a directory you own.`,
+      `Error: state directory ${path} is owned by uid ${stat.uid} but mikan is running as uid ${euid}. ` +
+        `Run mikan as the directory owner.`,
     );
     process.exit(1);
   }
@@ -144,7 +144,7 @@ function handleStartupError(error: unknown): never {
     console.error(`Missing global settings: ${error.settingsPath}`);
     console.error("");
     console.error("Run onboarding to create it:");
-    console.error(`  mikan --onboard --state-dir ${stateDir}`);
+    console.error(`  mikan onboard`);
     console.error("");
     console.error("Then review the generated settings.json and start mikan again.");
     process.exit(1);
@@ -255,7 +255,7 @@ try {
 
 const pending = pendingMigrations(stateDir);
 if (pending.length > 0) {
-  console.error(formatPendingMigrations({ pending, stateDir, workspaceRoot: workingDir, sandbox }));
+  console.error(formatPendingMigrations({ pending, workspaceRoot: workingDir, sandbox }));
   process.exit(1);
 }
 

@@ -12,7 +12,7 @@ import type { DockerCli } from "../migrations/types.js";
 import { assertPlatformName } from "../office/index.js";
 import type { PlatformName } from "../types.js";
 import { errorMessage } from "../unknown-values.js";
-import { cliCommand, commandExitCode, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
+import { cliCommand, commandExitCode, nonEmptyValue, stateDirPath } from "./arg-grammar.js";
 
 const PLATFORMS: readonly PlatformName[] = ["slack", "telegram", "discord", "github"];
 
@@ -35,7 +35,7 @@ function assertInstallPaths(stateDir: string, workspaceRoot: string): void {
   const settingsPath = globalSettingsPath(stateDir);
   if (!existsSync(settingsPath)) {
     throw new Error(
-      `No settings at ${settingsPath}; pass the state directory the daemon ran with as --state-dir`,
+      `No settings at ${settingsPath}; move the state directory the daemon ran with to ${stateDir}`,
     );
   }
   if (!existsSync(workspaceRoot)) {
@@ -46,7 +46,6 @@ function assertInstallPaths(stateDir: string, workspaceRoot: string): void {
 }
 
 interface MigrateOptions {
-  stateDir?: string;
   workspace?: string;
   dryRun?: boolean;
   sandbox: string;
@@ -56,8 +55,7 @@ interface MigrateOptions {
 export async function runMigrateCommand(argv: string[], docker = dockerCli): Promise<number> {
   const command = cliCommand("mikan migrate")
     .description("Apply pending state migrations (stop the daemon first)")
-    .option("--state-dir <dir>", "State directory", nonEmptyValue)
-    .option("--workspace <dir>", "Workspace directory (default: <state-dir>/workspace)")
+    .option("--workspace <dir>", "Workspace directory (default: ~/.mikan/workspace)")
     .requiredOption(
       "--sandbox <spec>",
       "The daemon's --sandbox value: host | container:<name> | image:<image> | cloudflare:<id>",
@@ -76,7 +74,7 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
     return commandExitCode(error, command);
   }
   const options = command.opts<MigrateOptions>();
-  const stateDir = resolveStateDir(argv);
+  const stateDir = stateDirPath();
   const dryRun = options.dryRun ?? false;
   const workspaceRoot = options.workspace
     ? resolve(options.workspace)

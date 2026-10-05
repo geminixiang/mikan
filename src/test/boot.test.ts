@@ -1,22 +1,18 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { describe, expect, test } from "vitest";
-import { defaultStateDir, resolveStateDir } from "../cli/arg-grammar.js";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { stateDirPath } from "../cli/arg-grammar.js";
 import { resolveBoot, helpText } from "../cli/boot.js";
 
 const HOME_STATE = join(homedir(), ".mikan");
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("resolveBoot", () => {
   test("no args: run mode with all defaults", () => {
-    const prev = process.env.MIKAN_STATE_DIR;
-    delete process.env.MIKAN_STATE_DIR;
-    let plan;
-    try {
-      plan = resolveBoot([]);
-    } finally {
-      if (prev !== undefined) process.env.MIKAN_STATE_DIR = prev;
-    }
-    expect(plan).toMatchObject({
+    expect(resolveBoot([])).toMatchObject({
       mode: "run",
       stateDir: HOME_STATE,
       workingDir: join(HOME_STATE, "workspace"),
@@ -33,18 +29,26 @@ describe("resolveBoot", () => {
   });
 
   test("--flag value and --flag=value forms are equivalent", () => {
-    const a = resolveBoot(["--state-dir", "/tmp/state", "--sandbox", "host"]);
-    const b = resolveBoot(["--state-dir=/tmp/state", "--sandbox=host"]);
-    expect(a.stateDir).toBe(resolve("/tmp/state"));
-    expect(b.stateDir).toBe(a.stateDir);
+    const a = resolveBoot(["--sandbox", "container:dev", "--download", "C1"]);
+    const b = resolveBoot(["--sandbox=container:dev", "--download=C1"]);
     expect(a.sandbox).toEqual(b.sandbox);
+    expect(a.downloadChannel).toBe(b.downloadChannel);
   });
 
-  test("default working dir follows an explicit state dir", () => {
-    const plan = resolveBoot(["--state-dir=/tmp/state"]);
-    expect(plan.workingDir).toBe(resolve("/tmp/state/workspace"));
-    expect(plan.workingDirExplicit).toBe(false);
+  test("the state dir is always ~/.mikan, whatever STATE_DIR says", () => {
+    vi.stubEnv("STATE_DIR", "/tmp/env-state");
+    vi.stubEnv("MIKAN_STATE_DIR", "/tmp/env-state");
+    expect(resolveBoot([]).stateDir).toBe(HOME_STATE);
+    expect(resolveBoot(["onboard"]).stateDir).toBe(HOME_STATE);
+    expect(stateDirPath()).toBe(HOME_STATE);
   });
+
+  test.each([[["--state-dir", "/tmp/state"]], [["onboard", "--state-dir=/tmp/state"]]])(
+    "--state-dir is an unknown option: %j",
+    (args) => {
+      expect(() => resolveBoot(args)).toThrow(/unknown option '--state-dir/);
+    },
+  );
 
   test("flag values are never taken as the positional working dir", () => {
     const plan = resolveBoot(["--sandbox", "host", "--download", "C123"]);
@@ -76,7 +80,6 @@ describe("resolveBoot", () => {
 
   test("`onboard` subcommand selects onboard mode, but only in first position", () => {
     expect(resolveBoot(["onboard"]).mode).toBe("onboard");
-    expect(resolveBoot(["onboard", "--state-dir", "/tmp/x"]).stateDir).toBe("/tmp/x");
     expect(resolveBoot(["/some/dir", "onboard"]).mode).toBe("run");
   });
 
@@ -110,77 +113,16 @@ describe("resolveBoot", () => {
 describe("helpText", () => {
   test("documents every flag the parser accepts", () => {
     const help = helpText();
-    for (const flag of [
-      "--state-dir",
-      "--sandbox",
-      "mikan onboard",
-      "--download",
-      "--version",
-      "--help",
-    ]) {
+    for (const flag of ["--sandbox", "mikan onboard", "--download", "--version", "--help"]) {
       expect(help).toContain(flag);
     }
     expect(help).not.toContain("--worker-token");
+    expect(help).not.toContain("--state-dir");
   });
 });
 
 describe("arg-grammar", () => {
-  test("defaultStateDir is ~/.mikan", () => {
-    expect(defaultStateDir()).toBe(HOME_STATE);
-  });
-
-  test.each([
-    ["--state-dir"],
-    ["--state-dir", "--help"],
-    ["--state-dir="],
-    ["--download"],
-    ["--sandbox"],
-  ])("rejects missing option values: %j", (...args) => {
+  test.each([["--download"], ["--sandbox"]])("rejects missing option values: %j", (...args) => {
     expect(() => resolveBoot(args)).toThrow();
-  });
-
-  test("resolveStateDir matches the full parser's answer", () => {
-    for (const args of [
-      ["--state-dir", "/tmp/state", "/tmp/mikan"],
-      ["--state-dir=/tmp/state", "/tmp/mikan"],
-      ["/tmp/mikan"],
-      [],
-    ]) {
-      expect(resolveStateDir(args)).toBe(resolveBoot(args).stateDir);
-    }
-  });
-
-  test("state-dir precedence: flag > env > default", () => {
-    const prev = process.env.MIKAN_STATE_DIR;
-    delete process.env.MIKAN_STATE_DIR;
-    try {
-      expect(resolveStateDir(["--state-dir=/tmp/flag"], "/tmp/env")).toBe(resolve("/tmp/flag"));
-      expect(resolveStateDir([], "/tmp/env")).toBe(resolve("/tmp/env"));
-      expect(resolveStateDir([], undefined)).toBe(defaultStateDir());
-    } finally {
-      if (prev !== undefined) process.env.MIKAN_STATE_DIR = prev;
-    }
-  });
-
-  test("last --state-dir flag wins, matching the historical parsers", () => {
-    expect(resolveStateDir(["--state-dir=/tmp/a", "--state-dir=/tmp/b"], undefined)).toBe(
-      resolve("/tmp/b"),
-    );
-  });
-
-  test("boot plan honors STATE_DIR env when no flag is given", () => {
-    const prev = { state: process.env.STATE_DIR, mikan: process.env.MIKAN_STATE_DIR };
-    process.env.STATE_DIR = "/tmp/env-state";
-    delete process.env.MIKAN_STATE_DIR;
-    try {
-      expect(resolveBoot([]).stateDir).toBe(resolve("/tmp/env-state"));
-      expect(resolveBoot(["--state-dir=/tmp/flag-state"]).stateDir).toBe(
-        resolve("/tmp/flag-state"),
-      );
-    } finally {
-      if (prev.state === undefined) delete process.env.STATE_DIR;
-      else process.env.STATE_DIR = prev.state;
-      if (prev.mikan !== undefined) process.env.MIKAN_STATE_DIR = prev.mikan;
-    }
   });
 });

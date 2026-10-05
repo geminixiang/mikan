@@ -21,8 +21,13 @@ function tempRoot(): string {
   return root;
 }
 
+function homeStateDir(root: string): string {
+  vi.stubEnv("HOME", root);
+  return join(root, ".mikan");
+}
+
 function legacyInstall(root: string): { stateDir: string; workspace: string } {
-  const stateDir = join(root, "state");
+  const stateDir = homeStateDir(root);
   const workspace = join(root, "workspace");
   mkdirSync(stateDir);
   mkdirSync(workspace);
@@ -43,6 +48,7 @@ describe("mikan migrate", () => {
   });
 
   test.each([
+    ["--sandbox", "host", "--state-dir", "/tmp/state"],
     ["--sandbox", "host", "extra"],
     ["--sandbox", "host", "--workspace"],
     ["--sandbox", "host", "--owner", "C123"],
@@ -56,14 +62,7 @@ describe("mikan migrate", () => {
   test("applies every migration to an install with nothing to convert, then has nothing pending", async () => {
     const { stateDir, workspace } = legacyInstall(tempRoot());
     const output = vi.spyOn(console, "log").mockImplementation(() => {});
-    const args = [
-      "--state-dir",
-      stateDir,
-      "--workspace",
-      workspace,
-      "--sandbox",
-      "image:mikan-sandbox:latest",
-    ];
+    const args = ["--workspace", workspace, "--sandbox", "image:mikan-sandbox:latest"];
 
     expect(await runMigrateCommand(args, missingDocker)).toBe(0);
     expect(output).toHaveBeenCalledWith(`Applied ${MIGRATIONS.length}.`);
@@ -82,21 +81,21 @@ describe("mikan migrate", () => {
     vi.stubEnv("PI_CODING_AGENT_DIR", piAgentDir);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const args = ["--state-dir", stateDir, "--workspace", workspace];
+    const args = ["--workspace", workspace];
     expect(await runMigrateCommand([...args, "--sandbox", "host"], missingDocker)).toBe(0);
 
     expect(readFileSync(join(stateDir, "models.json"), "utf-8")).toBe('{"providers":{}}');
   });
 
   test("a failing migration exits non-zero and names the problem", async () => {
-    const { stateDir, workspace } = legacyInstall(tempRoot());
+    const { workspace } = legacyInstall(tempRoot());
     mkdirSync(join(workspace, "123456"));
     writeFileSync(join(workspace, "123456", "log.jsonl"), "{}\n");
     vi.spyOn(console, "log").mockImplementation(() => {});
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const code = await runMigrateCommand(
-      ["--state-dir", stateDir, "--workspace", workspace, "--sandbox", "host"],
+      ["--workspace", workspace, "--sandbox", "host"],
       missingDocker,
     );
 
@@ -105,25 +104,25 @@ describe("mikan migrate", () => {
   });
 
   test.each([[[]], [["--dry-run"]]])(
-    "refuses a state directory without settings.json before touching the workspace %j",
+    "refuses a ~/.mikan without settings.json before touching the workspace %j",
     async (extra) => {
       const root = tempRoot();
-      const { workspace } = legacyInstall(root);
-      const mistyped = join(root, "stat");
-      mkdirSync(join(workspace, "C0123456789"));
+      const stateDir = homeStateDir(root);
+      const workspace = join(root, "workspace");
+      mkdirSync(join(workspace, "C0123456789"), { recursive: true });
       writeFileSync(join(workspace, "C0123456789", "log.jsonl"), "{}\n");
       vi.spyOn(console, "log").mockImplementation(() => {});
       const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const code = await runMigrateCommand(
-        ["--state-dir", mistyped, "--workspace", workspace, "--sandbox", "host", ...extra],
+        ["--workspace", workspace, "--sandbox", "host", ...extra],
         missingDocker,
       );
 
       expect(code).toBe(1);
-      expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(mistyped, "settings.json")));
+      expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(stateDir, "settings.json")));
       expect(existsSync(join(workspace, "C0123456789", "log.jsonl"))).toBe(true);
-      expect(existsSync(mistyped)).toBe(false);
+      expect(existsSync(stateDir)).toBe(false);
     },
   );
 
@@ -132,10 +131,7 @@ describe("mikan migrate", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const code = await runMigrateCommand(
-      ["--state-dir", stateDir, "--sandbox", "host"],
-      missingDocker,
-    );
+    const code = await runMigrateCommand(["--sandbox", "host"], missingDocker);
 
     expect(code).toBe(1);
     expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(stateDir, "workspace")));
@@ -146,12 +142,12 @@ describe("mikan migrate", () => {
 
 describe("mikan office list", () => {
   test("prints each office key with its platform and conversation id", () => {
-    const stateDir = join(tempRoot(), "state");
+    const stateDir = homeStateDir(tempRoot());
     const address = createOfficeAddress("slack", "C0123456789");
     new OfficeRegistry(stateDir).recordOffice(address);
     const output = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    expect(runOfficeCommand(["list", "--state-dir", stateDir])).toBe(0);
+    expect(runOfficeCommand(["list"])).toBe(0);
     expect(output).toHaveBeenCalledWith(`  ${officeKey(address)}  slack  C0123456789`);
   });
 

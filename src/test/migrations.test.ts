@@ -386,14 +386,13 @@ describe("the migration record", () => {
   test("the startup message names each pending migration and the exact command", () => {
     const message = formatPendingMigrations({
       pending: MIGRATIONS.slice(0, 1),
-      stateDir,
       workspaceRoot,
       sandbox: { type: "container", container: "dev" },
     });
 
     expect(message).toContain("0001-office-layout");
     expect(message).toContain(
-      `mikan migrate --state-dir ${stateDir} --workspace ${workspaceRoot} --sandbox container:dev --dry-run`,
+      `mikan migrate --workspace ${workspaceRoot} --sandbox container:dev --dry-run`,
     );
   });
 });

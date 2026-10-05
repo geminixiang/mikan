@@ -43,24 +43,25 @@ if (botAuth.team_id !== userAuth.team_id || botAuth.user_id === userAuth.user_id
   throw new Error("QA requires distinct bot/user identities in the same workspace");
 const base = mkdtempSync(join(tmpdir(), "mikan-slack-e2e-"));
 chmodSync(base, 0o700);
+const stateDir = join(base, ".mikan");
 const settings = JSON.parse(readFileSync(join(source, "settings.json"), "utf8"));
-settings.sandbox = { workspace: { doorPolicy: "trusted", layout: "full" } };
+delete settings.sandbox;
 delete settings.sentry;
-delete settings.observability;
-const onboard = spawnSync(process.execPath, ["dist/main.js", "--onboard", "--state-dir", base], {
+const onboard = spawnSync(process.execPath, ["dist/main.js", "onboard"], {
   cwd: repo,
+  env: { ...env, HOME: base },
   stdio: ["ignore", "ignore", "inherit"],
 });
 if (onboard.status !== 0) throw new Error("Could not initialize the QA state directory");
-writeFileSync(join(base, "settings.json"), JSON.stringify(settings), { mode: 0o600 });
+writeFileSync(join(stateDir, "settings.json"), JSON.stringify(settings), { mode: 0o600 });
 const modelsJson = join(source, "models.json");
 if (existsSync(modelsJson)) {
-  writeFileSync(join(base, "models.json"), readFileSync(modelsJson), { mode: 0o600 });
+  writeFileSync(join(stateDir, "models.json"), readFileSync(modelsJson), { mode: 0o600 });
 }
 mkdirSync(join(base, "workspace"));
 for (const key of Object.keys(env)) if (/^(SENTRY_|OTEL_|OTLP_)/.test(key)) delete env[key];
 Object.assign(env, {
-  MIKAN_STATE_DIR: base,
+  HOME: base,
   SENTRY_ENABLED: "false",
   LINK_PORT: "",
   GITHUB_TOKEN: "",
@@ -83,10 +84,7 @@ function launch(args, log) {
   });
   return { child, exited };
 }
-const daemon = launch(
-  ["dist/main.js", "--state-dir", base, join(base, "workspace"), "--sandbox", "host"],
-  "daemon.log",
-);
+const daemon = launch(["dist/main.js", join(base, "workspace"), "--sandbox", "host"], "daemon.log");
 let tests;
 const stop = () => {
   tests?.child.kill("SIGTERM");

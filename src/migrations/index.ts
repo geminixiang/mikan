@@ -106,12 +106,11 @@ function sandboxSpec(sandbox: SandboxConfig): string {
 
 export function formatPendingMigrations(options: {
   pending: readonly Migration[];
-  stateDir: string;
   workspaceRoot: string;
   sandbox: SandboxConfig;
 }): string {
-  const { pending, stateDir, workspaceRoot, sandbox } = options;
-  const command = `mikan migrate --state-dir ${stateDir} --workspace ${workspaceRoot} --sandbox ${sandboxSpec(sandbox)}`;
+  const { pending, workspaceRoot, sandbox } = options;
+  const command = `mikan migrate --workspace ${workspaceRoot} --sandbox ${sandboxSpec(sandbox)}`;
   return [
     "State needs migration before mikan can start:",
     ...pending.map((migration) => `  - ${migration.id}: ${migration.summary}`),

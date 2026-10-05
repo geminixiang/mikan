@@ -2,12 +2,11 @@ import { join, resolve } from "node:path";
 import { envSummaryLines } from "../env-manifest.js";
 import { parseSandboxArg } from "../sandbox/registry.js";
 import type { BootPlan } from "./types.js";
-import { cliCommand, defaultStateDir, nonEmptyValue, resolveStateDir } from "./arg-grammar.js";
+import { cliCommand, nonEmptyValue, stateDirPath } from "./arg-grammar.js";
 
 const SUBCOMMANDS = ["migrate", "office", "env"] as const;
 
 interface BootOptions {
-  stateDir?: string;
   sandbox?: string;
   download?: string;
   help?: boolean;
@@ -19,8 +18,7 @@ function bootCommand() {
   return cliCommand("mikan")
     .description("Multi-platform chat agent daemon")
     .helpOption(false)
-    .argument("[working-directory...]", "Workspace directory (default: <state-dir>/workspace)")
-    .option("--state-dir <dir>", "State directory (default: ~/.mikan)", nonEmptyValue)
+    .argument("[working-directory...]", "Workspace directory (default: ~/.mikan/workspace)")
     .option(
       "--sandbox <spec>",
       "host | container:<name> | image:<image[:tag]> | cloudflare:<id>",
@@ -44,7 +42,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
   const workingDirArg = (onboardFirst ? command.args.slice(1) : command.args).at(-1);
   const downloadChannel = options.download;
   const sandboxArg = options.sandbox;
-  const stateDir = resolveStateDir(args);
+  const stateDir = stateDirPath();
   return {
     mode: bootMode({ ...options, version: options.version || options.V }, onboardFirst),
     stateDir,
@@ -58,7 +56,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
 function subcommandPlan(args: string[]): BootPlan | undefined {
   const mode = SUBCOMMANDS.find((name) => name === args[0]);
   if (!mode) return undefined;
-  const stateDir = defaultStateDir();
+  const stateDir = stateDirPath();
   return {
     mode,
     migrateArgs: mode === "migrate" ? args.slice(1) : undefined,

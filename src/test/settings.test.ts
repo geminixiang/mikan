@@ -86,12 +86,12 @@ describe("loadGlobalSettings", () => {
     expect(existsSync(join(unconfigured.stateDir, "settings.json"))).toBe(false);
   });
 
-  test("conversation settings inherit the global settings of their own workspace, whatever the environment names", () => {
-    const otherStateDir = join(stateDir, "other");
+  test("conversation settings inherit the global settings of their own workspace, not ~/.mikan", () => {
+    const otherStateDir = join(stateDir, "home", ".mikan");
     mkdirSync(otherStateDir, { recursive: true });
     writeFileSync(join(stateDir, "settings.json"), llmSettings("workspace-model"));
-    writeFileSync(join(otherStateDir, "settings.json"), llmSettings("environment-model"));
-    vi.stubEnv("MIKAN_STATE_DIR", otherStateDir);
+    writeFileSync(join(otherStateDir, "settings.json"), llmSettings("home-model"));
+    vi.stubEnv("HOME", join(stateDir, "home"));
 
     expect(resolveConversationSettings(office()).model).toBe("workspace-model");
   });

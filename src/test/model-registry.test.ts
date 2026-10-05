@@ -185,9 +185,9 @@ describe("MikanModels.getAvailable", () => {
 });
 
 describe("defaultModelsJsonPath", () => {
-  test("lives in the given state directory, whatever the environment names", () => {
+  test("lives in the given state directory, not ~/.mikan", () => {
     const stateDir = mkdtempSync(join(tmpdir(), "mikan-model-state-"));
-    vi.stubEnv("MIKAN_STATE_DIR", join(stateDir, "other"));
+    vi.stubEnv("HOME", join(stateDir, "home"));
     try {
       expect(defaultModelsJsonPath(stateDir)).toBe(join(stateDir, "models.json"));
     } finally {
