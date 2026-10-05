@@ -160,15 +160,16 @@ describe("migrating a 0.5.3 state directory", () => {
     expect(readAppliedMigrations(stateDir).map((entry) => entry.id)).toEqual(ran);
   });
 
-  test("converts the v3 session, keeps a backup, and moves sessions to the state dir", async () => {
+  test("imports the session into the office storage and keeps the original under the state dir", async () => {
     writeRelease053State();
+    const name = readFileSync(join(workspaceRoot, DM, "sessions", "current"), "utf-8").trim();
+    const original = readFileSync(join(workspaceRoot, DM, "sessions", name), "utf-8");
 
     await runMigrations(context());
 
     expect(existsSync(join(workspaceRoot, dmKey, "sessions"))).toBe(false);
-    const archive = join(stateDir, "conversations", dmKey, "sessions-v4");
-    const file = join(archive, readFileSync(join(archive, "current"), "utf-8").trim());
-    expect(existsSync(`${file}.v3.bak`)).toBe(true);
+    const archive = join(stateDir, "conversations", dmKey, "sessions-v3");
+    expect(readFileSync(join(archive, name), "utf-8")).toBe(original);
     const office = createWorkspace({ root: workspaceRoot, stateDir }).office(
       createOfficeAddress("slack", DM),
     );

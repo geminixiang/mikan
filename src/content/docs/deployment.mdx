@@ -163,7 +163,7 @@ migrations that already succeeded stay applied.
 - renames conversation directories and their vaults from raw conversation ids to office keys;
 - renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
 - moves each conversation's `settings.json` into `<state-dir>/conversations/<office-key>/`;
-- converts v3 session files to the current format, keeping each original as `*.v3.bak`;
+- imports each conversation's session files into its `sessions.db` and keeps the original files under `<state-dir>/conversations/<office-key>/sessions-v3/`;
 - moves `<workspace>/events/*.json` into each conversation's host-only event store;
 - removes the 0.5.3 sandbox containers, which are recreated from the current image on the next
   message, with an empty `/root`;

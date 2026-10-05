@@ -155,7 +155,7 @@ pm2 start mikan
 - conversation directory とその vault を、生の conversation id から office key へ rename する
 - `host` の per-user vault と `container:*` の vault を、hash された identity key へ rename する
 - 各会話の `settings.json` を `<state-dir>/conversations/<office-key>/` へ移動する
-- v3 の session file を現在の形式へ変換し、元のファイルを `*.v3.bak` として残す
+- 各会話の session file をその `sessions.db` に取り込み、元のファイルを `<state-dir>/conversations/<office-key>/sessions-v3/` に残す
 - `<workspace>/events/*.json` を各会話の host 専用 event store へ移動する
 - 0.5.3 の sandbox container を削除する。次のメッセージで現在のイメージから空の `/root` で再作成される
 - mikan に `~/.mikan/models.json` がまだなければ、`~/.pi/agent/models.json`（または `$PI_CODING_AGENT_DIR/models.json`）をコピーする

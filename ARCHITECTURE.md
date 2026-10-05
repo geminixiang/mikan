@@ -372,9 +372,9 @@ Evidence: `src/settings/apply.ts`.
 
 <a id="inv-session-format-compatibility"></a>
 
-**`session-format-compatibility`** — Each office keeps its sessions in one pi-durable SQLite storage, `sessions.db` in its State dir (ADR 0018). The top-level session is the storage's root conversation, every other session is a conversation found through a session-key index, and lineage is pi-durable's fork parent. `/new` resets the conversation instead of replacing it, so earlier entries stay readable. Opening the storage aborts work a previous process left unfinished, before anything is submitted. `mikan migrate` converts 0.5.3 v3 files to v4 (keeping `*.v3.bak`) and imports v4 files into the office storage (keeping originals under `sessions-v4/`).
+**`session-format-compatibility`** — Each office keeps its sessions in one pi-durable SQLite storage, `sessions.db` in its State dir (ADR 0018). The top-level session is the storage's root conversation, every other session is a conversation found through a session-key index, and lineage is pi-durable's fork parent. `/new` resets the conversation instead of replacing it, so earlier entries stay readable. Opening the storage aborts work a previous process left unfinished, before anything is submitted. `mikan migrate` imports 0.5.3 session files straight into the office storage, keeping the originals under `sessions-v3/`.
 
-Evidence: `src/sessions/session-store.ts`, `src/migrations/sessions-v3.ts`, `src/migrations/sessions-sqlite.ts`.
+Evidence: `src/sessions/session-store.ts`, `src/migrations/session-v3.ts`, `src/migrations/sessions-sqlite.ts`.
 
 ## Known deviations
 

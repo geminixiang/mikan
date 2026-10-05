@@ -146,7 +146,7 @@ pm2 start mikan
 - 把对话目录及其 vault 从原始对话 id 重命名为 office key；
 - 把 `host` 模式的每用户 vault 和 `container:*` 的 vault 重命名为哈希后的 identity key；
 - 把每个对话的 `settings.json` 移到 `<state-dir>/conversations/<office-key>/`；
-- 把 v3 会话文件转换为当前格式，原文件保留为 `*.v3.bak`；
+- 把每个对话的会话文件导入它的 `sessions.db`，原文件保留在 `<state-dir>/conversations/<office-key>/sessions-v3/`；
 - 把 `<workspace>/events/*.json` 移到各对话仅主机可见的事件存储；
 - 删除 0.5.3 的沙盒容器；下一条消息到来时会用当前镜像重建，`/root` 从空开始；
 - 如果 mikan 还没有 `~/.mikan/models.json`，就复制 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）。

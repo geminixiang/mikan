@@ -59,7 +59,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 ## 运维迁移
 
-`mikan migrate` 会转换 0.5.3 的 v3 会话文件并把原文件保留为 `*.v3.bak`，也会把预览版的 v4 文件导入该 office 的 `sessions.db`，并把原来的 `sessions/` 目录移到 `sessions-v4/`；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
+`mikan migrate` 会把 0.5.3 的会话文件导入该 office 的 `sessions.db`，并把原来的 `sessions/` 目录移到 `sessions-v3/`；详见 [State 迁移](/zh-cn/deployment/#state-迁移)。
 
 ## Clean session 与记忆
 

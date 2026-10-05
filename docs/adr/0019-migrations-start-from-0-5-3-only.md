@@ -20,4 +20,5 @@ ADR 0014 made 0.5.3 the supported starting point and said formats that only 1.0.
 
 - A 1.0.0 prerelease install is not a supported starting point. One that already applied the removed steps keeps their IDs in `migrations.json`; unknown IDs are ignored, so nothing is pending and nothing reruns.
 - A prerelease install that upgrades directly to 1.0.0 without having applied them keeps any `dream.json` files and any office state directory with permissions looser than 700. Operators can delete the files and run `chmod -R go-rwx <state-dir>/conversations`.
+- `0004-sessions-v3` converted 0.5.3 session files to the prerelease v4 format, which `0009-sessions-sqlite` then imported. `0009` now reads the 0.5.3 files directly and `0004` is removed. On 417 real session files the resulting storage is identical row for row, the step runs in 4.8 s instead of 19.0 s, and the converted state takes 0.7 GB instead of 1.2 GB, because no `*.v3.bak` copy or v4 archive is written.
 - New steps take numbers after 0011, so a removed ID is never reused for a different step.

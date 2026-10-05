@@ -11,24 +11,66 @@ import { makeThreadSessionKey } from "../sessions/session-key.js";
 import type { ImportedSession, ImportedSessionEntry } from "../sessions/types.js";
 import { readTextFileIfExists } from "../file-guards.js";
 import {
-  branchSummaryMessage,
-  isContextMessage,
-  readV4Header,
-  readV4Session,
-  toModelMessage,
-  type V4Message,
-  type V4Session,
-} from "./session-v4.js";
+  epochMillis,
+  isV3SessionFile,
+  pathTo,
+  readV3Session,
+  type V3Entry,
+  type V3Session,
+} from "./session-v3.js";
 import type { Migration, MigrationContext } from "./types.js";
 
-const V4_SESSIONS_DIR = "sessions";
-const ARCHIVE_DIR = "sessions-v4";
+const SESSIONS_DIR = "sessions";
+const ARCHIVE_DIR = "sessions-v3";
 const STORAGE_FILENAME = "sessions.db";
 const TEMP_SUFFIX = ".importing";
 const MAIN_SESSION_FILENAME = /^\d{4}-\d{2}-\d{2}T.+_[0-9a-f]{8}\.jsonl$/i;
-const ARCHIVED_THREAD_PREFIX = "scoped-archive-";
 const INTERRUPTED_RESULT =
   "This tool call was interrupted by the upgrade to Pi 1.0; its outcome is unknown.";
+const BRANCH_SUMMARY_PREFIX =
+  "The following is a summary of a branch that this conversation came back from:\n\n<summary>\n";
+const BRANCH_SUMMARY_SUFFIX = "</summary>";
+const LEGACY_SETTING_TYPES: ReadonlySet<string> = new Set([
+  "thinking_level_change",
+  "model_change",
+]);
+
+function isModelMessage(value: { role: unknown }): value is Message {
+  return value.role === "user" || value.role === "assistant" || value.role === "toolResult";
+}
+
+function isContextMessage(message: Message): boolean {
+  return (
+    message.role !== "assistant" ||
+    (message.stopReason !== "error" &&
+      message.stopReason !== "aborted" &&
+      message.stopReason !== "deferred")
+  );
+}
+
+function userMessage(content: Extract<Message, { role: "user" }>["content"], timestamp: number) {
+  return {
+    role: "user" as const,
+    content: typeof content === "string" ? [{ type: "text" as const, text: content }] : content,
+    timestamp,
+  };
+}
+
+function messageOf(entry: V3Entry): Message | undefined {
+  const timestamp = epochMillis(entry.timestamp);
+  switch (entry.type) {
+    case "message":
+      return isModelMessage(entry.message) ? entry.message : undefined;
+    case "custom_message":
+      return userMessage(entry.content, timestamp);
+    case "branch_summary":
+      return entry.summary
+        ? userMessage(BRANCH_SUMMARY_PREFIX + entry.summary + BRANCH_SUMMARY_SUFFIX, timestamp)
+        : undefined;
+    default:
+      return undefined;
+  }
+}
 
 class EntryCollector {
   readonly entries: ImportedSessionEntry[] = [];
@@ -38,16 +80,14 @@ class EntryCollector {
     return this.entries.filter((entry) => entry.type !== "custom").length;
   }
 
-  message(v4: V4Message): void {
-    if (!isContextMessage(v4)) return;
-    const message = toModelMessage(v4);
-    if (!message) return;
+  message(message: Message): void {
+    if (!isContextMessage(message)) return;
     if (message.role === "toolResult") {
       if (!this.openCalls.delete(message.toolCallId)) return;
     } else {
       this.closeOpenCalls();
     }
-    this.push(message);
+    this.entries.push({ type: "message", message });
     if (message.role === "assistant") this.trackCalls(message);
   }
 
@@ -62,20 +102,19 @@ class EntryCollector {
 
   closeOpenCalls(): void {
     for (const [toolCallId, call] of this.openCalls) {
-      this.push({
-        role: "toolResult",
-        toolCallId,
-        toolName: call.name,
-        content: [{ type: "text", text: INTERRUPTED_RESULT }],
-        isError: true,
-        timestamp: call.timestamp,
+      this.entries.push({
+        type: "message",
+        message: {
+          role: "toolResult",
+          toolCallId,
+          toolName: call.name,
+          content: [{ type: "text", text: INTERRUPTED_RESULT }],
+          isError: true,
+          timestamp: call.timestamp,
+        },
       });
     }
     this.openCalls.clear();
-  }
-
-  private push(message: Message): void {
-    this.entries.push({ type: "message", message });
   }
 
   private trackCalls(message: AssistantMessage): void {
@@ -87,31 +126,40 @@ class EntryCollector {
   }
 }
 
-function collectEntries(session: V4Session): EntryCollector {
+function keptMessages(session: V3Session, entry: Extract<V3Entry, { type: "compaction" }>) {
+  const ancestors = pathTo(session.entriesById, entry.parentId);
+  const kept = ancestors.findIndex((ancestor) => ancestor.id === entry.firstKeptEntryId);
+  if (kept === -1) return [];
+  return ancestors
+    .slice(kept)
+    .filter((ancestor) => ancestor.type === "message" || ancestor.type === "custom_message");
+}
+
+function collectEntries(session: V3Session): EntryCollector {
   const collector = new EntryCollector();
   const visibleStart = session.branch.findLastIndex((entry) => entry.type === "compaction");
   for (const [index, entry] of session.branch.entries()) {
+    const timestamp = epochMillis(entry.timestamp);
     if (entry.type === "custom") {
-      collector.custom(entry.customType, entry.data, entry.timestamp);
+      collector.custom(entry.customType, entry.data, timestamp);
+      continue;
+    }
+    if (LEGACY_SETTING_TYPES.has(entry.type)) {
+      const { id: _id, parentId: _parentId, timestamp: _timestamp, type, ...data } = entry;
+      collector.custom(`mikan.legacy.${type}`, data, timestamp);
       continue;
     }
     if (index < visibleStart) continue;
-    switch (entry.type) {
-      case "compaction":
-        collector.compaction(entry.summary, entry.timestamp);
-        for (const message of entry.retainedTail) collector.message(message);
-        break;
-      case "message":
-        collector.message(entry.message);
-        break;
-      case "branch_summary":
-        if (entry.summary) {
-          collector.message(branchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
-        }
-        break;
-      default:
-        entry satisfies never;
+    if (entry.type === "compaction") {
+      collector.compaction(entry.summary, timestamp);
+      for (const kept of keptMessages(session, entry)) {
+        const message = messageOf(kept);
+        if (message) collector.message(message);
+      }
+      continue;
     }
+    const message = messageOf(entry);
+    if (message) collector.message(message);
   }
   collector.closeOpenCalls();
   return collector;
@@ -125,32 +173,32 @@ interface PlannedSession {
 
 function sessionKeyFor(conversationId: string, fileName: string, current: string | undefined) {
   if (fileName === current) return { key: conversationId, root: true };
-  const stem = fileName.slice(0, -".jsonl".length);
-  if (MAIN_SESSION_FILENAME.test(fileName) || fileName.startsWith(ARCHIVED_THREAD_PREFIX)) {
-    return { key: undefined, root: false };
-  }
-  return { key: makeThreadSessionKey(conversationId, stem), root: false };
+  if (MAIN_SESSION_FILENAME.test(fileName)) return { key: undefined, root: false };
+  return {
+    key: makeThreadSessionKey(conversationId, fileName.slice(0, -".jsonl".length)),
+    root: false,
+  };
 }
 
 function planOfficeImport(conversationId: string, sessionsDir: string): PlannedSession[] {
   const current = readTextFileIfExists(join(sessionsDir, "current"))?.trim() || undefined;
   return readdirSync(sessionsDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-    .filter((entry) => readV4Header(join(sessionsDir, entry.name)) !== undefined)
+    .filter((entry) => isV3SessionFile(join(sessionsDir, entry.name)))
     .map((entry) => {
       const file = join(sessionsDir, entry.name);
-      const v4 = readV4Session(file);
-      const collected = collectEntries(v4);
+      const v3 = readV3Session(file);
+      const collected = collectEntries(v3);
       const { key, root } = sessionKeyFor(conversationId, entry.name, current);
       return {
         file,
         expectedMessages: collected.messageCount,
         session: {
-          key: key ?? earlierSessionKey(v4.header.id),
-          id: v4.header.id,
-          createdAt: v4.header.createdAt,
+          key: key ?? earlierSessionKey(v3.id),
+          id: v3.id,
+          createdAt: v3.createdAt,
           root,
-          name: v4.name,
+          name: v3.name,
           entries: collected.entries,
         },
       };
@@ -169,13 +217,13 @@ async function verifyImport(temp: string, planned: readonly PlannedSession[]): P
   }
 }
 
-function hasV4Sessions(sessionsDir: string): boolean {
+function hasV3Sessions(sessionsDir: string): boolean {
   if (!existsSync(sessionsDir)) return false;
   return readdirSync(sessionsDir, { withFileTypes: true }).some(
     (entry) =>
       entry.isFile() &&
       entry.name.endsWith(".jsonl") &&
-      readV4Header(join(sessionsDir, entry.name)) !== undefined,
+      isV3SessionFile(join(sessionsDir, entry.name)),
   );
 }
 
@@ -184,7 +232,7 @@ async function migrateOffice(
   officeDir: string,
   context: MigrationContext,
 ): Promise<void> {
-  const sessionsDir = join(officeDir, V4_SESSIONS_DIR);
+  const sessionsDir = join(officeDir, SESSIONS_DIR);
   const archive = join(officeDir, ARCHIVE_DIR);
   const storage = join(officeDir, STORAGE_FILENAME);
   const temp = `${storage}${TEMP_SUFFIX}`;
@@ -193,9 +241,9 @@ async function migrateOffice(
     if (!context.dryRun) renameSync(temp, storage);
     return;
   }
-  if (!hasV4Sessions(sessionsDir)) return;
+  if (!hasV3Sessions(sessionsDir)) return;
   if (existsSync(storage)) throw new Error(`Session storage already exists: ${storage}`);
-  if (existsSync(archive)) throw new Error(`Archived v4 sessions already exist: ${archive}`);
+  if (existsSync(archive)) throw new Error(`Archived session files already exist: ${archive}`);
   const planned = planOfficeImport(conversationId, sessionsDir);
   context.report(`  ${planned.length} sessions -> ${storage}`);
   if (context.dryRun) return;
@@ -227,7 +275,7 @@ function assertEveryOfficeRegistered(stateDir: string, registered: ReadonlySet<s
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
     const dir = join(root, entry.name);
-    if (!registered.has(dir) && hasV4Sessions(join(dir, V4_SESSIONS_DIR))) {
+    if (!registered.has(dir) && hasV3Sessions(join(dir, SESSIONS_DIR))) {
       throw new Error(
         `Sessions in ${dir} belong to no office in office-registry.json; record the office before migrating`,
       );
@@ -238,7 +286,7 @@ function assertEveryOfficeRegistered(stateDir: string, registered: ReadonlySet<s
 export const sessionsSqliteMigration: Migration = Object.freeze({
   id: "0009-sessions-sqlite",
   summary:
-    "import v4 session files into one pi-durable SQLite storage per office, keeping originals under sessions-v4/",
+    "import 0.5.3 session files into one pi-durable SQLite storage per office, keeping originals under sessions-v3/",
   async run(context: MigrationContext): Promise<void> {
     const offices = registeredOffices(context.stateDir);
     assertEveryOfficeRegistered(context.stateDir, new Set(offices.map((office) => office.dir)));

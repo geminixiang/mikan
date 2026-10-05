@@ -11,7 +11,7 @@ any release.
 
 ### Removed
 
-- `mikan migrate` supports one upgrade, from 0.5.3 to 1.0.0 (ADR 0019). The steps that served only 1.0.0 prerelease installs, `0010-dream-checkpoints` and `0011-private-office-dirs`, are removed; an install that already applied them has nothing pending. A prerelease install that has not applied them keeps any `dream.json` files and loosely permissioned office state directories: delete the files and run `chmod -R go-rwx <state-dir>/conversations`.
+- `mikan migrate` supports one upgrade, from 0.5.3 to 1.0.0 (ADR 0019). The steps that served only 1.0.0 prerelease installs, `0004-sessions-v3`, `0010-dream-checkpoints`, and `0011-private-office-dirs`, are removed: 0.5.3 session files are imported into `sessions.db` directly and kept under `sessions-v3/` instead of being rewritten to the prerelease v4 format with a `*.v3.bak` copy, which on real data makes the step four times faster and the upgraded state 40% smaller. It no longer rewrites Pi session files stored elsewhere in the workspace. An install that already applied the removed steps has nothing pending. A prerelease install that has not applied them keeps any `dream.json` files and loosely permissioned office state directories: delete the files and run `chmod -R go-rwx <state-dir>/conversations`.
 
 ### Changed
 

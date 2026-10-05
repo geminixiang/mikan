@@ -9,7 +9,6 @@ import { officeLayoutMigration } from "./office-layout.js";
 import { officeSessionsMigration } from "./office-sessions.js";
 import { sandboxContainersMigration } from "./sandbox-containers.js";
 import { sessionsSqliteMigration } from "./sessions-sqlite.js";
-import { sessionsV3Migration } from "./sessions-v3.js";
 import type { AppliedMigration, Migration, MigrationContext } from "./types.js";
 import { workspaceEventsMigration } from "./workspace-events.js";
 
@@ -17,7 +16,6 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   officeLayoutMigration,
   actorVaultsMigration,
   conversationSettingsMigration,
-  sessionsV3Migration,
   workspaceEventsMigration,
   sandboxContainersMigration,
   modelsJsonMigration,

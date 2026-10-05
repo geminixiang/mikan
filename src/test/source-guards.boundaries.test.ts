@@ -57,14 +57,11 @@ const productionFiles = sources.filter((source) => isProductionFile(source.file)
 const productionDoubleAssertionBudget: Record<string, number> = {
   "src/adapters/slack/bot.ts": 1,
   "src/adapters/web/session-view/portal.ts": 1,
-  "src/migrations/sessions-v3.ts": 4,
 };
 
 const productionParsedJsonAssertionBudget: Record<string, number> = {
   "src/adapters/github/client.ts": 1,
   "src/harness/tools/jev-browser.ts": 2,
-  "src/migrations/session-files.ts": 1,
-  "src/migrations/sessions-v3.ts": 2,
   "src/sandbox/cloudflare.ts": 1,
 };
 

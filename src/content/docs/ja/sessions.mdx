@@ -62,7 +62,7 @@ Session 自身の回答がその記憶です。チャット同期は、他の人
 
 ## 運用者向けの移行
 
-`mikan migrate` は 0.5.3 の v3 session file を変換して元のファイルを `*.v3.bak` として残し、プレリリースの v4 file を office の `sessions.db` に取り込んで、元の `sessions/` ディレクトリを `sessions-v4/` に移します。詳しくは [State マイグレーション](/ja/deployment/#state-マイグレーション) を参照してください。
+`mikan migrate` は 0.5.3 の session file を office の `sessions.db` に取り込み、元の `sessions/` ディレクトリを `sessions-v3/` に移します。詳しくは [State マイグレーション](/ja/deployment/#state-マイグレーション) を参照してください。
 
 ## Clean session とメモリ
 
