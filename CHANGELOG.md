@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.95]
+
 ### Removed
 
 - `mikan migrate` supports one upgrade, from 0.5.3 to 1.0.0 (ADR 0019). The steps that served only 1.0.0 prerelease installs, `0004-sessions-v3`, `0010-dream-checkpoints`, and `0011-private-office-dirs`, are removed: 0.5.3 session files are imported into `sessions.db` directly and kept under `sessions-v3/` instead of being rewritten to the prerelease v4 format with a `*.v3.bak` copy, which on real data makes the step four times faster and the upgraded state 40% smaller. It no longer rewrites Pi session files stored elsewhere in the workspace. An install that already applied the removed steps has nothing pending. A prerelease install that has not applied them keeps any `dream.json` files and loosely permissioned office state directories: delete the files and run `chmod -R go-rwx <state-dir>/conversations`.
@@ -16,6 +18,7 @@ any release.
 ### Changed
 
 - Embedding API: settings and the model list are located through the `Workspace` instead of the `STATE_DIR` environment variable. `loadGlobalSettings`, `updateGlobalSettings`, `resolveSentryDsn`, and `defaultModelsJsonPath` take the state dir, `applyGlobalSettings` takes it after the runtime, `updateSkillPatterns` takes the office and a `"global" | "conversation"` scope, `MikanModels.create` requires `modelsJsonPath`, and `defaultCommandHandlers` requires the model registry. The Admin portal now requires a `workspace`. `--state-dir`, `STATE_DIR`, and `MIKAN_STATE_DIR` still choose the state dir on the command line; mikan no longer writes them back into its own environment.
+- Embedding API: `ConversationRuntime` replaces `switchConversationModel` and `refreshConversationEnvironment`, which both only cleared a conversation's cached runners, with one `refreshConversation(address)`. It returns `false` only while the conversation is busy.
 
 ### Fixed
 
