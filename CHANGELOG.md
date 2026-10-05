@@ -9,6 +9,8 @@ any release.
 
 ## [Unreleased]
 
+## [1.0.0-beta.93]
+
 ### Added
 
 - Skills can be turned off and on per workspace and per conversation with Pi's resource rules: `skills` in the global or conversation settings takes `!glob`, `+path`, and `-path` entries over each skill's directory, every skill stays listed by default, and an excluded skill is left out of the system prompt. The admin portal's Skills pages list every skill the agent loads, including nested ones such as `bundle/vendors/<skill>` that they previously missed, grouped by directory with a filter, and toggle them: the workspace page writes the global entries, and a conversation page cycles a skill between inherited, `+`, and `-` and shows how many skills and characters the prompt lists.
