@@ -12,6 +12,7 @@ any release.
 ### Removed
 
 - Embedding API: `MessagingBot` no longer declares the optional `addReaction`, `uploadFile`, `openDirectConversation`, `fetchHistory`, and `listUsers`, which nothing called through it since executable extensions were removed (ADR 0006); the Slack bot's unused `fetchHistory` and `listUsers` are removed with them.
+- Scheduled event files no longer accept `channelId` in place of `conversationId`; no release since 0.2.0 has written it. `mikan migrate` stops on a 0.5.3 workspace event file that has only `channelId`: rename the field and run it again.
 
 ### Changed
 

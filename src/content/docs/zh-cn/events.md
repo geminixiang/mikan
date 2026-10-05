@@ -76,7 +76,7 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 | 字段               | 说明                                                                                |
 | ------------------ | ----------------------------------------------------------------------------------- |
 | `platform`         | 目标 bot 平台，例如 `slack`。省略它会让文件在两个平台共用同一原始对话 id 时产生歧义 |
-| `conversationId`   | 要发送到的原始平台频道或 DM ID——不是 office key。`channelId` 作为旧版只读别名被接受 |
+| `conversationId`   | 要发送到的原始平台频道或 DM ID——不是 office key                                     |
 | `conversationKind` | `"shared"`（频道）或 `"direct"`（DM）                                               |
 | `userId`           | 请求此事件的平台用户 ID；在按用户模式下用于 vault/凭证路由                          |
 

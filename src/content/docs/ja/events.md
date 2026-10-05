@@ -73,12 +73,12 @@ Cron 形式: `minute hour day-of-month month day-of-week`
 
 `type`、`conversationId`、`text` はすべてのイベントファイルで必須です。その他は任意で、タイプ固有のフィールド（`at`、`schedule` + `timezone`）はそのタイプでのみ必須です。schema を所有するのは `src/events/index.ts` であり、すべての reader と writer はその parser と builder を経由します。
 
-| フィールド         | 説明                                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `platform`         | 対象 bot プラットフォーム（例: `slack`）。省略すると、生の conversation id を共有する 2 つのプラットフォームがある場合に曖昧になります           |
-| `conversationId`   | 送信先の生のプラットフォームチャンネルまたは DM ID。office key ではありません。`channelId` は legacy な読み取り専用 alias として受け付けられます |
-| `conversationKind` | `"shared"`（チャンネル）または `"direct"`（DM）                                                                                                  |
-| `userId`           | このイベントを要求したプラットフォームユーザー ID。per-user モードでは vault/credential routing に使われます                                     |
+| フィールド         | 説明                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform`         | 対象 bot プラットフォーム（例: `slack`）。省略すると、生の conversation id を共有する 2 つのプラットフォームがある場合に曖昧になります |
+| `conversationId`   | 送信先の生のプラットフォームチャンネルまたは DM ID。office key ではありません                                                          |
+| `conversationKind` | `"shared"`（チャンネル）または `"direct"`（DM）                                                                                        |
+| `userId`           | このイベントを要求したプラットフォームユーザー ID。per-user モードでは vault/credential routing に使われます                           |
 
 ## Session バインディング
 

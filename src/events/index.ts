@@ -97,7 +97,6 @@ const EventFileSchema = Type.Object({
   type: Type.Optional(EventTypeSchema),
   platform: Type.Optional(Type.String()),
   conversationId: Type.Optional(Type.String()),
-  channelId: Type.Optional(Type.String()),
   conversationKind: Type.Optional(Type.Union([Type.Literal("direct"), Type.Literal("shared")])),
   userId: Type.Optional(Type.String()),
   text: Type.Optional(Type.String()),
@@ -171,13 +170,7 @@ export function parseEventPayload(content: string, filename: string): EventFileP
       ? `Expected top-level JSON object in ${filename}`
       : `Malformed event file ${filename}: ${detail}`,
   );
-  const conversationId =
-    typeof data.conversationId === "string"
-      ? data.conversationId
-      : typeof data.channelId === "string"
-        ? data.channelId
-        : undefined;
-  const { type, text } = data;
+  const { type, conversationId, text } = data;
 
   if (!type || !conversationId || !text) {
     throw new Error(`Missing required fields (type, conversationId, text) in ${filename}`);

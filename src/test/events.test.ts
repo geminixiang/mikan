@@ -52,17 +52,13 @@ function office(platform: "slack" | "discord", conversationId: string): Office {
 }
 
 describe("event payload parsing", () => {
-  test("accepts legacy channelId field for backward compatibility", () => {
-    const parsed = parseEventPayload(
-      JSON.stringify({ type: "immediate", platform: "slack", channelId: "C-LEGACY", text: "x" }),
-      "legacy.json",
-    );
-    expect(parsed).toEqual({
-      type: "immediate",
-      platform: "slack",
-      conversationId: "C-LEGACY",
-      text: "x",
-    });
+  test("names conversationId as missing when a file carries only channelId", () => {
+    expect(() =>
+      parseEventPayload(
+        JSON.stringify({ type: "immediate", platform: "slack", channelId: "C123", text: "x" }),
+        "channel-only.json",
+      ),
+    ).toThrow("Missing required fields (type, conversationId, text) in channel-only.json");
   });
 
   test("rejects event files with invalid field types", () => {

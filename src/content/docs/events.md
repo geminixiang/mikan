@@ -76,7 +76,7 @@ Common schedules:
 | Field              | Description                                                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `platform`         | Target bot platform, for example `slack`. Omitting it makes the file ambiguous when two platforms share a raw conversation id |
-| `conversationId`   | Raw platform channel or DM ID to send to — not an office key. `channelId` is accepted as a legacy read-only alias             |
+| `conversationId`   | Raw platform channel or DM ID to send to — not an office key                                                                  |
 | `conversationKind` | `"shared"` (channel) or `"direct"` (DM)                                                                                       |
 | `userId`           | Platform user ID that requested this event; used for vault/credential routing in per-user mode                                |
 

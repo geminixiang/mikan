@@ -33,15 +33,6 @@ describe("event-format round-trip", () => {
     }
   });
 
-  test("parse honors the legacy channelId alias", () => {
-    const parsed = parseEventPayload(
-      JSON.stringify({ type: "immediate", channelId: "D123", text: "hi" }),
-      "legacy.json",
-    );
-    expect(parsed.conversationId).toBe("D123");
-    expect("channelId" in parsed).toBe(false);
-  });
-
   test("parse enforces per-type required fields", () => {
     expect(() =>
       parseEventPayload(
