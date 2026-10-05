@@ -527,6 +527,35 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.respondDiagnostic).not.toHaveBeenCalled();
   });
 
+  test("the usage summary includes the spend of subagents the run delegated to", async () => {
+    const { runner, faux } = await createTestRunner();
+    const longSubagentAnswer = "x".repeat(8_000);
+    faux.setResponses([
+      fauxAssistantMessage(
+        fauxToolCall("subagent", {
+          tasks: [{ label: "big", task: "write a lot", profile: "summarizer" }],
+        }),
+        { stopReason: "toolUse" },
+      ),
+      fauxAssistantMessage(longSubagentAnswer),
+      fauxAssistantMessage("done"),
+    ]);
+    const responder = makeResponder();
+
+    await runner.run(makeMessage({ text: "delegate" }), responder, {
+      ...platform,
+      diagnostics: { showUsageSummary: true },
+    });
+
+    const summary = String(
+      responder.respondDiagnostic.mock.calls.find((call) =>
+        String(call[0]).includes("Usage Summary"),
+      )?.[0],
+    );
+    const outputTokens = Number(/Output: ([\d,]+) tokens/.exec(summary)?.[1]?.replaceAll(",", ""));
+    expect(outputTokens).toBeGreaterThanOrEqual(2_000);
+  });
+
   test("published responses still post the usage summary", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("report")]);

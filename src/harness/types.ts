@@ -63,13 +63,6 @@ export interface RunnerSessionState {
   publishRunEvent: RunEventListener | undefined;
   lastSubagentProgressAt: number;
   toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
-  totalUsage: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    cost: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
-  };
   llmCallCount: number;
   toolCallCount: number;
   toolErrorCount: number;
@@ -77,7 +70,6 @@ export interface RunnerSessionState {
   toolOutputCharacters: number;
   assistantMessageCount: number;
   outputCharacters: number;
-  reasoningTokens: number;
   retryCount: number;
   compactionCount: number;
   budgetExceeded: boolean;

@@ -185,13 +185,6 @@ describe("presenter event routing", () => {
     expect(runState.responseModel).toBe(complete.model);
     expect(runState.firstTokenLatencyMs).toBeTypeOf("number");
     expect(runState.stopReason).toBe("stop");
-    expect(runState.totalUsage).toEqual({
-      input: complete.usage.input,
-      output: complete.usage.output,
-      cacheRead: complete.usage.cacheRead,
-      cacheWrite: complete.usage.cacheWrite,
-      cost: complete.usage.cost,
-    });
     expect(responder.appendResponseDelta).toHaveBeenCalledWith("Hel");
     expect(responder.finishResponse).toHaveBeenCalledWith("Hello\n\n_Triggered by @alice_");
   });

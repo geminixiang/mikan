@@ -19,6 +19,8 @@ import {
   validateSkill,
 } from "../../../harness/skills.js";
 import { SessionStore } from "../../../sessions/session-store.js";
+import type { SessionEntry } from "../../../sessions/types.js";
+import type { Usage } from "@earendil-works/pi-ai";
 import type { EventStore } from "../../../events/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { AdminToken, AdminTokenCreateOptions } from "./types.js";
@@ -413,9 +415,7 @@ async function readSessionUsage(
     const entries = await manager.getEntries();
     const usage = entries.reduce(
       (sum, entry) => {
-        if (entry.type !== "message" || entry.message.role !== "assistant") return sum;
-        const message = entry.message as unknown as AssistantUsageMessage;
-        const item = message.usage;
+        const item = assistantUsage(entry);
         if (!item) return sum;
         sum.input += numberOrZero(item.input);
         sum.output += numberOrZero(item.output);
@@ -447,14 +447,9 @@ async function readSessionUsage(
   }
 }
 
-interface AssistantUsageMessage {
-  usage?: {
-    input?: unknown;
-    output?: unknown;
-    cacheRead?: unknown;
-    cacheWrite?: unknown;
-    cost?: { total?: unknown };
-  };
+function assistantUsage(entry: SessionEntry): Partial<Usage> | undefined {
+  if (entry.type !== "message" || entry.message.role !== "assistant") return undefined;
+  return entry.message.usage;
 }
 
 function numberOrZero(value: unknown): number {
@@ -565,8 +560,7 @@ async function accumulateSessionUsageByDay(
     if (!manager) return;
 
     for (const entry of await manager.getEntries()) {
-      if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-      const usage = (entry.message as unknown as AssistantUsageMessage).usage;
+      const usage = assistantUsage(entry);
       if (!usage || !entry.timestamp) continue;
 
       const when = new Date(entry.timestamp);

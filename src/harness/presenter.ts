@@ -76,16 +76,6 @@ function endOutstandingOperationSpans(runState: RunnerSessionState): void {
   operationSpans.delete(runState);
 }
 
-function createEmptyUsageTotals() {
-  return {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-  };
-}
-
 function createRunStateDefaults(): RunnerSessionState {
   return {
     responder: null,
@@ -104,7 +94,6 @@ function createRunStateDefaults(): RunnerSessionState {
     publishRunEvent: undefined,
     lastSubagentProgressAt: 0,
     toolProgressTimer: undefined,
-    totalUsage: createEmptyUsageTotals(),
     llmCallCount: 0,
     toolCallCount: 0,
     toolErrorCount: 0,
@@ -112,7 +101,6 @@ function createRunStateDefaults(): RunnerSessionState {
     toolOutputCharacters: 0,
     assistantMessageCount: 0,
     outputCharacters: 0,
-    reasoningTokens: 0,
     retryCount: 0,
     compactionCount: 0,
     budgetExceeded: false,
@@ -440,7 +428,8 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   const contextTokens = await session.sessionStore.getContextTokens();
   const contextWindow = model.contextWindow || 200000;
 
-  const { totalUsage } = runState;
+  const runStats = session.getLastRunStats();
+  const totalUsage = runStats.usage;
   const runMetricAttributes = metricAttributes({
     provider: model.provider,
     model: model.id,
@@ -479,7 +468,7 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
     "gen_ai.usage.input_tokens.cached": totalUsage.cacheRead,
     "gen_ai.usage.input_tokens.cache_write": totalUsage.cacheWrite,
     "gen_ai.usage.output_tokens": totalUsage.output,
-    "gen_ai.usage.output_tokens.reasoning": runState.reasoningTokens,
+    "gen_ai.usage.output_tokens.reasoning": totalUsage.reasoning ?? 0,
     "mikan.usage.cost_usd": totalUsage.cost.total,
     "mikan.llm.call_count": runState.llmCallCount,
     "mikan.tool.call_count": runState.toolCallCount,
@@ -499,13 +488,8 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
       : { "mikan.response.first_token_ms": runState.firstTokenLatencyMs }),
   });
 
-  const summary = log.logUsageSummary(
-    runState.logCtx!,
-    runState.totalUsage,
-    contextTokens,
-    contextWindow,
-  );
-  const toolNames = Object.keys(session.getLastRunStats().toolCallCounts);
+  const summary = log.logUsageSummary(runState.logCtx!, totalUsage, contextTokens, contextWindow);
+  const toolNames = Object.keys(runStats.toolCallCounts);
   const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === TASK_STATUS_TOOL);
   if (
     platform.diagnostics?.showUsageSummary === true &&
@@ -735,17 +719,6 @@ function observeTextDelta(_event: TextDeltaEvent, context: RunObserverContext): 
 
 function recordAssistantUsage(message: AssistantMessage, context: RunObserverContext): void {
   if (!message.usage) return;
-  const { totalUsage } = context.runState;
-  totalUsage.input += message.usage.input;
-  totalUsage.output += message.usage.output;
-  totalUsage.cacheRead += message.usage.cacheRead;
-  totalUsage.cacheWrite += message.usage.cacheWrite;
-  totalUsage.cost.input += message.usage.cost.input;
-  totalUsage.cost.output += message.usage.cost.output;
-  totalUsage.cost.cacheRead += message.usage.cost.cacheRead;
-  totalUsage.cost.cacheWrite += message.usage.cost.cacheWrite;
-  totalUsage.cost.total += message.usage.cost.total;
-  context.runState.reasoningTokens += message.usage.reasoning ?? 0;
   context.runState.responseModel = message.responseModel ?? message.model;
 
   const attributes = metricAttributes({
