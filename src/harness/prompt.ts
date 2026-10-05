@@ -1,10 +1,8 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { basename, join, posix } from "node:path";
+import { posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
-import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
@@ -12,47 +10,6 @@ import type { BuildSystemPromptOptions } from "./types.js";
 
 import { readTextFileNoFollowIfExists } from "../file-guards.js";
 import * as log from "../log.js";
-
-function hasParentTraversal(path: string): boolean {
-  return path.split(/[\\/]/).some((segment) => segment === "..");
-}
-
-export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
-  if (hasParentTraversal(filePath)) {
-    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
-  }
-
-  const runtimeRoot = posix.resolve(runtimeWorkspaceRoot);
-  const runtimePath = posix.resolve(runtimeRoot, filePath);
-  const runtimeRelativePath = posix.relative(runtimeRoot, runtimePath);
-  if (
-    runtimeRelativePath === ".." ||
-    runtimeRelativePath.startsWith("../") ||
-    posix.isAbsolute(runtimeRelativePath)
-  ) {
-    throw new Error("Cannot attach files: path must be within the runtime workspace");
-  }
-  return runtimePath;
-}
-
-export async function withStagedRuntimeFile(
-  executor: Executor,
-  runtimePath: string,
-  upload: (stagedPath: string) => Promise<void>,
-): Promise<void> {
-  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
-  let stagingDir: string | undefined;
-  try {
-    stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
-    await chmod(stagingDir, 0o700);
-    const stagedPath = join(stagingDir, basename(runtimePath));
-    await writeFile(stagedPath, content, { mode: 0o600, flag: "wx" });
-    await chmod(stagedPath, 0o600);
-    await upload(stagedPath);
-  } finally {
-    if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
-  }
-}
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",

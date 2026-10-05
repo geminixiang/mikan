@@ -1,6 +1,9 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
-import { basename, extname } from "node:path";
+import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, extname, join, posix } from "node:path";
+import type { Executor } from "../../sandbox/types.js";
 
 const attachSchema = Type.Object({
   label: Type.String({ description: "Brief description of what you're sharing (shown to user)" }),
@@ -52,4 +55,45 @@ export function createAttachTool(): {
       uploadFn = fn;
     },
   };
+}
+
+function hasParentTraversal(path: string): boolean {
+  return path.split(/[\\/]/).some((segment) => segment === "..");
+}
+
+export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
+  if (hasParentTraversal(filePath)) {
+    throw new Error("Cannot attach files: parent-directory traversal is not allowed");
+  }
+
+  const runtimeRoot = posix.resolve(runtimeWorkspaceRoot);
+  const runtimePath = posix.resolve(runtimeRoot, filePath);
+  const runtimeRelativePath = posix.relative(runtimeRoot, runtimePath);
+  if (
+    runtimeRelativePath === ".." ||
+    runtimeRelativePath.startsWith("../") ||
+    posix.isAbsolute(runtimeRelativePath)
+  ) {
+    throw new Error("Cannot attach files: path must be within the runtime workspace");
+  }
+  return runtimePath;
+}
+
+export async function withStagedRuntimeFile(
+  executor: Executor,
+  runtimePath: string,
+  upload: (stagedPath: string) => Promise<void>,
+): Promise<void> {
+  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
+  let stagingDir: string | undefined;
+  try {
+    stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));
+    await chmod(stagingDir, 0o700);
+    const stagedPath = join(stagingDir, basename(runtimePath));
+    await writeFile(stagedPath, content, { mode: 0o600, flag: "wx" });
+    await chmod(stagedPath, 0o600);
+    await upload(stagedPath);
+  } finally {
+    if (stagingDir) await rm(stagingDir, { recursive: true, force: true });
+  }
 }

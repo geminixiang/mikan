@@ -21,7 +21,6 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   ConversationMessage,
-  ConversationKind,
   ConversationResponder,
   MessagingInfo,
   PlatformName,
@@ -45,7 +44,7 @@ import type {
   RunnerSessionState,
   MikanToolContext,
 } from "./types.js";
-import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
+import type { CreateRunnerOptions, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
 import { loadSkillPatterns, resolveConversationSettings } from "../settings/index.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
@@ -53,12 +52,10 @@ import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import type { PlatformToolPack, PlatformToolRunContext } from "./tools/types.js";
+import type { PlatformToolPack } from "./tools/types.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
 import {
-  normalizeAttachRuntimePath,
-  withStagedRuntimeFile,
   buildPromptPayload,
   buildSystemPrompt,
   buildTurnInstructions,
@@ -253,18 +250,7 @@ interface PrepareRunParams {
   executor: Executor;
   resolveForRun: RunnerExecutionContext["resolveForRun"];
   session: MikanAgentSession;
-  setEventContext: (context: {
-    platform: string;
-    conversationId: string;
-    conversationKind: ConversationKind;
-    userId: string;
-  }) => void;
-  setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
-  setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
-  bindTasks: ReturnType<typeof createMikanTools>["bindTasks"];
-  setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
-  bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
+  bindTools: ReturnType<typeof createMikanTools>["bindRun"];
 }
 
 interface RunPromptContext {
@@ -309,53 +295,18 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
   return { pathContext, memory, systemPrompt, triggerAttribution };
 }
 
-function bindRunCapabilities(params: PrepareRunParams, pathContext: RuntimePathContext): void {
-  const {
-    message,
-    responder,
-    platform,
-    office,
-    executor,
-    setEventContext,
-    setSandboxContext,
-    setUploadFunction,
-    setImageUploadFunction,
-    setReactFunction,
-    bindTasks,
-    bindPlatformToolPacks,
-  } = params;
-  setEventContext({
-    platform: platform.name,
-    conversationId: office.address.conversationId,
-    conversationKind: message.conversationKind,
-    userId: message.userId,
-  });
-  setSandboxContext({ address: message.address, userId: message.userId });
-  setUploadFunction(async (filePath: string, title?: string) => {
-    const runtimePath = normalizeAttachRuntimePath(filePath, pathContext.runtimeWorkspaceRoot);
-    await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
-      responder.uploadFile(stagedPath, title),
-    );
-  });
-  setImageUploadFunction(async (hostPath: string, title?: string) => {
-    await responder.uploadFile(hostPath, title);
-  });
-  bindTasks(responder);
-  setReactFunction(responder.react ? async (emoji: string) => responder.react!(emoji) : null);
-  bindPlatformToolPacks({
-    conversationId: office.address.conversationId,
-    platformName: platform.name,
-    threadTs: message.threadTs,
-  });
-}
-
 async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunContext> {
   const { message, platform, office, executor } = params;
   const sessionConversation = conversationIdOf(message.sessionKey);
   await mkdir(join(office.dir, "scratch"), { recursive: true });
   const { pathContext, memory, systemPrompt, triggerAttribution } =
     await preparePromptContext(params);
-  bindRunCapabilities(params, pathContext);
+  params.bindTools({
+    message,
+    responder: params.responder,
+    platformName: platform.name,
+    runtimeWorkspaceRoot: pathContext.runtimeWorkspaceRoot,
+  });
 
   log.logInfo(
     `Context sizes - system: ${systemPrompt.length} chars, memory: ${memory.length} chars`,
@@ -670,13 +621,7 @@ function prepareRunnerTurn(
     executor,
     resolveForRun,
     session,
-    setEventContext: toolBindings.setEventContext,
-    setSandboxContext: toolBindings.setSandboxContext,
-    setUploadFunction: toolBindings.setUploadFunction,
-    setImageUploadFunction: toolBindings.setImageUploadFunction,
-    setReactFunction: toolBindings.setReactFunction,
-    bindTasks: toolBindings.bindTasks,
-    bindPlatformToolPacks: toolBindings.bindPlatformToolPacks,
+    bindTools: toolBindings.bindRun,
   });
 }
 

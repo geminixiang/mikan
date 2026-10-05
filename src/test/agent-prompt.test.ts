@@ -8,7 +8,7 @@ import {
   buildTurnInstructions,
   resolveTriggerAttribution,
 } from "../harness/prompt.js";
-import { normalizeAttachRuntimePath } from "../harness/prompt.js";
+import { normalizeAttachRuntimePath } from "../harness/tools/attach.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../settings/index.js";

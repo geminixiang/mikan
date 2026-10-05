@@ -1,7 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "typebox";
+import type { ConversationMessage, ConversationResponder } from "../../types.js";
 
-export interface PlatformToolRunContext {
+interface PlatformToolRunContext {
   conversationId: string;
   platformName: string;
   threadTs?: string;
@@ -14,3 +15,10 @@ export interface PlatformToolPack {
 }
 
 export type PlatformToolPackFactory = () => PlatformToolPack;
+
+export interface MikanToolRunContext {
+  message: Pick<ConversationMessage, "address" | "conversationKind" | "userId" | "threadTs">;
+  responder: ConversationResponder;
+  platformName: string;
+  runtimeWorkspaceRoot: string;
+}

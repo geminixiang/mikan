@@ -1,8 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
-import type { ConversationKind } from "../../types.js";
-import { createAttachTool } from "./attach.js";
+import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } from "./attach.js";
 import type { Executor, SandboxConfig } from "../../sandbox/types.js";
-import type { OfficeAddress, SandboxResourceController } from "../../types.js";
+import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
@@ -13,7 +12,7 @@ import { createJevTool } from "./jev.js";
 import { createJevBrowserTool } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
-import type { PlatformToolPack, PlatformToolRunContext } from "./types.js";
+import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
   executor: Executor,
@@ -30,18 +29,7 @@ export function createMikanTools(
   },
 ): {
   tools: MikanHarnessTool[];
-  setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
-  setImageUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
-  bindTasks: ReturnType<typeof createTaskTools>["bindTasks"];
-  setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
-  bindPlatformToolPacks: (ctx: PlatformToolRunContext) => void;
-  setEventContext: (context: {
-    platform: string;
-    conversationId: string;
-    conversationKind: ConversationKind;
-    userId: string;
-  }) => void;
-  setSandboxContext: (context: { address: OfficeAddress; userId: string }) => void;
+  bindRun: (ctx: MikanToolRunContext) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
@@ -67,18 +55,31 @@ export function createMikanTools(
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
     ].map(withSecretRedaction),
-    setUploadFunction,
-    setImageUploadFunction: (fn) => {
-      imageTool?.setUploadFunction(fn);
-    },
-    setReactFunction,
-    bindTasks,
-    bindPlatformToolPacks: (ctx) => {
+    bindRun: ({ message, responder, platformName, runtimeWorkspaceRoot }) => {
+      const { address, userId } = message;
+      setEventContext({
+        platform: platformName,
+        conversationId: address.conversationId,
+        conversationKind: message.conversationKind,
+        userId,
+      });
+      setSandboxContext({ address, userId });
+      setUploadFunction(async (filePath, title) => {
+        const runtimePath = normalizeAttachRuntimePath(filePath, runtimeWorkspaceRoot);
+        await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
+          responder.uploadFile(stagedPath, title),
+        );
+      });
+      imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
+      bindTasks(responder);
+      setReactFunction(responder.react ? (emoji) => responder.react!(emoji) : null);
       for (const pack of platformToolPacks) {
-        pack.bindRun(ctx);
+        pack.bindRun({
+          conversationId: address.conversationId,
+          platformName,
+          threadTs: message.threadTs,
+        });
       }
     },
-    setEventContext,
-    setSandboxContext,
   };
 }
