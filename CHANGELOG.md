@@ -12,6 +12,7 @@ any release.
 ### Fixed
 
 - The system prompt's channel table no longer lists every channel and direct message the bot belongs to in every conversation: it names only the conversation itself and the public channels whose offices the conversation can read, so the names of private channels and the people who direct-message the bot no longer reach other conversations, as office visibility promises. On a deployment with 279 such conversations the table drops from 8.9k to 6.2k characters.
+- The usage summary, the `agent.run.*` metrics, and the run span's usage attributes now count the spend of subagents a run delegates to and of compaction during the run, matching the total the run budget enforces; they previously counted only the main agent's own model calls, so a run whose subagent wrote about 2,000 output tokens reported 21.
 
 ## [1.0.0-beta.93]
 
