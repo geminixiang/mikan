@@ -21,6 +21,7 @@ any release.
 ### Fixed
 
 - The startup log reports the HTTP idle timeout mikan applies, 300000ms by default, instead of `undefinedms` when `HTTP_IDLE_TIMEOUT` is not set.
+- A Slack App Home Force Stop button drawn before 1.0.0-beta.14, which carries no session key, now stops nothing instead of a session key guessed from its action ID, a guess that named the wrong session for GitHub conversations. Reopening the Home tab draws current buttons.
 
 ## [1.0.0-beta.95]
 

@@ -1843,23 +1843,22 @@ describe("SlackMessagingBot force-stop block action", () => {
     );
   });
 
-  test("legacy buttons without a value fall back to action_id decoding", async () => {
+  test("a button without a session key stops nothing", async () => {
     const handler = makeHandler();
     const { socket } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
 
     await socket.deliver("block_actions", {
       body: {
-        actions: [{ action_id: "force_stop_C123_1000.0001" }],
+        actions: [{ action_id: "force_stop_GH_owner_repo_42" }],
         user: { id: "U123" },
         container: { channel_id: "C123" },
       },
-      ack: makeAck(),
+      ack,
     });
 
-    expect(handler.forceStop).toHaveBeenCalledWith(
-      createOfficeAddress("slack", "C123"),
-      "C123:1000.0001",
-    );
+    expect(ack).toHaveBeenCalled();
+    expect(handler.forceStop).not.toHaveBeenCalled();
   });
 });
 

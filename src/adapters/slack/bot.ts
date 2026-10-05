@@ -1740,8 +1740,11 @@ export class SlackMessagingBot implements MessagingBot {
     }
 
     ack();
-    const sessionKey =
-      action.value ?? action.action_id.replace("force_stop_", "").replace(/_/g, ":");
+    const sessionKey = action.value;
+    if (!sessionKey) {
+      log.logWarning("[Force Stop] Ignored a button without a session key", action.action_id);
+      return;
+    }
     const userId = body.user?.id;
     const channelId = body.container?.channel_id || conversationIdOf(sessionKey);
 
