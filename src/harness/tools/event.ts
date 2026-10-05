@@ -28,11 +28,6 @@ const eventSchema = Type.Object({
       description: "Event filename for read, update, or delete actions",
     }),
   ),
-  scope: Type.Optional(
-    Type.Literal("conversation", {
-      description: "Only events owned by the current office are accessible.",
-    }),
-  ),
   label: Type.Optional(
     Type.String({
       description: "Brief description of the event you're scheduling (shown to user)",
@@ -124,9 +119,6 @@ async function runEventAction(
   context: EventToolContext,
 ): Promise<EventToolResult> {
   const action = params.action ?? "create";
-  if (params.scope !== undefined && params.scope !== "conversation") {
-    throw new Error("Cross-office event access is not authorized");
-  }
   if (action === "list") return listEvents(eventStore, context);
   if (action === "read") {
     const event = await eventStore.read(requireFilename(params));
@@ -145,13 +137,7 @@ async function listEvents(
   context: EventToolContext,
 ): Promise<EventToolResult> {
   const events = await eventStore.list();
-  return textResult(
-    JSON.stringify(
-      { scope: "conversation", conversationId: context.conversationId, events },
-      null,
-      2,
-    ),
-  );
+  return textResult(JSON.stringify({ conversationId: context.conversationId, events }, null, 2));
 }
 
 async function writeEvent(

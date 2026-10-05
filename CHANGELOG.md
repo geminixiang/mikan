@@ -13,6 +13,10 @@ any release.
 
 - Embedding API: `MessagingBot` no longer declares the optional `addReaction`, `uploadFile`, `openDirectConversation`, `fetchHistory`, and `listUsers`, which nothing called through it since executable extensions were removed (ADR 0006); the Slack bot's unused `fetchHistory` and `listUsers` are removed with them.
 
+### Changed
+
+- The `event` tool no longer offers a `scope` parameter, whose only allowed value was its default, and its `list` result drops the matching `scope` field. The tool still reaches only the current office's events.
+
 ### Fixed
 
 - The startup log reports the HTTP idle timeout mikan applies, 300000ms by default, instead of `undefinedms` when `HTTP_IDLE_TIMEOUT` is not set.

@@ -5,7 +5,7 @@ description: 透過 event tool 管理的排程 agent 執行之事件格式與處
 
 ## 事件檔案放在哪裡
 
-事件紀錄存放在 host 端的 `<state-dir>/conversations/<office-key>/events/`，不在 workspace 內，也不會掛載進任何 sandbox。agent 只能透過 `event` tool 管理事件，而且只能接觸目前 Office 自己的紀錄：其他 Office 的檔名會回報「not found」，`scope=all` 會被拒絕，`create` 不會覆蓋既有檔案。刪除紀錄會立即取消對應的 timer 或 cron。跨 Office 排程無法透過此工具完成，需要 Office policy 中定義的明確授權。
+事件紀錄存放在 host 端的 `<state-dir>/conversations/<office-key>/events/`，不在 workspace 內，也不會掛載進任何 sandbox。agent 只能透過 `event` tool 管理事件，而且只能接觸目前 Office 自己的紀錄：其他 Office 的檔名會回報「not found」，`list` 只列出目前 Office 的事件，`create` 不會覆蓋既有檔案。刪除紀錄會立即取消對應的 timer 或 cron。跨 Office 排程無法透過此工具完成，需要 Office policy 中定義的明確授權。
 
 `mikan migrate` 會把 0.5.3 workspace `events/` 裡的紀錄移到各對話的儲存區；詳見 [State 遷移](/zh-tw/deployment/#state-遷移)。
 

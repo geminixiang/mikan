@@ -5,7 +5,7 @@ description: Event formats and processing flow for scheduled agent runs managed 
 
 ## Where events live
 
-Event records live host-side under `<state-dir>/conversations/<office-key>/events/`, never inside the workspace or any sandbox mount. Agents manage them only through the `event` tool, and the tool only reaches the current office's records: another office's filename reads as "not found", `scope=all` is rejected, and `create` never overwrites an existing file. Deleting a record cancels its timer or cron immediately. Cross-office scheduling is not available through the tool; it requires explicit grants defined in the Office policy.
+Event records live host-side under `<state-dir>/conversations/<office-key>/events/`, never inside the workspace or any sandbox mount. Agents manage them only through the `event` tool, and the tool only reaches the current office's records: another office's filename reads as "not found", `list` returns only this office's events, and `create` never overwrites an existing file. Deleting a record cancels its timer or cron immediately. Cross-office scheduling is not available through the tool; it requires explicit grants defined in the Office policy.
 
 `mikan migrate` moves the 0.5.3 workspace `events/` records into each conversation's store; see [State migrations](/deployment/#state-migrations).
 

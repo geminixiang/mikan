@@ -148,11 +148,19 @@ describe("createEventTool", () => {
     await expect(tool.execute("call-2", { action: "list" })).resolves.toBeTruthy();
   });
 
-  test("rejects scope=all even when injected directly", async () => {
-    const { tool } = officeTool();
-    await expect(
-      tool.execute("call-1", JSON.parse('{"action":"list","scope":"all"}')),
-    ).rejects.toThrow("Cross-office event access is not authorized");
+  test("offers no list scope, and an injected one still lists only this office", async () => {
+    await new OfficeEventStore(office("slack", "C999")).create("foreign.json", {
+      type: "immediate",
+      platform: "slack",
+      conversationId: "C999",
+      text: "PRIVATE_FIXTURE",
+    });
+    const { tool } = officeTool(office("slack", "C123"));
+
+    expect(Object.keys(tool.parameters.properties)).not.toContain("scope");
+    const result = await tool.execute("call-1", JSON.parse('{"action":"list","scope":"all"}'));
+    const listing = JSON.parse(firstText(result));
+    expect(listing).toEqual({ conversationId: "C123", events: [] });
   });
 
   test("another office's events are unreachable by filename", async () => {
