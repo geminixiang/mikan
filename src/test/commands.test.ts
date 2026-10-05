@@ -171,8 +171,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     workspace: testWorkspace("/tmp/no-such-working-dir"),
     runtime: {
       handleNewCommand: vi.fn(),
-      refreshConversationEnvironment: vi.fn().mockReturnValue(true),
-      switchConversationModel: vi.fn().mockReturnValue(true),
+      refreshConversation: vi.fn().mockReturnValue(true),
     },
     sandbox,
     vaultManager: fakeVaultManager(),
@@ -291,10 +290,8 @@ describe("ModelCommandHandler", () => {
       expect(await commandHandler.tryHandle(ctx)).toBe(true);
       expect(ctx.responder.responses[0]).toContain("Switched: `provider/model:2026-01`");
       expect(ctx.responder.responses[0]).not.toContain("未知的 thinking level");
-      expect(ctx.services.runtime?.switchConversationModel).toHaveBeenCalledWith(
+      expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
         createOfficeAddress("slack", "C123"),
-        "provider",
-        "model:2026-01",
       );
     } finally {
       if (previousStateDir === undefined) delete process.env.MIKAN_STATE_DIR;
@@ -520,7 +517,7 @@ describe("LoginCommandHandler", () => {
       "team-tools",
       officeKey(createOfficeAddress("slack", "C123")),
     );
-    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+    expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
     expect(remove).toHaveBeenCalledWith(
@@ -545,8 +542,7 @@ describe("LoginCommandHandler", () => {
         provisioner,
         runtime: {
           handleNewCommand: vi.fn(),
-          refreshConversationEnvironment: vi.fn().mockReturnValue(false),
-          switchConversationModel: vi.fn(),
+          refreshConversation: vi.fn().mockReturnValue(false),
         },
         sandbox: { type: "image", image: "ubuntu:24.04" },
       },
@@ -554,7 +550,7 @@ describe("LoginCommandHandler", () => {
 
     expect(await handler.tryHandle(ctx)).toBe(true);
     expect(remove).not.toHaveBeenCalled();
-    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+    expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
     expect(ctx.responder.responses[0]).toContain("currently running");
@@ -658,8 +654,7 @@ describe("SandboxCommandHandler", () => {
         sandbox: { type: "image", image: "ubuntu:24.04" },
         runtime: {
           handleNewCommand: vi.fn(),
-          refreshConversationEnvironment: vi.fn().mockReturnValue(refreshResult),
-          switchConversationModel: vi.fn(),
+          refreshConversation: vi.fn().mockReturnValue(refreshResult),
         },
         resourceController: fakeResourceController(),
       },
@@ -693,7 +688,7 @@ describe("SandboxCommandHandler", () => {
     expect(await handler.tryHandle(ctx)).toBe(true);
     const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
     expect(written.office).toEqual({ visibility: "private" });
-    expect(ctx.services.runtime?.refreshConversationEnvironment).toHaveBeenCalledWith(
+    expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
     expect(ctx.responder.responses[0]).toContain("Current: private（admin 覆寫）");

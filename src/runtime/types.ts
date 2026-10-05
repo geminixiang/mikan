@@ -5,8 +5,10 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
+  GlobalRunnerCacheControl,
   MessagingEventHandler,
   OfficeAddress,
+  RunnerCacheControl,
 } from "../types.js";
 import type {
   AdminTokenStoreLike,
@@ -73,10 +75,8 @@ export interface ConversationRuntimeOptions extends Omit<
   runEvents?: RunEventPublisher;
 }
 
-export interface ConversationRuntime extends MessagingEventHandler {
+export interface ConversationRuntime
+  extends MessagingEventHandler, RunnerCacheControl, GlobalRunnerCacheControl {
   runSession(options: RunSessionOptions): Promise<void>;
-  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
-  refreshConversationEnvironment(address: OfficeAddress): boolean;
-  refreshAllConversations(): { busy: OfficeAddress[] };
   shutdown(timeoutMs?: number): Promise<void>;
 }

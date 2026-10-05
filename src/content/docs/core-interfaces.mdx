@@ -165,13 +165,12 @@ Source: `src/runtime/types.ts` and `src/runtime/conversation-runtime.ts`.
 
 ### Control and inspection
 
-| Method                                    | Semantics                                                                     |
-| ----------------------------------------- | ----------------------------------------------------------------------------- |
-| `isRunning(address, sessionKey)`          | Current in-process run state                                                  |
-| `getRunningSessions()`                    | Snapshot for admin/observability surfaces; each entry carries its `address`   |
-| `switchConversationModel(address, ...)`   | Update a cached runner; returns whether one existed                           |
-| `refreshConversationEnvironment(address)` | Re-resolve a cached runner environment                                        |
-| `shutdown(timeoutMs?)`                    | Reject new work, stop runners, and wait for in-flight work up to the deadline |
+| Method                           | Semantics                                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)` | Current in-process run state                                                                                    |
+| `getRunningSessions()`           | Snapshot for admin/observability surfaces; each entry carries its `address`                                     |
+| `refreshConversation(address)`   | Clear a conversation's cached runners so the next run rebuilds from settings; returns `false` while one is busy |
+| `shutdown(timeoutMs?)`           | Reject new work, stop runners, and wait for in-flight work up to the deadline                                   |
 
 Every session-scoped entry point takes an `OfficeAddress`. There is no raw-conversation-id bridge; platform and Admin surfaces carry the platform-scoped address explicitly.
 

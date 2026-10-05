@@ -28,9 +28,7 @@ export function applyConversationSettings(
 ): SettingsApplyResult {
   let runtimeSwitched: boolean | null = null;
   if (affectsCachedRunner(patch) && runtime) {
-    if (!runtime.switchConversationModel(office.address, patch.provider ?? "", patch.model ?? "")) {
-      return { ok: false };
-    }
+    if (!runtime.refreshConversation(office.address)) return { ok: false };
     runtimeSwitched = true;
   }
   updateConversationSettings(office, patch);
@@ -52,7 +50,7 @@ export function applyOfficeVisibility(
   office: Office,
   visibility: "private" | null,
 ): SettingsApplyResult {
-  if (runtime && !runtime.refreshConversationEnvironment(office.address)) {
+  if (runtime && !runtime.refreshConversation(office.address)) {
     return { ok: false };
   }
   setOfficeVisibilityOverride(office, visibility);

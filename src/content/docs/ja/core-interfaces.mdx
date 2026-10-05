@@ -126,13 +126,12 @@ host に面した platform port です。次を組み合わせます:
 
 ### Control と inspection
 
-| メソッド                                  | セマンティクス                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| `isRunning(address, sessionKey)`          | 現在のプロセス内での実行状態                                            |
-| `getRunningSessions()`                    | admin/observability 面向けのスナップショット。各要素は `address` を持つ |
-| `switchConversationModel(address, ...)`   | cached runner を更新する。存在したかどうかを返す                        |
-| `refreshConversationEnvironment(address)` | cached runner の環境を再解決する                                        |
-| `shutdown(timeoutMs?)`                    | 新しい作業を拒否し、runners を停止し、期限まで in-flight の作業を待つ   |
+| メソッド                         | セマンティクス                                                                         |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)` | 現在のプロセス内での実行状態                                                           |
+| `getRunningSessions()`           | admin/observability 面向けのスナップショット。各要素は `address` を持つ                |
+| `refreshConversation(address)`   | 会話の cached runner を破棄し、次の実行で設定から再構築する。実行中なら `false` を返す |
+| `shutdown(timeoutMs?)`           | 新しい作業を拒否し、runners を停止し、期限まで in-flight の作業を待つ                  |
 
 session スコープのエントリポイントはすべて `OfficeAddress` を受け取ります。raw conversation id の bridge はなく、platform と Admin surface が platform-scoped address を明示的に運びます。
 

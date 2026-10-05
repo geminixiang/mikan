@@ -126,13 +126,12 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### 控制與檢查
 
-| 方法                                      | 語意                                                          |
-| ----------------------------------------- | ------------------------------------------------------------- |
-| `isRunning(address, sessionKey)`          | 目前的 in-process 執行狀態                                    |
-| `getRunningSessions()`                    | 供 admin/observability 面的快照；每一筆都帶著自己的 `address` |
-| `switchConversationModel(address, ...)`   | 更新已快取的 runner；回傳先前是否存在                         |
-| `refreshConversationEnvironment(address)` | 重新解析已快取的 runner 環境                                  |
-| `shutdown(timeoutMs?)`                    | 拒絕新工作、停止 runner，並在期限內等待進行中的工作           |
+| 方法                             | 語意                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)` | 目前的 in-process 執行狀態                                              |
+| `getRunningSessions()`           | 供 admin/observability 面的快照；每一筆都帶著自己的 `address`           |
+| `refreshConversation(address)`   | 清除對話快取的 runner，下次執行依設定重建；有執行中的任務時回傳 `false` |
+| `shutdown(timeoutMs?)`           | 拒絕新工作、停止 runner，並在期限內等待進行中的工作                     |
 
 每個以 session 為範圍的進入點都接受一個 `OfficeAddress`。這裡沒有 raw-conversation-id 的橋接；platform 與 Admin 介面會明確攜帶 platform-scoped address。
 

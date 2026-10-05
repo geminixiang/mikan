@@ -50,7 +50,7 @@ async function refreshCopiedVaultRuntime(context: CommandContext): Promise<strin
     context.address.platform,
     context.vaultConversationId ?? context.conversationId,
   );
-  const cleared = context.services.runtime?.refreshConversationEnvironment(targetAddress);
+  const cleared = context.services.runtime?.refreshConversation(targetAddress);
   if (cleared === false) {
     return "A session is currently running, so the sandbox was not restarted. The copied credentials will be applied after the run finishes and the sandbox is recreated.";
   }

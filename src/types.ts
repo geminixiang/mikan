@@ -402,8 +402,7 @@ export interface EnvGroup {
 }
 
 export interface RunnerCacheControl {
-  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
-  refreshConversationEnvironment(address: OfficeAddress): boolean;
+  refreshConversation(address: OfficeAddress): boolean;
 }
 
 export interface GlobalRunnerCacheControl {

@@ -1,4 +1,10 @@
-import type { MessagingBot, OfficeAddress, PlatformName, RunningSession } from "../../../types.js";
+import type {
+  GlobalRunnerCacheControl,
+  MessagingBot,
+  PlatformName,
+  RunnerCacheControl,
+  RunningSession,
+} from "../../../types.js";
 import type { Office, Workspace } from "../../../office/types.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
 import type { SandboxConfig } from "../../../sandbox/types.js";
@@ -7,11 +13,8 @@ import type { InMemorySessionViewTokenStore } from "../session-view/portal.js";
 import type { TokenRecord } from "../types.js";
 import type { InMemoryAdminTokenStore } from "./portal.js";
 
-export interface AdminRuntimeBridge {
+export interface AdminRuntimeBridge extends RunnerCacheControl, GlobalRunnerCacheControl {
   getRunningSessions(): RunningSession[];
-  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
-  refreshConversationEnvironment(address: OfficeAddress): boolean;
-  refreshAllConversations(): { busy: OfficeAddress[] };
 }
 
 export interface AdminServices {

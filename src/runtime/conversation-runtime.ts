@@ -473,12 +473,10 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     );
   }
 
-  switchConversationModel(address: OfficeAddress, _provider: string, _model: string): boolean {
-    return this.invalidateOffice(address, "Model switched");
-  }
-
-  refreshConversationEnvironment(address: OfficeAddress): boolean {
-    return this.invalidateOffice(address, "Environment refreshed");
+  refreshConversation(address: OfficeAddress): boolean {
+    const cleared = this.sessions.invalidateConversation(address);
+    if (cleared) log.logInfo(`[${address.conversationId}] Cleared cached session runners`);
+    return cleared;
   }
 
   refreshAllConversations(): { busy: OfficeAddress[] } {
@@ -494,14 +492,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       );
     }
     return result;
-  }
-
-  private invalidateOffice(address: OfficeAddress, reason: string): boolean {
-    const cleared = this.sessions.invalidateConversation(address);
-    if (cleared) {
-      log.logInfo(`[${address.conversationId}] ${reason}; cleared cached session runners`);
-    }
-    return cleared;
   }
 
   private async createCurrentRunner(

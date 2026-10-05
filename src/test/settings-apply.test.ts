@@ -41,27 +41,21 @@ function conversationSettingsFile(conversationId: string): string {
 describe("applyConversationSettings", () => {
   test("llm change clears cached runners, then writes", () => {
     const runtime = {
-      switchConversationModel: vi.fn().mockReturnValue(true),
-      refreshConversationEnvironment: vi.fn(),
+      refreshConversation: vi.fn().mockReturnValue(true),
     };
     const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: true });
-    expect(runtime.switchConversationModel).toHaveBeenCalledWith(
-      C1,
-      "anthropic",
-      "claude-sonnet-4-6",
-    );
+    expect(runtime.refreshConversation).toHaveBeenCalledWith(C1);
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
     expect(written.llm.model).toBe("claude-sonnet-4-6");
   });
 
   test("busy conversation refuses: no write, disk and cache stay agreed", () => {
     const runtime = {
-      switchConversationModel: vi.fn().mockReturnValue(false),
-      refreshConversationEnvironment: vi.fn(),
+      refreshConversation: vi.fn().mockReturnValue(false),
     };
     const result = applyConversationSettings(runtime, office, {
       provider: "anthropic",
@@ -73,14 +67,13 @@ describe("applyConversationSettings", () => {
 
   test("non-llm patch writes without touching runners", () => {
     const runtime = {
-      switchConversationModel: vi.fn().mockReturnValue(false),
-      refreshConversationEnvironment: vi.fn(),
+      refreshConversation: vi.fn().mockReturnValue(false),
     };
     const result = applyConversationSettings(runtime, office, {
       sandbox: { memory: "2g" },
     });
     expect(result).toEqual({ ok: true, runtimeSwitched: null });
-    expect(runtime.switchConversationModel).not.toHaveBeenCalled();
+    expect(runtime.refreshConversation).not.toHaveBeenCalled();
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
     expect(written.sandbox.memory).toBe("2g");
   });
@@ -99,12 +92,11 @@ describe("applyOfficeVisibility", () => {
   test("writes the private override, clears the runner, keeps other settings", () => {
     applyConversationSettings(undefined, office, { sandbox: { cpus: "2" } });
     const runtime = {
-      switchConversationModel: vi.fn(),
-      refreshConversationEnvironment: vi.fn().mockReturnValue(true),
+      refreshConversation: vi.fn().mockReturnValue(true),
     };
     const result = applyOfficeVisibility(runtime, office, "private");
     expect(result).toEqual({ ok: true, runtimeSwitched: true });
-    expect(runtime.refreshConversationEnvironment).toHaveBeenCalledWith(C1);
+    expect(runtime.refreshConversation).toHaveBeenCalledWith(C1);
     const written = JSON.parse(readFileSync(conversationSettingsFile("C1"), "utf-8"));
     expect(written.office).toEqual({ visibility: "private" });
     expect(written.sandbox.cpus).toBe("2");
@@ -126,8 +118,7 @@ describe("applyOfficeVisibility", () => {
 
   test("busy conversation refuses without writing", () => {
     const runtime = {
-      switchConversationModel: vi.fn(),
-      refreshConversationEnvironment: vi.fn().mockReturnValue(false),
+      refreshConversation: vi.fn().mockReturnValue(false),
     };
     const result = applyOfficeVisibility(runtime, office, "private");
     expect(result).toEqual({ ok: false });

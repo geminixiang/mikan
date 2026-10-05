@@ -165,13 +165,12 @@ interface ConversationContext {
 
 ### 控制与检查
 
-| 方法                                      | 语义                                                    |
-| ----------------------------------------- | ------------------------------------------------------- |
-| `isRunning(address, sessionKey)`          | 当前进程内运行状态                                      |
-| `getRunningSessions()`                    | 用于管理/可观测性界面的快照；每个条目携带其 `address`   |
-| `switchConversationModel(address, ...)`   | 更新缓存的 runner；返回是否存在一个                     |
-| `refreshConversationEnvironment(address)` | 重新解析缓存的 runner 环境                              |
-| `shutdown(timeoutMs?)`                    | 拒绝新工作、停止 runner，并在截止期限内等待进行中的工作 |
+| 方法                             | 语义                                                                    |
+| -------------------------------- | ----------------------------------------------------------------------- |
+| `isRunning(address, sessionKey)` | 当前进程内运行状态                                                      |
+| `getRunningSessions()`           | 用于管理/可观测性界面的快照；每个条目携带其 `address`                   |
+| `refreshConversation(address)`   | 清除对话缓存的 runner，下次运行按设置重建；有运行中的任务时返回 `false` |
+| `shutdown(timeoutMs?)`           | 拒绝新工作、停止 runner，并在截止期限内等待进行中的工作                 |
 
 每个会话范围的入口点都接受一个 `OfficeAddress`。不存在原始对话 id 的桥接；平台与 Admin 介面会明确携带带平台范围的地址。
 

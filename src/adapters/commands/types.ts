@@ -11,6 +11,7 @@ import type {
   MessagingBot,
   OfficeAddress,
   PlatformName,
+  RunnerCacheControl,
   SessionViewTokenStoreLike,
 } from "../../types.js";
 import type { VaultManager } from "../../vault/types.js";
@@ -56,10 +57,8 @@ export interface AdminTokenStoreLike {
   create(options: AdminTokenCreateOptions): { token: string };
 }
 
-interface CommandRuntimeBridge {
+interface CommandRuntimeBridge extends RunnerCacheControl {
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
-  switchConversationModel(address: OfficeAddress, provider: string, model: string): boolean;
-  refreshConversationEnvironment(address: OfficeAddress): boolean;
 }
 
 export interface CommandServices {
