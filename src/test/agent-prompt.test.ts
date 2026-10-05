@@ -276,6 +276,35 @@ describe("system prompt memory guidance", () => {
     };
   }
 
+  test("lists only the channels this office can read", () => {
+    const projection = { ...projectionFor("private"), readableConversationIds: ["C123", "C200"] };
+    const office = createWorkspace({ root: workspaceDir, stateDir }).office(
+      createOfficeAddress("slack", "C123"),
+    );
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "container", container: "c1" },
+      platform: {
+        ...PLATFORM,
+        channels: [
+          { id: "C123", name: "here" },
+          { id: "C200", name: "general" },
+          { id: "G300", name: "secret-plans" },
+          { id: "D400", name: "DM:alice" },
+        ],
+      },
+      skills: [],
+      projection,
+    });
+
+    expect(prompt).toContain("C123\t#here");
+    expect(prompt).toContain("C200\t#general");
+    expect(prompt).not.toContain("secret-plans");
+    expect(prompt).not.toContain("DM:alice");
+  });
+
   test("public visibility tells the agent it can write shared memory", () => {
     const projection = projectionFor("public");
     const office = createWorkspace({ root: workspaceDir, stateDir }).office(

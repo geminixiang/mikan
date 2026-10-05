@@ -44,5 +44,6 @@ export interface WorkspaceProjection {
   visibility: WorkspaceVisibility;
   source: "platform" | "override" | "unknown";
   mounts: ContainerMount[];
+  readableConversationIds: string[];
   promptSources: WorkspacePromptSources;
 }

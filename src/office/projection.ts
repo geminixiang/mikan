@@ -6,7 +6,7 @@ import { listRegisteredOffices } from "./index.js";
 import type { Office, PlatformChannelKind, WorkspaceProjection } from "./types.js";
 import * as log from "../log.js";
 import { guestPublicOfficePath, guestWorkspacePath } from "../sandbox/layout.js";
-import type { ContainerMount, WorkspaceVisibility } from "../types.js";
+import type { WorkspaceVisibility } from "../types.js";
 import { errorMessage } from "../unknown-values.js";
 
 const CHANNEL_KIND_FILE = "channel-kind";
@@ -61,22 +61,24 @@ export function resolveOfficeVisibility(office: Office): OfficeVisibilityDecisio
   return { visibility: kind === "public_channel" ? "public" : "private", source: "platform" };
 }
 
-function publicOfficeMounts(self: Office): ContainerMount[] {
+function readablePublicOffices(self: Office): Office[] {
   const { workspace } = self;
-  const mounts: ContainerMount[] = [];
-  for (const record of listRegisteredOffices(workspace.stateDir)) {
-    const other = workspace.office(record);
-    if (other.key === self.key || !exists(other.dir)) continue;
-    if (resolveOfficeVisibility(other).visibility !== "public") continue;
-    mounts.push({ source: other.dir, target: guestPublicOfficePath(other.key), readOnly: true });
-  }
-  return mounts.toSorted((a, b) => a.target.localeCompare(b.target));
+  return listRegisteredOffices(workspace.stateDir)
+    .map((record) => workspace.office(record))
+    .filter(
+      (other) =>
+        other.key !== self.key &&
+        exists(other.dir) &&
+        resolveOfficeVisibility(other).visibility === "public",
+    )
+    .toSorted((a, b) => a.key.localeCompare(b.key));
 }
 
 export function resolveWorkspaceProjection(office: Office): WorkspaceProjection {
   const { workspace } = office;
   const decision = resolveOfficeVisibility(office);
   const readOnlyKnowledge = decision.visibility === "private";
+  const publicOffices = readablePublicOffices(office);
 
   assertDirectory(workspace.root, "Host workspace root");
   office.ensure();
@@ -96,7 +98,15 @@ export function resolveWorkspaceProjection(office: Office): WorkspaceProjection 
         target: guestWorkspacePath("skills"),
         readOnly: readOnlyKnowledge ? true : undefined,
       },
-      ...publicOfficeMounts(office),
+      ...publicOffices.map((other) => ({
+        source: other.dir,
+        target: guestPublicOfficePath(other.key),
+        readOnly: true,
+      })),
+    ],
+    readableConversationIds: [
+      office.address.conversationId,
+      ...publicOffices.map((other) => other.address.conversationId),
     ],
     promptSources: {
       conversationMemoryPath: office.memoryPath,

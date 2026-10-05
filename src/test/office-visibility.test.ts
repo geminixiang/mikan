@@ -132,6 +132,17 @@ describe("resolveWorkspaceProjection", () => {
     expect(projection.promptSources.globalKnowledgeReadOnly).toBe(true);
   });
 
+  test("names only the conversations whose offices it can read", () => {
+    const own = office("D1", "im");
+    office("C1", "public_channel");
+    office("G1", "private_channel");
+    office("D2", "im");
+    const hidden = office("C2", "public_channel");
+    setOfficeVisibilityOverride(hidden, "private");
+
+    expect(resolveWorkspaceProjection(own).readableConversationIds).toEqual(["D1", "C1"]);
+  });
+
   test("an office that becomes private leaves everyone else's public mounts", () => {
     const own = office("D1", "im");
     const pub = office("C1", "public_channel");

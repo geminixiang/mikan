@@ -204,10 +204,11 @@ function mappingTable(rows: string[], empty: string): string {
 }
 
 function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
-  const { platform, sandboxConfig } = input;
+  const { platform, sandboxConfig, projection } = input;
   const { workspaceRoot, scratchPath } = paths;
+  const readable = new Set(projection.readableConversationIds);
   const channelMappings = mappingTable(
-    platform.channels.map((c) => `${c.id}\t#${c.name}`),
+    platform.channels.filter((c) => readable.has(c.id)).map((c) => `${c.id}\t#${c.name}`),
     "(no channels loaded)",
   );
   const userMappings = mappingTable(

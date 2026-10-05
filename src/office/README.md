@@ -36,7 +36,7 @@ its host-side directory layout, its durable record, and the legacy migration.
   written under a domain lease. Plus the cold-path `listRegisteredOffices`
   lookup used by Admin enumeration and `mikan office list`. Moving 0.5.3
   raw-id directories into this layout belongs to `src/migrations/`.
-- **Projection** (`projection.ts`): The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the platform (only Slack public channels are public; other platforms are private by decision), the recorded channel kind, and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro) and authorizes prompt sources.
+- **Projection** (`projection.ts`): The office-owned data-view policy seam. `resolveOfficeVisibility(office)` derives public/private from the platform (only Slack public channels are public; other platforms are private by decision), the recorded channel kind, and the operator override; `resolveWorkspaceProjection(office)` turns that into the uniform runtime mounts (own office rw, every other public office ro, shared knowledge rw/ro), authorizes prompt sources, and lists the conversations whose offices those mounts expose. The system prompt names only those conversations, so a private office's existence and name stay out of every other office's prompt.
 
 ## Consumers
 
