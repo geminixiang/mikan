@@ -131,7 +131,7 @@ Even if a full dashboard is added later, these boundaries should remain:
 `startWebServer()` dispatch order:
 
 1. `GET /health`
-2. Agent event HTTP routes
+2. GitHub webhook (`POST /github/webhook`, when configured)
 3. Admin routes
 4. Session view routes
 5. Login / vault routes

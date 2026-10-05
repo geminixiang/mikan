@@ -40,7 +40,7 @@ Web portals, particular chat SDKs, Docker provisioning, Cloudflare execution, an
 
 Some apparent duplication protects important semantics:
 
-- Keep `log.jsonl` separate from agent session JSONL. They record different truths and support recovery.
+- Keep `log.jsonl` separate from the agent session storage. They record different truths and support recovery.
 - Keep office keys distinct from raw platform ids. Naming a directory or a vault by a raw id lets two platforms that share an id reach each other's data; the registry exists precisely because the key is not reversible.
 - Keep session keys raw. They are platform values, and pairing them with an office is what makes a non-globally-unique key safe — rewriting them into office-scoped strings would move the check from the runtime into every caller.
 - Keep host paths separate from runtime paths. Collapsing them breaks container/remote execution and can expose host-only data.

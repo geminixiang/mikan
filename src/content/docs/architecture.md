@@ -111,11 +111,11 @@ Responsibilities:
 
 Responsibilities:
 
-- `src/adapters/web/server.ts` owns the HTTP server and mounts login/vault, admin, session-view, and agent-event routes
+- `src/adapters/web/server.ts` owns the HTTP server and mounts the GitHub webhook and the login/vault, admin, and session-view routes
 - provide a web login portal that supports API key and OAuth writes into the vault
 - provide an admin portal for conversation/settings/workspace/events/skills management and link generation
 - provide a session viewer; it can currently display session timelines and, when interactive wiring is enabled, send messages through `/session/message`
-- watch `events/*.json` and re-inject scheduled events into the bot flow
+- schedule each office's events and re-inject them into the bot flow when they fire
 
 ## 3. Message processing flow
 
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── events/                    # the workspace scheduling bus
 ├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
@@ -169,15 +168,15 @@ sequenceDiagram
     └── skills/                # office-level skills
 
 <state-dir>/
-├── settings.json              # required global settings
-├── office-registry.json       # office inventory + migration journal
+├── settings.json              # global settings
+├── models.json                # custom providers and models
+├── office-registry.json       # office inventory
+├── migrations.json            # applied state migrations
 ├── conversations/
 │   └── <officeKey>/
 │       ├── settings.json      # host-only conversation overrides
-│       └── sessions/          # host-only agent history
-│           ├── current        # top-level session pointer
-│           ├── <timestamp>_<id>.jsonl
-│           └── <scope_id>.jsonl  # thread / reply scoped sessions
+│       ├── sessions.db        # host-only agent history (pi-durable SQLite)
+│       └── events/            # host-only scheduled events
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -189,9 +188,9 @@ Design points:
 - the office key names the same directory on the host and inside the sandbox runtime, so a path does not change meaning when it crosses the boundary
 - office keys cannot be reversed to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)` when it is first materialized. Raw-id-facing surfaces — the Admin portal, `mikan office claim` — resolve through it
 - `log.jsonl` is the platform conversation log: what actually happened on the source platform
-- `sessions/*.jsonl` is the LLM working context/log, kept host-only: what mikan gave the LLM and what the LLM/tool did
-- the top-level session uses the `current` pointer, but `current` is not channel history; when missing, recent top-level working context can be rebuilt from `log.jsonl`
-- thread / reply sessions use fixed file names so scoped sessions can be tracked separately
+- `sessions.db` is the LLM working context/log, kept host-only: what mikan gave the LLM and what the LLM/tool did. The top-level session is the storage's root conversation, and each thread or reply session is a conversation found by its session key
+- the top-level session is not channel history; a new one starts from recent top-level messages in `log.jsonl`
+- scheduled events live in the office's State dir, and the agent reaches them only through the `event` tool
 - session keys stay raw platform values; runtime state is addressed by office plus session key, so a session key can never select another office's runner or queue
 - Slack top-level messages share a channel session; Slack thread replies use `conversationId:threadTs`
 - Slack events first create a top-level anchor message, then run with `conversationId:anchorTs`
@@ -236,7 +235,7 @@ Key points:
 
 ## 6. Differences between events and normal chats
 
-`events/*.json` is watched by `EventsWatcher`, then converted into `ConversationEvent` and sent through the normal flow again.
+The scheduler loads each office's event records at start and follows changes made through the event store; when a record fires, it becomes a `ConversationEvent` and goes through the normal flow again.
 In other words, events are not a separate executor; they are another message intake path.
 
 This lets these capabilities share the same mechanism:
