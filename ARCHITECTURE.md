@@ -210,7 +210,7 @@ The exact paths are owned by the relevant modules, not by this diagram. Code mus
 
 The State dir is never part of a Workspace projection.
 
-Only the current file formats are read at runtime. `mikan migrate` converts older ones, in the order and with the record described in [`src/migrations/README.md`](src/migrations/README.md) and [ADR 0014](docs/adr/0014-versioned-state-migrations.md). A managed sandbox container is disposable: only the workspace projection and vault mounts outlive an image or mount change.
+Only the current file formats are read at runtime. `mikan migrate` converts the 0.5.3 layout, the only supported starting point, in the order and with the record described in [`src/migrations/README.md`](src/migrations/README.md), [ADR 0014](docs/adr/0014-versioned-state-migrations.md), and [ADR 0019](docs/adr/0019-migrations-start-from-0-5-3-only.md). A managed sandbox container is disposable: only the workspace projection and vault mounts outlive an image or mount change.
 
 ## Configuration authority
 

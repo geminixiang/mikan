@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Removed
+
+- `mikan migrate` supports one upgrade, from 0.5.3 to 1.0.0 (ADR 0019). The steps that served only 1.0.0 prerelease installs, `0010-dream-checkpoints` and `0011-private-office-dirs`, are removed; an install that already applied them has nothing pending. A prerelease install that has not applied them keeps any `dream.json` files and loosely permissioned office state directories: delete the files and run `chmod -R go-rwx <state-dir>/conversations`.
+
 ### Changed
 
 - Embedding API: settings and the model list are located through the `Workspace` instead of the `STATE_DIR` environment variable. `loadGlobalSettings`, `updateGlobalSettings`, `resolveSentryDsn`, and `defaultModelsJsonPath` take the state dir, `applyGlobalSettings` takes it after the runtime, `updateSkillPatterns` takes the office and a `"global" | "conversation"` scope, `MikanModels.create` requires `modelsJsonPath`, and `defaultCommandHandlers` requires the model registry. The Admin portal now requires a `workspace`. `--state-dir`, `STATE_DIR`, and `MIKAN_STATE_DIR` still choose the state dir on the command line; mikan no longer writes them back into its own environment.

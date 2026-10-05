@@ -37,6 +37,7 @@ For containers:
 ## Consequences
 
 - Supersedes [ADR 0009](0009-sandbox-persistence-model.md): there is no per-office home volume, and a replaced container starts with an empty `/root`.
+- The supported starting point is narrowed by [ADR 0019](0019-migrations-start-from-0-5-3-only.md): only 0.5.3, and steps that served only prerelease installs are removed before 1.0.0.
 
 - `src/migrations/` owns every legacy format. Other modules read and write only the current format.
 - Each migration is idempotent: with nothing to convert it records itself as applied, so a new install, a 0.5.3 install, and an up-to-date prerelease install all run the same command.

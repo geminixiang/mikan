@@ -1,5 +1,4 @@
 import {
-  chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -7,7 +6,6 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -220,59 +218,17 @@ describe("migrating a partly upgraded state directory", () => {
   });
 });
 
-describe("office state left by earlier versions", () => {
-  function writeLoosePermissionState(): { officeDir: string; outside: string } {
-    const officeDir = join(stateDir, "conversations", dmKey);
-    write(join(officeDir, "dream.json"), '{"version":1,"sessions":{}}\n');
-    write(join(officeDir, "settings.json"), "{}\n");
-    write(join(officeDir, "events", "one-shot-1.json"), "{}\n");
-    write(join(officeDir, "sessions-v4", "1700000000.000100", "context.jsonl"), "{}\n");
-    const outside = join(root, "outside");
-    mkdirSync(outside, { mode: 0o755 });
-    symlinkSync(outside, join(officeDir, "linked"));
-    for (const dir of [
-      join(stateDir, "conversations"),
-      officeDir,
-      join(officeDir, "events"),
-      join(officeDir, "sessions-v4"),
-      join(officeDir, "sessions-v4", "1700000000.000100"),
-    ]) {
-      chmodSync(dir, 0o755);
-    }
-    return { officeDir, outside };
-  }
+describe("a record written by a 1.0.0 prerelease", () => {
+  test("names retired steps without leaving anything pending", async () => {
+    const applied = [
+      ...MIGRATIONS.map((migration) => migration.id),
+      "0010-dream-checkpoints",
+      "0011-private-office-dirs",
+    ].map((id) => ({ id, appliedAt: "2026-10-05T00:00:00.000Z" }));
+    write(join(stateDir, "migrations.json"), JSON.stringify({ applied }));
 
-  test("removes Dream checkpoints and makes every office state directory private", async () => {
-    recordAllMigrations(stateDir, MIGRATIONS.slice(0, 9));
-    const { officeDir, outside } = writeLoosePermissionState();
-
-    await runMigrations(context());
-
-    expect(existsSync(join(officeDir, "dream.json"))).toBe(false);
-    expect(readFileSync(join(officeDir, "settings.json"), "utf-8")).toBe("{}\n");
-    for (const dir of [
-      join(stateDir, "conversations"),
-      officeDir,
-      join(officeDir, "events"),
-      join(officeDir, "sessions-v4"),
-      join(officeDir, "sessions-v4", "1700000000.000100"),
-    ]) {
-      expect(statSync(dir).mode & 0o777).toBe(0o700);
-    }
-    expect(statSync(outside).mode & 0o777).toBe(0o755);
-  });
-
-  test("a dry run reports the cleanup and changes nothing", async () => {
-    recordAllMigrations(stateDir, MIGRATIONS.slice(0, 9));
-    const { officeDir } = writeLoosePermissionState();
-    const lines: string[] = [];
-
-    await runMigrations(context({ dryRun: true, report: (line) => lines.push(line) }));
-
-    expect(existsSync(join(officeDir, "dream.json"))).toBe(true);
-    expect(statSync(officeDir).mode & 0o777).toBe(0o755);
-    expect(lines.join("\n")).toContain(join(officeDir, "dream.json"));
-    expect(lines.join("\n")).toContain(`chmod 700 ${officeDir}`);
+    expect(pendingMigrations(stateDir)).toEqual([]);
+    expect(await runMigrations(context())).toEqual([]);
   });
 });
 

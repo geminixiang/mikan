@@ -4,11 +4,9 @@ import type { SandboxConfig } from "../sandbox/types.js";
 import { isRecord } from "../unknown-values.js";
 import { actorVaultsMigration } from "./actor-vaults.js";
 import { conversationSettingsMigration } from "./conversation-settings.js";
-import { dreamCheckpointsMigration } from "./dream-checkpoints.js";
 import { modelsJsonMigration } from "./models-json.js";
 import { officeLayoutMigration } from "./office-layout.js";
 import { officeSessionsMigration } from "./office-sessions.js";
-import { privateOfficeDirsMigration } from "./private-office-dirs.js";
 import { sandboxContainersMigration } from "./sandbox-containers.js";
 import { sessionsSqliteMigration } from "./sessions-sqlite.js";
 import { sessionsV3Migration } from "./sessions-v3.js";
@@ -25,8 +23,6 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   modelsJsonMigration,
   officeSessionsMigration,
   sessionsSqliteMigration,
-  dreamCheckpointsMigration,
-  privateOfficeDirsMigration,
 ]);
 
 const RECORD_FILENAME = "migrations.json";
