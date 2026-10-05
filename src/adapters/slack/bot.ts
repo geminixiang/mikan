@@ -15,9 +15,6 @@ import type {
   ConversationKind,
   MessagingInfo,
   OfficeAddress,
-  PlatformHistoryMessage,
-  PlatformHistoryOptions,
-  PlatformUserInfo,
   Attachment,
 } from "../../types.js";
 import {
@@ -597,7 +594,7 @@ export class SlackMessagingBot implements MessagingBot {
     await this.postEphemeralBlocks(conversationId, userId, text, [buildMrkdwnContextBlock(text)]);
   }
 
-  async openDirectConversation(userId: string): Promise<string> {
+  private async openDirectConversation(userId: string): Promise<string> {
     return slackRetry(async () => {
       const result = await this.webClient.conversations.open({ users: userId });
       const channelId = result.channel?.id;
@@ -606,64 +603,6 @@ export class SlackMessagingBot implements MessagingBot {
       }
       return channelId;
     });
-  }
-
-  async fetchHistory(
-    channel: string,
-    options?: PlatformHistoryOptions,
-  ): Promise<PlatformHistoryMessage[]> {
-    const limit = Math.min(Math.max(options?.limit ?? 200, 1), 999);
-    const threadTs = options?.threadTs;
-    return slackRetry(async () => {
-      const result = threadTs
-        ? await this.webClient.conversations.replies({
-            channel,
-            ts: threadTs,
-            oldest: options?.oldest || undefined,
-            inclusive: options?.oldest ? false : undefined,
-            limit,
-          })
-        : await this.webClient.conversations.history({
-            channel,
-            oldest: options?.oldest || undefined,
-            inclusive: options?.oldest ? false : undefined,
-            limit,
-          });
-      const messages = (result.messages ?? []) as Array<{
-        ts?: string;
-        thread_ts?: string;
-        user?: string;
-        bot_id?: string;
-        subtype?: string;
-        text?: string;
-      }>;
-      const mapped = messages
-        .filter((msg): msg is typeof msg & { ts: string } => !!msg.ts)
-        .filter((msg) => msg.ts !== threadTs)
-        .map((msg) => {
-          const user = msg.user ? this.users.get(msg.user) : undefined;
-          const message: PlatformHistoryMessage = {
-            ts: msg.ts,
-            text: unescapeSlackText(msg.text ?? ""),
-            isBot: !!msg.bot_id || msg.subtype === "bot_message" || user?.isBot === true,
-          };
-          if (msg.thread_ts && msg.thread_ts !== msg.ts) message.threadTs = msg.thread_ts;
-          if (msg.user) message.userId = msg.user;
-          if (user) message.userName = user.userName;
-          return message;
-        });
-      return threadTs ? mapped : mapped.toReversed();
-    });
-  }
-
-  async listUsers(): Promise<PlatformUserInfo[]> {
-    await slackRetry(() => this.fetchUsers());
-    return this.getAllUsers().map((user) => ({
-      id: user.id,
-      userName: user.userName,
-      displayName: user.displayName,
-      isBot: user.isBot === true,
-    }));
   }
 
   async updateMessage(channel: string, ts: string, text: string): Promise<void> {

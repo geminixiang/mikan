@@ -9,6 +9,10 @@ any release.
 
 ## [Unreleased]
 
+### Removed
+
+- Embedding API: `MessagingBot` no longer declares the optional `addReaction`, `uploadFile`, `openDirectConversation`, `fetchHistory`, and `listUsers`, which nothing called through it since executable extensions were removed (ADR 0006); the Slack bot's unused `fetchHistory` and `listUsers` are removed with them.
+
 ## [1.0.0-beta.95]
 
 ### Removed

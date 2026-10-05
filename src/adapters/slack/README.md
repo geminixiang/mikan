@@ -10,7 +10,7 @@ This directory implements the Slack platform adapter and Slack-specific session/
   `markdown_text`). A mention split across two stream deltas stays unresolved in
   the provisional text; the final canonical `updateMessage` render resolves it.
   `userName` wins over `displayName` when both match a name.
-- Incoming text arrives with `&`, `<`, and `>` escaped as `&amp;`, `&lt;`, and `&gt;`. Every inbound path (live events, backfill, external-bot messages, and `fetchHistory`) undoes the escaping before the office log or the runtime sees the text, because the model otherwise reads `&amp;&amp;` where the user typed `&&`. Slack's `<@U…>`, `<#C…>`, and `<url>` markup is left intact.
+- Incoming text arrives with `&`, `<`, and `>` escaped as `&amp;`, `&lt;`, and `&gt;`. Every inbound path (live events, backfill, and external-bot messages) undoes the escaping before the office log or the runtime sees the text, because the model otherwise reads `&amp;&amp;` where the user typed `&&`. Slack's `<@U…>`, `<#C…>`, and `<url>` markup is left intact.
 - Slack file URLs need the bot token. `downloadSlackFile` sends it only to HTTPS `slack.com` hosts, retries transient failures, and hands the items to `saveIncomingAttachments`.
 - `blocks.ts` slices prose verbatim into `markdown` blocks so Slack owns prose rendering (ADR 0001); GFM tables become `table` blocks, and a plain-text fallback is derived for notifications.
 - On `msg_too_long`, `response-lifecycle.ts` shrinks the prefix and continues in the thread.

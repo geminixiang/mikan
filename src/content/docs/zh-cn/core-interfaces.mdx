@@ -137,7 +137,7 @@ interface ConversationContext {
 面向主机的平台端口。它组合了：
 
 - 生命周期：`start()` 和 `stop()`；
-- 出站消息：`postMessage`、`updateMessage`、可选的上传/reaction/私密回复；
+- 出站消息：`postMessage`、`updateMessage`，以及可选的 thread 回复、私密回复和 bot 回复记录；
 - 接收调度：`enqueueEvent`；
 - 发现/策略：`getMessagingInfo()`。
 

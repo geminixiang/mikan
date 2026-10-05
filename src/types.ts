@@ -146,15 +146,7 @@ export interface MessagingBot {
   stop(): Promise<void>;
   postMessage(channel: string, text: string): Promise<string>;
   updateMessage(channel: string, ts: string, text: string): Promise<void>;
-  addReaction?(channel: string, messageTs: string, emoji: string): Promise<void>;
-  uploadFile?(channel: string, filePath: string, title?: string): Promise<void>;
   postInThread?(channel: string, threadTs: string, text: string): Promise<string>;
-  openDirectConversation?(userId: string): Promise<string>;
-  fetchHistory?(
-    channel: string,
-    options?: PlatformHistoryOptions,
-  ): Promise<PlatformHistoryMessage[]>;
-  listUsers?(): Promise<PlatformUserInfo[]>;
   logBotResponse?(
     channel: string,
     text: string,
@@ -171,28 +163,6 @@ export interface MessagingBot {
     text: string,
     options?: { style?: "muted" | "error" },
   ): Promise<void>;
-}
-
-export interface PlatformHistoryOptions {
-  oldest?: string;
-  limit?: number;
-  threadTs?: string;
-}
-
-export interface PlatformHistoryMessage {
-  ts: string;
-  threadTs?: string;
-  userId?: string;
-  userName?: string;
-  text: string;
-  isBot: boolean;
-}
-
-export interface PlatformUserInfo {
-  id: string;
-  userName: string;
-  displayName: string;
-  isBot: boolean;
 }
 
 export interface ConversationContext {
