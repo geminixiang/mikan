@@ -17,6 +17,7 @@ any release.
 
 ### Changed
 
+- `@earendil-works/pi-codemode` and `@earendil-works/pi-mcp` are pinned to the tested 1.0.0, like the other Pi packages, so `npm i -g` no longer installs a newer, untested release.
 - At startup the daemon logs, per `settings.json`, the keys it ignores, such as 0.5.3's `llm.autoReply` and `sandbox.image`, so they can be removed.
 - The `event` tool no longer offers a `scope` parameter, whose only allowed value was its default, and its `list` result drops the matching `scope` field. The tool still reaches only the current office's events.
 
