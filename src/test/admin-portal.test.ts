@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { OfficeEventStore, officeEventsDir } from "../events/index.js";
-import {
-  listOfficeEvents,
-  readSkillsFromDir,
-  resolveConversationScope,
-} from "../adapters/web/admin/portal.js";
+import { listOfficeEvents, resolveConversationScope } from "../adapters/web/admin/portal.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { AdminToken } from "../adapters/web/admin/types.js";
 
@@ -99,55 +95,6 @@ describe("admin portal events listing", () => {
       timezone: null,
     });
     expect(events[0]!.size).toBeGreaterThan(0);
-  });
-});
-
-function writeSkill(skillsDir: string, directory: string, contents: string): void {
-  const dir = join(skillsDir, directory);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "SKILL.md"), contents);
-}
-
-describe("admin portal skills listing", () => {
-  test("reads skill frontmatter via the harness parser", () => {
-    const workspaceDir = makeWorkspace();
-    const skillsDir = join(workspaceDir, "skills");
-    writeSkill(
-      skillsDir,
-      "deploy",
-      "---\nname: \"deploy-prod\"\ndescription: 'Ship to production'\n---\n\nInstructions here.\n",
-    );
-
-    const skills = readSkillsFromDir(skillsDir, "global");
-
-    expect(skills).toEqual([
-      {
-        name: "deploy-prod",
-        description: "Ship to production",
-        source: "global",
-        directory: "deploy",
-      },
-    ]);
-  });
-
-  test("falls back to directory name, accepts keys case-insensitively, sorts by name", () => {
-    const workspaceDir = makeWorkspace();
-    const skillsDir = join(workspaceDir, "skills");
-    writeSkill(skillsDir, "zeta", "---\nDescription: Uppercase key still read\n---\nBody\n");
-    writeSkill(skillsDir, "alpha", "no frontmatter at all\n");
-    mkdirSync(join(skillsDir, "empty-dir"), { recursive: true });
-    writeSkill(skillsDir, ".hidden", "---\nname: nope\ndescription: hidden\n---\n");
-
-    const skills = readSkillsFromDir(skillsDir, "conversation");
-
-    expect(skills.map((s) => s.name)).toEqual(["alpha", "zeta"]);
-    expect(skills[0]).toMatchObject({ description: "", source: "conversation" });
-    expect(skills[1]).toMatchObject({ description: "Uppercase key still read" });
-  });
-
-  test("returns empty list for a missing skills directory", () => {
-    const workspaceDir = makeWorkspace();
-    expect(readSkillsFromDir(join(workspaceDir, "skills"), "global")).toEqual([]);
   });
 });
 

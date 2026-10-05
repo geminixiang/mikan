@@ -750,28 +750,90 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
     });
 
     let skillsCache = [];
+    let skillsPrompt = null;
 
-    function renderSkillsInto(containerId, skills, allowedSource) {
+    function skillGroup(directory) {
+      const slash = directory.lastIndexOf('/');
+      return slash < 0 ? '' : directory.slice(0, slash);
+    }
+
+    function skillCheckbox(s, scope) {
+      if (scope === 'global') return s.globalEnabled ? '[x]' : '[ ]';
+      if (s.conversationRule === '+') return '[+]';
+      if (s.conversationRule === '-') return '[-]';
+      return s.enabled ? '[x]' : '[ ]';
+    }
+
+    function skillSuffix(s, scope) {
+      if (scope === 'global') return s.globalRule === '!' ? 'excluded by pattern' : '';
+      if (s.conversationRule === '+') return 'conversation load';
+      if (s.conversationRule === '-') return 'conversation unload';
+      if (s.conversationRule === '!') return 'excluded by pattern';
+      return s.source === 'global' ? 'inherited global' : '';
+    }
+
+    function nextSkillState(s, scope) {
+      if (scope === 'global') return s.globalEnabled ? 'unload' : 'load';
+      if (s.conversationRule === '+') return 'unload';
+      if (s.conversationRule === '-') return 'inherit';
+      return 'load';
+    }
+
+    function renderSkillsInto(containerId, skills, scope) {
       const container = document.getElementById(containerId);
       if (!container) return;
-      const filtered = allowedSource ? skills.filter((s) => s.source === allowedSource) : skills;
+      const filterEl = document.getElementById(scope === 'global' ? 'global-skills-filter' : 'skills-filter');
+      const query = filterEl ? filterEl.value.trim().toLowerCase() : '';
+      const scoped = scope === 'global' ? skills.filter((s) => s.source === 'global') : skills;
+      const filtered = query
+        ? scoped.filter((s) => (s.name + ' ' + s.directory + ' ' + s.description).toLowerCase().includes(query))
+        : scoped;
+      const summaryEl = document.getElementById(scope === 'global' ? 'global-skills-summary' : 'skills-summary');
+      if (summaryEl) {
+        summaryEl.textContent = scope === 'global'
+          ? 'Enabled globally: ' + scoped.filter((s) => s.globalEnabled).length + ' / ' + scoped.length
+          : skillsPrompt ? 'In prompt: ' + skillsPrompt.listed + ' / ' + skillsPrompt.total + ' skills · ' + skillsPrompt.chars.toLocaleString() + ' chars' : '';
+      }
       if (filtered.length === 0) {
         container.innerHTML = '<div class="empty-state">No skills available</div>';
         return;
       }
+      const groups = new Map();
+      for (const s of filtered) {
+        const key = (s.source === 'conversation' ? 'conversation:' : '') + skillGroup(s.directory);
+        groups.set(key, [...(groups.get(key) || []), s]);
+      }
       container.innerHTML = '<div class="skills-list">' +
-        filtered.map((s) =>
-          '<div class="skill-row">' +
-            '<button class="skill-row-btn" data-skill-source="' + escAttr(s.source) + '" data-skill-directory="' + escAttr(s.directory) + '" data-skill-name="' + escAttr(s.name) + '">' +
-              '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span></div>' +
-              (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
-            '</button>' +
-            '<div class="skill-row-actions">' +
-              '<button class="mcp-btn" data-skill-edit-source="' + escAttr(s.source) + '" data-skill-edit-directory="' + escAttr(s.directory) + '">Edit</button>' +
-              '<button class="mcp-btn mcp-btn-danger" data-skill-delete-source="' + escAttr(s.source) + '" data-skill-delete-directory="' + escAttr(s.directory) + '" data-skill-delete-name="' + escAttr(s.name) + '">Delete</button>' +
-            '</div>' +
-          '</div>'
+        [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([key, items]) =>
+          '<div class="skill-group">' + escHtml(key.startsWith('conversation:') ? 'This conversation' + (key.length > 13 ? ' · ' + key.slice(13) : '') : key || 'skills/') + '</div>' +
+          items.map((s) => {
+            const suffix = skillSuffix(s, scope);
+            const dimmed = scope === 'conversation' && s.source === 'global' && !s.conversationRule;
+            return '<div class="skill-row' + (dimmed ? ' skill-row-dim' : '') + '">' +
+              '<button class="skill-toggle" title="' + (scope === 'global' ? 'Toggle for every conversation' : 'Cycle inherit / + / -') + '" data-skill-toggle-scope="' + scope + '" data-skill-toggle-source="' + escAttr(s.source) + '" data-skill-toggle-directory="' + escAttr(s.directory) + '" data-skill-toggle-state="' + nextSkillState(s, scope) + '">' + skillCheckbox(s, scope) + '</button>' +
+              '<button class="skill-row-btn" data-skill-source="' + escAttr(s.source) + '" data-skill-directory="' + escAttr(s.directory) + '" data-skill-name="' + escAttr(s.name) + '">' +
+                '<div class="skill-name">' + escHtml(s.name) + '<span class="skill-source skill-source-' + s.source + '">' + s.source + '</span>' + (suffix ? '<span class="skill-state">' + escHtml(suffix) + '</span>' : '') + '</div>' +
+                (s.description ? '<div class="skill-desc">' + escHtml(s.description) + '</div>' : '') +
+              '</button>' +
+              (s.editable ?
+                '<div class="skill-row-actions">' +
+                  '<button class="mcp-btn" data-skill-edit-source="' + escAttr(s.source) + '" data-skill-edit-directory="' + escAttr(s.directory) + '">Edit</button>' +
+                  '<button class="mcp-btn mcp-btn-danger" data-skill-delete-source="' + escAttr(s.source) + '" data-skill-delete-directory="' + escAttr(s.directory) + '" data-skill-delete-name="' + escAttr(s.name) + '">Delete</button>' +
+                '</div>' : '') +
+            '</div>';
+          }).join('')
         ).join('') + '</div>';
+    }
+
+    function renderAllSkills() {
+      renderSkillsInto('skills-content', skillsCache, 'conversation');
+      renderSkillsInto('global-skills-content', skillsCache, 'global');
+    }
+
+    function applySkillsData(data) {
+      skillsCache = Array.isArray(data.skills) ? data.skills : [];
+      skillsPrompt = data.prompt || null;
+      renderAllSkills();
     }
 
     async function loadSkills() {
@@ -780,12 +842,17 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
       container.innerHTML = '<div class="loading-msg">Loading…</div>';
       if (previewEl) previewEl.innerHTML = '<div class="placeholder-msg">Click a skill to preview SKILL.md</div>';
       try {
-        const data = await apiGet('/admin/api/skills?' + scopeQuery());
-        skillsCache = Array.isArray(data.skills) ? data.skills : [];
-        renderSkillsInto('skills-content', skillsCache);
-        renderSkillsInto('global-skills-content', skillsCache, 'global');
+        applySkillsData(await apiGet('/admin/api/skills?' + scopeQuery()));
       } catch (err) {
         container.innerHTML = '<div class="err-msg">' + escHtml(err.message) + '</div>';
+      }
+    }
+
+    async function toggleSkill(scope, source, directory, state) {
+      try {
+        applySkillsData(await apiPost('/admin/api/skills/toggle', { scope: scope, source: source, directory: directory, state: state, ...scopeBody() }));
+      } catch (err) {
+        alert(err.message);
       }
     }
 
@@ -821,6 +888,11 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
       const el = document.getElementById(containerId);
       if (!el) return;
       el.addEventListener('click', (event) => {
+        const toggleBtn = event.target.closest('[data-skill-toggle-scope]');
+        if (toggleBtn) {
+          void toggleSkill(toggleBtn.dataset.skillToggleScope, toggleBtn.dataset.skillToggleSource, toggleBtn.dataset.skillToggleDirectory, toggleBtn.dataset.skillToggleState);
+          return;
+        }
         const previewBtn = event.target.closest('[data-skill-source]');
         if (previewBtn) {
           previewSkillInto(previewId, previewBtn.dataset.skillSource, previewBtn.dataset.skillDirectory, previewBtn.dataset.skillName);
@@ -1425,8 +1497,24 @@ export const adminViewStyles = `
   .skill-row {
     padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
     background: rgba(0,0,0,0.02);
-    display: flex; flex-direction: column; align-items: stretch; gap: 6px;
+    display: flex; flex-direction: row; align-items: flex-start; gap: 10px;
   }
+  .skill-row-dim { opacity: 0.6; }
+  .skill-toggle {
+    flex-shrink: 0; cursor: pointer; border: none; background: transparent; padding: 0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 0.85rem; color: var(--text);
+  }
+  .skill-group {
+    margin-top: 8px; font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.75rem; color: var(--subtle);
+  }
+  .skill-state { font-size: 0.72rem; font-weight: 500; color: var(--subtle); }
+  .skills-toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .skills-filter {
+    flex: 0 1 260px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); font-size: 0.82rem; color: var(--text);
+  }
+  .skills-summary { font-size: 0.8rem; color: var(--muted); }
   .skill-row-btn {
     flex: 1 1 auto; min-width: 0; text-align: left; cursor: pointer; font-family: inherit;
     background: transparent; border: none; padding: 0;

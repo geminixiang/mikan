@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { formatSkillsForPrompt, loadSkillsFromDir, parseFrontmatter } from "../harness/skills.js";
+import {
+  formatSkillsForPrompt,
+  loadOfficeSkills,
+  loadSkillsFromDir,
+  parseFrontmatter,
+  resolveSkillEnabled,
+} from "../harness/skills.js";
 
 let dir: string;
 
@@ -233,5 +239,66 @@ describe("formatSkillsForPrompt", () => {
 
   test("returns empty string when no skills are visible", () => {
     expect(formatSkillsForPrompt([])).toBe("");
+  });
+});
+
+describe("resolveSkillEnabled", () => {
+  test("global rules: skills load by default, ! excludes by glob, + adds back, - wins", () => {
+    const global = ["!vendors/**", "+vendors/keep", "-tools/off", "+tools/off"];
+    expect(resolveSkillEnabled("global", "tools/on", { global, conversation: [] })).toBe(true);
+    expect(resolveSkillEnabled("global", "vendors/drop", { global, conversation: [] })).toBe(false);
+    expect(resolveSkillEnabled("global", "vendors/keep", { global, conversation: [] })).toBe(true);
+    expect(resolveSkillEnabled("global", "tools/off", { global, conversation: [] })).toBe(false);
+  });
+
+  test("a conversation override decides a global skill; without one the global rules apply", () => {
+    const global = ["!vendors/**"];
+    const conversation = ["+vendors/keep", "-tools/off"];
+    expect(resolveSkillEnabled("global", "vendors/keep", { global, conversation })).toBe(true);
+    expect(resolveSkillEnabled("global", "vendors/drop", { global, conversation })).toBe(false);
+    expect(resolveSkillEnabled("global", "tools/off", { global, conversation })).toBe(false);
+    expect(resolveSkillEnabled("global", "tools/on", { global, conversation })).toBe(true);
+  });
+
+  test("a conversation's own skills follow only its own rules", () => {
+    expect(
+      resolveSkillEnabled("conversation", "mine", { global: ["-mine"], conversation: [] }),
+    ).toBe(true);
+    expect(
+      resolveSkillEnabled("conversation", "mine", { global: [], conversation: ["-mine"] }),
+    ).toBe(false);
+  });
+});
+
+describe("loadOfficeSkills", () => {
+  test("lists nested skills with their directory and leaves disabled ones out of the prompt", () => {
+    const globalDir = join(dir, "skills");
+    const conversationDir = join(dir, "office", "skills");
+    for (const [root, path, name] of [
+      [globalDir, "bundle/vendors/alpha", "alpha"],
+      [globalDir, "bundle/tools/beta", "beta"],
+      [conversationDir, "mine", "mine"],
+    ] as const) {
+      mkdirSync(join(root, path), { recursive: true });
+      writeFileSync(
+        join(root, path, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ${name} skill\n---\nBody`,
+      );
+    }
+    const { skills } = loadOfficeSkills({
+      globalSkillsDir: globalDir,
+      conversationSkillsDir: conversationDir,
+      patterns: { global: ["!bundle/vendors/**"], conversation: [] },
+    });
+    expect(
+      skills.map(({ name, source, directory, enabled }) => ({ name, source, directory, enabled })),
+    ).toEqual([
+      { name: "beta", source: "global", directory: "bundle/tools/beta", enabled: true },
+      { name: "alpha", source: "global", directory: "bundle/vendors/alpha", enabled: false },
+      { name: "mine", source: "conversation", directory: "mine", enabled: true },
+    ]);
+    const prompt = formatSkillsForPrompt(skills);
+    expect(prompt).toContain("- beta:");
+    expect(prompt).not.toContain("- alpha:");
   });
 });

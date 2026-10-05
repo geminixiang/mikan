@@ -18,7 +18,7 @@ export class MissingGlobalSettingsError extends Error {
 }
 
 import type { AgentConfig, SandboxSettings } from "../types.js";
-import type { McpServerConfig } from "../harness/types.js";
+import type { McpServerConfig, SkillPatterns } from "../harness/types.js";
 import type { OnboardLlmChoice } from "../types.js";
 import type { Office } from "../office/types.js";
 import { errorMessage } from "../unknown-values.js";
@@ -110,6 +110,7 @@ const SettingsFileSchema = Type.Object({
       }),
     ),
   ),
+  skills: Type.Optional(Type.Array(Type.String({ pattern: "^[!+-]." }))),
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
@@ -314,6 +315,7 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     slack: hasDefinedValue(config.slack) ? config.slack : undefined,
     office: hasDefinedValue(config.office) ? config.office : undefined,
     mcpServers: config.mcpServers,
+    skills: config.skills,
   };
 }
 
@@ -379,6 +381,27 @@ export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
 
 export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
   updateSettingsFile(conversationSettingsPath(office), patch, {});
+}
+
+export function loadSkillPatterns(office: Office): SkillPatterns {
+  return {
+    global: loadSettingsFile(getSettingsPath())?.skills ?? [],
+    conversation: loadSettingsFile(conversationSettingsPath(office))?.skills ?? [],
+  };
+}
+
+export function updateSkillPatterns(office: Office | undefined, skills: readonly string[]): void {
+  const settingsPath = office ? conversationSettingsPath(office) : getSettingsPath();
+  const existing = loadSettingsFileForUpdate(settingsPath, office ? {} : ONBOARD_SETTINGS);
+  ensureDirExists(dirname(settingsPath));
+  atomicWritePrivateFile(
+    settingsPath,
+    JSON.stringify(
+      compactSettingsConfig({ ...existing, skills: skills.length > 0 ? [...skills] : undefined }),
+      null,
+      2,
+    ),
+  );
 }
 
 export function loadScopeMcpServers(office: Office): {

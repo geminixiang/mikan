@@ -9,10 +9,15 @@ import {
   statSync,
 } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { basename, join, resolve as pathResolve, sep as pathSep } from "node:path";
+import { basename, join, matchesGlob, resolve as pathResolve, sep as pathSep } from "node:path";
 import { atomicWritePrivateFile } from "../../../file-guards.js";
 import { MikanModels } from "../../../harness/models.js";
-import { parseFrontmatter, validateSkill } from "../../../harness/skills.js";
+import {
+  formatSkillsForPrompt,
+  loadOfficeSkills,
+  resolveSkillEnabled,
+  validateSkill,
+} from "../../../harness/skills.js";
 import { SessionStore } from "../../../sessions/session-store.js";
 import type { EventStore } from "../../../events/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
@@ -44,7 +49,9 @@ import {
   loadOfficeVisibilityOverride,
   loadGlobalSettings,
   loadScopeMcpServers,
+  loadSkillPatterns,
   resolveConversationSettings,
+  updateSkillPatterns,
 } from "../../../settings/index.js";
 import type { SandboxSettings, OfficeAddress } from "../../../types.js";
 import { findMcpPreset, listMcpPresets, materializeMcpPreset } from "../../../harness/mcp.js";
@@ -208,6 +215,8 @@ async function routePostApiRequest(
       return serveMcpServerMutation(res, body, services, token);
     case "/admin/api/skills/mutate":
       return serveSkillMutation(res, body, services, token);
+    case "/admin/api/skills/toggle":
+      return serveSkillToggle(res, body, services, token);
     case "/admin/api/settings/model":
       return serveGlobalModelUpdate(res, body, services);
     case "/admin/api/settings/sandbox":
@@ -1167,54 +1176,6 @@ function serveWorkspaceFile(
   servePreviewFile(res, safe.absolute, { path: requestedPath }, "File not found");
 }
 
-interface SkillEntry {
-  name: string;
-  description: string;
-  source: "global" | "conversation";
-  directory: string;
-}
-
-function readSkillMeta(filePath: string): { name?: string; description?: string } {
-  let text: string;
-  try {
-    text = readFileSync(filePath, "utf-8");
-  } catch {
-    return {};
-  }
-  const { values } = parseFrontmatter(text);
-  const out: { name?: string; description?: string } = {};
-  for (const [key, value] of Object.entries(values)) {
-    const normalized = key.toLowerCase();
-    if (normalized === "name") out.name = value;
-    if (normalized === "description") out.description = value;
-  }
-  return out;
-}
-
-export function readSkillsFromDir(skillsDir: string, source: SkillEntry["source"]): SkillEntry[] {
-  if (!existsSync(skillsDir)) return [];
-  const out: SkillEntry[] = [];
-  let entries;
-  try {
-    entries = readdirSync(skillsDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const skillMd = join(skillsDir, entry.name, "SKILL.md");
-    if (!existsSync(skillMd)) continue;
-    const meta = readSkillMeta(skillMd);
-    out.push({
-      name: meta.name ?? entry.name,
-      description: meta.description ?? "",
-      source,
-      directory: entry.name,
-    });
-  }
-  return out.toSorted((a, b) => a.name.localeCompare(b.name));
-}
-
 function serveMcpServersList(
   res: ServerResponse,
   url: URL,
@@ -1394,6 +1355,62 @@ async function serveMcpServerMutation(
   jsonRes(res, 200, { ok: true, results });
 }
 
+type SkillRule = "+" | "-" | "!" | null;
+
+function skillRule(directory: string, patterns: readonly string[]): SkillRule {
+  let rule: SkillRule = null;
+  for (const pattern of patterns) {
+    const kind = pattern[0];
+    const target = pattern.slice(1);
+    if ((kind === "+" || kind === "-") && target === directory) rule = kind;
+    else if (
+      kind === "!" &&
+      rule === null &&
+      (target === directory || matchesGlob(directory, target))
+    )
+      rule = "!";
+  }
+  return rule;
+}
+
+function officeSkillListing(workspace: Workspace, office: Office) {
+  const patterns = loadSkillPatterns(office);
+  const { skills } = loadOfficeSkills({
+    globalSkillsDir: workspace.skillsDir,
+    conversationSkillsDir: office.skillsDir,
+    patterns,
+  });
+  const listed = skills.filter((skill) => skill.enabled !== false && !skill.disableModelInvocation);
+  return {
+    conversationId: office.address.conversationId,
+    skills: skills.map((skill) => {
+      const directory = skill.directory ?? "";
+      return {
+        name: skill.name,
+        description: skill.description,
+        source: skill.source,
+        directory,
+        enabled: skill.enabled !== false,
+        globalEnabled:
+          skill.source === "global"
+            ? resolveSkillEnabled("global", directory, {
+                global: patterns.global,
+                conversation: [],
+              })
+            : null,
+        editable: !directory.includes("/"),
+        globalRule: skill.source === "global" ? skillRule(directory, patterns.global) : null,
+        conversationRule: skillRule(directory, patterns.conversation),
+      };
+    }),
+    prompt: {
+      listed: listed.length,
+      total: skills.length,
+      chars: formatSkillsForPrompt(skills).length,
+    },
+  };
+}
+
 function serveSkillsList(
   res: ServerResponse,
   url: URL,
@@ -1407,12 +1424,47 @@ function serveSkillsList(
   }
   const workspace = requireAdminWorkspace(res, services);
   if (!workspace) return;
-  const global = readSkillsFromDir(workspace.skillsDir, "global");
-  const conversation = readSkillsFromDir(workspace.office(scope.address).skillsDir, "conversation");
-  jsonRes(res, 200, {
-    conversationId: scope.conversationId,
-    skills: [...global, ...conversation],
-  });
+  jsonRes(res, 200, officeSkillListing(workspace, workspace.office(scope.address)));
+}
+
+const SKILL_TOGGLE_STATES: Record<"global" | "conversation", readonly string[]> = {
+  global: ["load", "unload"],
+  conversation: ["inherit", "load", "unload"],
+};
+
+function serveSkillToggle(
+  res: ServerResponse,
+  body: Record<string, unknown>,
+  services: AdminServices,
+  token: AdminToken,
+): void {
+  const scope = resolveTargetConversation(body, token);
+  if (scope.error) {
+    jsonRes(res, 403, { error: scope.error });
+    return;
+  }
+  const workspace = requireAdminWorkspace(res, services);
+  if (!workspace) return;
+  const target = body.scope === "global" || body.scope === "conversation" ? body.scope : undefined;
+  const state = typeof body.state === "string" ? body.state : "";
+  if (!target || !SKILL_TOGGLE_STATES[target].includes(state)) {
+    jsonRes(res, 400, { error: "Invalid scope or state" });
+    return;
+  }
+  const office = workspace.office(scope.address);
+  const skill = officeSkillListing(workspace, office).skills.find(
+    (entry) => entry.source === body.source && entry.directory === body.directory,
+  );
+  if (!skill) {
+    jsonRes(res, 404, { error: "Skill not found" });
+    return;
+  }
+  const patterns = loadSkillPatterns(office)[target].filter(
+    (pattern) => pattern.slice(1) !== skill.directory,
+  );
+  if (state !== "inherit") patterns.push(`${state === "load" ? "+" : "-"}${skill.directory}`);
+  updateSkillPatterns(target === "global" ? undefined : office, patterns);
+  jsonRes(res, 200, officeSkillListing(workspace, office));
 }
 
 function serveSkillFile(
@@ -1437,9 +1489,9 @@ function serveSkillFile(
   }
   if (
     !directory ||
-    directory.includes("/") ||
+    directory.startsWith("/") ||
     directory.includes("\\") ||
-    directory.includes("..")
+    directory.split("/").includes("..")
   ) {
     jsonRes(res, 400, { error: "Invalid skill directory" });
     return;
@@ -1729,7 +1781,7 @@ const adminViewBody = `<div class="settings-shell">
 
           ${settingsPane("workspace", "Workspace", "Read-only browser for this conversation's files on disk.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadWorkspace()">↻</button>', '<div class="workspace-split"><div id="workspace-tree" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="workspace-preview" class="workspace-preview"><div class="placeholder-msg">Click a file to preview</div></div></div>')}
 
-          ${settingsPane("skills", "Skills", "Instructions the agent can load for specific tasks in this conversation.", '<button class="primary-action-btn" onclick="openSkillDialog(\'conversation\')">+ New skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadSkills()">↻</button>', '<div class="workspace-split"><div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+          ${settingsPane("skills", "Skills", "Instructions the agent can load for specific tasks in this conversation.", '<button class="primary-action-btn" onclick="openSkillDialog(\'conversation\')">+ New skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadSkills()">↻</button>', '<div class="skills-toolbar"><input id="skills-filter" class="skills-filter" type="search" placeholder="Filter skills" oninput="renderAllSkills()"><span id="skills-summary" class="skills-summary"></span></div><div class="workspace-split"><div id="skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
 
           ${settingsPane("mcp", "MCP servers", "External tools this conversation can call during a run.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadMcpServers()">↻</button>', '<div id="mcp-conv-msg" class="status-msg" style="display:none"></div><div id="mcp-conv-content"><div class="loading-msg">Loading…</div></div>')}
 
@@ -1749,7 +1801,7 @@ const adminViewBody = `<div class="settings-shell">
 
           ${settingsPane("g-mcp", "MCP servers", "External tools available to every conversation in this workspace.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadMcpServers()">↻</button>', '<div id="mcp-global-msg" class="status-msg" style="display:none"></div><div id="mcp-global-content"><div class="loading-msg">Loading…</div></div>')}
 
-          ${settingsPane("g-skills", "Skills", "Shared instructions available to every conversation in this workspace.", '<button class="primary-action-btn" onclick="openSkillDialog(\'global\')">+ New global skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadGlobalSkills()">↻</button>', '<div class="workspace-split"><div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
+          ${settingsPane("g-skills", "Skills", "Shared instructions available to every conversation in this workspace.", '<button class="primary-action-btn" onclick="openSkillDialog(\'global\')">+ New global skill</button><button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadGlobalSkills()">↻</button>', '<div class="skills-toolbar"><input id="global-skills-filter" class="skills-filter" type="search" placeholder="Filter skills" oninput="renderAllSkills()"><span id="global-skills-summary" class="skills-summary"></span></div><div class="workspace-split"><div id="global-skills-content" class="workspace-tree"><div class="loading-msg">Loading…</div></div><div id="global-skills-preview" class="workspace-preview"><div class="placeholder-msg">Click a skill to preview SKILL.md</div></div></div>')}
 
           ${settingsPane("g-events", "Global events", "Every scheduled event across the whole workspace.", '<button class="refresh-btn" type="button" aria-label="Refresh" title="Refresh" onclick="loadEvents()">↻</button>', '<div id="global-events-content"><div class="loading-msg">Loading…</div></div>')}
         </div>

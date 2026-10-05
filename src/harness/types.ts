@@ -259,6 +259,15 @@ export interface MikanSkill {
   baseDir: string;
   source: string;
   inline?: boolean;
+  directory?: string;
+  enabled?: boolean;
+}
+
+export type SkillScope = "global" | "conversation";
+
+export interface SkillPatterns {
+  global: readonly string[];
+  conversation: readonly string[];
 }
 
 export interface SkillDiagnostic {

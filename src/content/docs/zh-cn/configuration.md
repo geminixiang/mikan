@@ -90,6 +90,16 @@ Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord�
 
 已退役的门禁策略设置（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及旧版 `sandbox.image.workspaceMount`）如果存在会被忽略，也不会改变投影。要访问另一个 private 办公室，需要 ADR 0008 描述的基于成员的授权，而不是更宽的 mount。
 
+## Skills
+
+workspace `skills/` 与对话自己的 `skills/` 下的 skill 默认都会列进 system prompt。全局或对话设置的 `skills` 按照 Pi 的 resource 规则开关 skill，以 skill 目录相对于其 `skills/` 根目录的路径表示：`!pattern` 用 glob 排除、`+path` 加回单个 skill、`-path` 强制排除（即使被加回）。对话设置中针对某个 workspace skill 的条目决定它在该对话的状态；没有的话就使用全局设置。
+
+```json
+{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+```
+
+Admin portal 的 Skills 页面会写入相同的设置：workspace 页面写入全局的 `+`/`-`，对话页面则在“继承”、`+`、`-` 之间切换。被排除的 skill 只是不列进 prompt，文件在 sandbox 中仍可读取。
+
 ## MCP servers
 
 `mcpServers` 可连接 stdio 或 Streamable HTTP MCP server，并将工具公开为 `mcp__<server>__<tool>`。MCP server 在 host 端执行或连接，`env`／`headers` 中的凭证不会暴露给模型或 sandbox。

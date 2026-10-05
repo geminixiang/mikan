@@ -360,3 +360,126 @@ describe("Admin skills mutation API", () => {
     rmSync(outsideTarget, { recursive: true, force: true });
   });
 });
+
+interface Listed {
+  name: string;
+  source: string;
+  directory: string;
+  enabled: boolean;
+  globalRule: string | null;
+  conversationRule: string | null;
+}
+interface ListBody {
+  skills: Listed[];
+  prompt: { listed: number; total: number; chars: number };
+}
+
+function writeSkill(root: string, directory: string, name: string): void {
+  mkdirSync(join(root, directory), { recursive: true });
+  writeFileSync(
+    join(root, directory, "SKILL.md"),
+    `---\nname: ${name}\ndescription: ${name} instructions\n---\nBody`,
+  );
+}
+
+const skillStates = (body: ListBody) =>
+  Object.fromEntries(
+    body.skills.map((s) => [s.name, [s.enabled, s.globalRule, s.conversationRule]]),
+  );
+
+describe("Admin skill enablement", () => {
+  beforeEach(() => {
+    const stateDir = join(base, "state");
+    process.env.MIKAN_STATE_DIR = stateDir;
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({ llm: { provider: "anthropic", model: "m", thinkingLevel: "off" } }),
+    );
+    writeSkill(join(workspaceDir, "skills"), "bundle/vendors/alpha", "alpha");
+    writeSkill(join(workspaceDir, "skills"), "beta", "beta");
+  });
+
+  afterEach(() => {
+    delete process.env.MIKAN_STATE_DIR;
+  });
+
+  test("lists nested skills as the runner loads them, all enabled by default", async () => {
+    const listed = await get<ListBody>(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.skills.map((s) => [s.name, s.directory])).toEqual([
+      ["beta", "beta"],
+      ["alpha", "bundle/vendors/alpha"],
+    ]);
+    expect(skillStates(listed.body)).toEqual({
+      alpha: [true, null, null],
+      beta: [true, null, null],
+    });
+    expect(listed.body.prompt).toMatchObject({ listed: 2, total: 2 });
+  });
+
+  test("a global toggle writes -path/+path and a conversation cycles inherit, + and -", async () => {
+    const toggle = (body: object) =>
+      post<ListBody>("/admin/api/skills/toggle", { conversationId: CONVERSATION_ID, ...body });
+
+    let result = await toggle({
+      scope: "global",
+      source: "global",
+      directory: "bundle/vendors/alpha",
+      state: "unload",
+    });
+    expect(result.status).toBe(200);
+    expect(skillStates(result.body).alpha).toEqual([false, "-", null]);
+    expect(result.body.prompt).toMatchObject({ listed: 1, total: 2 });
+    expect(JSON.parse(readFileSync(join(base, "state", "settings.json"), "utf-8")).skills).toEqual([
+      "-bundle/vendors/alpha",
+    ]);
+
+    result = await toggle({
+      scope: "conversation",
+      source: "global",
+      directory: "bundle/vendors/alpha",
+      state: "load",
+    });
+    expect(skillStates(result.body).alpha).toEqual([true, "-", "+"]);
+    result = await toggle({
+      scope: "conversation",
+      source: "global",
+      directory: "beta",
+      state: "unload",
+    });
+    expect(skillStates(result.body).beta).toEqual([false, null, "-"]);
+    const office = createWorkspace({ root: workspaceDir, stateDir: join(base, "state") }).office(
+      ADDRESS,
+    );
+    expect(
+      JSON.parse(readFileSync(join(office.stateDir, "settings.json"), "utf-8")).skills,
+    ).toEqual(["+bundle/vendors/alpha", "-beta"]);
+
+    result = await toggle({
+      scope: "conversation",
+      source: "global",
+      directory: "bundle/vendors/alpha",
+      state: "inherit",
+    });
+    expect(skillStates(result.body).alpha).toEqual([false, "-", null]);
+  });
+
+  test("rejects an unknown skill or state", async () => {
+    const bad = await post("/admin/api/skills/toggle", {
+      conversationId: CONVERSATION_ID,
+      scope: "global",
+      source: "global",
+      directory: "missing",
+      state: "unload",
+    });
+    expect(bad.status).toBe(404);
+    const invalid = await post("/admin/api/skills/toggle", {
+      conversationId: CONVERSATION_ID,
+      scope: "global",
+      source: "global",
+      directory: "beta",
+      state: "inherit",
+    });
+    expect(invalid.status).toBe(400);
+  });
+});

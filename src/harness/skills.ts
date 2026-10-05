@@ -1,63 +1,145 @@
-import type { MikanSkill, SkillDiagnostic, LoadSkillsResult } from "./types.js";
+import type {
+  MikanSkill,
+  SkillDiagnostic,
+  LoadSkillsResult,
+  SkillPatterns,
+  SkillScope,
+} from "./types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, matchesGlob, relative, sep } from "node:path";
 
 import * as log from "../log.js";
 
-function addSkills(
-  skillMap: Map<string, MikanSkill>,
-  skills: MikanSkill[],
-  rewritePath: (path: string) => string,
-): void {
-  for (const skill of skills) {
-    skill.filePath = rewritePath(skill.filePath);
-    skill.baseDir = rewritePath(skill.baseDir);
-    skillMap.set(skill.name, skill);
-  }
-}
-
-function skippedSymlinkPaths(
-  diagnostics: SkillDiagnostic[],
-  translatePath: (path: string) => string,
-): string[] {
+function skippedSymlinkPaths(diagnostics: SkillDiagnostic[]): string[] {
   const skipped: string[] = [];
   for (const diagnostic of diagnostics) {
     if (diagnostic.code !== "symlink") continue;
     log.logWarning("Skipping conversation skill entry (symlink)", diagnostic.path);
-    skipped.push(translatePath(diagnostic.path));
+    skipped.push(diagnostic.path);
   }
   return skipped;
+}
+
+function normalizePattern(pattern: string): string {
+  return pattern.replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
+function matchesPattern(directory: string, pattern: string, exact: boolean): boolean {
+  const normalized = normalizePattern(pattern);
+  return exact
+    ? directory === normalized
+    : directory === normalized || matchesGlob(directory, normalized);
+}
+
+function enabledByOverrides(directory: string, patterns: readonly string[]): boolean {
+  const targets = (prefix: string) =>
+    patterns.filter((pattern) => pattern.startsWith(prefix)).map((pattern) => pattern.slice(1));
+  let enabled = !targets("!").some((pattern) => matchesPattern(directory, pattern, false));
+  if (targets("+").some((pattern) => matchesPattern(directory, pattern, true))) enabled = true;
+  if (targets("-").some((pattern) => matchesPattern(directory, pattern, true))) enabled = false;
+  return enabled;
+}
+
+function conversationOverride(directory: string, patterns: readonly string[]): boolean | undefined {
+  let enabled: boolean | undefined;
+  for (const pattern of patterns) {
+    const kind = pattern[0];
+    if (kind !== "!" && kind !== "+" && kind !== "-") continue;
+    if (matchesPattern(directory, pattern.slice(1), kind !== "!")) enabled = kind === "+";
+  }
+  return enabled;
+}
+
+export function resolveSkillEnabled(
+  scope: SkillScope,
+  directory: string,
+  patterns: SkillPatterns,
+): boolean {
+  if (scope === "conversation") return enabledByOverrides(directory, patterns.conversation);
+  return (
+    conversationOverride(directory, patterns.conversation) ??
+    enabledByOverrides(directory, patterns.global)
+  );
+}
+
+function scopedSkills(
+  root: string,
+  scope: SkillScope,
+  loaded: MikanSkill[],
+  patterns: SkillPatterns,
+) {
+  return loaded
+    .map((skill) => {
+      const directory = relative(root, skill.baseDir).split(sep).join("/");
+      return {
+        ...skill,
+        source: scope,
+        directory,
+        enabled: resolveSkillEnabled(scope, directory, patterns),
+      };
+    })
+    .toSorted((a, b) => a.directory.localeCompare(b.directory));
+}
+
+export function loadOfficeSkills(options: {
+  globalSkillsDir?: string;
+  conversationSkillsDir: string;
+  patterns: SkillPatterns;
+}): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
+  const byName = new Map<string, MikanSkill>();
+  if (options.globalSkillsDir) {
+    const loaded = loadSkillsFromDir({ dir: options.globalSkillsDir, source: "global" });
+    for (const skill of scopedSkills(
+      options.globalSkillsDir,
+      "global",
+      loaded.skills,
+      options.patterns,
+    ))
+      byName.set(skill.name, skill);
+  }
+  const conversation = loadSkillsFromDir({
+    dir: options.conversationSkillsDir,
+    source: "conversation",
+    rejectSymlinks: true,
+  });
+  for (const skill of scopedSkills(
+    options.conversationSkillsDir,
+    "conversation",
+    conversation.skills,
+    options.patterns,
+  ))
+    byName.set(skill.name, skill);
+  return {
+    skills: [...byName.values()],
+    skippedSkillLinks: skippedSymlinkPaths(conversation.diagnostics),
+  };
 }
 
 export function loadMikanSkills(
   office: Office,
   workspacePath: string,
   projection: WorkspaceProjection,
+  patterns: SkillPatterns,
 ): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
-  const skillMap = new Map<string, MikanSkill>();
-
   const hostWorkspacePath = office.workspace.root;
   const translatePath = (hostPath: string): string =>
     hostPath.startsWith(hostWorkspacePath)
       ? workspacePath + hostPath.slice(hostWorkspacePath.length)
       : hostPath;
-
-  const workspaceSkillsDir = projection.promptSources.globalSkillsDir;
-  if (workspaceSkillsDir) {
-    const loaded = loadSkillsFromDir({ dir: workspaceSkillsDir, source: "workspace" });
-    addSkills(skillMap, loaded.skills, translatePath);
-  }
-
-  const conversationSkills = loadSkillsFromDir({
-    dir: projection.promptSources.conversationSkillsDir,
-    source: "channel",
-    rejectSymlinks: true,
+  const loaded = loadOfficeSkills({
+    globalSkillsDir: projection.promptSources.globalSkillsDir,
+    conversationSkillsDir: projection.promptSources.conversationSkillsDir,
+    patterns,
   });
-  const skippedSkillLinks = skippedSymlinkPaths(conversationSkills.diagnostics, translatePath);
-  addSkills(skillMap, conversationSkills.skills, translatePath);
-
-  return { skills: Array.from(skillMap.values()), skippedSkillLinks };
+  return {
+    skills: loaded.skills.map((skill) => ({
+      ...skill,
+      filePath: translatePath(skill.filePath),
+      baseDir: translatePath(skill.baseDir),
+    })),
+    skippedSkillLinks: loaded.skippedSkillLinks.map(translatePath),
+  };
 }
 
 const MAX_NAME_LENGTH = 64;
@@ -272,7 +354,9 @@ function escapeXml(str: string): string {
 }
 
 export function formatSkillsForPrompt(skills: MikanSkill[]): string {
-  const visible = skills.filter((skill) => !skill.disableModelInvocation);
+  const visible = skills.filter(
+    (skill) => !skill.disableModelInvocation && skill.enabled !== false,
+  );
   if (visible.length === 0) return "";
 
   const groups = new Map<string, MikanSkill[]>();

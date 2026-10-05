@@ -47,7 +47,7 @@ import type {
 } from "./types.js";
 import type { CreateRunnerOptions, OfficeAddress, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
-import { resolveConversationSettings } from "../settings/index.js";
+import { loadSkillPatterns, resolveConversationSettings } from "../settings/index.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
 import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
@@ -290,6 +290,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
+    loadSkillPatterns(office),
   );
   const triggerAttribution = resolveTriggerAttribution(message);
   const systemPrompt = buildSystemPrompt({
@@ -391,6 +392,7 @@ async function buildInitialSystemPrompt(params: {
     office,
     pathContext.runtimeWorkspaceRoot,
     projection,
+    loadSkillPatterns(office),
   );
   return buildSystemPrompt({
     workspacePath: pathContext.runtimeWorkspaceRoot,

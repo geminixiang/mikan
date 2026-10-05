@@ -90,6 +90,16 @@ visibility を強制できるのは `image:*` だけです。`host`、`container
 
 廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。別の private office へのアクセスには、より広い mount ではなく、ADR 0008 で説明するメンバーシップに基づく grant が必要です。
 
+## Skills
+
+workspace の `skills/` と conversation 自身の `skills/` にある skill は、既定ですべて system prompt に列挙されます。global または conversation 設定の `skills` は Pi の resource ルールで skill を有効・無効にし、各 skill のディレクトリを `skills/` ルートからの相対パスで指定します。`!pattern` は glob で除外、`+path` は 1 つを戻し、`-path` は戻されても除外します。workspace skill に対する conversation のエントリがその conversation での状態を決め、なければ global のエントリが適用されます。
+
+```json
+{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+```
+
+Admin portal の Skills ページは同じエントリを書き込みます。workspace ページは global に `+`/`-` を、conversation ページは継承・`+`・`-` を切り替えます。除外された skill は prompt に載らないだけで、ファイルは sandbox から読めます。
+
 ## MCP servers
 
 `mcpServers` は stdio または Streamable HTTP MCP server に接続し、tool を `mcp__<server>__<tool>` として公開します。MCP server は host 側で実行または接続され、`env`／`headers` の credential は model や sandbox に公開されません。

@@ -92,6 +92,16 @@ Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` ru
 
 The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. Reaching another private office needs the membership-based grants described in ADR 0008, not a wider mount.
 
+## Skills
+
+Every skill under the workspace `skills/` directory and the conversation's own `skills/` is listed in the system prompt by default. `skills` in the global or conversation settings turns skills off and on with Pi's resource rules, by the skill's directory relative to its `skills/` root: `!pattern` excludes matching skills by glob, `+path` adds one back, and `-path` excludes one even when added back. A conversation entry for a workspace skill decides it for that conversation; without one, the global entries apply.
+
+```json
+{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+```
+
+The admin portal's Skills pages toggle the same entries: the workspace page writes `+`/`-` to the global settings, and a conversation page cycles a skill between inherited, `+`, and `-`. An excluded skill is only left out of the prompt; its files stay readable in the sandbox.
+
 ## MCP servers
 
 `mcpServers` connects [Model Context Protocol](https://modelcontextprotocol.io) servers and exposes their tools to the agent as `mcp__<server>__<tool>`. Servers run on the host: credentials placed in `env` (stdio) or `headers` (HTTP) stay in the server process and are never visible to the model or the sandbox.
