@@ -139,7 +139,7 @@ pm2 start mikan
 
 ### 0.5.3 からのアップグレード
 
-1.0.0 は 0.5.3 のインストールを直接マイグレーションします。プレリリースにしか存在しなかった形式はサポート対象外です。`mikan migrate` は次を行います:
+1.0.0 は 0.5.3 のインストールを直接マイグレーションします。プレリリースにしか存在しなかった形式はサポート対象外です。1.0 は state を `~/.mikan` にのみ置くため、別の場所にある 0.5.3 の state directory は先にそこへ移動し、0.5.3 の working directory を `--workspace` で指定してください。`mikan migrate` は次を行います:
 
 - conversation directory とその vault を、生の conversation id から office key へ rename する
 - `host` の per-user vault と `container:*` の vault を、hash された identity key へ rename する
@@ -148,6 +148,7 @@ pm2 start mikan
 - `<workspace>/events/*.json` を各会話の host 専用 event store へ移動する
 - 0.5.3 の sandbox container を削除する。次のメッセージで現在のイメージから空の `/root` で再作成される
 - mikan に `~/.mikan/models.json` がまだなければ、`~/.pi/agent/models.json`（または `$PI_CODING_AGENT_DIR/models.json`）をコピーする
+- 各 conversation directory から `last_prompt.jsonl` と `auto-reply.disabled` を削除する（1.0 はどちらも書き込まない）
 
 Provider の API key は `models.json` か環境変数から読まれます。0.5.3 が `~/.pi/mikan/auth.json` から読んでいた key は移行されないため、起動前に `~/.mikan/mikan.env` に設定してください。
 

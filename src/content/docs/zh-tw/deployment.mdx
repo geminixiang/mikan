@@ -134,7 +134,7 @@ pm2 start mikan
 
 ### 從 0.5.3 升級
 
-1.0.0 可以直接遷移 0.5.3 的安裝；只在預覽版出現過的格式不在支援範圍。`mikan migrate` 會：
+1.0.0 可以直接遷移 0.5.3 的安裝；只在預覽版出現過的格式不在支援範圍。1.0 只把狀態放在 `~/.mikan`，所以放在其他位置的 0.5.3 state directory 要先搬過去，並用 `--workspace` 指定 0.5.3 的 working directory。`mikan migrate` 會：
 
 - 把對話目錄及其 vault 從原始 conversation id 改名為 office key；
 - 把 `host` 模式的每位使用者 vault 與 `container:*` 的 vault 改名為雜湊後的 identity key；
@@ -142,7 +142,8 @@ pm2 start mikan
 - 把每個對話的 session 檔匯入它的 `sessions.db`，原檔保留在 `~/.mikan/conversations/<office-key>/sessions-v3/`；
 - 把 `<workspace>/events/*.json` 移到各對話僅 host 可見的事件儲存區；
 - 移除 0.5.3 的沙盒容器；下一則訊息進來時會以目前映像重建，`/root` 從空的開始；
-- 如果 mikan 還沒有 `~/.mikan/models.json`，就複製 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）。
+- 如果 mikan 還沒有 `~/.mikan/models.json`，就複製 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）；
+- 刪除每個對話目錄裡的 `last_prompt.jsonl` 與 `auto-reply.disabled`，1.0 不會再寫這兩個檔案。
 
 Provider API key 來自 `models.json` 或環境變數。0.5.3 從 `~/.pi/mikan/auth.json` 讀取的 key 不會被遷移；請在啟動前設定到 `~/.mikan/mikan.env`。
 

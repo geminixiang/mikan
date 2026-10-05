@@ -75,7 +75,7 @@ office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-
 
 `/pi-model` 写入部分对话覆盖，`/pi-sandbox visibility <private|default>` 写入该对话的 `office.visibility` 覆盖；admin portal 提供同一个开关。
 
-Slack auto-reply 可通过 `/pi-auto-reply on|off` 修改，并以 conversation office 中的 `auto-reply`（on）或 `auto-reply.disabled`（off）标记文件保存。标记内容会被忽略：启用后，该 Slack channel 中未明确 address mikan 的 top-level human message 会直接触发，不使用 rules 或 judge model。Top-level `autoReply` 与 `llm.autoReply` JSON 设置仍保持退役并被忽略。
+Slack auto-reply 可通过 `/pi-auto-reply on|off|jev` 修改，并以 conversation office 中的 `auto-reply`（on）或 `auto-reply.jev`（jev）标记文件保存；`off` 会移除两者。标记内容会被忽略：`on` 会回应该 channel 中每条未明确 address mikan 的 human message，`jev` 则由 Jev 逐条判断消息是否在对 mikan 说话。已退役的 `autoReply` 与 `llm.autoReply` JSON 设置会被忽略，daemon 启动时会列出它们，方便删除。
 
 Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord、GitHub 的对话一律是 private。公开频道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 只读它，且它可以写入工作区全局的 `MEMORY.md` 与 `skills/`。私有频道、DM、群组 DM、外部共享频道，以及尚未观察到类型的对话都是 **private** office：只有自己可见，可读共享知识与 public office，但不会写回。每个 office 的挂载形状相同；没有任何布局会挂载工作区根目录。
 

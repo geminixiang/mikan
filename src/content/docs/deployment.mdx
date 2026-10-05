@@ -147,7 +147,9 @@ migrations that already succeeded stay applied.
 
 ### Upgrading from 0.5.3
 
-1.0.0 migrates a 0.5.3 install directly; prerelease-only formats are not supported. `mikan migrate`:
+1.0.0 migrates a 0.5.3 install directly; prerelease-only formats are not supported. 1.0 keeps its
+state in `~/.mikan` only, so move a 0.5.3 state directory kept elsewhere there first, and pass the
+0.5.3 working directory as `--workspace`. `mikan migrate`:
 
 - renames conversation directories and their vaults from raw conversation ids to office keys;
 - renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
@@ -157,7 +159,9 @@ migrations that already succeeded stay applied.
 - removes the 0.5.3 sandbox containers, which are recreated from the current image on the next
   message, with an empty `/root`;
 - copies `~/.pi/agent/models.json` (or `$PI_CODING_AGENT_DIR/models.json`) to `~/.mikan/models.json`
-  when mikan does not have one yet.
+  when mikan does not have one yet;
+- removes `last_prompt.jsonl` and `auto-reply.disabled` from each conversation directory, since 1.0
+  writes neither.
 
 Provider API keys come from `models.json` or environment variables. Keys that 0.5.3 read from
 `~/.pi/mikan/auth.json` are not migrated; set them in `~/.mikan/mikan.env` before starting.

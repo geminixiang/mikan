@@ -113,6 +113,9 @@ function writeRelease053State(): void {
   writeV3Session(dm, "remember oranges");
   write(join(dm, "settings.json"), '{"llm":{"model":"m"}}\n');
   write(join(workspaceRoot, CHANNEL, "log.jsonl"), "{}\n");
+  write(join(workspaceRoot, CHANNEL, "last_prompt.jsonl"), '{"systemPrompt":"..."}\n');
+  write(join(workspaceRoot, CHANNEL, "auto-reply.disabled"), "only about oranges");
+  write(join(workspaceRoot, CHANNEL, "scratch", "notes.txt"), "keep\n");
   write(join(workspaceRoot, "MEMORY.md"), "memory\n");
   mkdirSync(join(workspaceRoot, "skills"));
   write(
@@ -160,6 +163,16 @@ describe("migrating a 0.5.3 state directory", () => {
     expect(readAppliedMigrations(stateDir).map((entry) => entry.id)).toEqual(ran);
   });
 
+  test("removes the files only 0.5.3 wrote into an office and keeps the rest", async () => {
+    writeRelease053State();
+
+    await runMigrations(context());
+
+    const channel = join(workspaceRoot, channelKey);
+    expect(readdirSync(channel).toSorted()).toEqual(["log.jsonl", "scratch"]);
+    expect(readFileSync(join(channel, "scratch", "notes.txt"), "utf-8")).toBe("keep\n");
+  });
+
   test("imports the session into the office storage and keeps the original under the state dir", async () => {
     writeRelease053State();
     const name = readFileSync(join(workspaceRoot, DM, "sessions", "current"), "utf-8").trim();
@@ -199,6 +212,7 @@ describe("migrating a 0.5.3 state directory", () => {
     expect(pendingMigrations(stateDir)).toHaveLength(MIGRATIONS.length);
     expect(lines.join("\n")).toContain(`office ${DM} -> ${dmKey}`);
     expect(lines.join("\n")).toContain(`vault ${DM.toLowerCase()} -> ${dmKey}`);
+    expect(existsSync(join(workspaceRoot, CHANNEL, "last_prompt.jsonl"))).toBe(true);
   });
 });
 
