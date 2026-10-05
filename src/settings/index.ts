@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
+import { Value } from "typebox/value";
 import { existsSync, lstatSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readEnv } from "../env-manifest.js";
@@ -20,7 +21,7 @@ import type { AgentConfig, SandboxSettings } from "../types.js";
 import type { McpServerConfig, SkillPatterns } from "../harness/types.js";
 import type { OnboardLlmChoice } from "../types.js";
 import type { Office } from "../office/types.js";
-import { errorMessage } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 
 const ONBOARD_SETTINGS: SettingsFileConfig = {
   llm: {
@@ -156,6 +157,40 @@ function mergeSandboxSettings(
     ...override,
     boost: base.boost || override.boost ? { ...base.boost, ...override.boost } : undefined,
   };
+}
+
+function unusedKeys(value: unknown, used: unknown, prefix: string): string[] {
+  if (!isRecord(value) || !isRecord(used)) return [];
+  return Object.keys(value).flatMap((key) => {
+    const path = prefix ? `${prefix}.${key}` : key;
+    return Object.hasOwn(used, key) ? unusedKeys(value[key], used[key], path) : [path];
+  });
+}
+
+function unusedSettingsKeys(settingsPath: string): string[] {
+  let settings: SettingsFileConfig | undefined;
+  try {
+    settings = loadSettingsFile(settingsPath);
+  } catch {
+    return [];
+  }
+  return unusedKeys(settings, Value.Clean(SettingsFileSchema, structuredClone(settings)), "");
+}
+
+export interface UnusedSettings {
+  readonly path: string;
+  readonly keys: readonly string[];
+}
+
+export function findUnusedSettings(stateDir: string, offices: readonly Office[]): UnusedSettings[] {
+  const paths = [
+    globalSettingsPath(stateDir),
+    ...offices.map((office) => join(office.stateDir, "settings.json")),
+  ];
+  return paths.flatMap((path) => {
+    const keys = unusedSettingsKeys(path);
+    return keys.length > 0 ? [{ path, keys }] : [];
+  });
 }
 
 export function globalSettingsPath(stateDir: string): string {

@@ -16,6 +16,7 @@ any release.
 
 ### Changed
 
+- At startup the daemon logs, per `settings.json`, the keys it ignores, such as 0.5.3's `llm.autoReply` and `sandbox.image`, so they can be removed.
 - The `event` tool no longer offers a `scope` parameter, whose only allowed value was its default, and its `list` result drops the matching `scope` field. The tool still reaches only the current office's events.
 
 ### Fixed

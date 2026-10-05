@@ -30,7 +30,11 @@ import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
 import { DockerContainerManager } from "./sandbox/provisioner.js";
-import { loadGlobalSettings, MissingGlobalSettingsError } from "./settings/index.js";
+import {
+  findUnusedSettings,
+  loadGlobalSettings,
+  MissingGlobalSettingsError,
+} from "./settings/index.js";
 import { assertStateDirOutsideWorkspace } from "./file-guards.js";
 import { resolveLinkBaseUrl, resolveLinkListenHost } from "./env-manifest.js";
 import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
@@ -48,7 +52,7 @@ import { FileVaultManager } from "./vault/index.js";
 import { runMigrateCommand } from "./cli/migrate.js";
 import { runOfficeCommand } from "./cli/office.js";
 import { formatPendingMigrations, pendingMigrations } from "./migrations/index.js";
-import { createWorkspace } from "./office/index.js";
+import { createOfficeAddress, createWorkspace, listRegisteredOffices } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
@@ -281,6 +285,15 @@ const startupConfig = (() => {
     handleStartupError(error);
   }
 })();
+const registeredOffices = listRegisteredOffices(stateDir).map((record) =>
+  workspace.office(createOfficeAddress(record.platform, record.conversationId)),
+);
+for (const unused of findUnusedSettings(stateDir, registeredOffices)) {
+  log.logWarning(
+    `Settings that mikan ignores; remove them from ${unused.path}`,
+    unused.keys.join(", "),
+  );
+}
 const sandboxSettings = startupConfig.sandbox;
 const sandboxLimits =
   sandboxSettings?.cpus || sandboxSettings?.memory

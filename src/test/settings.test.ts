@@ -7,6 +7,7 @@ import type { Office } from "../office/types.js";
 import {
   conversationSettingsPath,
   createGlobalSettingsFile,
+  findUnusedSettings,
   loadGlobalSettings,
   resolveConversationSettings,
   resolveSentryDsn,
@@ -54,6 +55,35 @@ describe("loadGlobalSettings", () => {
     expect(loadGlobalSettings(stateDir)).toMatchObject({ provider: "anthropic", model: "main" });
     expect(loadGlobalSettings(stateDir)).not.toHaveProperty("autoReply");
     expect(readFileSync(path, "utf8")).toBe(content);
+  });
+
+  test("finds the settings keys mikan ignores without creating conversation settings", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "anthropic", model: "main", thinkingLevel: "off", autoReply: {} },
+        sandbox: { cpus: "1", image: { workspaceMount: "full" } },
+        autoReply: { enabled: true },
+      }),
+    );
+    const configured = office();
+    mkdirSync(configured.stateDir, { recursive: true });
+    writeFileSync(
+      join(configured.stateDir, "settings.json"),
+      JSON.stringify({ llm: { model: "other" }, mcpServers: { docs: { url: "x", timeout: 5 } } }),
+    );
+    const unconfigured = createWorkspace({ root: join(stateDir, "workspace"), stateDir }).office(
+      createOfficeAddress("slack", "C456"),
+    );
+
+    expect(findUnusedSettings(stateDir, [configured, unconfigured])).toEqual([
+      {
+        path: join(stateDir, "settings.json"),
+        keys: ["llm.autoReply", "sandbox.image", "autoReply"],
+      },
+      { path: join(configured.stateDir, "settings.json"), keys: ["mcpServers.docs.timeout"] },
+    ]);
+    expect(existsSync(join(unconfigured.stateDir, "settings.json"))).toBe(false);
   });
 
   test("conversation settings inherit the global settings of their own workspace, whatever the environment names", () => {
