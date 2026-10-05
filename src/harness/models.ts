@@ -1,4 +1,3 @@
-import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { join } from "node:path";
 import {
   createProvider,
@@ -64,8 +63,8 @@ interface ModelsJsonConfig {
   providers?: Record<string, CustomProviderConfig>;
 }
 
-export function defaultModelsJsonPath(): string {
-  return join(effectiveStateDir(), "models.json");
+export function defaultModelsJsonPath(stateDir: string): string {
+  return join(stateDir, "models.json");
 }
 
 function isModelsJsonConfig(parsed: unknown): parsed is ModelsJsonConfig {
@@ -204,10 +203,9 @@ export class MikanModels {
     this.loadError = loadError;
   }
 
-  static create(options: CreateMikanModelsOptions = {}): MikanModels {
-    const modelsJsonPath = options.modelsJsonPath ?? defaultModelsJsonPath();
+  static create(options: CreateMikanModelsOptions): MikanModels {
     const models = builtinModels();
-    const loadError = applyModelsJson(models, modelsJsonPath);
+    const loadError = applyModelsJson(models, options.modelsJsonPath);
     return new MikanModels(models, loadError);
   }
 

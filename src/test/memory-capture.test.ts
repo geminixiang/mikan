@@ -31,10 +31,8 @@ const STAMP = "captured 2026-09-23 from 1.0001";
 let root: string;
 let workspace: Workspace;
 let office: Office;
-let originalStateDir: string | undefined;
 
 beforeEach(() => {
-  originalStateDir = process.env.MIKAN_STATE_DIR;
   root = mkdtempSync(join(tmpdir(), "mikan-memory-capture-"));
   workspace = createWorkspace({ root: join(root, "workspace"), stateDir: join(root, "state") });
   office = workspace.office(createOfficeAddress("slack", "C1"));
@@ -42,8 +40,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  if (originalStateDir === undefined) delete process.env.MIKAN_STATE_DIR;
-  else process.env.MIKAN_STATE_DIR = originalStateDir;
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -274,7 +270,6 @@ describe("MemoryCapture", () => {
   });
 
   function officeModels(): { models: MikanModels; faux: ReturnType<typeof fauxProvider> } {
-    process.env.MIKAN_STATE_DIR = workspace.stateDir;
     mkdirSync(workspace.stateDir, { recursive: true });
     writeFileSync(
       join(workspace.stateDir, "settings.json"),

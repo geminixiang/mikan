@@ -12,7 +12,6 @@ let stateDir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "mikan-open-connector-"));
   stateDir = join(dir, "state");
-  process.env.STATE_DIR = stateDir;
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     join(stateDir, "settings.json"),
@@ -23,7 +22,6 @@ beforeEach(() => {
 afterEach(() => {
   delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
   delete process.env.MIKAN_OPENCONNECTOR_ADMIN_TOKEN;
-  delete process.env.STATE_DIR;
   rmSync(dir, { recursive: true, force: true });
 });
 

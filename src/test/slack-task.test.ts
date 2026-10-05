@@ -110,7 +110,6 @@ function deferred() {
   return { promise, resolve };
 }
 let dir: string;
-let envBefore: string | undefined;
 let models: MikanModels;
 let faux: ReturnType<typeof fauxProvider>;
 let workspace: ReturnType<typeof createWorkspace>;
@@ -127,10 +126,8 @@ const eventTs = () => `${Math.floor(Date.now() / 1000)}.${String(++id).padStart(
 
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "mikan-task-simulation-"));
-  envBefore = process.env.MIKAN_STATE_DIR;
   const stateDir = join(dir, "state");
   mkdirSync(stateDir);
-  process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
   writeFileSync(
     join(stateDir, "settings.json"),
@@ -206,8 +203,6 @@ afterEach(async () => {
 
   vi.restoreAllMocks();
   beforePromptPayload.mockReset();
-  if (envBefore === undefined) delete process.env.MIKAN_STATE_DIR;
-  else process.env.MIKAN_STATE_DIR = envBefore;
   rmSync(dir, { recursive: true, force: true });
 });
 const callHold = () => fauxAssistantMessage(fauxToolCall("hold", {}), { stopReason: "toolUse" });

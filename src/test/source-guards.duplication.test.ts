@@ -17,7 +17,7 @@ const scannedRoot = "src";
 
 const productionCloneBudget: Record<string, number> = {
   "src/adapters/discord/context.ts <-> src/adapters/github/context.ts": 1,
-  "src/adapters/web/admin/portal.ts <-> src/adapters/web/admin/portal.ts": 5,
+  "src/adapters/web/admin/portal.ts <-> src/adapters/web/admin/portal.ts": 1,
   "src/sandbox/cloudflare.ts <-> src/sandbox/container.ts": 1,
 };
 

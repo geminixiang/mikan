@@ -36,7 +36,7 @@ import { resolveLinkBaseUrl, resolveLinkListenHost } from "./env-manifest.js";
 import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
 import { defaultModelsJsonPath } from "./harness/models.js";
 import { RunEventHub } from "./harness/run-events.js";
-import { readEnv, setEnvAliases } from "./env-manifest.js";
+import { readEnv } from "./env-manifest.js";
 import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
 import { SandboxError } from "./sandbox/utils.js";
 import { validateSandbox } from "./sandbox/registry.js";
@@ -188,7 +188,6 @@ if (plan.mode === "version") {
 
 if (plan.mode === "onboard") {
   const stateDir = plan.stateDir;
-  setEnvAliases("STATE_DIR", stateDir);
   ensureSecureStateDir(stateDir);
   try {
     process.exit(await runOnboardCommand(stateDir));
@@ -210,7 +209,6 @@ if (plan.mode === "download" && plan.downloadChannel) {
 const sandbox = plan.sandbox;
 const stateDir = plan.stateDir;
 const workingDir = plan.workingDir;
-setEnvAliases("STATE_DIR", stateDir);
 ensureSecureStateDir(stateDir);
 if (!plan.workingDirExplicit) {
   ensureDirExists(workingDir);
@@ -277,7 +275,7 @@ if (vaultManager.isEnabled()) {
 
 const startupConfig = (() => {
   try {
-    return loadGlobalSettings();
+    return loadGlobalSettings(stateDir);
   } catch (error) {
     handleStartupError(error);
   }
@@ -438,7 +436,7 @@ function logHarnessStartupSummary(): void {
     `HTTP dispatcher: idle timeout ${httpIdleTimeoutMs}ms${proxy ? `, proxy ${proxy}` : ", no proxy"}`,
   );
 
-  const modelsPath = defaultModelsJsonPath();
+  const modelsPath = defaultModelsJsonPath(stateDir);
   log.logInfo(
     existsSync(modelsPath)
       ? `Harness models.json: ${modelsPath}`

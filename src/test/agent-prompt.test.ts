@@ -157,12 +157,10 @@ describe("host sandbox environment description", () => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-prompt-host-env-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
     createGlobalSettingsFile(stateDir);
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     rmSync(stateDir, { recursive: true, force: true });
   });
 
@@ -248,12 +246,10 @@ describe("system prompt memory guidance", () => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-prompt-memory-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
     createGlobalSettingsFile(stateDir);
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     rmSync(stateDir, { recursive: true, force: true });
   });
 

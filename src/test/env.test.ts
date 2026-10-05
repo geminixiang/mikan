@@ -1,5 +1,5 @@
 import { describe, expect, test, beforeEach, afterEach } from "vitest";
-import { readEnv, setEnvAliases } from "../env-manifest.js";
+import { readEnv } from "../env-manifest.js";
 
 describe("readEnv", () => {
   beforeEach(() => {
@@ -29,26 +29,5 @@ describe("readEnv", () => {
     process.env.TEST_VAR = "  ";
     delete process.env.MIKAN_TEST_VAR;
     expect(readEnv("TEST_VAR")).toBeUndefined();
-  });
-});
-
-describe("setEnvAliases", () => {
-  afterEach(() => {
-    delete process.env.MY_KEY;
-    delete process.env.MIKAN_MY_KEY;
-  });
-
-  test("sets both direct and prefixed env vars", () => {
-    setEnvAliases("MY_KEY", "secret");
-    expect(process.env.MY_KEY).toBe("secret");
-    expect(process.env.MIKAN_MY_KEY).toBe("secret");
-  });
-
-  test("overwrites existing values", () => {
-    process.env.MY_KEY = "old";
-    process.env.MIKAN_MY_KEY = "old";
-    setEnvAliases("MY_KEY", "new");
-    expect(process.env.MY_KEY).toBe("new");
-    expect(process.env.MIKAN_MY_KEY).toBe("new");
   });
 });

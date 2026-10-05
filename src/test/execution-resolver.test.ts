@@ -33,12 +33,10 @@ describe("ActorExecutionResolver", () => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-execution-resolver-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) {
       rmSync(stateDir, { recursive: true, force: true });
     }

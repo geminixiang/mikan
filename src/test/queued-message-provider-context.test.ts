@@ -32,13 +32,11 @@ beforeEach(() => {
   );
   const stateDir = join(workingDir, "state");
   mkdirSync(stateDir, { recursive: true });
-  process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
   conversationDir = createWorkspace({ root: workingDir, stateDir }).office(testAddress).ensure();
 });
 
 afterEach(() => {
-  delete process.env.MIKAN_STATE_DIR;
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 

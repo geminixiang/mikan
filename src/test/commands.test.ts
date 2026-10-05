@@ -254,7 +254,9 @@ describe("dispatchCommand", () => {
 });
 
 describe("ModelCommandHandler", () => {
-  const handler = new ModelCommandHandler(MikanModels.create());
+  const handler = new ModelCommandHandler(
+    MikanModels.create({ modelsJsonPath: "/nonexistent/models.json" }),
+  );
 
   test("prefers a registered colon model ID before validating its suffix", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mikan-model-command-test-"));
@@ -273,8 +275,6 @@ describe("ModelCommandHandler", () => {
         },
       }),
     );
-    const previousStateDir = process.env.MIKAN_STATE_DIR;
-    process.env.MIKAN_STATE_DIR = stateDir;
 
     try {
       const commandHandler = new ModelCommandHandler(
@@ -294,8 +294,6 @@ describe("ModelCommandHandler", () => {
         createOfficeAddress("slack", "C123"),
       );
     } finally {
-      if (previousStateDir === undefined) delete process.env.MIKAN_STATE_DIR;
-      else process.env.MIKAN_STATE_DIR = previousStateDir;
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -598,12 +596,10 @@ describe("SandboxCommandHandler", () => {
     mkdirSync(workingDir, { recursive: true });
     sandboxStateDir = join(workingDir, "state");
     mkdirSync(sandboxStateDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = sandboxStateDir;
     createGlobalSettingsFile(sandboxStateDir);
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     rmSync(workingDir, { recursive: true, force: true });
   });
 

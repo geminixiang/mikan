@@ -101,7 +101,6 @@ beforeEach(async () => {
   mkdirSync(stateDir, { recursive: true });
   const workspace = createWorkspace({ root: workspaceDir, stateDir });
   workspace.office(ADDRESS).ensure();
-  process.env.MIKAN_STATE_DIR = stateDir;
   writeFileSync(
     join(stateDir, "settings.json"),
     JSON.stringify({
@@ -125,7 +124,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  delete process.env.MIKAN_STATE_DIR;
   await new Promise<void>((resolve) => server.close(() => resolve()));
   rmSync(base, { recursive: true, force: true });
 });

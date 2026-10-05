@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     include: ["src/test/**/*.test.ts"],
     sequence: { shuffle: true },
-    setupFiles: ["./src/test/setup/git-env.ts", "./src/test/setup/state-dir.ts"],
+    setupFiles: ["./src/test/setup/git-env.ts"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],

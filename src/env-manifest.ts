@@ -12,11 +12,6 @@ export function readStandardEnv(name: string): string | undefined {
   return process.env[name]?.trim() || undefined;
 }
 
-export function setEnvAliases(name: string, value: string): void {
-  process.env[name] = value;
-  process.env[`MIKAN_${name}`] = value;
-}
-
 export const ENV_MANIFEST: readonly EnvGroup[] = [
   {
     key: "slack",

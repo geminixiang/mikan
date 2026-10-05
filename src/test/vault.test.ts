@@ -375,7 +375,6 @@ describe("ActorExecutionResolver image mode", () => {
     tmpDir = join(tmpdir(), `mikan-image-vault-test-${Date.now()}-${Math.random()}`);
     vaultsDir = join(tmpDir, "vaults");
     mkdirSync(vaultsDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = tmpDir;
     writeFileSync(
       join(tmpDir, "settings.json"),
       JSON.stringify({
@@ -387,7 +386,6 @@ describe("ActorExecutionResolver image mode", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
   });
 

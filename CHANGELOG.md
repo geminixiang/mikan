@@ -9,6 +9,14 @@ any release.
 
 ## [Unreleased]
 
+### Changed
+
+- Embedding API: settings and the model list are located through the `Workspace` instead of the `STATE_DIR` environment variable. `loadGlobalSettings`, `updateGlobalSettings`, `resolveSentryDsn`, and `defaultModelsJsonPath` take the state dir, `applyGlobalSettings` takes it after the runtime, `updateSkillPatterns` takes the office and a `"global" | "conversation"` scope, `MikanModels.create` requires `modelsJsonPath`, and `defaultCommandHandlers` requires the model registry. The Admin portal now requires a `workspace`. `--state-dir`, `STATE_DIR`, and `MIKAN_STATE_DIR` still choose the state dir on the command line; mikan no longer writes them back into its own environment.
+
+### Fixed
+
+- A program that embeds mikan with its own `createWorkspace({ stateDir })`, as `deploy/examples/embedder` does, now reads that directory's `settings.json` and `models.json`; it previously used `~/.mikan`'s settings and models while keeping conversations in its own directory.
+
 ## [1.0.0-beta.94]
 
 ### Changed

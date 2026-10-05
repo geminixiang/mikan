@@ -8,6 +8,7 @@ import {
 } from "../adapters/commands/manifest.js";
 import { commandManifestEntry, isCommandText } from "../adapters/commands/manifest.js";
 import { defaultCommandHandlers } from "../adapters/commands/registry.js";
+import { MikanModels } from "../harness/models.js";
 
 describe("command manifest", () => {
   test("isCommandText accepts every manifest name in slash and pi- form", () => {
@@ -118,7 +119,9 @@ describe("matchCommand", () => {
 
 describe("manifest-to-handler completeness", () => {
   test("every non-magic-word manifest entry constructs a handler", () => {
-    const handlers = defaultCommandHandlers();
+    const handlers = defaultCommandHandlers(
+      MikanModels.create({ modelsJsonPath: "/nonexistent/models.json" }),
+    );
     expect(handlers).toHaveLength(COMMAND_MANIFEST.filter((entry) => !entry.magicWord).length);
   });
 });

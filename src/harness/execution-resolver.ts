@@ -83,7 +83,7 @@ export class ActorExecutionResolver {
 
     let profile: string | undefined;
     try {
-      profile = loadGlobalSettings().sandbox?.defaultSharedVault;
+      profile = loadGlobalSettings(this.workspace.stateDir).sandbox?.defaultSharedVault;
     } catch {
       return;
     }

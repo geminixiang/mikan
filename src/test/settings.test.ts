@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import {
@@ -13,6 +13,10 @@ import {
   updateConversationSettings,
   updateGlobalSettings,
 } from "../settings/index.js";
+
+function llmSettings(model: string): string {
+  return JSON.stringify({ llm: { provider: "anthropic", model, thinkingLevel: "off" } });
+}
 
 describe("loadGlobalSettings", () => {
   let stateDir: string;
@@ -26,11 +30,10 @@ describe("loadGlobalSettings", () => {
   beforeEach(() => {
     stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
+    vi.unstubAllEnvs();
     delete process.env.MIKAN_AI_PROVIDER;
     delete process.env.MIKAN_AI_MODEL;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
@@ -48,19 +51,29 @@ describe("loadGlobalSettings", () => {
       autoReply: { enabled: true, rules: ["reply to everything"] },
     });
     writeFileSync(path, content);
-    expect(loadGlobalSettings()).toMatchObject({ provider: "anthropic", model: "main" });
-    expect(loadGlobalSettings()).not.toHaveProperty("autoReply");
+    expect(loadGlobalSettings(stateDir)).toMatchObject({ provider: "anthropic", model: "main" });
+    expect(loadGlobalSettings(stateDir)).not.toHaveProperty("autoReply");
     expect(readFileSync(path, "utf8")).toBe(content);
   });
 
+  test("conversation settings inherit the global settings of their own workspace, whatever the environment names", () => {
+    const otherStateDir = join(stateDir, "other");
+    mkdirSync(otherStateDir, { recursive: true });
+    writeFileSync(join(stateDir, "settings.json"), llmSettings("workspace-model"));
+    writeFileSync(join(otherStateDir, "settings.json"), llmSettings("environment-model"));
+    vi.stubEnv("MIKAN_STATE_DIR", otherStateDir);
+
+    expect(resolveConversationSettings(office()).model).toBe("workspace-model");
+  });
+
   test("throws when global settings.json is missing", () => {
-    expect(() => loadGlobalSettings()).toThrow(/Missing global settings file/);
+    expect(() => loadGlobalSettings(stateDir)).toThrow(/Missing global settings file/);
   });
 
   test("creates onboard settings", () => {
     const settingsPath = createGlobalSettingsFile(stateDir);
     expect(settingsPath).toBe(join(stateDir, "settings.json"));
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(stateDir);
     expect(config.provider).toBe("anthropic");
     expect(config.model).toBe("claude-sonnet-4-6");
     expect(config.thinkingLevel).toBe("off");
@@ -73,27 +86,27 @@ describe("loadGlobalSettings", () => {
   });
 
   test("reads provider and model from settings.json", () => {
-    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
-    const config = loadGlobalSettings();
+    updateGlobalSettings(stateDir, { provider: "openai", model: "gpt-4o" });
+    const config = loadGlobalSettings(stateDir);
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
   });
 
   test("reads sentryDsn from settings.json", () => {
-    updateGlobalSettings({ sentryDsn: "https://examplePublicKey@o0.ingest.sentry.io/0" });
-    const config = loadGlobalSettings();
+    updateGlobalSettings(stateDir, { sentryDsn: "https://examplePublicKey@o0.ingest.sentry.io/0" });
+    const config = loadGlobalSettings(stateDir);
     expect(config.sentryDsn).toBe("https://examplePublicKey@o0.ingest.sentry.io/0");
   });
 
   test("reads sandbox cpus, memory, and boost from settings.json", () => {
-    updateGlobalSettings({
+    updateGlobalSettings(stateDir, {
       sandbox: {
         cpus: "0.5",
         memory: "512m",
         boost: { cpus: "2", memory: "4g" },
       },
     });
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(stateDir);
     expect(config.sandbox?.cpus).toBe("0.5");
     expect(config.sandbox?.memory).toBe("512m");
     expect(config.sandbox?.boost?.cpus).toBe("2");
@@ -108,7 +121,7 @@ describe("loadGlobalSettings", () => {
       }),
       "utf-8",
     );
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(stateDir);
     expect(config.sandbox?.cpus).toBeUndefined();
     expect(config.sandbox?.memory).toBeUndefined();
     expect(config.sandbox?.boost?.cpus).toBeUndefined();
@@ -116,11 +129,11 @@ describe("loadGlobalSettings", () => {
   });
 
   test("provider and model come from settings.json, not env vars", () => {
-    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
+    updateGlobalSettings(stateDir, { provider: "openai", model: "gpt-4o" });
     process.env.MIKAN_AI_PROVIDER = "google";
     process.env.MIKAN_AI_MODEL = "gemini-2.0-flash";
 
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(stateDir);
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o");
   });
@@ -135,7 +148,7 @@ describe("loadGlobalSettings", () => {
         "utf-8",
       );
       createGlobalSettingsFile(stateDir);
-      const config = loadGlobalSettings();
+      const config = loadGlobalSettings(stateDir);
       expect(config.provider).toBe("anthropic");
       expect(config.model).toBe("claude-sonnet-4-6");
     } finally {
@@ -145,12 +158,12 @@ describe("loadGlobalSettings", () => {
 
   test("throws on malformed settings.json instead of silently falling back", () => {
     writeFileSync(join(stateDir, "settings.json"), "{ invalid json }", "utf-8");
-    expect(() => loadGlobalSettings()).toThrow(/Malformed settings file/);
+    expect(() => loadGlobalSettings(stateDir)).toThrow(/Malformed settings file/);
   });
 
   test("throws on settings.json whose top-level value is not an object", () => {
     writeFileSync(join(stateDir, "settings.json"), "[]", "utf-8");
-    expect(() => loadGlobalSettings()).toThrow(/expected a JSON object/);
+    expect(() => loadGlobalSettings(stateDir)).toThrow(/expected a JSON object/);
   });
 
   test("throws on settings.json with invalid nested field types", () => {
@@ -163,7 +176,7 @@ describe("loadGlobalSettings", () => {
       "utf-8",
     );
 
-    expect(() => loadGlobalSettings()).toThrow(
+    expect(() => loadGlobalSettings(stateDir)).toThrow(
       /Malformed settings file.*sandbox.*cpus.*must be string/,
     );
   });
@@ -177,7 +190,7 @@ describe("loadGlobalSettings", () => {
       "utf-8",
     );
 
-    expect(() => loadGlobalSettings()).toThrow(
+    expect(() => loadGlobalSettings(stateDir)).toThrow(
       /Malformed settings file.*thinkingLevel.*must be equal to one of the allowed values/,
     );
   });
@@ -198,7 +211,7 @@ describe("loadGlobalSettings", () => {
   });
 
   test("conversation model config overrides global provider and model only", () => {
-    updateGlobalSettings({ provider: "anthropic", model: "claude-sonnet-4-6" });
+    updateGlobalSettings(stateDir, { provider: "anthropic", model: "claude-sonnet-4-6" });
     const conversation = office();
     updateConversationSettings(conversation, {
       provider: "openai",
@@ -237,7 +250,7 @@ describe("loadGlobalSettings", () => {
 
   test("sandbox settings merge at the leaf level across global and conversation", () => {
     createGlobalSettingsFile(stateDir);
-    updateGlobalSettings({ sandbox: { cpus: "1", boost: { cpus: "4" } } });
+    updateGlobalSettings(stateDir, { sandbox: { cpus: "1", boost: { cpus: "4" } } });
     const conversation = office();
     updateConversationSettings(conversation, {
       sandbox: { memory: "2g", boost: { memory: "8g" } },
@@ -252,7 +265,7 @@ describe("loadGlobalSettings", () => {
 
   test("mcp servers merge per key: conversation overrides or disables one, keeps the rest", () => {
     createGlobalSettingsFile(stateDir);
-    updateGlobalSettings({
+    updateGlobalSettings(stateDir, {
       mcpServers: {
         github: { command: "npx", args: ["-y", "server-github"], env: { TOKEN: "t" } },
         docs: { url: "https://docs.example/mcp" },
@@ -274,7 +287,7 @@ describe("loadGlobalSettings", () => {
   });
 
   test("conversation slack config overrides global reply mode", () => {
-    updateGlobalSettings({ slack: { replyMode: "top-level" } });
+    updateGlobalSettings(stateDir, { slack: { replyMode: "top-level" } });
     const conversation = office();
     updateConversationSettings(conversation, { slack: { replyMode: "thread" } });
 
@@ -305,24 +318,22 @@ describe("resolveSentryDsn", () => {
   beforeEach(() => {
     stateDir = join(tmpdir(), `mikan-test-sentry-${Date.now()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     delete process.env.SENTRY_DSN;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
   test("prefers settings.json over env", () => {
-    updateGlobalSettings({ sentryDsn: "https://settings.example/1" });
+    updateGlobalSettings(stateDir, { sentryDsn: "https://settings.example/1" });
     process.env.SENTRY_DSN = "https://env.example/1";
-    expect(resolveSentryDsn()).toBe("https://settings.example/1");
+    expect(resolveSentryDsn(stateDir)).toBe("https://settings.example/1");
   });
 
   test("falls back to env when settings.json has no sentryDsn", () => {
     process.env.SENTRY_DSN = "https://env.example/2";
-    expect(resolveSentryDsn()).toBe("https://env.example/2");
+    expect(resolveSentryDsn(stateDir)).toBe("https://env.example/2");
   });
 });
 
@@ -332,17 +343,15 @@ describe("updateGlobalSettings", () => {
   beforeEach(() => {
     stateDir = join(tmpdir(), `mikan-test-${Date.now()}-${Math.random()}`);
     mkdirSync(stateDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
   });
 
   test("creates settings.json with given config", () => {
-    updateGlobalSettings({ provider: "google", model: "gemini-2.0-flash" });
-    const config = loadGlobalSettings();
+    updateGlobalSettings(stateDir, { provider: "google", model: "gemini-2.0-flash" });
+    const config = loadGlobalSettings(stateDir);
     expect(config.provider).toBe("google");
     expect(config.model).toBe("gemini-2.0-flash");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
@@ -362,9 +371,9 @@ describe("updateGlobalSettings", () => {
   });
 
   test("merges with existing settings — preserves unrelated fields", () => {
-    updateGlobalSettings({ provider: "openai", model: "gpt-4o" });
-    updateGlobalSettings({ model: "gpt-4o-mini" });
-    const config = loadGlobalSettings();
+    updateGlobalSettings(stateDir, { provider: "openai", model: "gpt-4o" });
+    updateGlobalSettings(stateDir, { model: "gpt-4o-mini" });
+    const config = loadGlobalSettings(stateDir);
     expect(config.provider).toBe("openai");
     expect(config.model).toBe("gpt-4o-mini");
     expect(JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8"))).toEqual({
@@ -385,15 +394,14 @@ describe("updateGlobalSettings", () => {
 
   test("creates parent directories if they don't exist", () => {
     const nested = join(stateDir, "a", "b", "c");
-    process.env.MIKAN_STATE_DIR = nested;
-    updateGlobalSettings({ provider: "anthropic" });
+    updateGlobalSettings(nested, { provider: "anthropic" });
     expect(existsSync(join(nested, "settings.json"))).toBe(true);
   });
 
   test("saves global shared vault settings", () => {
-    updateGlobalSettings({ sandbox: { defaultSharedVault: "shared-team" } });
+    updateGlobalSettings(stateDir, { sandbox: { defaultSharedVault: "shared-team" } });
 
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(stateDir);
     expect(config.sandbox?.defaultSharedVault).toBe("shared-team");
     expect(
       JSON.parse(readFileSync(join(stateDir, "settings.json"), "utf-8")).sandbox,

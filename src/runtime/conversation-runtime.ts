@@ -12,7 +12,7 @@ import type { Office } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { RunMemoryCapture } from "../memory-capture/types.js";
-import { MikanModels } from "../harness/models.js";
+import { defaultModelsJsonPath, MikanModels } from "../harness/models.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
 import type { CommandHandler, CommandServices } from "../adapters/commands/types.js";
@@ -112,7 +112,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
-    this.resolvedModels = options.models ?? MikanModels.create();
+    this.resolvedModels =
+      options.models ??
+      MikanModels.create({ modelsJsonPath: defaultModelsJsonPath(options.workspace.stateDir) });
     this.memoryCapture = options.memoryCapture?.(this.resolvedModels);
     this.commandServices = {
       ...options,

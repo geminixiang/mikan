@@ -25,7 +25,6 @@ describe("workspace office projection", () => {
     stateDir = mkdtempSync(join(tmpdir(), "mikan-office-projection-"));
     workspaceDir = join(stateDir, "workspace");
     mkdirSync(workspaceDir, { recursive: true });
-    process.env.MIKAN_STATE_DIR = stateDir;
     createGlobalSettingsFile(stateDir);
     workspace = createWorkspace({ root: workspaceDir, stateDir });
     office = workspace.office(address);
@@ -33,7 +32,6 @@ describe("workspace office projection", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.MIKAN_STATE_DIR;
     rmSync(stateDir, { recursive: true, force: true });
   });
 

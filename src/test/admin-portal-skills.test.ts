@@ -390,7 +390,6 @@ const skillStates = (body: ListBody) =>
 describe("Admin skill enablement", () => {
   beforeEach(() => {
     const stateDir = join(base, "state");
-    process.env.MIKAN_STATE_DIR = stateDir;
     writeFileSync(
       join(stateDir, "settings.json"),
       JSON.stringify({ llm: { provider: "anthropic", model: "m", thinkingLevel: "off" } }),
@@ -399,9 +398,7 @@ describe("Admin skill enablement", () => {
     writeSkill(join(workspaceDir, "skills"), "beta", "beta");
   });
 
-  afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
-  });
+  afterEach(() => {});
 
   test("lists nested skills as the runner loads them, all enabled by default", async () => {
     const listed = await get<ListBody>(`/admin/api/skills?conversationId=${CONVERSATION_ID}`);

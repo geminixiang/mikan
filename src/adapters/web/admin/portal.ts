@@ -11,7 +11,7 @@ import {
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, join, matchesGlob, resolve as pathResolve, sep as pathSep } from "node:path";
 import { atomicWritePrivateFile } from "../../../file-guards.js";
-import { MikanModels } from "../../../harness/models.js";
+import { defaultModelsJsonPath, MikanModels } from "../../../harness/models.js";
 import {
   formatSkillsForPrompt,
   loadOfficeSkills,
@@ -164,9 +164,9 @@ async function routeGetApiRequest(
     case "/admin/api/conversation-state":
       return serveConversationState(res, url, services, token);
     case "/admin/api/settings/global":
-      return serveGlobalSettings(res);
+      return serveGlobalSettings(res, services.workspace);
     case "/admin/api/models":
-      return serveModelsList(res);
+      return serveModelsList(res, services.workspace);
     case "/admin/api/workspace/tree":
       return serveWorkspaceTree(res, url, services, token);
     case "/admin/api/workspace/file":
@@ -266,14 +266,6 @@ function resolveTargetConversation(
   return resolveConversationScope(requested, platform, token);
 }
 
-function requireAdminWorkspace(res: ServerResponse, services: AdminServices): Workspace | null {
-  if (!services.workspace) {
-    jsonRes(res, 503, { error: "Working directory not available" });
-    return null;
-  }
-  return services.workspace;
-}
-
 function requireConversationWorkspace(
   res: ServerResponse,
   body: Record<string, unknown>,
@@ -285,8 +277,7 @@ function requireConversationWorkspace(
     jsonRes(res, 403, { error: scope.error });
     return undefined;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  return workspace ? { scope, workspace } : undefined;
+  return { scope, workspace: services.workspace };
 }
 
 function listAdminOffices(workspace: Workspace): OfficeAddress[] {
@@ -335,8 +326,7 @@ function conversationDisplayLabel(services: AdminServices, office: OfficeAddress
 }
 
 function serveConversationsList(res: ServerResponse, services: AdminServices): void {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
 
   const running = services.runtime?.getRunningSessions() ?? [];
 
@@ -365,8 +355,7 @@ interface SessionUsageRow {
 }
 
 async function serveSessionUsage(res: ServerResponse, services: AdminServices): Promise<void> {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
 
   const usageLists: SessionUsageRow[][] = [];
   for (const office of listAdminOffices(workspace)) {
@@ -482,8 +471,7 @@ async function serveConversationUsage(
   url: URL,
   services: AdminServices,
 ): Promise<void> {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
 
   const conversationId = (url.searchParams.get("conversationId") ?? "").trim();
   const platformParam = (url.searchParams.get("platform") ?? "").trim();
@@ -593,8 +581,7 @@ function serveConversationState(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
 
   const scope = resolveConversationFromQuery(url, token);
   if (scope.error) {
@@ -604,7 +591,7 @@ function serveConversationState(
   const conversationId = scope.conversationId;
 
   const office = workspace.office(scope.address);
-  const globalConfig = loadGlobalSettings();
+  const globalConfig = loadGlobalSettings(workspace.stateDir);
   const conversationConfig = resolveConversationSettings(office);
   const conversationWorkspace = resolveWorkspaceProjection(office);
 
@@ -627,9 +614,9 @@ function serveConversationState(
   });
 }
 
-function serveGlobalSettings(res: ServerResponse): void {
+function serveGlobalSettings(res: ServerResponse, workspace: Workspace): void {
   try {
-    const config = loadGlobalSettings();
+    const config = loadGlobalSettings(workspace.stateDir);
     jsonRes(res, 200, {
       provider: config.provider,
       model: config.model,
@@ -648,9 +635,11 @@ function serveGlobalSettings(res: ServerResponse): void {
   }
 }
 
-async function serveModelsList(res: ServerResponse): Promise<void> {
+async function serveModelsList(res: ServerResponse, workspace: Workspace): Promise<void> {
   try {
-    const registry = MikanModels.create();
+    const registry = MikanModels.create({
+      modelsJsonPath: defaultModelsJsonPath(workspace.stateDir),
+    });
     const availableModels = await registry.getAvailable();
     const statuses = await resolveAdminModelAccessStatuses(registry, availableModels);
     const models = availableModels.map((model) => ({
@@ -867,7 +856,7 @@ function serveGlobalModelUpdate(
   }
 
   respondWithSettingsUpdate(res, () => {
-    const result = applyGlobalSettings(services.runtime, {
+    const result = applyGlobalSettings(services.runtime, services.workspace.stateDir, {
       provider,
       model,
       thinkingLevel,
@@ -893,7 +882,7 @@ function serveGlobalSlackUpdate(
   }
 
   respondWithSettingsUpdate(res, () => {
-    applyGlobalSettings(services.runtime, { slack: { replyMode } });
+    applyGlobalSettings(services.runtime, services.workspace.stateDir, { slack: { replyMode } });
     return { ok: true };
   });
 }
@@ -926,7 +915,7 @@ function serveGlobalSandboxUpdate(
   }
 
   respondWithSettingsUpdate(res, () => {
-    applyGlobalSettings(services.runtime, { sandbox: update });
+    applyGlobalSettings(services.runtime, services.workspace.stateDir, { sandbox: update });
     return { ok: true };
   });
 }
@@ -1049,8 +1038,7 @@ function serveWorkspaceTree(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const convDir = workspace.office(scope.address).dir;
   if (!existsSync(convDir)) {
     jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
@@ -1150,8 +1138,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const requestedPath = (url.searchParams.get("path") ?? "").trim();
   if (!requestedPath) {
     jsonRes(res, 400, { error: "Missing path" });
@@ -1181,8 +1168,7 @@ function serveMcpServersList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const servers = loadScopeMcpServers(workspace.office(scope.address));
   jsonRes(res, 200, {
     conversationId: scope.conversationId,
@@ -1314,8 +1300,7 @@ async function serveMcpServerMutation(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const office = workspace.office(scope.address);
   const maps = loadScopeMcpServers(office);
   const current = mutationScope === "global" ? maps.global : maps.conversation;
@@ -1339,7 +1324,7 @@ async function serveMcpServerMutation(
   }
   const result =
     mutationScope === "global"
-      ? applyGlobalSettings(services.runtime, { mcpServers: plan.next })
+      ? applyGlobalSettings(services.runtime, workspace.stateDir, { mcpServers: plan.next })
       : applyConversationSettings(services.runtime, office, { mcpServers: plan.next });
   if (!result.ok) {
     jsonRes(res, 409, { error: "Conversation is busy; try again shortly." });
@@ -1416,8 +1401,7 @@ function serveSkillsList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   jsonRes(res, 200, officeSkillListing(workspace, workspace.office(scope.address)));
 }
 
@@ -1437,8 +1421,7 @@ function serveSkillToggle(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const target = body.scope === "global" || body.scope === "conversation" ? body.scope : undefined;
   const state = typeof body.state === "string" ? body.state : "";
   if (!target || !SKILL_TOGGLE_STATES[target].includes(state)) {
@@ -1457,7 +1440,7 @@ function serveSkillToggle(
     (pattern) => pattern.slice(1) !== skill.directory,
   );
   if (state !== "inherit") patterns.push(`${state === "load" ? "+" : "-"}${skill.directory}`);
-  updateSkillPatterns(target === "global" ? undefined : office, patterns);
+  updateSkillPatterns(office, target, patterns);
   jsonRes(res, 200, officeSkillListing(workspace, office));
 }
 
@@ -1472,8 +1455,7 @@ function serveSkillFile(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
 
   const source = (url.searchParams.get("source") ?? "").trim();
   const directory = (url.searchParams.get("directory") ?? "").trim();
@@ -1534,8 +1516,7 @@ async function serveSkillMutation(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const resolved = resolveSkillsRoot(workspace, scope, body.source);
   if ("error" in resolved) {
     jsonRes(res, 400, { error: resolved.error });
@@ -1633,8 +1614,7 @@ function requireAdminEventStore(
 }
 
 async function serveEventsList(res: ServerResponse, services: AdminServices): Promise<void> {
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   if (!services.eventStore) {
     jsonRes(res, 503, { error: "Working directory not available" });
     return;
@@ -1657,8 +1637,7 @@ async function serveConversationEventsList(
     jsonRes(res, 403, { error: scope.error });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const store = requireAdminEventStore(res, services, workspace.office(scope.address));
   if (!store) return;
   jsonRes(res, 200, {
@@ -1685,8 +1664,7 @@ async function serveConversationEventDelete(
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
-  const workspace = requireAdminWorkspace(res, services);
-  if (!workspace) return;
+  const { workspace } = services;
   const store = requireAdminEventStore(res, services, workspace.office(scope.address));
   if (!store) return;
   try {

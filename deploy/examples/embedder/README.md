@@ -23,11 +23,11 @@ embedder adopts one of mikan's supported platforms; this example drives a
 
 ## Run it
 
-Requires a configured mikan state dir: `~/.mikan` with `settings.json` (required)
-(`models.json` is optional). `MIKAN_STATE_DIR` (or `STATE_DIR`)
-moves where `settings.json` is read from; `models.json` stays
-under `~/.mikan` unless you construct your own `MikanModels` with explicit paths
-and pass it as the `models` option — which is what the test does.
+Requires a configured state dir: the `stateDir` you pass to `createWorkspace`
+holds `settings.json` (required) and `models.json` (optional). Every global
+setting and the model list are read from there; mikan does not consult
+`MIKAN_STATE_DIR` or `STATE_DIR` once you own the `Workspace`. Pass your own
+`MikanModels` as the `models` option to replace the model list, as the test does.
 
 ```sh
 npx tsx deploy/examples/embedder/index.ts

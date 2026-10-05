@@ -41,14 +41,12 @@ beforeEach(() => {
   );
   const stateDir = join(workingDir, "state");
   mkdirSync(stateDir, { recursive: true });
-  process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
   office = createWorkspace({ root: workingDir, stateDir }).office(testAddress);
   conversationDir = office.ensure();
 });
 
 afterEach(() => {
-  delete process.env.MIKAN_STATE_DIR;
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 
@@ -78,7 +76,6 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     }),
   );
-  process.env.MIKAN_STATE_DIR = stateDir;
 
   const models = MikanModels.create({
     modelsJsonPath: join(stateDir, "models.json"),
@@ -256,7 +253,6 @@ describe("ConversationRuntime handleEvent", () => {
         },
       }),
     );
-    process.env.MIKAN_STATE_DIR = stateDir;
     const models = MikanModels.create({
       modelsJsonPath,
     });

@@ -7,6 +7,7 @@ import { InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import { startWebServer } from "../adapters/web/server.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { FileVaultManager } from "../vault/index.js";
+import { createWorkspace } from "../office/index.js";
 
 async function waitForListening(server: Server): Promise<void> {
   if (server.listening) return;
@@ -137,7 +138,10 @@ describe("link server", () => {
       async () => {},
       undefined,
       undefined,
-      { adminTokenStore },
+      {
+        adminTokenStore,
+        workspace: createWorkspace({ root: join(stateDir, "workspace"), stateDir }),
+      },
     );
     servers.push(server);
     await waitForListening(server);

@@ -1,7 +1,7 @@
 import type { Office, Workspace } from "../office/types.js";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { MikanModels } from "./models.js";
+import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import {
   CONTROL_INPUT_CUSTOM_TYPE,
@@ -832,7 +832,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     env: createSandboxExecutionEnv(executor, sandboxConfig.type, pathContext.runtimeWorkspaceRoot),
   };
 
-  const modelRegistry = options.models ?? MikanModels.create();
+  const modelRegistry = options.models;
   if (modelRegistry.getError()) {
     log.logWarning("models.json load error", modelRegistry.getError()!);
   }

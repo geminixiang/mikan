@@ -45,12 +45,10 @@ beforeEach(() => {
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     }),
   );
-  process.env.MIKAN_STATE_DIR = stateDir;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete process.env.MIKAN_STATE_DIR;
   delete process.env.OPENCONNECTOR_ADMIN_TOKEN;
   delete process.env.OPENCONNECTOR_ENDPOINT;
   rmSync(dir, { recursive: true, force: true });

@@ -19,7 +19,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.MIKAN_STATE_DIR;
   if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
 });
 
@@ -33,7 +32,6 @@ function createFauxModels(): { models: MikanModels; faux: ReturnType<typeof faux
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     }),
   );
-  process.env.MIKAN_STATE_DIR = stateDir;
 
   const models = MikanModels.create({
     modelsJsonPath: join(stateDir, "models.json"),

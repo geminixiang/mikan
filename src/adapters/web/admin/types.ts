@@ -22,7 +22,7 @@ export interface AdminServices {
   sessionViewTokenStore?: InMemorySessionViewTokenStore;
   adminTokenStore: InMemoryAdminTokenStore;
   portalBaseUrl?: string;
-  workspace?: Workspace;
+  workspace: Workspace;
   eventStore?: (office: Office) => EventStore;
   sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;

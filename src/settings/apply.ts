@@ -37,9 +37,10 @@ export function applyConversationSettings(
 
 export function applyGlobalSettings(
   runtime: GlobalRunnerCacheControl | undefined,
+  stateDir: string,
   patch: Partial<AgentConfig>,
 ): { ok: true; staleConversations: OfficeAddress[] } {
-  updateGlobalSettings(patch);
+  updateGlobalSettings(stateDir, patch);
   const staleConversations =
     affectsCachedRunner(patch) && runtime ? runtime.refreshAllConversations().busy : [];
   return { ok: true, staleConversations };

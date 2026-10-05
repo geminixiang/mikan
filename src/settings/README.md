@@ -11,6 +11,10 @@ writes those files goes through this module; nothing else parses them.
 | `index.ts` | Settings schema, normalization, scope merge (global → office), readers (`loadGlobalSettings`, `resolveConversationSettings`, `loadScopeMcpServers`, `loadOfficeVisibilityOverride`, …) and the raw writers (`updateGlobalSettings`, `updateConversationSettings`, `setOfficeVisibilityOverride`, …) |
 | `apply.ts` | The one writer seam for settings that affect live conversations (`applyConversationSettings`, `applyGlobalSettings`, `applyOfficeVisibility`); chat commands and the Admin portal write through it so cached runners and disk never disagree                                                        |
 
+## State directory
+
+The global file is found through the caller's state dir: `office.workspace.stateDir` for office readers, an explicit `stateDir` argument for global-only readers and writers. Nothing here reads `STATE_DIR`/`MIKAN_STATE_DIR`; those are CLI inputs that `src/cli/arg-grammar.ts` resolves once at boot. An embedder that builds its own `Workspace` therefore gets its own `settings.json` and `models.json`, never `~/.mikan`'s. Pass `office.workspace.stateDir`, not `office.stateDir`, which is the office's own state directory.
+
 ## Scope rules
 
 - Office settings override global settings key by key; `sandbox.boost` and `mcpServers` merge per entry, and an office entry with `disabled: true` suppresses an inherited MCP server.

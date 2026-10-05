@@ -239,7 +239,7 @@ export type SubagentRunResult<TOutput = string> =
   | SubagentRunIncompleteResult;
 
 export interface CreateMikanModelsOptions {
-  modelsJsonPath?: string;
+  modelsJsonPath: string;
 }
 
 export interface MikanSkill {

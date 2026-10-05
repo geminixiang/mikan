@@ -22,12 +22,10 @@ beforeEach(() => {
   const workingDir = join(base, "workspace");
   mkdirSync(stateDir, { recursive: true });
   mkdirSync(workingDir, { recursive: true });
-  process.env.MIKAN_STATE_DIR = stateDir;
   office = createWorkspace({ root: workingDir, stateDir }).office(C1);
 });
 
 afterEach(() => {
-  delete process.env.MIKAN_STATE_DIR;
   rmSync(join(stateDir, ".."), { recursive: true, force: true });
 });
 
@@ -130,7 +128,7 @@ describe("applyGlobalSettings", () => {
   test("llm change writes, refreshes all, reports busy conversations as stale", () => {
     const busyOffice = createOfficeAddress("slack", "C9");
     const runtime = { refreshAllConversations: vi.fn().mockReturnValue({ busy: [busyOffice] }) };
-    const result = applyGlobalSettings(runtime, {
+    const result = applyGlobalSettings(runtime, stateDir, {
       provider: "anthropic",
       model: "claude-sonnet-4-6",
     });
@@ -142,7 +140,7 @@ describe("applyGlobalSettings", () => {
 
   test("non-llm global change never touches runners", () => {
     const runtime = { refreshAllConversations: vi.fn() };
-    const result = applyGlobalSettings(runtime, { sandbox: { cpus: "2" } });
+    const result = applyGlobalSettings(runtime, stateDir, { sandbox: { cpus: "2" } });
     expect(result).toEqual({ ok: true, staleConversations: [] });
     expect(runtime.refreshAllConversations).not.toHaveBeenCalled();
   });

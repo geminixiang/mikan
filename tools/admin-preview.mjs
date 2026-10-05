@@ -8,8 +8,6 @@ const ROOT = "/tmp/mikan-preview";
 const WS = join(ROOT, "workspace");
 const STATE = join(ROOT, "state");
 
-process.env.MIKAN_STATE_DIR = STATE;
-
 rmSync(ROOT, { recursive: true, force: true });
 mkdirSync(WS, { recursive: true, mode: 0o700 });
 mkdirSync(STATE, { recursive: true, mode: 0o700 });

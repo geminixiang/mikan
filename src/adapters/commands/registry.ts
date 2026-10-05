@@ -1,4 +1,3 @@
-import { MikanModels } from "../../harness/models.js";
 import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { LoginCommandHandler } from "./login.js";
@@ -19,9 +18,7 @@ const HANDLER_FACTORIES: Record<string, (modelRegistry: ModelRegistry) => Comman
   new: () => new NewCommandHandler(),
 };
 
-export function defaultCommandHandlers(
-  modelRegistry: ModelRegistry = MikanModels.create(),
-): CommandHandler[] {
+export function defaultCommandHandlers(modelRegistry: ModelRegistry): CommandHandler[] {
   return COMMAND_MANIFEST.filter((entry) => !entry.magicWord).map((entry) => {
     const factory = HANDLER_FACTORIES[entry.name];
     if (!factory) {

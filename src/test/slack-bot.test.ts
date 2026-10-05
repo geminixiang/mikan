@@ -348,13 +348,11 @@ describe("SlackMessagingBot slash commands", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-bot-"));
-    process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
     workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -546,13 +544,11 @@ describe("SlackMessagingBot queues follow-up messages", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-queue-"));
-    process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
     workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1520,13 +1516,11 @@ describe("SlackMessagingBot backfill", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-backfill-"));
-    process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
     workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1786,13 +1780,11 @@ describe("SlackMessagingBot attachments", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-attachments-"));
-    process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
     workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 
@@ -1889,13 +1881,11 @@ describe("SlackMessagingBot force-stop block action", () => {
 
   beforeEach(() => {
     workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-forcestop-"));
-    process.env.MIKAN_STATE_DIR = workingDir;
     createGlobalSettingsFile(workingDir);
     workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
   });
 
   afterEach(() => {
-    delete process.env.MIKAN_STATE_DIR;
     if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
   });
 

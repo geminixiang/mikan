@@ -430,7 +430,7 @@ export interface CreateRunnerOptions {
     portalBaseUrl?: string;
   };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
-  models?: MikanModels;
+  models: MikanModels;
   runEvents?: RunEventPublisher;
 }
 

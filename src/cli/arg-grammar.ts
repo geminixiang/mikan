@@ -47,7 +47,3 @@ export function resolveStateDir(
       ? resolve(envValue)
       : defaultStateDir();
 }
-
-export function effectiveStateDir(): string {
-  return resolveStateDir([]);
-}

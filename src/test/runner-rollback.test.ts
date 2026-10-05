@@ -41,7 +41,6 @@ beforeEach(() => {
       sandbox: { workspace: { doorPolicy: "trusted", layout: "full" } },
     }),
   );
-  process.env.MIKAN_STATE_DIR = stateDir;
   mocks.disposeMcp.mockReset().mockResolvedValue(undefined);
   mocks.loadMcpTools.mockReset().mockResolvedValue({
     tools: [],
@@ -54,7 +53,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete process.env.MIKAN_STATE_DIR;
   rmSync(dir, { recursive: true, force: true });
 });
 

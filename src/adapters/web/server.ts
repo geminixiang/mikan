@@ -30,7 +30,7 @@ interface StartWebServerOptions {
   sessionViewInteractive?: SessionViewInteractiveOptions;
   adminOptions?: {
     adminTokenStore: InMemoryAdminTokenStore;
-    workspace?: Workspace;
+    workspace: Workspace;
     runtime?: AdminRuntimeBridge;
     sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;

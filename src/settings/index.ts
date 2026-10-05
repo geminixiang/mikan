@@ -2,7 +2,6 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import { existsSync, lstatSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { effectiveStateDir } from "../cli/arg-grammar.js";
 import { readEnv } from "../env-manifest.js";
 import {
   atomicWritePrivateFile,
@@ -159,12 +158,12 @@ function mergeSandboxSettings(
   };
 }
 
-function getSettingsPath(): string {
-  return join(effectiveStateDir(), "settings.json");
+function globalSettingsPath(stateDir: string): string {
+  return join(stateDir, "settings.json");
 }
 
-function requireGlobalSettings(): SettingsFileConfig {
-  const settingsPath = getSettingsPath();
+function requireGlobalSettings(stateDir: string): SettingsFileConfig {
+  const settingsPath = globalSettingsPath(stateDir);
   const config = loadSettingsFile(settingsPath);
   if (!config) {
     throw new MissingGlobalSettingsError(settingsPath);
@@ -201,12 +200,12 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   };
 }
 
-function loadRawGlobalSettings(): Partial<AgentConfig> {
-  return normalizeSettingsConfig(requireGlobalSettings());
+function loadRawGlobalSettings(stateDir: string): Partial<AgentConfig> {
+  return normalizeSettingsConfig(requireGlobalSettings(stateDir));
 }
 
-export function loadGlobalSettings(): AgentConfig {
-  return toAgentConfig(loadRawGlobalSettings());
+export function loadGlobalSettings(stateDir: string): AgentConfig {
+  return toAgentConfig(loadRawGlobalSettings(stateDir));
 }
 
 export function conversationSettingsPath(office: Office): string {
@@ -260,7 +259,7 @@ export function setSlackConversationAutoReply(office: Office, mode: SlackAutoRep
 }
 
 export function resolveConversationSettings(office: Office): AgentConfig {
-  const globalConfig = loadRawGlobalSettings();
+  const globalConfig = loadRawGlobalSettings(office.workspace.stateDir);
   const conversationConfig = normalizeSettingsConfig(
     loadSettingsFile(conversationSettingsPath(office)) ?? {},
   );
@@ -278,13 +277,13 @@ function sentryDsnFrom(fromFile: string | undefined): string | undefined {
   return fromFile || readEnv("SENTRY_DSN");
 }
 
-export function resolveSentryDsn(): string | undefined {
-  const fromFile = normalizeSettingsConfig(loadSettingsFile(getSettingsPath()) ?? {});
+export function resolveSentryDsn(stateDir: string): string | undefined {
+  const fromFile = normalizeSettingsConfig(loadSettingsFile(globalSettingsPath(stateDir)) ?? {});
   return sentryDsnFrom(fromFile.sentryDsn);
 }
 
 export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoice): string {
-  const settingsPath = join(stateDir, "settings.json");
+  const settingsPath = globalSettingsPath(stateDir);
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
@@ -375,8 +374,8 @@ function updateSettingsFile(
   );
 }
 
-export function updateGlobalSettings(patch: Partial<AgentConfig>): void {
-  updateSettingsFile(getSettingsPath(), patch, ONBOARD_SETTINGS);
+export function updateGlobalSettings(stateDir: string, patch: Partial<AgentConfig>): void {
+  updateSettingsFile(globalSettingsPath(stateDir), patch, ONBOARD_SETTINGS);
 }
 
 export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
@@ -385,14 +384,24 @@ export function updateConversationSettings(office: Office, patch: Partial<AgentC
 
 export function loadSkillPatterns(office: Office): SkillPatterns {
   return {
-    global: loadSettingsFile(getSettingsPath())?.skills ?? [],
+    global: loadSettingsFile(globalSettingsPath(office.workspace.stateDir))?.skills ?? [],
     conversation: loadSettingsFile(conversationSettingsPath(office))?.skills ?? [],
   };
 }
 
-export function updateSkillPatterns(office: Office | undefined, skills: readonly string[]): void {
-  const settingsPath = office ? conversationSettingsPath(office) : getSettingsPath();
-  const existing = loadSettingsFileForUpdate(settingsPath, office ? {} : ONBOARD_SETTINGS);
+export function updateSkillPatterns(
+  office: Office,
+  scope: keyof SkillPatterns,
+  skills: readonly string[],
+): void {
+  const settingsPath =
+    scope === "conversation"
+      ? conversationSettingsPath(office)
+      : globalSettingsPath(office.workspace.stateDir);
+  const existing = loadSettingsFileForUpdate(
+    settingsPath,
+    scope === "conversation" ? {} : ONBOARD_SETTINGS,
+  );
   ensureDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
@@ -409,7 +418,7 @@ export function loadScopeMcpServers(office: Office): {
   conversation: Record<string, McpServerConfig>;
 } {
   return {
-    global: loadRawGlobalSettings().mcpServers ?? {},
+    global: loadRawGlobalSettings(office.workspace.stateDir).mcpServers ?? {},
     conversation: loadSettingsFile(conversationSettingsPath(office))?.mcpServers ?? {},
   };
 }

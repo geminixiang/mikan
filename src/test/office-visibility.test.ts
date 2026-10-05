@@ -17,13 +17,11 @@ let workspace: Workspace;
 beforeEach(() => {
   stateDir = mkdtempSync(join(tmpdir(), "mikan-office-visibility-"));
   mkdirSync(join(stateDir, "workspace"));
-  process.env.MIKAN_STATE_DIR = stateDir;
   createGlobalSettingsFile(stateDir);
   workspace = createWorkspace({ root: join(stateDir, "workspace"), stateDir });
 });
 
 afterEach(() => {
-  delete process.env.MIKAN_STATE_DIR;
   rmSync(stateDir, { recursive: true, force: true });
 });
 
