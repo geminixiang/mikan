@@ -266,18 +266,16 @@ function resolveTargetConversation(
   return resolveConversationScope(requested, platform, token);
 }
 
-function requireConversationWorkspace(
+function scopedOffice(
   res: ServerResponse,
-  body: Record<string, unknown>,
   services: AdminServices,
-  token: AdminToken,
-): { scope: AdminConversationScope; workspace: Workspace } | undefined {
-  const scope = resolveTargetConversation(body, token);
+  scope: AdminConversationScope,
+): Office | undefined {
   if (scope.error) {
     jsonRes(res, 403, { error: scope.error });
     return undefined;
   }
-  return { scope, workspace: services.workspace };
+  return services.workspace.office(scope.address);
 }
 
 function listAdminOffices(workspace: Workspace): OfficeAddress[] {
@@ -583,14 +581,10 @@ function serveConversationState(
 ): void {
   const { workspace } = services;
 
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 400, { error: scope.error });
-    return;
-  }
-  const conversationId = scope.conversationId;
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
+  const conversationId = office.address.conversationId;
 
-  const office = workspace.office(scope.address);
   const globalConfig = loadGlobalSettings(workspace.stateDir);
   const conversationConfig = resolveConversationSettings(office);
   const conversationWorkspace = resolveWorkspaceProjection(office);
@@ -658,30 +652,30 @@ async function serveModelsList(res: ServerResponse, workspace: Workspace): Promi
   }
 }
 
+function readModelSelection(res: ServerResponse, body: Record<string, unknown>) {
+  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+  const model = typeof body.model === "string" ? body.model.trim() : "";
+  if (!provider || !model) {
+    jsonRes(res, 400, { error: "Missing provider or model" });
+    return undefined;
+  }
+  const thinkingLevel = isThinkingLevel(body.thinkingLevel) ? body.thinkingLevel : undefined;
+  return { provider, model, thinkingLevel };
+}
+
 function serveConversationModelUpdate(
   res: ServerResponse,
   body: Record<string, unknown>,
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
-  const model = typeof body.model === "string" ? body.model.trim() : "";
-  const thinkingLevel = isThinkingLevel(body.thinkingLevel) ? body.thinkingLevel : undefined;
-
-  if (!provider || !model) {
-    jsonRes(res, 400, { error: "Missing provider or model" });
-    return;
-  }
-  const target = requireConversationWorkspace(res, body, services, token);
-  if (!target) return;
-  const { scope, workspace } = target;
+  const selection = readModelSelection(res, body);
+  if (!selection) return;
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
 
   try {
-    const result = applyConversationSettings(services.runtime, workspace.office(scope.address), {
-      provider,
-      model,
-      thinkingLevel,
-    });
+    const result = applyConversationSettings(services.runtime, office, selection);
     if (!result.ok) {
       jsonRes(res, 409, {
         error: "Conversation has a running job; retry after it finishes (or /stop it).",
@@ -704,13 +698,12 @@ function serveConversationVisibilityUpdate(
     jsonRes(res, 400, { error: "visibility must be 'private' or 'default'" });
     return;
   }
-  const target = requireConversationWorkspace(res, body, services, token);
-  if (!target) return;
-  const { scope, workspace } = target;
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   try {
     const result = applyOfficeVisibility(
       services.runtime,
-      workspace.office(scope.address),
+      office,
       body.visibility === "private" ? "private" : null,
     );
     if (!result.ok) {
@@ -734,11 +727,10 @@ function serveConversationSlackUpdate(
     jsonRes(res, 400, { error: "replyMode must be 'top-level' or 'thread'" });
     return;
   }
-  const target = requireConversationWorkspace(res, body, services, token);
-  if (!target) return;
-  const { scope, workspace } = target;
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   respondWithSettingsUpdate(res, () => {
-    applyConversationSettings(services.runtime, workspace.office(scope.address), {
+    applyConversationSettings(services.runtime, office, {
       slack: { replyMode },
     });
     return { ok: true };
@@ -751,9 +743,8 @@ async function serveConversationSessionLink(
   services: AdminServices,
   token: AdminToken,
 ): Promise<void> {
-  const target = requireConversationWorkspace(res, body, services, token);
-  if (!target) return;
-  const { scope, workspace } = target;
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   if (!services.sessionViewTokenStore) {
     jsonRes(res, 503, { error: "Session view token store not available" });
     return;
@@ -765,8 +756,7 @@ async function serveConversationSessionLink(
     return;
   }
 
-  const office = workspace.office(scope.address);
-  if (!(await SessionStore.exists(office, scope.conversationId))) {
+  if (!(await SessionStore.exists(office, office.address.conversationId))) {
     jsonRes(res, 404, { error: "No session found for this conversation" });
     return;
   }
@@ -775,8 +765,8 @@ async function serveConversationSessionLink(
     const { token: viewToken } = services.sessionViewTokenStore.create({
       platform: token.platform,
       platformUserId: token.platformUserId,
-      conversationId: scope.conversationId,
-      sessionKey: scope.conversationId,
+      conversationId: office.address.conversationId,
+      sessionKey: office.address.conversationId,
       office,
       platformUserName: token.platformUserName,
     });
@@ -793,11 +783,8 @@ function serveConversationLoginLink(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   if (!services.portalBaseUrl) {
     jsonRes(res, 503, { error: "Portal URL not configured." });
     return;
@@ -819,7 +806,7 @@ function serveConversationLoginLink(
     try {
       vaultId = credentialAuthorizationKey(services.sandbox, {
         userId: token.platformUserId,
-        address: scope.address,
+        address: office.address,
       });
     } catch (err) {
       jsonRes(res, 500, { error: errorMessage(err) });
@@ -830,7 +817,7 @@ function serveConversationLoginLink(
     const { token: linkToken } = services.linkTokenStore.create(
       token.platform,
       token.platformUserId,
-      scope.conversationId,
+      office.address.conversationId,
       vaultId,
       "",
     );
@@ -846,21 +833,11 @@ function serveGlobalModelUpdate(
   body: Record<string, unknown>,
   services: AdminServices,
 ): void {
-  const provider = typeof body.provider === "string" ? body.provider.trim() : "";
-  const model = typeof body.model === "string" ? body.model.trim() : "";
-  const thinkingLevel = isThinkingLevel(body.thinkingLevel) ? body.thinkingLevel : undefined;
-
-  if (!provider || !model) {
-    jsonRes(res, 400, { error: "Missing provider or model" });
-    return;
-  }
+  const selection = readModelSelection(res, body);
+  if (!selection) return;
 
   respondWithSettingsUpdate(res, () => {
-    const result = applyGlobalSettings(services.runtime, services.workspace.stateDir, {
-      provider,
-      model,
-      thinkingLevel,
-    });
+    const result = applyGlobalSettings(services.runtime, services.workspace.stateDir, selection);
     return {
       ok: true,
       staleConversations: result.staleConversations.map(
@@ -1033,15 +1010,11 @@ function serveWorkspaceTree(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const { workspace } = services;
-  const convDir = workspace.office(scope.address).dir;
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
+  const convDir = office.dir;
   if (!existsSync(convDir)) {
-    jsonRes(res, 200, { conversationId: scope.conversationId, tree: null });
+    jsonRes(res, 200, { conversationId: office.address.conversationId, tree: null });
     return;
   }
   const requestedSub = (url.searchParams.get("path") ?? "").trim();
@@ -1056,7 +1029,7 @@ function serveWorkspaceTree(
   }
   const tree = buildTree(startSafe.absolute, requestedSub);
   jsonRes(res, 200, {
-    conversationId: scope.conversationId,
+    conversationId: office.address.conversationId,
     root: requestedSub || ".",
     tree,
   });
@@ -1133,12 +1106,8 @@ function serveWorkspaceFile(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const { workspace } = services;
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
   const requestedPath = (url.searchParams.get("path") ?? "").trim();
   if (!requestedPath) {
     jsonRes(res, 400, { error: "Missing path" });
@@ -1148,7 +1117,7 @@ function serveWorkspaceFile(
     jsonRes(res, 403, { error: "Workspace path is not exposed" });
     return;
   }
-  const convDir = workspace.office(scope.address).dir;
+  const convDir = office.dir;
   const safe = safeJoinUnderRoot(convDir, requestedPath);
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1163,15 +1132,11 @@ function serveMcpServersList(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const { workspace } = services;
-  const servers = loadScopeMcpServers(workspace.office(scope.address));
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
+  const servers = loadScopeMcpServers(office);
   jsonRes(res, 200, {
-    conversationId: scope.conversationId,
+    conversationId: office.address.conversationId,
     presets: listMcpPresets(),
     global: redactMcpServers(servers.global),
     conversation: redactMcpServers(servers.conversation),
@@ -1295,13 +1260,9 @@ async function serveMcpServerMutation(
     return;
   }
   const mutationScope = body.scope === "global" ? "global" : "conversation";
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   const { workspace } = services;
-  const office = workspace.office(scope.address);
   const maps = loadScopeMcpServers(office);
   const current = mutationScope === "global" ? maps.global : maps.conversation;
 
@@ -1396,13 +1357,10 @@ function serveSkillsList(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
   const { workspace } = services;
-  jsonRes(res, 200, officeSkillListing(workspace, workspace.office(scope.address)));
+  jsonRes(res, 200, officeSkillListing(workspace, office));
 }
 
 const SKILL_TOGGLE_STATES: Record<"global" | "conversation", readonly string[]> = {
@@ -1416,11 +1374,8 @@ function serveSkillToggle(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   const { workspace } = services;
   const target = body.scope === "global" || body.scope === "conversation" ? body.scope : undefined;
   const state = typeof body.state === "string" ? body.state : "";
@@ -1428,7 +1383,6 @@ function serveSkillToggle(
     jsonRes(res, 400, { error: "Invalid scope or state" });
     return;
   }
-  const office = workspace.office(scope.address);
   const skill = officeSkillListing(workspace, office).skills.find(
     (entry) => entry.source === body.source && entry.directory === body.directory,
   );
@@ -1450,11 +1404,8 @@ function serveSkillFile(
   services: AdminServices,
   token: AdminToken,
 ): void {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
   const { workspace } = services;
 
   const source = (url.searchParams.get("source") ?? "").trim();
@@ -1473,8 +1424,7 @@ function serveSkillFile(
     return;
   }
 
-  const skillsRoot =
-    source === "global" ? workspace.skillsDir : workspace.office(scope.address).skillsDir;
+  const skillsRoot = source === "global" ? workspace.skillsDir : office.skillsDir;
   const safe = safeJoinUnderRoot(skillsRoot, join(directory, "SKILL.md"));
   if (safe.error) {
     jsonRes(res, 400, { error: safe.error });
@@ -1487,15 +1437,14 @@ function serveSkillFile(
 const SKILL_DIRECTORY_PATTERN = /^[a-z0-9-]+$/;
 
 function resolveSkillsRoot(
-  workspace: Workspace,
-  scope: AdminConversationScope,
+  office: Office,
   source: unknown,
 ): { root: string; source: "global" | "conversation" } | { error: string } {
   if (source !== "global" && source !== "conversation") {
     return { error: "Invalid skill source" };
   }
   return {
-    root: source === "global" ? workspace.skillsDir : workspace.office(scope.address).skillsDir,
+    root: source === "global" ? office.workspace.skillsDir : office.skillsDir,
     source,
   };
 }
@@ -1511,13 +1460,9 @@ async function serveSkillMutation(
     jsonRes(res, 400, { error: "action must be 'save' or 'delete'" });
     return;
   }
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const { workspace } = services;
-  const resolved = resolveSkillsRoot(workspace, scope, body.source);
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
+  const resolved = resolveSkillsRoot(office, body.source);
   if ("error" in resolved) {
     jsonRes(res, 400, { error: resolved.error });
     return;
@@ -1632,16 +1577,12 @@ async function serveConversationEventsList(
   services: AdminServices,
   token: AdminToken,
 ): Promise<void> {
-  const scope = resolveConversationFromQuery(url, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
-  const { workspace } = services;
-  const store = requireAdminEventStore(res, services, workspace.office(scope.address));
+  const office = scopedOffice(res, services, resolveConversationFromQuery(url, token));
+  if (!office) return;
+  const store = requireAdminEventStore(res, services, office);
   if (!store) return;
   jsonRes(res, 200, {
-    conversationId: scope.conversationId,
+    conversationId: office.address.conversationId,
     events: await listOfficeEvents(store),
   });
 }
@@ -1652,11 +1593,8 @@ async function serveConversationEventDelete(
   services: AdminServices,
   token: AdminToken,
 ): Promise<void> {
-  const scope = resolveTargetConversation(body, token);
-  if (scope.error) {
-    jsonRes(res, 403, { error: scope.error });
-    return;
-  }
+  const office = scopedOffice(res, services, resolveTargetConversation(body, token));
+  if (!office) return;
   let name: string;
   try {
     name = validateEventFilename(typeof body.name === "string" ? body.name : "");
@@ -1664,8 +1602,7 @@ async function serveConversationEventDelete(
     jsonRes(res, 400, { error: "Invalid name" });
     return;
   }
-  const { workspace } = services;
-  const store = requireAdminEventStore(res, services, workspace.office(scope.address));
+  const store = requireAdminEventStore(res, services, office);
   if (!store) return;
   try {
     await store.delete(name);

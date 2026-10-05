@@ -105,6 +105,39 @@ afterEach(async () => {
   rmSync(base, { recursive: true, force: true });
 });
 
+describe("Admin conversation scope", () => {
+  test("every conversation endpoint refuses an invalid conversation the same way", async () => {
+    const query = "conversationId=..%2Fescape";
+    const responses = await Promise.all([
+      get(`/admin/api/conversation-state?${query}`),
+      get(`/admin/api/workspace/tree?${query}`),
+      get(`/admin/api/workspace/file?${query}&path=MEMORY.md`),
+      get(`/admin/api/skills?${query}`),
+      get(`/admin/api/skills/file?${query}&source=conversation&directory=demo`),
+      get(`/admin/api/mcp-servers?${query}`),
+      get(`/admin/api/conversations/events?${query}`),
+      post("/admin/api/conversations/model", {
+        conversationId: "../escape",
+        provider: "anthropic",
+        model: "claude",
+      }),
+      post("/admin/api/conversations/visibility", {
+        conversationId: "../escape",
+        visibility: "private",
+      }),
+      post("/admin/api/conversations/login-link", { conversationId: "../escape" }),
+      post("/admin/api/skills/mutate", {
+        conversationId: "../escape",
+        action: "delete",
+        source: "conversation",
+        directory: "demo",
+      }),
+    ]);
+
+    expect(responses.map((response) => response.status)).toEqual(responses.map(() => 403));
+  });
+});
+
 describe("Admin response metadata", () => {
   test("returns workspace tree navigation fields without unused metadata", async () => {
     const scratch = join(workspaceDir, officeKey(ADDRESS), "scratch");
