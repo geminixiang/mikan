@@ -72,7 +72,6 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 | `host`             | 注入しない          | 拒否                   | プラットフォームの user から導出 |
 | `container:<name>` | 注入する            | 拒否                   | container 名から導出             |
 | `image:<image>`    | 注入する            | 投影する（bind mount） | office key                       |
-| `cloudflare:*`     | 注入する            | 拒否                   | office key                       |
 
 **拒否とは、ファイルが黙って無視されるのではなく、実行が失敗するという意味です。** directory に `env`
 以外のファイルを持つ vault は file mount に解決され、ファイルを mount できないモードは、不完全な認証
@@ -84,7 +83,7 @@ office key は、platform 名とプラットフォームの生の conversation i
 
 ## 共有 vault
 
-`sandbox.defaultSharedVault` は `vaults/shared/` 配下の profile を指定し、それが新しい conversation の vault に初回利用時にコピーされます。この ambient なコピーが起きるのは、membership でゲートされたプラットフォーム（Slack、Discord、Telegram、そして write 権限を持つ collaborator だけがトリガーできる GitHub）で、かつ隔離された `image` と `cloudflare` のトポロジーの場合だけです。open-trigger な面が継承することはありません。管理者が特定の conversation に対して明示的に vault をプロビジョニングすることは引き続き可能です。
+`sandbox.defaultSharedVault` は `vaults/shared/` 配下の profile を指定し、それが新しい conversation の vault に初回利用時にコピーされます。この ambient なコピーが起きるのは、membership でゲートされたプラットフォーム（Slack、Discord、Telegram、そして write 権限を持つ collaborator だけがトリガーできる GitHub）で、かつ隔離された `image` のトポロジーの場合だけです。open-trigger な面が継承することはありません。管理者が特定の conversation に対して明示的に vault をプロビジョニングすることは引き続き可能です。
 
 ## `/pi-login`
 

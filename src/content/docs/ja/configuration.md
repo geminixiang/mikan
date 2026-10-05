@@ -70,7 +70,7 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 | `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
 | `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
 | `office.visibility`          | 未設定              | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
-| `sandbox.defaultSharedVault` | 空                  | 対象となる membership-trust image/Cloudflare conversations にコピーされる共有 vault                               |
+| `sandbox.defaultSharedVault` | 空                  | 対象となる membership-trust image conversations にコピーされる共有 vault                                          |
 | `slack.replyMode`            | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                     |
 
 `/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox visibility <private|default>` は conversation の `office.visibility` の上書きを書き込みます。admin portal にも同じスイッチがあります。
@@ -79,7 +79,7 @@ Slack auto-reply は `/pi-auto-reply on|off|jev` で変更し、conversation off
 
 Office visibility は Slack の conversation type に従います（ADR 0008）。Telegram、Discord、GitHub の conversation は常に private です。public channel は **public** office です。他のすべての office が `/workspace/public/<office key>` で読み取り専用に参照でき、workspace 全体の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel、および種別が未観測の conversation は **private** office です。自分自身にだけ見え、共有知識と public office を読めますが書き戻しません。すべての office は同じ mount 形状を持ち、workspace root を mount する layout はありません。
 
-visibility を強制できるのは `image:*` だけです。`host`、`container:*`、`cloudflare:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
+visibility を強制できるのは `image:*` だけです。`host`、`container:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
 
 廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。office が別の private office に到達できるようにする設定はありません。
 

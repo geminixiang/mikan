@@ -70,7 +70,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 - 統一抽象 `Executor`
 - 依 workspace 能力把 sandbox runtime 分成兩類：
-  - 非受管 projection：`host` / `container:<name>` / `cloudflare:*`
+  - 非受管 projection：`host` / `container:<name>`
   - 受管 projection：`image:<image>`，會強制 private office visibility：無法觸及其他 private office，共用知識為唯讀
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
@@ -222,7 +222,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / cloudflare"]
+  Resolver --> Sandbox["host / container / image"]
 ```
 
 重點：
@@ -230,7 +230,7 @@ flowchart TD
 - 憑證不直接進 workspace
 - vault 存在 `~/.mikan`
 - 執行時才由該 office 的 vault 路由到對應 sandbox
-- `image` / `cloudflare` 模式以 office key 作為 vault 的 key——也就是在 workspace 與 registry 中命名該 office 的同一個字串；`container:<name>` 使用 shared container vault；`host` 以使用者為 key，且不注入 vault env
+- `image` 模式以 office key 作為 vault 的 key——也就是在 workspace 與 registry 中命名該 office 的同一個字串；`container:<name>` 使用 shared container vault；`host` 以使用者為 key，且不注入 vault env
 
 ## 6. Events 與一般對話的差異
 

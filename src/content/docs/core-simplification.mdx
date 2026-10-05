@@ -18,7 +18,7 @@ The smallest coherent mikan core is:
 7. one credential-resolution seam;
 8. registries for optional platform, command, tool, and sandbox capabilities.
 
-Web portals, particular chat SDKs, Docker provisioning, Cloudflare execution, and GitHub-specific tools are products or plugins around this core.
+Web portals, particular chat SDKs, Docker provisioning, and GitHub-specific tools are products or plugins around this core.
 
 ## Findings
 
@@ -121,7 +121,7 @@ interface SandboxRegistry {
 }
 ```
 
-The default CLI registers stable backends. Experimental backends such as Cloudflare can move behind optional product modules without changing tool or runtime code.
+The default CLI registers stable backends. Experimental backends can move behind optional product modules without changing tool or runtime code.
 
 ## Migration sequence
 
@@ -160,7 +160,7 @@ This should remove consistency bugs around `ts` versus `message.id`, `thread_ts`
 
 1. Introduce `SandboxRegistry` while preserving the existing default functions as wrappers.
 2. Register host/container/image as the default distribution.
-3. Register experimental backends such as Cloudflare from optional composition modules.
+3. Register experimental backends from optional composition modules.
 
 ### Phase 6 — reduce the composition root
 

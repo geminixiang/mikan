@@ -6,7 +6,7 @@ sidebar:
   label: Google Cloud SDK
 ---
 
-> Note: mikan stores the Google `authorized_user` JSON in the vault as `gcloud-adc.json`, and the runtime target is inferred from that file name. The `image` sandbox automatically projects the file to that target inside the runtime. `container` and `cloudflare` cannot mount files at all and fail the run rather than proceed without the credential, so do not use this flow on those modes.
+> Note: mikan stores the Google `authorized_user` JSON in the vault as `gcloud-adc.json`, and the runtime target is inferred from that file name. The `image` sandbox automatically projects the file to that target inside the runtime. `container` cannot mount files at all and fail the run rather than proceed without the credential, so do not use this flow on those modes.
 
 ## 1. Create a Google OAuth Client
 
@@ -80,4 +80,4 @@ After success, mikan:
 
 - mikan uses a web OAuth callback, so the Google OAuth client must be `Web application`, not a desktop app.
 - If Google does not return a `refresh_token`, revoke the existing consent and run `/pi-login` again. mikan requests `access_type=offline` and `prompt=consent`, but Google may still omit the refresh token because of existing authorization.
-- To make the credential file appear automatically at `/root/.config/gcloud/application_default_credentials.json`, use the `image` sandbox. On `container` and `cloudflare` a file credential in the vault makes the run fail with `does not support vault file mounts` — remove it and use `env`-only credentials there.
+- To make the credential file appear automatically at `/root/.config/gcloud/application_default_credentials.json`, use the `image` sandbox. On `container` a file credential in the vault makes the run fail with `does not support vault file mounts` — remove it and use `env`-only credentials there.

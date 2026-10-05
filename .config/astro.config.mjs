@@ -155,15 +155,6 @@ export default defineConfig({
                       translations: { "zh-TW": "Image", "zh-CN": "Image", ja: "Image" },
                       link: "/sandbox/image/",
                     },
-                    {
-                      label: "Cloudflare",
-                      translations: {
-                        "zh-TW": "Cloudflare",
-                        "zh-CN": "Cloudflare",
-                        ja: "Cloudflare",
-                      },
-                      link: "/sandbox/cloudflare/",
-                    },
                   ],
                 },
                 {

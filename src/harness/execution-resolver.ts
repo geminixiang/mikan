@@ -9,11 +9,7 @@ import { reportUserFacingError } from "../observability/index.js";
 import { normalizeSharedVaultName } from "../vault/index.js";
 import type { VaultManager } from "../vault/types.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
-import {
-  credentialAuthorizationKey,
-  runtimeResourceKey,
-  scopeCloudflareSandboxId,
-} from "../sandbox/identity.js";
+import { credentialAuthorizationKey, runtimeResourceKey } from "../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import type { WorkspaceProjection, Workspace } from "../office/types.js";
 
@@ -92,12 +88,6 @@ export class ActorExecutionResolver {
   }
 
   private resolveSandboxConfig(resourceKey: string): SandboxConfig {
-    if (this.baseConfig.type === "cloudflare") {
-      return {
-        type: "cloudflare",
-        sandboxId: scopeCloudflareSandboxId(this.baseConfig.sandboxId, resourceKey),
-      };
-    }
     if (this.baseConfig.type !== "image") return this.baseConfig;
     return {
       type: "container",

@@ -33,5 +33,5 @@ export { createOfficeAddress, createWorkspace, officeKey } from "./office/index.
 export type { Office, Workspace } from "./office/types.js";
 export type { ChatToolResult, ConversationContext, ConversationEvent, ConversationKind, ConversationMessage, ConversationResponder, HandleNewCommandOptions, MessagingBot, OfficeAddress, OfficeKey, MessagingEventHandler, MessagingInfo, PlatformName, RunningSession, } from "./types.js";
 export { SandboxError, createExecutor, getSandboxAdapters, parseSandboxArg, validateSandbox, } from "./sandbox/index.js";
-export type { CloudflareSandboxConfig, ExecOptions, ExecResult, Executor, SandboxAdapter, SandboxConfig, } from "./sandbox/index.js";"
+export type { ExecOptions, ExecResult, Executor, SandboxAdapter, SandboxConfig, } from "./sandbox/index.js";"
 `;

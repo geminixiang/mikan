@@ -1,5 +1,4 @@
 export type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,
@@ -7,7 +6,6 @@ export type {
   SandboxAdapter,
   SandboxConfig,
 } from "./types.js";
-export { CloudflareSandboxExecutor } from "./cloudflare.js";
 export { ContainerExecutor } from "./container.js";
 export { HostExecutor } from "./host.js";
 export { SandboxError } from "./utils.js";

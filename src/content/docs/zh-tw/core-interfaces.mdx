@@ -50,7 +50,7 @@ runtime 是協調者。平台不得知道 harness 的持久化細節，harness �
 | **Vault/web/security** | `src/vault/`、`src/adapters/web/`、`src/sandbox/identity.ts`             | 憑證 identity 與注入 policy、僅限 host 的 portal/token 介面、mount 衝突檢查，以及安全敏感的授權決策                        | 交給 vault policy 的 actor/trust 輸入；憑證只交給選定的 executor                                 |
 | **Config/CLI**         | `src/settings/`、`src/cli/`、`src/migrations/`、`src/adapters/commands/` | 啟動/flag 文法、設定持久化、state migration 與指令 manifest                                                                | 有效設定與確定性的指令清單                                                                       |
 
-一個對話的 harness instance 在 context 上與其他 instance 隔離，但這不是檔案系統或行程 sandbox。Sandbox executor 改變的是工具在哪裡執行、拿到哪些 mount；`host` 模式，以及不受管的 `container:*` 與 `cloudflare:*` 模式，都不強制 office visibility。審查 seam 時請把這兩件事分開。
+一個對話的 harness instance 在 context 上與其他 instance 隔離，但這不是檔案系統或行程 sandbox。Sandbox executor 改變的是工具在哪裡執行、拿到哪些 mount；`host` 模式，以及不受管的 `container:*` 模式，都不強制 office visibility。審查 seam 時請把這兩件事分開。
 
 ### 跨歸屬 seam
 
@@ -66,7 +66,7 @@ runtime 是協調者。平台不得知道 harness 的持久化細節，harness �
 | Run output                | Harness/tools → Platform entry                                                           | Harness 輸出的是**回應原文**：平台中立的 Markdown/GFM，使用者 mention 寫成 `<@userName>`。轉成原生呈現完全是 adapter 的工作——Slack 在每條對外路徑上都會把 `<@userName>` 解析成 `<@U…>`，任何 adapter 都不得引導模型輸出平台原生標記。選用的 responder 能力要 feature-detect。同一次執行內，回應操作保留呼叫順序；adapter 可以緩衝或串流，但不得把 harness 持久化或 SDK 物件暴露給 harness。 |
 | Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                      | Runtime 提供 host workspace 與 runtime cwd `<runtime workspace root>/<officeKey>`；office key 在兩側命名同一段路徑，所以路徑跨越邊界時意義不變。Executor 提供 `getWorkspacePath`/`getPathContext`。Prompt 與 tool 輸出使用 runtime 路徑，host 端的 attachment 轉換則使用宣告的 context。對應 root 以外的路徑不轉換。這是路徑契約，不是檔案系統隔離的保證。                                  |
 | Executor file transport   | Sandbox/workspace → Harness/tools                                                        | 工具使用 `Executor.readFile`/`writeFile`，絕不使用 shell quoting 協定。只能 exec 的傳輸共用 base64 分塊實作；寫入先 stage 再 rename，傳輸錯誤仍是錯誤。                                                                                                                                                                                                                                     |
-| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace                | `MessagingInfo.trustModel` 會傳進 actor 解析；vault policy 以這個值為準，不看平台名稱字串。未提供時預設為 `membership`；`open-trigger` 絕不會拿到環境式 shared vault 副本，而且只有 `image`/`cloudflare` 會走這條環境式路徑。明確的 vault 佈建仍是另一個管理決策。                                                                                                                          |
+| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace                | `MessagingInfo.trustModel` 會傳進 actor 解析；vault policy 以這個值為準，不看平台名稱字串。未提供時預設為 `membership`；`open-trigger` 絕不會拿到環境式 shared vault 副本，而且只有 `image` 會走這條環境式路徑。明確的 vault 佈建仍是另一個管理決策。                                                                                                                                       |
 | Settings and live runners | Config/CLI（指令與 admin 是 adapter）→ 設定檔與 Runtime/session                          | `applyConversationSettings` 會在寫入 LLM 變更**之前**清除快取的 runner，忙碌時兩個動作都拒絕。`applyOfficeVisibility` 對 visibility 變更的行為相同，因為 mount 組合已經寫進 runner 的環境。全域 LLM 設定先寫入，再清除閒置的 runner，忙碌的 runner 等執行結束後清除，並回報為 stale。Sandbox 資源限制與 Slack 回覆設定在使用時重新讀取，不會清除 runner。                                   |
 | Web capability bridge     | Vault/web/security → Runtime/session 與指令                                              | Portal store 是選用的 runtime 服務。設定了 portal URL 卻沒有對應 store，在使用該 portal 時會失敗；其他情況下缺少 store 會變成停用/未設定的行為。路由 payload 是隨附 UI 的契約，不是一般 REST API。                                                                                                                                                                                          |
 | Scheduled events          | Harness/tools 與 Admin → 經 `OfficeEventStore` 到 Runtime/session                        | 紀錄放在 office 僅限 host 的 State dir；任何 sandbox 都不會 mount 它。`event` 工具與 Admin 只能透過綁定該 office 的 store 存取它的 event，payload 也必須指向 store 自己的 office。Writer 使用 `buildEventPayload`；reader 使用 `parseEventPayload`。Secret 不應出現在 event 文字中。                                                                                                        |
@@ -141,7 +141,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 - intake scheduling：`enqueueEvent`；
 - discovery/policy：`getMessagingInfo()`。
 
-`MessagingInfo.trustModel` 具安全敏感性。當 sandbox 類型為 `image` 或 `cloudflare` 時，`membership` 允許環境式的 shared vault。任何人都能觸發 agent 的介面必須回傳 `open-trigger`。
+`MessagingInfo.trustModel` 具安全敏感性。當 sandbox 類型為 `image` 時，`membership` 允許環境式的 shared vault。任何人都能觸發 agent 的介面必須回傳 `open-trigger`。
 
 `MessagingBot` 是唯一面向 host 的 adapter 介面；lifecycle 與 messaging capability 不再拆成另一個淺介面。
 
@@ -224,7 +224,7 @@ Harness listener 會觀察 model/tool lifecycle event。預算設定會限制 to
 
 ### `SandboxConfig`
 
-這個 discriminated union 目前支援 `host`、`container`、`image` 與 `cloudflare`。解析語法與成熟度記錄在 [Sandbox](/zh-tw/sandbox/)。
+這個 discriminated union 目前支援 `host`、`container` 與 `image`。解析語法與成熟度記錄在 [Sandbox](/zh-tw/sandbox/)。
 
 ### `Executor`
 

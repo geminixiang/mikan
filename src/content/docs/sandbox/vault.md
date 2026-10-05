@@ -74,7 +74,6 @@ This is a data boundary, not an execution boundary. Anything the conversation's 
 | `host`             | not injected        | refused                 | derived from the platform user  |
 | `container:<name>` | injected            | refused                 | derived from the container name |
 | `image:<image>`    | injected            | projected (bind mounts) | the office key                  |
-| `cloudflare:*`     | injected            | refused                 | the office key                  |
 
 **Refused means the run fails, not that the file is quietly ignored.** A vault whose directory holds
 any file other than `env` resolves to a file mount, and a mode that cannot mount files raises
@@ -86,7 +85,7 @@ The office key is derived by hashing the platform name together with the platfor
 
 ## Shared vaults
 
-`sandbox.defaultSharedVault` names a profile under `vaults/shared/` that is copied into a new conversation's vault on first use. That ambient copy only happens for membership-gated platforms (Slack, Discord, Telegram, and GitHub, which only collaborators with write access can trigger) on the isolated `image` and `cloudflare` topologies. Open-trigger surfaces never inherit it; an admin can still provision a vault for a specific conversation explicitly.
+`sandbox.defaultSharedVault` names a profile under `vaults/shared/` that is copied into a new conversation's vault on first use. That ambient copy only happens for membership-gated platforms (Slack, Discord, Telegram, and GitHub, which only collaborators with write access can trigger) on the isolated `image` topology. Open-trigger surfaces never inherit it; an admin can still provision a vault for a specific conversation explicitly.
 
 ## `/pi-login`
 

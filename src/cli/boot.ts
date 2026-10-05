@@ -19,11 +19,7 @@ function bootCommand() {
     .description("Multi-platform chat agent daemon")
     .helpOption(false)
     .argument("[working-directory...]", "Workspace directory (default: ~/.mikan/workspace)")
-    .option(
-      "--sandbox <spec>",
-      "host | container:<name> | image:<image[:tag]> | cloudflare:<id>",
-      nonEmptyValue,
-    )
+    .option("--sandbox <spec>", "host | container:<name> | image:<image[:tag]>", nonEmptyValue)
     .option("--download <channel>", "Dump a Slack channel's history, then exit", nonEmptyValue)
     .option("--onboard", "Interactive first-run setup (also: mikan onboard)")
     .option("-v, --version", "Print version")

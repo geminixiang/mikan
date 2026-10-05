@@ -503,13 +503,6 @@ docs = "ARCHITECTURE.md#inv-session-format-compatibility"
 # accepted target model in prose or ADRs.
 
 [[deviations]]
-id = "cloudflare-factory-floor"
-status = "open"
-affects = ["sandbox", "harness"]
-docs = "ARCHITECTURE.md#dev-cloudflare-factory-floor"
-adr = "docs/adr/0002-sandbox-runtime-vs-task-executor.md"
-
-[[deviations]]
 id = "runtime-resource-identity"
 status = "open"
 affects = ["sandbox", "office"]

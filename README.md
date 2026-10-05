@@ -24,7 +24,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context in host-only session files under the State dir.
 - **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
-- **Sandbox runtime** is where tool commands execute: host, Docker container/image, or the experimental Cloudflare bridge.
+- **Sandbox runtime** is where tool commands execute: host, or a Docker container or image.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
@@ -32,7 +32,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
-- **Sandbox execution** — host, shared container, per-conversation managed container, or Cloudflare bridge (experimental)
+- **Sandbox execution** — host, shared container, or per-conversation managed container
 - **Credential vaults** — `/login` stores credentials under `~/.mikan` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
@@ -117,18 +117,17 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-| Mode                      | Description                                                                   |
-| ------------------------- | ----------------------------------------------------------------------------- |
-| `host` (default)          | Run on host; no vault env injection                                           |
-| `container:<name>`        | Run in an existing shared container; everyone sharing it shares its one vault |
-| `image:<image>`           | Auto-provision one Docker container and one vault per conversation office     |
-| `cloudflare:<sandbox-id>` | Cloudflare Worker bridge (experimental; no auto workspace sync)               |
+| Mode               | Description                                                                   |
+| ------------------ | ----------------------------------------------------------------------------- |
+| `host` (default)   | Run on host; no vault env injection                                           |
+| `container:<name>` | Run in an existing shared container; everyone sharing it shares its one vault |
+| `image:<image>`    | Auto-provision one Docker container and one vault per conversation office     |
 
 Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal or `/pi-sandbox visibility private` can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
 
-Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` share one filesystem and are trusted deployments; a private office there is served with a logged warning.
+Only `image:*` enforces visibility. `host` and `container:*` share one filesystem and are trusted deployments; a private office there is served with a logged warning.
 
-For routing, mounts, vault behavior, managed container details, and Cloudflare notes, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
+For routing, mounts, vault behavior, and managed container details, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
 ## Chat commands
 

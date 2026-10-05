@@ -68,7 +68,7 @@ are private. An operator may narrow a public channel with Admin or
 still declaring the retired `full` door policy get the same shape.
 
 Only the managed `image:*` backend consumes and enforces these mount flags.
-Host, existing-container, and Cloudflare modes ignore them and log once per
+Host and existing-container modes ignore them and log once per
 private office that its visibility is not enforced.
 
 Changing the policy changes the container's desired mounts, which reads as

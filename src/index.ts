@@ -111,7 +111,6 @@ export {
   validateSandbox,
 } from "./sandbox/index.js";
 export type {
-  CloudflareSandboxConfig,
   ExecOptions,
   ExecResult,
   Executor,

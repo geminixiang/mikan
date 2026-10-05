@@ -1,10 +1,6 @@
 import type { OfficeAddress } from "../types.js";
 
-export type SandboxConfig =
-  | HostSandboxConfig
-  | ContainerSandboxConfig
-  | ImageSandboxConfig
-  | CloudflareSandboxConfig;
+export type SandboxConfig = HostSandboxConfig | ContainerSandboxConfig | ImageSandboxConfig;
 
 export interface HostSandboxConfig {
   type: "host";
@@ -18,11 +14,6 @@ export interface ContainerSandboxConfig {
 export interface ImageSandboxConfig {
   type: "image";
   image: string;
-}
-
-export interface CloudflareSandboxConfig {
-  type: "cloudflare";
-  sandboxId: string;
 }
 
 export interface Executor {

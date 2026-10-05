@@ -11,6 +11,7 @@ any release.
 
 ### Removed
 
+- The experimental `cloudflare:<sandbox-id>` sandbox, its `CLOUDFLARE_SANDBOX_URL`/`CLOUDFLARE_SANDBOX_TOKEN` variables, and the example bridge worker. `--sandbox cloudflare:…` is now an invalid sandbox type. Embedding API: `CloudflareSandboxConfig` and `CloudflareSandboxExecutor` are no longer exported. The `/pi-login` Cloudflare/Wrangler credential form is unchanged.
 - The state directory is always `~/.mikan`: `--state-dir` and the `STATE_DIR`/`MIKAN_STATE_DIR` variables are gone, and passing `--state-dir` is an error. Before upgrading a 0.5.3 install that used another state directory, move it to `~/.mikan`; to run two bots on one host, run them as different users. The pm2 template no longer passes `./workspace`, so the workspace defaults to `~/.mikan/workspace`.
 - Embedding API: `MessagingBot` no longer declares the optional `addReaction`, `uploadFile`, `openDirectConversation`, `fetchHistory`, and `listUsers`, which nothing called through it since executable extensions were removed (ADR 0006); the Slack bot's unused `fetchHistory` and `listUsers` are removed with them.
 - Scheduled event files no longer accept `channelId` in place of `conversationId`; no release since 0.2.0 has written it. `mikan migrate` stops on a 0.5.3 workspace event file that has only `channelId`: rename the field and run it again.

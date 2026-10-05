@@ -74,7 +74,6 @@ Vault 裡的內容並不是同一類的祕密：
 | `host`             | 不注入              | 拒絕               | 由平台使用者推導      |
 | `container:<name>` | 注入                | 拒絕               | 由 container 名稱推導 |
 | `image:<image>`    | 注入                | 投影（bind mount） | office key            |
-| `cloudflare:*`     | 注入                | 拒絕               | office key            |
 
 **「拒絕」的意思是執行會失敗，而不是靜靜地忽略那個檔案。** 只要 vault 目錄中存在 `env` 以外的任何檔案，就會解析出 file mount；無法掛載檔案的模式會拋出 `Sandbox type "<type>" does not support vault file mounts`，而不是在憑證不完整的情況下執行。因此在這些模式上，請只把憑證放在 `env` 裡——一個從先前 `image` 部署留在 vault 中的 `gws.json`，就足以讓該對話無法執行。
 
@@ -82,7 +81,7 @@ office key 由平台名稱與該平台的原始 conversation id 一起雜湊而�
 
 ## Shared vault
 
-`sandbox.defaultSharedVault` 指定 `vaults/shared/` 底下的一份 profile，會在新對話第一次使用時複製進它的 vault。這種預設複製只發生在需要成員資格的平台（Slack、Discord、Telegram，以及只有具 write 權限的協作者才能觸發的 GitHub），且僅限 isolated 的 `image` 與 `cloudflare` 拓撲。可由任何人觸發的介面永遠不會繼承它——但管理員仍可明確為特定對話佈建 vault。
+`sandbox.defaultSharedVault` 指定 `vaults/shared/` 底下的一份 profile，會在新對話第一次使用時複製進它的 vault。這種預設複製只發生在需要成員資格的平台（Slack、Discord、Telegram，以及只有具 write 權限的協作者才能觸發的 GitHub），且僅限 isolated 的 `image` 拓撲。可由任何人觸發的介面永遠不會繼承它——但管理員仍可明確為特定對話佈建 vault。
 
 ## `/pi-login`
 

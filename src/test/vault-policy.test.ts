@@ -8,12 +8,6 @@ describe("allowsAmbientDefaultSharedVault", () => {
     ).toBe(true);
   });
 
-  test("membership + cloudflare allows ambient copy", () => {
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "cloudflare" }),
-    ).toBe(true);
-  });
-
   test("defaults omitted trustModel to membership", () => {
     expect(allowsAmbientDefaultSharedVault({ sandboxType: "image" })).toBe(true);
   });
@@ -21,9 +15,6 @@ describe("allowsAmbientDefaultSharedVault", () => {
   test("open-trigger never allows ambient copy", () => {
     expect(
       allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "image" }),
-    ).toBe(false);
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "cloudflare" }),
     ).toBe(false);
   });
 

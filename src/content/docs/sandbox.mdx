@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: Compare mikan's supported host, container, image, and Cloudflare sandbox modes.
+description: Compare mikan's supported host, container, and image sandbox modes.
 ---
 
 import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
@@ -28,12 +28,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## Supported modes
 
-| Mode                      | Execution location        | Vault env injection | Vault key                       | Notes                                                                                            |
-| ------------------------- | ------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `host`                    | host machine              | not injected        | derived from the platform user  | Local development only; requires a trusted read-write projection                                 |
-| `container:<name>`        | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault              |
-| `image:<image>`           | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`                     |
-| `cloudflare:<sandbox-id>` | Cloudflare Worker         | injected            | the office key                  | Under construction; requires your own `@cloudflare/sandbox` bridge; host workspace is not synced |
+| Mode               | Execution location        | Vault env injection | Vault key                       | Notes                                                                               |
+| ------------------ | ------------------------- | ------------------- | ------------------------------- | ----------------------------------------------------------------------------------- |
+| `host`             | host machine              | not injected        | derived from the platform user  | Local development only; requires a trusted read-write projection                    |
+| `container:<name>` | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault |
+| `image:<image>`    | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`        |
 
 The office key is the versioned `v1-<platform>-<readable-id>-<hash>` segment that also names the
 conversation's directory under the workspace. See [Conversation offices](#conversation-offices).
@@ -89,30 +88,25 @@ office layout, together with their vaults, settings, sessions, and events; see
   description="Let mikan manage per-conversation containers and resource limits."
   href="image/"
 />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="Run tools through a Cloudflare Worker bridge; under construction."
-  href="cloudflare/"
-/>
 
 ## Capability differences
 
 `image:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
 
-| Capability                                   | `host`         | `container:<name>`     | `image:<image>` | `cloudflare:*`     |
-| -------------------------------------------- | -------------- | ---------------------- | --------------- | ------------------ |
-| command execution                            | ✅             | ✅                     | ✅              | ✅                 |
-| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              | ❌                 |
-| per-conversation container / runtime         | ❌             | ❌                     | ✅              | bridge-derived id  |
-| per-conversation vault env                   | ❌             | ❌                     | ✅              | ✅                 |
-| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              | ❌                 |
-| automatic workspace mount                    | host           | self-managed           | ✅              | ❌                 |
-| enforced office visibility                   | ❌             | ❌                     | ✅              | ❌                 |
-| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              | ❌                 |
-| default CPU / memory limits                  | ❌             | ❌                     | ✅              | ❌                 |
-| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              | ❌                 |
-| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              | ❌                 |
-| recommendation level                         | local dev      | legacy / compatibility | mainline        | under construction |
+| Capability                                   | `host`         | `container:<name>`     | `image:<image>` |
+| -------------------------------------------- | -------------- | ---------------------- | --------------- |
+| command execution                            | ✅             | ✅                     | ✅              |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              |
+| per-conversation container / runtime         | ❌             | ❌                     | ✅              |
+| per-conversation vault env                   | ❌             | ❌                     | ✅              |
+| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              |
+| automatic workspace mount                    | host           | self-managed           | ✅              |
+| enforced office visibility                   | ❌             | ❌                     | ✅              |
+| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              |
+| default CPU / memory limits                  | ❌             | ❌                     | ✅              |
+| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              |
+| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              |
+| recommendation level                         | local dev      | legacy / compatibility | mainline        |
 
 Most ❌ rows are refusals rather than silent downgrades. The exception is office visibility: a mode
 that cannot enforce it logs `Sandbox '<type>' cannot enforce private office visibility` once per

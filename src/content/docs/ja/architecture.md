@@ -70,7 +70,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 - `Executor` を統一的に抽象化する
 - sandbox runtime を workspace capability で分ける:
-  - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
+  - unmanaged projection: `host` / `container:<name>`
   - managed projection: `image:<image>`。private office の visibility を強制する: 他の private office には到達できず、共有知識は read-only
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
@@ -221,7 +221,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / cloudflare"]
+  Resolver --> Sandbox["host / container / image"]
 ```
 
 ポイント:
@@ -229,7 +229,7 @@ flowchart TD
 - 認証情報は workspace に直接入りません
 - vault は `~/.mikan` に保存されます
 - 実行時にだけ office の vault から対応する sandbox へルーティングされます
-- `image` / `cloudflare` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
+- `image` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
 
 ## 6. Events と通常会話の違い
 

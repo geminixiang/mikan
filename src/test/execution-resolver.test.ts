@@ -217,7 +217,6 @@ describe("ActorExecutionResolver", () => {
   test.each([
     ["host", { type: "host" }],
     ["container", { type: "container", container: "mikan-sandbox" }],
-    ["cloudflare", { type: "cloudflare", sandboxId: "mikan-remote" }],
   ] as const)(
     "serves a private channel on %s without refusing it",
     async (label, sandboxConfig) => {
@@ -306,29 +305,24 @@ describe("ActorExecutionResolver", () => {
     createGlobalSettingsFile(stateDir);
     const vault = new FileVaultManager(stateDir);
     const key = credentialAuthorizationKey(
-      { type: "cloudflare", sandboxId: "base" },
+      { type: "host" },
       {
         userId: "U123",
         address: createOfficeAddress("slack", "C123"),
       },
     );
     vault.upsertFile(key, "secret", "value");
-    const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "base" },
-      vault,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/does not support vault file mounts/);
   });
 
-  test("cloudflare resolves an office of unknown kind as private", async () => {
+  test("a shared container resolves an office of unknown kind as private", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "cloudflare", sandboxId: "mikan-remote" },
+      { type: "container", container: "mikan-sandbox" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),

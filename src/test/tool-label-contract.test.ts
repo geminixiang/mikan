@@ -46,7 +46,6 @@ describe("every agent-facing tool requires a label parameter", () => {
     { type: "host" },
     { type: "container", container: "office-test" },
     { type: "image", image: "test-image" },
-    { type: "cloudflare", sandboxId: "test-sandbox" },
   ])("assembled browser tool uses the supplied $type executor", async (config) => {
     const exec = vi.fn().mockResolvedValue({
       code: 0,

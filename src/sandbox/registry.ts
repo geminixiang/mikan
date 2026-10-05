@@ -1,5 +1,4 @@
 import { containerSandboxAdapter } from "./container.js";
-import { cloudflareSandboxAdapter } from "./cloudflare.js";
 import { hostSandboxAdapter } from "./host.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
@@ -41,12 +40,7 @@ const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
   validate: validateImageSandbox,
 };
 
-const sandboxAdapters = [
-  hostSandboxAdapter,
-  containerSandboxAdapter,
-  imageSandboxAdapter,
-  cloudflareSandboxAdapter,
-] as const;
+const sandboxAdapters = [hostSandboxAdapter, containerSandboxAdapter, imageSandboxAdapter] as const;
 const sandboxAdapterByType = new Map(
   sandboxAdapters.map((adapter) => [adapter.type, adapter]),
 ) as Map<SandboxConfig["type"], SandboxAdapter>;
@@ -86,7 +80,7 @@ export function warnUnenforcedPrivateOffice(
   warnedUnenforcedPrivacy.add(officeKey);
   log.logWarning(
     `Sandbox '${sandboxConfig.type}' cannot enforce private office visibility for ${officeKey}`,
-    "host, container, and cloudflare backends share one filesystem; use image:* to isolate private channels and DMs",
+    "host and container backends share one filesystem; use image:* to isolate private channels and DMs",
   );
 }
 
@@ -105,7 +99,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'image:<image-name>', or 'cloudflare:<sandbox-id>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', or 'image:<image-name>'`,
   );
 }
 

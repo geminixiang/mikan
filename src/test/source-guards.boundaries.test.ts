@@ -62,7 +62,6 @@ const productionDoubleAssertionBudget: Record<string, number> = {
 const productionParsedJsonAssertionBudget: Record<string, number> = {
   "src/adapters/github/client.ts": 1,
   "src/harness/tools/jev-browser.ts": 2,
-  "src/sandbox/cloudflare.ts": 1,
 };
 
 function publishedEntryPoints(): Map<string, string> {

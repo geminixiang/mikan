@@ -28,12 +28,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 対応モード
 
-| モード                    | 実行場所              | Vault env injection | Vault key                        | 備考                                                                                                 |
-| ------------------------- | --------------------- | ------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `host`                    | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                                   |
-| `container:<name>`        | 既存 Docker container | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します                |
-| `image:<image>`           | mikan 管理の Docker   | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`                           |
-| `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key                       | 構築中。`@cloudflare/sandbox` bridge を自分でデプロイする必要があり、host workspace は同期されません |
+| モード             | 実行場所              | Vault env injection | Vault key                        | 備考                                                                                  |
+| ------------------ | --------------------- | ------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
+| `host`             | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                    |
+| `container:<name>` | 既存 Docker container | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します |
+| `image:<image>`    | mikan 管理の Docker   | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`            |
 
 office key は、workspace 配下でその conversation の directory も命名する、バージョン付きの
 `v1-<platform>-<readable-id>-<hash>` セグメントです。[Conversation office](#conversation-office) を
@@ -84,11 +83,6 @@ workspace root を mount する layout はありません。admin portal また�
 />
 <LinkCard />
 <LinkCard />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="Cloudflare Worker bridge 経由でツールを実行します。構築中です。"
-  href="cloudflare/"
-/>
 
 ## 機能差分
 

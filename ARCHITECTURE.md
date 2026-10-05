@@ -380,12 +380,6 @@ Evidence: `src/sessions/session-store.ts`, `src/migrations/session-v3.ts`, `src/
 
 These are explicit current-state limitations, not implicit changes to the accepted architecture.
 
-### DEV Cloudflare Factory floor
-
-<a id="dev-cloudflare-factory-floor"></a>
-
-**`cloudflare-factory-floor` — Open.** Cloudflare is currently exposed as a conversation `SandboxConfig`, while ADR 0002 and ADR 0004 classify remote task sandboxes as ephemeral Factory floors rather than persistent office runtimes. Keep the adapter transitional until task-executor orchestration owns it.
-
 ### DEV runtime resource identity
 
 <a id="dev-runtime-resource-identity"></a>

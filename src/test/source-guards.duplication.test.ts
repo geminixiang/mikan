@@ -17,7 +17,6 @@ const scannedRoot = "src";
 
 const productionCloneBudget: Record<string, number> = {
   "src/adapters/discord/context.ts <-> src/adapters/github/context.ts": 1,
-  "src/sandbox/cloudflare.ts <-> src/sandbox/container.ts": 1,
 };
 
 function detectProductionClones(): JscpdClone[] {

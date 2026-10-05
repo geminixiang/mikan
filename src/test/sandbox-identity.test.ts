@@ -3,7 +3,6 @@ import {
   credentialAuthorizationKey,
   runtimeResourceKey,
   sanitizeIdentitySegment,
-  scopeCloudflareSandboxId,
 } from "../sandbox/identity.js";
 import { createOfficeAddress, officeKey } from "../office/index.js";
 
@@ -57,9 +56,5 @@ describe("sandbox identity", () => {
   test("sanitizes readable identity segments", () => {
     expect(sanitizeIdentitySegment("GH_owner_repo_42")).toBe("gh-owner-repo-42");
     expect(sanitizeIdentitySegment("///")).toBe("unknown");
-  });
-
-  test("scopes cloudflare ids with the resolved resource key", () => {
-    expect(scopeCloudflareSandboxId("mikan", "c1-0123456789ab")).toBe("mikan-c1-0123456789ab");
   });
 });

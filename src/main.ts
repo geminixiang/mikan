@@ -272,7 +272,7 @@ if (vaultManager.isEnabled()) {
   console.log(
     sandbox.type === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image" || sandbox.type === "cloudflare"
+      : sandbox.type === "image"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -434,9 +434,7 @@ const sandboxDesc =
     ? "host"
     : sandbox.type === "container"
       ? `container:${sandbox.container}`
-      : sandbox.type === "image"
-        ? `image:${sandbox.image}`
-        : `cloudflare:${sandbox.sandboxId}`;
+      : `image:${sandbox.image}`;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 

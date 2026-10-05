@@ -445,7 +445,7 @@ export function allowsAmbientDefaultSharedVault(options: {
 }): boolean {
   const trustModel = options.trustModel ?? "membership";
   if (trustModel === "open-trigger") return false;
-  return options.sandboxType === "image" || options.sandboxType === "cloudflare";
+  return options.sandboxType === "image";
 }
 
 import type { VaultInjection } from "./types.js";

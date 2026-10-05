@@ -26,12 +26,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支援模式
 
-| 模式                      | 執行位置              | Vault env injection | Vault key             | 備註                                                                         |
-| ------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------- |
-| `host`                    | 宿主機                | 不注入              | 由平台使用者推導      | 僅供本機開發；無法強制 office visibility                                     |
-| `container:<name>`        | 既有 Docker container | 注入                | 由 container 名稱推導 | one container one vault；多人共用同一 container 就共用該 vault               |
-| `image:<image>`           | mikan 管理的 Docker   | 注入                | office key            | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container`               |
-| `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key            | 施工中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不會自動同步 |
+| 模式               | 執行位置              | Vault env injection | Vault key             | 備註                                                           |
+| ------------------ | --------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
+| `host`             | 宿主機                | 不注入              | 由平台使用者推導      | 僅供本機開發；無法強制 office visibility                       |
+| `container:<name>` | 既有 Docker container | 注入                | 由 container 名稱推導 | one container one vault；多人共用同一 container 就共用該 vault |
+| `image:<image>`    | mikan 管理的 Docker   | 注入                | office key            | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container` |
 
 office key 是帶版本的 `v1-<platform>-<readable-id>-<hash>` 片段，同時也是該對話在 workspace 底下的目錄名稱。詳見 [Conversation offices](#conversation-offices)。
 
@@ -73,11 +72,6 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 />
 <LinkCard />
 <LinkCard />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="透過 Cloudflare Worker bridge 執行工具；施工中。"
-  href="cloudflare/"
-/>
 
 ## 能力差異
 

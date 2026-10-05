@@ -101,8 +101,6 @@ function sandboxSpec(sandbox: SandboxConfig): string {
       return `container:${sandbox.container}`;
     case "image":
       return `image:${sandbox.image}`;
-    case "cloudflare":
-      return `cloudflare:${sandbox.sandboxId}`;
   }
 }
 

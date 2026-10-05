@@ -26,12 +26,11 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 
 ## 支持模式
 
-| 模式                      | 执行位置              | Vault env injection | Vault key             | 备注                                                                         |
-| ------------------------- | --------------------- | ------------------- | --------------------- | ---------------------------------------------------------------------------- |
-| `host`                    | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；无法强制 office visibility                                     |
-| `container:<name>`        | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault               |
-| `image:<image>`           | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container`               |
-| `cloudflare:<sandbox-id>` | Cloudflare Worker     | 注入                | office key            | 建设中；需自行部署 `@cloudflare/sandbox` bridge，host workspace 不会自动同步 |
+| 模式               | 执行位置              | Vault env injection | Vault key             | 备注                                                           |
+| ------------------ | --------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
+| `host`             | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；无法强制 office visibility                       |
+| `container:<name>` | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault |
+| `image:<image>`    | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container` |
 
 office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，它同时也命名该对话在 workspace 下的目录。参阅[对话办公室](#对话办公室)。
 
@@ -73,11 +72,6 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
 />
 <LinkCard />
 <LinkCard />
-<LinkCard
-  title="Cloudflare sandbox"
-  description="通过 Cloudflare Worker bridge 执行工具；建设中。"
-  href="cloudflare/"
-/>
 
 ## 能力差异
 

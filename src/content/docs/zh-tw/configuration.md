@@ -70,7 +70,7 @@ Office key 無法反推回原始平台 id，因此 host 會在 `~/.mikan/office-
 | `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 套用的暫時 CPU 限制                                  |
 | `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 套用的暫時記憶體限制                                 |
 | `office.visibility`          | 未設定              | 僅限對話的覆寫：`private` 把 Slack 公開頻道縮為 private office；不能放寬 |
-| `sandbox.defaultSharedVault` | 空白                | 複製到符合資格之 membership-trust image/Cloudflare 對話的共享 vault      |
+| `sandbox.defaultSharedVault` | 空白                | 複製到符合資格之 membership-trust image 對話的共享 vault                 |
 | `slack.replyMode`            | `top-level`         | Slack 回應模式：`top-level` 或 `thread`                                  |
 
 `/pi-model` 會寫入部分對話覆寫；`/pi-sandbox visibility <private|default>` 會寫入該對話的 `office.visibility` 覆寫；admin portal 提供同一個開關。
@@ -79,7 +79,7 @@ Slack auto-reply 可透過 `/pi-auto-reply on|off|jev` 修改，並以 conversat
 
 Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord、GitHub 的對話一律是 private。公開頻道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 唯讀它，且它可以寫入 workspace 全域的 `MEMORY.md` 與 `skills/`。私人頻道、DM、群組 DM、外部共享頻道，以及尚未觀察到類型的對話都是 **private** office：只有自己看得到，可讀共用知識與 public office，但不會寫回。每個 office 的掛載形狀相同；沒有任何佈局會掛載 workspace root。
 
-只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
+只有 `image:*` 會強制執行 visibility。`host`、`container:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
 已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）如果存在會被忽略，也不會改變 projection。沒有任何設定能讓一個 office 觸及另一個 private office。
 

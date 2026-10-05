@@ -70,7 +70,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 - 提供统一的 `Executor` 抽象
 - 按工作区能力划分沙箱运行时：
-  - 非受管投影：`host` / `container:<name>` / `cloudflare:*`
+  - 非受管投影：`host` / `container:<name>`
   - 受管投影：`image:<image>`，强制执行 private 办公室的 visibility：无法触及其他 private 办公室，共享知识为只读
 - 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
 
@@ -222,7 +222,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image / cloudflare"]
+  Resolver --> Sandbox["host / container / image"]
 ```
 
 要点：
@@ -230,7 +230,7 @@ flowchart TD
 - 凭证不会直接进入工作区
 - vault 位于 `~/.mikan`
 - 执行时，办公室的 vault 会路由到相应沙箱
-- `image` / `cloudflare` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
+- `image` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
 
 ## 6. 事件与普通聊天的区别
 

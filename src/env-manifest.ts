@@ -138,16 +138,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
-    key: "cloudflare",
-    title: "Cloudflare sandbox",
-    kind: "feature",
-    doc: "For --sandbox=cloudflare:<id> via the bridge worker",
-    vars: [
-      { name: "CLOUDFLARE_SANDBOX_URL", doc: "Bridge worker URL" },
-      { name: "CLOUDFLARE_SANDBOX_TOKEN", secret: true, doc: "Bridge worker auth token" },
-    ],
-  },
-  {
     key: "observability",
     title: "Observability",
     kind: "feature",

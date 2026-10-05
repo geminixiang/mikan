@@ -26,7 +26,7 @@ labels: bug
 - mikan version: <!-- `mikan --version` or version from package.json -->
 - Node version: <!-- `node --version` -->
 - Platform(s): <!-- Slack / Telegram / Discord -->
-- Sandbox mode: <!-- host / container:<name> / image:<image> / cloudflare:<sandbox-id> -->
+- Sandbox mode: <!-- host / container:<name> / image:<image> -->
 - OS:
 
 ## Logs

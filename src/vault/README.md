@@ -16,11 +16,11 @@ One directory under `<stateDir>/vaults/` per key. Which key a run
 authenticates as is decided by `credentialAuthorizationKey`
 (`sandbox/identity.ts`), never by this module:
 
-| Sandbox type                              | Key                                                                                                                             |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| conversation-scoped (`image`, Cloudflare) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
-| `host`                                    | a user-derived key (the host has no execution isolation to scope to)                                                            |
-| `container`                               | a key derived from the deployment-chosen container name                                                                         |
+| Sandbox type                  | Key                                                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| conversation-scoped (`image`) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
+| `host`                        | a user-derived key (the host has no execution isolation to scope to)                                                            |
+| `container`                   | a key derived from the deployment-chosen container name                                                                         |
 
 `shared/<name>` is a reserved namespace for named shared login profiles.
 `extensions/` also remains reserved as a legacy namespace: executable
@@ -44,7 +44,7 @@ never ambient. Three identity tiers, narrowest first:
 2. **Shared machine identity** (`sandbox.defaultSharedVault`): broad
    convenience credentials copied into each new conversation's vault. Only
    appropriate for `trustModel: "membership"` (Slack/Discord/Telegram/GitHub) on
-   isolated sandboxes (`image` / `cloudflare`). Decided by
+   isolated sandboxes (`image`). Decided by
    `allowsAmbientDefaultSharedVault` — not by platform name strings.
 3. **Personal identity** (`/pi-login` OAuth): the agent acts as a specific
    person; granted knowingly by that person, scoped to their vault.

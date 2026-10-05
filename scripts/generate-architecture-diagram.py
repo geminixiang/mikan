@@ -157,7 +157,7 @@ def main():
         470,
         280,
         "3. Sandbox runtime",
-        ["Executor abstraction", "unmanaged: host / container / cloudflare", "managed projection: image", "runtime workspace mapping"],
+        ["Executor abstraction", "unmanaged: host / container", "managed projection: image", "runtime workspace mapping"],
         ORANGE,
         ORANGE_BORDER,
     )
