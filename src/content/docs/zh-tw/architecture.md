@@ -17,7 +17,6 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapters/index.ts`
 
 職責：
 
@@ -35,7 +34,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/adapters/commands/manifest.ts`
-- `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 
 職責：
@@ -92,7 +91,6 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 ### F. 狀態與持久化層
 
-- `src/sessions/store.ts`
 - `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`

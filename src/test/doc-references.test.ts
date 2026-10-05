@@ -15,6 +15,17 @@ const repositoryPathPrefixes = [
   ".github/",
 ];
 
+const siteDocsDir = "src/content/docs";
+const archivedSiteResearch = `${siteDocsDir}/sandbox/sandbox-ecosystem-research.md`;
+
+function siteDocs(directory = siteDocsDir): string[] {
+  return readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) return siteDocs(path);
+    return /\.mdx?$/.test(entry.name) && path !== archivedSiteResearch ? [path] : [];
+  });
+}
+
 function moduleReadmes(directory = "src"): string[] {
   return readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap((entry) => {
     const path = `${directory}/${entry.name}`;
@@ -45,6 +56,24 @@ function missingTarget(target: string, fragment: string | undefined): string | u
   return undefined;
 }
 
+function brokenPathMentions(
+  file: string,
+  text: string,
+  prefixes: readonly string[] = repositoryPathPrefixes,
+): string[] {
+  return [...text.matchAll(/`([^`\s]+)`/g)]
+    .map(([, mention = ""]) => mention)
+    .filter(
+      (mention) =>
+        prefixes.some((prefix) => mention.startsWith(prefix)) && !/[<>*{}]/.test(mention),
+    )
+    .flatMap((mention) => {
+      const [path = "", fragment] = mention.split("#");
+      const problem = missingTarget(path.replace(/\/$/, ""), fragment);
+      return problem ? [`${file}: ${mention} (${problem})`] : [];
+    });
+}
+
 function brokenReferences(file: string, text: string): string[] {
   const markdownLinks = [...text.matchAll(/\]\(([^)\s]+)\)/g)]
     .map(([, link = ""]) => link)
@@ -53,21 +82,13 @@ function brokenReferences(file: string, text: string): string[] {
       const [path = "", fragment] = link.split("#");
       return { shown: link, target: normalize(join(dirname(file), path)), fragment };
     });
-  const pathMentions = [...text.matchAll(/`([^`\s]+)`/g)]
-    .map(([, mention = ""]) => mention)
-    .filter(
-      (mention) =>
-        repositoryPathPrefixes.some((prefix) => mention.startsWith(prefix)) &&
-        !/[<>*{}]/.test(mention),
-    )
-    .map((mention) => {
-      const [path = "", fragment] = mention.split("#");
-      return { shown: mention, target: path.replace(/\/$/, ""), fragment };
-    });
-  return [...markdownLinks, ...pathMentions].flatMap(({ shown, target, fragment }) => {
-    const problem = missingTarget(target, fragment);
-    return problem ? [`${file}: ${shown} (${problem})`] : [];
-  });
+  return [
+    ...markdownLinks.flatMap(({ shown, target, fragment }) => {
+      const problem = missingTarget(target, fragment);
+      return problem ? [`${file}: ${shown} (${problem})`] : [];
+    }),
+    ...brokenPathMentions(file, text),
+  ];
 }
 
 describe("documentation references", () => {
@@ -89,6 +110,14 @@ describe("documentation references", () => {
     const files = [...rootGuides, ...moduleReadmes()];
     const broken = files.flatMap((file) =>
       brokenReferences(file, readFileSync(join(repositoryRoot, file), "utf8")),
+    );
+    expect(broken).toEqual([]);
+  });
+
+  test("site docs name repository files that exist", () => {
+    const prefixes = repositoryPathPrefixes.filter((prefix) => prefix !== ".config/");
+    const broken = siteDocs().flatMap((file) =>
+      brokenPathMentions(file, readFileSync(join(repositoryRoot, file), "utf8"), prefixes),
     );
     expect(broken).toEqual([]);
   });

@@ -17,7 +17,6 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapters/index.ts`
 
 职责：
 
@@ -35,7 +34,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/adapters/commands/manifest.ts`
-- `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 
 职责：
@@ -92,7 +91,6 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 ### F. 状态和持久化层
 
-- `src/sessions/store.ts`
 - `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`

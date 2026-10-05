@@ -17,7 +17,6 @@ For the shared adapter contract, see [Platform adapters](platform-adapters.mdx).
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapters/index.ts`
 
 Responsibilities:
 
@@ -35,7 +34,7 @@ Raw platform identifiers stay at these external I/O boundaries. Everything inwar
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/adapters/commands/manifest.ts`
-- `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 
 Responsibilities:
@@ -92,7 +91,6 @@ Responsibilities:
 
 ### F. State and persistence layer
 
-- `src/sessions/store.ts`
 - `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`

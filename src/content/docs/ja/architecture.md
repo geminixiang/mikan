@@ -17,7 +17,6 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `src/adapters/telegram/*`
 - `src/adapters/discord/*`
 - `src/adapters/github/*`
-- `src/adapters/index.ts`
 
 責務:
 
@@ -35,7 +34,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `src/runtime/conversation-runtime.ts`
 - `src/adapters/intake.ts`
 - `src/adapters/commands/manifest.ts`
-- `src/sessions/store.ts`
+- `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 
 責務:
@@ -92,7 +91,6 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 ### F. 状態と永続化レイヤー
 
-- `src/sessions/store.ts`
 - `src/sessions/session-store.ts`
 - `src/sessions/chat-history-sync.ts`
 - `src/vault/index.ts`
