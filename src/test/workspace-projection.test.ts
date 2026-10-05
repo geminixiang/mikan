@@ -52,6 +52,11 @@ describe("workspace office projection", () => {
     expect(resolveWorkspaceProjection(office).visibility).toBe("private");
   });
 
+  test("recording a channel kind creates the office state directory private to the owner", () => {
+    recordPlatformChannelKind(office, "public_channel");
+    expect(lstatSync(office.stateDir).mode & 0o777).toBe(0o700);
+  });
+
   test("a corrupt channel kind file is treated as unknown (private)", () => {
     recordPlatformChannelKind(office, "public_channel");
     writeFileSync(join(office.stateDir, "channel-kind"), "banana\n");

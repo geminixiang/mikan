@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { atomicWritePrivateFile, ensureDirExists } from "../file-guards.js";
+import { atomicWritePrivateFile, ensureDirExists, ensurePrivateDirExists } from "../file-guards.js";
 import { loadOfficeVisibilityOverride } from "../settings/index.js";
 import { listRegisteredOffices } from "./index.js";
 import type { Office, PlatformChannelKind, WorkspaceProjection } from "./types.js";
@@ -19,7 +19,7 @@ const CHANNEL_KINDS: readonly PlatformChannelKind[] = [
 
 export function recordPlatformChannelKind(office: Office, kind: PlatformChannelKind): void {
   if (readPlatformChannelKind(office) === kind) return;
-  ensureDirExists(office.stateDir);
+  ensurePrivateDirExists(office.stateDir);
   atomicWritePrivateFile(join(office.stateDir, CHANNEL_KIND_FILE), kind + "\n");
 }
 

@@ -27,6 +27,10 @@ export function ensureDirExists(dir: string): void {
   mkdirSync(dir, { recursive: true });
 }
 
+export function ensurePrivateDirExists(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+}
+
 function openRegularFileNoFollow(path: string, flags: number): number {
   let fd: number;
   try {

@@ -25,6 +25,7 @@ any release.
 
 ### Fixed
 
+- Office state directories under `~/.mikan/conversations/` are created with mode `0700`; recording a Slack channel's kind or a first conversation setting created them `0755`.
 - `mikan migrate` refuses to run when `<state-dir>/settings.json` or the workspace is missing. A mistyped `--state-dir`, or leaving out `--workspace` for a 0.5.3 install whose working directory is elsewhere, used to find nothing to convert, record every step as applied, and start the daemon without its sessions, events, settings, and vaults.
 - The startup log reports the HTTP idle timeout mikan applies, 300000ms by default, instead of `undefinedms` when `HTTP_IDLE_TIMEOUT` is not set.
 - A Slack App Home Force Stop button drawn before 1.0.0-beta.14, which carries no session key, now stops nothing instead of a session key guessed from its action ID, a guess that named the wrong session for GitHub conversations. Reopening the Home tab draws current buttons.

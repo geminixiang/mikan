@@ -7,6 +7,7 @@ import { readEnv } from "../env-manifest.js";
 import {
   atomicWritePrivateFile,
   ensureDirExists,
+  ensurePrivateDirExists,
   readJsonSchemaFileIfExists,
 } from "../file-guards.js";
 
@@ -249,7 +250,7 @@ export function conversationSettingsPath(office: Office): string {
     assertSettingsFile(hostPath, "Conversation settings");
     return hostPath;
   }
-  ensureDirExists(dirname(hostPath));
+  ensurePrivateDirExists(dirname(hostPath));
   atomicWritePrivateFile(hostPath, "{}\n");
   return hostPath;
 }
@@ -322,7 +323,7 @@ export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoic
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
-  ensureDirExists(stateDir);
+  ensurePrivateDirExists(stateDir);
   const settings: SettingsFileConfig = llm
     ? {
         ...ONBOARD_SETTINGS,
@@ -402,7 +403,7 @@ function updateSettingsFile(
   defaultSettings: SettingsFileConfig,
 ): void {
   const existing = loadSettingsFileForUpdate(settingsPath, defaultSettings);
-  ensureDirExists(dirname(settingsPath));
+  ensurePrivateDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
     JSON.stringify(patchSettingsConfig(existing, patch), null, 2),
@@ -437,7 +438,7 @@ export function updateSkillPatterns(
     settingsPath,
     scope === "conversation" ? {} : ONBOARD_SETTINGS,
   );
-  ensureDirExists(dirname(settingsPath));
+  ensurePrivateDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
     JSON.stringify(
@@ -466,7 +467,7 @@ export function setOfficeVisibilityOverride(office: Office, visibility: "private
   const settingsPath = conversationSettingsPath(office);
   const existing = loadSettingsFileForUpdate(settingsPath, {});
   const { office: _previous, ...rest } = existing;
-  ensureDirExists(dirname(settingsPath));
+  ensurePrivateDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
     JSON.stringify(

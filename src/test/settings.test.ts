@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -94,6 +94,11 @@ describe("loadGlobalSettings", () => {
     vi.stubEnv("HOME", join(stateDir, "home"));
 
     expect(resolveConversationSettings(office()).model).toBe("workspace-model");
+  });
+
+  test("creates the office's settings directory private to the owner", () => {
+    const settingsPath = conversationSettingsPath(office());
+    expect(statSync(join(settingsPath, "..")).mode & 0o777).toBe(0o700);
   });
 
   test("throws when global settings.json is missing", () => {
