@@ -30,13 +30,13 @@ Either way the semantics are **one container one vault**:
 Unlike the conversation-scoped modes, the key does not depend on the conversation, so a container
 vault is not a per-conversation credential boundary.
 
-## Door policy
+## Office visibility
 
-`container:*` cannot enforce a conversation-scoped workspace projection or read-only shared memory —
-`docker exec` cannot add mounts to a container mikan did not create. It therefore refuses effective
-isolated projections and platform-derived private/read-only projections. Choose a trusted read-write
-policy explicitly in the global `settings.json` or the admin portal (the `/pi-sandbox` chat command
-only serves managed sandboxes), and mount the workspace yourself when you create the container.
+`container:*` cannot enforce a private office's visibility (ADR 0008) — `docker exec` cannot add
+mounts to a container mikan did not create, so every conversation sees whatever you mounted when you
+created the container. mikan still runs private offices and logs once per office that it cannot
+enforce their visibility. Mount the workspace yourself when you create the container; the
+`/pi-sandbox` chat command only serves managed sandboxes.
 
 ## Limitations
 

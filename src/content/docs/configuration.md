@@ -90,7 +90,7 @@ Office visibility follows the Slack conversation type (ADR 0008); conversations 
 
 Only `image:*` enforces visibility. `host`, `container:*`, and `cloudflare:*` run every office in one filesystem and are trusted deployments; a private office there is served with a one-time logged warning.
 
-The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. Reaching another private office needs the membership-based grants described in ADR 0008, not a wider mount.
+The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. No setting lets an office reach another private office.
 
 ## Skills
 

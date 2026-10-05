@@ -26,7 +26,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - mikan は conversation ごとに独立した vault と container を作成します
 - 各 container は専用の Docker bridge network に接続され、container 間の直接通信が分離されます。outbound network access は引き続き有効です
 - managed container 作成時は `--cap-drop=ALL`、`--security-opt=no-new-privileges`、`--pids-limit=1024` を付けます
-- container 内の workspace mount は明示的な設定または記録された Slack channel visibility に従います。public channel は shared memory を読み書きし、private channel は読み取り専用、DM・external・unknown conversation は isolated のままです
+- container 内の workspace mount は office の visibility（ADR 0008）に従います。public office は共有の `MEMORY.md` と `skills/` に書き込み、private office はそれらを読み取るだけで、どの office も別の private office には到達できません
 - vault env は実行時に注入されます
 - vault file credential は、各ファイル名から推定される target に従って自動で container へ bind mount されます（[Vault](/ja/sandbox/vault/) を参照）
 - idle containers は 10 分ごとに確認され、少なくとも 10 分間利用がないと停止します。scan timing により、最後に追跡された利用から約 10〜20 分後に停止します
@@ -44,10 +44,10 @@ Rollback: 以前の image ID を tag し直し、container をもう一度置き
 
 conversation の office directory は `/workspace/<office-key>` に読み書き可能で bind mount されます。
 office key は、host 上でもその directory を命名する `v1-<platform>-<readable-id>-<hash>` セグメント
-です。isolated projection はこの directory だけを mount します。trusted な `shared-support` layout は
-workspace 全体の `MEMORY.md`、`skills/`、`events/` を追加します。private visibility は global memory
-bind を read-only にし、public visibility は read-write のままです。`trusted` / `full` は workspace root
-全体を `/workspace` に mount します。
+です。すべての office は workspace 全体の `MEMORY.md` と `skills/`（public office では読み書き可能、
+private office では read-only）と、他のすべての public office を `/workspace/public/<office-key>` 配下に
+read-only で受け取ります。workspace root 全体を mount するものはなく、スケジュールされた event は host
+専用のままです。
 
 mount が変わると（たとえば visibility の変更後）、次のメッセージで container が現在のイメージから置き換えられます。
 
@@ -88,7 +88,7 @@ mount が変わると（たとえば visibility の変更後）、次のメッ�
 
 - 新しい container 作成時、制限は `docker run` 引数へ直接追加されます
 - 実行中の container は次回 provision 時に `docker update` で新しい制限が即時適用され、再作成は不要です
-- `/pi-sandbox` は現在の conversation の有効な制限に加えて、その door policy と layout を表示します
+- `/pi-sandbox` は現在の conversation の有効な制限に加えて、その office visibility を表示します
 - `/pi-sandbox boost` は現在の conversation を一時的に `sandbox.boost` のスペックへ引き上げます。boost 状態は container に紐づき、container stop 後に終了します
-- `/pi-sandbox door <default|isolated|shared|shared-private|full>` はこの office の door policy を切り替えます。container は次のメッセージで新しい mount とともに再作成され、内容は保持されます
+- `/pi-sandbox visibility <private|default>` は public channel を private office に狭めるか、その上書きを解除します。container は次のメッセージで新しい mount とともに再作成され、workspace と vault のファイルは保持されます
 - agent は組み込みの `sandbox` tool で現在の conversation の CPU / memory limit を確認または一時設定できます。この種の override も container stop 後に消去されます

@@ -72,7 +72,7 @@ Responsibilities:
 - provide a unified `Executor` abstraction
 - split sandbox runtimes by workspace capability:
   - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
-  - managed projection: `image:<image>`, which can enforce isolated offices and read-only shared memory
+  - managed projection: `image:<image>`, which enforces private office visibility: no reach into other private offices and read-only shared knowledge
 - in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
 
 ### E. Conversation office layer
@@ -84,11 +84,11 @@ Every conversation is an **office**: its own persistent working area and data bo
 
 Responsibilities:
 
-- `createWorkspace({ root, stateDir })` builds the per-process `Workspace` value: the workspace root, its global `MEMORY.md` / `skills/` / `events/` / `agents/`, and the office factory
-- `workspace.office(address)` returns a frozen `Office` value with every path precomputed — `dir`, `memoryPath`, `skillsDir`, `sessionsDir`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — plus `ensure()`, the single materialization seam
+- `createWorkspace({ root, stateDir })` builds the per-process `Workspace` value: the workspace root, its global `MEMORY.md` / `skills/` / `agents/`, and the office factory
+- `workspace.office(address)` returns a frozen `Office` value with every path precomputed — `dir`, `memoryPath`, `skillsDir`, `sessionsPath`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — plus `ensure()`, the single materialization seam
 - derive the `OfficeKey` (`v1-<platform>-<readable-id>-<sha256 prefix>`) that names the office on the host, inside sandbox runtimes, and in the vault
 - keep the host-only office registry (`office-registry.json`) as the durable raw-id ↔ office mapping, because office keys are not reversible
-- resolve the workspace projection: which host paths are mounted into the sandbox runtime for the office's door policy
+- resolve the office's visibility and workspace projection: which host paths are mounted into the sandbox runtime, and which conversations the system prompt may name
 
 ### F. State and persistence layer
 
@@ -198,17 +198,17 @@ Design points:
 - Slack top-level messages share a channel session; Slack thread replies use `conversationId:threadTs`
 - Slack events first create a top-level anchor message, then run with `conversationId:anchorTs`
 
-### Door policy and the workspace projection
+### Office visibility and the workspace projection
 
-What an office's sandbox runtime actually sees is the _workspace projection_, resolved from the office's door policy:
+What an office's sandbox runtime actually sees is the _workspace projection_, resolved from the office's visibility (ADR 0008). Slack public channels are public offices; private channels, DMs, group DMs, externally shared channels, unknown kinds, and every Telegram, Discord, and GitHub conversation are private. Every office gets the same mount shape; only the read-only flags differ:
 
-| Door policy | Layout           | Mounted into the runtime                                            |
-| ----------- | ---------------- | ------------------------------------------------------------------- |
-| `isolated`  | `conversation`   | `<officeKey>/` only                                                 |
-| `trusted`   | `shared-support` | `<officeKey>/` plus workspace `MEMORY.md`, `skills/`, and `events/` |
-| `trusted`   | `full`           | the entire workspace root                                           |
+| Mounted under `/workspace`                        | Public office | Private office |
+| ------------------------------------------------- | ------------- | -------------- |
+| `<officeKey>/` — this office                      | read-write    | read-write     |
+| `MEMORY.md`, `skills/` — shared knowledge         | read-write    | read-only      |
+| `public/<officeKey>/` — every other public office | read-only     | read-only      |
 
-`isolated` always implies the `conversation` layout. Without an explicit override, recorded Slack public channels derive trusted read-write shared support, private channels derive trusted shared support with read-only global memory, and DMs, external channels, or unknown kinds derive isolated. Door policy is a data-access boundary; it never changes execution or network isolation. Admin and `/pi-sandbox door` may set explicit overrides — see [Configuration](/configuration/).
+Nothing mounts the workspace root, and no office reaches another private office. The system prompt's channel table names only the office itself and the public offices it mounts. Visibility is a data-access boundary; it never changes execution or network isolation. Admin and `/pi-sandbox visibility private` can narrow a public channel to private; nothing can widen beyond the platform — see [Configuration](/configuration/).
 
 ## 5. Login / Vault / Sandbox relationship
 

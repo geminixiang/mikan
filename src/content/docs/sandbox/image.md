@@ -26,7 +26,7 @@ Features:
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
-- inside the container, workspace mounts follow explicit settings or recorded Slack channel visibility; public channels share workspace memory read-write, private channels receive it read-only, and DMs/external/unknown conversations stay isolated
+- inside the container, workspace mounts follow the office's visibility (ADR 0008): public offices write the shared `MEMORY.md` and `skills/`, private offices read them, and no office reaches another private office
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
@@ -49,10 +49,10 @@ Rollback: re-tag the previous image ID and let containers be replaced again.
 
 The conversation's office directory is bind-mounted read-write at `/workspace/<office-key>`, where
 the office key is the `v1-<platform>-<readable-id>-<hash>` segment that also names the directory on
-the host. An `isolated` projection makes that the only workspace mount; trusted `shared-support`
-adds the workspace-global `MEMORY.md`, `skills/`, and `events/`. Private visibility marks the global
-memory bind read-only, while public visibility leaves it read-write. `trusted` / `full` mounts the
-whole workspace root at `/workspace`.
+the host. Every office also gets the workspace-global `MEMORY.md` and `skills/` (read-write for a
+public office, read-only for a private one) and every other public office read-only under
+`/workspace/public/<office-key>`. Nothing mounts the whole workspace root, and scheduled events stay
+host-only.
 
 When the mounts change, for example after a visibility change, the next message replaces the
 container from the current image.
@@ -100,7 +100,7 @@ In `settings.json`, you can configure CPU and memory limits for each managed con
 
 - when creating a new container, limits are added directly to `docker run`
 - running containers receive new limits immediately through `docker update` on the next provision, without recreation
-- `/pi-sandbox` shows the current conversation's effective limits plus its door policy and layout
+- `/pi-sandbox` shows the current conversation's effective limits plus its office visibility
 - `/pi-sandbox boost` temporarily upgrades the current conversation to the `sandbox.boost` spec; boost state follows the container and ends when the container stops
-- `/pi-sandbox door <default|isolated|shared|shared-private|full>` switches this office's door policy; the container is recreated with the new mounts on the next message and keeps its contents
+- `/pi-sandbox visibility <private|default>` narrows a public channel to a private office or clears that override; the container is recreated with the new mounts on the next message and keeps the workspace and vault files
 - the agent can use the built-in `sandbox` tool to inspect or temporarily set the current conversation's CPU / memory limit; these overrides are also cleared when the container stops

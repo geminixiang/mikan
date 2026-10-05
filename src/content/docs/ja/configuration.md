@@ -88,7 +88,7 @@ Office visibility は Slack の conversation type に従います（ADR 0008）�
 
 visibility を強制できるのは `image:*` だけです。`host`、`container:*`、`cloudflare:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
 
-廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。別の private office へのアクセスには、より広い mount ではなく、ADR 0008 で説明するメンバーシップに基づく grant が必要です。
+廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。office が別の private office に到達できるようにする設定はありません。
 
 ## Skills
 

@@ -33,14 +33,14 @@ Admin portal 可以：
 
 - 查看目前使用者與 conversation identity。
 - 從 office registry（持久的 raw id ↔ office 對照）列出 conversations，而不是掃描 workspace。
-- 讀取與更新 conversation model、thinking level、workspace door policy 與 layout 與 Slack reply mode。
-- 讀取與更新 global model、sandbox 資源預設值、全域 door policy 與 Slack defaults。
-- 檢視有限範圍的 workspace files、skills、events metadata/files，並可在任一層級建立或編輯 skills。
+- 讀取與更新 conversation model、thinking level、office visibility（把公開頻道縮為 private）與 Slack reply mode。
+- 讀取與更新 global model、sandbox 資源預設值與 Slack defaults。
+- 檢視有限範圍的 workspace files、skills、events metadata/files，可在任一層級建立或編輯 skills，並可針對整個 workspace 或單一 conversation 開關 skills。
 - 檢視 session 與 conversation 使用量。
 - 刪除所選 conversation 的 events。
 - 為目標 conversation 產生 session view link 或 login/vault link。
 
-Door policy 也可以從聊天中用 `/pi-sandbox door` 設定，但絕不會由 agent 自己設定：conversation 設定之所以放在僅限 host 的 state dir 底下，正是因為 conversation 目錄會以可讀寫的方式 bind mount 進 sandbox，而位於該 mount 內的設定檔只會被移轉一次，之後就再也不會被讀取。
+Office visibility 也可以從聊天中用 `/pi-sandbox visibility private` 縮窄，但絕不會由 agent 自己設定：conversation 設定之所以放在僅限 host 的 state dir 底下，正是因為 conversation 目錄會以可讀寫的方式 bind mount 進 sandbox，而位於該 mount 內的設定檔只會被移轉一次，之後就再也不會被讀取。
 
 Admin portal 不會直接寫入 secret values。即使從 admin portal 產生 login link，真正的 secret write 仍會走 Login / vault portal 的一次性 token flow。
 

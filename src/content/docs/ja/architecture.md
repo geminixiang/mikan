@@ -72,7 +72,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - `Executor` を統一的に抽象化する
 - sandbox runtime を workspace capability で分ける:
   - unmanaged projection: `host` / `container:<name>` / `cloudflare:*`
-  - managed projection: `image:<image>`。isolated office と read-only shared memory を強制できる
+  - managed projection: `image:<image>`。private office の visibility を強制する: 他の private office には到達できず、共有知識は read-only
 - `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
 
 ### E. Conversation office レイヤー
@@ -84,11 +84,11 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- `createWorkspace({ root, stateDir })` がプロセスごとの `Workspace` を構築する: workspace root、そのグローバルな `MEMORY.md` / `skills/` / `events/` / `agents/`、そして office factory
-- `workspace.office(address)` は、すべての path を事前計算した frozen な `Office` を返す — `dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — さらに唯一の materialization seam である `ensure()` を持つ
+- `createWorkspace({ root, stateDir })` がプロセスごとの `Workspace` を構築する: workspace root、そのグローバルな `MEMORY.md` / `skills/` / `agents/`、そして office factory
+- `workspace.office(address)` は、すべての path を事前計算した frozen な `Office` を返す — `dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — さらに唯一の materialization seam である `ensure()` を持つ
 - host 上、sandbox runtime 内、vault のいずれでも office を指す `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`）を導出する
 - office key は逆変換できないため、生 id ↔ office の対応を保持する host 専用の office registry（`office-registry.json`）を管理する
-- workspace projection を解決する: その office の door policy に対して、どの host path が sandbox runtime に mount されるか
+- office の visibility と workspace projection を解決する: どの host path が sandbox runtime に mount され、system prompt がどの conversation の名前を挙げてよいか
 
 ### F. 状態と永続化レイヤー
 
@@ -198,17 +198,17 @@ state directory の既定値は `~/.mikan` です。sandbox から見える work
 - Slack top-level メッセージは channel session を共有します。Slack thread replies は `conversationId:threadTs` を使います
 - Slack events は先に top-level anchor message を作成し、その後 `conversationId:anchorTs` で実行します
 
-### Door policy と workspace projection
+### Office visibility と workspace projection
 
-office の sandbox runtime が実際に見るものは _workspace projection_ であり、これは office の door policy から解決されます:
+office の sandbox runtime が実際に見るものは _workspace projection_ であり、これは office の visibility（ADR 0008）から解決されます。Slack public channel は public office です。private channel、DM、group DM、外部共有 channel、unknown kind、およびすべての Telegram・Discord・GitHub の conversation は private です。すべての office は同じ mount 形状を持ち、異なるのは read-only フラグだけです:
 
-| Door policy | Layout           | runtime に mount されるもの                                            |
-| ----------- | ---------------- | ---------------------------------------------------------------------- |
-| `isolated`  | `conversation`   | `<officeKey>/` のみ                                                    |
-| `trusted`   | `shared-support` | `<officeKey>/` に加えて workspace の `MEMORY.md`、`skills/`、`events/` |
-| `trusted`   | `full`           | workspace root 全体                                                    |
+| `/workspace` 配下に mount されるもの               | Public office | Private office |
+| -------------------------------------------------- | ------------- | -------------- |
+| `<officeKey>/` — この office                       | read-write    | read-write     |
+| `MEMORY.md`、`skills/` — 共有知識                  | read-write    | read-only      |
+| `public/<officeKey>/` — 他のすべての public office | read-only     | read-only      |
 
-`isolated` は常に `conversation` layout を意味します。明示的な上書きがない場合、記録された Slack public channel は trusted read-write shared support、private channel は read-only global memory を持つ trusted shared support、DM・external・unknown kind は isolated に解決されます。Door policy はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。admin portal または `/pi-sandbox door` で明示的に上書きできます — [設定](/ja/configuration/) を参照してください。
+workspace root を mount するものはなく、どの office も別の private office には到達できません。system prompt の channel table が名前を挙げるのは、その office 自身と、mount している public office だけです。Visibility はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、platform の設定より広げることはできません — [設定](/ja/configuration/) を参照してください。
 
 ## 5. Login / Vault / Sandbox の関係
 

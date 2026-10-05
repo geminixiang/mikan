@@ -88,7 +88,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord�
 
 只有 `image:*` 會強制執行 visibility。`host`、`container:*`、`cloudflare:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
-已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）如果存在會被忽略，也不會改變 projection。要存取另一個 private office，需要 ADR 0008 描述的成員制授權，而不是更寬的 mount。
+已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）如果存在會被忽略，也不會改變 projection。沒有任何設定能讓一個 office 觸及另一個 private office。
 
 ## Skills
 

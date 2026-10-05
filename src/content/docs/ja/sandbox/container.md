@@ -35,12 +35,13 @@ directory（`container-<name>`）も引き続き読み取られます。
 conversation スコープのモードとは異なり、この key は conversation に依存しません。したがって container
 vault は conversation ごとの認証情報の境界ではありません。
 
-## Door policy
+## Office visibility
 
-`container:*` は conversation スコープの workspace projection や read-only shared memory を強制できません。`docker exec` は
-mikan が作成していない container に mount を追加できないためです。そのため、effective isolated projection と platform-derived private/read-only projection を拒否します。グローバルな `settings.json` または admin portal で trusted read-write policy
-を明示的に選び（`/pi-sandbox` チャットコマンドは管理型 sandbox 専用です）、container を作成する際に
-workspace は自分で mount してください。
+`container:*` は private office の visibility（ADR 0008）を強制できません。`docker exec` は mikan が
+作成していない container に mount を追加できないため、すべての conversation は container 作成時にあなたが
+mount したものをそのまま見ます。mikan は private office も実行し、visibility を強制できないことを office ごとに
+一度だけログに記録します。container を作成する際に workspace は自分で mount してください。`/pi-sandbox`
+チャットコマンドは管理型 sandbox 専用です。
 
 ## 制限
 

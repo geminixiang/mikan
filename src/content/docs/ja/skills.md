@@ -9,18 +9,17 @@ description: workspace-level と conversation-level skills の読み込み場所
 | Conversation-level（local skills） | 単一の conversation / channel / DM だけで使う tool       | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/` |
 
 office key は、mikan が各 conversation に対して導出する `v1-<platform>-<readable-id>-<hash>` という
-directory 名です。手で組み立てるものではありません。admin portal の skills view は両方のレベルを
-一覧表示し、どちらにも skill を作成できます。
+directory 名です。手で組み立てるものではありません。admin portal の skills view は、入れ子の skill
+directory を含めて両方のレベルを一覧表示し、どちらにも skill を作成でき、skill を有効・無効に切り替えられます。
 
 :::note
 mikan は workspace-level skills を先に読み込み、その後 conversation-level skills を読み込みます。両方に同じ `name` がある場合、conversation-level skill が workspace-level skill を上書きします。
 :::
 
-:::caution[Workspace-level skills には trusted な door が必要です]
-`isolated` door policy では、conversation は自分の office しか見えないため、workspace-level
-skills は mount されず、agent にも提示されません。prompt は代わりに自分の office 内に skills を
-置くよう指示します。DM・external channel・unknown platform visibility は、admin の明示的な上書きがなければこの policy を導出します。workspace-level skills には trusted な `shared-support` または `full` layout が
-必要です。[Sandbox](/ja/sandbox/) を参照してください。
+:::note[Private office は workspace-level skills を読み取ります]
+すべての conversation が workspace-level skills を一覧表示し、読み取れます。private office（private
+channel、DM、または Slack 以外の conversation）は `/workspace/skills/` を read-only で mount するため、
+それらの skills を使えますが、自分の skill は自分の office 内に作成します。[Sandbox](/ja/sandbox/) を参照してください。
 :::
 
 ## ディレクトリ構造
@@ -55,6 +54,13 @@ Usage: {baseDir}/run.sh <args>
 
 ## どちらのレベルを使うべきか
 
-Workspace-level skills は共有 tool に適しています：会社 API、よく使う scripts、release helpers、reporting tools、または複数 conversations で使う能力。これらには trusted な door policy が必要です。
+Workspace-level skills は共有 tool に適しています：会社 API、よく使う scripts、release helpers、reporting tools、または複数 conversations で使う能力。書き込めるのは public office だけです。
 
-Conversation-level skills はローカル tool に適しています：特定 channel workflow、一時的な helper、または他の conversations に出すべきではない tool。これらはどの door policy でも動作し、isolated な office が書き込める唯一のレベルです。
+Conversation-level skills はローカル tool に適しています：特定 channel workflow、一時的な helper、または他の conversations に出すべきではない tool。すべての office が書き込め、private office が書き込める唯一のレベルです。
+
+## Skill を無効にする
+
+すべての skill は既定で system prompt に列挙されます。global または conversation 設定の `skills` は Pi の
+resource ルールで skill を除外し、admin portal の Skills ページでは workspace ごと、conversation ごとに切り替えられます。
+[設定](/ja/configuration/#skills) を参照してください。除外された skill は prompt から外されるだけで、その files は sandbox 内で
+引き続き読み取れます。

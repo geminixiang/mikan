@@ -6,17 +6,16 @@ writes those files goes through this module; nothing else parses them.
 
 ## Ownership
 
-| File         | Authority                                                                                                                                                                                                                                                                                           |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `index.ts`   | Settings schema, normalization, scope merge (global → office), readers (`loadGlobalSettings`, `resolveConversationSettings`, `loadScopeMcpServers`, `loadOfficeVisibilityOverride`, …) and the raw writers (`updateGlobalSettings`, `updateConversationSettings`, `setOfficeVisibilityOverride`, …) |
-| `apply.ts`   | The one writer seam for settings that affect live conversations (`applyConversationSettings`, `applyGlobalSettings`, `applyOfficeVisibility`); chat commands and the Admin portal write through it so cached runners and disk never disagree                                                        |
-| `migrate.ts` | One-time settings migrations run by `mikan office …` with the daemon stopped (`migrateLegacyDoorPolicy`). Runtime code never imports this file                                                                                                                                                      |
+| File       | Authority                                                                                                                                                                                                                                                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts` | Settings schema, normalization, scope merge (global → office), readers (`loadGlobalSettings`, `resolveConversationSettings`, `loadScopeMcpServers`, `loadOfficeVisibilityOverride`, …) and the raw writers (`updateGlobalSettings`, `updateConversationSettings`, `setOfficeVisibilityOverride`, …) |
+| `apply.ts` | The one writer seam for settings that affect live conversations (`applyConversationSettings`, `applyGlobalSettings`, `applyOfficeVisibility`); chat commands and the Admin portal write through it so cached runners and disk never disagree                                                        |
 
 ## Scope rules
 
 - Office settings override global settings key by key; `sandbox.boost` and `mcpServers` merge per entry, and an office entry with `disabled: true` suppresses an inherited MCP server.
 - Office settings live at `conversationSettingsPath(office)` under the state dir, never inside the office's workspace directory, so sandboxed code cannot edit its own policy. Reading a legacy in-workspace file moves it there once and leaves a `{}` marker behind.
-- Retired keys (`sandbox.image.workspaceMount`, `sandbox.workspace`) still parse so old files load, but are dropped from the resolved config; `migrate.ts` removes them from disk.
+- Retired keys (`sandbox.image.workspaceMount`, `sandbox.workspace`) still parse so old files load, but are dropped from the resolved config and never change the projection; nothing rewrites them on disk.
 - Office visibility (`office.visibility`) has its own reader and writer rather than flowing through `AgentConfig`: it is a projection input (`src/office/projection.ts`), not an agent setting.
 
 ## Writer contract

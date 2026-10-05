@@ -14,33 +14,19 @@ Features:
 - `/pi-login` can still store credentials in `state-dir/vaults`, keyed by platform user; env entries simply go unused, but a _file_ credential in that vault fails the run with `Sandbox type "host" does not support vault file mounts`
 - bash commands start in the mikan process's own working directory
 
-## Door policy requirement
+## Private offices are not enforced
 
-`host` cannot enforce a conversation-scoped workspace projection or read-only shared memory: there
-is nothing to mount into, and the tools see whatever the host user can see. mikan therefore refuses
-to run when the effective projection is isolated or has private/read-only shared memory. Platform
-derivation makes this relevant for DMs, external/unknown conversations, and Slack private channels.
-An isolated projection fails with:
+`host` cannot enforce a private office's visibility (ADR 0008): there is nothing to mount into, and
+the tools see whatever the host user can see, including other private offices and the shared
+`MEMORY.md` and `skills/`. mikan still runs those conversations, and logs once per office:
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:*,
-or explicitly choose trusted workspace policy
+Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
-A private/read-only projection similarly fails with `cannot enforce read-only shared workspace
-memory`. To use host mode for those conversations, choose a trusted read-write policy explicitly,
-either globally in `<state-dir>/settings.json`:
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-or per conversation from the admin portal. The `/pi-sandbox` chat command is not available in host
-mode — it only serves the managed `image:*` sandboxes.
+Platform derivation makes this apply to DMs, Slack private channels, externally shared and unknown
+conversations, and every Telegram, Discord, and GitHub conversation. The `/pi-sandbox` chat command
+is not available in host mode — it only serves the managed `image:*` sandboxes.
 
 Suitable for:
 

@@ -14,27 +14,17 @@ mikan --sandbox=host /path/to/workspace
 - `/pi-login` 仍可把 credential 存进 `state-dir/vaults`，按平台用户标识；env 条目只是不会被使用，但该 vault 中的**文件**凭证会让运行以 `Sandbox type "host" does not support vault file mounts` 失败
 - bash commands 从 mikan 进程自身的工作目录启动
 
-## 门禁策略要求
+## 不强制执行 private 办公室
 
-`host` 无法强制执行对话范围的工作区投影：没有可挂载的目标，工具能看到的就是 host 用户能看到的一切。
-因此当办公室的门禁策略为 `isolated`（也就是默认值）时，mikan 会拒绝运行，并给出：
+`host` 无法强制执行 private 办公室的 visibility（ADR 0008）：没有可挂载的目标，工具能看到的就是 host 用户能看到的一切，
+包括其他 private 办公室以及共享的 `MEMORY.md` 和 `skills/`。mikan 仍会运行这些对话，并对每个办公室记录一次：
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:*,
-or explicitly choose trusted workspace policy
+Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
-要使用 host 模式，请显式选择受信任策略，可以在 `<state-dir>/settings.json` 中全局设置：
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-也可以在 admin portal 中按对话设置。`/pi-sandbox` 聊天命令在 host 模式下不可用——它只服务于受管理的
+平台推导使这一点适用于 DM、Slack 私密频道、外部共享和未知对话，以及所有 Telegram、Discord 和 GitHub 对话。
+`/pi-sandbox` 聊天命令在 host 模式下不可用——它只服务于受管理的 `image:*` 沙箱。
 
 适合：
 

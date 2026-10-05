@@ -14,30 +14,19 @@ mikan --sandbox=host /path/to/workspace
 - `/pi-login` は引き続き credential を `state-dir/vaults` に、プラットフォームの user を key として保存できます。env エントリは単に使われないだけですが、その vault に _file_ credential があると実行は `Sandbox type "host" does not support vault file mounts` で失敗します
 - bash command は mikan プロセス自身の working directory から開始します
 
-## Door policy の要件
+## Private office は強制されません
 
-`host` は conversation スコープの workspace projection を強制できません。mount する先が存在せず、
-tools は host user が見えるものをそのまま見ます。そのため mikan は、office の door policy が
-`isolated`（これが既定です）の場合、次のように実行を拒否します：
+`host` は private office の visibility（ADR 0008）を強制できません。mount する先が存在せず、tools は
+host user が見えるもの（他の private office や共有の `MEMORY.md`、`skills/` を含む）をそのまま見ます。
+mikan はそれらの conversation も実行し、office ごとに一度だけ次のログを記録します：
 
 ```text
-Sandbox 'host' cannot provide an isolated conversation office; use image:*,
-or explicitly choose trusted workspace policy
+Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
-host mode を使うには、trusted な policy を明示的に選びます。グローバルには
-`<state-dir>/settings.json` で：
-
-```json
-{
-  "sandbox": {
-    "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-  }
-}
-```
-
-conversation ごとに設定するなら admin portal からです。`/pi-sandbox` チャットコマンドは host mode
-では利用できません。管理型の `image:*` sandbox 専用です。
+platform による導出により、これは DM、Slack private channel、外部共有および種別不明の conversation、
+そしてすべての Telegram・Discord・GitHub の conversation に当てはまります。`/pi-sandbox` チャットコマンドは
+host mode では利用できません。管理型の `image:*` sandbox 専用です。
 
 適している用途：
 

@@ -33,14 +33,14 @@ Admin portal でできること：
 
 - 現在のユーザーと conversation identity を確認する。
 - workspace を走査するのではなく、office registry（生 id ↔ office の恒久的な対応）から conversations を一覧表示する。
-- conversation model、thinking level、workspace の door policy と layout、Slack reply mode を読み取り・更新する。
-- global model、sandbox のリソース既定値、グローバルな door policy、Slack defaults を読み取り・更新する。
-- 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集する。
+- conversation model、thinking level、office visibility（public channel を private に狭める）、Slack reply mode を読み取り・更新する。
+- global model、sandbox のリソース既定値、Slack defaults を読み取り・更新する。
+- 限定範囲の workspace files、skills、events metadata/files を閲覧し、どちらのレベルでも skill を作成・編集し、workspace 全体または 1 つの conversation に対して skill を有効・無効に切り替える。
 - session と conversation の使用状況を確認する。
 - 選択した conversation の events を削除する。
 - 対象 conversation 用の session view link または login/vault link を生成する。
 
-Door policy はチャットからも `/pi-sandbox door` で設定できますが、agent 自身が設定することは決してできません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
+Office visibility はチャットからも `/pi-sandbox visibility private` で狭められますが、agent 自身が変更することは決してできません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
 
 Admin portal は secret values を直接書き込みません。admin portal から login link を生成した場合でも、実際の secret write は Login / vault portal の one-time token flow を通ります。
 

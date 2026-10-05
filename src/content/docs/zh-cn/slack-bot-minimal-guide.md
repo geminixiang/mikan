@@ -104,22 +104,14 @@ Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack
 
 ## 9. 选择沙箱
 
-不带 `--sandbox` 时，mikan 会直接在主机上运行工具。没有覆盖时，工作区策略跟随 Slack 频道可见性：公开频道读写共享记忆，私密频道要求只读共享记忆，DM 保持 isolated。Host 模式无法强制后两种边界，因此会拒绝这些运行。请在第一次真正对话之前先选定一种：
+不带 `--sandbox` 时，mikan 会直接在主机上运行工具。办公室 visibility 跟随 Slack 对话类型：公开频道是 public 办公室，可写入共享的 `MEMORY.md` 和 `skills/`；私密频道和 DM 是 private 办公室，只能读取它们，且其他任何办公室都无法读取它们。Host 模式无法强制执行 private 办公室，会在运行它们时记录一次警告。请在第一次真正对话之前先选定一种：
 
-- **推荐做法。** 使用受管理的沙箱，它为每个对话提供独立容器，无需更改设置即可强制 public、private/只读和 isolated 投影：
+- **推荐做法。** 使用受管理的沙箱，它为每个对话提供独立容器，无需更改设置即可强制执行办公室 visibility：
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
-- **Host 模式**，仅限在你已经信任其访问整个工作区的机器上：在 `~/.mikan/settings.json` 中加入受信任的读写门禁策略。该覆盖会明确移除平台推导出的 private/DM 数据边界。
-
-  ```json
-  {
-    "sandbox": {
-      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-    }
-  }
-  ```
+- **Host 模式**，仅限在你已经信任其访问整个工作区的机器上：每个对话（包括 DM 和私密频道）都能读取其他所有对话的文件。
 
 完整对比请参阅 [Sandbox](/zh-cn/sandbox/)。

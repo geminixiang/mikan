@@ -33,14 +33,14 @@ The admin portal can:
 
 - view the current user and conversation identity
 - list conversations from the office registry (the durable raw-id ↔ office mapping), not by scanning the workspace
-- read and update conversation model, thinking level, workspace door policy and layout, and Slack reply mode
-- read and update global model, sandbox resource defaults, global door policy, and Slack defaults
-- view limited workspace files, skills, and events metadata/files, and create or edit skills at either level
+- read and update conversation model, thinking level, office visibility (narrowing a public channel to private), and Slack reply mode
+- read and update global model, sandbox resource defaults, and Slack defaults
+- view limited workspace files, skills, and events metadata/files, create or edit skills at either level, and turn skills on and off for the workspace or one conversation
 - view session and conversation usage
 - delete events for the selected conversation
 - generate a session view link or login/vault link for the target conversation
 
-Door policy can also be set from chat with `/pi-sandbox door`, but never by the agent itself:
+Office visibility can also be narrowed from chat with `/pi-sandbox visibility private`, but never by the agent itself:
 conversation settings live under the host-only state dir precisely because conversation directories
 are bind-mounted read-write into the sandbox, and the settings file inside the mount is migrated
 once and then never read again.

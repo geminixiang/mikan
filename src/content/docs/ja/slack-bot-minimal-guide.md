@@ -104,28 +104,19 @@ Bot は DM で応答し、channel では mention されたときに応答しま�
 
 ## 9. sandbox を選ぶ
 
-`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行します。上書きがなければ workspace
-policy は Slack channel visibility に従い、public channel は shared memory を読み書きし、private
-channel は read-only shared memory を要求し、DM は isolated のままです。Host mode は後者 2 つを
-強制できないため、その run を拒否します。最初の実運用の会話を始める前に、どちらかを選んでください：
+`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行します。Office visibility は
+Slack の conversation type に従います。public channel は共有の `MEMORY.md` と `skills/` に書き込める
+public office であり、private channel と DM はそれらを読むだけで、他のどの office からも読まれない private
+office です。Host mode は private office を強制できず、一度だけ警告を記録してそのまま実行します。最初の実運用の会話を始める前に、どちらかを選んでください：
 
 - **推奨。** 管理型 sandbox を使います。conversation ごとに専用の container が与えられ、設定を変更
-  せずに public・private/read-only・isolated projection を強制できます：
+  せずに office visibility を強制できます：
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
 - **Host mode** は、workspace 全体を任せられる、すでに信頼しているマシンでのみ使用してください。
-  `~/.mikan/settings.json` に trusted read-write door policy を追加します。この上書きは platform-derived
-  private/DM data boundary を意図的に取り除きます。
-
-  ```json
-  {
-    "sandbox": {
-      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-    }
-  }
-  ```
+  DM や private channel を含むすべての conversation が、他のすべての conversation の files を読めます。
 
 完全な比較は [Sandbox](/ja/sandbox/) を参照してください。

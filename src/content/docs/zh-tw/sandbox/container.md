@@ -31,9 +31,9 @@ Vault key 由 container 名稱推導而來——一段可讀的前綴，加上�
 
 與以對話為範圍的模式不同，這個 key 不取決於對話，因此 container vault 並不是以對話為單位的憑證邊界。
 
-## Door policy
+## Office visibility
 
-`container:*` 無法落實以對話為範圍的 workspace projection 或唯讀共享記憶——`docker exec` 無法替一個不是 mikan 建立的 container 新增 mount——因此它會拒絕生效的 isolated projection 與平台推導的 private/唯讀 projection。請在全域 `settings.json` 或 admin portal 中明確選擇 trusted 讀寫 policy（`/pi-sandbox` 聊天指令只服務受管的 sandbox），並在建立 container 時自行掛載 workspace。
+`container:*` 無法強制 private office 的 visibility（ADR 0008）——`docker exec` 無法替一個不是 mikan 建立的 container 新增 mount，因此每個對話看到的都是你建立 container 時掛載的內容。mikan 仍會執行 private office，並對每個 office 記錄一次無法強制其 visibility。請在建立 container 時自行掛載 workspace；`/pi-sandbox` 聊天指令只服務受管的 sandbox。
 
 ## 限制
 

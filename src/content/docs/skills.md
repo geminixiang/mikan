@@ -9,19 +9,17 @@ description: Load locations, sandbox paths, and tool structure for workspace-lev
 | Conversation-level (local skills) | Tools for one conversation / channel / DM only             | `<workspace>/<office-key>/skills/<skill-name>/` | `/workspace/<office-key>/skills/<skill-name>/` |
 
 The office key is the `v1-<platform>-<readable-id>-<hash>` directory name mikan derives for each
-conversation; you do not construct it by hand. The admin portal's skills view lists both levels and
-can create a skill in either.
+conversation; you do not construct it by hand. The admin portal's skills view lists both levels,
+including nested skill directories, can create a skill in either, and turns skills on and off.
 
 :::note
 mikan loads workspace-level skills first, then conversation-level skills. If both sides define the same `name`, the conversation-level skill overrides the workspace-level skill.
 :::
 
-:::caution[Workspace-level skills need a trusted door]
-Under an `isolated` door policy a conversation sees only its own office, so workspace-level skills
-are neither mounted nor offered to the agent — the prompt tells it to keep skills in its own office
-instead. DMs, external channels, and unknown platform visibility derive this policy unless an admin
-overrides it. Workspace-level skills require a trusted `shared-support` or
-`full` layout. See [Sandbox](/sandbox/).
+:::note[Private offices read workspace-level skills]
+Every conversation lists and reads workspace-level skills. A private office (a private channel, DM,
+or any non-Slack conversation) mounts `/workspace/skills/` read-only, so it can use those skills but
+creates its own in its office. See [Sandbox](/sandbox/).
 :::
 
 ## Directory structure
@@ -56,6 +54,13 @@ Usage: {baseDir}/run.sh <args>
 
 ## Which level to use
 
-Workspace-level skills are good for shared tools: company APIs, common scripts, release helpers, reporting tools, or any capability used by multiple conversations. They require a trusted door policy.
+Workspace-level skills are good for shared tools: company APIs, common scripts, release helpers, reporting tools, or any capability used by multiple conversations. Only public offices can write them.
 
-Conversation-level skills are good for local tools: a specific channel workflow, a temporary helper, or tools that should not appear in other conversations. They work under every door policy, and are the only writable level an isolated office has.
+Conversation-level skills are good for local tools: a specific channel workflow, a temporary helper, or tools that should not appear in other conversations. Every office can write them, and they are the only writable level a private office has.
+
+## Turning skills off
+
+Every skill is listed in the system prompt by default. `skills` in the global or conversation
+settings excludes skills with Pi's resource rules, and the admin portal's Skills pages toggle them
+per workspace and per conversation; see [Configuration](/configuration/#skills). An excluded skill is
+only left out of the prompt; its files stay readable in the sandbox.

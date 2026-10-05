@@ -70,9 +70,9 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 职责：
 
 - 提供统一的 `Executor` 抽象
-- 将沙箱运行时分为两类：
-  - 共享：`host` / `container:<name>`，共享同一主机或命名容器
-  - 隔离：`image:<image>` / `cloudflare:*`，按参与者/对话/vault 路由到隔离执行环境
+- 按工作区能力划分沙箱运行时：
+  - 非受管投影：`host` / `container:<name>` / `cloudflare:*`
+  - 受管投影：`image:<image>`，强制执行 private 办公室的 visibility：无法触及其他 private 办公室，共享知识为只读
 - 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
 
 ### E. 对话办公室层
@@ -84,11 +84,11 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- `createWorkspace({ root, stateDir })` 构建每进程的 `Workspace` 值：工作区根目录、其全局 `MEMORY.md` / `skills/` / `events/` / `agents/`，以及办公室工厂
-- `workspace.office(address)` 返回一个冻结的 `Office` 值，其中所有路径均已预先计算——`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath` 以及仅主机的 `stateDir`——外加 `ensure()`，即唯一的物化缝隙
+- `createWorkspace({ root, stateDir })` 构建每进程的 `Workspace` 值：工作区根目录、其全局 `MEMORY.md` / `skills/` / `agents/`，以及办公室工厂
+- `workspace.office(address)` 返回一个冻结的 `Office` 值，其中所有路径均已预先计算——`dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath` 以及仅主机的 `stateDir`——外加 `ensure()`，即唯一的物化缝隙
 - 派生 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 前缀>`），它在主机上、沙箱运行时内部以及 vault 中都用于命名该办公室
 - 维护仅主机的办公室注册表（`office-registry.json`），作为原始 id ↔ 办公室的持久映射，因为 office key 不可逆
-- 解析工作区投影：按办公室的门禁策略，将哪些主机路径挂载进沙箱运行时
+- 解析办公室的 visibility 与工作区投影：哪些主机路径会挂载进沙箱运行时，以及 system prompt 可以列出哪些对话
 
 ### F. 状态和持久化层
 
@@ -198,17 +198,17 @@ sequenceDiagram
 - Slack 顶层消息共享频道会话；Slack 话题回复使用 `conversationId:threadTs`
 - Slack 事件先创建顶层锚点消息，然后使用 `conversationId:anchorTs` 运行
 
-### 门禁策略与工作区投影
+### 办公室 visibility 与工作区投影
 
-一间办公室的沙箱运行时实际能看到什么，取决于**工作区投影**，它由该办公室的门禁策略解析得出：
+一间办公室的沙箱运行时实际能看到什么，取决于**工作区投影**，它由该办公室的 visibility（ADR 0008）解析得出。Slack 公开频道是 public 办公室；私密频道、DM、群组 DM、外部共享频道、未知类型，以及所有 Telegram、Discord 和 GitHub 对话都是 private 办公室。每间办公室的挂载形状相同，只有只读标记不同：
 
-| 门禁策略   | 布局             | 挂载进运行时的内容                                              |
-| ---------- | ---------------- | --------------------------------------------------------------- |
-| `isolated` | `conversation`   | 仅 `<officeKey>/`                                               |
-| `trusted`  | `shared-support` | `<officeKey>/` 外加工作区的 `MEMORY.md`、`skills/` 和 `events/` |
-| `trusted`  | `full`           | 整个工作区根目录                                                |
+| 挂载在 `/workspace` 下                        | Public 办公室 | Private 办公室 |
+| --------------------------------------------- | ------------- | -------------- |
+| `<officeKey>/`——本办公室                      | 读写          | 读写           |
+| `MEMORY.md`、`skills/`——共享知识              | 读写          | 只读           |
+| `public/<officeKey>/`——其他每个 public 办公室 | 只读          | 只读           |
 
-`isolated` 是默认值，并且始终意味着 `conversation` 布局。门禁策略是数据访问边界；它绝不改变执行或网络隔离。可以在 admin portal 中或用 `/pi-sandbox door` 按办公室设置，其全局默认值位于 `sandbox.workspace`——参阅[配置](/zh-cn/configuration/)。
+没有任何挂载会包含工作区根目录，也没有办公室能触及另一间 private 办公室。system prompt 中的频道表只列出办公室自身以及它挂载的 public 办公室。Visibility 是数据访问边界；它绝不改变执行或网络隔离。Admin portal 和 `/pi-sandbox visibility private` 可以把公开频道收窄为 private；任何设置都不能放宽超过平台本身——参阅[配置](/zh-cn/configuration/)。
 
 ## 5. Login / Vault / Sandbox 关系
 

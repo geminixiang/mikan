@@ -165,28 +165,20 @@ The bot responds in DMs and when mentioned in channels. Triggered Slack thread w
 
 ## 9. Choose a sandbox
 
-Without `--sandbox`, mikan runs tools directly on the host. Workspace policy follows Slack channel
-visibility when no override exists: public channels use shared memory read-write, private channels
-request read-only shared memory, and DMs stay isolated. Host mode cannot enforce the latter two and
-refuses those runs. Pick one before your first real conversation:
+Without `--sandbox`, mikan runs tools directly on the host. Office visibility follows the Slack
+conversation type: public channels are public offices that write the shared `MEMORY.md` and
+`skills/`, while private channels and DMs are private offices that only read them and cannot be read
+by any other office. Host mode cannot enforce private offices; it runs them with a one-time logged
+warning. Pick one before your first real conversation:
 
 - **Recommended.** Use the managed sandbox, which gives each conversation its own container and
-  enforces public, private/read-only, and isolated projections with no settings change:
+  enforces office visibility with no settings change:
 
   ```bash
   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
-- **Host mode**, only on a machine you already trust with the whole workspace: add a trusted
-  read-write door policy to `~/.mikan/settings.json`. This override deliberately removes the
-  platform-derived private/DM data boundary.
-
-  ```json
-  {
-    "sandbox": {
-      "workspace": { "doorPolicy": "trusted", "layout": "shared-support" }
-    }
-  }
-  ```
+- **Host mode**, only on a machine you already trust with the whole workspace: every conversation,
+  including DMs and private channels, can read every other conversation's files.
 
 See [Sandbox](/sandbox/) for the full comparison.

@@ -26,7 +26,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 都有自己的 Docker bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
 - 建立 managed container 時會加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 與 `--pids-limit=1024`
-- container 內的 workspace mount 跟隨明確設定或已記錄的 Slack 頻道可見性：公開頻道讀寫共享記憶，私密頻道唯讀共享記憶，DM、外部及未知對話維持 isolated
+- container 內的 workspace mount 跟隨該 office 的 visibility（ADR 0008）：public office 可寫入共用的 `MEMORY.md` 與 `skills/`，private office 只能讀取，且沒有任何 office 能觸及另一個 private office
 - vault env 會在執行時注入
 - vault file credential 會自動 bind mount 進 container，target 由每個檔案的名稱推斷（見 [Vault](/zh-tw/sandbox/vault/)）
 - 每 10 分鐘檢查一次閒置 containers，至少閒置 10 分鐘後停止；視掃描時間而定，約在最後一次追蹤使用後 10–20 分鐘停止
@@ -42,7 +42,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## Mount 與 conversation office
 
-該對話的 office 目錄會以可讀寫的方式 bind mount 在 `/workspace/<office-key>`，其中 office key 就是 `v1-<platform>-<readable-id>-<hash>` 這段、同時也是宿主機上該目錄的名稱。isolated projection 只掛載這個目錄；trusted 的 `shared-support` layout 會再加上 workspace 全域的 `MEMORY.md`、`skills/` 與 `events/`。private visibility 會把全域記憶 bind 設為唯讀，public visibility 則維持讀寫；`trusted` / `full` 會把整個 workspace root 掛在 `/workspace`。
+該對話的 office 目錄會以可讀寫的方式 bind mount 在 `/workspace/<office-key>`，其中 office key 就是 `v1-<platform>-<readable-id>-<hash>` 這段、同時也是宿主機上該目錄的名稱。每個 office 也會取得 workspace 全域的 `MEMORY.md` 與 `skills/`（public office 為讀寫，private office 為唯讀），以及以唯讀方式掛在 `/workspace/public/<office-key>` 的其他每個 public office。沒有任何東西會掛載整個 workspace root，排程事件也只留在 host。
 
 mount 改變時（例如 visibility 變更之後），下一則訊息會用目前映像替換 container。
 
@@ -83,7 +83,7 @@ Credentials 以 **office key** 為 key：某個對話的 vault 目錄是 `~/.mik
 
 - 建立新 container 時，限制直接加進 `docker run` 參數
 - 已在執行的 container 會在下次 provision 時透過 `docker update` 立即套用新限制，不需重新建立
-- `/pi-sandbox` 會顯示目前 conversation 的有效限制，以及它的 door policy 與 layout
+- `/pi-sandbox` 會顯示目前 conversation 的有效限制，以及它的 office visibility
 - `/pi-sandbox boost` 會把目前 conversation 暫時升級到 `sandbox.boost` 規格；boost 狀態跟著 container，container stop 後就結束
-- `/pi-sandbox door <default|isolated|shared|shared-private|full>` 可切換這個 office 的 door policy；container 會在下一則訊息時以新的 mount 重建，保留 `/root` 與 workspace mount
+- `/pi-sandbox visibility <private|default>` 可把公開頻道縮為 private office，或清除這個覆寫；container 會在下一則訊息時以新的 mount 重建，保留 workspace 與 vault 檔案
 - agent 可用內建 `sandbox` tool 查詢或暫時設定目前 conversation 的 CPU / memory limit；這類 override 也會在 container stop 後清除

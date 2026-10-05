@@ -5,7 +5,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 ## Contracts
 
 - `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
-- A backend without managed projection cannot honor an `isolated` door or read-only shared memory; `assertSandboxSupportsWorkspacePolicy` in `registry.ts` rejects that combination.
+- A backend without managed projection cannot enforce a private office's visibility; `assertSandboxSupportsWorkspacePolicy` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
 - Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
 - `provision`, `stop`, and `remove` are serialized per key.
 - Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.
@@ -63,12 +63,11 @@ Visibility follows the Slack conversation type: public channels are public;
 private channels, DMs, group DMs, externally shared channels, and unknown kinds
 are private. An operator may narrow a public channel with Admin or
 `/pi-sandbox visibility private`. Nothing mounts the workspace root; offices
-still declaring the retired `full` door policy get the same shape and are
-reported once per process.
+still declaring the retired `full` door policy get the same shape.
 
 Only the managed `image:*` backend consumes and enforces these mount flags.
-Host, existing-container, and Cloudflare modes fail closed when a projection
-requires isolation or read-only shared memory.
+Host, existing-container, and Cloudflare modes ignore them and log once per
+private office that its visibility is not enforced.
 
 Changing the policy changes the container's desired mounts, which reads as
 drift: the provisioner recreates the container with the new binds while

@@ -70,9 +70,9 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 職責：
 
 - 統一抽象 `Executor`
-- sandbox runtime 分成兩類：
-  - shared: `host` / `container:<name>`，同一個 host 或指定 container 共用
-  - isolated: `image:<image>` / `cloudflare:*`，依 actor/conversation/vault 路由到隔離的執行環境
+- 依 workspace 能力把 sandbox runtime 分成兩類：
+  - 非受管 projection：`host` / `container:<name>` / `cloudflare:*`
+  - 受管 projection：`image:<image>`，會強制 private office visibility：無法觸及其他 private office，共用知識為唯讀
 - 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
 
 ### E. Conversation office 層
@@ -84,11 +84,11 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- `createWorkspace({ root, stateDir })` 建立每個 process 的 `Workspace` 值：workspace root、它的全域 `MEMORY.md` / `skills/` / `events/` / `agents/`，以及 office factory
-- `workspace.office(address)` 回傳一個所有路徑都已預先算好的凍結 `Office` 值——`dir`、`memoryPath`、`skillsDir`、`sessionsDir`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——再加上 `ensure()`，也就是唯一的實體化接縫
+- `createWorkspace({ root, stateDir })` 建立每個 process 的 `Workspace` 值：workspace root、它的全域 `MEMORY.md` / `skills/` / `agents/`，以及 office factory
+- `workspace.office(address)` 回傳一個所有路徑都已預先算好的凍結 `Office` 值——`dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——再加上 `ensure()`，也就是唯一的實體化接縫
 - 推導出 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`），用來在 host 上、sandbox runtime 內以及 vault 中命名該 office
 - 維護僅限 host 的 office registry（`office-registry.json`），作為 raw id ↔ office 的持久對照，因為 office key 無法反推
-- 解析 workspace projection：依該 office 的 door policy，決定哪些 host 路徑會掛進 sandbox runtime
+- 解析該 office 的 visibility 與 workspace projection：哪些 host 路徑會掛進 sandbox runtime，以及 system prompt 可以提及哪些對話
 
 ### F. 狀態與持久化層
 
@@ -198,17 +198,17 @@ sequenceDiagram
 - Slack top-level 訊息共用 channel session；Slack thread replies 使用 `conversationId:threadTs`
 - Slack events 會先建立 top-level anchor message，再用 `conversationId:anchorTs` 執行
 
-### Door policy 與 workspace projection
+### Office visibility 與 workspace projection
 
-一個 office 的 sandbox runtime 實際看到什麼，取決於 _workspace projection_，而它是由該 office 的 door policy 解析出來的：
+一個 office 的 sandbox runtime 實際看到什麼，取決於 _workspace projection_，而它是由該 office 的 visibility 解析出來的（ADR 0008）。Slack 公開頻道是 public office；私人頻道、DM、群組 DM、外部共享頻道、未知類型，以及所有 Telegram、Discord、GitHub 對話都是 private office。每個 office 的掛載形狀相同，只有唯讀旗標不同：
 
-| Door policy | Layout           | 掛進 runtime 的內容                                                  |
-| ----------- | ---------------- | -------------------------------------------------------------------- |
-| `isolated`  | `conversation`   | 只有 `<officeKey>/`                                                  |
-| `trusted`   | `shared-support` | `<officeKey>/` 再加上 workspace 的 `MEMORY.md`、`skills/`、`events/` |
-| `trusted`   | `full`           | 整個 workspace root                                                  |
+| 掛在 `/workspace` 底下                        | Public office | Private office |
+| --------------------------------------------- | ------------- | -------------- |
+| `<officeKey>/`——這個 office                   | 讀寫          | 讀寫           |
+| `MEMORY.md`、`skills/`——共用知識              | 讀寫          | 唯讀           |
+| `public/<officeKey>/`——其他每個 public office | 唯讀          | 唯讀           |
 
-`isolated` 是預設值，而且一律隱含 `conversation` layout。Door policy 是資料存取邊界，它絕不會改變執行環境或網路隔離。它可從 admin portal 或用 `/pi-sandbox door` 依 office 設定，全域預設值則位於 `sandbox.workspace`——見[設定](/zh-tw/configuration/)。
+沒有任何佈局會掛載 workspace root，也沒有任何 office 能觸及另一個 private office。System prompt 的頻道表只會列出該 office 自己以及它所掛載的 public office。Visibility 是資料存取邊界，它絕不會改變執行環境或網路隔離。Admin 與 `/pi-sandbox visibility private` 可以把公開頻道縮為 private；沒有任何方式能放寬超過平台的設定——見[設定](/zh-tw/configuration/)。
 
 ## 5. Login / Vault / Sandbox 關係
 
