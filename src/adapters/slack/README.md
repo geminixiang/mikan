@@ -30,7 +30,9 @@ Text in a DM task thread, and top-level DM text while a task thread is running,
 is classified by Jev (`task-intent.ts`) before any model turn: `status` answers
 from observation, `steer` calls the runtime steering port (a top-level supplement
 is steered only when exactly one task is running), and `request` falls through
-to normal prompt execution. Attachments and slash commands always fall through.
+to normal prompt execution. Slash commands always fall through. Attachments skip
+Jev: in a task thread they go to steering, which rejects them with a request to
+stop first; top-level attachments are a normal turn.
 Without Jev the regex status shortcut decides `status`, thread text is tried as
 steering, and top-level text is a normal turn — the pre-Jev behavior. Idle
 threads use normal prompt execution (including explicit continuation after

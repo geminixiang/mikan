@@ -278,10 +278,23 @@ queue admission; the task uses the existing independent session runner, not a
 nested subagent or a new execution loop.
 
 `PiAgentWrapper.steer` accepts text controls from the current actor only. It
-records a `mikan.control_input` custom entry before submitting a steer so
-chat-history sync cannot replay cancelled or rejected controls as ordinary input.
-Attachments require stopping and starting another turn. Native steering acceptance
-means queued for the next tool-batch boundary, not proof of model compliance.
+records a `mikan.control_input` custom entry before its checks and before
+submitting a steer, so chat-history sync never replays a message that took the
+control path, whether accepted, cancelled, or rejected. Attachments require
+stopping and starting another turn. Native steering acceptance means queued for
+the next tool-batch boundary, not proof of model compliance.
+
+The marker deliberately precedes the checks; do not move it after them:
+
+- A cancelled steer must not return: syncing the log after a stop withdrew a
+  queued steer put it back into the next context as an instruction
+  (`docs/research/conversation-task-handoff.md`, experiment C9; guarded by
+  `slack-task.test.ts`).
+- A rejected steer is not lost silently. Every rejection is posted back telling
+  the user to send again or stop first, so syncing the original as well would
+  show the model the same instruction twice.
+- The current-actor check is defensive. Only Slack one-to-one DMs (`im`) reach
+  steering, so a different person cannot steer someone else's task there.
 
 `task_status` is a responder-bound read-only query, advertised only when supported
 and excluded from subagent grants. It exposes no cross-office task lookup.
