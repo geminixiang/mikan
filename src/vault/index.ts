@@ -10,7 +10,6 @@ import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
-const LEGACY_MOUNT_TARGETS_FILE = ".mount-targets.json";
 const MOUNT_TARGETS_DIR = "vault-mount-targets";
 const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
@@ -102,8 +101,6 @@ export class FileVaultManager implements VaultManager {
     if (!existsSync(sourceDir)) throw new Error(`vault: shared login "${name}" does not exist`);
 
     const targetDir = join(this.vaultsDir, targetKey);
-    assertNoLegacyMountTargetsCollision(sourceDir);
-    assertNoLegacyMountTargetsCollision(targetDir);
     const sourceTargets = readMountTargets(this.mountTargetsPath(sourceKey));
     const targetTargets = readMountTargets(this.mountTargetsPath(targetKey));
     ensurePrivateDir(this.vaultsDir);
@@ -176,17 +173,12 @@ export class FileVaultManager implements VaultManager {
     if (!isSafeVaultKey(key)) throw new Error(`vault: invalid vault key: ${key}`);
     const normalizedPath = normalizeVaultRelativePath(relativePath);
     const normalizedTarget = normalizeVaultTargetPath(targetPath);
-    if (
-      !normalizedPath ||
-      normalizedPath === LEGACY_MOUNT_TARGETS_FILE ||
-      (targetPath !== undefined && !normalizedTarget)
-    ) {
+    if (!normalizedPath || (targetPath !== undefined && !normalizedTarget)) {
       throw new Error(`vault: invalid relative secret file path for "${key}": ${relativePath}`);
     }
 
     const dir = join(this.vaultsDir, key);
     const filePath = join(dir, normalizedPath);
-    assertNoLegacyMountTargetsCollision(dir);
 
     ensurePrivateDir(this.vaultsDir);
     ensurePrivateDir(dir);
@@ -198,7 +190,6 @@ export class FileVaultManager implements VaultManager {
 
   private buildResolved(key: string): ResolvedVault {
     const dir = join(this.vaultsDir, key);
-    assertNoLegacyMountTargetsCollision(dir);
     const mounts = resolveMountsFromDir(dir, readMountTargets(this.mountTargetsPath(key)));
 
     const envContent = readTextFileIfExists(join(dir, "env"));
@@ -279,13 +270,6 @@ function resolveNestedMounts(
     mounts.push(...resolveNestedMounts(rootDir, relativePath, inferredTarget, explicitTargets));
   }
   return mounts;
-}
-
-function assertNoLegacyMountTargetsCollision(dir: string): void {
-  const path = join(dir, LEGACY_MOUNT_TARGETS_FILE);
-  if (existsSync(path)) {
-    throw new Error(`vault: reserved mount metadata filename collision: ${path}`);
-  }
 }
 
 function readMountTargets(path: string): Record<string, string> {

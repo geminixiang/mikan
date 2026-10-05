@@ -297,33 +297,27 @@ describe("FileVaultManager", () => {
     });
   });
 
-  test.each(["legacy secret", '{"custom.json":"/opt/provider/custom.json"}'])(
-    "fails closed on a legacy root mount metadata filename collision",
-    (content) => {
-      const dir = join(vaultsDir, "U123");
-      const collisionPath = join(dir, ".mount-targets.json");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(collisionPath, content);
-      const mgr = new FileVaultManager(tmpDir);
+  test("a vault file named like mount metadata is an ordinary credential file", () => {
+    const mgr = new FileVaultManager(tmpDir);
+    mgr.upsertFile("U123", ".mount-targets.json", '{"custom.json":"/opt/provider/custom.json"}');
+    mgr.upsertFile("U123", "custom.json", "custom");
 
-      expect(() => mgr.resolve("U123")).toThrow(/reserved mount metadata filename collision/);
-      expect(readFileSync(collisionPath, "utf-8")).toBe(content);
-      expect(existsSync(join(tmpDir, "vault-mount-targets", "U123.json"))).toBe(false);
-    },
-  );
+    expect(mgr.resolve("U123")?.mounts).toEqual(
+      expect.arrayContaining([
+        {
+          source: join(vaultsDir, "U123", ".mount-targets.json"),
+          target: "/root/.mount-targets.json",
+        },
+        { source: join(vaultsDir, "U123", "custom.json"), target: "/root/custom.json" },
+      ]),
+    );
+  });
 
   test("upsertFile rejects traversal and absolute relative paths", () => {
     const mgr = new FileVaultManager(tmpDir);
     const outsidePath = join(tmpDir, "escape.json");
 
-    for (const relativePath of [
-      "../escape.json",
-      "..",
-      ".",
-      "/etc/passwd",
-      ".mount-targets.json",
-      "   ",
-    ]) {
+    for (const relativePath of ["../escape.json", "..", ".", "/etc/passwd", "   "]) {
       expect(() => mgr.upsertFile("U123", relativePath, "secret")).toThrow(
         "vault: invalid relative secret file path",
       );
