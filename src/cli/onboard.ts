@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as prompts from "@clack/prompts";
-import { ENV_MANIFEST, envReport, readEnv } from "../env-manifest.js";
+import { ENV_MANIFEST, envSetReport, readEnv } from "../env-manifest.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
 import { recordAllMigrations } from "../migrations/index.js";
 import type { OnboardLlmChoice } from "../types.js";
@@ -199,7 +199,7 @@ export async function runOnboardWizard(
   atomicWritePrivateFile(envFilePath, renderEnvFile(existing, env));
   io.print(`Wrote ${envFilePath} (0600)`);
 
-  io.print(`\n${envReport((name) => env[name] ?? readEnv(name))}`);
+  io.print(`\n${envSetReport((name) => env[name] ?? readEnv(name))}`);
 
   const sandboxFlag = sandboxArg ? ` --sandbox ${sandboxArg}` : "";
   io.print("Next steps:");

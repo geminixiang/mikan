@@ -254,6 +254,15 @@ export function envReport(env: EnvLookup = readEnv): string {
   return lines.join("\n");
 }
 
+export function envSetReport(env: EnvLookup = readEnv): string {
+  const set = ENV_MANIFEST.flatMap((group) => group.vars).filter((spec) => env(spec.name));
+  return [
+    "Variables set:",
+    ...set.map((spec) => `  ${spec.name.padEnd(36)} ${spec.doc}`),
+    "Run `mikan env` to see every variable mikan reads.",
+  ].join("\n");
+}
+
 export function resolveLinkListenHost(
   read: (name: string) => string | undefined = readEnv,
 ): string {

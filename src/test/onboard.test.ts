@@ -72,6 +72,20 @@ describe("runOnboardWizard", () => {
     expect(pendingMigrations(dir)).toEqual([]);
   });
 
+  test("ends by listing only the variables that are set", async () => {
+    vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "", "1"]);
+    await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
+
+    const transcript = io.transcript.join("\n");
+    expect(transcript).toMatch(/SLACK_APP_TOKEN\s+Socket-mode app token/);
+    expect(transcript).toContain("ANTHROPIC_API_KEY");
+    expect(transcript).not.toContain("TELEGRAM_BOT_TOKEN");
+    expect(transcript).not.toContain("unset");
+    expect(transcript).toContain("mikan env");
+    expect(transcript).not.toContain("xapp-123");
+  });
+
   test("custom endpoint writes models.json and points settings at it", async () => {
     const envFile = join(dir, "mikan.env");
     const modelsFile = join(dir, "models.json");
