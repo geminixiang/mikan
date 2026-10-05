@@ -37,7 +37,7 @@ description: 挙動を変えずに mikan の public 面と内部結合を減ら�
 
 一見の重複の中には、重要なセマンティクスを守るものがあります:
 
-- `log.jsonl` を agent session JSONL から分離して保つ。これらは異なる真実を記録し、リカバリを支える。
+- `log.jsonl` を agent session ストレージ から分離して保つ。これらは異なる真実を記録し、リカバリを支える。
 - office key を生の platform id と区別して保つ。directory や vault を生 id で命名すると、id を共有する 2 つのプラットフォームが互いのデータに到達できてしまう。registry が存在するのは、まさに key が逆変換できないからである。
 - session keys は生のままに保つ。これらは platform の値であり、office と組にすることこそが、グローバルには一意でない key を安全にしている。office スコープの文字列に書き換えると、チェックが runtime からすべての呼び出し側へ移ってしまう。
 - host paths を runtime paths から分離して保つ。これらを統合すると container/remote 実行が壊れ、host-only のデータを露出し得る。

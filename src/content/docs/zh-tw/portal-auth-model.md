@@ -128,7 +128,7 @@ Session view token 錨定到 base session file。使用 `/session?session=<file.
 `startWebServer()` 的 dispatch 順序是：
 
 1. `GET /health`
-2. Agent event HTTP routes
+2. GitHub webhook（`POST /github/webhook`，有設定時）
 3. Admin routes
 4. Session view routes
 5. Login / vault routes

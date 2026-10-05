@@ -56,7 +56,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 - `PiAgentWrapper` を作成する
 - モデル、skills、memory、session context を読み込む
-- ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-agent-core` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets and bounded subagents を実行する
+- ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-durable` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets and bounded subagents を実行する
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
 - tool の結果を session に書き戻し、adapter 経由でプラットフォームへ返す
 - `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
@@ -97,7 +97,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- session ファイルを管理する: `sessions/current` と `*.jsonl`
+- session ストレージ: office ごとに 1 つの `sessions.db`
 - `log.jsonl` と structured session の二系統の履歴を保存する
 - workspace レベルと office レベルの `MEMORY.md` を扱う
 - per-office vault の認証情報と mount / env 注入を扱う
@@ -111,11 +111,11 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- `src/adapters/web/server.ts` は HTTP server を所有し、login/vault、admin、session-view、agent-event routes をマウントする
+- `src/adapters/web/server.ts` は HTTP server を所有し、GitHub webhook と login/vault、admin、session-view routes をマウントする
 - Web login portal を提供し、API key と OAuth の vault 書き込みをサポートする
 - admin portal を提供し、conversation/settings/workspace/events/skills 管理と link generation をサポートする
 - session viewer を提供する。現在は session timeline を表示でき、interactive wiring が有効な場合は `/session/message` からメッセージを送れる
-- `events/*.json` を監視し、スケジュールイベントを bot フローへ再注入する
+- 各 office の event をスケジュールし、発火時に bot フローへ再注入する
 
 ## 3. メッセージ処理フロー
 
@@ -125,26 +125,26 @@ sequenceDiagram
   participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
-  participant S as sessions/store.ts
-  participant R as harness/runner.ts / PiAgentWrapper
+  participant S as sessions/chat-history-sync.ts
+  participant R as harness/runner.ts
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Office dir / sessions
+  participant W as Office dir / sessions.db
 
   U->>P: メッセージ / mention / reply を送信
   P->>A: プラットフォームイベント
   A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
   M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
-  S-->>M: contextFile + sessionDir
+  S-->>M: session key
   M->>R: getState() / run()
-  R->>W: MEMORY.md と session file を読む、必要なら log.jsonl を調べる
+  R->>W: MEMORY.md と session を読む、必要なら log.jsonl を調べる
   R->>R: system prompt / skills / model / session context を作成
   R->>T: ツールを実行
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: 結果を返す
-  R->>W: structured session に書き込む、adapter がプラットフォーム log を記録
+  R->>W: session に書き込む、adapter がプラットフォーム log を記録
   R-->>M: final response
   M-->>A: 返信内容 / 診断 / ファイル
   A-->>P: プラットフォームメッセージを更新
@@ -174,10 +174,8 @@ sequenceDiagram
 ├── conversations/
 │   └── <officeKey>/
 │       ├── settings.json      # host-only conversation overrides
-│       └── sessions/          # host-only agent history
-│           ├── current        # top-level session pointer
-│           ├── <timestamp>_<id>.jsonl
-│           └── <scope_id>.jsonl  # thread / reply scoped sessions
+│       ├── sessions.db        # host-only agent history (pi-durable SQLite)
+│       └── events/            # host-only scheduled events
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -189,9 +187,9 @@ state directory の既定値は `~/.mikan` です。sandbox から見える work
 - office key は host 上でも sandbox runtime 内でも同じ directory を指すため、境界を越えても path の意味が変わりません
 - office key から生のプラットフォーム id へは逆変換できないため、`office-registry.json` が各 office の `(platform, conversationId)` を初回 materialize 時に記録します。生 id を扱う面 — Admin portal や `mikan office claim` — はこれを介して解決します
 - `log.jsonl` はプラットフォーム会話ログです。Slack/Discord/Telegram で実際に何が起きたかを記録します
-- `sessions/*.jsonl` は host 専用で、LLM の作業コンテキスト/作業記録です。mikan が LLM に何を渡し、LLM/tool が何をしたかを記録します
-- top-level session は `current` ポインターを使いますが、`current` は channel history ではありません。欠落時は `log.jsonl` から最近の top-level 作業コンテキストを再構築できます
-- thread / reply session は固定ファイル名を使い、scoped session を個別に追跡できるようにします
+- `sessions.db` は host 専用で、LLM の作業コンテキスト/作業記録です。mikan が LLM に何を渡し、LLM/tool が何をしたかを記録します。top-level session はストレージの root conversation で、各 thread / reply session は session key で見つかる conversation です
+- top-level session は channel history ではありません。新しい top-level session は `log.jsonl` の最近の top-level メッセージから始まります
+- スケジュールされた event は office の State dir にあり、agent は `event` tool からのみアクセスします
 - session key は生のプラットフォーム値のままです。runtime state は office と session key の組で指し示されるため、ある session key が別の office の runner や queue を選ぶことはありません
 - Slack top-level メッセージは channel session を共有します。Slack thread replies は `conversationId:threadTs` を使います
 - Slack events は先に top-level anchor message を作成し、その後 `conversationId:anchorTs` で実行します
@@ -235,7 +233,7 @@ flowchart TD
 
 ## 6. Events と通常会話の違い
 
-`events/*.json` は `EventsWatcher` に監視され、その後 `ConversationEvent` に変換されて通常フローをもう一度通ります。
+scheduler は起動時に各 office の event 記録を読み込み、その後は event store の変更に従います。記録が発火すると `ConversationEvent` に変換され、通常フローをもう一度通ります。
 つまり events は独立した実行器ではなく、「別のメッセージ入口」です。
 
 これにより、次の機能が同じ仕組みを共有します:

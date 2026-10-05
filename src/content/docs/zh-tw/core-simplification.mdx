@@ -36,7 +36,7 @@ description: 以證據為本的計畫，在不改變行為的前提下縮減 mik
 
 有些看似重複的地方其實保護著重要語意：
 
-- 讓 `log.jsonl` 與 agent session JSONL 分開。它們記錄不同的真實，並支援復原。
+- 讓 `log.jsonl` 與 agent session 儲存 分開。它們記錄不同的真實，並支援復原。
 - 讓 office key 與原始平台 id 分開。用 raw id 命名目錄或 vault，會讓兩個共用同一個 id 的平台碰到彼此的資料；registry 之所以存在，正是因為這個 key 無法反推。
 - 讓 session key 維持原始值。它們是平台值，而把它們與一個 office 配對，正是讓非全域唯一的 key 得以安全的原因——把它們改寫成以 office 為範圍的字串，只會把這道檢查從 runtime 推給每一個呼叫端。
 - 讓 host path 與 runtime path 分開。合併它們會破壞 container/remote 執行，並可能暴露僅限 host 的資料。

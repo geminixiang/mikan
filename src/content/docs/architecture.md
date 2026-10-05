@@ -56,7 +56,7 @@ Responsibilities:
 
 - create `PiAgentWrapper`
 - load model, skills, memory, and session context
-- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-agent-core` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
+- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-durable` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
 - use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
@@ -97,7 +97,7 @@ Responsibilities:
 
 Responsibilities:
 
-- session file management: `sessions/current` and `*.jsonl`
+- session storage: one `sessions.db` per office
 - dual-track history persistence with `log.jsonl` and structured sessions
 - workspace-level and office-level `MEMORY.md`
 - per-office vault credentials and mount / env injection
@@ -125,26 +125,26 @@ sequenceDiagram
   participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
-  participant S as sessions/store.ts
-  participant R as harness/runner.ts / PiAgentWrapper
+  participant S as sessions/chat-history-sync.ts
+  participant R as harness/runner.ts
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Office dir / sessions
+  participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply
   P->>A: platform event
   A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
   M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
-  S-->>M: contextFile + sessionDir
+  S-->>M: session key
   M->>R: getState() / run()
-  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: return result
-  R->>W: write structured session, adapter records platform log
+  R->>W: write the session, adapter records platform log
   R-->>M: final response
   M-->>A: response content / diagnostics / files
   A-->>P: platform message update

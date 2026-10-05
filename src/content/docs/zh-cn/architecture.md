@@ -56,7 +56,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 - 创建 `PiAgentWrapper`
 - 加载模型、技能、记忆和会话上下文
-- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-agent-core` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
+- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-durable` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
 - 将工具调用连接到本地 `read/bash/edit/write/event/attach`
 - 将工具结果写回会话，并通过适配器返回回复
 - 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
@@ -97,7 +97,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- 会话文件管理：`sessions/current` 和 `*.jsonl`
+- 会话存储：每个 office 一个 `sessions.db`
 - 使用 `log.jsonl` 和结构化会话双轨保存历史记录
 - 工作区级和办公室级 `MEMORY.md`
 - 按办公室的 vault 凭证及挂载/环境变量注入
@@ -111,11 +111,11 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- `src/adapters/web/server.ts` 管理 HTTP 服务器并挂载 login/vault、admin、session-view 和 agent-event 路由
+- `src/adapters/web/server.ts` 管理 HTTP 服务器并挂载 GitHub webhook 以及 login/vault、admin 和 session-view 路由
 - 提供 Web 登录 portal，支持将 API key 和 OAuth 写入 vault
 - 提供管理 portal，用于管理对话/设置/工作区/事件/技能并生成链接
 - 提供会话查看器；目前可以显示会话时间线，并在启用交互 wiring 时通过 `/session/message` 发送消息
-- 监视 `events/*.json`，将计划事件重新注入 bot 流程
+- 为每个 office 的事件排程，触发时重新注入 bot 流程
 
 ## 3. 消息处理流程
 
@@ -125,26 +125,26 @@ sequenceDiagram
   participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
-  participant S as sessions/store.ts
-  participant R as harness/runner.ts / PiAgentWrapper
+  participant S as sessions/chat-history-sync.ts
+  participant R as harness/runner.ts
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Office dir / sessions
+  participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply
   P->>A: platform event
   A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
   M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
-  S-->>M: contextFile + sessionDir
+  S-->>M: session key
   M->>R: getState() / run()
-  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: return result
-  R->>W: write structured session, adapter records platform log
+  R->>W: write the session, adapter records platform log
   R-->>M: final response
   M-->>A: response content / diagnostics / files
   A-->>P: platform message update
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── events/                    # the workspace scheduling bus
 ├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
@@ -169,15 +168,15 @@ sequenceDiagram
     └── skills/                # office-level skills
 
 <state-dir>/
-├── settings.json              # required global settings
+├── settings.json              # global settings
+├── models.json                # custom providers and models
 ├── office-registry.json       # office inventory
+├── migrations.json            # applied state migrations
 ├── conversations/
 │   └── <officeKey>/
 │       ├── settings.json      # host-only conversation overrides
-│       └── sessions/          # host-only agent history
-│           ├── current        # top-level session pointer
-│           ├── <timestamp>_<id>.jsonl
-│           └── <scope_id>.jsonl  # thread / reply scoped sessions
+│       ├── sessions.db        # host-only agent history (pi-durable SQLite)
+│       └── events/            # host-only scheduled events
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -189,9 +188,9 @@ sequenceDiagram
 - office key 在主机上和沙箱运行时内部命名同一个目录，因此路径跨越边界时含义不会改变
 - office key 无法反推回原始平台 id，所以 `office-registry.json` 会在办公室首次物化时记录其 `(platform, conversationId)`。面向原始 id 的接口——Admin portal、`mikan office claim`——都通过它解析
 - `log.jsonl` 是平台对话日志：源平台上实际发生的内容
-- `sessions/*.jsonl` 仅存于主机，是 LLM 工作上下文/日志：mikan 提供给 LLM 的内容，以及 LLM/工具执行的操作
-- 顶层会话使用 `current` 指针，但 `current` 不是频道历史记录；缺失时，可以从 `log.jsonl` 重建近期顶层工作上下文
-- 话题/回复会话使用固定文件名，以便分别跟踪限定范围的会话
+- `sessions.db` 仅存于主机，是 LLM 工作上下文/日志：mikan 提供给 LLM 的内容，以及 LLM/工具执行的操作。顶层会话是存储的 root conversation，每个话题/回复会话是按会话键找到的 conversation
+- 顶层会话不是频道历史记录；新的顶层会话从 `log.jsonl` 中最近的顶层消息开始
+- 计划事件放在 office 的 State dir，代理只能通过 `event` 工具访问
 - 会话密钥保持为原始平台值；运行时状态按办公室加会话密钥寻址，因此一个会话密钥永远不可能选中另一间办公室的 runner 或队列
 - Slack 顶层消息共享频道会话；Slack 话题回复使用 `conversationId:threadTs`
 - Slack 事件先创建顶层锚点消息，然后使用 `conversationId:anchorTs` 运行
@@ -235,7 +234,7 @@ flowchart TD
 
 ## 6. 事件与普通聊天的区别
 
-`EventsWatcher` 监视 `events/*.json`，然后将其转换为 `ConversationEvent` 并再次送入正常流程。
+调度器在启动时加载每个 office 的事件记录，之后随事件存储的变更更新；记录触发时会转换为 `ConversationEvent`，并再次送入正常流程。
 换言之，事件不是独立 executor，而是另一条消息输入路径。
 
 因此，以下能力可以共享同一机制：

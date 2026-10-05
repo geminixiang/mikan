@@ -128,7 +128,7 @@ Session view token は base session file に固定されます。`/session?sessi
 `startWebServer()` の dispatch 順序：
 
 1. `GET /health`
-2. Agent event HTTP routes
+2. GitHub webhook（`POST /github/webhook`、設定時のみ）
 3. Admin routes
 4. Session view routes
 5. Login / vault routes

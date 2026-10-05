@@ -56,7 +56,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 - 建立 `PiAgentWrapper`
 - 載入模型、skills、memory、session context
-- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-agent-core` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
+- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-durable` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 結果回寫 session，並透過 adapter 回傳給平台
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
@@ -97,7 +97,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- session 檔案管理： `sessions/current` 與 `*.jsonl`
+- session 儲存：每個 office 一個 `sessions.db`
 - `log.jsonl` 與 structured session 的雙軌歷史保存
 - workspace 級別與 office 級別的 `MEMORY.md`
 - per-office vault 憑證與 mount / env 注入
@@ -111,11 +111,11 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- `src/adapters/web/server.ts` 負責 HTTP server，並掛接 login/vault、admin、session-view、agent-event routes
+- `src/adapters/web/server.ts` 負責 HTTP server，並掛接 GitHub webhook 與 login/vault、admin、session-view routes
 - 提供 Web login portal，支援 API key 與 OAuth 寫入 vault
 - 提供 admin portal，支援 conversation/settings/workspace/events/skills 管理與 link generation
 - 提供 session viewer；目前可顯示 session timeline，且在 interactive wiring 啟用時可透過 `/session/message` 送訊息
-- 監看 `events/*.json`，把排程事件重新注入 bot 流程
+- 為每個 office 的 event 排程，觸發時重新注入 bot 流程
 
 ## 3. 訊息處理流程
 
@@ -125,26 +125,26 @@ sequenceDiagram
   participant P as Slack / Telegram / Discord / GitHub
   participant A as Adapter
   participant M as ConversationRuntime / Orchestrator
-  participant S as sessions/store.ts
-  participant R as harness/runner.ts / PiAgentWrapper
+  participant S as sessions/chat-history-sync.ts
+  participant R as harness/runner.ts
   participant T as tools/*
   participant X as sandbox Executor
-  participant W as Office dir / sessions
+  participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply
   P->>A: platform event
   A->>M: ConversationEvent + ConversationMessage + ResponseContext (with OfficeAddress)
   M->>M: resolve office, queue event, dispatch commands
   M->>S: resolve session scope
-  S-->>M: contextFile + sessionDir
+  S-->>M: session key
   M->>R: getState() / run()
-  R->>W: read MEMORY.md and the session file, query log.jsonl when needed
+  R->>W: read MEMORY.md and the session, query log.jsonl when needed
   R->>R: build system prompt / skills / model / session context
   R->>T: execute tools
   T->>X: read / bash / edit / write / event / attach
   X-->>T: tool result
   T-->>R: return result
-  R->>W: write structured session, adapter records platform log
+  R->>W: write the session, adapter records platform log
   R-->>M: final response
   M-->>A: response content / diagnostics / files
   A-->>P: platform message update
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── events/                    # the workspace scheduling bus
 ├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
@@ -169,15 +168,15 @@ sequenceDiagram
     └── skills/                # office-level skills
 
 <state-dir>/
-├── settings.json              # required global settings
+├── settings.json              # global settings
+├── models.json                # custom providers and models
 ├── office-registry.json       # office inventory
+├── migrations.json            # applied state migrations
 ├── conversations/
 │   └── <officeKey>/
 │       ├── settings.json      # host-only conversation overrides
-│       └── sessions/          # host-only agent history
-│           ├── current        # top-level session pointer
-│           ├── <timestamp>_<id>.jsonl
-│           └── <scope_id>.jsonl  # thread / reply scoped sessions
+│       ├── sessions.db        # host-only agent history (pi-durable SQLite)
+│       └── events/            # host-only scheduled events
 └── vaults/<vaultId>/          # credentials
 ```
 
@@ -189,9 +188,9 @@ sequenceDiagram
 - office key 在 host 上與 sandbox runtime 內命名的是同一個目錄，因此一個路徑跨越邊界時不會改變意義
 - office key 無法反推回原始平台 id，所以 `office-registry.json` 會在每個 office 第一次實體化時記下它的 `(platform, conversationId)`。面向 raw id 的介面——Admin portal、`mikan office claim`——都透過它來解析
 - `log.jsonl` 是平台對話紀錄：來源平台上實際發生過什麼
-- `sessions/*.jsonl` 只存在 host 上，是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼
-- top-level session 用 `current` 指標，但 `current` 不是 channel history；缺失時可從 `log.jsonl` 重建最近 top-level 工作上下文
-- thread / reply session 用固定檔名，讓 scoped session 可被單獨追蹤
+- `sessions.db` 只存在 host 上，是 LLM 工作上下文/工作紀錄：mikan 拿什麼給 LLM 看，以及 LLM/tool 做了什麼。top-level session 是儲存的 root conversation，每個 thread / reply session 是依 session key 找到的 conversation
+- top-level session 不是 channel history；新的 top-level session 會從 `log.jsonl` 裡最近的 top-level 訊息開始
+- 排程 event 放在 office 的 State dir，agent 只能透過 `event` 工具存取
 - session key 維持原始平台值；runtime 狀態是以 office 加上 session key 來定址，因此一個 session key 絕不可能選到另一個 office 的 runner 或 queue
 - Slack top-level 訊息共用 channel session；Slack thread replies 使用 `conversationId:threadTs`
 - Slack events 會先建立 top-level anchor message，再用 `conversationId:anchorTs` 執行
@@ -235,7 +234,7 @@ flowchart TD
 
 ## 6. Events 與一般對話的差異
 
-`events/*.json` 會被 `EventsWatcher` 監看，之後轉成 `ConversationEvent` 再走一次正常流程。
+scheduler 在啟動時載入每個 office 的 event 紀錄，之後跟著 event store 的變更更新；紀錄觸發時會轉成 `ConversationEvent`，再走一次正常流程。
 也就是說 events 不是獨立執行器，而是「另一個訊息入口」。
 
 這讓下列能力共用同一套機制:

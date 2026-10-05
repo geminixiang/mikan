@@ -129,7 +129,7 @@ description: mikan 管理、登录和会话 portal 使用的短期 capability to
 `startWebServer()` 的分发顺序：
 
 1. `GET /health`
-2. Agent event HTTP routes
+2. GitHub webhook（`POST /github/webhook`，已配置时）
 3. Admin routes
 4. Session view routes
 5. Login / vault routes
