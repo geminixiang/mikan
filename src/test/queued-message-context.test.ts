@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { SessionStore } from "../sessions/session-store.js";
+import { RUN_CAUSE_CUSTOM_TYPE } from "../sessions/types.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { formatHistoryLine } from "../sessions/history-line.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
@@ -120,9 +121,11 @@ async function appendTurn(
   prompt: string,
   answer: string | undefined,
   timestamp: number,
+  messageId: string,
 ): Promise<void> {
   const session = await SessionStore.open(office, contextFile);
   try {
+    await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId });
     await session.appendMessage({
       role: "user",
       content: [
@@ -177,7 +180,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
   const scope = { contextFile: SESSION_KEY };
 
   await syncForTurn(manager, scope.contextFile, BUSY_RECORD.ts);
-  await appendTurn(scope.contextFile, BUSY_TEXT, "QA_BUSY_TOKEN", 3);
+  await appendTurn(scope.contextFile, BUSY_TEXT, "QA_BUSY_TOKEN", 3, BUSY_RECORD.ts);
 
   writeLog([...EARLIER_TURN, BUSY_RECORD, QUEUED_RECORD, BUSY_REPLY_RECORD]);
 
@@ -188,6 +191,7 @@ async function runBusyThenQueuedTurns(): Promise<string> {
 async function appendToolCallTurn(contextFile: string): Promise<void> {
   const session = await SessionStore.open(office, contextFile);
   try {
+    await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: BUSY_RECORD.ts });
     await session.appendMessage({
       role: "user",
       content: [
@@ -245,7 +249,7 @@ describe("queued message context", () => {
 
   test("the queued turn prompts with the queued message, not the busy one", async () => {
     const contextFile = await runBusyThenQueuedTurns();
-    await appendTurn(contextFile, QUEUED_TEXT, undefined, 6);
+    await appendTurn(contextFile, QUEUED_TEXT, undefined, 6, QUEUED_RECORD.ts);
 
     const messages = await providerMessages(contextFile);
     const lastUser = messages.findLast((message) => message.role === "user");
@@ -270,7 +274,7 @@ describe("queued message context", () => {
 
     writeLog([...EARLIER_TURN, BUSY_RECORD, QUEUED_RECORD, BUSY_REPLY_RECORD]);
     await syncForTurn(manager, scope.contextFile, QUEUED_RECORD.ts);
-    await appendTurn(scope.contextFile, QUEUED_TEXT, undefined, 8);
+    await appendTurn(scope.contextFile, QUEUED_TEXT, undefined, 8, QUEUED_RECORD.ts);
 
     const userTexts = (await providerMessages(scope.contextFile))
       .filter((message) => message.role === "user")

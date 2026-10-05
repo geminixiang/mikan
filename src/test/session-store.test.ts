@@ -72,6 +72,55 @@ describe("SessionStore", () => {
     await reopened.close();
   });
 
+  test("a history batch commits its messages and bookkeeping together or not at all", async () => {
+    const store = await SessionStore.open(office, "C1");
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const message = {
+      role: "user" as const,
+      content: [{ type: "text" as const, text: "synced history" }],
+      timestamp: 1,
+    };
+    try {
+      await expect(
+        store.appendEntries([
+          { type: "message", message, history: { messageId: "1" } },
+          { type: "custom", customType: "mikan.test", data: circular, timestamp: 1 },
+        ]),
+      ).rejects.toThrow(/circular/i);
+      expect(await store.getEntries()).toEqual([]);
+      await expect(
+        store.appendEntries([
+          {
+            type: "message",
+            message: fauxAssistantMessage("not a chat line"),
+            history: { messageId: "1" },
+          },
+        ]),
+      ).rejects.toThrow("Chat history must enter as an attributed user message");
+      expect(await store.getEntries()).toEqual([]);
+
+      await store.appendEntries([
+        { type: "message", message, history: { messageId: "1" } },
+        { type: "custom", customType: "mikan.test", data: { messageId: "1" }, timestamp: 1 },
+      ]);
+      expect((await store.getEntries()).map((entry) => entry.type)).toEqual(["message", "custom"]);
+    } finally {
+      await store.close();
+    }
+    const reopened = await SessionStore.open(office, "C1");
+    try {
+      const entries = await reopened.getEntries();
+      expect(entries.map((entry) => entry.type)).toEqual(["message", "custom"]);
+      expect(entries[0]).toMatchObject({ history: { messageId: "1" } });
+      expect(JSON.stringify((await reopened.buildSessionContext()).messages)).toContain(
+        "synced history",
+      );
+    } finally {
+      await reopened.close();
+    }
+  });
+
   test("lists sessions with the top-level session as root", async () => {
     for (const key of ["C1", "C1:1000.1"]) await (await SessionStore.open(office, key)).close();
 

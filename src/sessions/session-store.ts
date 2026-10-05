@@ -33,6 +33,7 @@ import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite
 import type { Office } from "../office/types.js";
 import type {
   AttachedSessionHarness,
+  ChatHistoryMessageIdentity,
   ImportedSession,
   ImportedSessionEntry,
   SessionHarnessBinding,
@@ -84,6 +85,8 @@ const SessionIndexDoc = defineDoc<SessionIndexState>({
   initial: () => ({ sessions: {} }),
 });
 
+const ChatHistoryEntry = defineEntry<Readonly<ChatHistoryMessageIdentity>>("mikan.chat_history");
+
 const CustomSessionEntry = defineEntry<{
   customType: string;
   data: JsonValue;
@@ -124,9 +127,20 @@ function contentText(message: Message | undefined): string {
 function toSessionEntry(record: EntryRecord, sessionId: string): SessionEntry | undefined {
   const id = `${sessionId}:${record.id}`;
   const message = record.model?.[0];
-  if (UserEntry.is(record) || AssistantEntry.is(record) || ToolResultEntry.is(record)) {
+  if (
+    UserEntry.is(record) ||
+    ChatHistoryEntry.is(record) ||
+    AssistantEntry.is(record) ||
+    ToolResultEntry.is(record)
+  ) {
     if (!message) return undefined;
-    return { type: "message", id, timestamp: messageTimestamp(message), message };
+    return {
+      type: "message",
+      id,
+      timestamp: messageTimestamp(message),
+      message,
+      history: ChatHistoryEntry.is(record) ? record.data : undefined,
+    };
   }
   if (CompactionEntry.is(record)) {
     return {
@@ -421,16 +435,22 @@ export function isEarlierSessionKey(key: string): boolean {
   return key.startsWith(EARLIER_SESSION_PREFIX);
 }
 
-async function appendImportedEntry(
+async function appendSessionEntry(
   tx: Tx,
   conversationId: ConversationId,
   entry: ImportedSessionEntry,
 ): Promise<void> {
   switch (entry.type) {
     case "message": {
+      if (entry.history !== undefined && entry.message.role !== "user") {
+        throw new Error("Chat history must enter as an attributed user message");
+      }
       const model = [durableMessage(entry.message)];
-      if (entry.message.role === "user") await tx.appendEntry(UserEntry, conversationId, { model });
-      else if (entry.message.role === "assistant") {
+      if (entry.history !== undefined) {
+        await tx.appendEntry(ChatHistoryEntry, conversationId, { model, data: entry.history });
+      } else if (entry.message.role === "user") {
+        await tx.appendEntry(UserEntry, conversationId, { model });
+      } else if (entry.message.role === "assistant") {
         await tx.appendEntry(AssistantEntry, conversationId, { model });
       } else {
         await tx.appendEntry(ToolResultEntry, conversationId, {
@@ -480,7 +500,7 @@ export async function importOfficeSessions(
   try {
     for (const session of sessions) {
       const init = async (tx: Tx, conversationId: ConversationId) => {
-        for (const entry of session.entries) await appendImportedEntry(tx, conversationId, entry);
+        for (const entry of session.entries) await appendSessionEntry(tx, conversationId, entry);
         if (session.name) (await tx.doc(SessionDoc, conversationId)).name = session.name;
         await writeSessionIndex(tx, session.key, {
           conversationId,
@@ -602,7 +622,7 @@ export class SessionStore implements SessionInspection {
         {
           ownership: { kind: "ownerless" },
           init: async (tx, conversationId) => {
-            for (const entry of entries) await appendImportedEntry(tx, conversationId, entry);
+            for (const entry of entries) await appendSessionEntry(tx, conversationId, entry);
             await writeSessionIndex(tx, key, {
               conversationId,
               id: randomUUID(),
@@ -774,6 +794,14 @@ export class SessionStore implements SessionInspection {
         extensionName: `mikan.${conversationId}`,
       };
     });
+  }
+
+  async appendEntries(entries: readonly ImportedSessionEntry[]): Promise<void> {
+    await this.mutate(() =>
+      this.conversation.commit(async (tx) => {
+        for (const entry of entries) await appendSessionEntry(tx, this.conversation.id, entry);
+      }, context),
+    );
   }
 
   async appendMessage(message: AgentMessage): Promise<string> {

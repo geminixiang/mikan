@@ -122,6 +122,36 @@ describe("ChatHistorySync", () => {
     expect(await sessionRaw("C123")).toContain("work in C123");
   });
 
+  test("reset accepts new IDs with the same text without replaying the old context", async () => {
+    const before = {
+      date: "2026-05-01T00:00:00.000Z",
+      ts: "1000.0001",
+      user: "U1",
+      userName: "alice",
+      text: "thanks",
+      isMessagingBot: false,
+    };
+    writeLog([before]);
+    let now = new Date("2026-05-01T00:00:01.000Z");
+    const manager = new ChatHistorySync({ isCommandText, now: () => now });
+    await manager.resolveSessionScope({ office, sessionKey: "C123" });
+    now = new Date("2026-05-02T00:00:00.000Z");
+    await manager.resetSession({ office, sessionKey: "C123" });
+    writeLog([
+      before,
+      { ...before, date: "2026-05-02T00:00:01.000Z", ts: "2000.0001", userName: "bob", user: "U2" },
+    ]);
+    now = new Date("2026-05-02T00:00:02.000Z");
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    const text = await readContextText("C123");
+    expect(text).toContain("[bob]: thanks");
+    expect(text).not.toContain("[alice]: thanks");
+    expect(text.match(/: thanks/g)).toHaveLength(1);
+
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect(await readContextText("C123")).toBe(text);
+  });
+
   test("reset excludes pre-reset messages that are logged late", async () => {
     writeLog([
       {
@@ -548,6 +578,35 @@ describe("ChatHistorySync", () => {
     expect(await readContextText("C123:1000.0001")).toContain("[carol]: earlier thread remark");
   });
 
+  test("a forked thread keeps a new message identical to its inherited chat history", async () => {
+    await channelWithRuns();
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-05-01T00:00:07.000Z"),
+    });
+    const key = "C123:1000.0001";
+    await manager.resolveSessionScope({ office, sessionKey: key, currentMessageId: "1000.0006" });
+    appendFileSync(
+      office.logPath,
+      `${JSON.stringify({
+        date: "2026-05-01T00:00:06.000Z",
+        ts: "1000.0007",
+        threadTs: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "earlier thread remark",
+      })}\n`,
+    );
+    await syncViaRuntimePath(manager, office, key, key);
+    const text = await readContextText(key);
+    expect(text.match(/: earlier thread remark/g)).toHaveLength(2);
+    expect(text).toContain("build hash 4f2a9c");
+    expect(await readContextText("C123")).not.toContain("earlier thread remark");
+
+    await syncViaRuntimePath(manager, office, key, key);
+    expect(await readContextText(key)).toBe(text);
+  });
+
   test("a thread no run caused starts from its root and its own replies alone", async () => {
     writeLog([
       {
@@ -644,6 +703,125 @@ describe("ChatHistorySync", () => {
     expect(text).not.toContain("answer from a thread run");
   });
 
+  test.each(["alice", "bob"])(
+    "keeps a later identical message from %s and does not replay it on the next sync",
+    async (userName) => {
+      const first = {
+        date: "2026-05-01T00:00:00.000Z",
+        ts: "1000.0001",
+        user: "U1",
+        userName: "alice",
+        text: "thanks",
+        isMessagingBot: false,
+      };
+      writeLog([first]);
+      const manager = new ChatHistorySync({
+        isCommandText,
+        now: () => new Date("2026-05-02T00:00:03.000Z"),
+      });
+      await manager.resolveSessionScope({ office, sessionKey: "C123" });
+      writeLog([
+        first,
+        {
+          ...first,
+          date: "2026-05-02T00:00:00.000Z",
+          ts: "2000.0001",
+          user: userName === "alice" ? "U1" : "U2",
+          userName,
+        },
+        {
+          ...first,
+          date: "2026-05-02T00:00:01.000Z",
+          ts: "2000.0002",
+          text: "different",
+        },
+      ]);
+
+      await syncViaRuntimePath(manager, office, "C123", "C123");
+      const firstSync = await readContextText("C123");
+      expect(firstSync.match(/: thanks/g)).toHaveLength(2);
+      expect(firstSync).toContain(`[${userName}]: thanks`);
+      expect(firstSync).toContain("different");
+
+      await syncViaRuntimePath(manager, office, "C123", "C123");
+      expect(await readContextText("C123")).toBe(firstSync);
+    },
+  );
+
+  test("a run-cause without an admitted user message does not hide the trigger from history", async () => {
+    const trigger = {
+      date: "2026-05-01T00:00:00.000Z",
+      ts: "1000.0001",
+      user: "U1",
+      userName: "alice",
+      text: "request before authentication failed",
+      isMessagingBot: false,
+    };
+    writeLog([trigger]);
+    const manager = new ChatHistorySync({
+      isCommandText,
+      maxTopLevelMessages: 1,
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    });
+    await manager.resolveSessionScope({
+      office,
+      sessionKey: "C123",
+      currentMessageId: trigger.ts,
+    });
+    const session = await SessionStore.open(office, "C123");
+    try {
+      await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: trigger.ts });
+    } finally {
+      await session.close();
+    }
+    writeLog([trigger, { ...trigger, ts: "1000.0002", text: "other passive history" }]);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect(await readContextText("C123")).toContain("other passive history");
+
+    writeLog([trigger]);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect(await readContextText("C123")).toContain("request before authentication failed");
+  });
+
+  test("run-cause IDs exclude handled prompts without excluding a later identical message", async () => {
+    const trigger = {
+      date: "2026-05-01T00:00:00.000Z",
+      ts: "1000.0001",
+      user: "U1",
+      userName: "alice",
+      text: "thanks",
+      isMessagingBot: false,
+    };
+    writeLog([trigger]);
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-05-01T00:00:04.000Z"),
+    });
+    await manager.resolveSessionScope({
+      office,
+      sessionKey: "C123",
+      currentMessageId: trigger.ts,
+    });
+    const session = await SessionStore.open(office, "C123");
+    try {
+      await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: trigger.ts });
+      await session.appendMessage({
+        role: "user",
+        content: [{ type: "text", text: "[2026-05-01 00:00:00+00:00] [alice]: thanks" }],
+        timestamp: 1,
+      });
+    } finally {
+      await session.close();
+    }
+    writeLog([trigger, { ...trigger, ts: "1000.0002", text: "between runs" }]);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect((await readContextText("C123")).match(/: thanks/g)).toHaveLength(1);
+
+    appendFileSync(office.logPath, `${JSON.stringify({ ...trigger, ts: "1000.0003" })}\n`);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect((await readContextText("C123")).match(/: thanks/g)).toHaveLength(2);
+  });
+
   test("syncs passive top-level chat messages into an existing session", async () => {
     const logEntries = [
       {
@@ -724,6 +902,7 @@ describe("ChatHistorySync", () => {
       currentMessageId: "1000.0003",
     });
     const session = await SessionStore.open(office, firstScope.key);
+    await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: "1000.0003" });
     await session.appendMessage({
       role: "user",
       content: [{ type: "text", text: "[2026-05-01 00:00:02+00:00] [alice]: next one is?" }],
@@ -848,6 +1027,38 @@ describe("ChatHistorySync", () => {
     expect(text).not.toContain("sync0");
     expect(text).toContain("sync1");
     expect(text).toContain("sync2");
+  });
+
+  test("a rebuilt log does not replay synced IDs or hide a new identical message", async () => {
+    const first = {
+      date: "2026-05-01T00:00:00.000Z",
+      ts: "1000.0001",
+      user: "U1",
+      userName: "alice",
+      text: "thanks",
+      isMessagingBot: false,
+    };
+    const second = { ...first, ts: "1000.0002", user: "U2", userName: "bob" };
+    const watermark = { ...first, ts: "1000.0003", text: "watermark" };
+    writeLog([first]);
+    const manager = new ChatHistorySync({
+      isCommandText,
+      now: () => new Date("2026-05-01T00:00:03.000Z"),
+    });
+    await manager.resolveSessionScope({ office, sessionKey: "C123" });
+    writeLog([first, second, watermark]);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect((await readContextText("C123")).match(/: thanks/g)).toHaveLength(2);
+
+    writeLog([first, second, { ...first, ts: "1000.0004", user: "U3", userName: "charlie" }]);
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    const text = await readContextText("C123");
+    expect(text.match(/: thanks/g)).toHaveLength(3);
+    expect(text).toContain("[charlie]: thanks");
+    expect(text.match(/: watermark/g)).toHaveLength(1);
+
+    await syncViaRuntimePath(manager, office, "C123", "C123");
+    expect(await readContextText("C123")).toBe(text);
   });
 
   test("recovers when log rebuild removes the existing sync watermark", async () => {

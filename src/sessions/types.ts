@@ -46,9 +46,14 @@ interface SessionEntryBase {
   timestamp: number;
 }
 
+export interface ChatHistoryMessageIdentity {
+  messageId: string | null;
+}
+
 export interface SessionMessageEntry extends SessionEntryBase {
   type: "message";
   message: AgentMessage;
+  history?: ChatHistoryMessageIdentity;
 }
 
 export interface SessionCustomEntry extends SessionEntryBase {
@@ -107,7 +112,7 @@ export interface SessionListing {
 }
 
 export type ImportedSessionEntry =
-  | { type: "message"; message: Message }
+  | { type: "message"; message: Message; history?: ChatHistoryMessageIdentity }
   | { type: "compaction"; summary: string; timestamp: number }
   | { type: "custom"; customType: string; data: unknown; timestamp: number };
 

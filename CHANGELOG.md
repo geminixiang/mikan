@@ -11,6 +11,7 @@ any release.
 
 ### Fixed
 
+- Chat-history sync no longer drops a new human message because an earlier message has the same text. It uses run-cause and synced message IDs instead, preserving repeated confirmations and identical messages from different people, including after a session reset or in a forked thread. New history batches store their IDs and messages together in one Pi commit, so a failed write can be retried without replaying a partial batch; IDs also prevent replay when a rebuilt log loses its sync cursor. Previously omitted history is not automatically restored.
 - The system prompt's channel table no longer lists every channel and direct message the bot belongs to in every conversation: it names only the conversation itself and the public channels whose offices the conversation can read, so the names of private channels and the people who direct-message the bot no longer reach other conversations, as office visibility promises. On a deployment with 279 such conversations the table drops from 8.9k to 6.2k characters.
 - The usage summary, the `agent.run.*` metrics, and the run span's usage attributes now count the spend of subagents a run delegates to and of compaction during the run, matching the total the run budget enforces; they previously counted only the main agent's own model calls, so a run whose subagent wrote about 2,000 output tokens reported 21.
 

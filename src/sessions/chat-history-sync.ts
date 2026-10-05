@@ -1,6 +1,6 @@
-import type { Message } from "@earendil-works/pi-ai";
 import {
   CONTROL_INPUT_CUSTOM_TYPE,
+  RUN_CAUSE_CUSTOM_TYPE,
   type ImportedSessionEntry,
   type SessionEntry,
 } from "./types.js";
@@ -170,8 +170,8 @@ export class ChatHistorySync {
       const forked = await SessionStore.forkRun(options.office, options.sessionKey, cause, [
         ...threadRecords.flatMap((record): ImportedSessionEntry[] => {
           if (record.message.ts === threadId) return [];
-          const message = buildHistorySessionMessage(record.message);
-          return message ? [{ type: "message", message }] : [];
+          const entry = buildHistorySessionEntry(record.message);
+          return entry ? [entry] : [];
         }),
         {
           type: "custom",
@@ -324,10 +324,7 @@ async function bootstrapSessionFromLog(
 ): Promise<void> {
   const sessionManager = await SessionStore.open(session.office, session.sessionKey);
   try {
-    await appendLogRecordsToSession(sessionManager, records);
-    await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-      lastMessageId,
-    });
+    await appendLogRecordsToSession(sessionManager, records, lastMessageId);
   } finally {
     await sessionManager.close();
   }
@@ -373,27 +370,51 @@ async function syncSessionManagerFromLog(
   );
   if (syncCandidates.length === 0) return;
 
+  const representedIds = new Set(
+    existingEntries.flatMap((entry, index) => {
+      if (entry.type === "message") {
+        return entry.history?.messageId ? [entry.history.messageId] : [];
+      }
+      if (entry.type !== "custom" || !isRecord(entry.data)) return [];
+      if (entry.customType === RUN_CAUSE_CUSTOM_TYPE) {
+        const input = existingEntries[index + 1];
+        if (input?.type !== "message" || input.message.role !== "user" || input.history) return [];
+        return typeof entry.data.messageId === "string" ? [entry.data.messageId] : [];
+      }
+      return isChatSyncMarker(entry) && typeof entry.data.lastMessageId === "string"
+        ? [entry.data.lastMessageId]
+        : [];
+    }),
+  );
   const represented = buildRepresentedMessageCounts(existingEntries);
   const newRecords = syncCandidates.filter(
-    (record) => !consumeRepresentedLogMessage(record, represented),
+    (record) =>
+      !representedIds.has(record.message.ts ?? "") &&
+      (!record.message.isMessagingBot || !consumeRepresentedLogMessage(record, represented)),
   );
   if (newRecords.length === 0) return;
 
   const lastMessageId = syncCandidates.at(-1)?.message.ts;
-  await appendLogRecordsToSession(sessionManager, newRecords);
-  await sessionManager.appendCustomEntry(CHAT_SYNC_CUSTOM_TYPE, {
-    lastMessageId,
-  });
+  await appendLogRecordsToSession(sessionManager, newRecords, lastMessageId);
 }
 
 async function appendLogRecordsToSession(
   sessionManager: SessionStore,
   records: LogRecord[],
+  lastMessageId: string | undefined,
 ): Promise<void> {
-  for (const record of records) {
-    const message = buildHistorySessionMessage(record.message);
-    if (message) await sessionManager.appendMessage(message);
-  }
+  await sessionManager.appendEntries([
+    ...records.flatMap((record): ImportedSessionEntry[] => {
+      const entry = buildHistorySessionEntry(record.message);
+      return entry ? [entry] : [];
+    }),
+    {
+      type: "custom",
+      customType: CHAT_SYNC_CUSTOM_TYPE,
+      data: { lastMessageId },
+      timestamp: Date.now(),
+    },
+  ]);
 }
 
 function isChatSyncMarker(entry: SessionEntry): entry is Extract<SessionEntry, { type: "custom" }> {
@@ -497,13 +518,17 @@ function getSessionMessageText(entry: SessionEntry): string {
 
 const normalizeComparableText = stripHistoryLinePrefix;
 
-function buildHistorySessionMessage(message: ConversationLogMessage): Message | null {
+function buildHistorySessionEntry(message: ConversationLogMessage): ImportedSessionEntry | null {
   const text = historyMessageText(message);
   if (!text) return null;
   return {
-    role: "user",
-    content: [{ type: "text", text: formatHistoryMessage({ ...message, text }) }],
-    timestamp: parseMessageTimestamp(message) ?? Date.now(),
+    type: "message",
+    message: {
+      role: "user",
+      content: [{ type: "text", text: formatHistoryMessage({ ...message, text }) }],
+      timestamp: parseMessageTimestamp(message) ?? Date.now(),
+    },
+    history: { messageId: message.ts ?? null },
   };
 }
 
