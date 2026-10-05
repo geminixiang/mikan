@@ -1,4 +1,5 @@
-import type { RunAnswer } from "../../types.js";
+import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
@@ -14,8 +15,6 @@ import type { TelegramClient, TelegramEvent, TelegramMessagingBotOptions } from 
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
-  appendBotResponseLog,
-  appendChannelLog,
   MessagingEventQueue,
   MessagingIntakeTracker,
   downloadUrlToFile,
@@ -189,8 +188,8 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
-  logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workspace.office(createOfficeAddress("telegram", channel)), entry);
+  logToFile(channel: string, entry: ConversationLogMessage): void {
+    appendOfficeLog(this.workspace.office(createOfficeAddress("telegram", channel)), entry);
   }
 
   logBotResponse(
@@ -200,13 +199,12 @@ export class TelegramMessagingBot implements MessagingBot {
     threadTs?: string,
     { answer }: { answer?: RunAnswer } = {},
   ): void {
-    appendBotResponseLog(
-      this.workspace.office(createOfficeAddress("telegram", channel)),
+    appendBotResponseLog(this.workspace.office(createOfficeAddress("telegram", channel)), {
       text,
       ts,
       threadTs,
-      { ...answer },
-    );
+      answer,
+    });
   }
 
   async processAttachments(

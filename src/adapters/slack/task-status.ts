@@ -1,4 +1,4 @@
-import { readTextFileNoFollowIfExists } from "../../file-guards.js";
+import { readOfficeLog } from "../../office/log.js";
 import type { Office } from "../../office/types.js";
 import { resolveSlackSessionKey } from "./session.js";
 import { reportUserFacingError } from "../../observability/index.js";
@@ -12,14 +12,10 @@ export function isTaskStatusQuestion(text: string): boolean {
 }
 
 export function readTaskRoots(office: Office): Map<string, string> {
-  const raw = readTextFileNoFollowIfExists(office.logPath) ?? "";
   const roots = new Map<string, string>();
-  for (const line of raw.split("\n")) {
-    try {
-      const entry = JSON.parse(line);
-      if (entry.taskRoot === true && entry.isMessagingBot === true && typeof entry.ts === "string")
-        roots.set(entry.ts, String(entry.text ?? ""));
-    } catch {}
+  for (const entry of readOfficeLog(office)) {
+    if (entry.taskRoot === true && entry.isMessagingBot === true && typeof entry.ts === "string")
+      roots.set(entry.ts, String(entry.text ?? ""));
   }
   return roots;
 }

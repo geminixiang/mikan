@@ -7,8 +7,7 @@ import {
 import type { Office } from "../office/types.js";
 import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
-import * as log from "../log.js";
-import { parseJsonValue, readTextFileNoFollowIfExists } from "../file-guards.js";
+import { readOfficeLog } from "../office/log.js";
 import {
   formatHistoryLine,
   stripHistoryLinePrefix,
@@ -32,7 +31,7 @@ import type {
   ResolvedSessionScope,
   ThreadRootMessage,
 } from "./types.js";
-import { errorMessage, isRecord } from "../unknown-values.js";
+import { isRecord } from "../unknown-values.js";
 
 export async function hasMaterializedChatSession(
   options: HasMaterializedSessionOptions,
@@ -542,33 +541,9 @@ function formatHistoryMessage(message: ConversationLogMessage): string {
 }
 
 export function readConversationLog(office: Office): LogRecord[] {
-  const logFile = office.logPath;
-  const raw = readTextFileNoFollowIfExists(logFile);
-  if (raw === undefined) return [];
-
-  const records: LogRecord[] = [];
-  for (const [index, line] of raw.trim().split("\n").filter(Boolean).entries()) {
-    const message = parseLogLine(line, logFile, index + 1);
-    if (message) records.push({ message, index });
-  }
-  return coalesceMessagingBotLogChunks(records);
-}
-
-function parseLogLine(
-  line: string,
-  logFile: string,
-  lineNumber: number,
-): ConversationLogMessage | undefined {
-  try {
-    return parseJsonValue(
-      line,
-      (value): value is ConversationLogMessage => isRecord(value),
-      (detail, kind) => (kind === "shape" ? "expected a JSON object" : detail),
-    );
-  } catch (err) {
-    log.logWarning(`Skipping malformed log entry at ${logFile}:${lineNumber}`, errorMessage(err));
-    return undefined;
-  }
+  return coalesceMessagingBotLogChunks(
+    readOfficeLog(office).map((message, index) => ({ message, index })),
+  );
 }
 
 function coalesceMessagingBotLogChunks(records: LogRecord[]): LogRecord[] {

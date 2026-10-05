@@ -1,4 +1,5 @@
-import type { RunAnswer } from "../../types.js";
+import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import { existsSync } from "node:fs";
 import type {
   MessagingBot,
@@ -8,12 +9,7 @@ import type {
 } from "../../types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import {
-  appendBotResponseLog,
-  appendChannelLog,
-  MessagingEventQueue,
-  splitText,
-} from "../shared.js";
+import { MessagingEventQueue, splitText } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
 import { readGithubActivity } from "./activity.js";
 import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
@@ -210,8 +206,8 @@ export class GithubMessagingBot implements MessagingBot {
     await githubRetry(() => this.client.deleteIssueComment(ref.owner, ref.repo, commentId));
   }
 
-  logToFile(conversationId: string, entry: object): void {
-    appendChannelLog(this.office(conversationId), entry);
+  logToFile(conversationId: string, entry: ConversationLogMessage): void {
+    appendOfficeLog(this.office(conversationId), entry);
   }
 
   logBotResponse(
@@ -221,7 +217,7 @@ export class GithubMessagingBot implements MessagingBot {
     threadTs?: string,
     { answer }: { answer?: RunAnswer } = {},
   ): void {
-    appendBotResponseLog(this.office(conversationId), text, ts, threadTs, { ...answer });
+    appendBotResponseLog(this.office(conversationId), { text, ts, threadTs, answer });
   }
 
   private getQueue(conversationId: string): MessagingEventQueue {

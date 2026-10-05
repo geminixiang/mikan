@@ -1,7 +1,6 @@
 import { join } from "node:path";
-import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { OFFICE_LOG_FILENAME } from "../../office/index.js";
-import { isRecord } from "../../unknown-values.js";
+import { readOfficeLog } from "../../office/log.js";
 
 export interface RecentLine {
   ts: string;
@@ -31,20 +30,9 @@ export function readRecentScope(
 ): RecentLine[] {
   const limit = options.limit ?? 12;
   const humanize = options.humanize ?? ((text: string) => text);
-  const raw = readTextFileNoFollowIfExists(join(conversationDir, OFFICE_LOG_FILENAME));
-  if (raw === undefined) return [];
   const lines: RecentLine[] = [];
-  for (const line of raw.split("\n")) {
-    if (!line) continue;
-    let entry: unknown;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!isRecord(entry) || typeof entry.ts !== "string" || typeof entry.text !== "string") {
-      continue;
-    }
+  for (const entry of readOfficeLog({ logPath: join(conversationDir, OFFICE_LOG_FILENAME) })) {
+    if (typeof entry.ts !== "string" || typeof entry.text !== "string") continue;
     const threadTs = typeof entry.threadTs === "string" ? entry.threadTs : undefined;
     const inScope = event.thread_ts
       ? threadTs === event.thread_ts || entry.ts === event.thread_ts

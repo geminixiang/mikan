@@ -6,7 +6,7 @@ import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
 import { sameOffice } from "../office/index.js";
 import type { Office } from "../office/types.js";
-import { appendFileNoFollow, pinDirectoryNoFollow } from "../file-guards.js";
+import { pinDirectoryNoFollow } from "../file-guards.js";
 import type { PinnedDirectory } from "../file-guards.js";
 import * as log from "../log.js";
 import { reportUserFacingError } from "../observability/index.js";
@@ -188,11 +188,6 @@ export function splitText(
   return parts;
 }
 
-export function appendChannelLog(office: Office, entry: object): void {
-  office.ensure();
-  appendFileNoFollow(office.logPath, `${JSON.stringify(entry)}\n`);
-}
-
 export async function saveIncomingAttachments(
   office: Office,
   items: readonly IncomingAttachment[],
@@ -229,25 +224,6 @@ export async function saveIncomingAttachments(
   } finally {
     directory.close();
   }
-}
-
-export function appendBotResponseLog(
-  office: Office,
-  text: string,
-  ts: string,
-  threadTs?: string,
-  extraFields: Record<string, unknown> = {},
-): void {
-  appendChannelLog(office, {
-    date: new Date().toISOString(),
-    ts,
-    threadTs: threadTs || undefined,
-    user: "bot",
-    text,
-    attachments: [],
-    isMessagingBot: true,
-    ...extraFields,
-  });
 }
 
 export function resolveStopTarget(input: ResolveStopTargetInput): string | null {

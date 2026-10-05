@@ -4,6 +4,8 @@ import type {
   MessagingBot,
   ConversationContext,
   ConversationEvent,
+  ConversationLogMessage,
+  LoggedAttachment,
   MessagingEventHandler,
   OfficeAddress,
   SubagentProgressSnapshot,
@@ -139,9 +141,9 @@ export interface MessageIntakeOptions<TEvent extends ConversationEvent> {
   addressed: boolean;
   magicWord: MagicWordIntakeOptions;
   busyPolicy: "queue" | "reject";
-  logEntryBase: Record<string, unknown>;
-  log?: (entry: Record<string, unknown>) => void;
-  processAttachments: () => Promise<unknown[]>;
+  logEntryBase: ConversationLogMessage;
+  log?: (entry: ConversationLogMessage) => void;
+  processAttachments: () => Promise<LoggedAttachment[]>;
   queueKey: string;
   enqueue: (queueKey: string, work: () => Promise<void>) => QueueAdmission;
   react?: (emoji: string) => Promise<void>;

@@ -1,4 +1,5 @@
-import type { RunAnswer } from "../../types.js";
+import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import {
   ApplicationCommandOptionType,
   ChannelType,
@@ -43,8 +44,6 @@ import type { Workspace } from "../../office/types.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { formatNothingRunning } from "../messages.js";
 import {
-  appendBotResponseLog,
-  appendChannelLog,
   MessagingEventQueue,
   MessagingIntakeTracker,
   downloadUrlToFile,
@@ -273,8 +272,8 @@ export class DiscordMessagingBot implements MessagingBot {
     return Array.from(this.users.values());
   }
 
-  logToFile(channelId: string, entry: object): void {
-    appendChannelLog(this.workspace.office(createOfficeAddress("discord", channelId)), entry);
+  logToFile(channelId: string, entry: ConversationLogMessage): void {
+    appendOfficeLog(this.workspace.office(createOfficeAddress("discord", channelId)), entry);
   }
 
   logBotResponse(
@@ -284,13 +283,12 @@ export class DiscordMessagingBot implements MessagingBot {
     threadTs?: string,
     { answer }: { answer?: RunAnswer } = {},
   ): void {
-    appendBotResponseLog(
-      this.workspace.office(createOfficeAddress("discord", channelId)),
+    appendBotResponseLog(this.workspace.office(createOfficeAddress("discord", channelId)), {
       text,
       ts,
       threadTs,
-      { ...answer },
-    );
+      answer,
+    });
   }
 
   async processAttachments(

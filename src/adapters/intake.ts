@@ -1,5 +1,5 @@
 import { assertSessionKeyBelongsToConversation } from "../sessions/session-key.js";
-import type { ConversationEvent } from "../types.js";
+import type { ConversationEvent, LoggedAttachment } from "../types.js";
 import { formatAlreadyWorking, formatNothingRunning } from "./messages.js";
 import { resolveOnlyScopedStopTarget, resolveStopTarget } from "./shared.js";
 import * as log from "../log.js";
@@ -30,7 +30,7 @@ export async function processMessageIntake<TEvent extends ConversationEvent>(
     return "not-triggered";
   }
 
-  function prepareEvent(attachments: unknown[]): TEvent {
+  function prepareEvent(attachments: LoggedAttachment[]): TEvent {
     const event = { ...options.eventBase, attachments } as TEvent;
     options.log?.({ ...options.logEntryBase, attachments });
     return event;

@@ -274,6 +274,8 @@ export interface RunAnswer {
   sessionKey: string;
 }
 
+export type LoggedAttachment = Attachment | { name: string; localPath: string };
+
 export interface ConversationLogMessage {
   date?: string;
   ts?: string;
@@ -282,8 +284,17 @@ export interface ConversationLogMessage {
   sessionKey?: string;
   user?: string;
   userName?: string;
+  displayName?: string;
   text?: string;
+  attachments?: LoggedAttachment[];
   isMessagingBot?: boolean;
+  taskRoot?: boolean;
+  platform?: PlatformName;
+  slackBlocks?: object[];
+  slackInteraction?: Record<string, unknown>;
+  botId?: string;
+  appId?: string;
+  subtype?: string;
 }
 
 export interface ActorContext {

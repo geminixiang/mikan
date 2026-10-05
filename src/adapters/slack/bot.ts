@@ -1,4 +1,5 @@
-import type { RunAnswer } from "../../types.js";
+import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import { appendBotResponseLog, appendOfficeLog, readOfficeLog } from "../../office/log.js";
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
@@ -53,8 +54,6 @@ import type {
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
 import {
-  appendBotResponseLog,
-  appendChannelLog,
   MessagingEventQueue,
   MessagingIntakeTracker,
   AttachmentRejectedError,
@@ -867,8 +866,8 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  logToFile(channel: string, entry: object): void {
-    appendChannelLog(this.workspace.office(createOfficeAddress("slack", channel)), entry);
+  logToFile(channel: string, entry: ConversationLogMessage): void {
+    appendOfficeLog(this.workspace.office(createOfficeAddress("slack", channel)), entry);
   }
 
   logBotResponse(
@@ -878,37 +877,24 @@ export class SlackMessagingBot implements MessagingBot {
     threadTs?: string,
     { slackBlocks, answer }: { slackBlocks?: object[]; answer?: RunAnswer } = {},
   ): void {
-    appendBotResponseLog(
-      this.workspace.office(createOfficeAddress("slack", channel)),
+    appendBotResponseLog(this.workspace.office(createOfficeAddress("slack", channel)), {
       text,
       ts,
       threadTs,
-      {
-        platform: "slack",
-        slackBlocks,
-        ...answer,
-      },
-    );
+      answer,
+      platform: "slack",
+      slackBlocks,
+    });
   }
 
   ownsBlockKitMessage(channel: string, ts: string, threadTs?: string): boolean {
-    const content = readTextFileNoFollowIfExists(this.office(channel).logPath);
-    if (content === undefined) return false;
-    for (const line of content.trim().split("\n").toReversed()) {
-      try {
-        const entry: unknown = JSON.parse(line);
-        if (!isRecord(entry) || entry.ts !== ts) continue;
-        return (
-          entry.isMessagingBot === true &&
-          entry.platform === "slack" &&
-          Array.isArray(entry.slackBlocks) &&
-          entry.threadTs === threadTs
-        );
-      } catch {
-        continue;
-      }
-    }
-    return false;
+    const entry = readOfficeLog(this.office(channel)).findLast((candidate) => candidate.ts === ts);
+    return (
+      entry?.isMessagingBot === true &&
+      entry.platform === "slack" &&
+      Array.isArray(entry.slackBlocks) &&
+      entry.threadTs === threadTs
+    );
   }
 
   getMessagingInfo(): MessagingInfo {

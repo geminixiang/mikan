@@ -13,7 +13,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler, OfficeAddress, RunningSession } from "../types.js";
 import {
-  appendChannelLog,
   MAX_PENDING_EVENTS,
   saveIncomingAttachments,
   writeResponseToFile,
@@ -24,6 +23,7 @@ import {
   splitText,
   withRetry,
 } from "../adapters/shared.js";
+import { appendOfficeLog } from "../office/log.js";
 import { formatToolArgs } from "../harness/tool-args.js";
 import {
   createConversationEvent,
@@ -335,7 +335,7 @@ describe("office files the agent can replace", () => {
 
   test("appending to the conversation log never writes through a link", () => {
     symlinkSync(hostFile, office.logPath);
-    expect(() => appendChannelLog(office, { text: "hi" })).toThrow(/symbolic link/);
+    expect(() => appendOfficeLog(office, { text: "hi" })).toThrow(/symbolic link/);
     expect(readFileSync(hostFile, "utf-8")).toBe("host\n");
   });
 
