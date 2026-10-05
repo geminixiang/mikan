@@ -5,7 +5,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 ## Contracts
 
 - `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
-- A backend without managed projection cannot enforce a private office's visibility; `assertSandboxSupportsWorkspacePolicy` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
+- A backend without managed projection cannot enforce a private office's visibility; `warnUnenforcedPrivateOffice` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
 - Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
 - `provision`, `stop`, and `remove` are serialized per key.
 - Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.

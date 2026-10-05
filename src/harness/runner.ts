@@ -29,7 +29,7 @@ import type {
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import type { DockerContainerManager } from "../sandbox/provisioner.js";
 import {
-  assertSandboxSupportsWorkspacePolicy,
+  warnUnenforcedPrivateOffice,
   createExecutor,
   getUnresolvedSandboxPathContext,
 } from "../sandbox/registry.js";
@@ -196,11 +196,9 @@ function createRunnerExecutionContext(
       }
 
       const office = workspace.office(context.address);
-      const projection = resolveWorkspaceProjection(office);
-      assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.visibility, office.key);
       return {
         pathContext: executor.getPathContext(workspace.root),
-        projection,
+        projection: resolveWorkspaceProjection(office),
       };
     },
   };
@@ -877,7 +875,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   };
 
   const projection = resolveWorkspaceProjection(office);
-  assertSandboxSupportsWorkspacePolicy(sandboxConfig, projection.visibility, office.key);
+  warnUnenforcedPrivateOffice(sandboxConfig, projection.visibility, office.key);
   const { executor, resolveForRun } = createRunnerExecutionContext(
     sandboxConfig,
     vaultManager,

@@ -6,7 +6,7 @@ import { ContainerExecutor } from "../sandbox/container.js";
 import { HostExecutor } from "../sandbox/host.js";
 import { SandboxError } from "../sandbox/utils.js";
 import {
-  assertSandboxSupportsWorkspacePolicy,
+  warnUnenforcedPrivateOffice,
   createExecutor,
   parseSandboxArg,
 } from "../sandbox/registry.js";
@@ -61,7 +61,7 @@ describe("parseSandboxArg", () => {
   });
 });
 
-describe("assertSandboxSupportsWorkspacePolicy", () => {
+describe("warnUnenforcedPrivateOffice", () => {
   test.each([
     { type: "host" } as const,
     { type: "container", container: "mikan-sandbox" } as const,
@@ -69,9 +69,9 @@ describe("assertSandboxSupportsWorkspacePolicy", () => {
   ])("warns once about an unenforced private office on $type", (sandboxConfig) => {
     const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
     const key = `k-${sandboxConfig.type}`;
-    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "private", key);
-    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "private", key);
-    assertSandboxSupportsWorkspacePolicy(sandboxConfig, "public", key);
+    warnUnenforcedPrivateOffice(sandboxConfig, "private", key);
+    warnUnenforcedPrivateOffice(sandboxConfig, "private", key);
+    warnUnenforcedPrivateOffice(sandboxConfig, "public", key);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]![0]).toMatch(/cannot enforce private office visibility/);
     warn.mockRestore();
@@ -79,7 +79,7 @@ describe("assertSandboxSupportsWorkspacePolicy", () => {
 
   test("image mode enforces visibility silently", () => {
     const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
-    assertSandboxSupportsWorkspacePolicy({ type: "image", image: "ubuntu:24.04" }, "private", "k");
+    warnUnenforcedPrivateOffice({ type: "image", image: "ubuntu:24.04" }, "private", "k");
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });

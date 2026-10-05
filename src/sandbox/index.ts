@@ -12,7 +12,7 @@ export { ContainerExecutor } from "./container.js";
 export { HostExecutor } from "./host.js";
 export { SandboxError } from "./utils.js";
 export {
-  assertSandboxSupportsWorkspacePolicy,
+  warnUnenforcedPrivateOffice,
   createExecutor,
   getSandboxAdapters,
   getSandboxCredentialCapabilities,

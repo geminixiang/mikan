@@ -75,7 +75,7 @@ export function getSandboxWorkspaceCapabilities(
 
 const warnedUnenforcedPrivacy = new Set<string>();
 
-export function assertSandboxSupportsWorkspacePolicy(
+export function warnUnenforcedPrivateOffice(
   sandboxConfig: SandboxConfig,
   visibility: "public" | "private",
   officeKey: string,

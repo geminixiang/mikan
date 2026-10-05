@@ -3,11 +3,7 @@ import { posix } from "node:path";
 import { loadGlobalSettings } from "../settings/index.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { ContainerMount, ActorContext, ExecutionPlan } from "../types.js";
-import {
-  assertSandboxSupportsWorkspacePolicy,
-  createExecutor,
-  getSandboxCredentialCapabilities,
-} from "../sandbox/registry.js";
+import { createExecutor, getSandboxCredentialCapabilities } from "../sandbox/registry.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { reportUserFacingError } from "../observability/index.js";
 import { normalizeSharedVaultName } from "../vault/index.js";
@@ -66,7 +62,6 @@ export class ActorExecutionResolver {
       address: office.address,
     });
     const mounts = this.resolveMounts(injection.mounts, projection);
-    assertSandboxSupportsWorkspacePolicy(this.baseConfig, projection.visibility, office.key);
     return {
       plan: {
         credentialKey,

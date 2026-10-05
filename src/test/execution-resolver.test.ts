@@ -221,7 +221,7 @@ describe("ActorExecutionResolver", () => {
     ["container", { type: "container", container: "mikan-sandbox" }],
     ["cloudflare", { type: "cloudflare", sandboxId: "mikan-remote" }],
   ] as const)(
-    "serves a private channel on %s with an unenforced-visibility warning",
+    "serves a private channel on %s without refusing it",
     async (label, sandboxConfig) => {
       createGlobalSettingsFile(stateDir);
       const currentWorkspace = workspace();
@@ -233,13 +233,8 @@ describe("ActorExecutionResolver", () => {
         undefined,
         currentWorkspace,
       );
-      const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
-
-      await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringMatching(/cannot enforce private office visibility/),
-        expect.any(String),
-      );
+      const decision = await resolver.resolve({ userId: "U123", address });
+      expect(decision.projection.visibility).toBe("private");
     },
   );
 
@@ -332,7 +327,7 @@ describe("ActorExecutionResolver", () => {
     ).rejects.toThrow(/does not support vault file mounts/);
   });
 
-  test("cloudflare resolves an office with an unenforced-visibility warning", async () => {
+  test("cloudflare resolves an office of unknown kind as private", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
       { type: "cloudflare", sandboxId: "mikan-remote" },
@@ -340,11 +335,10 @@ describe("ActorExecutionResolver", () => {
       undefined,
       workspace(),
     );
-    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
-
-    await expect(
-      resolver.resolve({ userId: "alice", address: createOfficeAddress("slack", "CCFUNKNOWN") }),
-    ).resolves.toBeDefined();
-    expect(warn).toHaveBeenCalled();
+    const decision = await resolver.resolve({
+      userId: "alice",
+      address: createOfficeAddress("slack", "CCFUNKNOWN"),
+    });
+    expect(decision.projection.visibility).toBe("private");
   });
 });
