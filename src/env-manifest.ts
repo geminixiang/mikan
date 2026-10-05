@@ -118,6 +118,15 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         secret: true,
         doc: "Google Cloud SDK OAuth secret",
       },
+      {
+        name: "GITHUB_OAUTH_SCOPES",
+        doc: "Scopes /login requests from GitHub (default repo read:user user:email read:org gist)",
+      },
+      {
+        name: "OAUTH_SERVICES_JSON",
+        secret: true,
+        doc: "JSON array of extra OAuth services offered by /login",
+      },
     ],
   },
   {
@@ -154,6 +163,15 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         deploy: false,
         doc: "Sentry trace sample rate, 0 to 1 (default 1; ignored with OTLP traces)",
       },
+    ],
+  },
+  {
+    key: "otel",
+    title: "OpenTelemetry",
+    kind: "feature",
+    folded: true,
+    doc: "Standard OTEL_* exporter variables; mikan sends OTLP over HTTP/protobuf",
+    vars: [
       { name: "OTEL_SDK_DISABLED", doc: "Set to true to disable OpenTelemetry" },
       { name: "OTEL_SERVICE_NAME", doc: "OTLP service name (default mikan)" },
       {
@@ -228,6 +246,14 @@ export function envReport(env: EnvLookup = readEnv): string {
           ? " — active"
           : " — inactive"
         : "";
+    if (group.folded) {
+      const set = group.vars.filter((spec) => env(spec.name)).length;
+      const pattern = `${group.vars[0]!.name.split("_")[0]}_*`;
+      lines.push(group.title);
+      lines.push(`  ${pattern.padEnd(36)} ${set} of ${group.vars.length} set  ${group.doc ?? ""}`);
+      lines.push("");
+      continue;
+    }
     lines.push(`${group.title}${active}${group.doc ? ` · ${group.doc}` : ""}`);
     for (const spec of group.vars) {
       const status = env(spec.name) ? "set" : "unset";

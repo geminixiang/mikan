@@ -369,6 +369,7 @@ export interface EnvGroup {
   kind: "platform" | "feature";
   vars: EnvVarSpec[];
   doc?: string;
+  folded?: boolean;
 }
 
 export interface RunnerCacheControl {

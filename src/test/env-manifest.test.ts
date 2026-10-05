@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import {
@@ -53,6 +53,30 @@ describe("derived surfaces", () => {
     for (const line of envSummaryLines()) {
       expect(help).toContain(line.trim());
     }
+  });
+
+  test("lists every variable mikan reads, except Pi's own", () => {
+    const readOnPisBehalf = new Set(["PI_CODING_AGENT_DIR"]);
+    const listed = new Set(ENV_MANIFEST.flatMap((group) => group.vars.map((spec) => spec.name)));
+    const sources = readdirSync(join(process.cwd(), "src"), { recursive: true, encoding: "utf8" })
+      .filter((file) => file.endsWith(".ts") && !file.startsWith("test"))
+      .map((file) => readFileSync(join(process.cwd(), "src", file), "utf8"));
+    const read = sources.flatMap((source) =>
+      [...source.matchAll(/(?:readEnv|readStandardEnv|resolveScopesFromEnv)\("([A-Z_]+)"/g)].map(
+        (match) => match[1]!,
+      ),
+    );
+    expect(read.filter((name) => !listed.has(name) && !readOnPisBehalf.has(name))).toEqual([]);
+  });
+
+  test("envReport folds the standard OTEL_* variables into one line", () => {
+    const report = envReport(
+      lookup({ OTEL_SERVICE_NAME: "mikan", OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://x" }),
+    );
+    const otelLines = report.split("\n").filter((line) => line.includes("OTEL_"));
+    expect(otelLines).toHaveLength(1);
+    expect(otelLines[0]).toMatch(/OTEL_\*\s+2 of \d+ set/);
+    expect(report).not.toContain("https://x");
   });
 
   test("envReport shows status without leaking values", () => {

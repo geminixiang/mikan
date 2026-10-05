@@ -19,6 +19,7 @@ any release.
 
 ### Changed
 
+- `mikan env` lists `GITHUB_OAUTH_SCOPES` and `OAUTH_SERVICES_JSON`, which mikan read without listing, and folds the 19 standard `OTEL_*` variables into one line showing how many are set. A test now fails when code reads a variable the inventory does not list.
 - `mikan onboard` asks fewer questions: Anthropic and OpenAI use their default model (change it later with `/pi-model` or `settings.json`), `image` uses `ghcr.io/geminixiang/mikan-sandbox:latest`, and the sandbox choice is host or image.
 - `mikan onboard` ends by listing only the variables that are set, instead of all 50-odd variables mikan reads; `mikan env` still prints the full inventory.
 - `mikan migrate` gains `0012-legacy-office-files`, which removes the `last_prompt.jsonl` debug prompt and the `auto-reply.disabled` marker that 0.5.3 left in office directories, where sandboxes could still read them. 1.0 writes neither.
