@@ -48,7 +48,6 @@
     "test": "vitest --run --config .config/vitest.config.ts",
     "typecheck": "tsgo -p .config/tsconfig.typecheck.json",
     "test:coverage": "vitest --run --coverage --config .config/vitest.config.ts",
-    "test:coverage:check": "npm run test:coverage",
     "test:office:docker": "node scripts/verify-office-docker.mjs",
     "lint": "oxlint -c .config/oxlintrc.json --deny-warnings",
     "lint:fix": "oxlint -c .config/oxlintrc.json --fix",
