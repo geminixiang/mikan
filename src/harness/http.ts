@@ -5,24 +5,11 @@ export const DEFAULT_HTTP_IDLE_TIMEOUT_MS = 300_000;
 const originalGlobalFetch = globalThis.fetch;
 let installedGlobalFetch: typeof globalThis.fetch | undefined;
 
-export function parseHttpIdleTimeoutMs(value: unknown): number | undefined {
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.toLowerCase() === "disabled") return 0;
-    if (trimmed.length === 0) return undefined;
-    return parseHttpIdleTimeoutMs(Number(trimmed));
-  }
-  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-    return undefined;
-  }
-  return Math.floor(value);
-}
-
 export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): number {
-  const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
-  if (normalizedTimeoutMs === undefined) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
     throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
   }
+  const normalizedTimeoutMs = Math.floor(timeoutMs);
 
   undici.setGlobalDispatcher(
     new undici.EnvHttpProxyAgent({

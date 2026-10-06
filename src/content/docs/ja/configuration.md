@@ -61,17 +61,17 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 以下の値は onboarding によって生成されます。解決後のグローバル設定では `llm.provider`、`llm.model`、`llm.thinkingLevel` が必須で、その他のフィールドは省略できます。
 
-| フィールド                   | Onboarding の値     | 説明                                                                                                              |
-| ---------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `llm.provider`               | `anthropic`         | メイン AI provider                                                                                                |
-| `llm.model`                  | `claude-sonnet-4-6` | メイン model 名                                                                                                   |
-| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                              |
-| `sentry.dsn`                 | 未設定              | Sentry DSN。機密性の高い prompt と tool の内容はマスクされます                                                    |
-| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
-| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
-| `office.visibility`          | 未設定              | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
-| `sandbox.defaultSharedVault` | 空                  | 対象となる membership-trust image conversations にコピーされる共有 vault                                          |
-| `slack.replyMode`            | `top-level`         | Slack 応答モード：`top-level` または `thread`                                                                     |
+| フィールド                   | Onboarding の値         | 説明                                                                                                              |
+| ---------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `llm.provider`               | `anthropic`             | メイン AI provider                                                                                                |
+| `llm.model`                  | `claude-sonnet-4-6`     | メイン model 名                                                                                                   |
+| `llm.thinkingLevel`          | `off`                   | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                              |
+| `sandbox.boost.cpus`         | `2`                     | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
+| `sandbox.boost.memory`       | `4g`                    | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
+| `office.visibility`          | 未設定                  | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
+| `sandbox.defaultSharedVault` | 空                      | 対象となる membership-trust image conversations にコピーされる共有 vault                                          |
+| `github.*`                   | GitHub を選ぶと `repos` | GitHub adapter が応答する場所とトリガーできる人。[GitHub](/ja/platform-adapters/github/#設定) を参照              |
+| `slack.replyMode`            | `top-level`             | Slack 応答モード：`top-level` または `thread`                                                                     |
 
 `/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox visibility <private|default>` は conversation の `office.visibility` の上書きを書き込みます。admin portal にも同じスイッチがあります。
 
@@ -123,12 +123,12 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 
 通常の bot mode には、少なくとも 1 組の完全な platform credentials が必要です：
 
-| Platform | 必須の環境変数                                                                    | 任意の変数                                                                                               |
-| -------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                              | —                                                                                                        |
-| Telegram | `TELEGRAM_BOT_TOKEN`                                                              | —                                                                                                        |
-| Discord  | `DISCORD_BOT_TOKEN`                                                               | —                                                                                                        |
-| GitHub   | `GITHUB_AGENT_TOKEN`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOS`, および `LINK_PORT` | `GITHUB_PUBLIC_REPOS`, `GITHUB_USERS`, `GITHUB_MIN_PERMISSION`, `GITHUB_TRIGGERS`, `GITHUB_CAPABILITIES` |
+| Platform | 必須の環境変数                                                                                       | 任意の変数               |
+| -------- | ---------------------------------------------------------------------------------------------------- | ------------------------ |
+| Slack    | `SLACK_APP_TOKEN`, `SLACK_BOT_TOKEN`                                                                 | —                        |
+| Telegram | `TELEGRAM_BOT_TOKEN`                                                                                 | —                        |
+| Discord  | `DISCORD_BOT_TOKEN`                                                                                  | —                        |
+| GitHub   | `GITHUB_AGENT_TOKEN`、`GITHUB_WEBHOOK_SECRET`、`LINK_PORT`、および `settings.json` の `github.repos` | その他の `github.*` 設定 |
 
 プラットフォーム固有のセットアップと権限については [プラットフォーム接続](/ja/platform-adapters/) を参照してください。
 
@@ -152,13 +152,13 @@ mikan は単一の OpenTelemetry traces/metrics pipeline を所有し、標準 O
 
 ローカルの [Arize Phoenix](https://github.com/Arize-ai/phoenix) には `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:6006/v1/traces` を設定します。Phoenix は traces を受信しますが OTLP metrics ingestion は提供しません。metrics は Collector または別 backend に送ってください。mikan は同じ spans に content-free な標準 GenAI attributes と最小 OpenInference projection を付け、provider、model、token counts、duration、status、session attribution、tool name を duplicate spans なしで保持します。
 
-`SENTRY_DSN`（または互換の `sentry.dsn`）は Sentry issue reporting を有効にし、error を active OpenTelemetry trace に link します。Sentry が第2の application trace/metric pipeline を作ることはありません。同じ traces を Phoenix と Sentry の両方へ送る場合は OpenTelemetry Collector で fan-out してください。Sentry direct OTLP は現在 traces/logs をサポートしますが OTLP metrics はサポートしません。
+`SENTRY_DSN` は Sentry issue reporting を有効にし、error を active OpenTelemetry trace に link します。Sentry が第2の application trace/metric pipeline を作ることはありません。同じ traces を Phoenix と Sentry の両方へ送る場合は OpenTelemetry Collector で fan-out してください。Sentry direct OTLP は現在 traces/logs をサポートしますが OTLP metrics はサポートしません。
 
 サポート protocol は `http/protobuf` のみです。`OTEL_TRACES_EXPORTER=none` と `OTEL_METRICS_EXPORTER=none` で signal ごとに無効化できます。prompts、completions、message text、tool arguments/results、file contents、credentials、tokens、absolute paths は送信しません。一方で model ID、token/cost totals、timings、payload sizes、tool categories、retry/compaction/budget counts など、content-free な運用 metadata は送信します。platform conversation、session、message、thread、user identifiers は trace を送信元へ直接対応付けられるよう raw operational ID として export します。human-readable username、channel name、workspace name は引き続き送信しません。resource attributes は allowlist されるため、`OTEL_RESOURCE_ATTRIBUTES` に secrets や paths を入れないでください。shutdown は conversation work を drain した後に OTLP を flush/shutdown し、最後に Sentry を close します。
 
 ## 環境変数のエイリアス
 
-mikan の設定 helper で読み込む環境変数は、`MIKAN_` prefix も受け付けます。たとえば `MIKAN_SLACK_APP_TOKEN` と `MIKAN_LINK_URL` は `SLACK_APP_TOKEN` と `LINK_URL` の fallback で、prefix なしの値が優先されます。`SENTRY_DSN` は例外です。直接設定するか、`settings.json` の `sentry.dsn` を設定してください。
+mikan の設定 helper で読み込む環境変数は、`MIKAN_` prefix も受け付けます。たとえば `MIKAN_SLACK_APP_TOKEN` と `MIKAN_LINK_URL` は `SLACK_APP_TOKEN` と `LINK_URL` の fallback で、prefix なしの値が優先されます。
 
 daemon の完全な環境インターフェースは、ソースツリー内の manifest として宣言されています。`mikan env` は、platform と feature ごとにグループ化された注釈付きインベントリを、各変数の現在の状態とともに表示するため、コードを読まずにデプロイを監査できます。
 

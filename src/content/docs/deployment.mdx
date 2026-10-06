@@ -171,7 +171,9 @@ start and prints the `mikan migrate` command for your install.
 
 7. **Start and check the log.** For each `settings.json`, the daemon logs
    `Settings that mikan ignores; remove them from <path>` with the 0.5.3 keys 1.0 no longer
-   reads, such as `llm.autoReply`. Remove them.
+   reads, such as `llm.autoReply`, and `Environment variable that mikan ignores` for each
+   variable it no longer reads, with what replaces it. Remove them; move a `sentry.dsn` setting to
+   `SENTRY_DSN`.
 
 `mikan migrate`:
 

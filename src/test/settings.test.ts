@@ -10,7 +10,7 @@ import {
   findUnusedSettings,
   loadGlobalSettings,
   resolveConversationSettings,
-  resolveSentryDsn,
+  loadGithubSettings,
   updateConversationSettings,
   updateGlobalSettings,
 } from "../settings/index.js";
@@ -127,10 +127,44 @@ describe("loadGlobalSettings", () => {
     expect(config.model).toBe("gpt-4o");
   });
 
-  test("reads sentryDsn from settings.json", () => {
-    updateGlobalSettings(stateDir, { sentryDsn: "https://examplePublicKey@o0.ingest.sentry.io/0" });
-    const config = loadGlobalSettings(stateDir);
-    expect(config.sentryDsn).toBe("https://examplePublicKey@o0.ingest.sentry.io/0");
+  test("reads the GitHub policy from settings.json", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "off" },
+        github: { repos: ["acme/*"], publicRepos: true, triggers: ["mention"] },
+      }),
+    );
+    expect(loadGithubSettings(stateDir)).toEqual({
+      repos: ["acme/*"],
+      publicRepos: true,
+      triggers: ["mention"],
+    });
+  });
+
+  test("keeps the GitHub policy when another setting changes", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "off" },
+        github: { repos: ["acme/*"] },
+      }),
+    );
+    updateGlobalSettings(stateDir, { model: "gpt-5" });
+    expect(loadGithubSettings(stateDir)).toEqual({ repos: ["acme/*"] });
+  });
+
+  test("reports a sentry.dsn left in settings.json as ignored", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "off" },
+        sentry: { dsn: "https://public@example.invalid/1" },
+      }),
+    );
+    expect(findUnusedSettings(stateDir, [])).toEqual([
+      { path: join(stateDir, "settings.json"), keys: ["sentry"] },
+    ]);
   });
 
   test("reads sandbox cpus, memory, and boost from settings.json", () => {
@@ -344,31 +378,6 @@ describe("loadGlobalSettings", () => {
 
     expect(resolveConversationSettings(conversation).sandbox?.memory).toBe("1g");
     expect(existsSync(join(conversation.dir, "settings.json"))).toBe(true);
-  });
-});
-
-describe("resolveSentryDsn", () => {
-  let stateDir: string;
-
-  beforeEach(() => {
-    stateDir = join(tmpdir(), `mikan-test-sentry-${Date.now()}`);
-    mkdirSync(stateDir, { recursive: true });
-  });
-
-  afterEach(() => {
-    delete process.env.SENTRY_DSN;
-    if (existsSync(stateDir)) rmSync(stateDir, { recursive: true });
-  });
-
-  test("prefers settings.json over env", () => {
-    updateGlobalSettings(stateDir, { sentryDsn: "https://settings.example/1" });
-    process.env.SENTRY_DSN = "https://env.example/1";
-    expect(resolveSentryDsn(stateDir)).toBe("https://settings.example/1");
-  });
-
-  test("falls back to env when settings.json has no sentryDsn", () => {
-    process.env.SENTRY_DSN = "https://env.example/2";
-    expect(resolveSentryDsn(stateDir)).toBe("https://env.example/2");
   });
 });
 

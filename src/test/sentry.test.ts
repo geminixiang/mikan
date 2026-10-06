@@ -58,6 +58,16 @@ describe("Sentry initialization", () => {
     expect(options).not.toHaveProperty("dataCollection");
   });
 
+  test("turns on exactly when a DSN is set", () => {
+    vi.stubEnv("SENTRY_ENABLED", "false");
+    try {
+      expect(createSentryInitOptions("https://public@example.invalid/1").enabled).toBe(true);
+      expect(createSentryInitOptions(undefined).enabled).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test("samples every trace unless SENTRY_TRACES_SAMPLE_RATE lowers it", () => {
     vi.stubEnv("SENTRY_TRACES_SAMPLE_RATE", "");
     try {

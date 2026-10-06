@@ -15,20 +15,22 @@ Required:
   delivers Issues, Issue comments, Pull requests, and Pull request review
   comments to `<LINK_URL>/github/webhook`. The link server must run
   (`LINK_PORT`); startup fails otherwise.
-- `GITHUB_REPOS` — comma-separated `owner/repo` or `owner/*`. Nothing else is
-  answered.
+  Policy lives in the `github` block of `~/.mikan/settings.json`, because it is
+  behavior rather than a secret:
 
-Restrictions (optional):
-
-- `GITHUB_PUBLIC_REPOS=true` — also answer in public repositories.
-- `GITHUB_USERS` — only these logins can trigger.
-- `GITHUB_MIN_PERMISSION` — `write` (default), `maintain`, or `admin`.
-- `GITHUB_TRIGGERS` — any of `mention`, `assign`, `review`, `followup`
+- `github.repos` (required) — `owner/repo` or `owner/*` entries. Nothing else
+  is answered.
+- `github.publicRepos: true` — also answer in public repositories.
+- `github.users` — only these logins can trigger.
+- `github.minPermission` — `write` (default), `maintain`, or `admin`.
+- `github.triggers` — any of `mention`, `assign`, `review`, `followup`
   (default all).
-- `GITHUB_CAPABILITIES` — `triage` and/or `push` (default none: the agent can
+- `github.capabilities` — `triage` and/or `push` (default none: the agent can
   comment and read but not change labels, assignees, or code).
 
-`policy.ts` parses and applies these; an unknown value fails startup.
+`policy.ts` parses and applies these; an unknown value fails startup. The
+`GITHUB_REPOS`-style variables of earlier prereleases are reported at startup
+with the setting that replaces them.
 
 ## Behavior notes
 
@@ -47,7 +49,7 @@ Restrictions (optional):
 - The `github_*` tools are a `PlatformToolPack` injected from `main.ts`, not
   core tools; the pack omits tools whose capability is off.
 - GitHub sets `MessagingInfo.trustModel: "membership"`: only collaborators
-  with at least write access trigger it (`GITHUB_MIN_PERMISSION` accepts
+  with at least write access trigger it (`github.minPermission` accepts
   nothing lower), so `sandbox.defaultSharedVault`, settings-declared MCP
   servers, and the default OpenConnector token apply as on Slack.
 

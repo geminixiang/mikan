@@ -31,16 +31,32 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 
 ## 設定
 
-| 環境変数                | 用途                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------- |
-| `GITHUB_AGENT_TOKEN`    | アカウントの fine-grained PAT（必須）。GitHub が拒否すると起動に失敗します。     |
-| `GITHUB_WEBHOOK_SECRET` | webhook の secret（必須）。                                                      |
-| `GITHUB_REPOS`          | カンマ区切りの `owner/repo` または `owner/*`（必須）。それ以外には応答しません。 |
-| `GITHUB_PUBLIC_REPOS`   | `true` で public repository にも応答します（既定 `false`）。                     |
-| `GITHUB_USERS`          | トリガーできるログインのカンマ区切りリスト（既定：必要な権限を持つ全員）。       |
-| `GITHUB_MIN_PERMISSION` | トリガーに必要な repository 権限：`write`（既定）、`maintain`、`admin`。         |
-| `GITHUB_TRIGGERS`       | `mention`、`assign`、`review`、`followup` の任意の組み合わせ（既定はすべて）。   |
-| `GITHUB_CAPABILITIES`   | コメント以外に許可する `triage` と `push`（既定はどちらもなし）。                |
+2 つの secret を `~/.mikan/mikan.env` に置くと、GitHub adapter が有効になります:
+
+| 環境変数                | 用途                                                                         |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `GITHUB_AGENT_TOKEN`    | アカウントの fine-grained PAT（必須）。GitHub が拒否すると起動に失敗します。 |
+| `GITHUB_WEBHOOK_SECRET` | webhook の secret（必須）。                                                  |
+
+応答する repository とトリガーできる人は `~/.mikan/settings.json` に置きます:
+
+```json
+{
+  "github": {
+    "repos": ["acme/*"],
+    "capabilities": ["triage"]
+  }
+}
+```
+
+| 設定                   | 用途                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------ |
+| `github.repos`         | `owner/repo` または `owner/*`（必須）。それ以外には応答しません。              |
+| `github.publicRepos`   | `true` で public repository にも応答します（既定 `false`）。                   |
+| `github.users`         | トリガーできるログイン（既定：必要な権限を持つ全員）。                         |
+| `github.minPermission` | トリガーに必要な repository 権限：`write`（既定）、`maintain`、`admin`。       |
+| `github.triggers`      | `mention`、`assign`、`review`、`followup` の任意の組み合わせ（既定はすべて）。 |
+| `github.capabilities`  | コメント以外に許可する `triage` と `push`（既定はどちらもなし）。              |
 
 不明な値があると起動に失敗します。
 
@@ -49,14 +65,14 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 配信は次をすべて満たすときだけ実行を開始します。
 
 1. 送信者が bot でも agent アカウント自身でもない。
-2. repository が `GITHUB_REPOS` に一致し、`GITHUB_PUBLIC_REPOS=true` でない限り private である。
+2. repository が `github.repos` に一致し、`github.publicRepos` が `true` でない限り private である。
 3. 有効なトリガーである：
    - `mention`：新しい issue、pull request、comment、inline review comment が `@<login>` をメンションした；
    - `assign`：issue または pull request がアカウントに assign された；
    - `review`：pull request でアカウントの review が依頼された；
    - `followup`：mikan がすでに参加している thread に新しい comment が来た。
-4. `GITHUB_USERS` が設定されていれば、送信者がそこに含まれる。
-5. 送信者が repository で `GITHUB_MIN_PERMISSION` 以上の権限を持つ。確認結果は 5 分間キャッシュされ、失敗時は拒否します。
+4. `github.users` が設定されていれば、送信者がそこに含まれる。
+5. 送信者が repository で `github.minPermission` 以上の権限を持つ。確認結果は 5 分間キャッシュされ、失敗時は拒否します。
 
 それ以外は状態を作らずに無視します。メンション付きの `stop`（または `/stop`）comment は実行中の session を止めます。
 
@@ -64,7 +80,7 @@ conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文�
 
 ## ケイパビリティ
 
-`GITHUB_CAPABILITIES` がなければ、mikan はコメント、リアクション、repository と CI 結果の読み取り、review thread への返信ができますが、label、assignee、コードは変更できません。
+`github.capabilities` がなければ、mikan はコメント、リアクション、repository と CI 結果の読み取り、review thread への返信ができますが、label、assignee、コードは変更できません。
 
 | ケイパビリティ | 追加されるもの                                                   |
 | -------------- | ---------------------------------------------------------------- |

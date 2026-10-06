@@ -135,16 +135,16 @@ describe("runOnboardWizard", () => {
 
   test("github adapter asks the agent token, webhook secret, and repositories", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["4", "github_pat_x", "hush", "acme/*", "2", "sk-oai", "1"]);
+    const io = scriptedIo(["4", "github_pat_x", "hush", "acme/*, tools/cli", "2", "sk-oai", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
     expect(envContent).toContain("GITHUB_AGENT_TOKEN=github_pat_x");
     expect(envContent).toContain("GITHUB_WEBHOOK_SECRET=hush");
-    expect(envContent).toContain("GITHUB_REPOS=acme/*");
-    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")).llm.provider).toBe(
-      "openai",
-    );
+    expect(envContent).not.toContain("GITHUB_REPOS");
+    const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8"));
+    expect(settings.llm.provider).toBe("openai");
+    expect(settings.github).toEqual({ repos: ["acme/*", "tools/cli"] });
   });
 
   test("re-prompts on empty required answers", async () => {

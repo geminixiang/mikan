@@ -82,23 +82,32 @@ curl -s -o /dev/null -w "%{http_code}\n" \
 
 ## 6. 設定 mikan
 
-在 mikan 的執行環境設定以下變數，然後重新啟動：
+把兩個密鑰放進 `~/.mikan/mikan.env`：
 
 ```bash
 GITHUB_AGENT_TOKEN=github_pat_...
 GITHUB_WEBHOOK_SECRET=<webhook 的 secret>
-GITHUB_REPOS=acme/*
 ```
 
-`GITHUB_REPOS` 列出 mikan 會回應的地方：`owner/repo` 或 `owner/*`，用逗號分隔。預設只回應私有 repo、只回應有 write 權限的人，而且只能留言和讀取。可以用下面的設定放寬或收緊：
+再到 `~/.mikan/settings.json` 列出 mikan 要回應的 repo，然後重新啟動：
 
-| 設定                    | 範例             | 效果                                  |
-| ----------------------- | ---------------- | ------------------------------------- |
-| `GITHUB_CAPABILITIES`   | `triage,push`    | 另外可以管理 label、assignee，並開 PR |
-| `GITHUB_TRIGGERS`       | `mention,assign` | 只回應 @ 和 assign                    |
-| `GITHUB_USERS`          | `alice,bob`      | 只有這些人能叫它                      |
-| `GITHUB_MIN_PERMISSION` | `maintain`       | 只有 maintainer 和 admin 能叫它       |
-| `GITHUB_PUBLIC_REPOS`   | `true`           | 也回應公開 repo                       |
+```json
+{
+  "github": {
+    "repos": ["acme/*"]
+  }
+}
+```
+
+`github.repos` 填 `owner/repo` 或 `owner/*`。預設只回應私有 repo、只回應有 write 權限的人，而且只能留言和讀取。可以用其他 `github` 設定放寬或收緊：
+
+| 設定                   | 範例                    | 效果                                  |
+| ---------------------- | ----------------------- | ------------------------------------- |
+| `github.capabilities`  | `["triage", "push"]`    | 另外可以管理 label、assignee，並開 PR |
+| `github.triggers`      | `["mention", "assign"]` | 只回應 @ 和 assign                    |
+| `github.users`         | `["alice", "bob"]`      | 只有這些人能叫它                      |
+| `github.minPermission` | `"maintain"`            | 只有 maintainer 和 admin 能叫它       |
+| `github.publicRepos`   | `true`                  | 也回應公開 repo                       |
 
 啟動 log 會出現：
 
@@ -125,7 +134,7 @@ mikan 自己從不執行 git。agent 在 sandbox 裡 clone 和 push，sandbox �
 | 啟動失敗，出現 `GET /user failed with 401` | Token 打錯、過期或被撤銷                                                        | 建立新 token 並更新環境變數                |
 | Webhook 推送出現紅色叉叉和 401             | `GITHUB_WEBHOOK_SECRET` 和 webhook 的 secret 不同                               | 兩邊設成相同的 secret                      |
 | Webhook 推送連線失敗                       | 網際網路連不到 mikan 的 `LINK_URL`                                              | 檢查 reverse proxy 和 `LINK_PORT`          |
-| 推送成功但 mikan 沒反應                    | Repo 不在 `GITHUB_REPOS`、是公開 repo、觸發方式或使用者未開放，或發送者權限不足 | 檢查第 6 步的設定；mikan 會在 log 寫出原因 |
+| 推送成功但 mikan 沒反應                    | Repo 不在 `github.repos`、是公開 repo、觸發方式或使用者未開放，或發送者權限不足 | 檢查第 6 步的設定；mikan 會在 log 寫出原因 |
 | Clone 或留言出現 404                       | Token 等待核准、resource owner 選錯，或帳號沒有權限                             | 重新檢查第 2、3 步                         |
 | 自動完成或 Assignees 找不到帳號            | 帳號對該 repo 沒有權限                                                          | 照第 2 步調整                              |
 

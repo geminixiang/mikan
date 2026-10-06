@@ -153,7 +153,7 @@ pm2 start mikan
    mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
    ```
 
-7. **起動してログを確認する。** daemon は各 `settings.json` について `Settings that mikan ignores; remove them from <path>` を記録し、1.0 が読まなくなった `llm.autoReply` などの 0.5.3 の設定を挙げます。それらを削除してください。
+7. **起動してログを確認する。** daemon は各 `settings.json` について `Settings that mikan ignores; remove them from <path>` を記録し、1.0 が読まなくなった `llm.autoReply` などの 0.5.3 の設定を挙げます。読まなくなった環境変数についても、代わりの設定とともに `Environment variable that mikan ignores` を記録します。それらを削除し、`sentry.dsn` の設定は `SENTRY_DSN` に移してください。
 
 `mikan migrate` は次を行います:
 

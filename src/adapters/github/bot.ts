@@ -284,7 +284,7 @@ export class GithubMessagingBot implements MessagingBot {
     if (trigger === null || !policy.triggers.has(trigger)) return;
     if (!userIsAllowed(policy, activity.sender.login)) {
       log.logInfo(
-        `GitHub: ignoring ${conversationId} from ${activity.sender.login} (not in GITHUB_USERS)`,
+        `GitHub: ignoring ${conversationId} from ${activity.sender.login} (not in github.users)`,
       );
       return;
     }

@@ -49,7 +49,10 @@ async function askChoice(io: OnboardIo, labels: string[], prompt: string): Promi
   return io.select(prompt, labels);
 }
 
-async function askAdapter(io: OnboardIo, env: Record<string, string>): Promise<void> {
+async function askAdapter(
+  io: OnboardIo,
+  env: Record<string, string>,
+): Promise<{ githubRepos?: string[] }> {
   const platforms = ENV_MANIFEST.filter((group) => group.kind === "platform");
   io.print("\nStep 1/3 — chat adapter");
   const index = await askChoice(
@@ -61,6 +64,14 @@ async function askAdapter(io: OnboardIo, env: Record<string, string>): Promise<v
   for (const spec of group.vars.filter((v) => v.required)) {
     env[spec.name] = await askRequired(io, `  ${spec.name} (${spec.doc}): `, spec.secret);
   }
+  if (group.key !== "github") return {};
+  const repos = await askRequired(io, "  Repositories (owner/repo or owner/*, comma-separated): ");
+  return {
+    githubRepos: repos
+      .split(",")
+      .map((repo) => repo.trim())
+      .filter(Boolean),
+  };
 }
 
 async function askLlm(
@@ -155,7 +166,7 @@ export async function runOnboardWizard(
   }
 
   const env: Record<string, string> = {};
-  await askAdapter(io, env);
+  const { githubRepos } = await askAdapter(io, env);
   const { llm, modelsJson } = await askLlm(io, env);
   const sandboxArg = await askSandbox(io);
 
@@ -174,7 +185,7 @@ export async function runOnboardWizard(
     return 1;
   }
 
-  createGlobalSettingsFile(stateDir, llm);
+  createGlobalSettingsFile(stateDir, { llm, githubRepos });
   recordAllMigrations(stateDir);
   io.print(`\nWrote ${settingsPath}`);
 

@@ -144,7 +144,7 @@ pm2 start mikan
    mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
    ```
 
-7. **启动并检查日志。** daemon 会针对每个 `settings.json` 记录 `Settings that mikan ignores; remove them from <path>`，列出 1.0 不再读取的 0.5.3 设置，例如 `llm.autoReply`。请把它们删除。
+7. **启动并检查日志。** daemon 会针对每个 `settings.json` 记录 `Settings that mikan ignores; remove them from <path>`，列出 1.0 不再读取的 0.5.3 设置，例如 `llm.autoReply`；也会针对每个不再读取的环境变量记录 `Environment variable that mikan ignores`，并说明该改用什么。请把它们删除；`sentry.dsn` 设置要改成 `SENTRY_DSN` 环境变量。
 
 `mikan migrate` 会：
 

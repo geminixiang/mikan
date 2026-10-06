@@ -82,23 +82,32 @@ A GitHub App webhook works the same way if you prefer one, for example for repos
 
 ## 6. Configure mikan
 
-Set these in mikan's environment and restart it:
+Put the two secrets in `~/.mikan/mikan.env`:
 
 ```bash
 GITHUB_AGENT_TOKEN=github_pat_...
 GITHUB_WEBHOOK_SECRET=<the webhook secret>
-GITHUB_REPOS=acme/*
 ```
 
-`GITHUB_REPOS` lists where mikan answers: `owner/repo` or `owner/*`, comma-separated. By default mikan answers only in private repositories, only to people with write permission, and can only comment and read. Loosen or tighten that with:
+Then list where mikan answers in `~/.mikan/settings.json`, and restart it:
 
-| Setting                 | Example          | Effect                                         |
-| ----------------------- | ---------------- | ---------------------------------------------- |
-| `GITHUB_CAPABILITIES`   | `triage,push`    | Also manage labels and assignees, and open PRs |
-| `GITHUB_TRIGGERS`       | `mention,assign` | Only react to mentions and assignments         |
-| `GITHUB_USERS`          | `alice,bob`      | Only these people can trigger it               |
-| `GITHUB_MIN_PERMISSION` | `maintain`       | Only maintainers and admins can trigger it     |
-| `GITHUB_PUBLIC_REPOS`   | `true`           | Also answer in public repositories             |
+```json
+{
+  "github": {
+    "repos": ["acme/*"]
+  }
+}
+```
+
+`github.repos` takes `owner/repo` or `owner/*` entries. By default mikan answers only in private repositories, only to people with write permission, and can only comment and read. Loosen or tighten that with more `github` settings:
+
+| Setting                | Example                 | Effect                                         |
+| ---------------------- | ----------------------- | ---------------------------------------------- |
+| `github.capabilities`  | `["triage", "push"]`    | Also manage labels and assignees, and open PRs |
+| `github.triggers`      | `["mention", "assign"]` | Only react to mentions and assignments         |
+| `github.users`         | `["alice", "bob"]`      | Only these people can trigger it               |
+| `github.minPermission` | `"maintain"`            | Only maintainers and admins can trigger it     |
+| `github.publicRepos`   | `true`                  | Also answer in public repositories             |
 
 The startup log shows:
 
@@ -125,7 +134,7 @@ Use an account with the required permission on the repository.
 | Startup fails with `GET /user failed with 401`        | The token is mistyped, expired, or revoked                                                                            | Create a new token and update the environment                     |
 | Webhook deliveries show a red cross with 401          | `GITHUB_WEBHOOK_SECRET` differs from the webhook's secret                                                             | Set the same secret on both sides                                 |
 | Webhook deliveries fail to connect                    | mikan's `LINK_URL` is not reachable from the internet                                                                 | Check the reverse proxy and `LINK_PORT`                           |
-| Deliveries succeed but mikan stays silent             | Repository not in `GITHUB_REPOS`, public repository, trigger or user disabled, or sender below the minimum permission | Check the settings in step 6; mikan logs why it ignored a trigger |
+| Deliveries succeed but mikan stays silent             | Repository not in `github.repos`, public repository, trigger or user disabled, or sender below the minimum permission | Check the settings in step 6; mikan logs why it ignored a trigger |
 | Cloning or commenting fails with 404                  | Token pending approval, wrong resource owner, or the account lacks access                                             | Recheck steps 2 and 3                                             |
 | The account is missing from autocomplete or Assignees | The account has no access to that repository                                                                          | Adjust as in step 2                                               |
 

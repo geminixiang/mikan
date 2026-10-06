@@ -33,16 +33,32 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 
 ## 設定
 
-| 環境變數                | 用途                                                                   |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `GITHUB_AGENT_TOKEN`    | 帳號的 fine-grained PAT（必填）。GitHub 拒絕時啟動失敗。               |
-| `GITHUB_WEBHOOK_SECRET` | Webhook secret（必填）。                                               |
-| `GITHUB_REPOS`          | 以逗號分隔的 `owner/repo` 或 `owner/*`（必填）。其他 repo 一律不回應。 |
-| `GITHUB_PUBLIC_REPOS`   | 設為 `true` 時也回應公開 repo（預設 `false`）。                        |
-| `GITHUB_USERS`          | 以逗號分隔、允許觸發的帳號（預設：任何有足夠權限的人）。               |
-| `GITHUB_MIN_PERMISSION` | 觸發者需要的 repo 權限：`write`（預設）、`maintain` 或 `admin`。       |
-| `GITHUB_TRIGGERS`       | `mention`、`assign`、`review`、`followup` 的任意組合（預設全部）。     |
-| `GITHUB_CAPABILITIES`   | 在留言之外額外開放 `triage` 和／或 `push`（預設都不開）。              |
+兩個密鑰放在 `~/.mikan/mikan.env`，設定後就會啟用 GitHub adapter：
+
+| 環境變數                | 用途                                                     |
+| ----------------------- | -------------------------------------------------------- |
+| `GITHUB_AGENT_TOKEN`    | 帳號的 fine-grained PAT（必填）。GitHub 拒絕時啟動失敗。 |
+| `GITHUB_WEBHOOK_SECRET` | Webhook secret（必填）。                                 |
+
+要回應哪些 repo、誰可以觸發，放在 `~/.mikan/settings.json`：
+
+```json
+{
+  "github": {
+    "repos": ["acme/*"],
+    "capabilities": ["triage"]
+  }
+}
+```
+
+| 設定                   | 用途                                                               |
+| ---------------------- | ------------------------------------------------------------------ |
+| `github.repos`         | `owner/repo` 或 `owner/*`（必填）。其他 repo 一律不回應。          |
+| `github.publicRepos`   | 設為 `true` 時也回應公開 repo（預設 `false`）。                    |
+| `github.users`         | 允許觸發的帳號（預設：任何有足夠權限的人）。                       |
+| `github.minPermission` | 觸發者需要的 repo 權限：`write`（預設）、`maintain` 或 `admin`。   |
+| `github.triggers`      | `mention`、`assign`、`review`、`followup` 的任意組合（預設全部）。 |
+| `github.capabilities`  | 在留言之外額外開放 `triage` 和／或 `push`（預設都不開）。          |
 
 任何一項填了不認得的值，啟動就會失敗。
 
@@ -51,14 +67,14 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 一次推送要同時符合以下條件才會觸發：
 
 1. 發送者不是 bot，也不是 agent 帳號自己。
-2. Repo 符合 `GITHUB_REPOS`，而且是私有 repo，除非 `GITHUB_PUBLIC_REPOS=true`。
+2. Repo 符合 `github.repos`，而且是私有 repo，除非 `github.publicRepos` 是 `true`。
 3. 屬於有開啟的觸發方式：
    - `mention`：新的 issue、PR、留言或 inline review comment 提到 `@<帳號>`；
    - `assign`：issue 或 PR 被 assign 給這個帳號；
    - `review`：PR 請這個帳號 review；
    - `followup`：mikan 已經參與的 thread 有新留言。
-4. 有設定 `GITHUB_USERS` 時，發送者在名單內。
-5. 發送者在該 repo 有 `GITHUB_MIN_PERMISSION` 以上的權限。查詢結果快取五分鐘，查詢失敗一律拒絕。
+4. 有設定 `github.users` 時，發送者在名單內。
+5. 發送者在該 repo 有 `github.minPermission` 以上的權限。查詢結果快取五分鐘，查詢失敗一律拒絕。
 
 其他情況一律忽略，也不會留下任何狀態。@ 帳號並留言 `stop`（或 `/stop`）會停止執行中的 session；這個 magic word 在所有平台用同一套語法。
 
@@ -66,7 +82,7 @@ Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 與 repo 都轉�
 
 ## 能力
 
-沒有設定 `GITHUB_CAPABILITIES` 時，mikan 可以留言、按 reaction、讀取 repo 與 CI 結果、在 review thread 回覆，但不能改 label、assignee 或程式碼。
+沒有設定 `github.capabilities` 時，mikan 可以留言、按 reaction、讀取 repo 與 CI 結果、在 review thread 回覆，但不能改 label、assignee 或程式碼。
 
 | 能力     | 開放                                                     |
 | -------- | -------------------------------------------------------- |

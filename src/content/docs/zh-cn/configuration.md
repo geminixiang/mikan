@@ -61,17 +61,17 @@ office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-
 
 以下值由初始化生成。解析后的全局配置中必须包含 `llm.provider`、`llm.model` 和 `llm.thinkingLevel`；其他字段可以省略。
 
-| 字段                         | 初始化值            | 说明                                                                       |
-| ---------------------------- | ------------------- | -------------------------------------------------------------------------- |
-| `llm.provider`               | `anthropic`         | 主 AI 提供商                                                               |
-| `llm.model`                  | `claude-sonnet-4-6` | 主模型名称                                                                 |
-| `llm.thinkingLevel`          | `off`               | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                |
-| `sentry.dsn`                 | 未设置              | Sentry DSN；敏感提示词和工具内容会被编辑隐藏                               |
-| `sandbox.boost.cpus`         | `2`                 | `/pi-sandbox boost` 应用的临时 CPU 限制                                    |
-| `sandbox.boost.memory`       | `4g`                | `/pi-sandbox boost` 应用的临时内存限制                                     |
-| `office.visibility`          | 未设置              | 仅限对话的覆盖：`private` 将 Slack 公开频道收窄为 private office；不能放宽 |
-| `sandbox.defaultSharedVault` | 空                  | 复制到符合条件、基于成员身份信任的 image 对话中的共享 vault                |
-| `slack.replyMode`            | `top-level`         | Slack 回复模式：`top-level` 或 `thread`                                    |
+| 字段                         | 初始化值                   | 说明                                                                                      |
+| ---------------------------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| `llm.provider`               | `anthropic`                | 主 AI 提供商                                                                              |
+| `llm.model`                  | `claude-sonnet-4-6`        | 主模型名称                                                                                |
+| `llm.thinkingLevel`          | `off`                      | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                               |
+| `sandbox.boost.cpus`         | `2`                        | `/pi-sandbox boost` 应用的临时 CPU 限制                                                   |
+| `sandbox.boost.memory`       | `4g`                       | `/pi-sandbox boost` 应用的临时内存限制                                                    |
+| `office.visibility`          | 未设置                     | 仅限对话的覆盖：`private` 将 Slack 公开频道收窄为 private office；不能放宽                |
+| `sandbox.defaultSharedVault` | 空                         | 复制到符合条件、基于成员身份信任的 image 对话中的共享 vault                               |
+| `github.*`                   | 选择 GitHub 时写入 `repos` | GitHub adapter 要回应哪里、谁可以触发；见 [GitHub](/zh-cn/platform-adapters/github/#配置) |
+| `slack.replyMode`            | `top-level`                | Slack 回复模式：`top-level` 或 `thread`                                                   |
 
 `/pi-model` 写入部分对话覆盖，`/pi-sandbox visibility <private|default>` 写入该对话的 `office.visibility` 覆盖；admin portal 提供同一个开关。
 
@@ -123,12 +123,12 @@ OpenConnector 是一个附带部署默认值的普通 MCP server。`OPENCONNECTO
 
 正常 bot 模式至少需要一套完整的平台凭证：
 
-| 平台     | 必需环境变量                                                                    | 可选变量                                                                                                 |
-| -------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Slack    | `SLACK_APP_TOKEN`、`SLACK_BOT_TOKEN`                                            | —                                                                                                        |
-| Telegram | `TELEGRAM_BOT_TOKEN`                                                            | —                                                                                                        |
-| Discord  | `DISCORD_BOT_TOKEN`                                                             | —                                                                                                        |
-| GitHub   | `GITHUB_AGENT_TOKEN`、`GITHUB_WEBHOOK_SECRET`、`GITHUB_REPOS`，以及 `LINK_PORT` | `GITHUB_PUBLIC_REPOS`、`GITHUB_USERS`、`GITHUB_MIN_PERMISSION`、`GITHUB_TRIGGERS`、`GITHUB_CAPABILITIES` |
+| 平台     | 必需环境变量                                                                                         | 可选变量             |
+| -------- | ---------------------------------------------------------------------------------------------------- | -------------------- |
+| Slack    | `SLACK_APP_TOKEN`、`SLACK_BOT_TOKEN`                                                                 | —                    |
+| Telegram | `TELEGRAM_BOT_TOKEN`                                                                                 | —                    |
+| Discord  | `DISCORD_BOT_TOKEN`                                                                                  | —                    |
+| GitHub   | `GITHUB_AGENT_TOKEN`、`GITHUB_WEBHOOK_SECRET`、`LINK_PORT`，以及 `settings.json` 中的 `github.repos` | 其他 `github.*` 设置 |
 
 有关各平台的设置和权限，请参阅[平台适配器](/zh-cn/platform-adapters/)。
 
@@ -152,13 +152,13 @@ mikan 只维护一条 OpenTelemetry traces/metrics pipeline，并通过标准 OT
 
 本地 [Arize Phoenix](https://github.com/Arize-ai/phoenix) 可设置 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:6006/v1/traces`。Phoenix 接收 traces，不提供 OTLP metrics ingestion；metrics 请发送到 Collector 或其他 backend。mikan 在同一组 spans 上输出不含内容的标准 GenAI attributes 和最小 OpenInference projection，保留 provider、model、token counts、duration、status、session attribution和 tool name，不生成重复 spans。
 
-`SENTRY_DSN`（或兼容的 `sentry.dsn`）启用 Sentry issue reporting，并把错误链接到当前 OpenTelemetry trace；Sentry 不会创建第二条 application trace/metric pipeline。如需把同一份 traces 同时发送到 Phoenix 和 Sentry，请使用 OpenTelemetry Collector fan-out。Sentry direct OTLP 当前支持 traces/logs，不支持 OTLP metrics。
+`SENTRY_DSN` 启用 Sentry issue reporting，并把错误链接到当前 OpenTelemetry trace；Sentry 不会创建第二条 application trace/metric pipeline。如需把同一份 traces 同时发送到 Phoenix 和 Sentry，请使用 OpenTelemetry Collector fan-out。Sentry direct OTLP 当前支持 traces/logs，不支持 OTLP metrics。
 
 仅支持 `http/protobuf`；`OTEL_TRACES_EXPORTER=none`、`OTEL_METRICS_EXPORTER=none` 可分别关闭 signal。mikan 不会输出 prompts、completions、消息文本、tool arguments/results、文件内容、credentials、tokens 或绝对路径；但会输出 model ID、token/cost 总量、耗时、payload 大小、tool 类别，以及 retry/compaction/budget 次数等无内容的操作 metadata。平台 conversation、session、message、thread 与 user identifiers 会以 raw operational ID 导出，让 trace 能直接对应来源；human-readable username、channel name 与 workspace name 仍不会输出。resource attributes 采用 allowlist，请勿在 `OTEL_RESOURCE_ATTRIBUTES` 中放入 secrets 或 paths。shutdown 会先 drain conversation work，再 flush/shutdown OTLP，最后 close Sentry。
 
 ## 环境变量别名
 
-通过 mikan 配置辅助程序读取的环境变量也接受 `MIKAN_` 前缀。例如，`MIKAN_SLACK_APP_TOKEN` 和 `MIKAN_LINK_URL` 是 `SLACK_APP_TOKEN` 和 `LINK_URL` 的后备值；无前缀值优先。`SENTRY_DSN` 是例外：请直接配置它，或在 `settings.json` 中设置 `sentry.dsn`。
+通过 mikan 配置辅助程序读取的环境变量也接受 `MIKAN_` 前缀。例如，`MIKAN_SLACK_APP_TOKEN` 和 `MIKAN_LINK_URL` 是 `SLACK_APP_TOKEN` 和 `LINK_URL` 的后备值；无前缀值优先。
 
 daemon 的完整环境接口在源码树中以 manifest 声明；`mikan env` 会打印按平台和功能分组的带注释清单，并附上每个变量的当前状态，让你无需阅读代码即可审计一次部署。
 

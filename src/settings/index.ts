@@ -3,7 +3,6 @@ import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { existsSync, lstatSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { readEnv } from "../env-manifest.js";
 import {
   atomicWritePrivateFile,
   ensureDirExists,
@@ -68,9 +67,14 @@ const SettingsFileSchema = Type.Object({
       thinkingLevel: Type.Optional(Type.Enum(THINKING_LEVELS)),
     }),
   ),
-  sentry: Type.Optional(
+  github: Type.Optional(
     Type.Object({
-      dsn: Type.Optional(Type.String()),
+      repos: Type.Optional(Type.Array(Type.String())),
+      publicRepos: Type.Optional(Type.Boolean()),
+      users: Type.Optional(Type.Array(Type.String())),
+      minPermission: Type.Optional(Type.String()),
+      triggers: Type.Optional(Type.Array(Type.String())),
+      capabilities: Type.Optional(Type.Array(Type.String())),
     }),
   ),
   slack: Type.Optional(
@@ -116,6 +120,7 @@ const SettingsFileSchema = Type.Object({
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
+export type GithubSettings = NonNullable<SettingsFileConfig["github"]>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail, kind) =>
@@ -130,7 +135,6 @@ function normalizeSettingsConfig(config: SettingsFileConfig): Partial<AgentConfi
     ...(config.llm?.provider !== undefined ? { provider: config.llm.provider } : {}),
     ...(config.llm?.model !== undefined ? { model: config.llm.model } : {}),
     ...(config.llm?.thinkingLevel !== undefined ? { thinkingLevel: config.llm.thinkingLevel } : {}),
-    ...(config.sentry?.dsn !== undefined ? { sentryDsn: config.sentry.dsn } : {}),
     ...(config.sandbox !== undefined ? { sandbox: normalizeSandboxSettings(config.sandbox) } : {}),
     ...(config.slack !== undefined ? { slack: config.slack } : {}),
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
@@ -220,7 +224,6 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
   const thinkingLevel = requireString(fromFile.thinkingLevel, "llm.thinkingLevel") as ThinkingLevel;
-  const sentryDsn = sentryDsnFrom(fromFile.sentryDsn);
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
   const mcpServers = fromFile.mcpServers;
@@ -229,7 +232,6 @@ function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
     provider,
     model,
     thinkingLevel,
-    sentryDsn,
     sandbox,
     slack,
     mcpServers,
@@ -242,6 +244,10 @@ function loadRawGlobalSettings(stateDir: string): Partial<AgentConfig> {
 
 export function loadGlobalSettings(stateDir: string): AgentConfig {
   return toAgentConfig(loadRawGlobalSettings(stateDir));
+}
+
+export function loadGithubSettings(stateDir: string): GithubSettings | undefined {
+  return requireGlobalSettings(stateDir).github;
 }
 
 export function conversationSettingsPath(office: Office): string {
@@ -309,31 +315,23 @@ export function resolveConversationSettings(office: Office): AgentConfig {
   });
 }
 
-function sentryDsnFrom(fromFile: string | undefined): string | undefined {
-  return fromFile || readEnv("SENTRY_DSN");
-}
-
-export function resolveSentryDsn(stateDir: string): string | undefined {
-  const fromFile = normalizeSettingsConfig(loadSettingsFile(globalSettingsPath(stateDir)) ?? {});
-  return sentryDsnFrom(fromFile.sentryDsn);
-}
-
-export function createGlobalSettingsFile(stateDir: string, llm?: OnboardLlmChoice): string {
+export function createGlobalSettingsFile(
+  stateDir: string,
+  choices: { llm?: OnboardLlmChoice; githubRepos?: string[] } = {},
+): string {
   const settingsPath = globalSettingsPath(stateDir);
   if (existsSync(settingsPath)) {
     throw new Error(`Global settings already exists at ${settingsPath}`);
   }
   ensurePrivateDirExists(stateDir);
-  const settings: SettingsFileConfig = llm
-    ? {
-        ...ONBOARD_SETTINGS,
-        llm: {
-          ...ONBOARD_SETTINGS.llm,
-          provider: llm.provider,
-          model: llm.model,
-        },
-      }
-    : ONBOARD_SETTINGS;
+  const { llm, githubRepos } = choices;
+  const settings: SettingsFileConfig = {
+    ...ONBOARD_SETTINGS,
+    llm: llm
+      ? { ...ONBOARD_SETTINGS.llm, provider: llm.provider, model: llm.model }
+      : ONBOARD_SETTINGS.llm,
+    github: githubRepos ? { repos: githubRepos } : undefined,
+  };
   atomicWritePrivateFile(settingsPath, JSON.stringify(settings, null, 2));
   return settingsPath;
 }
@@ -345,10 +343,10 @@ function hasDefinedValue(values: Record<string, unknown> | undefined): boolean {
 function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
   return {
     llm: hasDefinedValue(config.llm) ? config.llm : undefined,
-    sentry: hasDefinedValue(config.sentry) ? config.sentry : undefined,
     sandbox: hasDefinedValue(config.sandbox) ? config.sandbox : undefined,
     slack: hasDefinedValue(config.slack) ? config.slack : undefined,
     office: hasDefinedValue(config.office) ? config.office : undefined,
+    github: hasDefinedValue(config.github) ? config.github : undefined,
     mcpServers: config.mcpServers,
     skills: config.skills,
   };
@@ -365,10 +363,6 @@ function patchSettingsConfig(
       ...(config.provider !== undefined ? { provider: config.provider } : {}),
       ...(config.model !== undefined ? { model: config.model } : {}),
       ...(config.thinkingLevel !== undefined ? { thinkingLevel: config.thinkingLevel } : {}),
-    },
-    sentry: {
-      ...existing.sentry,
-      ...(config.sentryDsn !== undefined ? { dsn: config.sentryDsn } : {}),
     },
     sandbox: mergeSandboxSettings(existing.sandbox, config.sandbox) ?? {},
     slack: {

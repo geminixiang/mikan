@@ -31,12 +31,13 @@ import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/porta
 import { DockerContainerManager } from "./sandbox/provisioner.js";
 import {
   findUnusedSettings,
+  loadGithubSettings,
   loadGlobalSettings,
   MissingGlobalSettingsError,
 } from "./settings/index.js";
 import { assertStateDirOutsideWorkspace } from "./file-guards.js";
 import { resolveLinkBaseUrl, resolveLinkListenHost } from "./env-manifest.js";
-import { configureHttpDispatcher, parseHttpIdleTimeoutMs } from "./harness/http.js";
+import { configureHttpDispatcher } from "./harness/http.js";
 import { defaultModelsJsonPath } from "./harness/models.js";
 import { RunEventHub } from "./harness/run-events.js";
 import { readEnv } from "./env-manifest.js";
@@ -46,7 +47,12 @@ import { validateSandbox } from "./sandbox/registry.js";
 import { helpText, resolveBoot } from "./cli/boot.js";
 import type { BootPlan } from "./cli/types.js";
 import { runOnboardCommand } from "./cli/onboard.js";
-import { envReport, noPlatformsMessage, platformIsActive } from "./env-manifest.js";
+import {
+  envReport,
+  noPlatformsMessage,
+  platformIsActive,
+  retiredEnvWarnings,
+} from "./env-manifest.js";
 import { FileVaultManager } from "./vault/index.js";
 import { runMigrateCommand } from "./cli/migrate.js";
 import { runOfficeCommand } from "./cli/office.js";
@@ -171,9 +177,7 @@ if (plan.mode === "migrate") {
   process.exit(await runMigrateCommand(plan.migrateArgs ?? []));
 }
 
-const httpIdleTimeoutMs = configureHttpDispatcher(
-  parseHttpIdleTimeoutMs(readEnv("HTTP_IDLE_TIMEOUT")),
-);
+const httpIdleTimeoutMs = configureHttpDispatcher();
 
 if (plan.mode === "help") {
   console.log(helpText());
@@ -226,16 +230,7 @@ if (!hasSlack && !hasTelegram && !hasDiscord && !hasGithub) {
 
 let githubPolicy: GithubPolicy | undefined;
 try {
-  githubPolicy = hasGithub
-    ? parseGithubPolicy({
-        repos: readEnv("GITHUB_REPOS"),
-        publicRepos: readEnv("GITHUB_PUBLIC_REPOS"),
-        users: readEnv("GITHUB_USERS"),
-        minPermission: readEnv("GITHUB_MIN_PERMISSION"),
-        triggers: readEnv("GITHUB_TRIGGERS"),
-        capabilities: readEnv("GITHUB_CAPABILITIES"),
-      })
-    : undefined;
+  githubPolicy = hasGithub ? parseGithubPolicy(loadGithubSettings(stateDir)) : undefined;
   if (hasGithub && !LINK_PORT) {
     throw new Error("GitHub receives webhooks on the link server: set LINK_PORT and LINK_URL");
   }
@@ -278,6 +273,12 @@ const startupConfig = (() => {
 const registeredOffices = listRegisteredOffices(stateDir).map((record) =>
   workspace.office(createOfficeAddress(record.platform, record.conversationId)),
 );
+for (const warning of retiredEnvWarnings()) {
+  log.logWarning(
+    "Environment variable that mikan ignores; remove it from ~/.mikan/mikan.env",
+    warning,
+  );
+}
 for (const unused of findUnusedSettings(stateDir, registeredOffices)) {
   log.logWarning(
     `Settings that mikan ignores; remove them from ${unused.path}`,

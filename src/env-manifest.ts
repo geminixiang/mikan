@@ -43,7 +43,7 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     key: "github",
     title: "GitHub",
     kind: "platform",
-    doc: "Issue/PR conversations as a bound GitHub account, driven by webhooks (needs LINK_PORT)",
+    doc: "Issue/PR conversations as a bound GitHub account, driven by webhooks (needs LINK_PORT and github.repos in settings.json)",
     vars: [
       {
         name: "GITHUB_AGENT_TOKEN",
@@ -56,25 +56,6 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         required: true,
         secret: true,
         doc: "Secret of the webhook that delivers to <LINK_URL>/github/webhook",
-      },
-      {
-        name: "GITHUB_REPOS",
-        required: true,
-        doc: "Comma-separated owner/repo or owner/* the agent answers in",
-      },
-      { name: "GITHUB_PUBLIC_REPOS", doc: "Answer in public repositories too (default false)" },
-      { name: "GITHUB_USERS", doc: "Comma-separated logins allowed to trigger (default: anyone)" },
-      {
-        name: "GITHUB_MIN_PERMISSION",
-        doc: "Repository permission a trigger needs: write, maintain, or admin (default write)",
-      },
-      {
-        name: "GITHUB_TRIGGERS",
-        doc: "Comma-separated mention, assign, review, followup (default all)",
-      },
-      {
-        name: "GITHUB_CAPABILITIES",
-        doc: "Comma-separated triage, push beyond commenting (default none)",
       },
     ],
   },
@@ -119,6 +100,14 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
         doc: "Google Cloud SDK OAuth secret",
       },
       {
+        name: "GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES",
+        doc: "Scopes /login requests for Google Workspace (space-separated)",
+      },
+      {
+        name: "GOOGLE_CLOUD_SDK_OAUTH_SCOPES",
+        doc: "Scopes /login requests for Google Cloud SDK (space-separated)",
+      },
+      {
         name: "GITHUB_OAUTH_SCOPES",
         doc: "Scopes /login requests from GitHub (default repo read:user user:email read:org gist)",
       },
@@ -151,13 +140,12 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     title: "Observability",
     kind: "feature",
     vars: [
-      { name: "SENTRY_DSN", secret: true, doc: "Sentry DSN (settings.json sentry.dsn wins)" },
+      { name: "SENTRY_DSN", secret: true, doc: "Sentry DSN; Sentry is off while it is unset" },
       {
         name: "SENTRY_ENVIRONMENT",
         deploy: false,
         doc: "Sentry environment tag (default production)",
       },
-      { name: "SENTRY_ENABLED", deploy: false, doc: "Set to false to disable Sentry errors" },
       {
         name: "SENTRY_TRACES_SAMPLE_RATE",
         deploy: false,
@@ -197,19 +185,49 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
       { name: "OTEL_METRIC_EXPORT_TIMEOUT", doc: "Metric export timeout in milliseconds" },
     ],
   },
-  {
-    key: "runtime",
-    title: "Runtime",
-    kind: "feature",
-    vars: [
-      {
-        name: "HTTP_IDLE_TIMEOUT",
-        deploy: false,
-        doc: "Idle timeout in ms for outbound HTTP streams",
-      },
-    ],
-  },
 ];
+
+function movedToSettings(key: string): string {
+  return `set ${key} in ~/.mikan/settings.json`;
+}
+
+const NO_GITHUB_APP = "removed; GitHub runs as the account of GITHUB_AGENT_TOKEN";
+
+const RETIRED_ENV: readonly { name: string; note: string }[] = [
+  { name: "GITHUB_REPOS", note: movedToSettings("github.repos") },
+  { name: "GITHUB_PUBLIC_REPOS", note: movedToSettings("github.publicRepos") },
+  { name: "GITHUB_USERS", note: movedToSettings("github.users") },
+  {
+    name: "GITHUB_MIN_PERMISSION",
+    note: movedToSettings("github.minPermission"),
+  },
+  { name: "GITHUB_TRIGGERS", note: movedToSettings("github.triggers") },
+  {
+    name: "GITHUB_CAPABILITIES",
+    note: movedToSettings("github.capabilities"),
+  },
+  { name: "GITHUB_APP_ID", note: NO_GITHUB_APP },
+  { name: "GITHUB_APP_PRIVATE_KEY_PATH", note: NO_GITHUB_APP },
+  { name: "GITHUB_INSTALLATION_ID", note: NO_GITHUB_APP },
+  {
+    name: "HTTP_IDLE_TIMEOUT",
+    note: "removed; outbound HTTP streams time out after 5 minutes",
+  },
+  { name: "SENTRY_ENABLED", note: "removed; leave SENTRY_DSN unset to turn Sentry off" },
+  { name: "STATE_DIR", note: "removed; state always lives in ~/.mikan" },
+  { name: "CLOUDFLARE_SANDBOX_URL", note: "removed with the cloudflare sandbox" },
+  { name: "CLOUDFLARE_SANDBOX_TOKEN", note: "removed with the cloudflare sandbox" },
+];
+
+export function retiredEnvWarnings(
+  env: (name: string) => string | undefined = (name) => process.env[name]?.trim() || undefined,
+): string[] {
+  return RETIRED_ENV.flatMap(({ name, note }) =>
+    [name, `MIKAN_${name}`]
+      .filter((spelling) => env(spelling))
+      .map((spelling) => `${spelling}: ${note}`),
+  );
+}
 
 type EnvLookup = (name: string) => string | undefined;
 

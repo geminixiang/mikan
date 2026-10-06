@@ -59,6 +59,10 @@ deployment guide, which lists what migrates, what does not, and what to check af
 ### Changed
 
 - Node.js 24.15.0 or newer is required.
+- `mikan.env` holds secrets and deployment addresses; `settings.json` holds behavior. The
+  Sentry DSN is read only from `SENTRY_DSN`, so a `sentry.dsn` setting is ignored, and the GitHub
+  adapter's repositories and trigger rules live under `github` in `settings.json`. At startup the
+  daemon logs each environment variable it no longer reads, with what replaces it.
 - State lives in `~/.mikan` only: `settings.json`, `mikan.env`, `models.json`, vaults, and the
   host-only per-conversation directories under `conversations/`. Per-conversation settings,
   sessions, and scheduled events moved out of the workspace, where sandboxes could read them.
@@ -87,6 +91,8 @@ deployment guide, which lists what migrates, what does not, and what to check af
 - The `firecracker:*` and `cloudflare:*` sandboxes.
 - `--state-dir` and the `STATE_DIR` / `MIKAN_STATE_DIR` variables, and `--download`.
 - Auto-reply on Discord and Telegram, and auto-reply rules.
+- `SENTRY_ENABLED` (leave `SENTRY_DSN` unset to turn Sentry off) and `HTTP_IDLE_TIMEOUT`
+  (outbound HTTP streams time out after five minutes).
 - Provider keys in `~/.pi/mikan/auth.json`; put them in `~/.mikan/mikan.env` or `models.json`.
 
 ### Fixed

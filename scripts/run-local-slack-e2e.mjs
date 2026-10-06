@@ -62,7 +62,6 @@ mkdirSync(join(base, "workspace"));
 for (const key of Object.keys(env)) if (/^(SENTRY_|OTEL_|OTLP_)/.test(key)) delete env[key];
 Object.assign(env, {
   HOME: base,
-  SENTRY_ENABLED: "false",
   LINK_PORT: "",
   GITHUB_TOKEN: "",
   DISCORD_BOT_TOKEN: "",

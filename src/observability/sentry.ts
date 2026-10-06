@@ -82,7 +82,7 @@ export function createSentryInitOptions(dsn?: string, customOpenTelemetry = fals
   return {
     dsn,
     environment: readEnv("SENTRY_ENVIRONMENT") ?? "production",
-    enabled: Boolean(dsn) && readEnv("SENTRY_ENABLED") !== "false",
+    enabled: Boolean(dsn),
     sendDefaultPii: false,
     tracesSampleRate: customOpenTelemetry ? undefined : readTracesSampleRate(),
     skipOpenTelemetrySetup: customOpenTelemetry,

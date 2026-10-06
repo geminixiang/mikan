@@ -52,7 +52,7 @@ in-memory set, and persists nothing about deliveries.
 `conversationId` uses the `GH_` prefix so it never collides with Slack
 (`C…`/`D…`) or other platforms. Owner and repo are **lowercased**: GitHub
 names are case-insensitive, and the id has two spelling sources (the
-`GITHUB_REPOS` env var and webhook payloads), so unlike Slack's platform-issued
+`github.repos` setting and webhook payloads), so unlike Slack's platform-issued
 ids this is a mikan-derived slug. Lowercasing ensures one issue cannot split
 into two conversation identities on case-sensitive filesystems.
 
@@ -80,14 +80,14 @@ Re-opening the same PR later resumes its session.
 An activity triggers when all of these hold:
 
 1. The sender is neither a `Bot` nor the agent account.
-2. The repository matches `GITHUB_REPOS`, and is private unless
-   `GITHUB_PUBLIC_REPOS` is on.
-3. It is one of the enabled `GITHUB_TRIGGERS`: a mention in a new issue, PR,
+2. The repository matches `github.repos`, and is private unless
+   `github.publicRepos` is on.
+3. It is one of the enabled `github.triggers`: a mention in a new issue, PR,
    comment, or review comment; an assignment to the agent; a review request
    for the agent; or any new comment in a thread that already has a
    conversation log (`followup`).
-4. The sender is in `GITHUB_USERS` when that list is set.
-5. The sender holds `GITHUB_MIN_PERMISSION` (write by default) on the
+4. The sender is in `github.users` when that list is set.
+5. The sender holds `github.minPermission` (write by default) on the
    repository. The lookup is cached for five minutes and fails closed.
 
 Opening an issue that both mentions and is assigned to the agent sends two
@@ -96,7 +96,7 @@ minutes so the agent answers once.
 
 ## Capabilities
 
-Commenting, reading, CI results, and review replies are always available. `GITHUB_CAPABILITIES` adds `triage` (`github_issue`) and
+Commenting, reading, CI results, and review replies are always available. `github.capabilities` adds `triage` (`github_issue`) and
 `push` (`github_pr`). A capability that is off removes the tool from the
 agent's tool list and from the conversation guide, so the model is never told
 about an action it cannot take. The token's permissions and the account's

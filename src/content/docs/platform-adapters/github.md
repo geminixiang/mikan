@@ -33,16 +33,32 @@ The conversation id is `GH_<owner>_<repo>_<number>` with owner and repo lowercas
 
 ## Configuration
 
-| Env var                 | Purpose                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------- |
-| `GITHUB_AGENT_TOKEN`    | The agent account's fine-grained PAT (required). Startup fails if GitHub rejects it.      |
-| `GITHUB_WEBHOOK_SECRET` | The webhook secret (required).                                                            |
-| `GITHUB_REPOS`          | Comma-separated `owner/repo` or `owner/*` (required). Nothing else is answered.           |
-| `GITHUB_PUBLIC_REPOS`   | `true` to also answer in public repositories (default `false`).                           |
-| `GITHUB_USERS`          | Comma-separated logins allowed to trigger (default: anyone with the required permission). |
-| `GITHUB_MIN_PERMISSION` | Repository permission a trigger needs: `write` (default), `maintain`, or `admin`.         |
-| `GITHUB_TRIGGERS`       | Any of `mention`, `assign`, `review`, `followup` (default all).                           |
-| `GITHUB_CAPABILITIES`   | `triage` and/or `push` beyond commenting (default none).                                  |
+The two secrets go in `~/.mikan/mikan.env`; they turn the adapter on:
+
+| Env var                 | Purpose                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `GITHUB_AGENT_TOKEN`    | The agent account's fine-grained PAT (required). Startup fails if GitHub rejects it. |
+| `GITHUB_WEBHOOK_SECRET` | The webhook secret (required).                                                       |
+
+Where mikan answers and who may trigger it go in `~/.mikan/settings.json`:
+
+```json
+{
+  "github": {
+    "repos": ["acme/*"],
+    "capabilities": ["triage"]
+  }
+}
+```
+
+| Setting                | Purpose                                                                           |
+| ---------------------- | --------------------------------------------------------------------------------- |
+| `github.repos`         | `owner/repo` or `owner/*` entries (required). Nothing else is answered.           |
+| `github.publicRepos`   | `true` to also answer in public repositories (default `false`).                   |
+| `github.users`         | Logins allowed to trigger (default: anyone with the required permission).         |
+| `github.minPermission` | Repository permission a trigger needs: `write` (default), `maintain`, or `admin`. |
+| `github.triggers`      | Any of `mention`, `assign`, `review`, `followup` (default all).                   |
+| `github.capabilities`  | `triage` and/or `push` beyond commenting (default none).                          |
 
 An unknown value in any of these fails startup.
 
@@ -51,14 +67,14 @@ An unknown value in any of these fails startup.
 A delivery triggers a run only when all of these hold:
 
 1. The sender is not a bot and not the agent account itself.
-2. The repository matches `GITHUB_REPOS`, and is private unless `GITHUB_PUBLIC_REPOS=true`.
+2. The repository matches `github.repos`, and is private unless `github.publicRepos` is `true`.
 3. It is an enabled trigger:
    - `mention`: a new issue, pull request, comment, or inline review comment mentions `@<agent-login>`;
    - `assign`: an issue or pull request is assigned to the account;
    - `review`: the account's review is requested on a pull request;
    - `followup`: a new comment arrives in a thread mikan already takes part in.
-4. The sender is listed in `GITHUB_USERS`, when set.
-5. The sender holds `GITHUB_MIN_PERMISSION` on the repository. Lookups are cached for five minutes and fail closed.
+4. The sender is listed in `github.users`, when set.
+5. The sender holds `github.minPermission` on the repository. Lookups are cached for five minutes and fail closed.
 
 Everything else is ignored without creating any state. A mentioned `stop` (or `/stop`) comment stops the running session; the magic word uses one grammar across all platforms.
 
@@ -66,7 +82,7 @@ Delivery is best effort. mikan answers GitHub immediately, ignores a repeated de
 
 ## Capabilities
 
-Without `GITHUB_CAPABILITIES`, mikan comments, reacts, reads the repository and CI results, and replies in review threads. It cannot change labels, assignees, or code.
+Without `github.capabilities`, mikan comments, reacts, reads the repository and CI results, and replies in review threads. It cannot change labels, assignees, or code.
 
 | Capability | Adds                                                                           |
 | ---------- | ------------------------------------------------------------------------------ |

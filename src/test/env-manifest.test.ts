@@ -8,6 +8,7 @@ import {
   noPlatformsMessage,
   platformIsActive,
   resolveLinkListenHost,
+  retiredEnvWarnings,
 } from "../env-manifest.js";
 import { helpText } from "../cli/boot.js";
 
@@ -23,11 +24,10 @@ describe("platform activation", () => {
     );
   });
 
-  test("github needs the agent token, the webhook secret, and a repository allowlist", () => {
+  test("github needs the agent token and the webhook secret", () => {
     const complete = {
       GITHUB_AGENT_TOKEN: "github_pat_x",
       GITHUB_WEBHOOK_SECRET: "hush",
-      GITHUB_REPOS: "acme/*",
     };
     expect(platformIsActive("github", lookup(complete))).toBe(true);
     for (const name of Object.keys(complete)) {
@@ -38,6 +38,36 @@ describe("platform activation", () => {
   });
 });
 
+describe("retired variables", () => {
+  test("name where each moved setting now lives, under either spelling", () => {
+    const warnings = retiredEnvWarnings(
+      lookup({ GITHUB_REPOS: "acme/*", MIKAN_GITHUB_USERS: "alice", SLACK_BOT_TOKEN: "x" }),
+    );
+    expect(warnings).toEqual([
+      "GITHUB_REPOS: set github.repos in ~/.mikan/settings.json",
+      "MIKAN_GITHUB_USERS: set github.users in ~/.mikan/settings.json",
+    ]);
+  });
+
+  test("report removed variables without a replacement", () => {
+    expect(
+      retiredEnvWarnings(lookup({ HTTP_IDLE_TIMEOUT: "60000", SENTRY_ENABLED: "false" })),
+    ).toEqual([
+      "HTTP_IDLE_TIMEOUT: removed; outbound HTTP streams time out after 5 minutes",
+      "SENTRY_ENABLED: removed; leave SENTRY_DSN unset to turn Sentry off",
+    ]);
+  });
+
+  test("are not listed as variables mikan reads", () => {
+    const listed = new Set(ENV_MANIFEST.flatMap((group) => group.vars.map((spec) => spec.name)));
+    const retired = retiredEnvWarnings((name) =>
+      name.startsWith("MIKAN_") ? undefined : "set",
+    ).map((warning) => warning.split(":")[0]!);
+    expect(retired.length).toBeGreaterThan(0);
+    expect(retired.filter((name) => listed.has(name))).toEqual([]);
+  });
+});
+
 describe("derived surfaces", () => {
   test("the no-platforms error names every platform group", () => {
     const message = noPlatformsMessage();
@@ -45,7 +75,7 @@ describe("derived surfaces", () => {
       expect(message).toContain(group.title);
     }
     expect(message).toContain("SLACK_APP_TOKEN + SLACK_BOT_TOKEN");
-    expect(message).toContain("GITHUB_AGENT_TOKEN + GITHUB_WEBHOOK_SECRET + GITHUB_REPOS");
+    expect(message).toContain("GITHUB_AGENT_TOKEN + GITHUB_WEBHOOK_SECRET");
   });
 
   test("--help embeds the platform recipes", () => {
@@ -62,7 +92,7 @@ describe("derived surfaces", () => {
       .filter((file) => file.endsWith(".ts") && !file.startsWith("test"))
       .map((file) => readFileSync(join(process.cwd(), "src", file), "utf8"));
     const read = sources.flatMap((source) =>
-      [...source.matchAll(/(?:readEnv|readStandardEnv|resolveScopesFromEnv)\("([A-Z_]+)"/g)].map(
+      [...source.matchAll(/(?:readEnv|readStandardEnv|resolveScopesFromEnv)\(\s*"([A-Z_]+)"/g)].map(
         (match) => match[1]!,
       ),
     );

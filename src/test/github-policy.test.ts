@@ -4,24 +4,16 @@ import {
   permissionMeets,
   repoIsAllowed,
   userIsAllowed,
-  type GithubPolicyEnv,
 } from "../adapters/github/policy.js";
+import type { GithubSettings } from "../settings/index.js";
 
-function env(overrides: Partial<GithubPolicyEnv> = {}): GithubPolicyEnv {
-  return {
-    repos: "acme/widgets",
-    publicRepos: undefined,
-    users: undefined,
-    minPermission: undefined,
-    triggers: undefined,
-    capabilities: undefined,
-    ...overrides,
-  };
+function env(overrides: GithubSettings = {}): GithubSettings {
+  return { repos: ["acme/widgets"], ...overrides };
 }
 
 describe("parseGithubPolicy", () => {
   test("defaults answer write-permission users on every trigger with no extra capabilities", () => {
-    const policy = parseGithubPolicy(env({ repos: " Acme/Widgets , acme/* " }));
+    const policy = parseGithubPolicy(env({ repos: [" Acme/Widgets ", "acme/*"] }));
     expect(policy).toEqual({
       repos: ["acme/widgets", "acme/*"],
       publicRepos: false,
@@ -35,11 +27,11 @@ describe("parseGithubPolicy", () => {
   test("reads every restriction", () => {
     const policy = parseGithubPolicy(
       env({
-        publicRepos: "true",
-        users: "Alice,bob",
+        publicRepos: true,
+        users: ["Alice", "bob"],
         minPermission: "maintain",
-        triggers: "mention",
-        capabilities: "triage, push",
+        triggers: ["mention"],
+        capabilities: ["triage", "push"],
       }),
     );
     expect(policy.publicRepos).toBe(true);
@@ -50,20 +42,25 @@ describe("parseGithubPolicy", () => {
   });
 
   test.each([
-    [{ repos: undefined }, /at least one owner\/repo/],
-    [{ repos: "acme" }, /invalid entries acme/],
-    [{ repos: "*/*" }, /invalid entries/],
-    [{ publicRepos: "yes" }, /GITHUB_PUBLIC_REPOS must be true or false/],
-    [{ minPermission: "read" }, /GITHUB_MIN_PERMISSION must be one of write, maintain, admin/],
-    [{ triggers: "mention,label" }, /GITHUB_TRIGGERS has unknown value\(s\) label/],
-    [{ capabilities: "merge" }, /GITHUB_CAPABILITIES has unknown value\(s\) merge/],
+    [{ repos: [] }, /github\.repos must list at least one owner\/repo/],
+    [{ repos: ["acme"] }, /github\.repos has invalid entries acme/],
+    [{ repos: ["*/*"] }, /github\.repos has invalid entries/],
+    [{ minPermission: "read" }, /github\.minPermission must be one of write, maintain, admin/],
+    [{ triggers: ["mention", "label"] }, /github\.triggers has unknown value\(s\) label/],
+    [{ capabilities: ["merge"] }, /github\.capabilities has unknown value\(s\) merge/],
   ])("rejects %o", (overrides, message) => {
     expect(() => parseGithubPolicy(env(overrides))).toThrow(message);
+  });
+
+  test("names settings.json when GitHub runs without github.repos", () => {
+    expect(() => parseGithubPolicy(undefined)).toThrow(
+      /Set github\.repos in ~\/\.mikan\/settings\.json/,
+    );
   });
 });
 
 describe("policy checks", () => {
-  const policy = parseGithubPolicy(env({ repos: "acme/widgets,tools/*", users: "alice" }));
+  const policy = parseGithubPolicy(env({ repos: ["acme/widgets", "tools/*"], users: ["alice"] }));
 
   test("repositories match exactly or by owner wildcard, case-insensitively", () => {
     expect(repoIsAllowed(policy, { owner: "Acme", repo: "Widgets", private: true })).toBe(true);

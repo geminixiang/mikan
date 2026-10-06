@@ -231,7 +231,6 @@ export interface AgentConfig {
   provider: string;
   model: string;
   thinkingLevel: ThinkingLevel;
-  sentryDsn?: string;
   sandbox?: SandboxSettings;
   slack?: {
     replyMode?: "top-level" | "thread";
