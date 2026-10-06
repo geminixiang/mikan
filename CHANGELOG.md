@@ -11,6 +11,15 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- `mikan onboard` asks for a sandbox image instead of a sandbox mode: the published
+  `mikan-sandbox` image (recommended), `debian:trixie-slim`, or any other image. It writes
+  `~/.mikan/ecosystem.config.cjs` with that image and prints the `docker pull` and
+  `pm2 start` commands, so the PM2 file no longer has to be downloaded. An existing
+  ecosystem file is kept. `host` and `container:<name>` still work through `--sandbox` but
+  are no longer offered.
+
 ## [1.0.0] - 2026-10-06
 
 1.0.0 is the first stable release. It replaces the 0.5.3 runtime, which ran on

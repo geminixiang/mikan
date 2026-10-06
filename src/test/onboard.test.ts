@@ -54,7 +54,7 @@ describe("renderEnvFile", () => {
 });
 
 describe("runOnboardWizard", () => {
-  test("slack + anthropic + host writes settings and env file", async () => {
+  test("slack + anthropic writes settings and env file", async () => {
     const envFile = join(dir, "mikan.env");
     const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
@@ -73,17 +73,56 @@ describe("runOnboardWizard", () => {
     expect(pendingMigrations(dir)).toEqual([]);
   });
 
-  test("uses the provider's default model and image without asking, offering host or image", async () => {
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "2"]);
+  test("uses the provider's default model and the published image without asking", async () => {
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
 
     const transcript = io.transcript.join("\n");
     expect(transcript).not.toMatch(/Model \[|Image \[/);
     expect(transcript).not.toContain("cloudflare");
-    expect(transcript).toContain("--sandbox image:ghcr.io/geminixiang/mikan-sandbox:latest");
+    expect(transcript).not.toMatch(/\bhost —/);
+    expect(transcript).toContain("docker pull ghcr.io/geminixiang/mikan-sandbox:latest");
     expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")).llm.model).toBe(
       "claude-sonnet-4-6",
     );
+  });
+
+  test("writes the maintained pm2 ecosystem file next to settings", async () => {
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
+
+    const ecosystemFile = join(dir, "ecosystem.config.cjs");
+    expect(readFileSync(ecosystemFile, "utf-8")).toBe(
+      readFileSync(join(process.cwd(), "deploy", "pm2", "ecosystem.config.cjs"), "utf-8"),
+    );
+    expect(io.transcript.join("\n")).toContain(`pm2 start ${ecosystemFile}`);
+  });
+
+  test("a custom image goes into the ecosystem file and the next steps", async () => {
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "3", "acme/sandbox:1"]);
+    expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
+
+    expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
+      'args: "--sandbox=image:acme/sandbox:1",',
+    );
+    expect(io.transcript.join("\n")).toContain("docker pull acme/sandbox:1");
+  });
+
+  test("offers the minimal Debian image as a menu choice", async () => {
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "2"]);
+    expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
+
+    expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
+      'args: "--sandbox=image:debian:trixie-slim",',
+    );
+  });
+
+  test("keeps an existing ecosystem file", async () => {
+    const ecosystemFile = join(dir, "ecosystem.config.cjs");
+    writeFileSync(ecosystemFile, "module.exports = { apps: [] };\n");
+    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
+    expect(readFileSync(ecosystemFile, "utf-8")).toBe("module.exports = { apps: [] };\n");
   });
 
   test("ends by listing only the variables that are set", async () => {
@@ -111,7 +150,7 @@ describe("runOnboardWizard", () => {
       "http://10.0.0.1:8080/v1",
       "gw-key",
       "chatgpt, gpt-5.6-sol",
-      "2",
+      "1",
     ]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
@@ -128,9 +167,6 @@ describe("runOnboardWizard", () => {
     expect(settings.llm.provider).toBe("agent-model");
     expect(settings.llm.model).toBe("chatgpt");
     expect(settings.llm.autoReply).toBeUndefined();
-
-    const nextSteps = io.transcript.join("\n");
-    expect(nextSteps).toContain("--sandbox image:ghcr.io/geminixiang/mikan-sandbox:latest");
   });
 
   test("github adapter asks the agent token, webhook secret, and repositories", async () => {
