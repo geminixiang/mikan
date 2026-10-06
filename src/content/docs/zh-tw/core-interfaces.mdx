@@ -14,7 +14,7 @@ description: mikan 的 platform、runtime、harness、session、execution、vaul
 | Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送                  | 明確 migrate；讀取端應容忍受支援的較舊格式 |
 | Internal         | 連接 mikan CLI 內部的各模組                      | 可在協調好呼叫端與測試的情況下變更         |
 
-`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它暴露的 harness 內容仍然多於一般 bot 整合所需；請把下表視為預期中的契約，其餘的拆分請參閱[核心簡化](/zh-tw/core-simplification/)。
+`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它暴露的 harness 內容仍然多於一般 bot 整合所需；請把下表視為預期中的契約。
 
 ## 邊界圖
 

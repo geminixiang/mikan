@@ -14,7 +14,7 @@ This page documents mikan's **architectural interfaces**: the contracts that cro
 | Wire / persisted | Stored on disk or sent across a process/network boundary    | Migrate explicitly; readers should tolerate supported older forms |
 | Internal         | Connects modules inside the mikan CLI                       | May change with coordinated call sites and tests                  |
 
-`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It still exposes more of the harness than an ordinary bot integration needs; treat the table below as the intended contract and see [Core simplification](/core-simplification/) for the remaining split.
+`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It still exposes more of the harness than an ordinary bot integration needs; treat the table below as the intended contract.
 
 ## Boundary map
 

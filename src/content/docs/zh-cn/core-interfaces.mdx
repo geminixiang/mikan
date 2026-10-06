@@ -14,7 +14,7 @@ description: mikan 在平台、运行时、框架、会话、执行、vault 与�
 | Wire / persisted | 存储在磁盘上或跨进程/网络边界发送   | 显式迁移；读取方应容忍受支持的旧格式 |
 | Internal         | 连接 mikan CLI 内部的模块           | 在协调好调用点和测试的情况下可以更改 |
 
-`src/index.ts` 是一份显式的导出清单，而非通配符重新导出，并且 `src/test/public-api.test.ts` 会对其做快照，因此意外新增会导致 CI 失败。它暴露的框架内容仍然多于普通 bot 集成所需；请将下表视为预期的契约，剩余的拆分参见[核心简化](/zh-cn/core-simplification/)。
+`src/index.ts` 是一份显式的导出清单，而非通配符重新导出，并且 `src/test/public-api.test.ts` 会对其做快照，因此意外新增会导致 CI 失败。它暴露的框架内容仍然多于普通 bot 集成所需；请将下表视为预期的契约。
 
 ## 边界地图
 

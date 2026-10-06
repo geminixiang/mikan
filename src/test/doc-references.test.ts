@@ -16,13 +16,12 @@ const repositoryPathPrefixes = [
 ];
 
 const siteDocsDir = "src/content/docs";
-const archivedSiteResearch = `${siteDocsDir}/sandbox/sandbox-ecosystem-research.md`;
 
 function siteDocs(directory = siteDocsDir): string[] {
   return readdirSync(join(repositoryRoot, directory), { withFileTypes: true }).flatMap((entry) => {
     const path = `${directory}/${entry.name}`;
     if (entry.isDirectory()) return siteDocs(path);
-    return /\.mdx?$/.test(entry.name) && path !== archivedSiteResearch ? [path] : [];
+    return /\.mdx?$/.test(entry.name) ? [path] : [];
   });
 }
 

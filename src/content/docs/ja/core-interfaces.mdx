@@ -14,7 +14,7 @@ description: mikan の platform、runtime、harness、session、execution、vaul
 | Wire / persisted | ディスクに保存されるか、プロセス/ネットワーク境界を越えて送られる | 明示的に移行する。reader はサポート対象の古い形式を許容すべき |
 | Internal         | mikan CLI 内部のモジュールを接続する                              | call sites と tests を協調させれば変更してよい                |
 
-`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。それでも、通常の bot integration に必要な範囲を超えて harness を公開しています。下の表を意図された契約として扱い、残りの分割については [コア簡素化](/core-simplification/) を参照してください。
+`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。それでも、通常の bot integration に必要な範囲を超えて harness を公開しています。下の表を意図された契約として扱ってください。
 
 ## 境界マップ
 
