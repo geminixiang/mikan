@@ -83,9 +83,9 @@ describe("append trigger attribution", () => {
   });
 
   test("replaces a garbled, unclosed signature line the model wrote from habit", () => {
-    expect(appendTriggerAttribution("R5A-OK  \n_Triggered by @f416720ությանը", "@f416720001")).toBe(
-      "R5A-OK\n\n_Triggered by @f416720001_",
-    );
+    expect(
+      appendTriggerAttribution("R5A-OK  \n_Triggered by @U0123456ությանը", "@U0123456789"),
+    ).toBe("R5A-OK\n\n_Triggered by @U0123456789_");
   });
 
   test("keeps a sentence that merely mentions the phrase mid-line", () => {
