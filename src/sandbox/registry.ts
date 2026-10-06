@@ -45,10 +45,6 @@ const sandboxAdapterByType = new Map(
   sandboxAdapters.map((adapter) => [adapter.type, adapter]),
 ) as Map<SandboxConfig["type"], SandboxAdapter>;
 
-export function getSandboxAdapters(): readonly [...typeof sandboxAdapters] {
-  return sandboxAdapters;
-}
-
 function requireSandboxAdapter(type: SandboxConfig["type"]): SandboxAdapter {
   const adapter = sandboxAdapterByType.get(type);
   if (!adapter) throw new SandboxError(`Error: Unsupported sandbox type '${type}'`);
@@ -61,9 +57,7 @@ export function getSandboxCredentialCapabilities(
   return requireSandboxAdapter(type).credentials;
 }
 
-export function getSandboxWorkspaceCapabilities(
-  type: SandboxConfig["type"],
-): SandboxAdapter["workspace"] {
+function getSandboxWorkspaceCapabilities(type: SandboxConfig["type"]): SandboxAdapter["workspace"] {
   return requireSandboxAdapter(type).workspace;
 }
 

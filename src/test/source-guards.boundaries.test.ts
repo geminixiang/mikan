@@ -218,16 +218,16 @@ const rules: BoundaryRule[] = [
     spellings: [
       {
         file: "src/runtime/x.ts",
-        code: 'import { a } from "../harness/index.js";',
+        code: 'import { a } from "../index.js";',
         violates: true,
       },
       {
-        file: "src/runtime/x.ts",
-        code: 'import type { A } from "../sandbox/index.js";',
+        file: "src/harness/tools/x.ts",
+        code: 'import type { A } from "../../index.js";',
         violates: true,
       },
-      { file: "src/harness/x.ts", code: 'import { a } from "./index.js";', violates: true },
-      { file: "src/harness/tools/x.ts", code: "import { a } from '..';", violates: true },
+      { file: "src/x.ts", code: 'import { a } from "./index.js";', violates: true },
+      { file: "src/runtime/x.ts", code: "import { a } from '..';", violates: true },
       { file: "src/test/x.test.ts", code: 'import { a } from "../index.js";', violates: true },
       {
         file: "src/test/x.test.ts",
@@ -236,22 +236,22 @@ const rules: BoundaryRule[] = [
       },
       {
         file: "src/test/x.test.ts",
-        code: 'const m = await import("@geminixiang/mikan/harness");',
+        code: 'const m = await import("@geminixiang/mikan");',
         violates: true,
       },
       {
         file: "src/test/x.test.ts",
-        code: 'vi.mock("../sandbox/index.js", () => ({}));',
+        code: 'vi.mock("../index.js", () => ({}));',
         violates: true,
       },
       {
         file: "src/test/x.test.ts",
-        code: 'type T = import("../harness/index.js").T;',
+        code: 'type T = import("../index.js").T;',
         violates: true,
       },
       {
         file: "src/runtime/x.ts",
-        code: 'export { a } from "../harness/index.js";',
+        code: 'export { a } from "../index.js";',
         violates: true,
       },
       {
@@ -458,9 +458,7 @@ function spellingViolates(rule: BoundaryRule, file: string, code: string): boole
 
 describe("boundary guard patterns", () => {
   test("package.json exports resolve to the published entry points", () => {
-    expect([...entryPointFiles]).toEqual(
-      expect.arrayContaining(["src/harness/index.ts", "src/index.ts", "src/sandbox/index.ts"]),
-    );
+    expect([...entryPointFiles]).toEqual(expect.arrayContaining(["src/index.ts"]));
     expect([...entryPointFiles].filter((file) => !knownFiles.has(file))).toEqual([]);
   });
 

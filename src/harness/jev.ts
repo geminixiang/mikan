@@ -30,7 +30,7 @@ export type JevQuestion =
 
 export type JevQuestions = Record<string, JevQuestion>;
 
-export type JevAnswer<QUESTION extends JevQuestion> = QUESTION extends { type: "choice" }
+type JevAnswer<QUESTION extends JevQuestion> = QUESTION extends { type: "choice" }
   ? {
       type: "choice";
       choice: string;

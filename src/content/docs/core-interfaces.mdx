@@ -14,7 +14,7 @@ This page documents mikan's **architectural interfaces**: the contracts that cro
 | Wire / persisted | Stored on disk or sent across a process/network boundary    | Migrate explicitly; readers should tolerate supported older forms |
 | Internal         | Connects modules inside the mikan CLI                       | May change with coordinated call sites and tests                  |
 
-`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It still exposes more of the harness than an ordinary bot integration needs; treat the table below as the intended contract.
+`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It exports only what an embedder needs; harness, session, and sandbox internals are not part of the package interface.
 
 ## Boundary map
 
@@ -85,9 +85,9 @@ The npm entry point is `@geminixiang/mikan`, implemented by `src/index.ts`.
 | Runtime embedding    | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions`                           | A host that supplies platform and execution dependencies               |
 | Office and workspace | `createWorkspace`, `createOfficeAddress`, `officeKey`, `Workspace`, `Office`, `OfficeAddress`, `OfficeKey` | Any embedder: `createConversationRuntime` requires a `Workspace` value |
 | Platform contract    | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo`       | Platform adapters and embedders                                        |
-| Commands             | `CommandHandler`, `CommandContext`, `CommandServices`, `dispatchCommand`                                   | Hosts adding deterministic commands                                    |
-| Execution            | `Executor`, `SandboxConfig`, `SandboxAdapter`, `createExecutor`, `parseSandboxArg`, `validateSandbox`      | Runtime backends and hosts                                             |
-| Harness embedding    | `MikanAgentSession`, `SessionStore`, `MikanModels`, settings and event-format functions                    | Advanced embedders; not ordinary bot integrations                      |
+| Commands             | `CommandHandler`, `CommandContext`, `CommandServices`, `defaultCommandHandlers`                            | Hosts adding deterministic commands to the defaults                    |
+| Execution            | `SandboxConfig`                                                                                            | Hosts choosing the execution backend                                   |
+| Models               | `MikanModels`, `CreateMikanModelsOptions`                                                                  | Hosts supplying their own model list                                   |
 
 Only paths declared by the package `exports` map are public. Importing any other generated `dist/` path or a source path under `src/` is unsupported.
 
@@ -188,7 +188,7 @@ Recognized built-in command forms are consumed before runner creation. An unmatc
 
 ## 5. Harness interface
 
-Sources: `src/harness/index.ts`, `src/harness/runner.ts`, `src/sessions/session-store.ts`, `src/harness/models.ts`, and `src/harness/types.ts`.
+Sources: `src/harness/runner.ts`, `src/sessions/session-store.ts`, `src/harness/models.ts`, and `src/harness/types.ts`.
 
 ### `MikanAgentSession`
 
@@ -220,7 +220,7 @@ Core tools use the executor and host services supplied by the runner. `EventStor
 
 ## 7. Sandbox and executor interface
 
-Sources: `src/sandbox/types.ts` and `src/sandbox/index.ts`.
+Sources: `src/sandbox/types.ts` and `src/sandbox/registry.ts`.
 
 ### `SandboxConfig`
 
@@ -245,7 +245,7 @@ Remote/exec-only implementations share base64-chunked file transport. Tool imple
 
 An adapter recognizes one CLI value, optionally validates it, and optionally creates an executor. `image` deliberately has no direct executor: actor/vault resolution provisions a concrete container first.
 
-Although the type is exported, adapter registration is currently a closed list inside `src/sandbox/index.ts`; external consumers cannot add an adapter to `parseSandboxArg` or `createExecutor`.
+Adapter registration is a closed list inside `src/sandbox/registry.ts`, and the package exports neither `SandboxAdapter` nor the registry.
 
 ## 8. Vault and execution-resolution interface
 

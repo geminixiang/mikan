@@ -820,15 +820,13 @@ function abortedStream(model: Model<Api>, reason: string): AssistantMessageEvent
   return stream;
 }
 
-export type { CompactionSettings };
-
-export const DEFAULT_RETRY_SETTINGS: RetrySettings = {
+const DEFAULT_RETRY_SETTINGS: RetrySettings = {
   enabled: true,
   maxRetries: 3,
   baseDelayMs: 2000,
 };
 
-export const DEFAULT_BUDGET_SETTINGS: BudgetSettings = {};
+const DEFAULT_BUDGET_SETTINGS: BudgetSettings = {};
 
 export const DEFAULT_EVENT_BUDGET: BudgetSettings = {
   maxDurationMs: 10 * 60 * 1000,
@@ -836,7 +834,7 @@ export const DEFAULT_EVENT_BUDGET: BudgetSettings = {
   maxCostUsd: 10,
 };
 
-export function resolveHarnessSettings(overrides?: {
+function resolveHarnessSettings(overrides?: {
   compaction?: Partial<CompactionSettings>;
   retry?: Partial<RetrySettings>;
   budget?: Partial<BudgetSettings>;

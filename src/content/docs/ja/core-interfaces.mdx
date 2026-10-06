@@ -14,7 +14,7 @@ description: mikan の platform、runtime、harness、session、execution、vaul
 | Wire / persisted | ディスクに保存されるか、プロセス/ネットワーク境界を越えて送られる | 明示的に移行する。reader はサポート対象の古い形式を許容すべき |
 | Internal         | mikan CLI 内部のモジュールを接続する                              | call sites と tests を協調させれば変更してよい                |
 
-`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。それでも、通常の bot integration に必要な範囲を超えて harness を公開しています。下の表を意図された契約として扱ってください。
+`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。embedder に必要なものだけを export し、harness、session、sandbox の内部実装はパッケージのインターフェースに含めません。
 
 ## 境界マップ
 
@@ -85,9 +85,9 @@ npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` に
 | Runtime embedding   | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | platform と execution の依存を供給する host                                  |
 | Office と workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | すべての embedder。`createConversationRuntime` は `Workspace` を必要とします |
 | Platform contract   | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | platform adapters と embedders                                               |
-| Commands            | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 決定的な commands を追加する host                                            |
-| Execution           | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | runtime backends と host                                                     |
-| Harness embedding   | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings および event-format functions                 | 上級の embedders。通常の bot integration ではありません                      |
+| Commands            | `CommandHandler`、`CommandContext`、`CommandServices`、`defaultCommandHandlers`                            | 既定の commands に決定的な commands を追加する host                          |
+| Execution           | `SandboxConfig`                                                                                            | 実行環境を選ぶ host                                                          |
+| Models              | `MikanModels`、`CreateMikanModelsOptions`                                                                  | 独自のモデル一覧を渡す host                                                  |
 
 パッケージの `exports` map が宣言するパスだけが public です。それ以外の生成済み `dist/` パスや `src/` ソースパスの import はサポートされません。
 
@@ -188,7 +188,7 @@ session スコープのエントリポイントはすべて `OfficeAddress` を�
 
 ## 5. Harness インターフェース
 
-ソース: `src/harness/index.ts`、`src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts`、`src/harness/types.ts`。
+ソース: `src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts`、`src/harness/types.ts`。
 
 ### `MikanAgentSession`
 
@@ -220,7 +220,7 @@ Core tools は、runner が供給する executor と host services を使いま�
 
 ## 7. Sandbox と executor のインターフェース
 
-ソース: `src/sandbox/types.ts` と `src/sandbox/index.ts`。
+ソース: `src/sandbox/types.ts` と `src/sandbox/registry.ts`。
 
 ### `SandboxConfig`
 
@@ -245,7 +245,7 @@ Remote/exec のみの実装は base64 chunked な file transport を共有しま
 
 adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意で executor を作成します。`image` には意図的に直接の executor がありません。actor/vault 解決が先に具体的な container をプロビジョニングします。
 
-型は export されていますが、adapter 登録は現在 `src/sandbox/index.ts` 内部の閉じたリストです。外部の consumers は `parseSandboxArg` や `createExecutor` に adapter を追加できません。
+adapter 登録は `src/sandbox/registry.ts` 内部の閉じたリストで、パッケージは `SandboxAdapter` も登録表も export しません。
 
 ## 8. Vault と execution-resolution のインターフェース
 

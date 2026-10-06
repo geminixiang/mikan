@@ -14,7 +14,7 @@ description: mikan 的 platform、runtime、harness、session、execution、vaul
 | Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送                  | 明確 migrate；讀取端應容忍受支援的較舊格式 |
 | Internal         | 連接 mikan CLI 內部的各模組                      | 可在協調好呼叫端與測試的情況下變更         |
 
-`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它暴露的 harness 內容仍然多於一般 bot 整合所需；請把下表視為預期中的契約。
+`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它只匯出 embedder 需要的部分；harness、session 與 sandbox 的內部實作不屬於套件介面。
 
 ## 邊界圖
 
@@ -85,9 +85,9 @@ npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
 | Runtime embedding    | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | 提供 platform 與 execution 相依的 host                             |
 | Office and workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | 任何 embedder：`createConversationRuntime` 需要一個 `Workspace` 值 |
 | Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | Platform adapter 與 embedder                                       |
-| Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`dispatchCommand`                                   | 新增確定性指令的 host                                              |
-| Execution            | `Executor`、`SandboxConfig`、`SandboxAdapter`、`createExecutor`、`parseSandboxArg`、`validateSandbox`      | Runtime backend 與 host                                            |
-| Harness embedding    | `MikanAgentSession`、`SessionStore`、`MikanModels`、settings 與 event-format 函式                          | 進階 embedder；不適用於一般 bot 整合                               |
+| Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`defaultCommandHandlers`                            | 在預設指令之外新增確定性指令的 host                                |
+| Execution            | `SandboxConfig`                                                                                            | 選擇執行環境的 host                                                |
+| Models               | `MikanModels`、`CreateMikanModelsOptions`                                                                  | 自行提供模型清單的 host                                            |
 
 只有套件 `exports` map 宣告的路徑是 public。匯入其他 `dist/` 產生路徑或 `src/` 原始碼路徑皆不受支援。
 
@@ -188,7 +188,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ## 5. Harness 介面
 
-來源：`src/harness/index.ts`、`src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts` 與 `src/harness/types.ts`。
+來源：`src/harness/runner.ts`、`src/sessions/session-store.ts`、`src/harness/models.ts` 與 `src/harness/types.ts`。
 
 ### `MikanAgentSession`
 
@@ -220,7 +220,7 @@ Harness listener 會觀察 model/tool lifecycle event。預算設定會限制 to
 
 ## 7. Sandbox 與 executor 介面
 
-來源：`src/sandbox/types.ts` 與 `src/sandbox/index.ts`。
+來源：`src/sandbox/types.ts` 與 `src/sandbox/registry.ts`。
 
 ### `SandboxConfig`
 
@@ -245,7 +245,7 @@ Remote/exec-only 的實作共用 base64 分塊的檔案傳輸。工具實作必�
 
 Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立 executor。`image` 刻意沒有直接的 executor：actor/vault 解析會先佈建一個具體的 container。
 
-雖然此型別已匯出，adapter 註冊目前是 `src/sandbox/index.ts` 內部的封閉清單；外部消費者無法為 `parseSandboxArg` 或 `createExecutor` 新增 adapter。
+adapter 註冊是 `src/sandbox/registry.ts` 內部的封閉清單，套件不匯出 `SandboxAdapter`，也不匯出這份註冊表。
 
 ## 8. Vault 與 execution-resolution 介面
 

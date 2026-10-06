@@ -23,9 +23,9 @@ export interface EventScheduleSink {
   cancelRecord(address: OfficeAddress, filename: string): void;
 }
 
-export type EventConversationKind = "direct" | "shared";
+type EventConversationKind = "direct" | "shared";
 
-export type EventType = "immediate" | "one-shot" | "periodic";
+type EventType = "immediate" | "one-shot" | "periodic";
 
 interface EventPayloadBase {
   platform?: string;
@@ -35,16 +35,16 @@ interface EventPayloadBase {
   text: string;
 }
 
-export interface ImmediateEventPayload extends EventPayloadBase {
+interface ImmediateEventPayload extends EventPayloadBase {
   type: "immediate";
 }
 
-export interface OneShotEventPayload extends EventPayloadBase {
+interface OneShotEventPayload extends EventPayloadBase {
   type: "one-shot";
   at: string;
 }
 
-export interface PeriodicEventPayload extends EventPayloadBase {
+interface PeriodicEventPayload extends EventPayloadBase {
   type: "periodic";
   schedule: string;
   timezone: string;

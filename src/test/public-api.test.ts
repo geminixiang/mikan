@@ -3,44 +3,14 @@ import { describe, expect, test } from "vitest";
 import * as publicApi from "../index.js";
 
 const EXPECTED_RUNTIME_EXPORTS = [
-  "ChatHistorySync",
-  "DEFAULT_BUDGET_SETTINGS",
-  "DEFAULT_EVENT_BUDGET",
-  "DEFAULT_HTTP_IDLE_TIMEOUT_MS",
-  "DEFAULT_RETRY_SETTINGS",
-  "EventTypeSchema",
-  "MikanAgentSession",
   "MikanModels",
-  "SandboxError",
-  "SessionStore",
-  "buildEventPayload",
-  "configureHttpDispatcher",
   "createConversationEvent",
   "createConversationMessage",
   "createConversationRuntime",
-  "createExecutor",
   "createOfficeAddress",
   "createWorkspace",
   "defaultCommandHandlers",
-  "defaultModelsJsonPath",
-  "dispatchCommand",
-  "formatSkillsForPrompt",
-  "getSandboxAdapters",
-  "hasMaterializedChatSession",
-  "inferConversationKind",
-  "isCommandText",
-  "loadSkillsFromDir",
-  "loadSubagentProfiles",
   "officeKey",
-  "parseEventPayload",
-  "parseFrontmatter",
-  "parseHttpIdleTimeoutMs",
-  "parseSandboxArg",
-  "registerThreadSession",
-  "resolveChatSessionKey",
-  "resolveHarnessSettings",
-  "validateSandbox",
-  "waitForThreadSessionBootstrap",
 ].toSorted();
 
 describe("public package interface", () => {
@@ -58,15 +28,10 @@ describe("public package interface", () => {
     expect(declarations).toMatchSnapshot();
   });
 
-  test("declares enforced root and compatibility entry points", () => {
+  test("declares only the root entry point", () => {
     const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
       exports?: Record<string, unknown>;
     };
-    expect(Object.keys(packageJson.exports ?? {}).toSorted()).toEqual([
-      ".",
-      "./harness",
-      "./package.json",
-      "./sandbox",
-    ]);
+    expect(Object.keys(packageJson.exports ?? {}).toSorted()).toEqual([".", "./package.json"]);
   });
 });

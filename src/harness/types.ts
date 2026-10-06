@@ -167,7 +167,7 @@ export interface SubagentProfile {
   maxDurationMs?: number;
 }
 
-export interface SubagentRunBudget {
+interface SubagentRunBudget {
   maxTurns?: number;
   maxTokens?: number;
   maxCostUsd?: number;
@@ -182,7 +182,7 @@ export type SubagentRunStatus =
   | "budget_exceeded"
   | "invalid_output";
 
-export interface SubagentParentContext {
+interface SubagentParentContext {
   mode: "normalized";
   recentTurns?: number;
 }
@@ -308,7 +308,7 @@ export interface LoadSubagentProfilesResult {
   diagnostics: SubagentProfileDiagnostic[];
 }
 
-export type CompactionReason = "threshold" | "overflow" | "manual";
+type CompactionReason = "threshold" | "overflow" | "manual";
 
 export type HarnessEvent =
   | { type: "message_start"; message: AgentMessage }

@@ -56,7 +56,7 @@ export interface SessionMessageEntry extends SessionEntryBase {
   history?: ChatHistoryMessageIdentity;
 }
 
-export interface SessionCustomEntry extends SessionEntryBase {
+interface SessionCustomEntry extends SessionEntryBase {
   type: "custom";
   customType: string;
   data?: JsonValue;

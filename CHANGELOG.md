@@ -11,6 +11,7 @@ any release.
 
 ### Removed
 
+- The `@geminixiang/mikan/harness` and `@geminixiang/mikan/sandbox` entry points, and every root export an embedder does not need. The package now exports `createConversationRuntime`, `createWorkspace`, `createOfficeAddress`, `officeKey`, `createConversationEvent`, `createConversationMessage`, `defaultCommandHandlers`, `MikanModels`, and the types their signatures use; session storage, `MikanAgentSession`, skills and subagent loaders, sandbox executors, session-key helpers, and HTTP dispatcher setup are internal.
 - `mikan --download <channel-id>`, a debugging dump of a Slack channel's history; passing it is now an error.
 - The experimental `cloudflare:<sandbox-id>` sandbox, its `CLOUDFLARE_SANDBOX_URL`/`CLOUDFLARE_SANDBOX_TOKEN` variables, and the example bridge worker. `--sandbox cloudflare:…` is now an invalid sandbox type. Embedding API: `CloudflareSandboxConfig` and `CloudflareSandboxExecutor` are no longer exported. The `/pi-login` Cloudflare/Wrangler credential form is unchanged.
 - The state directory is always `~/.mikan`: `--state-dir` and the `STATE_DIR`/`MIKAN_STATE_DIR` variables are gone, and passing `--state-dir` is an error. Before upgrading a 0.5.3 install that used another state directory, move it to `~/.mikan`; to run two bots on one host, run them as different users. The pm2 template no longer passes `./workspace`, so the workspace defaults to `~/.mikan/workspace`.
@@ -29,6 +30,9 @@ any release.
 
 ### Fixed
 
+- Slack startup and reconnects no longer hang without a log line when Slack accepts the connection and never answers; a socket silent for 30 seconds is dropped and retried. The daemon logs `Slack connection lost; reconnecting` and `Slack reconnected after Ns`.
+- Stopping the daemon while it is still connecting to Slack ends with a graceful shutdown instead of `Failed to start bot undefined` and exit code 1.
+- When Telegram ends long polling because the token was revoked (401) or another process polls the same bot (409), the daemon logs the reason and exits with code 1 for the process manager to restart, instead of running on without receiving Telegram messages.
 - Office state directories under `~/.mikan/conversations/` are created with mode `0700`; recording a Slack channel's kind or a first conversation setting created them `0755`.
 - `mikan migrate` refuses to run when `<state-dir>/settings.json` or the workspace is missing. A mistyped `--state-dir`, or leaving out `--workspace` for a 0.5.3 install whose working directory is elsewhere, used to find nothing to convert, record every step as applied, and start the daemon without its sessions, events, settings, and vaults.
 - The startup log reports the HTTP idle timeout mikan applies, 300000ms by default, instead of `undefinedms` when `HTTP_IDLE_TIMEOUT` is not set.

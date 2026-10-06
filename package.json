@@ -31,14 +31,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./harness": {
-      "types": "./dist/harness/index.d.ts",
-      "import": "./dist/harness/index.js"
-    },
-    "./sandbox": {
-      "types": "./dist/sandbox/index.d.ts",
-      "import": "./dist/sandbox/index.js"
-    },
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -132,9 +124,7 @@
     "entry": [
       "src/index.ts!",
       "src/main.ts!",
-      "src/observability/instrument.ts!",
-      "src/harness/index.ts!",
-      "src/sandbox/index.ts!"
+      "src/observability/instrument.ts!"
     ],
     "ignore": [
       ".pi/**",
