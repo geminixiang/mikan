@@ -21,19 +21,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## 指令速查
 
-| 指令                                               | 用途與範圍                                                                                             |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                         |
-| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                    |
-| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                            |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。 |
-| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                  |
-| `/pi-auto-reply <on\|off>`                         | 開啟或關閉目前 Slack channel 不需 mention 的回覆。                                                     |
-| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                        |
-| `/sandbox` / `/pi-sandbox`                         | 顯示目前 sandbox 的限制，以及這個 office 的 visibility。                                               |
-| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                             |
-| `/pi-sandbox visibility`                           | 回報這個 office 生效中的 visibility 與其來源。                                                         |
-| `/pi-sandbox visibility <private\|default>`        | 把這個公開頻道縮為 private office，或清除該覆寫。見下方 [Office visibility](#office-visibility)。      |
+| 指令                                               | 用途與範圍                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                                          |
+| `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                                     |
+| `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                                             |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                  |
+| `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                                   |
+| `/pi-auto-reply <on\|off\|jev>`                    | 讓目前的 Slack channel 回覆每一則訊息（`on`）、只回覆 mention（`off`），或由 Jev 判斷訊息是否在對 mikan 說話（`jev`）。 |
+| `/admin` / `/pi-admin`                             | 開啟 30 分鐘有效的管理 portal。                                                                                         |
+| `/sandbox` / `/pi-sandbox`                         | 顯示目前 sandbox 的限制，以及這個 office 的 visibility。                                                                |
+| `/pi-sandbox boost`                                | 套用設定的 boost 限制，直到受管理的 sandbox runtime 停止。                                                              |
+| `/pi-sandbox visibility`                           | 回報這個 office 生效中的 visibility 與其來源。                                                                          |
+| `/pi-sandbox visibility <private\|default>`        | 把這個公開頻道縮為 private office，或清除該覆寫。見下方 [Office visibility](#office-visibility)。                       |
 
 `/pi-sandbox` 只適用於受管理的 sandbox runtime：在 `host` 或 `container:<name>` 模式下，它會回覆這個指令需要 `image:*`。
 

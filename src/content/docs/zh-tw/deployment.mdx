@@ -134,7 +134,23 @@ pm2 start mikan
 
 ### 從 0.5.3 升級
 
-1.0.0 可以直接遷移 0.5.3 的安裝；只在預覽版出現過的格式不在支援範圍。1.0 只把狀態放在 `~/.mikan`，所以放在其他位置的 0.5.3 state directory 要先搬過去，並用 `--workspace` 指定 0.5.3 的 working directory。`mikan migrate` 會：
+1.0.0 會直接在原地遷移 0.5.3 的安裝。這是唯一支援的升級路徑：只在 1.0.0 預覽版出現過的格式不會被轉換。遷移完成之前，1.0 的 daemon 不會啟動，並會印出適用於你的安裝的 `mikan migrate` 指令。
+
+1. **備份。** 停止 0.5.3 的 daemon，複製它的 state directory 與 working directory。遷移會改名兩邊的目錄。
+2. **安裝 1.0。** 需要 Node.js 24.15.0 以上：`npm i -g @geminixiang/mikan@latest`。
+3. **把狀態搬到 `~/.mikan`。** 1.0 沒有 `--state-dir`；如果 0.5.3 的狀態放在其他位置，請把該目錄搬到 `~/.mikan`，並從 process manager 執行的指令中拿掉 `--state-dir`。
+4. **選擇支援的沙盒。** 1.0 支援 `host`、`container:<name>` 與 `image:<image>`。使用 `firecracker:*` 或 `cloudflare:*` 的 0.5.3 安裝，要先改用其中一種。
+5. **搬移 provider key。** 0.5.3 從 `~/.pi/mikan/auth.json` 讀取的 key 不會被遷移；請設定到 `~/.mikan/mikan.env`，或保留在 `models.json`。
+6. **遷移。** 傳入 0.5.3 的 working directory 與 daemon 之後要用的沙盒，先預覽再套用：
+
+   ```bash
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   ```
+
+7. **啟動並檢查 log。** daemon 會針對每個 `settings.json` 記錄 `Settings that mikan ignores; remove them from <path>`，列出 1.0 不再讀取的 0.5.3 設定，例如 `llm.autoReply`。請把它們刪掉。
+
+`mikan migrate` 會：
 
 - 把對話目錄及其 vault 從原始 conversation id 改名為 office key；
 - 把 `host` 模式的每位使用者 vault 與 `container:*` 的 vault 改名為雜湊後的 identity key；
@@ -145,12 +161,14 @@ pm2 start mikan
 - 如果 mikan 還沒有 `~/.mikan/models.json`，就複製 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）；
 - 刪除每個對話目錄裡的 `last_prompt.jsonl` 與 `auto-reply.disabled`，1.0 不會再寫這兩個檔案。
 
-Provider API key 來自 `models.json` 或環境變數。0.5.3 從 `~/.pi/mikan/auth.json` 讀取的 key 不會被遷移；請在啟動前設定到 `~/.mikan/mikan.env`。
+升級後使用者會注意到的變化：
 
-<Aside type="caution" title="請先備份 state directory">
-  遷移會同時改名 workspace 與 state directory 底下的目錄。遷移前請先複製一份 `~/.mikan` 與
-  workspace。
-</Aside>
+- 只有 `session` 與 `stop` 可以不加斜線；`new`、`model`、`auto-reply` 要用斜線形式，例如 `/pi-new`。
+- Auto-reply 只支援 Slack，接受 `on`、`off` 或 `jev`。原本設有 auto-reply 規則的頻道，現在會回覆每一則頂層訊息；可以用 `/pi-auto-reply off` 或 `jev` 縮小範圍。
+- 在沙盒裡，對話的檔案位於 `/workspace/<office-key>`。agent 在舊 session 裡引用的路徑，仍指向舊的 `/workspace/<conversation-id>`。
+- 不再載入 extension；`skills/` 目錄裡的 skill 仍會載入。
+
+[changelog](https://github.com/geminixiang/mikan/blob/main/CHANGELOG.md) 列出自 0.5.3 以來的所有變更，包括給 embedder 的套件介面縮減。
 
 ## Health endpoint
 

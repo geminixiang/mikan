@@ -147,9 +147,33 @@ migrations that already succeeded stay applied.
 
 ### Upgrading from 0.5.3
 
-1.0.0 migrates a 0.5.3 install directly; prerelease-only formats are not supported. 1.0 keeps its
-state in `~/.mikan` only, so move a 0.5.3 state directory kept elsewhere there first, and pass the
-0.5.3 working directory as `--workspace`. `mikan migrate`:
+1.0.0 migrates a 0.5.3 install in place. It is the only supported upgrade: formats that existed
+only in 1.0.0 prereleases are not converted. Until the migrations run, the 1.0 daemon refuses to
+start and prints the `mikan migrate` command for your install.
+
+1. **Back up.** Stop the 0.5.3 daemon and copy both its state directory and its working
+   directory. Migrations rename directories in both.
+2. **Install 1.0.** It needs Node.js 24.15.0 or newer: `npm i -g @geminixiang/mikan@latest`.
+3. **Move state to `~/.mikan`.** 1.0 has no `--state-dir`; if 0.5.3 kept its state elsewhere,
+   move that directory to `~/.mikan`, and remove `--state-dir` from the command line your process
+   manager runs.
+4. **Choose a supported sandbox.** 1.0 runs `host`, `container:<name>`, and `image:<image>`. A
+   0.5.3 install on `firecracker:*` or `cloudflare:*` must pick one of these first.
+5. **Move provider keys.** Keys that 0.5.3 read from `~/.pi/mikan/auth.json` are not migrated;
+   set them in `~/.mikan/mikan.env`, or keep them in `models.json`.
+6. **Migrate.** Pass the 0.5.3 working directory and the sandbox the daemon will run with,
+   preview, then apply:
+
+   ```bash
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   ```
+
+7. **Start and check the log.** For each `settings.json`, the daemon logs
+   `Settings that mikan ignores; remove them from <path>` with the 0.5.3 keys 1.0 no longer
+   reads, such as `llm.autoReply`. Remove them.
+
+`mikan migrate`:
 
 - renames conversation directories and their vaults from raw conversation ids to office keys;
 - renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
@@ -163,13 +187,18 @@ state in `~/.mikan` only, so move a 0.5.3 state directory kept elsewhere there f
 - removes `last_prompt.jsonl` and `auto-reply.disabled` from each conversation directory, since 1.0
   writes neither.
 
-Provider API keys come from `models.json` or environment variables. Keys that 0.5.3 read from
-`~/.pi/mikan/auth.json` are not migrated; set them in `~/.mikan/mikan.env` before starting.
+What people notice after the upgrade:
 
-<Aside type="caution" title="Back up the state directory first">
-  Migrations rename directories under both the workspace and the state directory. Take a copy of
-  `~/.mikan` and the workspace before migrating.
-</Aside>
+- Only `session` and `stop` work without a leading slash; `new`, `model`, and `auto-reply` need
+  their slash forms, such as `/pi-new`.
+- Auto-reply is Slack-only and takes `on`, `off`, or `jev`. A channel that had auto-reply rules
+  now replies to every top-level message; use `/pi-auto-reply off` or `jev` to narrow it.
+- Inside the sandbox, a conversation's files are at `/workspace/<office-key>`. Paths the agent
+  quoted in earlier sessions point at the old `/workspace/<conversation-id>` location.
+- Extensions are no longer loaded; skills in `skills/` directories still are.
+
+The [changelog](https://github.com/geminixiang/mikan/blob/main/CHANGELOG.md) lists every change
+since 0.5.3, including the narrower package interface for embedders.
 
 ## Health endpoint
 

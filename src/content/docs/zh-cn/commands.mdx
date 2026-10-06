@@ -21,19 +21,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## 命令速查
 
-| 命令                                               | 用途和范围                                                                                         |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                     |
-| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                      |
-| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                            |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。      |
-| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                        |
-| `/pi-auto-reply <on\|off>`                         | 开启或关闭当前 Slack channel 无需 mention 的回复。                                                 |
-| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                                  |
-| `/sandbox` / `/pi-sandbox`                         | 显示当前沙箱限制，以及本办公室的 visibility。                                                      |
-| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                                  |
-| `/pi-sandbox visibility`                           | 报告办公室生效的 visibility 及其来源。                                                             |
-| `/pi-sandbox visibility <private\|default>`        | 将本公开频道收窄为 private office，或清除该覆盖。参阅下方[办公室 visibility](#办公室-visibility)。 |
+| 命令                                               | 用途和范围                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                                          |
+| `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                                           |
+| `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                                                 |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                           |
+| `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                                             |
+| `/pi-auto-reply <on\|off\|jev>`                    | 让当前的 Slack channel 回复每一条消息（`on`）、只回复 mention（`off`），或由 Jev 判断消息是否在对 mikan 说话（`jev`）。 |
+| `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                                                       |
+| `/sandbox` / `/pi-sandbox`                         | 显示当前沙箱限制，以及本办公室的 visibility。                                                                           |
+| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                                                       |
+| `/pi-sandbox visibility`                           | 报告办公室生效的 visibility 及其来源。                                                                                  |
+| `/pi-sandbox visibility <private\|default>`        | 将本公开频道收窄为 private office，或清除该覆盖。参阅下方[办公室 visibility](#办公室-visibility)。                      |
 
 `/pi-sandbox` 仅适用于受管理的沙箱运行时：在 `host` 或 `container:<name>` 模式下，它会回复该命令需要 `image:*`。
 

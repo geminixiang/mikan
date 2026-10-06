@@ -9,8 +9,7 @@
 
 Self-hosted AI coding agent for organizations: every Slack channel and DM gets its own sandboxed workspace, credentials, and memory. Also speaks Telegram, Discord, and GitHub.
 
-> [!WARNING]
-> **Pre-1.0 status** — the overall framework stabilizes at 1.0.0. Until then, releases may change settings and on-disk data formats without migrations: upgrading between pre-1.0 versions can require resetting or manually adjusting existing state and workspace data.
+Upgrading from 0.5.3? Follow [Upgrading from 0.5.3](src/content/docs/deployment.mdx#upgrading-from-053); `mikan migrate` converts the state in place.
 
 ## Architecture
 
@@ -37,7 +36,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
 - **Skills** — drop CLI tools into `skills/`
-- **Events** — schedule one-shot or recurring tasks via JSON files
+- **Events** — the agent schedules one-shot or recurring runs with its `event` tool
 - **Multi-provider** — any provider/model supported by `pi-ai`
 
 ## Requirements
@@ -138,7 +137,7 @@ For routing, mounts, vault behavior, and managed container details, see [src/con
 | `/new` / `/pi-new`                               | Reset the current session                                      |
 | `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                    |
 | `/sandbox` / `/pi-sandbox [boost\|visibility …]` | Show sandbox status, boost limits, or narrow office visibility |
-| `/pi-auto-reply <on\|off>`                       | Toggle mention-free replies for the current Slack channel      |
+| `/pi-auto-reply <on\|off\|jev>`                  | Set mention-free replies for the current Slack channel         |
 | `/admin` / `/pi-admin`                           | Open the admin portal                                          |
 | `stop` / `/stop`                                 | Stop the current run (works on every platform)                 |
 
@@ -165,17 +164,20 @@ See [src/content/docs/configuration.md](src/content/docs/configuration.md) for a
 ```text
 ~/.mikan/
 ├── settings.json
+├── mikan.env
+├── models.json
+├── migrations.json
 ├── office-registry.json
 ├── conversations/
 │   └── <office-key>/
 │       ├── settings.json
-│       └── sessions/
+│       ├── sessions.db
+│       └── events/
 └── vaults/
 
 <working-directory>/
 ├── MEMORY.md
 ├── skills/
-├── events/
 ├── agents/
 └── <office-key>/
     ├── MEMORY.md

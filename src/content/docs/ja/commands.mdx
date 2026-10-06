@@ -22,19 +22,19 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 
 ## コマンド早見表
 
-| コマンド                                           | 用途と scope                                                                                                                        |
-| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                                |
-| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                                         |
-| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                          |
-| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。    |
-| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。               |
-| `/pi-auto-reply <on\|off>`                         | 現在の Slack channel で mention なしの応答を有効または無効にします。                                                                |
-| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                             |
-| `/sandbox` / `/pi-sandbox`                         | 現在の sandbox の制限と、この office の visibility を表示します。                                                                   |
-| `/pi-sandbox boost`                                | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                      |
-| `/pi-sandbox visibility`                           | office の実効 visibility とその由来を表示します。                                                                                   |
-| `/pi-sandbox visibility <private\|default>`        | この public channel を private office に狭めるか、その override を解除します。下の [Office visibility](#office-visibility) を参照。 |
+| コマンド                                           | 用途と scope                                                                                                                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/login` / `/pi-login`                             | 15 分間有効な login/vault link を開きます。DM のみ。                                                                                                        |
+| `session` / `/session` / `/pi-session`             | 現在の session viewer を開きます。DM のみ。                                                                                                                 |
+| `/new` / `/pi-new`                                 | 現在の session をリセットします。DM のみ。                                                                                                                  |
+| `/model` / `/pi-model [provider/model[:thinking]]` | 現在の conversation model を表示または切り替えます。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                            |
+| `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。                                       |
+| `/pi-auto-reply <on\|off\|jev>`                    | 現在の Slack channel で、すべてのメッセージに応答する（`on`）、mention にだけ応答する（`off`）、または Jev がメッセージが mikan 宛てかを判断する（`jev`）。 |
+| `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                                                     |
+| `/sandbox` / `/pi-sandbox`                         | 現在の sandbox の制限と、この office の visibility を表示します。                                                                                           |
+| `/pi-sandbox boost`                                | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                                              |
+| `/pi-sandbox visibility`                           | office の実効 visibility とその由来を表示します。                                                                                                           |
+| `/pi-sandbox visibility <private\|default>`        | この public channel を private office に狭めるか、その override を解除します。下の [Office visibility](#office-visibility) を参照。                         |
 
 ### Office visibility
 

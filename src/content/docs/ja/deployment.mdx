@@ -139,7 +139,23 @@ pm2 start mikan
 
 ### 0.5.3 からのアップグレード
 
-1.0.0 は 0.5.3 のインストールを直接マイグレーションします。プレリリースにしか存在しなかった形式はサポート対象外です。1.0 は state を `~/.mikan` にのみ置くため、別の場所にある 0.5.3 の state directory は先にそこへ移動し、0.5.3 の working directory を `--workspace` で指定してください。`mikan migrate` は次を行います:
+1.0.0 は 0.5.3 のインストールをその場でマイグレーションします。サポートされるアップグレードはこれだけで、1.0.0 のプレリリースにしか存在しなかった形式は変換されません。マイグレーションが済むまで 1.0 の daemon は起動せず、そのインストール用の `mikan migrate` コマンドを表示します。
+
+1. **バックアップする。** 0.5.3 の daemon を止め、state directory と working directory の両方をコピーします。マイグレーションは両方の directory を rename します。
+2. **1.0 をインストールする。** Node.js 24.15.0 以降が必要です: `npm i -g @geminixiang/mikan@latest`。
+3. **state を `~/.mikan` に移す。** 1.0 には `--state-dir` がありません。0.5.3 が state を別の場所に置いていた場合は、その directory を `~/.mikan` に移動し、process manager が実行するコマンドから `--state-dir` を外してください。
+4. **サポートされる sandbox を選ぶ。** 1.0 が動かすのは `host`、`container:<name>`、`image:<image>` です。`firecracker:*` や `cloudflare:*` を使っていた 0.5.3 のインストールは、先にこのいずれかへ切り替えてください。
+5. **provider key を移す。** 0.5.3 が `~/.pi/mikan/auth.json` から読んでいた key は移行されません。`~/.mikan/mikan.env` に設定するか、`models.json` に置いてください。
+6. **マイグレーションする。** 0.5.3 の working directory と、daemon が今後使う sandbox を渡し、プレビューしてから適用します:
+
+   ```bash
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   ```
+
+7. **起動してログを確認する。** daemon は各 `settings.json` について `Settings that mikan ignores; remove them from <path>` を記録し、1.0 が読まなくなった `llm.autoReply` などの 0.5.3 の設定を挙げます。それらを削除してください。
+
+`mikan migrate` は次を行います:
 
 - conversation directory とその vault を、生の conversation id から office key へ rename する
 - `host` の per-user vault と `container:*` の vault を、hash された identity key へ rename する
@@ -150,12 +166,14 @@ pm2 start mikan
 - mikan に `~/.mikan/models.json` がまだなければ、`~/.pi/agent/models.json`（または `$PI_CODING_AGENT_DIR/models.json`）をコピーする
 - 各 conversation directory から `last_prompt.jsonl` と `auto-reply.disabled` を削除する（1.0 はどちらも書き込まない）
 
-Provider の API key は `models.json` か環境変数から読まれます。0.5.3 が `~/.pi/mikan/auth.json` から読んでいた key は移行されないため、起動前に `~/.mikan/mikan.env` に設定してください。
+アップグレード後に利用者が気づく変化:
 
-<Aside type="caution" title="先に state directory をバックアップする">
-  マイグレーションは workspace と state directory の両方で directory を rename します。実行前に
-  `~/.mikan` と workspace のコピーを取ってください。
-</Aside>
+- スラッシュなしで使えるのは `session` と `stop` だけです。`new`、`model`、`auto-reply` は `/pi-new` のようなスラッシュ形式が必要です。
+- Auto-reply は Slack 専用で、`on`、`off`、`jev` を受け付けます。auto-reply のルールを設定していたチャンネルは、すべてのトップレベルメッセージに返信するようになります。`/pi-auto-reply off` または `jev` で絞り込んでください。
+- sandbox 内では、会話のファイルは `/workspace/<office-key>` にあります。以前の session で agent が引用したパスは、古い `/workspace/<conversation-id>` を指したままです。
+- extension は読み込まれなくなりました。`skills/` directory の skill は引き続き読み込まれます。
+
+[changelog](https://github.com/geminixiang/mikan/blob/main/CHANGELOG.md) には、embedder 向けのパッケージインターフェースの縮小を含め、0.5.3 以降のすべての変更が載っています。
 
 ## Health endpoint
 
