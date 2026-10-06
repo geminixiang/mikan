@@ -468,6 +468,13 @@ if (hasTelegram) {
   const telegramMessagingBot = new TelegramMessagingBot(handler, {
     token: telegramToken,
     workspace,
+    onPollingFailure: (error) => {
+      log.logWarning(
+        "Telegram stopped delivering messages; exiting so the process restarts",
+        error.message,
+      );
+      process.exit(1);
+    },
   });
   botsByPlatform.telegram = telegramMessagingBot;
   log.logInfo("Platform: Telegram");

@@ -444,6 +444,46 @@ describe("TelegramMessagingBot startup", () => {
       { command: "admin", description: "Open the admin portal" },
     ]);
   });
+
+  test("reports polling that Telegram ends, such as a revoked token or a second poller", async () => {
+    const client = new FakeTelegramClient();
+    const failure = new Error("Call to 'getUpdates' failed! (409: Conflict)");
+    client.start = () => Promise.reject(failure);
+    const onPollingFailure = vi.fn();
+    const bot = new TelegramMessagingBot(makeHandler(), {
+      token: "T",
+      workspace,
+      client,
+      onPollingFailure,
+    });
+
+    await bot.start();
+
+    await vi.waitFor(() => expect(onPollingFailure).toHaveBeenCalledWith(failure));
+  });
+
+  test("does not report polling that ends because mikan is stopping", async () => {
+    const client = new FakeTelegramClient();
+    let endPolling!: (error: Error) => void;
+    client.start = () =>
+      new Promise<void>((_resolve, reject) => {
+        endPolling = reject;
+      });
+    const onPollingFailure = vi.fn();
+    const bot = new TelegramMessagingBot(makeHandler(), {
+      token: "T",
+      workspace,
+      client,
+      onPollingFailure,
+    });
+    await bot.start();
+
+    await bot.stop();
+    endPolling(new Error("Call to 'getUpdates' failed! (409: Conflict)"));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(onPollingFailure).not.toHaveBeenCalled();
+  });
 });
 
 describe("TelegramMessagingBot attachments", () => {

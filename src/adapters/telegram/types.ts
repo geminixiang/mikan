@@ -40,6 +40,7 @@ export interface TelegramMessagingBotOptions {
   token: string;
   workspace: Workspace;
   client?: TelegramClient;
+  onPollingFailure?: (error: Error) => void;
 }
 
 export type TelegramResponseBot = Pick<

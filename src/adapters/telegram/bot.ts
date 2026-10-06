@@ -65,12 +65,16 @@ export class TelegramMessagingBot implements MessagingBot {
   private queues = new Map<string, MessagingEventQueue>();
   private intake = new MessagingIntakeTracker("Telegram");
   private startupTime: number = 0;
+  private readonly onPollingFailure: (error: Error) => void;
 
   constructor(handler: MessagingEventHandler, options: TelegramMessagingBotOptions) {
     this.handler = handler;
     this.botToken = options.token;
     this.workspace = options.workspace;
     this.client = options.client ?? new GrammyMessagingBot(options.token);
+    this.onPollingFailure =
+      options.onPollingFailure ??
+      ((error) => log.logWarning("Telegram polling error", error.message));
     this.client.catch((err) => {
       log.logWarning("Telegram error", errorMessage(err));
     });
@@ -88,8 +92,9 @@ export class TelegramMessagingBot implements MessagingBot {
 
     this.setupEventHandlers();
 
-    this.client.start().catch((err) => {
-      log.logWarning("Telegram polling error", errorMessage(err));
+    this.client.start().catch((err: unknown) => {
+      if (this.stopped) return;
+      this.onPollingFailure(err instanceof Error ? err : new Error(String(err)));
     });
 
     log.logConnected("Telegram");
