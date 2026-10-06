@@ -28,7 +28,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 ## Features
 
-- **Multi-platform** — Slack, Telegram, Discord, and GitHub adapters
+- **Multi-platform** — Slack, Telegram, Discord, and GitHub (experimental) adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
 - **Sandbox execution** — host, shared container, or per-conversation managed container
@@ -111,7 +111,7 @@ The working directory is optional: it defaults to `~/.mikan/workspace` and is cr
 - **Slack** — create a Socket Mode app using [src/content/docs/slack-bot-minimal-guide.md](src/content/docs/slack-bot-minimal-guide.md). The bot responds when `@mentioned` in channels and to all DMs.
 - **Telegram** — create a bot via [@BotFather](https://t.me/BotFather). The bot responds to private messages, `@mention`, and reply chains in groups.
 - **Discord** — create an application in the [Discord Developer Portal](https://discord.com/developers/applications), enable **Message Content Intent**, and invite it with message/file permissions.
-- **GitHub** — bind a regular GitHub account with a fine-grained PAT, point an organization webhook at `<LINK_URL>/github/webhook`, and list the repositories mikan answers in. People mention, assign, and request reviews from it like a teammate; one issue or PR is one conversation. See [src/content/docs/platform-adapters/github.md](src/content/docs/platform-adapters/github.md).
+- **GitHub (experimental)** — bind a regular GitHub account with a fine-grained PAT, point an organization webhook at `<LINK_URL>/github/webhook`, and list the repositories mikan answers in. People mention, assign, and request reviews from it like a teammate; one issue or PR is one conversation. See [src/content/docs/platform-adapters/github.md](src/content/docs/platform-adapters/github.md).
 
 Slack threads, Discord replies/threads, and Telegram reply chains are mapped to independent session scopes. See [src/content/docs/sessions.mdx](src/content/docs/sessions.mdx).
 

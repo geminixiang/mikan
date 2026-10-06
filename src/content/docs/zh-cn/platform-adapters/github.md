@@ -3,6 +3,10 @@ title: GitHub 适配器
 description: 绑定 GitHub 账号、由 webhook 驱动、issue/PR 对话、限制设置，以及以 comment 回复。
 ---
 
+:::caution[实验性功能]
+GitHub 适配器目前是实验性功能。它的设置和对话的存储方式，可能在次版本更新时改变，这个版本的对话不保证能延续。
+:::
+
 每个 GitHub issue 或 pull request 都是一个 mikan 对话。mikan 以你绑定的普通 GitHub 账号行动，所以大家可以像对待队友一样，用自动补全 @ 它、把 issue 和 PR assign 给它、请它 review。GitHub 通过带签名的 webhook 通知 mikan 发生了什么。设计理由见 [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md)。
 
 Conversation id 是 `GH_<owner>_<repo>_<number>`，其中 owner 与 repo 都转为小写。它避开 `/` 与 `:`，因为 id 会原样作为单一路径片段使用，也会出现在 docker 的 `-v source:target` 语法中；它以 `_` 而非 `-` 分隔，是因为 GitHub owner 可能含有 `-`（那会让 owner/repo 的边界产生歧义），但绝不会含有 `_`。和每个平台一样，原始 id 只停留在 GitHub API 边界上：在磁盘上，该对话位于以 office key 命名的 office 目录中。

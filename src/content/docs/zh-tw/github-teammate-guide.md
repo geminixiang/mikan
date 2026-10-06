@@ -3,6 +3,10 @@ title: 讓 mikan 成為 GitHub 隊友
 description: 用 fine-grained PAT 和 webhook 把一個 GitHub 帳號綁給 mikan，讓團隊可以 @ 它、assign 給它、請它 review。
 ---
 
+:::caution[實驗性功能]
+GitHub 接入目前是實驗性功能，見 [GitHub 接入](/zh-tw/platform-adapters/github/)。
+:::
+
 完成這份指南後，團隊在 issue 或 PR 輸入 `@` 就能從自動完成選到 mikan，也能把 issue 或 PR assign 給它，或請它 review。mikan 在 GitHub 上只以這個帳號行動。
 
 以下以 `acme` 代表你的組織、`acme-agent` 代表這個帳號、`https://mikan.example.com` 代表 mikan 的 `LINK_URL`，請換成實際名稱。

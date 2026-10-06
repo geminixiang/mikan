@@ -3,6 +3,10 @@ title: GitHub 接続
 description: 紐付けた GitHub アカウントと webhook による駆動、issue/PR conversation、制限設定、comment による応答。
 ---
 
+:::caution[実験的機能]
+GitHub 接続は実験的機能です。設定と conversation の保存方法はマイナーリリースで変わる可能性があり、このバージョンの conversation が引き継がれる保証はありません。
+:::
+
 1 つの GitHub issue または pull request が 1 つの mikan conversation になります。mikan は紐付けた通常の GitHub アカウントとして動作するため、チームメイトと同じように、オートコンプリートで @ メンションし、issue や PR を assign し、review を依頼できます。何が起きたかは署名付き webhook で mikan に届きます。理由は [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md) を参照してください。
 
 conversation id は `GH_<owner>_<repo>_<number>` で、owner と repo は小文字化されます。id は 1 つの path segment としてそのまま使われ、docker の `-v source:target` 構文にも入るため、`/` と `:` を避けています。また `-` ではなく `_` で区切るのは、GitHub の owner が `-` を含み得る（それでは owner/repo の境界が曖昧になる）一方で `_` は含まないためです。他のすべてのプラットフォームと同じく、生 id は GitHub API の境界に留まります。ディスク上では、この conversation は office key で命名された office directory に存在します。

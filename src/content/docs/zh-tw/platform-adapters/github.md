@@ -3,6 +3,10 @@ title: GitHub 接入
 description: 綁定 GitHub 帳號、以 webhook 驅動、issue/PR 對話、限制設定與以 comment 回覆。
 ---
 
+:::caution[實驗性功能]
+GitHub 接入目前是實驗性功能。它的設定和對話的儲存方式，可能在次版本更新時改變，這個版本的對話不保證能延續。
+:::
+
 每個 GitHub issue 或 pull request 都是一個 mikan 對話。mikan 以你綁定的一般 GitHub 帳號行動，所以大家可以像對待隊友一樣，用自動完成 @ 它、把 issue 和 PR assign 給它、請它 review。GitHub 透過有簽章的 webhook 通知 mikan 發生了什麼。設計理由見 [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md)。
 
 逐步設定請見[讓 mikan 成為 GitHub 隊友](/zh-tw/github-teammate-guide/)。

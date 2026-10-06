@@ -3,6 +3,10 @@ title: GitHub adapter
 description: A bound GitHub account driven by webhooks, issue/PR conversations, restrictions, and comment-based responses.
 ---
 
+:::caution[Experimental]
+The GitHub adapter is experimental. Its settings and how conversations are stored may change in a minor release, and conversations from this version may not carry over.
+:::
+
 One GitHub issue or pull request is one mikan conversation. mikan acts as a regular GitHub account that you bind to it, so people mention it with autocomplete, assign it issues and pull requests, and request its review like a teammate. Signed webhooks tell mikan what happened. See [ADR 0015](https://github.com/geminixiang/mikan/blob/main/docs/adr/0015-github-agent-account-and-webhooks.md) for why.
 
 For step-by-step setup, see [Make mikan a GitHub teammate](/github-teammate-guide/).

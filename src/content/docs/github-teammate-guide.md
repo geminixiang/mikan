@@ -3,6 +3,10 @@ title: Make mikan a GitHub teammate
 description: Bind a GitHub account to mikan with a fine-grained PAT and a webhook so your team can mention, assign, and ask it for review.
 ---
 
+:::caution[Experimental]
+The GitHub adapter is experimental; see [GitHub adapter](/platform-adapters/github/).
+:::
+
 After this guide, your team can type `@` in an issue or PR and pick mikan from autocomplete, assign an issue or PR to it, or request its review. mikan acts on GitHub only as that account.
 
 Below, `acme` is your organization, `acme-agent` is the account, and `https://mikan.example.com` is mikan's `LINK_URL`. Replace them with your real names.

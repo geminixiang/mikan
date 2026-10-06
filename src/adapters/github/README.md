@@ -1,5 +1,8 @@
 # src/adapters/github
 
+Experimental: settings and the conversation layout may change in a minor
+release (excluded from the 1.0 semver promise in `CHANGELOG.md`).
+
 GitHub adapter: one issue or PR = one conversation. mikan acts as a bound
 GitHub user account and is driven by signed webhooks (see `DESIGN.md` and
 [ADR 0015](../../../docs/adr/0015-github-agent-account-and-webhooks.md)).
