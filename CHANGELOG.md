@@ -6,8 +6,12 @@ The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 from 1.0.0 on. The package interface is the root export of `@geminixiang/mikan`; the
 CLI, `settings.json`, `mikan.env`, and the state layout under `~/.mikan` are covered too.
+The GitHub adapter is experimental and excluded: its settings and conversation layout may
+change in a minor release.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-06
 
 1.0.0 is the first stable release. It replaces the 0.5.3 runtime, which ran on
 `pi-coding-agent`, with mikan's own harness on `pi-durable` and `pi-ai`, and gives every
@@ -29,9 +33,10 @@ deployment guide, which lists what migrates, what does not, and what to check af
   (`v1-<platform>-<readable-id>-<hash>`) so two platforms never collide on one raw id. Offices
   are public or private, following the Slack conversation type, and `image:*` sandboxes enforce
   it: a private office sees only itself plus shared knowledge. `mikan office list` prints them.
-- **GitHub adapter.** A regular GitHub account, bound with a fine-grained token and an
+- **GitHub adapter (experimental).** A regular GitHub account, bound with a fine-grained token and an
   organization webhook, answers mentions, assignments, and review requests; each issue or pull
-  request is one conversation.
+  request is one conversation. Its settings and conversation layout may change in a minor
+  release, and conversations from this version may not carry over.
 - **Durable sessions.** Each office keeps its sessions in one SQLite database (`sessions.db`)
   through `pi-durable`. Sessions survive restarts, a channel's top-level session stays current
   until `/new` with Pi compacting old context, and threads keep their own sessions. The agent's
@@ -105,54 +110,6 @@ deployment guide, which lists what migrates, what does not, and what to check af
   the same bot (409), the daemon logs the reason and exits with code 1 for the process manager
   to restart, instead of running on without receiving messages.
 - A Slack message whose acknowledgement was lost during a reconnect runs once, not twice.
-
-## [1.0.0-beta.96]
-
-The last prerelease before 1.0.0. Installs on 1.0.0-beta.95 run one migration,
-`0012-legacy-office-files`, before the daemon starts.
-
-### Removed
-
-- `--state-dir` and the `STATE_DIR` / `MIKAN_STATE_DIR` variables: state always lives in
-  `~/.mikan`, and passing `--state-dir` is an error.
-- The experimental `cloudflare:<sandbox-id>` sandbox with `CLOUDFLARE_SANDBOX_URL` and
-  `CLOUDFLARE_SANDBOX_TOKEN`, and `mikan --download`.
-- The `@geminixiang/mikan/harness` and `@geminixiang/mikan/sandbox` entry points and every root
-  export an embedder does not need; the root keeps `createConversationRuntime`,
-  `createWorkspace`, `createOfficeAddress`, `officeKey`, `createConversationEvent`,
-  `createConversationMessage`, `defaultCommandHandlers`, `MikanModels`, and the types they use.
-  `MessagingBot` drops the optional `addReaction`, `uploadFile`, `openDirectConversation`,
-  `fetchHistory`, and `listUsers`.
-- `SENTRY_ENABLED` and `HTTP_IDLE_TIMEOUT`, and the `sentry.dsn` setting: the DSN comes only from
-  `SENTRY_DSN`, and Sentry runs exactly when it is set.
-- The `event` tool's `scope` parameter, and `channelId` in place of `conversationId` in event files.
-
-### Changed
-
-- The GitHub adapter's repositories and trigger rules move from `GITHUB_REPOS`,
-  `GITHUB_PUBLIC_REPOS`, `GITHUB_USERS`, `GITHUB_MIN_PERMISSION`, `GITHUB_TRIGGERS`, and
-  `GITHUB_CAPABILITIES` to the `github` block of `settings.json`, as JSON lists.
-- At startup the daemon logs each `settings.json` key and each environment variable it no longer
-  reads, with what replaces it.
-- `mikan onboard` asks fewer questions and lists only the variables it set; `mikan env` folds the
-  19 `OTEL_*` variables into one line and lists every variable mikan reads.
-- `0012-legacy-office-files` removes the `last_prompt.jsonl` and `auto-reply.disabled` files 0.5.3
-  left in office directories.
-- `@earendil-works/pi-codemode` and `@earendil-works/pi-mcp` are pinned to 1.0.0.
-
-### Fixed
-
-- Slack startup and reconnects give up a connection that stays silent for 30 seconds and retry,
-  instead of hanging without a log line; the daemon logs lost connections and reconnection time.
-- Stopping the daemon while it connects to Slack ends in a graceful shutdown instead of
-  `Failed to start bot undefined` and exit code 1.
-- When Telegram ends long polling on 401 or 409, the daemon logs why and exits for the process
-  manager to restart it, instead of running on without messages.
-- `mikan migrate` refuses to run when the state directory or workspace is not a mikan install,
-  instead of recording every step as applied.
-- Office state directories are created with mode `0700`.
-- The startup log reports the HTTP idle timeout actually applied.
-- A Slack App Home Force Stop button without a session key stops nothing.
 
 ## [0.5.3] - 2026-06-30
 
