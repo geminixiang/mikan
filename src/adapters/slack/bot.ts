@@ -437,7 +437,12 @@ export class SlackMessagingBot implements MessagingBot {
     this.startupTs = (Date.now() / 1000).toFixed(6);
 
     this.setupEventHandlers();
-    await this.socketClient.start();
+    try {
+      await this.socketClient.start();
+    } catch (error) {
+      if (this.stopped) return;
+      throw error;
+    }
 
     log.logConnected("Slack");
 

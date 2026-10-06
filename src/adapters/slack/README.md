@@ -16,6 +16,7 @@ This directory implements the Slack platform adapter and Slack-specific session/
 - On `msg_too_long`, `response-lifecycle.ts` shrinks the prefix and continues in the thread.
 - `slack_blockkit` is confined to the active conversation thread and to messages it posted. Interactions return through `block_actions` as `[Slack action]` conversation events.
 - `update-diagnostics.ts` records content-free `chat.update` rejection breadcrumbs for at most 128 message identities over ten minutes and never changes payloads, errors, or retries.
+- `@slack/socket-mode` rejects `start()` with `undefined` when `disconnect()` interrupts a connection attempt. `start()` treats that rejection as a normal stop once `stop()` has run; otherwise `main.ts` would log `Failed to start bot undefined` and exit with code 1 in the middle of a graceful shutdown.
 - DM task intent (`task-intent.ts`) is classified by Jev and falls back to `isTaskStatusQuestion` when Jev is unavailable.
 
 ## DM tasks

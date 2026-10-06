@@ -218,6 +218,49 @@ describe("Slack channel kind backfill", () => {
   });
 });
 
+class StalledSlackSocket extends FakeSlackSocket {
+  private readonly connecting = deferred();
+  readonly startCalled = deferred();
+
+  override async start(): Promise<void> {
+    this.startCalled.resolve();
+    await this.connecting.promise;
+    return Promise.reject(undefined);
+  }
+
+  override async disconnect(): Promise<void> {
+    this.connecting.resolve();
+  }
+}
+
+describe("Slack startup", () => {
+  test("stopping while the socket is still connecting ends start without an error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-stop-connecting-"));
+    try {
+      const workspace = createWorkspace({ root: join(dir, "ws"), stateDir: join(dir, "state") });
+      const socket = new StalledSlackSocket();
+      const web = createFakeWebApi();
+      vi.mocked(web.users.list).mockResolvedValue({ ok: true, members: [] });
+      vi.mocked(web.conversations.list).mockResolvedValue({ ok: true, channels: [] });
+      const bot = new SlackMessagingBot(makeHandler(), {
+        appToken: "xapp-test",
+        botToken: "xoxb-test",
+        workspace,
+        webApi: web,
+        socket,
+      });
+
+      const started = bot.start();
+      await socket.startCalled.promise;
+      await bot.stop();
+
+      await expect(started).resolves.toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("Slack status transport", () => {
   test("status timeout uses an abort signal, rejects once, and releases its queue", async () => {
     const dir = mkdtempSync(join(tmpdir(), "slack-status-"));
