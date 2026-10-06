@@ -8,6 +8,7 @@ import type {
   UsersListResponse,
 } from "@slack/web-api";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import * as log from "../log.js";
 
 const evaluateWithJevMock = vi.fn();
 vi.mock("../harness/jev.js", async () => {
@@ -256,6 +257,36 @@ describe("Slack startup", () => {
 
       await expect(started).resolves.toBeUndefined();
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Slack connection log", () => {
+  test("reports a lost connection once and how long the reconnection took", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-reconnect-log-"));
+    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    const info = vi.spyOn(log, "logInfo").mockImplementation(() => {});
+    try {
+      const workspace = createWorkspace({ root: join(dir, "ws"), stateDir: join(dir, "state") });
+      const { bot, socket } = await startSlackHarness({ handler: makeHandler(), workspace });
+      const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+
+      await socket.deliver("close", { ack: async () => {} });
+      await socket.deliver("close", { ack: async () => {} });
+      now.mockReturnValue(25_000);
+      await socket.deliver("connected", { ack: async () => {} });
+      now.mockRestore();
+      await bot.stop();
+      await socket.deliver("close", { ack: async () => {} });
+
+      expect(warn.mock.calls.filter(([message]) => message.startsWith("Slack connection"))).toEqual(
+        [["Slack connection lost; reconnecting"]],
+      );
+      expect(info).toHaveBeenCalledWith("Slack reconnected after 24s");
+    } finally {
+      warn.mockRestore();
+      info.mockRestore();
       rmSync(dir, { recursive: true, force: true });
     }
   });

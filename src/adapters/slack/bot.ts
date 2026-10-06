@@ -33,6 +33,7 @@ import {
 import { evaluateWithJev, JevNotConfiguredError } from "../../harness/jev.js";
 import type { EventScheduler } from "../../events/scheduler.js";
 import * as log from "../../log.js";
+import { SlackSocketAgent } from "./socket-agent.js";
 import type {
   SlackBlockAction,
   SlackBlockActionBody,
@@ -408,6 +409,7 @@ export class SlackMessagingBot implements MessagingBot {
       new SocketModeClient({
         appToken: config.appToken,
         clientPingTimeout: 12_000,
+        clientOptions: { agent: new SlackSocketAgent() },
       });
     this.webClient = config.webApi ?? new WebClient(config.botToken, { fetch: config.fetch });
     this.statusClient = new WebClient(config.botToken, {
@@ -1339,14 +1341,20 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private setupEventHandlers(): void {
-    this.socketClient.on("disconnect", (err: unknown) => {
-      log.logWarning("Slack socket disconnect", err ? String(err) : "");
-    });
     this.socketClient.on("error", (err: unknown) => {
       log.logWarning("Slack socket error", err ? String(err) : "");
     });
-    this.socketClient.on("unable_to_socket_mode_start", (err: unknown) => {
-      log.logWarning("Slack socket unable_to_start", err ? String(err) : "");
+    let connectionLostAt: number | undefined;
+    this.socketClient.on("close", () => {
+      if (this.stopped || connectionLostAt !== undefined) return;
+      connectionLostAt = Date.now();
+      log.logWarning("Slack connection lost; reconnecting");
+    });
+    this.socketClient.on("connected", () => {
+      if (connectionLostAt === undefined) return;
+      const seconds = Math.round((Date.now() - connectionLostAt) / 1000);
+      connectionLostAt = undefined;
+      log.logInfo(`Slack reconnected after ${seconds}s`);
     });
 
     const on = (event: string, handle: (args: SlackSocketEventArgs) => Promise<void> | void) =>

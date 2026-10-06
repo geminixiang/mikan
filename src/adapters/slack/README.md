@@ -16,6 +16,8 @@ This directory implements the Slack platform adapter and Slack-specific session/
 - On `msg_too_long`, `response-lifecycle.ts` shrinks the prefix and continues in the thread.
 - `slack_blockkit` is confined to the active conversation thread and to messages it posted. Interactions return through `block_actions` as `[Slack action]` conversation events.
 - `update-diagnostics.ts` records content-free `chat.update` rejection breadcrumbs for at most 128 message identities over ten minutes and never changes payloads, errors, or retries.
+- `@slack/socket-mode` (2.x with `ws`, and 3.x with undici) sets no deadline on `apps.connections.open` or the WebSocket handshake, so a peer that accepts TCP and never answers stalls startup or a reconnect forever without a log line. `SlackSocketAgent` destroys a socket that stays silent for 30s, and socket-mode then retries on its own. `ws` calls `setTimeout(0)` once the upgrade completes, so an idle live connection is never cut; the ping monitor (`clientPingTimeout`) covers it from then on. The agent depends on that `ws` behavior, so recheck it when moving to socket-mode 3.x.
+- `close` and `connected` socket events log `Slack connection lost; reconnecting` and `Slack reconnected after Ns`; socket-mode 2.x emits neither `disconnect` nor `unable_to_socket_mode_start`.
 - `@slack/socket-mode` rejects `start()` with `undefined` when `disconnect()` interrupts a connection attempt. `start()` treats that rejection as a normal stop once `stop()` has run; otherwise `main.ts` would log `Failed to start bot undefined` and exit with code 1 in the middle of a graceful shutdown.
 - DM task intent (`task-intent.ts`) is classified by Jev and falls back to `isTaskStatusQuestion` when Jev is unavailable.
 
