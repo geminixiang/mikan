@@ -88,7 +88,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord�
 workspace `skills/` 與對話自己的 `skills/` 底下的 skill 預設都會列進 system prompt。全域或對話設定的 `skills` 依照 Pi 的 resource 規則開關 skill，以 skill 資料夾相對於其 `skills/` 根目錄的路徑表示：`!pattern` 用 glob 排除、`+path` 加回單一 skill、`-path` 強制排除（即使被加回）。對話設定中針對某個 workspace skill 的項目會決定它在該對話的狀態；沒有的話就套用全域設定。
 
 ```json
-{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+{ "skills": ["!acme-skills/vendors/**", "+acme-skills/vendors/google-genai"] }
 ```
 
 Admin portal 的 Skills 頁面會寫入相同的設定：workspace 頁面寫入全域的 `+`/`-`，對話頁面則在「繼承」、`+`、`-` 之間切換。被排除的 skill 只是不列進 prompt，檔案在 sandbox 中仍可讀取。

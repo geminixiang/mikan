@@ -90,7 +90,7 @@ The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `vis
 Every skill under the workspace `skills/` directory and the conversation's own `skills/` is listed in the system prompt by default. `skills` in the global or conversation settings turns skills off and on with Pi's resource rules, by the skill's directory relative to its `skills/` root: `!pattern` excludes matching skills by glob, `+path` adds one back, and `-path` excludes one even when added back. A conversation entry for a workspace skill decides it for that conversation; without one, the global entries apply.
 
 ```json
-{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+{ "skills": ["!acme-skills/vendors/**", "+acme-skills/vendors/google-genai"] }
 ```
 
 The admin portal's Skills pages toggle the same entries: the workspace page writes `+`/`-` to the global settings, and a conversation page cycles a skill between inherited, `+`, and `-`. An excluded skill is only left out of the prompt; its files stay readable in the sandbox.

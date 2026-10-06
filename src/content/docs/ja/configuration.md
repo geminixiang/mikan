@@ -88,7 +88,7 @@ visibility を強制できるのは `image:*` だけです。`host`、`container
 workspace の `skills/` と conversation 自身の `skills/` にある skill は、既定ですべて system prompt に列挙されます。global または conversation 設定の `skills` は Pi の resource ルールで skill を有効・無効にし、各 skill のディレクトリを `skills/` ルートからの相対パスで指定します。`!pattern` は glob で除外、`+path` は 1 つを戻し、`-path` は戻されても除外します。workspace skill に対する conversation のエントリがその conversation での状態を決め、なければ global のエントリが適用されます。
 
 ```json
-{ "skills": ["!livingbio-skills/vendors/**", "+livingbio-skills/vendors/google-genai"] }
+{ "skills": ["!acme-skills/vendors/**", "+acme-skills/vendors/google-genai"] }
 ```
 
 Admin portal の Skills ページは同じエントリを書き込みます。workspace ページは global に `+`/`-` を、conversation ページは継承・`+`・`-` を切り替えます。除外された skill は prompt に載らないだけで、ファイルは sandbox から読めます。
