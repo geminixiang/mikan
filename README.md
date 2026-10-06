@@ -1,13 +1,17 @@
 <p align="center">
-  <img src="src/content/docs/assets/mikan-office-hero.png" alt="mikan office architecture — conversation-scoped workspaces and sandbox execution" width="100%">
+  <img src="src/content/docs/assets/mikan-hero.png" alt="mikan — your team's AI coding agent, in chat" width="100%">
 </p>
 
-# @geminixiang/mikan
+# <img src="src/content/docs/assets/mikan-logo.png" alt="" width="44" align="top"> @geminixiang/mikan
 
 [![npm version](https://img.shields.io/npm/v/@geminixiang/mikan.svg)](https://www.npmjs.com/package/@geminixiang/mikan)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Self-hosted AI coding agent for organizations: every Slack channel and DM gets its own sandboxed workspace, credentials, and memory. Also speaks Telegram, Discord, and GitHub.
+Self-hosted AI coding agent that works in your team's chat.
+
+- **One office per conversation** — every Slack channel and DM gets its own workspace, sandbox, credentials, and memory; each thread runs as its own session.
+- **Where your team already talks** — Slack, Telegram, Discord, and GitHub (experimental).
+- **Real tools, contained** — in `image:` mode, commands run in a per-office Docker sandbox with credentials from that office's vault.
 
 Upgrading from 0.5.3? Follow [Upgrading from 0.5.3](src/content/docs/deployment.mdx#upgrading-from-053); `mikan migrate` converts the state in place.
 
@@ -21,8 +25,8 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 - **Conversation office** is the unit everything else hangs off: one conversation's working area plus its own sandbox runtime. An office is identified by its platform and raw conversation id, and its directory is named by an office key (`v1-<platform>-<readable-id>-<hash>`), so two platforms can never collide on the same raw id.
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
-- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists structured context in host-only session files under the State dir.
-- **mikan agent harness** (`src/harness/`, built on pi-agent-core and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
+- **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists agent sessions in one host-only SQLite `sessions.db` per office under the State dir.
+- **mikan agent harness** (`src/harness/`, built on pi-durable and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
 - **Sandbox runtime** is where tool commands execute: host, or a Docker container or image.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
@@ -31,7 +35,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Multi-platform** — Slack, Telegram, Discord, and GitHub (experimental) adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
-- **Sandbox execution** — host, shared container, or per-conversation managed container
+- **Sandbox execution** — one managed Docker container per conversation office
 - **Credential vaults** — `/login` stores credentials under `~/.mikan` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
@@ -39,72 +43,22 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Events** — the agent schedules one-shot or recurring runs with its `event` tool
 - **Multi-provider** — any provider/model supported by `pi-ai`
 
-## Requirements
-
-- Node.js >= 24.15.0
-
-## Installation
-
-```bash
-npm install -g @geminixiang/mikan
-```
-
-Or from source:
-
-```bash
-npm install && npm run build
-```
-
 ## Quick Start
 
-Run mikan under [PM2](https://pm2.keymetrics.io/) so it stays up, restarts after failures, and starts on boot:
+You need Node.js 24.15 or later and Docker.
 
 ```bash
 npm i -g @geminixiang/mikan pm2
-
-# One-time setup: platform tokens, LLM provider, and sandbox mode,
-# written to ~/.mikan/settings.json and ~/.mikan/mikan.env (0600)
-mikan onboard
-
-# Pull the sandbox image the default deployment runs tools in
+mikan onboard                                  # pick a chat platform, a model, and a sandbox image
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-
-# Grab the maintained ecosystem file (supervision only)
-curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup   # run the printed command to enable boot autostart
+pm2 start ~/.mikan/ecosystem.config.cjs && pm2 save
 ```
 
-Each file has one job: `settings.json` holds behavior (model, sandbox limits, reply modes — the Admin surface), `~/.mikan/mikan.env` holds secrets and platform tokens, and `ecosystem.config.cjs` holds process supervision only. mikan keeps all of them in `~/.mikan`. In `ecosystem.config.cjs`, `args` holds the sandbox mode and an optional working directory (`mikan --help` documents the flags):
+That's it: `@mention` the bot in a channel or send it a DM. `mikan onboard` prints the exact `docker pull` line for the image you picked; the recommended image is about 900 MB, so the pull takes a few minutes the first time. Run `pm2 startup` once if mikan should start on boot.
 
-```js
-args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
-```
+Everything lives in `~/.mikan`: `settings.json` for behavior (model, sandbox limits, reply modes), `mikan.env` for secrets and platform tokens, and `ecosystem.config.cjs` for process supervision. To add another platform later, put its tokens in `mikan.env` and run `pm2 reload ~/.mikan/ecosystem.config.cjs` so pm2 rereads the file; `mikan env` lists every variable mikan reads.
 
-To add a platform later, set its tokens in `~/.mikan/mikan.env`; you can run multiple platforms at once. `mikan env` prints the full inventory and what is currently set:
-
-```bash
-SLACK_APP_TOKEN=xapp-...
-SLACK_BOT_TOKEN=xoxb-...
-TELEGRAM_BOT_TOKEN=123456:ABC-...
-DISCORD_BOT_TOKEN=MTI...
-GITHUB_AGENT_TOKEN=github_pat_...
-GITHUB_WEBHOOK_SECRET=...
-```
-
-GitHub also needs the repositories it answers in, as `"github": { "repos": ["acme/*"] }` in `~/.mikan/settings.json`.
-
-Tail logs with `pm2 logs mikan`; upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=<mode> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for sandbox images, graceful shutdown, and the health endpoint.
-
-For a one-off foreground run, the same CLI works directly:
-
-```bash
-mikan [--sandbox=<mode>] [<working-directory>]
-```
-
-The working directory is optional: it defaults to `~/.mikan/workspace` and is created on first run.
+Upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=image:<image> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for graceful shutdown and the health endpoint.
 
 ## Platforms
 
@@ -117,15 +71,11 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-| Mode               | Description                                                                   |
-| ------------------ | ----------------------------------------------------------------------------- |
-| `host` (default)   | Run on host; no vault env injection                                           |
-| `container:<name>` | Run in an existing shared container; everyone sharing it shares its one vault |
-| `image:<image>`    | Auto-provision one Docker container and one vault per conversation office     |
+Use `image:<image>`: mikan starts one Docker container and one credential vault per conversation office, and enforces office visibility. `mikan onboard` sets it up.
+
+`host` (run directly on the machine) and `container:<name>` (one shared, existing container) still work but are not recommended: they give the agent the whole machine or one shared filesystem, skip `/login` credential injection, and do not enforce office visibility.
 
 Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal or `/pi-sandbox visibility private` can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
-
-Only `image:*` enforces visibility. `host` and `container:*` share one filesystem and are trusted deployments; a private office there is served with a logged warning.
 
 For routing, mounts, vault behavior, and managed container details, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
@@ -144,55 +94,9 @@ For routing, mounts, vault behavior, and managed container details, see [src/con
 
 `session` is the only command accepted without a leading slash. See [src/content/docs/commands.mdx](src/content/docs/commands.mdx) for the full command reference and web session viewer setup.
 
-## Configuration
-
-mikan reads global settings from `~/.mikan/settings.json`; host-only per-conversation overrides live at `~/.mikan/conversations/<office-key>/settings.json`. Legacy workspace settings are migrated once, then ignored.
-
-```json
-{
-  "llm": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-6",
-    "thinkingLevel": "off"
-  }
-}
-```
-
-See [src/content/docs/configuration.md](src/content/docs/configuration.md) for all fields.
-
-## Data layout
-
-```text
-~/.mikan/
-├── settings.json
-├── mikan.env
-├── models.json
-├── migrations.json
-├── office-registry.json
-├── conversations/
-│   └── <office-key>/
-│       ├── settings.json
-│       ├── sessions.db
-│       └── events/
-└── vaults/
-
-<working-directory>/
-├── MEMORY.md
-├── skills/
-├── agents/
-└── <office-key>/
-    ├── MEMORY.md
-    ├── SYSTEM.md
-    ├── log.jsonl
-    ├── attachments/
-    ├── scratch/
-    └── skills/
-```
-
-Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`) and are not reversible to a raw platform id, so `office-registry.json` records each office's `(platform, conversationId)`. `mikan office list` prints the registered offices. `mikan migrate` upgrades a 0.5.3 install to this layout; see [State migrations](src/content/docs/deployment.mdx).
-
 ## More docs
 
+- [Configuration](src/content/docs/configuration.md)
 - [Events](src/content/docs/events.md)
 - [Skills](src/content/docs/skills.md)
 - [Deployment](src/content/docs/deployment.mdx)
@@ -203,6 +107,7 @@ Office directories are named by office key (`v1-<platform>-<readable-id>-<hash>`
 ## Development
 
 ```bash
+npm install && npm run build
 npm run dev
 npm test
 npm run lint
