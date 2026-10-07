@@ -21,6 +21,23 @@ export default defineConfig({
       title: "mikan",
       logo: { src: "./src/content/docs/assets/mikan-logo.png", alt: "" },
       favicon: "/favicon.png",
+      head: [
+        {
+          tag: "link",
+          attrs: {
+            rel: "preload",
+            href: "/fonts/nunito-black-mikan.woff2",
+            as: "font",
+            type: "font/woff2",
+            crossorigin: "",
+          },
+        },
+        {
+          tag: "style",
+          content:
+            '@font-face{font-family:"Nunito Mikan";font-weight:900;font-display:swap;src:url("/fonts/nunito-black-mikan.woff2") format("woff2")}.site-title{font-family:"Nunito Mikan",var(--sl-font);font-weight:900;font-size:1.35rem;letter-spacing:-0.01em;gap:0.55rem}',
+        },
+      ],
       description: "Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.",
       locales: {
         root: { label: "English", lang: "en" },
