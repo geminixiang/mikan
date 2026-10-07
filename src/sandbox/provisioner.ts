@@ -43,6 +43,7 @@ import type {
 } from "../types.js";
 import { errorMessage } from "../unknown-values.js";
 import type { DockerExecFile } from "./types.js";
+import { sweepOrphanedCommands } from "./container.js";
 
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
@@ -249,6 +250,12 @@ export class DockerContainerManager {
       const lastUsed = details.startedAtMs ?? Date.now();
       this.state.set(containerKey, { status, lastUsed, containerName });
     }
+
+    await Promise.all(
+      Array.from(this.state.values())
+        .filter((state) => state.status === "running")
+        .map((state) => sweepOrphanedCommands(state.containerName, this.execFileImpl)),
+    );
 
     const running = Array.from(this.state.values()).filter((s) => s.status === "running").length;
     const stopped = this.state.size - running;

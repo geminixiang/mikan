@@ -11,6 +11,11 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Fixed
+
+- A command left running in a container sandbox by a crashed or killed daemon is ended
+  when the daemon starts again, so a resumed or repeated run does not race the old copy.
+
 ## [1.0.1] - 2026-10-07
 
 ### Changed

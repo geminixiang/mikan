@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   ContainerSandboxConfig,
+  DockerExecFile,
   ExecOptions,
   ExecResult,
   Executor,
@@ -72,18 +73,43 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
   console.log(`  Container '${config.container}' is running.`);
 }
 
+const GROUP_FILE_PREFIX = "/tmp/mikan-exec-";
+
 const RUN_IN_PROCESS_GROUP = [
   "if command -v setsid >/dev/null 2>&1; then",
-  `setsid sh -c 'echo $$ > "$1"; exec sh -c "$2"' _ "$1" "$2" & wait $!;`,
+  `setsid sh -c 'echo "$$ $(cut -d" " -f22 /proc/$$/stat)" > "$1"; exec sh -c "$2"' _ "$1" "$2" & wait $!;`,
   'status=$?; rm -f "$1"; exit $status;',
   'fi; exec sh -c "$2"',
 ].join(" ");
 
-const KILL_PROCESS_GROUP = [
-  'i=0; while [ ! -s "$1" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done;',
-  'group=$(cat "$1" 2>/dev/null) || exit 0; rm -f "$1";',
-  'kill -s KILL -- -"$group" 2>/dev/null || kill -s KILL -"$group" 2>/dev/null; exit 0',
+const STOP_RECORDED_GROUP = [
+  'stop_group() { read group start < "$1" 2>/dev/null || return 0; rm -f "$1";',
+  '[ "$group" -gt 1 ] 2>/dev/null || return 0;',
+  '[ "$(cut -d" " -f22 /proc/$group/stat 2>/dev/null)" = "$start" ] || return 0;',
+  'kill -s KILL -- -"$group" 2>/dev/null || kill -s KILL -"$group" 2>/dev/null; return 0; };',
 ].join(" ");
+
+const KILL_PROCESS_GROUP = [
+  STOP_RECORDED_GROUP,
+  'i=0; while [ ! -s "$1" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done;',
+  'stop_group "$1"; exit 0',
+].join(" ");
+
+const SWEEP_PROCESS_GROUPS = [
+  STOP_RECORDED_GROUP,
+  `for file in ${GROUP_FILE_PREFIX}*; do [ -f "$file" ] && stop_group "$file"; done; exit 0`,
+].join(" ");
+
+export async function sweepOrphanedCommands(
+  containerName: string,
+  execFile: DockerExecFile,
+): Promise<void> {
+  try {
+    await execFile("docker", ["exec", containerName, "sh", "-c", SWEEP_PROCESS_GROUPS]);
+  } catch (error) {
+    log.logWarning(`Could not end leftover commands in ${containerName}`, errorMessage(error));
+  }
+}
 
 function buildContainerExecCommand(
   container: string,
@@ -142,7 +168,7 @@ export class ContainerExecutor implements Executor {
 
     const env = withGitHubCredentialHelper(this.env);
     const temp = env ? createSecureEnvFile(env) : undefined;
-    const groupFile = `/tmp/mikan-exec-${randomUUID()}`;
+    const groupFile = `${GROUP_FILE_PREFIX}${randomUUID()}`;
     try {
       const dockerCmd = buildContainerExecCommand(
         this.container,

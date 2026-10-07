@@ -548,6 +548,30 @@ describe("DockerContainerManager", () => {
     expect(stopCallsOf(execMock)).toEqual([["stop", "mikan-sandbox-slack-u1"]]);
   });
 
+  test("reconcile ends commands a previous process left running in its containers", async () => {
+    const execMock = vi.fn<DockerExecFile>(async (_file, args) => {
+      if (args[0] === "ps") {
+        return {
+          stdout: "mikan-sandbox-slack-u1\nmikan-sandbox-slack-u2\nmikan-sandbox-slack-u3\n",
+        };
+      }
+      if (args[0] === "inspect") {
+        const name = args.at(-1);
+        const running = name !== "mikan-sandbox-slack-u2";
+        const root = name === "mikan-sandbox-slack-u3" ? "/srv/b/workspace" : "/srv/a/workspace";
+        return { stdout: `${running}\t2026-04-22T00:00:00Z\t["${root}/x:/workspace"]\n` };
+      }
+      return { stdout: "" };
+    });
+    const manager = new DockerContainerManager("ubuntu:24.04", { execFileImpl: execMock });
+
+    await manager.reconcile("/srv/a/workspace");
+
+    const sweeps = execMock.mock.calls.filter(([, args]) => args[0] === "exec");
+    expect(sweeps.map(([, args]) => args[1])).toEqual(["mikan-sandbox-slack-u1"]);
+    expect(sweeps[0]?.[1].join(" ")).toContain("/tmp/mikan-exec-");
+  });
+
   test("concurrent provision calls for the same vaultId share one docker run", async () => {
     const startDeferred = createDeferred<{ stdout: string }>();
     const execMock = vi

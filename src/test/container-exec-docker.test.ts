@@ -1,8 +1,11 @@
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { afterAll, describe, expect, test } from "vitest";
-import { ContainerExecutor } from "../sandbox/container.js";
+import { promisify } from "node:util";
+import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
+import { ContainerExecutor, sweepOrphanedCommands } from "../sandbox/container.js";
+import { HostExecutor } from "../sandbox/host.js";
 
+const EMPTY_RESULT = { stdout: "", stderr: "", code: 0 };
 const CANDIDATE_IMAGES = ["debian:trixie-slim", "alpine:latest"];
 
 function localImages(): string[] {
@@ -44,6 +47,10 @@ function guestCommandLines(container: string): string[] {
     .filter(Boolean);
 }
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 afterAll(() => {
   for (const name of containers) spawnSync("docker", ["rm", "-f", name], { stdio: "ignore" });
 });
@@ -82,6 +89,39 @@ describe.runIf(images.length > 0)("ContainerExecutor against a real container", 
       const result = await executor.exec("echo out; echo err >&2; exit 7", { cwd: "/tmp" });
 
       expect(result).toEqual({ stdout: "out\n", stderr: "err\n", code: 7 });
+    },
+    30_000,
+  );
+
+  test.each(images)(
+    "the startup sweep ends a command left by a crashed process in %s",
+    async (image) => {
+      const container = startContainer(image);
+      const run = HostExecutor.prototype.exec;
+      let calls = 0;
+      vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(
+        function (this: HostExecutor, command, options) {
+          calls += 1;
+          return calls === 1 ? run.call(this, command, options) : Promise.resolve(EMPTY_RESULT);
+        },
+      );
+      const executor = new ContainerExecutor(container, undefined, async () => {});
+      const controller = new AbortController();
+      const running = executor.exec("sleep 300", { cwd: "/tmp", signal: controller.signal });
+      await expect
+        .poll(() => guestCommandLines(container).includes("sleep 300"), { timeout: 10_000 })
+        .toBe(true);
+      controller.abort();
+      await expect(running).rejects.toThrow("Command aborted");
+      expect(guestCommandLines(container)).toContain("sleep 300");
+      execFileSync("docker", ["exec", container, "sh", "-c", 'echo "1 0" > /tmp/mikan-exec-stale']);
+
+      await sweepOrphanedCommands(container, promisify(execFile));
+
+      expect(guestCommandLines(container).filter((line) => line.includes("sleep 300"))).toEqual([]);
+      expect(guestCommandLines(container)).toContain("sleep infinity");
+      const leftover = execFileSync("docker", ["exec", container, "sh", "-c", "ls /tmp"]);
+      expect(leftover.toString()).not.toContain("mikan-exec-");
     },
     30_000,
   );
