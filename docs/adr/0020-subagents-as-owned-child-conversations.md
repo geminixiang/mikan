@@ -4,7 +4,7 @@ status: rejected
 
 # Subagents run as task-owned child conversations of the office Harness
 
-Rejected: today's subagents work, and the change would not alter what users see. The background-task pattern recorded here as an option is pursued for DM tasks in [ADR 0021](0021-dm-tasks-as-background-child-conversations.md).
+Rejected: today's subagents work, and the change would not alter what users see. The background-task pattern recorded here as an option is pursued for DM tasks in [ADR 0021](0021-tasks-as-background-child-conversations.md).
 
 A subagent becomes a child conversation that its `subagent` tool call owns, in the same pi-durable Harness and office storage as its parent. Pi then owns what mikan builds by hand today: the child's loop, retry, abort propagation, and idleness. A subagent may delegate to its own subagents down to a fixed depth, so the agent can hand work to a fresh copy of itself.
 
