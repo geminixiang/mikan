@@ -34,6 +34,16 @@ user message already carries its send time, so the prompt no longer sends the
 model to `date`. Before this, 97% of final answers repeated the signature, the
 signature instruction prefixed every user message, and each acknowledgement cost
 a separate model round before any work began.
+
+The system prompt names the folders already in the office's `scratch/` and asks
+the model to reuse a clone before making another. A thread or `/new` session
+starts without earlier tool output, so it otherwise could not tell a repository
+was already there: in production, one office held 23 clones of the same
+repository. The listing reads one directory level through
+`pinDirectoryNoFollow`, because the agent owns `scratch/` and could replace it
+with a link to a host path. It shows at most the 30 most recently changed
+folders and skips names with control characters, which would otherwise inject
+lines into the prompt.
 These responsibilities share the
 harness module with the native Pi session integration rather than forming a
 separate agent-runner module.

@@ -7,10 +7,12 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
+import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
 import * as log from "./log.js";
 import { randomBytes } from "node:crypto";
@@ -65,6 +67,7 @@ export function readTextFileNoFollowIfExists(path: string): string | undefined {
 
 export interface PinnedDirectory {
   pathOf(name: string): string;
+  entries(): Dirent[];
   close(): void;
 }
 
@@ -83,6 +86,7 @@ export function pinDirectoryNoFollow(dir: string): PinnedDirectory {
       }
       return join(base, name);
     },
+    entries: () => readdirSync(base, { withFileTypes: true }),
     close: () => closeSync(fd),
   };
 }

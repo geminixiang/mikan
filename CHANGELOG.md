@@ -11,6 +11,12 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- The system prompt lists the folders already in the office's `scratch/` and asks the agent
+  to reuse an existing clone, with `git fetch` or `git worktree add`, before cloning again.
+  A new thread previously could not tell a repository was already there and cloned another copy.
+
 ### Fixed
 
 - A command left running in a container sandbox by a crashed or killed daemon is ended

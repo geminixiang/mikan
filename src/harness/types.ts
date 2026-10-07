@@ -28,6 +28,11 @@ export interface EnsureDefaultOpenConnectorOptions {
   fetch?: typeof globalThis.fetch;
 }
 
+export interface ScratchListing {
+  folders: string[];
+  omitted: number;
+}
+
 export interface BuildSystemPromptOptions {
   workspacePath: string;
   office: Office;
@@ -37,6 +42,7 @@ export interface BuildSystemPromptOptions {
   skills: MikanSkill[];
   projection: WorkspaceProjection;
   skippedSkillLinks?: string[];
+  scratch: ScratchListing;
 }
 
 export interface RunnerSessionState {

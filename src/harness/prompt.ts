@@ -1,14 +1,15 @@
 import type { ImageContent } from "@earendil-works/pi-ai";
-import { existsSync } from "node:fs";
-import { posix } from "node:path";
+import { existsSync, lstatSync } from "node:fs";
+import { join, posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
 import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
-import type { BuildSystemPromptOptions } from "./types.js";
+import type { BuildSystemPromptOptions, ScratchListing } from "./types.js";
 
-import { readTextFileNoFollowIfExists } from "../file-guards.js";
+import { pinDirectoryNoFollow, readTextFileNoFollowIfExists } from "../file-guards.js";
+import type { PinnedDirectory } from "../file-guards.js";
 import * as log from "../log.js";
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
@@ -49,6 +50,43 @@ async function collectMessageAttachments(
   }
 
   return { imageAttachments, nonImagePaths };
+}
+
+const SCRATCH_LISTING_LIMIT = 30;
+const UNSAFE_FOLDER_NAME = /\p{Cc}/u;
+
+export function listScratchFolders(office: Office): ScratchListing {
+  let scratch: PinnedDirectory;
+  try {
+    scratch = pinDirectoryNoFollow(join(office.dir, "scratch"));
+  } catch {
+    return { folders: [], omitted: 0 };
+  }
+  try {
+    const folders = scratch
+      .entries()
+      .filter((entry) => entry.isDirectory() && !UNSAFE_FOLDER_NAME.test(entry.name))
+      .flatMap((entry) => {
+        const stats = lstatSync(scratch.pathOf(entry.name), { throwIfNoEntry: false });
+        return stats ? [{ name: entry.name, mtimeMs: stats.mtimeMs }] : [];
+      })
+      .toSorted((a, b) => b.mtimeMs - a.mtimeMs);
+    return {
+      folders: folders
+        .slice(0, SCRATCH_LISTING_LIMIT)
+        .map((folder) => folder.name)
+        .toSorted(),
+      omitted: Math.max(0, folders.length - SCRATCH_LISTING_LIMIT),
+    };
+  } finally {
+    scratch.close();
+  }
+}
+
+function formatScratchListing(listing: ScratchListing): string {
+  if (listing.folders.length === 0) return "(none)";
+  const names = listing.folders.join(", ");
+  return listing.omitted > 0 ? `${names} (and ${listing.omitted} older; run \`ls -t\`)` : names;
 }
 
 function buildRuntimePaths(runtimeWorkspaceRoot: string, office: Office) {
@@ -201,6 +239,8 @@ When mentioning users, write <@userName> using the exact userName from the Users
 ## Environment
 ${envDescription}
 - Default place for clones, downloads, and experiments: ${scratchPath}
+- Folders already in scratch: ${formatScratchListing(input.scratch)}
+- Before cloning a repository, check whether one of these folders already holds it (\`git -C <folder> remote get-url origin\`). Reuse it with \`git fetch\`, and use \`git worktree add\` when a branch or pull request needs its own checkout. Clone only when no folder holds the repository.
 - Do not use host-only paths unless you are running in host mode and verified they exist.`;
 }
 

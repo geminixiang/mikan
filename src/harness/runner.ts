@@ -59,6 +59,7 @@ import {
   buildPromptPayload,
   buildSystemPrompt,
   buildTurnInstructions,
+  listScratchFolders,
   getMemory,
   resolveTriggerAttribution,
 } from "./prompt.js";
@@ -286,6 +287,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     skills: conversationSkillLoad.skills,
     projection,
     skippedSkillLinks: conversationSkillLoad.skippedSkillLinks,
+    scratch: listScratchFolders(office),
   });
   session.setSystemPrompt(systemPrompt);
   const promptHash = createHash("sha256").update(systemPrompt).digest("hex").slice(0, 8);
@@ -358,6 +360,7 @@ async function buildInitialSystemPrompt(params: {
     skills,
     projection,
     skippedSkillLinks,
+    scratch: listScratchFolders(office),
   });
 }
 

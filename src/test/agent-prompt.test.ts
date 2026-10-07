@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -6,12 +6,15 @@ import {
   appendTriggerAttribution,
   buildSystemPrompt,
   buildTurnInstructions,
+  listScratchFolders,
   resolveTriggerAttribution,
 } from "../harness/prompt.js";
 import { normalizeAttachRuntimePath } from "../harness/tools/attach.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
+
+const NO_SCRATCH = { folders: [], omitted: 0 };
 
 const PLATFORM = {
   name: "slack",
@@ -175,6 +178,7 @@ describe("host sandbox environment description", () => {
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).not.toContain("use: date");
@@ -196,6 +200,7 @@ describe("host sandbox environment description", () => {
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("log.jsonl");
@@ -214,6 +219,7 @@ describe("host sandbox environment description", () => {
       platform: PLATFORM,
       skills: [],
       projection,
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain(`Bash commands start in: ${workspaceDir}`);
@@ -231,6 +237,7 @@ describe("host sandbox environment description", () => {
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("Only files under /workspace persist");
@@ -293,6 +300,7 @@ describe("system prompt memory guidance", () => {
       },
       skills: [],
       projection,
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("C123\t#here");
@@ -314,6 +322,7 @@ describe("system prompt memory guidance", () => {
       platform: PLATFORM,
       skills: [],
       projection,
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("Write important shared knowledge to");
@@ -333,6 +342,7 @@ describe("system prompt memory guidance", () => {
       platform: PLATFORM,
       skills: [],
       projection,
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("mounted read-only for this private office");
@@ -353,6 +363,7 @@ describe("system prompt memory guidance", () => {
       platform: PLATFORM,
       skills: [],
       projection,
+      scratch: NO_SCRATCH,
     });
 
     expect(prompt).toContain("compact, revisable orientation anchor");
@@ -363,5 +374,87 @@ describe("system prompt memory guidance", () => {
     expect(prompt).toContain("current state could not be verified");
     expect(prompt).toContain("do not fall back to memory as current truth");
     expect(prompt).toContain("normal, expected requests");
+  });
+});
+
+describe("scratch folder listing", () => {
+  let stateDir: string;
+  let workspaceDir: string;
+
+  beforeEach(() => {
+    stateDir = mkdtempSync(join(tmpdir(), "mikan-prompt-scratch-"));
+    workspaceDir = join(stateDir, "workspace");
+    mkdirSync(workspaceDir, { recursive: true });
+    createGlobalSettingsFile(stateDir);
+  });
+
+  afterEach(() => {
+    rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  function promptFor(prepare: (scratchDir: string) => void): string {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const scratchDir = join(office.dir, "scratch");
+    mkdirSync(scratchDir, { recursive: true });
+    prepare(scratchDir);
+    return buildSystemPrompt({
+      workspacePath: "/workspace",
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "image", image: "mikan-sandbox:latest" },
+      platform: PLATFORM,
+      skills: [],
+      projection: resolveWorkspaceProjection(office),
+      scratch: listScratchFolders(office),
+    });
+  }
+
+  test("names the folders a new session can reuse instead of cloning again", () => {
+    const prompt = promptFor((scratchDir) => {
+      mkdirSync(join(scratchDir, "player"));
+      mkdirSync(join(scratchDir, "notes"));
+      writeFileSync(join(scratchDir, "report.csv"), "");
+      symlinkSync(join(scratchDir, "player"), join(scratchDir, "player-link"));
+      mkdirSync(join(scratchDir, "bad\n## Injected"));
+    });
+
+    expect(prompt).toContain("Folders already in scratch: notes, player\n");
+    expect(prompt).not.toContain("report.csv");
+    expect(prompt).not.toContain("player-link");
+    expect(prompt).not.toContain("Injected");
+    expect(prompt).toContain("git worktree add");
+  });
+
+  test("lists only the most recently changed folders of a crowded scratch", () => {
+    const prompt = promptFor((scratchDir) => {
+      for (let index = 0; index < 32; index += 1) {
+        const folder = join(scratchDir, `repo-${String(index).padStart(2, "0")}`);
+        mkdirSync(folder);
+        utimesSync(folder, 1_000 + index, 1_000 + index);
+      }
+    });
+
+    expect(prompt).toContain("repo-31");
+    expect(prompt).toContain("repo-02,");
+    expect(prompt).not.toContain("repo-01");
+    expect(prompt).not.toContain("repo-00");
+    expect(prompt).toContain("(and 2 older; run `ls -t`)");
+  });
+
+  test("never lists a directory that scratch links to", () => {
+    const outside = join(stateDir, "host-secrets");
+    mkdirSync(join(outside, "private-project"), { recursive: true });
+    const prompt = promptFor((scratchDir) => {
+      rmSync(scratchDir, { recursive: true });
+      symlinkSync(outside, scratchDir);
+    });
+
+    expect(prompt).not.toContain("private-project");
+    expect(prompt).toContain("Folders already in scratch: (none)");
+  });
+
+  test("says scratch is empty when it holds no folders", () => {
+    expect(promptFor(() => {})).toContain("Folders already in scratch: (none)");
   });
 });
