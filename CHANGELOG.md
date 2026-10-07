@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-08
+
 ### Changed
 
 - The system prompt lists the folders already in the office's `scratch/` and asks the agent
