@@ -67,14 +67,13 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 ## Consequences
 
 - A deploy no longer waits for long tasks, and a task that outlives a restart finishes instead of being dropped.
-- A tool call interrupted by a restart is not replayed; the model sees it as interrupted and may run it again. Until resume ends leftover guest process groups first, a command can run twice.
+- A tool call interrupted by a restart is not replayed; the model sees it as interrupted and may run it again. Startup ends the interrupted command's guest process group before any run resumes, so the rerun does not race the old copy.
 - Each task costs one extra conversation record and one anchor task; its transcript was already stored as a thread session.
 - Slack's log-scanned task status is removed. `taskRoot` log entries stay readable for tasks started before the change.
 - [ADR 0020](0020-subagents-as-owned-child-conversations.md) is rejected; subagents stay as they are.
 
 ## Open questions before acceptance
 
-- Resume must end the interrupted command's guest process group, recorded by the 1.0.1 stop fix, before the model continues.
 - The progress message posted before a crash stays at "…"; the resumed run posts a new one.
 - Startup checks every Slack conversation with task roots, opening its office storage; the cost across production offices is unmeasured.
 - A pending task run can start before its session is bound if another conversation in the same office submits first; the prototype did not hit it, and the request would fail with no model binding.
