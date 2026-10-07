@@ -40,8 +40,8 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    ```
 
 2. Run the setup as the user PM2 runs under. It asks for the chat platform's tokens, the LLM
-   provider, and the sandbox mode, then writes `~/.mikan/settings.json` and the secrets file
-   `~/.mikan/mikan.env` (mode `0600`):
+   provider, and the sandbox image, then writes `~/.mikan/settings.json`, the secrets file
+   `~/.mikan/mikan.env` (mode `0600`), and the PM2 file `~/.mikan/ecosystem.config.cjs`:
 
    ```bash
    mikan onboard
@@ -49,47 +49,33 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
 
    Every secret lives in `~/.mikan/mikan.env`, which the ecosystem file loads at start; never put
    secrets in the ecosystem file or PM2's own environment. To add a platform or variable later, edit
-   that file; `mikan env` lists every variable and what is currently set.
+   that file; `mikan env` lists every variable and what is currently set. An existing
+   `~/.mikan/ecosystem.config.cjs` is kept as it is.
 
-3. Pull the managed sandbox image:
+3. Pull the sandbox image you picked. Onboard prints this line; the published image is about
+   900 MB:
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   Do not also start a long-lived container when the selected mode is `image:*`. A pre-existing
-   container is needed only for `container:<name>` mode.
-
-4. Download the ecosystem file:
+4. Start and persist the process:
 
    ```bash
-   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-   ```
-
-   The ecosystem file is supervision-only: process name, restart policy, graceful-shutdown timeout,
-   and the `mikan.env` loader. Behavior (model, sandbox limits, reply modes) stays in
-   `~/.mikan/settings.json`.
-
-5. Set the sandbox mode in `args` (run `mikan --help` for the flag reference):
-
-   ```js
-   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
-   ```
-
-   The working-directory argument is optional; without it mikan uses `~/.mikan/workspace` and
-   creates it on first start.
-
-6. Start and persist the process:
-
-   ```bash
-   pm2 start ecosystem.config.cjs
+   pm2 start ~/.mikan/ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-7. Run the command printed by `pm2 startup` to enable boot startup.
+5. Run the command printed by `pm2 startup` to enable boot startup.
 
 </Steps>
+
+The ecosystem file is supervision-only: process name, restart policy, graceful-shutdown timeout,
+the `mikan.env` loader, and the sandbox mode in `args` (run `mikan --help` for the flag
+reference). Behavior (model, sandbox limits, reply modes) stays in `~/.mikan/settings.json`. The
+working-directory argument is optional; without it mikan uses `~/.mikan/workspace` and creates it
+on first start.
 
 Relative workspace paths are resolved from PM2's current working directory. Absolute paths avoid silently opening a different workspace after service migration or reboot.
 
@@ -106,7 +92,7 @@ After editing `~/.mikan/mikan.env`, reload through the ecosystem file so the env
 re-read:
 
 ```bash
-pm2 reload ecosystem.config.cjs
+pm2 reload ~/.mikan/ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

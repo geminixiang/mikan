@@ -1,11 +1,11 @@
 ---
 title: Quickstart
-description: Go from zero to your first bot reply in about 15 minutes with Telegram and the host sandbox.
+description: Go from zero to your first bot reply in about 15 minutes with Telegram and the Docker sandbox.
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-This guide gets a working bot replying to you in about 15 minutes. It uses Telegram because it needs only one token, and the `host` sandbox because it needs no Docker setup. At the end, links point to the other platforms and to proper isolation.
+This guide gets a working bot replying to you in about 15 minutes. It uses Telegram because it needs only one token. You need Node.js 24.15 or later and Docker. At the end, links point to the other platforms and to running mikan under PM2.
 
 ## Prerequisites
 
@@ -27,11 +27,11 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    mikan onboard
    ```
 
-   Three questions — chat adapter (with its tokens), LLM provider (with its API key), and sandbox mode — produce `~/.mikan/settings.json` and `~/.mikan/mikan.env` (0600). A custom OpenAI-compatible endpoint (vLLM, a proxy) also writes `~/.mikan/models.json`. Non-interactive stdin writes the settings template only. See [Configuration](/configuration/) for every field.
+   Three questions — chat adapter (with its tokens), LLM provider (with its API key), and sandbox image — produce `~/.mikan/settings.json`, `~/.mikan/mikan.env` (0600), and `~/.mikan/ecosystem.config.cjs`. Pick the recommended image. A custom OpenAI-compatible endpoint (vLLM, a proxy) also writes `~/.mikan/models.json`. Non-interactive stdin writes the settings template only. See [Configuration](/configuration/) for every field.
 
    Keys can equally come from plain environment variables (`<PROVIDER>_API_KEY`, e.g. `ANTHROPIC_API_KEY`); the env file is just a persistent home for them that the pm2 template loads.
 
-   Onboarding does not write any office policy: visibility follows the platform conversation type. Telegram private chats are private offices, which only the managed Docker sandbox can enforce; this guide uses `host`, which runs every office in one filesystem and logs a one-time warning per private office instead. That is fine for a first try on your own machine.
+   Onboarding does not write any office policy: visibility follows the platform conversation type. Telegram private chats are private offices, and the Docker sandbox keeps each office's files to itself.
 
 3. Create a Telegram bot. Message [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts, and copy the token it returns:
 
@@ -39,13 +39,14 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. Start mikan:
+4. Pull the sandbox image and start mikan in the foreground:
 
    ```bash
-   mikan --sandbox=host
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path (`mikan --sandbox=host ~/mikan-workspace`) to use a different one.
+   The image is about 900 MB, so the first pull takes a few minutes. The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path after the flags to use a different one.
 
    Inside that workspace, each conversation gets its own **office**: a directory holding that conversation's memory, attachments, session logs, skills, and working area. Office directories are named by office key (`v1-telegram-…`) rather than by the raw chat id, so `mikan office list` is the way to see which office belongs to which conversation.
 
@@ -55,11 +56,9 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 
 </Steps>
 
-<Aside type="caution" title="Host sandbox runs on your machine">
-  In `host` mode the agent's commands run directly on your machine with your permissions. It is the
-  right mode for a first try on a trusted machine. Before letting other people talk to the bot,
-  switch to the managed [image sandbox](/sandbox/image/), which gives each conversation an isolated
-  Docker container and enforces office visibility.
+<Aside type="tip" title="Keep it running">
+  To keep mikan up after you close the terminal, follow [Deployment](/deployment/): `pm2 start
+  ~/.mikan/ecosystem.config.cjs` runs the same command under PM2.
 </Aside>
 
 ## Where to go next

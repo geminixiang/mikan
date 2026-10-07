@@ -40,8 +40,8 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    ```
 
 2. PM2 が実行するユーザーで setup を実行します。chat platform の tokens、LLM provider、sandbox
-   mode を尋ね、`~/.mikan/settings.json` と secrets file `~/.mikan/mikan.env`（mode `0600`）を
-   書き込みます：
+   image を尋ね、`~/.mikan/settings.json`、secrets file `~/.mikan/mikan.env`（mode `0600`）、
+   PM2 の設定 file `~/.mikan/ecosystem.config.cjs` を書き込みます：
 
    ```bash
    mikan onboard
@@ -49,47 +49,32 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    secrets はすべて `~/.mikan/mikan.env` に置かれ、ecosystem file が起動時に読み込みます。secrets を
    ecosystem file や PM2 自身の環境に置かないでください。後から platform や変数を追加するときは
-   この file を編集します。`mikan env` はすべての変数と現在の設定状況を表示します。
+   この file を編集します。`mikan env` はすべての変数と現在の設定状況を表示します。既存の
+   `~/.mikan/ecosystem.config.cjs` はそのまま残ります。
 
-3. managed sandbox image を pull します：
+3. 選んだ sandbox image を pull します。onboard がこの行を表示します。公開 image は約 900 MB です：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   選択した mode が `image:*` の場合、長時間稼働する container を別途起動しないでください。既存の
-   container が必要なのは `container:<name>` mode だけです。
-
-4. ecosystem file をダウンロードします：
+4. process を起動し、永続化します：
 
    ```bash
-   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-   ```
-
-   ecosystem file は supervision 専用です：process 名、restart policy、graceful-shutdown timeout、
-   および `mikan.env` の loader です。挙動（model、sandbox limits、reply modes）は
-   `~/.mikan/settings.json` に残ります。
-
-5. `args` で sandbox mode を指定します（flag の一覧は `mikan --help` を実行してください）：
-
-   ```js
-   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
-   ```
-
-   working-directory 引数は任意です。指定しない場合、mikan は `~/.mikan/workspace` を使用し、
-   初回起動時に作成します。
-
-6. process を起動し、永続化します：
-
-   ```bash
-   pm2 start ecosystem.config.cjs
+   pm2 start ~/.mikan/ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-7. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
+5. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
 
 </Steps>
+
+ecosystem file は supervision 専用です：process 名、restart policy、graceful-shutdown timeout、
+`mikan.env` の loader、そして `args` の sandbox mode（flag の一覧は `mikan --help` を実行して
+ください）。挙動（model、sandbox limits、reply modes）は `~/.mikan/settings.json` に残ります。
+working-directory 引数は任意です。指定しない場合、mikan は `~/.mikan/workspace` を使用し、
+初回起動時に作成します。
 
 相対 workspace paths は PM2 の current working directory から解決されます。絶対 paths を使うと、service の移行や reboot 後に別の workspace を暗黙に開くことを防げます。
 
@@ -106,7 +91,7 @@ pm2 reload mikan
 します：
 
 ```bash
-pm2 reload ecosystem.config.cjs
+pm2 reload ~/.mikan/ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

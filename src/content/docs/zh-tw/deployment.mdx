@@ -37,8 +37,9 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. 以 PM2 執行時的使用者身分執行設定。它會詢問聊天平台的 token、LLM provider 與 sandbox 模式，
-   接著寫入 `~/.mikan/settings.json` 與 secrets 檔案 `~/.mikan/mikan.env`（mode `0600`）：
+2. 以 PM2 執行時的使用者身分執行設定。它會詢問聊天平台的 token、LLM provider 與 sandbox image，
+   接著寫入 `~/.mikan/settings.json`、secrets 檔案 `~/.mikan/mikan.env`（mode `0600`），以及 PM2
+   設定檔 `~/.mikan/ecosystem.config.cjs`：
 
    ```bash
    mikan onboard
@@ -46,47 +47,30 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    所有 secret 都放在 `~/.mikan/mikan.env`，ecosystem file 會在啟動時載入它；絕不要把 secret 放進
    ecosystem file 或 PM2 自己的環境。之後要加平台或變數時，直接編輯這個檔案；`mikan env` 會列出所有
-   變數與目前已設定的項目。
+   變數與目前已設定的項目。已存在的 `~/.mikan/ecosystem.config.cjs` 會保留不動。
 
-3. 拉取受管理 sandbox image：
+3. 拉取你選的 sandbox image。onboard 會印出這一行；官方 image 約 900 MB：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   選擇 `image:*` 模式時，不要另外啟動長期運作的 container。只有 `container:<name>`
-   模式才需要預先存在的 container。
-
-4. 下載 ecosystem file：
+4. 啟動並保存程序：
 
    ```bash
-   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-   ```
-
-   這個 ecosystem file 只負責 supervision：process 名稱、restart policy、graceful-shutdown
-   timeout，以及 `mikan.env` loader。行為（model、sandbox 限制、reply mode）仍留在
-   `~/.mikan/settings.json`。
-
-5. 在 `args` 設定 sandbox 模式（執行 `mikan --help` 查看旗標參考）：
-
-   ```js
-   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
-   ```
-
-   working-directory 引數是選用的；若省略，mikan 會使用 `~/.mikan/workspace`，並在首次啟動
-   時建立它。
-
-6. 啟動並保存程序：
-
-   ```bash
-   pm2 start ecosystem.config.cjs
+   pm2 start ~/.mikan/ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-7. 執行 `pm2 startup` 印出的指令，啟用開機自動啟動。
+5. 執行 `pm2 startup` 印出的指令，啟用開機自動啟動。
 
 </Steps>
+
+這個 ecosystem file 只負責 supervision：process 名稱、restart policy、graceful-shutdown timeout、
+`mikan.env` loader，以及 `args` 裡的 sandbox 模式（執行 `mikan --help` 查看旗標參考）。行為
+（model、sandbox 限制、reply mode）仍留在 `~/.mikan/settings.json`。working-directory 引數是選用的；
+若省略，mikan 會使用 `~/.mikan/workspace`，並在首次啟動時建立它。
 
 相對 workspace 路徑會從 PM2 的 current working directory 解析。使用絕對路徑可避免服務移轉或重開機後，無聲地開啟另一個 workspace。
 
@@ -102,7 +86,7 @@ pm2 reload mikan
 編輯 `~/.mikan/mikan.env` 之後，請透過 ecosystem file 重新載入，讓環境重新讀取：
 
 ```bash
-pm2 reload ecosystem.config.cjs
+pm2 reload ~/.mikan/ecosystem.config.cjs
 ```
 
 <Aside type="note" title="Graceful reload">

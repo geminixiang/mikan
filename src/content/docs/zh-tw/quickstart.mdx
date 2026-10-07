@@ -1,11 +1,11 @@
 ---
 title: 快速開始
-description: 使用 Telegram 與 host sandbox，約 15 分鐘從零到收到第一則機器人回覆。
+description: 使用 Telegram 與 Docker sandbox，約 15 分鐘從零到收到第一則機器人回覆。
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-本指南約 15 分鐘就能讓機器人回覆你的訊息。示範使用 Telegram（只需要一個 token）與 `host` sandbox（不需要設定 Docker）。最後附上其他平台與正式隔離方案的連結。
+本指南約 15 分鐘就能讓機器人回覆你的訊息。示範使用 Telegram（只需要一個 token）。你需要 Node.js 24.15 以上與 Docker。最後附上其他平台與用 PM2 常駐執行的連結。
 
 ## 前置需求
 
@@ -27,11 +27,11 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    mikan onboard
    ```
 
-   三個問題——聊天平台（及其 token）、LLM provider（及其 API key）、sandbox 模式——會產生 `~/.mikan/settings.json` 與 `~/.mikan/mikan.env`（0600）。選擇自訂 OpenAI 相容端點（vLLM、proxy）時也會寫出 `~/.mikan/models.json`。非互動式 stdin 只會寫出設定模板。所有欄位請參閱[設定](/zh-tw/configuration/)。
+   三個問題——聊天平台（及其 token）、LLM provider（及其 API key）、sandbox image——會產生 `~/.mikan/settings.json`、`~/.mikan/mikan.env`（0600）與 `~/.mikan/ecosystem.config.cjs`。選推薦的 image 即可。選擇自訂 OpenAI 相容端點（vLLM、proxy）時也會寫出 `~/.mikan/models.json`。非互動式 stdin 只會寫出設定模板。所有欄位請參閱[設定](/zh-tw/configuration/)。
 
    Key 也可以直接用環境變數提供（`<PROVIDER>_API_KEY`，例如 `ANTHROPIC_API_KEY`）；env 檔只是它們的持久化位置，pm2 模板會載入它。
 
-   Onboarding 不會寫入任何 office policy：visibility 跟隨平台對話類型。Telegram 私訊是 private office，只有受管理的 Docker sandbox 能強制執行；本指南使用 `host`，它讓所有 office 共用同一個檔案系統，改為對每個 private office 記錄一次警告。在自己的機器上初次嘗試時這樣就夠了。
+   Onboarding 不會寫入任何 office policy：visibility 跟隨平台對話類型。Telegram 私訊是 private office，Docker sandbox 會讓每個 office 的檔案只屬於它自己。
 
 3. 建立 Telegram 機器人。傳訊息給 [@BotFather](https://t.me/BotFather)，送出 `/newbot`，依提示操作並複製它回傳的 token：
 
@@ -39,13 +39,14 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. 啟動 mikan：
+4. 拉取 sandbox image，並在前景啟動 mikan：
 
    ```bash
-   mikan --sandbox=host
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   working directory 預設為 `~/.mikan/workspace`，並會自動建立；傳入路徑（`mikan --sandbox=host ~/mikan-workspace`）即可改用其他位置。
+   image 約 900 MB，第一次拉取要等幾分鐘。working directory 預設為 `~/.mikan/workspace`，並會自動建立；在旗標後面傳入路徑即可改用其他位置。
 
    在那個 workspace 裡，每個對話都有自己的 **office**：一個存放該對話記憶、附件、工作階段記錄、skills 與工作區的目錄。Office 目錄是以 office key（`v1-telegram-…`）命名，而不是原始 chat id，因此要查看哪個 office 對應哪個對話，請使用 `mikan office list`。
 
@@ -55,10 +56,9 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
 </Steps>
 
-<Aside type="caution" title="host sandbox 直接在你的機器上執行">
-  在 `host` 模式下，agent 的指令會以你的權限直接在你的機器上執行。它適合在受信任的機器上初次嘗試。
-  讓其他人與機器人對話前，請改用受管理的 [image
-  sandbox](/zh-tw/sandbox/image/)，讓每個對話都有獨立的 Docker 容器，並強制執行 office visibility。
+<Aside type="tip" title="讓它持續執行">
+  關掉終端機後也要讓 mikan 繼續執行，請參閱[部署](/zh-tw/deployment/)： `pm2 start
+  ~/.mikan/ecosystem.config.cjs` 會在 PM2 底下執行同一個指令。
 </Aside>
 
 ## 下一步

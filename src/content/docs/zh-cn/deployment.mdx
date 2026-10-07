@@ -37,8 +37,9 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    npm i -g @geminixiang/mikan pm2
    ```
 
-2. 以 PM2 运行时的用户身份执行设置。它会询问聊天平台的 token、LLM provider 和沙箱模式，
-   然后写入 `~/.mikan/settings.json` 与 secrets 文件 `~/.mikan/mikan.env`（权限 `0600`）：
+2. 以 PM2 运行时的用户身份执行设置。它会询问聊天平台的 token、LLM provider 和沙箱镜像，
+   然后写入 `~/.mikan/settings.json`、secrets 文件 `~/.mikan/mikan.env`（权限 `0600`）以及 PM2
+   配置文件 `~/.mikan/ecosystem.config.cjs`：
 
    ```bash
    mikan onboard
@@ -46,44 +47,30 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 
    所有 secret 都存放在 `~/.mikan/mikan.env`，ecosystem 文件会在启动时加载它；切勿把 secret 放进
    ecosystem 文件或 PM2 自身的环境。之后要添加平台或变量时，直接编辑这个文件；`mikan env` 会列出
-   所有变量及当前的设置状态。
+   所有变量及当前的设置状态。已存在的 `~/.mikan/ecosystem.config.cjs` 会保持不变。
 
-3. 拉取管理的沙箱镜像：
+3. 拉取你选择的沙箱镜像。onboard 会打印这一行；官方镜像约 900 MB：
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   选择 `image:*` 模式时，不要另外启动长期运行的容器。只有 `container:<name>` 模式才需要预先存在的容器。
-
-4. 下载 ecosystem 文件：
+4. 启动并持久保存进程：
 
    ```bash
-   curl -O https://raw.githubusercontent.com/geminixiang/mikan/main/deploy/pm2/ecosystem.config.cjs
-   ```
-
-   ecosystem 文件仅用于进程监管：进程名称、重启策略、优雅关闭超时以及 `mikan.env` 加载器。
-   行为（模型、沙箱限制、回复模式）仍保留在 `~/.mikan/settings.json` 中。
-
-5. 在 `args` 中设置沙箱模式（运行 `mikan --help` 查看参数参考）：
-
-   ```js
-   args: "--sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest",
-   ```
-
-   工作目录参数是可选的；不提供时 mikan 会使用 `~/.mikan/workspace` 并在首次启动时创建它。
-
-6. 启动并持久保存进程：
-
-   ```bash
-   pm2 start ecosystem.config.cjs
+   pm2 start ~/.mikan/ecosystem.config.cjs
    pm2 save
    pm2 startup
    ```
 
-7. 运行 `pm2 startup` 输出的命令，启用开机启动。
+5. 运行 `pm2 startup` 输出的命令，启用开机启动。
 
 </Steps>
+
+ecosystem 文件仅用于进程监管：进程名称、重启策略、优雅关闭超时、`mikan.env` 加载器，以及
+`args` 中的沙箱模式（运行 `mikan --help` 查看参数参考）。行为（模型、沙箱限制、回复模式）仍保留在
+`~/.mikan/settings.json` 中。工作目录参数是可选的；不提供时 mikan 会使用 `~/.mikan/workspace`
+并在首次启动时创建它。
 
 相对工作区路径从 PM2 的当前工作目录解析。绝对路径可避免服务迁移或重启后无意中打开其他工作区。
 
@@ -99,7 +86,7 @@ pm2 reload mikan
 编辑 `~/.mikan/mikan.env` 之后，请通过 ecosystem 文件重新加载，以便重新读取环境：
 
 ```bash
-pm2 reload ecosystem.config.cjs
+pm2 reload ~/.mikan/ecosystem.config.cjs
 ```
 
 <Aside type="note" title="优雅重新加载">

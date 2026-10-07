@@ -1,11 +1,11 @@
 ---
 title: 快速开始
-description: 使用 Telegram 与 host 沙箱，约 15 分钟从零到收到第一条机器人回复。
+description: 使用 Telegram 与 Docker 沙箱，约 15 分钟从零到收到第一条机器人回复。
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-本指南约 15 分钟就能让机器人回复你的消息。示例使用 Telegram（只需要一个 token）和 `host` 沙箱（无需配置 Docker）。最后附上其他平台和正式隔离方案的链接。
+本指南约 15 分钟就能让机器人回复你的消息。示例使用 Telegram（只需要一个 token）。你需要 Node.js 24.15 以上和 Docker。最后附上其他平台和用 PM2 常驻运行的链接。
 
 ## 前置要求
 
@@ -27,11 +27,11 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    mikan onboard
    ```
 
-   三个问题——聊天平台（及其 token）、LLM provider（及其 API key）、沙箱模式——会生成 `~/.mikan/settings.json` 与 `~/.mikan/mikan.env`（0600）。选择自定义 OpenAI 兼容端点（vLLM、proxy）时还会写出 `~/.mikan/models.json`。非交互式 stdin 只写出设置模板。所有字段请参阅[配置](/zh-cn/configuration/)。
+   三个问题——聊天平台（及其 token）、LLM provider（及其 API key）、沙箱镜像——会生成 `~/.mikan/settings.json`、`~/.mikan/mikan.env`（0600）与 `~/.mikan/ecosystem.config.cjs`。选择推荐的镜像即可。选择自定义 OpenAI 兼容端点（vLLM、proxy）时还会写出 `~/.mikan/models.json`。非交互式 stdin 只写出设置模板。所有字段请参阅[配置](/zh-cn/configuration/)。
 
    Key 也可以直接用环境变量提供（`<PROVIDER>_API_KEY`，例如 `ANTHROPIC_API_KEY`）；env 文件只是它们的持久化位置，pm2 模板会加载它。
 
-   Onboarding 不会写入任何办公室策略：visibility 跟随平台对话类型。Telegram 私聊是 private office，只有受管理的 Docker 沙箱能强制执行；本指南使用 `host`，它让所有办公室共用同一个文件系统，改为对每个 private office 记录一次警告。在自己的机器上首次尝试时这样就够了。
+   Onboarding 不会写入任何办公室策略：visibility 跟随平台对话类型。Telegram 私聊是 private office，Docker 沙箱会让每个办公室的文件只属于它自己。
 
 3. 创建 Telegram 机器人。给 [@BotFather](https://t.me/BotFather) 发消息，发送 `/newbot`，按提示操作并复制它返回的 token：
 
@@ -39,13 +39,14 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. 启动 mikan：
+4. 拉取沙箱镜像，并在前台启动 mikan：
 
    ```bash
-   mikan --sandbox=host
+   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
-   工作目录默认为 `~/.mikan/workspace` 并会自动创建；传入路径（`mikan --sandbox=host ~/mikan-workspace`）可使用其他目录。
+   镜像约 900 MB，首次拉取需要几分钟。工作目录默认为 `~/.mikan/workspace` 并会自动创建；在参数后面传入路径可使用其他目录。
 
    在该工作区内，每个对话都有自己的**办公室**：一个目录，存放该对话的记忆、附件、会话日志、技能和工作区域。办公室目录按 office key（`v1-telegram-…`）命名，而不是按原始聊天 id，因此要查看哪间办公室属于哪个对话，请使用 `mikan office list`。
 
@@ -55,10 +56,9 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
 </Steps>
 
-<Aside type="caution" title="host 沙箱直接在你的机器上运行">
-  在 `host` 模式下，agent 的命令会以你的权限直接在你的机器上运行。它适合在受信任的机器上首次尝试。
-  在让其他人与机器人对话之前，请切换到受管理的 [image
-  沙箱](/zh-cn/sandbox/image/)，让每个对话都有独立的 Docker 容器，并强制执行 office visibility。
+<Aside type="tip" title="让它持续运行">
+  关闭终端后也要让 mikan 继续运行，请参阅[部署](/zh-cn/deployment/)： `pm2 start
+  ~/.mikan/ecosystem.config.cjs` 会在 PM2 下运行同一个命令。
 </Aside>
 
 ## 下一步
