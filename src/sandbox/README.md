@@ -9,6 +9,7 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
 - `provision`, `stop`, and `remove` are serialized per key.
 - Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.
+- Killing the host `docker exec` client does not stop the command inside the container. `ContainerExecutor` therefore starts each command under `setsid` in its own process group, records the group ID in `/tmp/mikan-exec-<uuid>` in the guest, and on abort or timeout runs a second `docker exec` that kills the whole group. Dash needs `kill -s KILL -- -<group>` and BusyBox rejects `--`, so the kill script tries both. An image without `setsid` still runs commands, but a stop leaves them running.
 
 ## Host / sandbox path boundary (image mode)
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,7 @@ import {
 import { HostExecutor } from "./host.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 import { errorMessage } from "../unknown-values.js";
+import * as log from "../log.js";
 
 const PRIVATE_DIR_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -70,15 +72,34 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
   console.log(`  Container '${config.container}' is running.`);
 }
 
+const RUN_IN_PROCESS_GROUP = [
+  "if command -v setsid >/dev/null 2>&1; then",
+  `setsid sh -c 'echo $$ > "$1"; exec sh -c "$2"' _ "$1" "$2" & wait $!;`,
+  'status=$?; rm -f "$1"; exit $status;',
+  'fi; exec sh -c "$2"',
+].join(" ");
+
+const KILL_PROCESS_GROUP = [
+  'i=0; while [ ! -s "$1" ] && [ $i -lt 10 ]; do sleep 0.1; i=$((i+1)); done;',
+  'group=$(cat "$1" 2>/dev/null) || exit 0; rm -f "$1";',
+  'kill -s KILL -- -"$group" 2>/dev/null || kill -s KILL -"$group" 2>/dev/null; exit 0',
+].join(" ");
+
 function buildContainerExecCommand(
   container: string,
   command: string,
+  groupFile: string,
   envFilePath?: string,
   cwd?: string,
 ): string {
   const envPart = envFilePath ? `--env-file ${shellEscape(envFilePath)} ` : "";
   const workdir = cwd === undefined ? GUEST_WORKSPACE_ROOT : shellEscape(cwd);
-  return `docker exec ${envPart}-w ${workdir} ${container} sh -c ${shellEscape(command)}`;
+  const script = `${shellEscape(RUN_IN_PROCESS_GROUP)} _ ${shellEscape(groupFile)} ${shellEscape(command)}`;
+  return `docker exec ${envPart}-w ${workdir} ${container} sh -c ${script}`;
+}
+
+function buildKillProcessGroupCommand(container: string, groupFile: string): string {
+  return `docker exec ${container} sh -c ${shellEscape(KILL_PROCESS_GROUP)} _ ${shellEscape(groupFile)}`;
 }
 
 const GITHUB_CREDENTIAL_KEY = "credential.https://github.com.helper";
@@ -121,17 +142,33 @@ export class ContainerExecutor implements Executor {
 
     const env = withGitHubCredentialHelper(this.env);
     const temp = env ? createSecureEnvFile(env) : undefined;
+    const groupFile = `/tmp/mikan-exec-${randomUUID()}`;
     try {
       const dockerCmd = buildContainerExecCommand(
         this.container,
         command,
+        groupFile,
         temp?.envFilePath,
         options?.cwd,
       );
       const { cwd: _cwd, ...hostOptions } = options ?? {};
       return await this.hostExecutor.exec(dockerCmd, options ? hostOptions : undefined);
+    } catch (error) {
+      await this.killProcessGroup(groupFile);
+      throw error;
     } finally {
       temp?.cleanup();
+    }
+  }
+
+  private async killProcessGroup(groupFile: string): Promise<void> {
+    try {
+      await this.hostExecutor.exec(buildKillProcessGroupCommand(this.container, groupFile));
+    } catch (error) {
+      log.logWarning(
+        `Could not stop a command in container ${this.container}`,
+        errorMessage(error),
+      );
     }
   }
 

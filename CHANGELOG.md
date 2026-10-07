@@ -20,6 +20,12 @@ change in a minor release.
   ecosystem file is kept. `host` and `container:<name>` still work through `--sandbox` but
   are no longer offered.
 
+### Fixed
+
+- Stopping a run, or a command timing out, now ends the command inside the container
+  sandbox. Before, only the host `docker exec` client was killed and the command kept
+  running in the container. Images without `setsid` keep the old behavior.
+
 ## [1.0.0] - 2026-10-06
 
 1.0.0 is the first stable release. It replaces the 0.5.3 runtime, which ran on

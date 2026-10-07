@@ -141,6 +141,42 @@ describe("ContainerExecutor", () => {
     ]);
   });
 
+  test.each([
+    ["aborted", "Command aborted"],
+    ["timed out", "Command timed out after 5 seconds"],
+  ])("kills the guest process group when the command is %s", async (_case, failure) => {
+    const commands: string[] = [];
+    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
+      commands.push(command);
+      if (commands.length === 1) throw new Error(failure);
+      return { stdout: "", stderr: "", code: 0 };
+    });
+    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
+    const controller = new AbortController();
+    if (failure === "Command aborted") controller.abort();
+
+    await expect(
+      executor.exec("sleep 300", { timeout: 5, signal: controller.signal }),
+    ).rejects.toThrow(failure);
+
+    const groupFile = /'(\/tmp\/mikan-exec-[^']+)'/.exec(commands[0] ?? "")?.[1];
+    expect(groupFile).toBeDefined();
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toContain("docker exec mikan-sandbox sh -c");
+    expect(commands[1]).toContain(groupFile);
+  });
+
+  test("does not kill anything after a command that finished", async () => {
+    const exec = vi
+      .spyOn(HostExecutor.prototype, "exec")
+      .mockResolvedValue({ stdout: "ok", stderr: "", code: 0 });
+    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
+
+    await expect(executor.exec("true")).resolves.toMatchObject({ stdout: "ok" });
+
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
   test("leaves env untouched without a GitHub token", async () => {
     let envFile = "";
     vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {

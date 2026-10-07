@@ -578,7 +578,9 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(exec).toHaveBeenCalledWith(
-      `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
+      expect.stringMatching(
+        new RegExp(`^docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c .* 'pwd'$`),
+      ),
       undefined,
     );
   });
@@ -620,7 +622,9 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(exec).toHaveBeenCalledWith(
-      `docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c 'pwd'`,
+      expect.stringMatching(
+        new RegExp(`^docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c .* 'pwd'$`),
+      ),
       undefined,
     );
   });
