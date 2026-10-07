@@ -4,6 +4,8 @@ description: 適用於 Slack、Telegram、Discord 與 GitHub 的多平台 AI 程
 template: splash
 ---
 
+import { Image } from "astro:assets";
+import heroImage from "../assets/mikan-hero.png";
 import Hero from "@geminixiang/mikan-starlight-theme/components/Hero.astro";
 
 <Hero
@@ -14,4 +16,13 @@ import Hero from "@geminixiang/mikan-starlight-theme/components/Hero.astro";
     { text: "快速開始", href: "/zh-tw/quickstart/", variant: "primary" },
     { text: "查看 GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
   ]}
+/>
+
+<Image
+  src={heroImage}
+  alt=""
+  widths={[720, 1440]}
+  sizes="(max-width: 800px) 100vw, 720px"
+  class="not-content"
+  style="display:block;width:100%;max-width:720px;height:auto;margin:2rem auto 0;border-radius:24px"
 />

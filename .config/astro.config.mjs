@@ -19,6 +19,8 @@ export default defineConfig({
   integrations: [
     starlight({
       title: "mikan",
+      logo: { src: "./src/content/docs/assets/mikan-logo.png", alt: "" },
+      favicon: "/favicon.png",
       description: "Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub.",
       locales: {
         root: { label: "English", lang: "en" },

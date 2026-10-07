@@ -4,6 +4,8 @@ description: Multi-platform AI coding agent for Slack, Telegram, Discord, and Gi
 template: splash
 ---
 
+import { Image } from "astro:assets";
+import heroImage from "./assets/mikan-hero.png";
 import Hero from "@geminixiang/mikan-starlight-theme/components/Hero.astro";
 import PlatformStrip from "@geminixiang/mikan-starlight-theme/components/PlatformStrip.astro";
 import Features from "@geminixiang/mikan-starlight-theme/components/Features.astro";
@@ -12,13 +14,22 @@ import CodeDemo from "@geminixiang/mikan-starlight-theme/components/CodeDemo.ast
 import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
 
 <Hero
-  eyebrow="AI coding agent · pre-1.0"
+  eyebrow="AI coding agent · 1.0"
   title="One agent, every chat."
   tagline="mikan is an AI coding agent that lives in Slack, Telegram, Discord, and GitHub — and keeps the chat record, its own session, the sandbox it runs in, and your credentials each in their own place."
   actions={[
     { text: "Get started", href: "/quickstart/", variant: "primary" },
     { text: "View on GitHub", href: "https://github.com/geminixiang/mikan", variant: "secondary" },
   ]}
+/>
+
+<Image
+  src={heroImage}
+  alt=""
+  widths={[720, 1440]}
+  sizes="(max-width: 800px) 100vw, 720px"
+  class="not-content"
+  style="display:block;width:100%;max-width:720px;height:auto;margin:2rem auto 0;border-radius:24px"
 />
 
 <PlatformStrip
@@ -109,8 +120,8 @@ import CTA from "@geminixiang/mikan-starlight-theme/components/CTA.astro";
   lines={[
     "$ npm i -g @geminixiang/mikan pm2",
     "$ mikan onboard",
-    "# add SLACK_BOT_TOKEN + friends to ~/.mikan/mikan.env",
-    "$ pm2 start ecosystem.config.cjs",
+    "$ docker pull ghcr.io/geminixiang/mikan-sandbox:latest",
+    "$ pm2 start ~/.mikan/ecosystem.config.cjs",
     "  mikan online — Slack, Telegram, Discord, GitHub",
   ]}
 />
