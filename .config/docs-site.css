@@ -1,0 +1,75 @@
+@font-face {
+  font-family: "Nunito Mikan";
+  font-weight: 900;
+  font-display: swap;
+  src: url("/fonts/nunito-black-mikan.woff2") format("woff2");
+}
+
+.site-title {
+  gap: 0.55rem;
+  font-family: "Nunito Mikan", var(--sl-font);
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.mikan-sitefooter .mikan-sitefooter-art,
+.mikan-sitefooter .mikan-sitefooter-name {
+  display: none;
+}
+
+.mikan-sitefooter .mikan-sitefooter-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  border-top: 0;
+  padding-block: 4rem 0;
+}
+
+.mikan-sitefooter .mikan-sitefooter-meta,
+:root[data-theme="dark"] .mikan-sitefooter .mikan-sitefooter-meta {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 0.4rem;
+  white-space: nowrap;
+  color: var(--mk-text);
+  font-family: var(--sl-font);
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+
+.mikan-sitefooter .mikan-sitefooter-meta a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.mikan-sitefooter-bottom::after {
+  content: "mikan";
+  align-self: flex-end;
+  margin-bottom: -0.15em;
+  color: #171717;
+  font-family: "Nunito Mikan", var(--sl-font);
+  font-size: clamp(6rem, 16vw, 15rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+:root[data-theme="dark"] .mikan-sitefooter-bottom::after {
+  color: #ff8a0f;
+}
+
+@media (min-width: 50rem) {
+  .mikan-sitefooter .mikan-sitefooter-bottom {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding-top: 6rem;
+  }
+
+  .mikan-sitefooter .mikan-sitefooter-meta {
+    padding-bottom: 1.5rem;
+  }
+}
