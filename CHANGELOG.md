@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-07
+
 ### Changed
 
 - `mikan onboard` asks for a sandbox image instead of a sandbox mode: the published
@@ -19,6 +21,9 @@ change in a minor release.
   `pm2 start` commands, so the PM2 file no longer has to be downloaded. An existing
   ecosystem file is kept. `host` and `container:<name>` still work through `--sandbox` but
   are no longer offered.
+- The README and the quick start and deployment guides, in all four languages, follow the
+  onboard flow: install, `mikan onboard`, `docker pull`, and `pm2 start` with the generated
+  ecosystem file. The docs site has a new logo, favicon, hero image, and footer.
 
 ### Fixed
 
