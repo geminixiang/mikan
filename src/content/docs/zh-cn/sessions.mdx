@@ -65,7 +65,7 @@ import { Aside, Card, CardGrid, FileTree } from "@astrojs/starlight/components";
 
 顶层会话会长期沿用，Pi 的自动 compaction 会让模型上下文保持在上限内。`/new` 会立即重置会话：模型从空的上下文开始，之前的记录仍留在存储中，`history` 工具与 session view 都能读取。它不会总结前一段对话，也不会等待记忆处理；现有对话 `MEMORY.md` 仍可独立使用。
 
-**Memory capture** 会在知识被说出的当下就记录。每次由真人触发的 run 结束后，mikan 会请 Jev 判断用户是否建立了长期知识，例如长期规则、交付偏好、关于系统或流程的持久事实，或是一项更正。若是，对话所用的模型会在对话 `MEMORY.md` 的 `## Captured knowledge` 下新增或更新单独条目，并标注捕获日期与来源消息。计划 event 的 run 会被跳过，从不写入 workspace 共享记忆；未配置 Jev（`OPENROUTER_API_KEY`）时此功能停用。要更正或删除捕获的条目，和其他记忆一样请 agent 修改即可。
+**Memory capture** 会在知识被说出的当下就记录。每次由真人触发的 run 结束后，mikan 会请 Jev 判断用户是否建立了长期知识，例如长期规则、交付偏好、关于系统或流程的持久事实，或是一项更正。若是，对话所用的模型会在对话 `MEMORY.md` 的 `## Captured knowledge` 下新增或更新单独条目，并标注捕获日期与来源消息。计划 event 的 run 会被跳过，从不写入 workspace 共享记忆；没有任何 [Jev provider](/zh-cn/configuration/#jev) 有 key 时此功能停用。要更正或删除捕获的条目，和其他记忆一样请 agent 修改即可。
 
 对话 `MEMORY.md`（**Memory anchor**）由 agent 在 run 中写入，以及由 Memory capture 在 run 结束后写入；没有任何计划任务会重写或整理它。它是精简且可修订的导向信息，不是最终真相。较新的对话 evidence 优先。可变的外部状态必须在回答当次从 Live source 或当前 API 验证；如果来源不可用，mikan 应说明目前无法验证，而不是把 memory 当作当前真相。
 

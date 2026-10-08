@@ -83,6 +83,20 @@ visibility を強制できるのは `image:*` だけです。`host`、`container
 
 廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。office が別の private office に到達できるようにする設定はありません。
 
+## Jev
+
+Jev は auto-reply の `jev` モード、Memory capture、DM task intent、`jev` と `jev_browser` ツールが使う判断モデルです。mikan は pi-ai に組み込まれた次の Jev model のうち、provider に key がある最初のものを使います：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。どれもなければ、これらの機能は Jev なしの動作に戻ります。
+
+System One protocol を話す proxy 経由で Jev を使うには、Pi の proxy 設定と同じく `models.json` で組み込み provider に `baseUrl` と `apiKey` だけを指定します。組み込み model はそのまま残り、mikan はその key で proxy に送信します：
+
+```json
+{
+  "providers": {
+    "typesafe": { "baseUrl": "https://llm-gateway.example.com/v1", "apiKey": "<gateway key>" }
+  }
+}
+```
+
 ## Skills
 
 workspace の `skills/` と conversation 自身の `skills/` にある skill は、既定ですべて system prompt に列挙されます。global または conversation 設定の `skills` は Pi の resource ルールで skill を有効・無効にし、各 skill のディレクトリを `skills/` ルートからの相対パスで指定します。`!pattern` は glob で除外、`+path` は 1 つを戻し、`-path` は戻されても除外します。workspace skill に対する conversation のエントリがその conversation での状態を決め、なければ global のエントリが適用されます。

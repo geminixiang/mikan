@@ -237,12 +237,17 @@ siblings.
 
 ## Jev
 
-`jev.ts` asks Jev (`~typesafe/jev-latest` on OpenRouter), a typed-decision model
-that scores a shared `state` against boolean, choice, and score questions
-instead of generating text, through pi-ai's classifier support
-(`Models.classify()` with the `typesafe-system-one` API). It builds its own
-`builtinModels()` with mikan's `readEnv` auth context instead of using
-`MikanModels`, so `models.json` cannot redirect it yet. `evaluateWithJev` is a
+`jev.ts` asks Jev, a typed-decision model that scores a shared `state` against
+boolean, choice, and score questions instead of generating text, through pi-ai's
+classifier support (`Models.classify()`). It uses the first of pi-ai's built-in
+Jev models whose provider has a key, OpenRouter first, so a deployment picks its
+Jev source with the key it holds. `main.ts` hands it the daemon's `MikanModels`
+through `useJevModels`, so a `models.json` entry that gives a built-in provider
+only a `baseUrl` and `apiKey`, as Pi documents for proxies, sends Jev through
+that proxy with that key. Without that call, as in an embedder, `jev.ts` builds
+pi-ai's built-in catalog with mikan's `readEnv` auth context. `useJevModels` is
+a process-wide binding because the five call sites span adapters and harness and
+none of them otherwise receives `MikanModels`. `evaluateWithJev` is a
 plain function callers use directly — each call site owns its questions and
 interprets the returned probabilities. It keeps the caller-facing contract
 this file has always exposed: a text `state` is sent as `{ "text": … }`, and

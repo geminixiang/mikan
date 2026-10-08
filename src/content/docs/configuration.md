@@ -85,6 +85,20 @@ Only `image:*` enforces visibility. `host` and `container:*` run every office in
 
 The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. No setting lets an office reach another private office.
 
+## Jev
+
+Jev is the decision model behind auto-reply `jev` mode, Memory capture, DM task intent, and the `jev` and `jev_browser` tools. mikan uses the first of these pi-ai built-in Jev models whose provider has a key: `openrouter/~typesafe/jev-latest` (`OPENROUTER_API_KEY`), `typesafe/jev-latest` (`TYPESAFE_API_KEY`), `vercel-ai-gateway/typesafe-ai/jev`, `cloudflare-workers-ai/typesafe/jev`, and `opencode/jev-1.13`. With none, those features fall back to their behavior without Jev.
+
+To send Jev through a proxy that speaks the System One protocol, give the built-in provider only a `baseUrl` and an `apiKey` in `models.json`, as Pi does for proxies. Its built-in models stay, and mikan sends them to the proxy with that key:
+
+```json
+{
+  "providers": {
+    "typesafe": { "baseUrl": "https://llm-gateway.example.com/v1", "apiKey": "<gateway key>" }
+  }
+}
+```
+
 ## Skills
 
 Every skill under the workspace `skills/` directory and the conversation's own `skills/` is listed in the system prompt by default. `skills` in the global or conversation settings turns skills off and on with Pi's resource rules, by the skill's directory relative to its `skills/` root: `!pattern` excludes matching skills by glob, `+path` adds one back, and `-path` excludes one even when added back. A conversation entry for a workspace skill decides it for that conversation; without one, the global entries apply.

@@ -118,7 +118,7 @@ function applyModelsJson(
     for (const [providerName, providerConfig] of Object.entries(config?.providers ?? {})) {
       if (providerConfig.models && providerConfig.models.length > 0) {
         models.setProvider(buildCustomProvider(providerName, providerConfig));
-      } else if (providerConfig.baseUrl || providerConfig.compat) {
+      } else if (providerConfig.baseUrl || providerConfig.apiKey || providerConfig.compat) {
         const builtin = models.getProvider(providerName);
         if (builtin) {
           models.setProvider(overrideBuiltinProvider(builtin, providerConfig));
@@ -188,9 +188,24 @@ function overrideBuiltinProvider(provider: Provider, config: CustomProviderConfi
     if (config.compat) overridden.compat = config.compat as Model<Api>["compat"];
     return overridden;
   });
+  const otherModels = (provider.getAllModels?.() ?? [])
+    .filter((model) => model.type !== "chat")
+    .map((model) => Object.assign({}, model, config.baseUrl ? { baseUrl: config.baseUrl } : {}));
+  const apiKey = config.apiKey;
   return {
     ...provider,
+    auth: apiKey
+      ? {
+          ...provider.auth,
+          apiKey: {
+            name: provider.auth.apiKey?.name ?? `${provider.name} API key`,
+            check: async () => ({ type: "api_key", source: "models.json" }),
+            resolve: async () => ({ auth: { apiKey }, source: "models.json" }),
+          },
+        }
+      : provider.auth,
     getModels: () => models,
+    getAllModels: () => [...models, ...otherModels],
   };
 }
 

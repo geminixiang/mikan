@@ -151,6 +151,27 @@ describe("MikanModels built-in catalog", () => {
   });
 });
 
+describe("MikanModels built-in provider override", () => {
+  test("a models.json entry with only baseUrl and apiKey sends a built-in classifier there with that key", async () => {
+    const previous = process.env.TYPESAFE_API_KEY;
+    delete process.env.TYPESAFE_API_KEY;
+    try {
+      const registry = withTempRegistry({
+        providers: {
+          typesafe: { baseUrl: "https://gateway.example.com/v1", apiKey: "gateway-key" },
+        },
+      });
+      const jev = registry.models.getModelOfType("classifier", "typesafe", "jev-latest");
+
+      expect(registry.getError()).toBeUndefined();
+      expect(jev?.baseUrl).toBe("https://gateway.example.com/v1");
+      expect((await registry.models.getAuth(jev!))?.auth.apiKey).toBe("gateway-key");
+    } finally {
+      if (previous !== undefined) process.env.TYPESAFE_API_KEY = previous;
+    }
+  });
+});
+
 describe("MikanModels.getAvailable", () => {
   test("delegates provider filtering and isolates one provider failure", async () => {
     const registry = withTempRegistry({

@@ -3,7 +3,16 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const recordJevOutcomeMock = vi.hoisted(() => vi.fn());
 vi.mock("../observability/index.js", () => ({ recordJevOutcome: recordJevOutcomeMock }));
 
-import { JevNotConfiguredError, JevRequestError, evaluateWithJev } from "../harness/jev.js";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  JevNotConfiguredError,
+  JevRequestError,
+  evaluateWithJev,
+  useJevModels,
+} from "../harness/jev.js";
+import { MikanModels } from "../harness/models.js";
 
 const SYSTEM_ONE_URL = "https://openrouter.ai/api/v1/systemone";
 
@@ -111,6 +120,41 @@ describe("evaluateWithJev", () => {
         costUsd: expect.closeTo(0.000042, 12),
       }),
     );
+  });
+
+  test("uses the daemon's models.json, so a proxied built-in Jev needs no OpenRouter key", async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.MIKAN_OPENROUTER_API_KEY;
+    const dir = mkdtempSync(join(tmpdir(), "mikan-jev-"));
+    const modelsJsonPath = join(dir, "models.json");
+    writeFileSync(
+      modelsJsonPath,
+      JSON.stringify({
+        providers: {
+          typesafe: { baseUrl: "https://gateway.example.com/v1", apiKey: "gateway-key" },
+        },
+      }),
+    );
+    fetchMock.mockResolvedValue(
+      jsonResponse({ model: "jev-latest", answers: { q: { type: "noul", noul: 0.8 } } }),
+    );
+    useJevModels(MikanModels.create({ modelsJsonPath }));
+    try {
+      const result = await evaluateWithJev(
+        "state",
+        { q: { type: "boolean", instructions: "is it?" } },
+        { caller: "jev_tool" },
+      );
+
+      expect(result.answers.q.probability).toBeCloseTo(0.8);
+      expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://gateway.example.com/v1/systemone");
+      expect(new Headers(fetchMock.mock.calls[0]?.[1]?.headers).get("authorization")).toBe(
+        "Bearer gateway-key",
+      );
+      expect(requestBody(fetchMock, 0).model).toBe("jev-latest");
+    } finally {
+      useJevModels(undefined);
+    }
   });
 
   test("sends an object state as is and JSON criteria as text", async () => {

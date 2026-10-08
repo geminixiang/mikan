@@ -11,6 +11,16 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Added
+
+- Jev uses the first of pi-ai's built-in Jev models whose provider has a key, starting with
+  OpenRouter and then TypeSafe, Vercel AI Gateway, Cloudflare Workers AI, and OpenCode, so it
+  works with `TYPESAFE_API_KEY` and the other providers Pi lists, not only `OPENROUTER_API_KEY`.
+- A `models.json` entry that gives a built-in provider only a `baseUrl` and an `apiKey`, as Pi
+  documents for proxies, now also redirects that provider's classifier models and uses that key.
+  Jev reads the daemon's `models.json`, so `"typesafe": { "baseUrl": …, "apiKey": … }` sends Jev
+  through a System One proxy without an OpenRouter key.
+
 ### Removed
 
 - The `jev` setting and the `models.json` classifier models added in 1.2.0 are removed, so

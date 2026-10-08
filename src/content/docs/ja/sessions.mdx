@@ -68,7 +68,7 @@ Session 自身の回答がその記憶です。チャット同期は、他の人
 
 Top-level session は長期間使い続けられ、Pi の自動 compaction が model context を上限内に保ちます。`/new` は直ちに session をリセットします。model は空の context から始まり、以前のエントリは storage に残って `history` tool と session view から読めます。前の会話の要約や memory 処理の待機は行いません。既存の conversation `MEMORY.md` は独立して利用できます。
 
-**Memory capture** は、知識が述べられた時点で記録します。人が起点の run が終わるたびに、mikan は Jev にユーザーが永続的な知識（継続的なルール、納品の好み、システムやワークフローに関する永続的な事実、訂正など）を確立したかを判定させます。確立していれば、会話のモデルが conversation `MEMORY.md` の `## Captured knowledge` に個別の行を追加または更新し、取得日と元メッセージを付記します。スケジュールされた event の run は対象外で、workspace 共有メモリには書き込みません。Jev（`OPENROUTER_API_KEY`）が未設定の場合は無効です。取得した行の訂正や削除は、他のメモリと同じく agent に依頼してください。
+**Memory capture** は、知識が述べられた時点で記録します。人が起点の run が終わるたびに、mikan は Jev にユーザーが永続的な知識（継続的なルール、納品の好み、システムやワークフローに関する永続的な事実、訂正など）を確立したかを判定させます。確立していれば、会話のモデルが conversation `MEMORY.md` の `## Captured knowledge` に個別の行を追加または更新し、取得日と元メッセージを付記します。スケジュールされた event の run は対象外で、workspace 共有メモリには書き込みません。key のある [Jev provider](/ja/configuration/#jev) がない場合は無効です。取得した行の訂正や削除は、他のメモリと同じく agent に依頼してください。
 
 conversation `MEMORY.md`（**Memory anchor**）は、run 中に agent が、run の終了後に Memory capture が書き込みます。スケジュールによる書き換えや整理はありません。これは簡潔で修正可能な案内情報であり、最終的な真実ではありません。より新しい conversation evidence が優先されます。変更可能な外部状態は、その回答の実行中に Live source または現在の API から確認する必要があります。利用できない場合、mikan は memory を現在の真実として扱わず、確認できないことを伝えます。
 

@@ -83,6 +83,20 @@ Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord�
 
 已退役的门禁策略设置（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及旧版 `sandbox.image.workspaceMount`）如果存在会被忽略，也不会改变投影。没有任何设置能让一个办公室访问另一个 private 办公室。
 
+## Jev
+
+Jev 是 auto-reply 的 `jev` 模式、Memory capture、DM task intent，以及 `jev` 与 `jev_browser` 工具使用的判断模型。mikan 会使用下列 pi-ai 内置 Jev model 中，第一个 provider 有 key 的：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。都没有时，这些功能回到没有 Jev 时的行为。
+
+要让 Jev 经由支持 System One 协议的 proxy，就像 Pi 设置 proxy 一样，在 `models.json` 只给内置 provider 设置 `baseUrl` 和 `apiKey`。内置 model 会保留，mikan 用该 key 发送到 proxy：
+
+```json
+{
+  "providers": {
+    "typesafe": { "baseUrl": "https://llm-gateway.example.com/v1", "apiKey": "<gateway key>" }
+  }
+}
+```
+
 ## Skills
 
 workspace `skills/` 与对话自己的 `skills/` 下的 skill 默认都会列进 system prompt。全局或对话设置的 `skills` 按照 Pi 的 resource 规则开关 skill，以 skill 目录相对于其 `skills/` 根目录的路径表示：`!pattern` 用 glob 排除、`+path` 加回单个 skill、`-path` 强制排除（即使被加回）。对话设置中针对某个 workspace skill 的条目决定它在该对话的状态；没有的话就使用全局设置。

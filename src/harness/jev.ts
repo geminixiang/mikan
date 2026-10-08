@@ -1,17 +1,26 @@
 import type {
   AuthContext,
   ClassifierAnswer,
+  ClassifierApi,
+  ClassifierModel,
   ClassifierQuestion,
   JsonObject,
+  Models,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readEnv } from "../env-manifest.js";
 import { isRecord } from "../unknown-values.js";
 import { recordJevOutcome } from "../observability/index.js";
 import type { JevCaller } from "../observability/types.js";
+import type { MikanModels } from "./models.js";
 
-const JEV_PROVIDER = "openrouter";
-const JEV_MODEL_ID = "~typesafe/jev-latest";
+const JEV_MODELS: readonly (readonly [provider: string, id: string])[] = [
+  ["openrouter", "~typesafe/jev-latest"],
+  ["typesafe", "jev-latest"],
+  ["vercel-ai-gateway", "typesafe-ai/jev"],
+  ["cloudflare-workers-ai", "typesafe/jev"],
+  ["opencode", "jev-1.13"],
+];
 const JEV_TIMEOUT_MS = 30_000;
 const JEV_MAX_RETRIES = 2;
 
@@ -52,7 +61,7 @@ export interface JevResult<QUESTIONS extends JevQuestions> {
 export class JevNotConfiguredError extends Error {
   constructor() {
     super(
-      "Jev requires OPENROUTER_API_KEY (an OpenRouter API key). Set it in the environment before calling evaluateWithJev().",
+      `Jev has no provider with a key. Configure one of ${JEV_MODELS.map(([provider, id]) => `${provider}/${id}`).join(", ")}, for example with OPENROUTER_API_KEY or TYPESAFE_API_KEY.`,
     );
     this.name = "JevNotConfiguredError";
   }
@@ -79,11 +88,25 @@ const mikanAuthContext: AuthContext = {
   },
 };
 
-let cachedModels: ReturnType<typeof builtinModels> | undefined;
+let cachedModels: Models | undefined;
+let daemonModels: MikanModels | undefined;
 
-function models() {
+export function useJevModels(registry: MikanModels | undefined): void {
+  daemonModels = registry;
+}
+
+function models(): Models {
+  if (daemonModels) return daemonModels.models;
   cachedModels ??= builtinModels({ authContext: mikanAuthContext });
   return cachedModels;
+}
+
+async function availableJev(): Promise<ClassifierModel<ClassifierApi> | undefined> {
+  for (const [provider, id] of JEV_MODELS) {
+    const model = models().getModelOfType("classifier", provider, id);
+    if (model && (await models().getAuth(model))) return model;
+  }
+  return undefined;
 }
 
 function text(entry: JevEntry | undefined, fallback: string): string {
@@ -147,8 +170,8 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
     throw error;
   };
 
-  const model = models().getModelOfType("classifier", JEV_PROVIDER, JEV_MODEL_ID);
-  if (!model || !(await models().getAuth(model))) return fail(new JevNotConfiguredError());
+  const model = await availableJev();
+  if (!model) return fail(new JevNotConfiguredError());
 
   const result = await models().classify(
     model,
