@@ -1641,7 +1641,7 @@ export class SlackMessagingBot implements MessagingBot {
     } catch (err) {
       if (err instanceof JevNotConfiguredError) {
         log.logWarning(
-          "Slack auto-reply jev mode requires OPENROUTER_API_KEY; treating message as unaddressed",
+          "Slack auto-reply jev mode has no Jev model available; treating message as unaddressed",
           String(err),
         );
         return false;

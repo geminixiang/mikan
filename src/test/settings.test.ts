@@ -11,6 +11,7 @@ import {
   loadGlobalSettings,
   resolveConversationSettings,
   loadGithubSettings,
+  loadJevSettings,
   updateConversationSettings,
   updateGlobalSettings,
 } from "../settings/index.js";
@@ -140,6 +141,20 @@ describe("loadGlobalSettings", () => {
       publicRepos: true,
       triggers: ["mention"],
     });
+  });
+
+  test("reads the Jev model from settings.json and keeps it when another setting changes", () => {
+    writeFileSync(
+      join(stateDir, "settings.json"),
+      JSON.stringify({
+        llm: { provider: "openai", model: "gpt-4o", thinkingLevel: "off" },
+        jev: { provider: "agent-model", model: "jev" },
+      }),
+    );
+    expect(loadJevSettings(stateDir)).toEqual({ provider: "agent-model", model: "jev" });
+    updateGlobalSettings(stateDir, { model: "gpt-5" });
+    expect(loadJevSettings(stateDir)).toEqual({ provider: "agent-model", model: "jev" });
+    expect(findUnusedSettings(stateDir, [])).toEqual([]);
   });
 
   test("keeps the GitHub policy when another setting changes", () => {

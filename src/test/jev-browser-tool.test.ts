@@ -214,6 +214,70 @@ describe("jev_browser tool", () => {
     });
   }
 
+  function answerType(target: string) {
+    return jsonResponse({
+      answers: {
+        operation: {
+          type: "choice",
+          choice: "TYPE_TEXT",
+          probabilities: { TYPE_TEXT: 1 },
+          confidence: 1,
+        },
+        type_target: {
+          type: "choice",
+          choice: target,
+          probabilities: { [target]: 1 },
+          confidence: 1,
+        },
+      },
+    });
+  }
+
+  test("a TYPE step fills the field with text written by the run's chat model", async () => {
+    const emailPage = {
+      success: true,
+      data: { snapshot: "Email field", refs: { e1: { role: "textbox", name: "Email" } } },
+    };
+    mockAgentBrowser([emailPage, { success: true, data: {} }, emailPage]);
+    fetchMock
+      .mockResolvedValueOnce(answerType("e1"))
+      .mockResolvedValueOnce(answerOperation("DONE"));
+    const generateText = vi.fn(async () => 'Here you go: {"text":"qa@example.com"}');
+
+    await createJevBrowserTool(executor, generateText).execute(
+      "type",
+      { label: "test", goal: "Enter the email qa@example.com", maxSteps: 2 },
+      undefined,
+    );
+
+    expect(generateText).toHaveBeenCalledOnce();
+    expect(JSON.stringify(generateText.mock.calls[0])).toContain("Enter the email qa@example.com");
+    expect(
+      execMock.mock.calls.some((call) => String(call[0]).includes("'fill' '@e1' 'qa@example.com'")),
+    ).toBe(true);
+  });
+
+  test("a TYPE step without a chat model blocks and says why", async () => {
+    mockAgentBrowser([
+      {
+        success: true,
+        data: { snapshot: "Email field", refs: { e1: { role: "textbox", name: "Email" } } },
+      },
+    ]);
+    fetchMock.mockResolvedValueOnce(answerType("e1"));
+
+    const result = await createJevBrowserTool(executor).execute(
+      "type",
+      { label: "test", goal: "Enter an email" },
+      undefined,
+    );
+
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "blocked",
+      message: "No chat model is available to write text for this field.",
+    });
+  });
+
   test.each([
     { command: [], error: /commands cannot be empty/ },
     ...["press", "key"].flatMap((operation) =>

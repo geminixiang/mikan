@@ -196,3 +196,68 @@ describe("defaultModelsJsonPath", () => {
     }
   });
 });
+
+describe("MikanModels classifier models", () => {
+  test("serves a models.json classifier model through the provider's key and base URL", async () => {
+    const registry = withTempRegistry({
+      providers: {
+        "agent-model": {
+          api: "openai-completions",
+          apiKey: "gateway-key",
+          baseUrl: "http://localhost:8080/v1",
+          models: [
+            { id: "chatgpt" },
+            {
+              id: "jev",
+              type: "classifier",
+              api: "typesafe-system-one",
+              cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          ],
+        },
+      },
+    });
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ answers: { q: { type: "noul", noul: 0.7 } } }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+
+    const model = registry.models.getModelOfType("classifier", "agent-model", "jev")!;
+    const result = await registry.models.classify(
+      model,
+      {
+        state: { text: "t" },
+        questions: {
+          q: { type: "bool", instructions: "?", criteria: { true: "Yes", false: "No" } },
+        },
+      },
+      { fetch: fetchMock },
+    );
+
+    expect(result.stopReason).toBe("stop");
+    expect(result.answers.q).toEqual({ type: "bool", probability: 0.7 });
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://localhost:8080/v1/systemone");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      authorization: "Bearer gateway-key",
+    });
+    expect(registry.find("agent-model", "jev")).toBeUndefined();
+    expect(registry.find("agent-model", "chatgpt")?.api).toBe("openai-completions");
+  });
+
+  test("rejects a classifier model whose api mikan cannot serve", () => {
+    const registry = withTempRegistry({
+      providers: {
+        gw: {
+          baseUrl: "http://localhost:8080/v1",
+          models: [{ id: "x", type: "classifier", api: "unknown-classify" }],
+        },
+      },
+    });
+    expect(registry.getError()).toMatch(
+      /classifier model "x" needs an "api" of: typesafe-system-one/,
+    );
+  });
+});

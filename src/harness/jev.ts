@@ -3,15 +3,17 @@ import type {
   ClassifierAnswer,
   ClassifierQuestion,
   JsonObject,
+  Models,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readEnv } from "../env-manifest.js";
 import { isRecord } from "../unknown-values.js";
 import { recordJevOutcome } from "../observability/index.js";
 import type { JevCaller } from "../observability/types.js";
+import type { MikanModels } from "./models.js";
 
-const JEV_PROVIDER = "openrouter";
-const JEV_MODEL_ID = "~typesafe/jev-latest";
+const DEFAULT_JEV_PROVIDER = "openrouter";
+const DEFAULT_JEV_MODEL = "~typesafe/jev-latest";
 const JEV_TIMEOUT_MS = 30_000;
 const JEV_MAX_RETRIES = 2;
 
@@ -50,12 +52,18 @@ export interface JevResult<QUESTIONS extends JevQuestions> {
 }
 
 export class JevNotConfiguredError extends Error {
-  constructor() {
+  constructor(provider: string, model: string) {
     super(
-      "Jev requires OPENROUTER_API_KEY (an OpenRouter API key). Set it in the environment before calling evaluateWithJev().",
+      `Jev model ${provider}/${model} is not available: define it in models.json or set its provider's API key (OPENROUTER_API_KEY for the default ${DEFAULT_JEV_PROVIDER}/${DEFAULT_JEV_MODEL}).`,
     );
     this.name = "JevNotConfiguredError";
   }
+}
+
+export interface JevBinding {
+  models: MikanModels;
+  provider: string;
+  model: string;
 }
 
 export class JevRequestError extends Error {
@@ -79,11 +87,18 @@ const mikanAuthContext: AuthContext = {
   },
 };
 
-let cachedModels: ReturnType<typeof builtinModels> | undefined;
+let defaultModels: Models | undefined;
+let binding: JevBinding | undefined;
 
-function models() {
-  cachedModels ??= builtinModels({ authContext: mikanAuthContext });
-  return cachedModels;
+export function configureJev(next: JevBinding | undefined): void {
+  binding = next;
+}
+
+function jevModels(): { models: Models; provider: string; model: string } {
+  if (binding)
+    return { models: binding.models.models, provider: binding.provider, model: binding.model };
+  defaultModels ??= builtinModels({ authContext: mikanAuthContext });
+  return { models: defaultModels, provider: DEFAULT_JEV_PROVIDER, model: DEFAULT_JEV_MODEL };
 }
 
 function text(entry: JevEntry | undefined, fallback: string): string {
@@ -147,10 +162,13 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
     throw error;
   };
 
-  const model = models().getModelOfType("classifier", JEV_PROVIDER, JEV_MODEL_ID);
-  if (!model || !(await models().getAuth(model))) return fail(new JevNotConfiguredError());
+  const jev = jevModels();
+  const model = jev.models.getModelOfType("classifier", jev.provider, jev.model);
+  if (!model || !(await jev.models.getAuth(model))) {
+    return fail(new JevNotConfiguredError(jev.provider, jev.model));
+  }
 
-  const result = await models().classify(
+  const result = await jev.models.classify(
     model,
     {
       state: toState(state),

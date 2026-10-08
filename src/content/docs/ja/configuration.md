@@ -77,6 +77,8 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 
 Slack auto-reply は `/pi-auto-reply on|off|jev` で変更し、conversation office の `auto-reply`（on）または `auto-reply.jev`（jev）marker file に保存します。`off` は両方を削除します。Marker の内容は無視されます。`on` は channel 内の mikan 宛てでない human message すべてに応答し、`jev` は message ごとに mikan 宛てかどうかを Jev が判断します。廃止済みの `autoReply` と `llm.autoReply` JSON 設定は無視され、daemon は起動時にそれらを表示するので削除できます。
 
+Jev は auto-reply の `jev` モード、Memory capture、task intent、`jev` と `jev_browser` ツールが使う判断モデルで、既定は `OPENROUTER_API_KEY` を使う `openrouter/~typesafe/jev-latest` です。別の経路に切り替えるには、global の `settings.json` に `"jev": { "provider": "agent-model", "model": "jev" }` のように classifier model を指定し、`models.json` のその provider に `"type": "classifier"` と `"api": "typesafe-system-one"` を持つ model を宣言します。mikan は provider の key で `<baseUrl>/systemone` に送信します。TypeSafe の System One protocol を話すサービスなら何でも使えます。`jev_browser` はフォーム入力の文字列を会話の chat model で生成します。
+
 Office visibility は Slack の conversation type に従います（ADR 0008）。Telegram、Discord、GitHub の conversation は常に private です。public channel は **public** office です。他のすべての office が `/workspace/public/<office key>` で読み取り専用に参照でき、workspace 全体の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel、および種別が未観測の conversation は **private** office です。自分自身にだけ見え、共有知識と public office を読めますが書き戻しません。すべての office は同じ mount 形状を持ち、workspace root を mount する layout はありません。
 
 visibility を強制できるのは `image:*` だけです。`host`、`container:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。

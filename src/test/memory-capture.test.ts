@@ -246,7 +246,7 @@ describe("MemoryCapture", () => {
 
   test("disables itself when Jev is not configured", async () => {
     const gate = vi.fn(async () => {
-      throw new JevNotConfiguredError();
+      throw new JevNotConfiguredError("openrouter", "~typesafe/jev-latest");
     });
     const capture = new MemoryCapture(models, { gate, extract: vi.fn(), now: () => NOW });
     capture.capture(run({ id: "1.0001" }));

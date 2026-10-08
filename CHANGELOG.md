@@ -11,7 +11,17 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Added
+
+- Jev can run on any service that speaks TypeSafe's System One protocol, such as an LLM gateway.
+  Set `jev` in `settings.json` to a provider and model, and declare that model in `models.json`
+  with `"type": "classifier"` and `"api": "typesafe-system-one"`; mikan sends it to
+  `<baseUrl>/systemone` with the provider's key. Without the setting Jev stays on OpenRouter.
+
 ### Changed
+
+- `jev_browser` writes text for form fields with the conversation's chat model instead of
+  `openai/gpt-4o-mini` on OpenRouter, so it no longer needs `OPENROUTER_API_KEY`.
 
 - Jev decisions go through pi-ai's classifier support instead of `@geminixiang/jev`, which is
   removed. The model, `OPENROUTER_API_KEY`, timeout, and retries stay the same; requests go to

@@ -116,11 +116,13 @@ const SettingsFileSchema = Type.Object({
     ),
   ),
   skills: Type.Optional(Type.Array(Type.String({ pattern: "^[!+-]." }))),
+  jev: Type.Optional(Type.Object({ provider: Type.String(), model: Type.String() })),
 });
 
 type SettingsFileConfig = Static<typeof SettingsFileSchema>;
 type SandboxFileSettings = NonNullable<SettingsFileConfig["sandbox"]>;
 export type GithubSettings = NonNullable<SettingsFileConfig["github"]>;
+export type JevSettings = NonNullable<SettingsFileConfig["jev"]>;
 
 function loadSettingsFile(settingsPath: string): SettingsFileConfig | undefined {
   return readJsonSchemaFileIfExists(settingsPath, SettingsFileSchema, (detail, kind) =>
@@ -250,6 +252,10 @@ export function loadGithubSettings(stateDir: string): GithubSettings | undefined
   return requireGlobalSettings(stateDir).github;
 }
 
+export function loadJevSettings(stateDir: string): JevSettings | undefined {
+  return requireGlobalSettings(stateDir).jev;
+}
+
 export function conversationSettingsPath(office: Office): string {
   const hostPath = join(office.stateDir, "settings.json");
   if (existsSync(hostPath)) {
@@ -349,6 +355,7 @@ function compactSettingsConfig(config: SettingsFileConfig): SettingsFileConfig {
     github: hasDefinedValue(config.github) ? config.github : undefined,
     mcpServers: config.mcpServers,
     skills: config.skills,
+    jev: config.jev,
   };
 }
 
