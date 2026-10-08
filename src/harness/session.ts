@@ -13,7 +13,7 @@ import type {
   TextContent,
   Usage,
 } from "@earendil-works/pi-ai";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { contentText, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import {
   AgentDoc,
   DEFAULT_COMPACTION_POLICY,
@@ -27,6 +27,7 @@ import {
   watchEvents,
   type AgentEvent as DurableEvent,
   type AgentEventStream,
+  type MessageChange,
   type ToolExecutionApi,
   type UsageState,
 } from "@earendil-works/pi-durable";
@@ -107,6 +108,7 @@ export class MikanAgentSession {
   private budgetExceededReason: string | undefined;
   private retryAttempt = 0;
   private runMessages: AgentMessage[] = [];
+  private streamingContent: AssistantMessage["content"] = [];
   private readonly toolArgs = new Map<string, unknown>();
   private loopGuard = new ToolLoopGuard();
   private readonly loopNotices = new Map<string, string>();
@@ -604,17 +606,16 @@ export class MikanAgentSession {
         await this.endRetry(this.runAborted ? "Retry cancelled" : undefined);
         this.runEndSeen = true;
         return;
+      case "snapshot":
+        return this.streamContent(event.generation?.message?.content ?? []);
       case "message_start":
         if (event.message.role === "system") return;
+        this.streamingContent = [];
         await this.emit({ type: "message_start", message: event.message });
+        if (event.message.role === "assistant") await this.streamContent(event.message.content);
         return;
       case "message_update":
-        for (const change of event.changes) {
-          if (change.type === "text_delta" && change.delta) {
-            await this.emit({ type: "text_delta", delta: change.delta });
-          }
-        }
-        return;
+        return this.streamContent(applyMessageChanges(this.streamingContent, event.changes));
       case "message_end":
         return this.endMessage(event.entry.model?.[0]);
       case "tool_execution_start":
@@ -682,6 +683,15 @@ export class MikanAgentSession {
     }
   }
 
+  private async streamContent(content: AssistantMessage["content"]): Promise<void> {
+    const before = contentText(this.streamingContent);
+    this.streamingContent = content;
+    const after = contentText(content);
+    if (after.length > before.length && after.startsWith(before)) {
+      await this.emit({ type: "text_delta", delta: after.slice(before.length) });
+    }
+  }
+
   private async compactionOutcome(
     taskId: Parameters<AttachedSessionHarness["harness"]["getTask"]>[0],
   ) {
@@ -710,6 +720,7 @@ export class MikanAgentSession {
 
   private async endMessage(message: Message | undefined): Promise<void> {
     if (!message || message.role === "system") return;
+    if (message.role === "assistant") await this.streamContent(message.content);
     this.runMessages.push(message);
     await this.emit({ type: "message_end", message });
     if (message.role !== "assistant") return;
@@ -905,4 +916,38 @@ function subtractUsage(total: Usage, base: Usage): Usage {
 
 export function copyUsage(usage: Usage): Usage {
   return { ...usage, cost: { ...usage.cost } };
+}
+
+function applyMessageChanges(
+  content: AssistantMessage["content"],
+  changes: readonly MessageChange[],
+): AssistantMessage["content"] {
+  const next = [...content];
+  for (const change of changes) {
+    switch (change.type) {
+      case "message":
+        next.splice(0, next.length, ...change.message.content);
+        break;
+      case "text_start":
+      case "thinking_start":
+      case "toolcall_start":
+      case "block":
+        next[change.contentIndex] = change.block;
+        break;
+      case "text_delta": {
+        const block = next[change.contentIndex];
+        next[change.contentIndex] =
+          block?.type === "text"
+            ? { ...block, text: `${block.text}${change.delta}` }
+            : { type: "text", text: change.delta };
+        break;
+      }
+      case "thinking_delta":
+      case "toolcall_delta":
+        break;
+      default:
+        change satisfies never;
+    }
+  }
+  return next;
 }

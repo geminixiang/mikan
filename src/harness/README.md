@@ -63,10 +63,13 @@ rerun unless the tool is `replay: "safe"`.
 
 `HarnessEvent` is a thin, one-to-one projection of pi-durable's agent events,
 which are derived from commits: assistant `message_end` arrives after
-persistence, text arrives as `text_delta` appends, and tool progress carries the
-latest `details`. It adds only what Pi has no event for: budget stops, nested
-codemode tool calls, and retry bounds. It does not rebuild partial messages or
-emit run and turn boundaries; a run ends when `prompt()` settles. Pi writes an aborted assistant entry only when a
+persistence, and tool progress carries the latest `details`. It adds only what
+Pi has no event for: budget stops, nested codemode tool calls, and retry bounds.
+`text_delta` is the one derived event: Pi batches every change within a commit,
+so an answer's first text arrives inside `message_start` or a block start, and
+its last text may arrive only with `message_end`. The session tracks the
+in-flight answer's text and emits what each event added, so the deltas of an
+answer add up to its committed text. It does not emit run and turn boundaries; a run ends when `prompt()` settles. Pi writes an aborted assistant entry only when a
 partial was committed, and the model context omits errored and aborted answers,
 so read a run's answer from `lastRunMessages` and its outcome from
 `getLastRunStats().status`. The session keeps no transcript copy: read the model

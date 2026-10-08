@@ -27,6 +27,9 @@ change in a minor release.
 
 - A task run is no longer offered `task_status` and `start_task`, which made one of three
   test tasks report its own status instead of doing the work.
+- A reply no longer streams with its first words missing. The first text of an answer, and
+  sometimes its last, never reached the chat while it streamed, so the message jumped when
+  the final version replaced it, and a Slack thread reply was deleted and posted again.
 
 ## [1.0.2] - 2026-10-08
 

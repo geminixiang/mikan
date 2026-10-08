@@ -33,9 +33,9 @@ afterEach(async () => {
   vi.restoreAllMocks();
   rmSync(dir, { recursive: true, force: true });
 });
-function setup() {
+function setup(fauxOptions?: Parameters<typeof fauxProvider>[0]) {
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
-  const faux = fauxProvider();
+  const faux = fauxProvider(fauxOptions);
   (models.models as MutableModels).setProvider(faux.provider);
   const model = faux.getModel() as Model<Api>;
   const file = join(dir, "session.jsonl");
@@ -329,6 +329,26 @@ test("cancelling codemode aborts nested work and waits for its cleanup", async (
   await run;
   expect(cleaned).toBe(true);
   expect(session.isActiveRun).toBe(false);
+});
+
+test.each([
+  ["a commit holds the whole answer", undefined],
+  [
+    "the answer streams across many commits",
+    { tokensPerSecond: 100, tokenSize: { min: 2, max: 6 } },
+  ],
+])("streamed text deltas add up to the committed answer when %s", async (_case, fauxOptions) => {
+  const { faux, file, wrap } = setup(fauxOptions);
+  const store = await openSessionAt(file);
+  const session = wrap(store);
+  const answer = "這台機器目前執行 Ubuntu Linux，核心版本為 6.8。".repeat(20);
+  faux.setResponses([fauxAssistantMessage(answer)]);
+  const deltas: string[] = [];
+  session.subscribe((event) => {
+    if (event.type === "text_delta") deltas.push(event.delta);
+  });
+  await session.prompt("describe the machine");
+  expect(deltas.join("")).toBe(answer);
 });
 
 test("tool progress reports details and each committed message is presented once", async () => {
