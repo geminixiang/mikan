@@ -91,6 +91,14 @@ describe("append trigger attribution", () => {
     ).toBe("R5A-OK\n\n_Triggered by @U0123456789_");
   });
 
+  test.each([
+    "Done._Triggered by @david_",
+    "Done._Triggered by @david",
+    "Done. Triggered by @david",
+  ])("replaces the signature the model appended to its last line: %s", (text) => {
+    expect(appendTriggerAttribution(text, "@david")).toBe("Done.\n\n_Triggered by @david_");
+  });
+
   test("keeps a sentence that merely mentions the phrase mid-line", () => {
     expect(appendTriggerAttribution("The job was Triggered by cron.", "@bob")).toBe(
       "The job was Triggered by cron.\n\n_Triggered by @bob_",

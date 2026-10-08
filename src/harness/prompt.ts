@@ -401,7 +401,10 @@ export function appendTriggerAttribution(
   const trimmed = text.trimEnd();
   const signature = `_Triggered by ${triggerAttribution}_`;
   const suffix = sessionLink ? `${signature} · session: ${sessionLink}` : signature;
-  if (trimmed.endsWith(suffix)) return text;
-  const body = stripTriggerSignature(trimmed);
+  const echoed = `Triggered by ${triggerAttribution}`;
+  const inline = trimmed.replace(/_$/, "");
+  const body = inline.endsWith(echoed)
+    ? inline.slice(0, -echoed.length).replace(/_$/, "").trimEnd()
+    : stripTriggerSignature(trimmed);
   return `${body}\n\n${suffix}`;
 }
