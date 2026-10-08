@@ -1,6 +1,6 @@
 import type { Office, Workspace } from "../office/types.js";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import {
@@ -851,17 +851,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       model,
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
       outputDir: office.dir,
-    },
-    async (systemPrompt, user, signal) => {
-      const reply = await modelRegistry.models.completeSimple(
-        model,
-        { systemPrompt, messages: [{ role: "user", content: user, timestamp: Date.now() }] },
-        { signal },
-      );
-      if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-        throw new Error(reply.errorMessage ?? `Text generation ${reply.stopReason}`);
-      }
-      return contentText(reply.content);
     },
   );
 

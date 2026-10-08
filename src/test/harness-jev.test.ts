@@ -3,16 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const recordJevOutcomeMock = vi.hoisted(() => vi.fn());
 vi.mock("../observability/index.js", () => ({ recordJevOutcome: recordJevOutcomeMock }));
 
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import {
-  JevNotConfiguredError,
-  JevRequestError,
-  configureJev,
-  evaluateWithJev,
-} from "../harness/jev.js";
-import { MikanModels } from "../harness/models.js";
+import { JevNotConfiguredError, JevRequestError, evaluateWithJev } from "../harness/jev.js";
 
 const SYSTEM_ONE_URL = "https://openrouter.ai/api/v1/systemone";
 
@@ -50,7 +41,6 @@ describe("evaluateWithJev", () => {
   });
 
   afterEach(() => {
-    configureJev(undefined);
     if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalKey;
     global.fetch = originalFetch;
@@ -208,59 +198,5 @@ describe("evaluateWithJev", () => {
     expect(recordJevOutcomeMock).toHaveBeenCalledWith(
       expect.objectContaining({ caller: "jev_tool", status: "error" }),
     );
-  });
-
-  test("asks the configured classifier model through its models.json provider", async () => {
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.MIKAN_OPENROUTER_API_KEY;
-    const dir = mkdtempSync(join(tmpdir(), "mikan-jev-"));
-    writeFileSync(
-      join(dir, "models.json"),
-      JSON.stringify({
-        providers: {
-          "agent-model": {
-            api: "openai-completions",
-            apiKey: "gateway-key",
-            baseUrl: "http://gateway.example/v1",
-            models: [{ id: "jev", type: "classifier", api: "typesafe-system-one" }],
-          },
-        },
-      }),
-    );
-    configureJev({
-      models: MikanModels.create({ modelsJsonPath: join(dir, "models.json") }),
-      provider: "agent-model",
-      model: "jev",
-    });
-    fetchMock.mockResolvedValue(jsonResponse({ answers: { q: { type: "noul", noul: 0.6 } } }));
-
-    const result = await evaluateWithJev(
-      "state",
-      { q: { type: "boolean", instructions: "is it?" } },
-      { caller: "jev_tool" },
-    );
-
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://gateway.example/v1/systemone");
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      authorization: "Bearer gateway-key",
-    });
-    expect(requestBody(fetchMock, 0).model).toBe("jev");
-    expect(result.answers.q).toEqual({ type: "boolean", probability: 0.6 });
-  });
-
-  test("reports a configured model that models.json does not define as not configured", async () => {
-    configureJev({
-      models: MikanModels.create({ modelsJsonPath: join(tmpdir(), "missing-models.json") }),
-      provider: "agent-model",
-      model: "jev",
-    });
-    await expect(
-      evaluateWithJev(
-        "state",
-        { q: { type: "boolean", instructions: "?" } },
-        { caller: "jev_tool" },
-      ),
-    ).rejects.toThrow(/agent-model\/jev/);
-    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

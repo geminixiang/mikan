@@ -145,7 +145,7 @@ beforeEach(async () => {
   faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
   jev.mockReset();
-  jev.mockRejectedValue(new JevNotConfiguredError("openrouter", "~typesafe/jev-latest"));
+  jev.mockRejectedValue(new JevNotConfiguredError());
   hold = deferred();
   started = deferred();
   aborted = false;

@@ -9,7 +9,7 @@ import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-
 import { withSecretRedaction } from "./secret-redaction.js";
 import { createTaskTools } from "./task.js";
 import { createJevTool } from "./jev.js";
-import { createJevBrowserTool, type FieldTextGenerator } from "./jev-browser.js";
+import { createJevBrowserTool } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
@@ -27,7 +27,6 @@ export function createMikanTools(
     getApiKey: () => Promise<string | undefined>;
     outputDir: string;
   },
-  generateFieldText?: FieldTextGenerator,
 ): {
   tools: MikanHarnessTool[];
   bindRun: (ctx: MikanToolRunContext) => void;
@@ -37,7 +36,7 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
-  const jevBrowserTool = createJevBrowserTool(executor, generateFieldText);
+  const jevBrowserTool = createJevBrowserTool(executor);
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
     sandboxController ?? { sandbox: executor.getSandboxConfig() },

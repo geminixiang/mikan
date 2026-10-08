@@ -77,8 +77,6 @@ office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-
 
 Slack auto-reply 可通过 `/pi-auto-reply on|off|jev` 修改，并以 conversation office 中的 `auto-reply`（on）或 `auto-reply.jev`（jev）标记文件保存；`off` 会移除两者。标记内容会被忽略：`on` 会回应该 channel 中每条未明确 address mikan 的 human message，`jev` 则由 Jev 逐条判断消息是否在对 mikan 说话。已退役的 `autoReply` 与 `llm.autoReply` JSON 设置会被忽略，daemon 启动时会列出它们，方便删除。
 
-Jev 是 auto-reply 的 `jev` 模式、Memory capture、task intent，以及 `jev` 与 `jev_browser` 工具使用的判断模型，默认是使用 `OPENROUTER_API_KEY` 的 `openrouter/~typesafe/jev-latest`。若要改走其他服务，在 global `settings.json` 设置 `jev` 指向一个 classifier model，例如 `"jev": { "provider": "agent-model", "model": "jev" }`，并在 `models.json` 该 provider 下声明 `"type": "classifier"`、`"api": "typesafe-system-one"` 的 model；mikan 会用该 provider 的 key 发送到 `<baseUrl>/systemone`。任何支持 TypeSafe System One 协议的服务都可以。`jev_browser` 用对话的 chat model 生成表单要填的文字。
-
 Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord、GitHub 的对话一律是 private。公开频道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 只读它，且它可以写入工作区全局的 `MEMORY.md` 与 `skills/`。私有频道、DM、群组 DM、外部共享频道，以及尚未观察到类型的对话都是 **private** office：只有自己可见，可读共享知识与 public office，但不会写回。每个 office 的挂载形状相同；没有任何布局会挂载工作区根目录。
 
 只有 `image:*` 会强制执行 visibility。`host`、`container:*` 让所有 office 共用同一个文件系统，属于受信任部署；private office 在这些模式下会照常服务，并记录一次警告。

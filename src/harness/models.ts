@@ -3,13 +3,10 @@ import {
   createProvider,
   type Api,
   type AuthResult,
-  type ClassifierApi,
-  type ClassifierModel,
   type Model,
   type Models,
   type MutableModels,
   type Provider,
-  type ProviderClassifier,
   type ProviderStreams,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -19,7 +16,6 @@ import { googleGenerativeAIApi } from "@earendil-works/pi-ai/api/google-generati
 import { mistralConversationsApi } from "@earendil-works/pi-ai/api/mistral-conversations.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { typesafeSystemOneApi } from "@earendil-works/pi-ai/api/typesafe-system-one.lazy";
 import { readJsonFileIfExists } from "../file-guards.js";
 import type { CreateMikanModelsOptions } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
@@ -33,17 +29,12 @@ const CUSTOM_API_STREAMS: Record<string, () => ProviderStreams> = {
   "openai-responses": openAIResponsesApi,
 };
 
-const CUSTOM_CLASSIFIER_APIS: Record<string, () => ProviderClassifier> = {
-  "typesafe-system-one": typesafeSystemOneApi,
-};
-
 const DEFAULT_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 16384;
 
 interface CustomModelConfig {
   id: string;
-  type?: "classifier";
   name?: string;
   api?: string;
   baseUrl?: string;
@@ -94,25 +85,16 @@ function isModelsJsonConfig(parsed: unknown): parsed is ModelsJsonConfig {
       if (!Array.isArray(models)) {
         throw new Error(`models.json provider "${name}" models must be an array`);
       }
+      const api = (config as CustomProviderConfig).api;
+      if (typeof api !== "string" || !(api in CUSTOM_API_STREAMS)) {
+        throw new Error(
+          `models.json provider "${name}" needs an "api" of: ${Object.keys(CUSTOM_API_STREAMS).join(", ")}`,
+        );
+      }
       for (const model of models) {
         if (!model || typeof model !== "object" || typeof model.id !== "string") {
           throw new Error(`models.json provider "${name}" has a model without a string "id"`);
         }
-        if (
-          model.type === "classifier" &&
-          !(model.api !== undefined && model.api in CUSTOM_CLASSIFIER_APIS)
-        ) {
-          throw new Error(
-            `models.json provider "${name}" classifier model "${model.id}" needs an "api" of: ${Object.keys(CUSTOM_CLASSIFIER_APIS).join(", ")}`,
-          );
-        }
-      }
-      const api = (config as CustomProviderConfig).api;
-      const hasChatModels = models.some((model) => model.type !== "classifier");
-      if (hasChatModels && (typeof api !== "string" || !(api in CUSTOM_API_STREAMS))) {
-        throw new Error(
-          `models.json provider "${name}" needs an "api" of: ${Object.keys(CUSTOM_API_STREAMS).join(", ")}`,
-        );
       }
     }
   }
@@ -150,30 +132,14 @@ function applyModelsJson(
 }
 
 function buildCustomProvider(providerName: string, config: CustomProviderConfig): Provider {
-  const api = config.api;
+  const api = config.api!;
   const displayName = config.name ?? providerName;
   const envVar = envVarNameFor(providerName);
-  const configs = config.models ?? [];
-  const classifierConfigs = configs.filter((modelConfig) => modelConfig.type === "classifier");
-  const classifiers = classifierConfigs.map(
-    (modelConfig): ClassifierModel<ClassifierApi> => ({
-      type: "classifier",
-      id: modelConfig.id,
-      name: modelConfig.name ?? modelConfig.id,
-      api: modelConfig.api!,
-      provider: providerName,
-      baseUrl: modelConfig.baseUrl ?? config.baseUrl ?? "",
-      input: modelConfig.input ?? ["text"],
-      cost: modelConfig.cost ?? DEFAULT_COST,
-      contextWindow: modelConfig.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
-    }),
-  );
-  const chatConfigs = configs.filter((modelConfig) => modelConfig.type !== "classifier");
-  const models = chatConfigs.map((modelConfig): Model<Api> => {
+  const models = (config.models ?? []).map((modelConfig): Model<Api> => {
     const model: Model<Api> = {
       id: modelConfig.id,
       name: modelConfig.name ?? modelConfig.id,
-      api: (modelConfig.api ?? api!) as Api,
+      api: (modelConfig.api ?? api) as Api,
       provider: providerName,
       baseUrl: modelConfig.baseUrl ?? config.baseUrl ?? "",
       reasoning: modelConfig.reasoning ?? false,
@@ -210,17 +176,8 @@ function buildCustomProvider(providerName: string, config: CustomProviderConfig)
         },
       },
     },
-    models: [...models, ...classifiers],
-    api: api && chatConfigs.length > 0 ? CUSTOM_API_STREAMS[api]!() : undefined,
-    classifiers:
-      classifiers.length > 0
-        ? Object.fromEntries(
-            [...new Set(classifiers.map((model) => model.api))].map((classifierApi) => [
-              classifierApi,
-              CUSTOM_CLASSIFIER_APIS[classifierApi]!(),
-            ]),
-          )
-        : undefined,
+    models,
+    api: CUSTOM_API_STREAMS[api]!(),
   });
 }
 

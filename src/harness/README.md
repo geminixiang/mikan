@@ -237,18 +237,12 @@ siblings.
 
 ## Jev
 
-`jev.ts` asks Jev, a typed-decision model that scores a shared `state` against
-boolean, choice, and score questions instead of generating text, through pi-ai's
-classifier support (`Models.classify()`). The model comes from the global
-`settings.json` `jev` key, which `main.ts` passes to `configureJev` with the
-daemon's `MikanModels`; a `models.json` provider declares it as a model with
-`"type": "classifier"` and `"api": "typesafe-system-one"` (`models.ts` serves
-only that classifier API). Without the setting, or in an embedder that never
-calls `configureJev`, Jev is `openrouter/~typesafe/jev-latest` from pi-ai's
-built-in catalog with mikan's `readEnv` auth context. `configureJev` is the one
-process-wide binding here: the five call sites (Slack auto-reply and task intent,
-Memory capture, and two tools) span adapters and harness, and none of them
-otherwise receives `MikanModels`. `evaluateWithJev` is a
+`jev.ts` asks Jev (`~typesafe/jev-latest` on OpenRouter), a typed-decision model
+that scores a shared `state` against boolean, choice, and score questions
+instead of generating text, through pi-ai's classifier support
+(`Models.classify()` with the `typesafe-system-one` API). It builds its own
+`builtinModels()` with mikan's `readEnv` auth context instead of using
+`MikanModels`, so `models.json` cannot redirect it yet. `evaluateWithJev` is a
 plain function callers use directly — each call site owns its questions and
 interprets the returned probabilities. It keeps the caller-facing contract
 this file has always exposed: a text `state` is sent as `{ "text": … }`, and

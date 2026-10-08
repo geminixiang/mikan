@@ -11,6 +11,13 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Removed
+
+- The `jev` setting and the `models.json` classifier models added in 1.2.0 are removed, so
+  `models.json` follows Pi's format again. Jev runs on `openrouter/~typesafe/jev-latest` with
+  `OPENROUTER_API_KEY`, and `jev_browser` writes form text with `openai/gpt-4o-mini` on
+  OpenRouter, as in 1.1.0.
+
 ## [1.2.0] - 2026-10-09
 
 ### Added

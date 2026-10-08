@@ -148,9 +148,7 @@ describe("jev tool", () => {
 
   it("surfaces a missing API key as an actionable tool error", async () => {
     const tool = createJevTool();
-    evaluateWithJevMock.mockRejectedValue(
-      new JevNotConfiguredError("openrouter", "~typesafe/jev-latest"),
-    );
+    evaluateWithJevMock.mockRejectedValue(new JevNotConfiguredError());
     await expect(
       tool.execute("c", { label: "l", state: "x", questions: booleanQ }),
     ).rejects.toThrow("Judge the input yourself");

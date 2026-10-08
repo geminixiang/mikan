@@ -3,8 +3,10 @@ import { Type, type Static } from "typebox";
 import { randomUUID } from "node:crypto";
 import type { Executor } from "../../sandbox/types.js";
 import { shellEscape } from "../../sandbox/utils.js";
+import { readEnv } from "../../env-manifest.js";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
+import { parseJsonSchemaValue } from "../../file-guards.js";
 import { isRecord } from "../../unknown-values.js";
 
 export const JEV_BROWSER_TOOL = "jev_browser";
@@ -17,6 +19,17 @@ const MAX_REFS = 200;
 const MAX_SNAPSHOT_CHARS = 12_000;
 const MAX_UNCHANGED_ACTIONS = 3;
 const BROWSER_TAB_LIMIT = 3;
+const TEXT_MODEL = "openai/gpt-4o-mini";
+
+const ChatCompletionSchema = Type.Object({
+  choices: Type.Optional(
+    Type.Array(
+      Type.Object({
+        message: Type.Optional(Type.Object({ content: Type.Optional(Type.String()) })),
+      }),
+    ),
+  ),
+});
 
 const jevBrowserSchema = Type.Object({
   label: LABEL_PARAMETER,
@@ -308,34 +321,50 @@ function buildQuestionPlan(
   return { questions, singles };
 }
 
-export type FieldTextGenerator = (
-  system: string,
-  user: string,
-  signal?: AbortSignal,
-) => Promise<string>;
-
 async function generateFieldText(
-  generateText: FieldTextGenerator,
+  apiKey: string,
   params: { goal: string; label: string; role: string; snapshotText: string; forSelect: boolean },
   signal?: AbortSignal,
 ): Promise<string> {
-  const content = await generateText(
-    TEXT_VALUE_INSTRUCTIONS,
-    JSON.stringify({
-      goal: params.goal,
-      field: { label: params.label, role: params.role },
-      page: truncate(params.snapshotText, MAX_SNAPSHOT_CHARS),
-      mode: params.forSelect
-        ? "select an exact visible option label from the page"
-        : "type a value",
-    }),
+  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
     signal,
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: TEXT_MODEL,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: TEXT_VALUE_INSTRUCTIONS },
+        {
+          role: "user",
+          content: JSON.stringify({
+            goal: params.goal,
+            field: { label: params.label, role: params.role },
+            page: truncate(params.snapshotText, MAX_SNAPSHOT_CHARS),
+            mode: params.forSelect
+              ? "select an exact visible option label from the page"
+              : "type a value",
+          }),
+        },
+      ],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Text-generation model returned HTTP ${response.status}`);
+  }
+  const body = parseJsonSchemaValue(
+    await response.text(),
+    ChatCompletionSchema,
+    () => "Text-generation model returned a malformed response",
   );
-  const start = content.indexOf("{");
-  const end = content.lastIndexOf("}");
+  const content = body.choices?.[0]?.message?.content;
+  if (!content) throw new Error("Text-generation model returned no content");
   let parsed: unknown;
   try {
-    parsed = start >= 0 && end > start ? JSON.parse(content.slice(start, end + 1)) : undefined;
+    parsed = JSON.parse(content);
   } catch {
     throw new Error("Text-generation model returned invalid JSON");
   }
@@ -375,10 +404,7 @@ async function openPage(
   return runAgentBrowser(executor, sessionId, ["open", url], signal);
 }
 
-function createUnlockedJevBrowserTool(
-  executor: Executor,
-  generateText: FieldTextGenerator | undefined,
-): AgentTool<typeof jevBrowserSchema> {
+function createUnlockedJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
   const sessionId = `mikan-jb-${randomUUID()}`;
   let browserOpen = false;
   let closedByCall = false;
@@ -429,6 +455,7 @@ function createUnlockedJevBrowserTool(
       const expectedOpen = browserOpen;
       const closedTabs: string[] = [];
       const maxSteps = Math.min(args.maxSteps ?? DEFAULT_MAX_STEPS, HARD_MAX_STEPS);
+      const openrouterApiKey = readEnv("OPENROUTER_API_KEY");
       const history: HistoryEntry[] = [];
       const commandResults: Array<{
         command: string[];
@@ -645,13 +672,13 @@ function createUnlockedJevBrowserTool(
             continue;
           }
 
-          if (!generateText) {
+          if (!openrouterApiKey) {
             status = "blocked";
-            message = "No chat model is available to write text for this field.";
+            message = "OPENROUTER_API_KEY is not configured; cannot generate text for this field.";
             break;
           }
           const text = await generateFieldText(
-            generateText,
+            openrouterApiKey,
             {
               goal,
               label: targetInfo?.name ?? "",
@@ -727,11 +754,8 @@ function createUnlockedJevBrowserTool(
   };
 }
 
-export function createJevBrowserTool(
-  executor: Executor,
-  generateText?: FieldTextGenerator,
-): AgentTool<typeof jevBrowserSchema> {
-  const tool = createUnlockedJevBrowserTool(executor, generateText);
+export function createJevBrowserTool(executor: Executor): AgentTool<typeof jevBrowserSchema> {
+  const tool = createUnlockedJevBrowserTool(executor);
   const execute = tool.execute.bind(tool);
   let executionTail = Promise.resolve();
 

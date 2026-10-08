@@ -189,6 +189,6 @@ most one evidence-based correction rather than retrying an unchanged goal.
 
 - `generate_image` writes host-side into the office directory, the only host location the guest can also reach, and uploads from that host path, because the file may not be mounted in the sandbox the way `attach` assumes.
 - `withSecretRedaction` scrubs every configured secret env value from each assembled tool's text output; in host sandbox mode it is the only defense against a command or file read returning a secret. It mutates `execute` in place so the `isHarnessTool` marker and a platform pack's `bindRun` binding survive wrapping.
-- `jev` reports an unavailable Jev model (undefined in `models.json`, or a provider without a key) as a tool error, never a silent fallback.
+- `jev` reports a missing `OPENROUTER_API_KEY` as a tool error, never a silent fallback.
 - Each runner's `jev_browser` owns one browser, named by the tool rather than the model, that stays open until `close: true`; a later `url` opens a new tab, and opening past three tabs first closes the oldest inactive ones. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out. Every command, including cleanup, runs through the actor-resolved sandbox `Executor`, and a missing `agent-browser` is a provisioning error, never an automatic install or a host fallback.
 - `subagent.ts` owns the progress protocol that the presenter renders: snapshot bounds, parsing, merging, settling, and the Markdown dashboard.

@@ -101,7 +101,10 @@ export function createJevTool(): AgentTool<typeof jevSchema> {
         });
       } catch (error) {
         if (error instanceof JevNotConfiguredError) {
-          throw new Error(`${error.message} Judge the input yourself.`, { cause: error });
+          throw new Error(
+            "Jev is not configured (OPENROUTER_API_KEY missing). Judge the input yourself.",
+            { cause: error },
+          );
         }
         throw error;
       }

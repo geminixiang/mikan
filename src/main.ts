@@ -33,14 +33,12 @@ import {
   findUnusedSettings,
   loadGithubSettings,
   loadGlobalSettings,
-  loadJevSettings,
   MissingGlobalSettingsError,
 } from "./settings/index.js";
 import { assertStateDirOutsideWorkspace } from "./file-guards.js";
 import { resolveLinkBaseUrl, resolveLinkListenHost } from "./env-manifest.js";
 import { configureHttpDispatcher } from "./harness/http.js";
-import { configureJev } from "./harness/jev.js";
-import { defaultModelsJsonPath, MikanModels } from "./harness/models.js";
+import { defaultModelsJsonPath } from "./harness/models.js";
 import { RunEventHub } from "./harness/run-events.js";
 import { readEnv } from "./env-manifest.js";
 import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
@@ -404,14 +402,9 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
   return factories;
 }
 
-const mikanModels = MikanModels.create({ modelsJsonPath: defaultModelsJsonPath(stateDir) });
-const jevSettings = loadJevSettings(stateDir);
-if (jevSettings) configureJev({ models: mikanModels, ...jevSettings });
-
 let eventScheduler: EventScheduler | undefined;
 const handler = createConversationRuntime({
   workspace,
-  models: mikanModels,
   eventScheduler: () => eventScheduler,
   sandbox,
   vaultManager,
