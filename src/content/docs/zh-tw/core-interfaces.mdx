@@ -128,7 +128,7 @@ interface ConversationContext {
 
 ### `ConversationResponder`
 
-runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診斷、tool status、typing/working 狀態、檔案上傳與回應刪除。串流（`appendResponseDelta`、`finishResponse`）與反應（`react`）是選用能力。
+runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診斷、tool status、typing/working 狀態、檔案上傳與回應刪除。`replaceResponse` 設定整則主訊息，`{ final: true }` 表示最後一次寫入。邊寫邊顯示回答（`showsPartialAnswer`）與反應（`react`）是選用能力。
 
 能力規則：呼叫端必須對選用方法做 feature-detect。Adapter 可以緩衝輸出或原生實作串流，但單一次執行內必須保留呼叫順序。
 

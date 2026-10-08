@@ -43,7 +43,7 @@ export function createTelegramAdapters(
     maxLength: MAX_LENGTH,
     formatContinuation: (partNum: number): string => `(continued ${partNum})`,
     errorPrefix: "Error: ",
-    supportsDeltas: true,
+    showsPartialAnswer: true,
     typing: {
       send: () => bot.sendTyping(chatId),
       intervalMs: 4000,

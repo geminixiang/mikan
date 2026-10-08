@@ -27,6 +27,15 @@ change in a minor release.
 
 - A task run is no longer offered `task_status` and `start_task`, which made one of three
   test tasks report its own status instead of doing the work.
+- A reply's message no longer flickers between its text and the tool checklist. Text written
+  before a tool call stays under the checklist until the next answer replaces it, the
+  message is updated at most once a second, and the final answer is written once instead of
+  three times. A Slack thread reply that has to change earlier text stops streaming and is
+  edited in place instead of deleted and posted again.
+- The `...` that marks a reply still being written is removed when the reply ends, also when
+  the final edit is first rejected.
+- A signature the model wrote at the end of its last line is replaced, so a reply no longer
+  ends with two `Triggered by` lines.
 - A reply no longer streams with its first words missing. The first text of an answer, and
   sometimes its last, never reached the chat while it streamed, so the message jumped when
   the final version replaced it, and a Slack thread reply was deleted and posted again.

@@ -65,7 +65,6 @@ interface ProgressiveStreamTransport {
   start(text: string): Promise<string>;
   append(messageId: string, delta: string): Promise<void>;
   stop(messageId: string): Promise<void>;
-  minDeltaChars?: number;
 }
 
 export interface ProgressiveRendererPlatform {
@@ -83,7 +82,7 @@ export interface ProgressiveRendererPlatform {
   setTyping?: (isTyping: boolean, responseId: string | null) => Promise<void>;
   onFinish?: (text: string, responseId: string | null) => void | Promise<void>;
   logIntermediateResponses?: boolean;
-  supportsDeltas?: boolean;
+  showsPartialAnswer?: boolean;
   stream?: ProgressiveStreamTransport;
   needsCanonicalRender?: (text: string) => boolean;
   formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;

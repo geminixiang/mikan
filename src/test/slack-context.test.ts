@@ -166,10 +166,10 @@ describe("respond() — non-threaded", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot);
 
-    await responder.appendResponseDelta?.("first");
+    await responder.replaceResponse("first");
     vi.advanceTimersByTime(2000);
-    await responder.appendResponseDelta?.(" second".repeat(20));
-    await responder.finishResponse?.("final");
+    await responder.replaceResponse(`first${" second".repeat(20)}`);
+    await responder.replaceResponse("final", { final: true });
     vi.useRealTimers();
 
     expect(bot.startMessageStream).not.toHaveBeenCalled();
@@ -194,12 +194,13 @@ describe("respond() — non-threaded", () => {
       await responder.replaceResponse(source);
       const closed = source.startsWith("```") ? `${source}\n\`\`\`` : source;
       expect(bot.postMessage).toHaveBeenCalledWith("C001", `${closed}\n\n...`);
-      await responder.finishResponse?.(closed);
+      await responder.replaceResponse(closed, { final: true });
       expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "MSG1", closed);
     },
   );
 
   test("progress replacement keeps the next assistant turn on the same message", async () => {
+    vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       postMessage: vi.fn().mockResolvedValue("MSG1"),
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
@@ -208,8 +209,10 @@ describe("respond() — non-threaded", () => {
     const { responder } = createSlackAdapters(event, bot);
 
     await responder.replaceResponse("✓ recovered context");
-    await responder.appendResponseDelta?.("final answer");
-    await responder.finishResponse?.("final answer");
+    vi.advanceTimersByTime(2000);
+    await responder.replaceResponse("final answer");
+    await responder.replaceResponse("final answer", { final: true });
+    vi.useRealTimers();
 
     expect(bot.postMessage).toHaveBeenCalledTimes(1);
     expect(bot.startMessageStream).not.toHaveBeenCalled();
@@ -218,6 +221,7 @@ describe("respond() — non-threaded", () => {
   });
 
   test("thread reply mode streams top-level inputs in the user message thread", async () => {
+    vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
       appendMessageStream: vi.fn().mockResolvedValue(undefined),
@@ -227,9 +231,11 @@ describe("respond() — non-threaded", () => {
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
     const suffix = " second".repeat(20);
-    await responder.appendResponseDelta?.("first");
-    await responder.appendResponseDelta?.(suffix);
-    await responder.finishResponse?.(`first${suffix}`);
+    await responder.replaceResponse("first");
+    vi.advanceTimersByTime(2000);
+    await responder.replaceResponse(`first${suffix}`);
+    await responder.replaceResponse(`first${suffix}`, { final: true });
+    vi.useRealTimers();
 
     expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001", "U001");
     expect(bot.appendMessageStream).toHaveBeenCalledTimes(1);
@@ -250,8 +256,8 @@ describe("respond() — threaded", () => {
     const event = makeEvent({ ts: "1000.0003", thread_ts: "1000.0001" });
     const { responder } = createSlackAdapters(event, bot, { replyMode: "top-level" });
 
-    await responder.appendResponseDelta?.("first");
-    await responder.finishResponse?.("first");
+    await responder.replaceResponse("first");
+    await responder.replaceResponse("first", { final: true });
 
     expect(bot.startMessageStream).toHaveBeenCalledWith("C001", "first", "1000.0001", "U001");
     expect(bot.postMessage).not.toHaveBeenCalled();
@@ -413,7 +419,7 @@ describe("non-blocking assistant status", () => {
     let finished = false;
     const done = (async () => {
       await responder.setTyping(true);
-      await responder.finishResponse?.();
+      await responder.replaceResponse("", { final: true });
       finished = true;
     })();
     try {
@@ -536,7 +542,7 @@ describe("text accumulation", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot);
     await responder.respond("original text");
-    await responder.replaceResponse("replacement");
+    await responder.replaceResponse("replacement", { final: true });
     const updateCall = vi.mocked(bot.updateMessage).mock.calls[0];
     expect(updateCall?.[2]).not.toContain("original text");
     expect(updateCall?.[2]).toContain("replacement");
@@ -577,7 +583,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
     const longText = `${"x".repeat(6000)}END`;
     const createOverflowLink = vi.fn(() => "https://portal.example/session?token=abc");
-    await responder.replaceResponse(longText, { createOverflowLink });
+    await responder.replaceResponse(longText, { createOverflowLink, final: true });
     expect(bot.postMessage).toHaveBeenCalledTimes(2);
     expect(createOverflowLink).toHaveBeenCalledTimes(1);
     const fallbackText = vi.mocked(bot.postMessage).mock.calls[1]?.[1] as string;
@@ -606,7 +612,7 @@ describe("text accumulation", () => {
     const event = makeEvent({ thread_ts: "ROOT" });
     const { responder } = createSlackAdapters(event, bot);
 
-    await responder.replaceResponse(`${"x".repeat(6000)}END`);
+    await responder.replaceResponse(`${"x".repeat(6000)}END`, { final: true });
 
     expect(bot.postInThread).toHaveBeenLastCalledWith(
       "C001",
@@ -644,7 +650,7 @@ describe("text accumulation", () => {
     const { responder } = createSlackAdapters(event, bot);
 
     await responder.respond(`${"x".repeat(6000)}END`);
-    await responder.finishResponse?.();
+    await responder.replaceResponse(`${"x".repeat(6000)}END`, { final: true });
 
     expect(bot.postInThread).toHaveBeenCalledWith(
       "C001",
@@ -666,7 +672,7 @@ describe("text accumulation", () => {
 
     const lines = Array.from({ length: 600 }, (_, i) => `${String(i + 1).padStart(3, "0")} | body`);
     await responder.respond(lines.join("\n"));
-    await responder.finishResponse?.();
+    await responder.replaceResponse(lines.join("\n"), { final: true });
 
     const main = vi.mocked(bot.postMessage).mock.calls[1]?.[1] as string;
     const continuation = String(vi.mocked(bot.postInThread).mock.calls[0]?.[2] ?? "");
@@ -713,7 +719,9 @@ describe("text accumulation", () => {
 
     await responder.respond(`${"x".repeat(6000)}ALPHA`);
     await responder.respond(`${"y".repeat(6000)}BETA`);
-    await responder.finishResponse?.();
+    await responder.replaceResponse(`${"x".repeat(6000)}ALPHA\n${"y".repeat(6000)}BETA`, {
+      final: true,
+    });
 
     const posts = vi.mocked(bot.postInThread).mock.calls.map((call) => String(call[2]));
     expect(posts).toHaveLength(1);
@@ -895,10 +903,10 @@ describe("streaming lifecycle", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
-    await responder.appendResponseDelta?.("hello");
+    await responder.replaceResponse("hello");
     vi.advanceTimersByTime(2000);
-    await responder.appendResponseDelta?.(" world".repeat(20));
-    await responder.finishResponse?.("hello final");
+    await responder.replaceResponse(`hello${" world".repeat(20)}`);
+    await responder.replaceResponse("hello final", { final: true });
     vi.useRealTimers();
 
     expect(bot.postInThread).toHaveBeenCalledWith(
@@ -914,7 +922,7 @@ describe("streaming lifecycle", () => {
     expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "T002", "hello final");
   });
 
-  test("a stream Slack rejects as too long at the end is replaced, not left beside a second copy", async () => {
+  test("a stream Slack rejects as too long at the end is rewritten in place, not left beside a second copy", async () => {
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
       appendMessageStream: vi
@@ -926,15 +934,13 @@ describe("streaming lifecycle", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
-    await responder.appendResponseDelta?.("partial");
-    await responder.finishResponse?.("partial and the rest");
+    await responder.replaceResponse("partial");
+    await responder.replaceResponse("partial and the rest", { final: true });
 
-    expect(bot.deleteMessage).toHaveBeenCalledWith("C001", "STREAM1");
-    expect(bot.postInThread).toHaveBeenCalledWith(
-      "C001",
-      "1000.0001",
-      expect.stringContaining("partial and the rest"),
-    );
+    expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
+    expect(bot.deleteMessage).not.toHaveBeenCalled();
+    expect(bot.postInThread).not.toHaveBeenCalled();
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "STREAM1", "partial and the rest");
   });
 
   test("finish re-renders a table without outer pipes canonically", async () => {
@@ -948,14 +954,15 @@ describe("streaming lifecycle", () => {
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
     const table = "Name | Count\n---- | -----\nAlice | 2";
 
-    await responder.appendResponseDelta?.("Name");
-    await responder.finishResponse?.(table);
+    await responder.replaceResponse("Name");
+    await responder.replaceResponse(table, { final: true });
 
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
     expect(bot.updateMessage).toHaveBeenCalledWith("C001", "STREAM1", table);
   });
 
-  test("native stream append conflict abandons the stream message before fallback", async () => {
+  test("a native stream append conflict stops the stream and updates the same message", async () => {
+    vi.useFakeTimers();
     const bot = makeSlackMessagingBot({
       startMessageStream: vi.fn().mockResolvedValue("STREAM1"),
       appendMessageStream: vi
@@ -968,18 +975,15 @@ describe("streaming lifecycle", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createSlackAdapters(event, bot, { replyMode: "thread" });
 
-    await responder.appendResponseDelta?.("hello");
-    await responder.appendResponseDelta?.(" world");
-    await responder.finishResponse?.("hello world");
+    await responder.replaceResponse("hello");
+    vi.advanceTimersByTime(2000);
+    await responder.replaceResponse("hello world");
+    await responder.replaceResponse("hello world, done", { final: true });
+    vi.useRealTimers();
 
     expect(bot.stopMessageStream).toHaveBeenCalledWith("C001", "STREAM1");
-    expect(bot.deleteMessage).toHaveBeenCalledWith("C001", "STREAM1");
-    expect(bot.updateMessage).not.toHaveBeenCalledWith("C001", "STREAM1", expect.any(String));
-    expect(bot.postInThread).toHaveBeenCalledWith(
-      "C001",
-      "1000.0001",
-      expect.stringContaining("hello world"),
-    );
-    expect(bot.updateMessage).not.toHaveBeenCalled();
+    expect(bot.deleteMessage).not.toHaveBeenCalled();
+    expect(bot.postInThread).not.toHaveBeenCalled();
+    expect(bot.updateMessage).toHaveBeenLastCalledWith("C001", "STREAM1", "hello world, done");
   });
 });

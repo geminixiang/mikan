@@ -89,7 +89,9 @@ describe("createGithubAdapters", () => {
     expect(first).toMatch(/\n\*\(continued 1\)\*$/);
     expect(first.replace(/\n\*\(continued 1\)\*$/, "") + second).toBe(answer);
 
-    await responder.replaceResponse(answer.replaceAll("A", "C").replaceAll("B", "D"));
+    await responder.replaceResponse(answer.replaceAll("A", "C").replaceAll("B", "D"), {
+      final: true,
+    });
 
     expect(bot.postComment).toHaveBeenCalledTimes(2);
     expect(bot.updateMessage.mock.calls).toEqual([
@@ -98,10 +100,9 @@ describe("createGithubAdapters", () => {
     ]);
   });
 
-  test("streaming is disabled so the runner falls back to a single respond()", () => {
+  test("an answer is not shown while it is written, only its tool progress and final text", () => {
     const { responder } = createGithubAdapters(makeEvent(), makeFakeBot());
-    expect(responder.appendResponseDelta).toBeUndefined();
-    expect(responder.finishResponse).toBeUndefined();
+    expect(responder.showsPartialAnswer).toBe(false);
   });
 
   test("system prompt context names the issue the conversation lives in", () => {

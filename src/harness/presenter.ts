@@ -17,7 +17,11 @@ import {
   renderSubagentDashboard,
   settleSubagentProgress,
 } from "./tools/subagent.js";
-import type { ConversationResponder, SubagentProgressSnapshot } from "../types.js";
+import type {
+  ConversationResponder,
+  ReplaceResponseOptions,
+  SubagentProgressSnapshot,
+} from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
 import {
   addLifecycleEvent,
@@ -90,6 +94,8 @@ function createRunStateDefaults(): RunnerSessionState {
     subagentProgressShown: false,
     suppressResponseDeltas: false,
     answerStreamStarted: false,
+    answerText: "",
+    notice: "",
     workAcknowledged: false,
     publishRunEvent: undefined,
     lastSubagentProgressAt: 0,
@@ -195,10 +201,10 @@ async function replaceWithSubagentDashboard(
   responder: ConversationResponder,
   snapshot: SubagentProgressSnapshot,
   finalText?: string,
-  options?: { createOverflowLink?: () => string },
+  options?: ReplaceResponseOptions,
 ): Promise<void> {
   if (responder.replaceSubagentProgress) {
-    await responder.replaceSubagentProgress(snapshot, finalText);
+    await responder.replaceSubagentProgress(snapshot, finalText, options);
     return;
   }
   const dashboard = renderSubagentDashboard(snapshot);
@@ -214,8 +220,8 @@ async function replaceResponseWithToolProgress(
     await replaceWithSubagentDashboard(responder, subagentProgress);
     return;
   }
-  const progress = formatToolProgress(runState);
-  if (progress) await responder.replaceResponse(progress);
+  const view = formatResponseWithToolProgress(runState.answerText || runState.notice, runState);
+  if (view) await responder.replaceResponse(view);
 }
 
 const TOOL_PROGRESS_DEBOUNCE_MS = 500;
@@ -291,7 +297,7 @@ async function finalizeErrorResponse(
     });
   }
   try {
-    await responder.replaceResponse("_Sorry, something went wrong_");
+    await responder.replaceResponse("_Sorry, something went wrong_", { final: true });
     await responder.respondDiagnostic(`Error: ${runState.errorMessage}`, { style: "error" });
   } catch (err) {
     const errMsg = errorMessage(err);
@@ -382,17 +388,20 @@ async function publishFinalResponse(
       if (resolvedProfile && responder.respondAsRole) {
         await replaceWithSubagentDashboard(responder, finalDashboard, undefined, {
           createOverflowLink: options?.createOverflowLink,
+          final: true,
         });
         await responder.respondAsRole(resolvedProfile, finalResponse);
         return true;
       }
       await replaceWithSubagentDashboard(responder, finalDashboard, finalResponse, {
         createOverflowLink: options?.createOverflowLink,
+        final: true,
       });
       return true;
     }
     await responder.replaceResponse(formatResponseWithToolProgress(finalResponse, runState), {
       createOverflowLink: options?.createOverflowLink,
+      final: true,
     });
     return true;
   } catch (err) {
@@ -914,20 +923,21 @@ function presentAssistantDelta(
   event: RunEventOf<"assistant_delta">,
   context: FrontProjectionContext,
 ): void {
-  const { runState } = context;
-  if (!context.responder.appendResponseDelta || runState.suppressResponseDeltas) return;
-  const delta = runState.answerStreamStarted
-    ? event.delta
-    : formatResponseWithToolProgress(event.delta, runState);
+  const { runState, responder } = context;
+  if (!responder.showsPartialAnswer || runState.suppressResponseDeltas) return;
+  runState.answerText = runState.answerStreamStarted
+    ? runState.answerText + event.delta
+    : event.delta;
   runState.answerStreamStarted = true;
-  context.queue.enqueue(async () => {
-    await context.responder.appendResponseDelta?.(delta);
-  }, "response delta");
+  runState.notice = "";
+  context.queue.enqueue(
+    () => replaceResponseWithToolProgress(responder, runState),
+    "response delta",
+  );
 }
 
 function presentThinking(thinking: string, context: FrontProjectionContext): void {
   log.logThinking(context.logCtx, thinking);
-  context.queue.enqueue(() => context.responder.respond(`_${thinking}_`), "thinking main");
   context.queue.enqueue(
     () => context.responder.respondDiagnostic(`_${thinking}_`),
     "thinking diagnostic",
@@ -935,19 +945,7 @@ function presentThinking(thinking: string, context: FrontProjectionContext): voi
 }
 
 function presentFinalText(text: string, context: FrontProjectionContext): void {
-  const finalText = appendTriggerAttribution(
-    formatResponseWithToolProgress(text, context.runState),
-    context.runState.triggerAttribution,
-  );
   log.logResponse(context.logCtx, text);
-  if (context.runState.completedSubagentProgress.length > 0) return;
-  if (context.responder.finishResponse) {
-    context.queue.enqueue(async () => {
-      await context.responder.finishResponse?.(finalText);
-    }, "response finish");
-  } else {
-    context.queue.enqueue(() => context.responder.respond(finalText), "response main");
-  }
 }
 
 function presentAssistantMessage(
@@ -977,14 +975,18 @@ function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void
       presentAssistantMessage(event, context);
       return;
     case "compaction_started":
+      context.runState.notice = "_Compacting context..._";
       context.queue.enqueue(
-        () => context.responder.respond("_Compacting context..._"),
+        () => replaceResponseWithToolProgress(context.responder, context.runState),
         "compaction start",
       );
       return;
     case "retry_started": {
-      const text = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-      context.queue.enqueue(() => context.responder.respond(text), "retry");
+      context.runState.notice = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
+      context.queue.enqueue(
+        () => replaceResponseWithToolProgress(context.responder, context.runState),
+        "retry",
+      );
       return;
     }
     case "budget_exceeded": {

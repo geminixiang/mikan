@@ -128,7 +128,7 @@ interface ConversationContext {
 
 ### `ConversationResponder`
 
-运行时/框架的输出端口。必需操作涵盖最终文本、替换、诊断、工具状态、typing/working 状态、文件上传和响应删除。流式（`appendResponseDelta`、`finishResponse`）和 reaction（`react`）是可选能力。
+运行时/框架的输出端口。必需操作涵盖最终文本、替换、诊断、工具状态、typing/working 状态、文件上传和响应删除。`replaceResponse` 设置整条主消息，`{ final: true }` 表示最终写入。边写边显示回答（`showsPartialAnswer`）和 reaction（`react`）是可选能力。
 
 能力规则：调用方必须对可选方法进行特性检测。适配器可以缓冲输出或原生实现流式，但对于单次运行必须保持调用顺序。
 

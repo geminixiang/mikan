@@ -128,7 +128,7 @@ interface ConversationContext {
 
 ### `ConversationResponder`
 
-The runtime/harness output port. Required operations cover final text, replacement, diagnostics, tool status, typing/working state, file upload, and response deletion. Streaming (`appendResponseDelta`, `finishResponse`) and reaction (`react`) are optional capabilities.
+The runtime/harness output port. Required operations cover final text, replacement, diagnostics, tool status, typing/working state, file upload, and response deletion. `replaceResponse` sets the whole main message; `{ final: true }` marks the final write. Showing the answer while it is written (`showsPartialAnswer`) and reaction (`react`) are optional capabilities.
 
 Capability rule: callers must feature-detect optional methods. An adapter may buffer output or implement streaming natively, but it must preserve call order for a single run.
 

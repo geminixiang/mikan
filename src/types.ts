@@ -97,15 +97,23 @@ export interface TaskStatus {
   endedAt?: string;
 }
 
+export interface ReplaceResponseOptions {
+  createOverflowLink?: () => string;
+  final?: boolean;
+}
+
 export interface ConversationResponder {
   startTask?(message: string, task: string): Promise<string>;
   notifyCompletion?(): Promise<void>;
   getTaskStatus?(sessionKey?: string): Promise<TaskStatus[]>;
+  readonly showsPartialAnswer?: boolean;
   respond(text: string): Promise<void>;
-  appendResponseDelta?(delta: string): Promise<void>;
-  finishResponse?(finalText?: string): Promise<void>;
-  replaceResponse(text: string, options?: { createOverflowLink?: () => string }): Promise<void>;
-  replaceSubagentProgress?(progress: SubagentProgressSnapshot, finalText?: string): Promise<void>;
+  replaceResponse(text: string, options?: ReplaceResponseOptions): Promise<void>;
+  replaceSubagentProgress?(
+    progress: SubagentProgressSnapshot,
+    finalText?: string,
+    options?: ReplaceResponseOptions,
+  ): Promise<void>;
   respondAsRole?(profile: string, text: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;

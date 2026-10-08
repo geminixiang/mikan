@@ -59,7 +59,7 @@ export function createDiscordAdapters(
     formatContinuation: formatDiscordContinuation,
     errorPrefix: "*Error:* ",
     workingIndicator: " ...",
-    supportsDeltas: true,
+    showsPartialAnswer: true,
     typing: {
       send: () => bot.sendTyping(channelId),
       intervalMs: 8000,

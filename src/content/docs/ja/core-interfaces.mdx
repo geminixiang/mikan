@@ -128,7 +128,7 @@ interface ConversationContext {
 
 ### `ConversationResponder`
 
-runtime/harness の出力 port です。必須の操作は、最終テキスト、置換、診断、tool status、typing/working 状態、file upload、response 削除をカバーします。Streaming（`appendResponseDelta`、`finishResponse`）と reaction（`react`）は任意の機能です。
+runtime/harness の出力 port です。必須の操作は、最終テキスト、置換、診断、tool status、typing/working 状態、file upload、response 削除をカバーします。`replaceResponse` はメインメッセージ全体を設定し、`{ final: true }` が最終書き込みを示します。回答を書きながら表示する機能（`showsPartialAnswer`）と reaction（`react`）は任意の機能です。
 
 Capability ルール: 呼び出し側は任意メソッドを feature-detect しなければなりません。adapter は出力を buffer してもよく、streaming をネイティブに実装してもよいですが、1 つの実行に対する呼び出し順序を保持しなければなりません。
 

@@ -21,9 +21,14 @@ telemetry, run accounting, and daemon logs from the raw Pi event, then
 front projection renders through the responder. The front projection reads only
 `RunEvent`s, so another view of the same run (such as Session View) can consume
 the same stream without re-deriving state from chat-shaped responder calls.
-A renderer restarts its streamed text after every replacement, so the first
-answer delta after a tool call carries the tool checklist; otherwise the
-checklist vanishes while the answer streams and reappears in the final render.
+The front projection keeps one view of the run's main message: the tool
+checklist (or subagent dashboard), then the current answer text or a notice
+such as compaction, and hands the whole view to `replaceResponse` on every
+change. Text written before a tool call stays under the checklist until the
+next answer text replaces it. Thinking goes only to diagnostics. The final
+answer is written once, by `finalizeRunResponse` with `{ final: true }`; the
+front projection never writes it, because two writers of the final message
+disagreed about attribution and progress and rewrote it up to three times.
 
 Mechanical conventions belong to mikan, not the model. The presenter reacts
 `saluting_face` (eyes on GitHub) once when a run starts its first work tool, and

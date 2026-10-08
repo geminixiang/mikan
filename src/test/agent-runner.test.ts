@@ -367,6 +367,7 @@ describe("PiAgentWrapper.run", () => {
         ],
       }),
       expect.stringContaining("parent complete"),
+      expect.objectContaining({ final: true }),
     );
     const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
     expect(replacements).not.toContainEqual(expect.stringContaining("Subagent parallel"));
@@ -377,6 +378,7 @@ describe("PiAgentWrapper.run", () => {
         ]),
       }),
       expect.stringContaining("parent complete"),
+      expect.objectContaining({ final: true }),
     );
     expect(responder.replaceSubagentProgress.mock.calls.length).toBeLessThanOrEqual(3);
   });
@@ -581,7 +583,9 @@ describe("PiAgentWrapper.run", () => {
 
     expect(result.stopReason).toBe("error");
     expect(result.errorMessage).toBe("provider exploded");
-    expect(responder.replaceResponse).toHaveBeenCalledWith("_Sorry, something went wrong_");
+    expect(responder.replaceResponse).toHaveBeenCalledWith("_Sorry, something went wrong_", {
+      final: true,
+    });
     expect(responder.respondDiagnostic).toHaveBeenCalledWith(
       expect.stringContaining("provider exploded"),
       { style: "error" },

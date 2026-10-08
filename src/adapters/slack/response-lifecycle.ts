@@ -12,7 +12,6 @@ import { slackPersonaForProfile } from "./persona.js";
 import { errorMessage } from "../../unknown-values.js";
 
 const MAX_MAIN_LENGTH = 35000;
-const STREAM_MIN_DELTA_CHARS = 256;
 
 const MAX_THREAD_LENGTH = 20000;
 const FALLBACK_MAIN_LENGTH = 3000;
@@ -285,14 +284,13 @@ export function createSlackResponseContext({
     workingIndicator: streamKind === "buffered" ? WORKING_INDICATOR : undefined,
     formatProvisional: formatProvisionalSlackText,
     prepareSource: prepareSlackSource,
-    supportsDeltas: true,
+    showsPartialAnswer: true,
     stream:
       streamKind === "native"
         ? {
             start: (text) => slack.startMessageStream(event.channel, text, rootTs, event.user),
             append: (id, delta) => slack.appendMessageStream(event.channel, id, delta),
             stop: (id) => slack.stopMessageStream(event.channel, id),
-            minDeltaChars: STREAM_MIN_DELTA_CHARS,
           }
         : undefined,
     needsCanonicalRender,

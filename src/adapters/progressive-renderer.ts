@@ -1,4 +1,9 @@
-import type { ChatToolResult, ConversationResponder, SubagentProgressSnapshot } from "../types.js";
+import type {
+  ChatToolResult,
+  ConversationResponder,
+  ReplaceResponseOptions,
+  SubagentProgressSnapshot,
+} from "../types.js";
 import * as log from "../log.js";
 import { createChatResponseErrorReporter, splitText } from "./shared.js";
 import type { ChatResponseErrorOperation, ProgressiveRendererPlatform } from "./types.js";
@@ -23,13 +28,13 @@ interface RendererState {
   streamActive: boolean;
   streamUnavailable: boolean;
   streamedSource: string;
-  pendingChars: number;
-  lastFlushAt: number;
-  resetDelta: boolean;
   typingInterval: ReturnType<typeof setInterval> | null;
   typingFailureWarned: boolean;
   extraIds: Array<string | number>;
   continuationIds: Array<string | number>;
+  shown: string | null;
+  lastWriteAt: number;
+  flushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 const DEFAULT_FLUSH_INTERVAL_MS = 1000;
@@ -51,13 +56,13 @@ class ProgressiveRenderer {
       streamActive: false,
       streamUnavailable: false,
       streamedSource: "",
-      pendingChars: 0,
-      lastFlushAt: 0,
-      resetDelta: false,
       typingInterval: null,
       typingFailureWarned: false,
       extraIds: [],
       continuationIds: [],
+      shown: null,
+      lastWriteAt: 0,
+      flushTimer: null,
     };
     this.sanitize = platform.sanitize ?? ((text: string) => text);
     this.reportResponseError = platform.responseErrorContext
@@ -70,17 +75,11 @@ class ProgressiveRenderer {
   private createResponder(): ConversationResponder {
     return {
       respond: (text) => this.respond(text),
-      appendResponseDelta:
-        this.platform.supportsDeltas || this.platform.stream
-          ? (delta) => this.appendDelta(delta)
-          : undefined,
-      finishResponse:
-        this.platform.supportsDeltas || this.platform.stream
-          ? (finalText) => this.finishResponse(finalText)
-          : undefined,
+      showsPartialAnswer: Boolean(this.platform.showsPartialAnswer || this.platform.stream),
       replaceResponse: (text, options) => this.replaceResponse(text, options),
       replaceSubagentProgress: this.platform.formatSubagentProgress
-        ? (progress, finalText) => this.replaceSubagentProgress(progress, finalText)
+        ? (progress, finalText, options) =>
+            this.replaceSubagentProgress(progress, finalText, options)
         : undefined,
       respondDiagnostic: (text, options) => this.respondDiagnostic(text, options),
       respondToolResult: (result) => this.respondToolResult(result),
@@ -145,18 +144,6 @@ class ProgressiveRenderer {
     await this.platform.stream.stop(streamId);
   }
 
-  private async abandonNativeStream(): Promise<void> {
-    if (!this.platform.stream || this.state.responseId === null) return;
-    const streamId = this.state.responseId;
-    this.state.streamActive = false;
-    this.state.streamedSource = "";
-    await this.platform.stream.stop(streamId).catch(() => undefined);
-    await this.platform.delete?.(streamId).catch((error: unknown) => {
-      log.logWarning("Could not delete an abandoned stream message", errorMessage(error));
-    });
-    if (this.state.responseId === streamId) this.state.responseId = null;
-  }
-
   private async renderRaw(
     text: string,
     operation: "render" | "replace",
@@ -181,81 +168,34 @@ class ProgressiveRenderer {
     }
   }
 
-  private async renderDelta(text: string): Promise<string> {
-    if (this.state.working && !text.trim()) return text;
-    const prepared = this.platform.prepareSource?.(text, this.state.working) ?? text;
-    const stream = this.platform.stream;
-    const display = this.provisional(prepared, this.state.working);
-    if (!stream || this.state.streamUnavailable) {
-      await this.renderRaw(display, "render", undefined, prepared);
-      return prepared;
-    }
-    if (this.state.responseId !== null && !this.state.streamActive) {
-      await this.renderRaw(display, "render", undefined, prepared);
-      return prepared;
-    }
-    if (
-      this.state.responseId !== null &&
-      this.state.streamActive &&
-      !prepared.startsWith(this.state.streamedSource)
-    ) {
-      await this.abandonNativeStream();
-      await this.renderRaw(display, "render", undefined, prepared);
-      return prepared;
-    }
-
-    try {
-      if (this.state.responseId !== null) {
-        const delta = prepared.slice(this.state.streamedSource.length);
-        if (delta && delta.length >= (stream.minDeltaChars ?? 0)) {
-          await stream.append(this.state.responseId, delta);
-          this.state.streamedSource = prepared;
-        }
-        return prepared;
-      }
-      this.state.responseId = await stream.start(prepared);
-      this.state.streamActive = true;
-      this.state.streamedSource = prepared;
-      return prepared;
-    } catch (err) {
-      this.state.streamUnavailable = true;
-      log.logWarning(
-        "Native response streaming unavailable; falling back to message updates",
-        errorMessage(err),
-      );
-      await this.abandonNativeStream();
-      await this.renderRaw(display, "render", undefined, prepared);
-      return prepared;
-    }
-  }
-
-  private async renderFinal(text: string): Promise<string> {
+  private async renderFinal(text: string, options?: ReplaceResponseOptions): Promise<string> {
     const stream = this.platform.stream;
     if (stream && this.state.streamActive && this.state.responseId !== null) {
-      let streamed = false;
+      const streamId = this.state.responseId;
+      const extendsStream = text.startsWith(this.state.streamedSource);
+      this.state.streamActive = false;
       try {
-        if (text.startsWith(this.state.streamedSource)) {
+        if (extendsStream) {
           const delta = text.slice(this.state.streamedSource.length);
-          if (delta) await stream.append(this.state.responseId, delta);
-          await stream.stop(this.state.responseId);
-          streamed = true;
+          if (delta) await stream.append(streamId, delta);
         }
+        await stream.stop(streamId);
       } catch (err) {
         this.state.streamUnavailable = true;
         log.logWarning(
           "Native response streaming unavailable; falling back to message updates",
           errorMessage(err),
         );
+        await stream.stop(streamId).catch(() => undefined);
+        return this.renderRaw(text, "replace", options);
+      } finally {
+        this.state.streamedSource = "";
       }
-      this.state.streamActive = false;
-      this.state.streamedSource = "";
-      if (streamed) {
-        if (this.platform.needsCanonicalRender?.(text)) await this.renderRaw(text, "render");
-        return text;
-      }
-      await this.abandonNativeStream();
+      if (extendsStream && !this.platform.needsCanonicalRender?.(text)) return text;
+      return this.renderRaw(text, "replace", options);
     }
-    if (this.state.responseId !== null || text) return this.renderRaw(text, "render");
+    if (text === this.state.shown) return text;
+    if (this.state.responseId !== null || text) return this.renderRaw(text, "replace", options);
     return text;
   }
 
@@ -275,41 +215,10 @@ class ProgressiveRenderer {
           await this.platform.notifySendFailure(message);
         } catch {}
       }
-      if (label === "replaceResponse" || label === "finishResponse") throw err;
+      if (label === "finalResponse") throw err;
     });
     this.queueTail = handled.catch(() => undefined);
     return handled;
-  }
-
-  private async appendDelta(delta: string): Promise<void> {
-    await this.run(
-      "appendResponseDelta",
-      "respond",
-      async () => {
-        if (!delta) return;
-        if (this.state.resetDelta) {
-          this.state.source = "";
-          this.state.pendingChars = 0;
-          this.state.resetDelta = false;
-        }
-        const sanitized = this.sanitize(delta);
-        this.state.source += sanitized;
-        this.state.pendingChars += sanitized.length;
-        const elapsed = this.now() - this.state.lastFlushAt;
-        if (
-          this.state.lastFlushAt === 0 ||
-          (elapsed >= this.flushIntervalMs && this.state.pendingChars > 0)
-        ) {
-          this.state.pendingChars = 0;
-          try {
-            this.state.source = await this.renderDelta(this.state.source);
-          } finally {
-            this.state.lastFlushAt = this.now();
-          }
-        }
-      },
-      () => ({ textLength: delta.length, accumulatedLength: this.state.source.length }),
-    );
   }
 
   private async respond(text: string): Promise<void> {
@@ -319,8 +228,8 @@ class ProgressiveRenderer {
       async () => {
         const sanitized = this.sanitize(text);
         this.state.source = this.state.source ? `${this.state.source}\n${sanitized}` : sanitized;
-        this.state.pendingChars = 0;
-        this.state.source = await this.renderDelta(this.state.source);
+        this.cancelFlush();
+        await this.renderView();
         if (this.state.responseId !== null && this.platform.logIntermediateResponses) {
           this.platform.logBotResponse?.(text, this.state.responseId);
         }
@@ -333,58 +242,127 @@ class ProgressiveRenderer {
     );
   }
 
-  private async finishResponse(finalText?: string): Promise<void> {
+  private async replaceResponse(text: string, options?: ReplaceResponseOptions): Promise<void> {
     await this.run(
-      "finishResponse",
-      "set_working",
-      async () => {
-        if (finalText !== undefined) this.state.source = this.sanitize(finalText);
-        this.state.resetDelta = false;
-        this.state.pendingChars = 0;
-        this.stopTyping();
-        this.state.working = false;
-        this.state.source = await this.renderFinal(this.state.source);
-        if (this.state.responseId !== null) {
-          this.platform.logBotResponse?.(this.state.source, this.state.responseId);
-        }
-        await this.platform.onFinish?.(this.state.source, this.state.responseId);
-      },
-      () => ({ finalTextLength: finalText?.length }),
-    );
-  }
-
-  private async replaceResponse(
-    text: string,
-    options?: { createOverflowLink?: () => string },
-  ): Promise<void> {
-    await this.run(
-      "replaceResponse",
+      options?.final ? "finalResponse" : "replaceResponse",
       "replace_response",
       async () => {
         this.state.source = this.sanitize(text);
-        this.state.pendingChars = 0;
-        this.state.resetDelta = true;
-        if (this.state.streamActive) await this.stopNativeStream();
-        if (this.state.working && !this.state.source.trim()) return;
-        const prepared =
-          this.platform.prepareSource?.(this.state.source, this.state.working) ?? this.state.source;
-        this.state.source = await this.renderRaw(
-          this.provisional(prepared, this.state.working),
-          "replace",
-          options,
-          prepared,
-        );
+        if (options?.final) await this.finish(options);
+        else await this.show(options);
       },
-      () => ({ textLength: text.length, hadExistingResponse: Boolean(this.state.responseId) }),
+      () => ({
+        textLength: text.length,
+        hadExistingResponse: Boolean(this.state.responseId),
+        final: options?.final === true,
+      }),
     );
+  }
+
+  private async show(options?: ReplaceResponseOptions): Promise<void> {
+    if (this.state.working && !this.state.source.trim()) return;
+    const wait = this.state.lastWriteAt + this.flushIntervalMs - this.now();
+    if (this.state.working && wait > 0) {
+      this.scheduleFlush(wait);
+      return;
+    }
+    await this.renderView(options);
+  }
+
+  private async finish(options: ReplaceResponseOptions): Promise<void> {
+    this.stopTyping();
+    this.cancelFlush();
+    this.state.working = false;
+    this.state.source = await this.renderFinal(this.state.source, options);
+    this.state.shown = this.state.source;
+    this.state.lastWriteAt = this.now();
+    if (this.state.responseId !== null) {
+      this.platform.logBotResponse?.(this.state.source, this.state.responseId);
+    }
+    await this.platform.onFinish?.(this.state.source, this.state.responseId);
+  }
+
+  private scheduleFlush(delayMs: number): void {
+    if (this.state.flushTimer !== null) return;
+    this.state.flushTimer = setTimeout(() => {
+      this.state.flushTimer = null;
+      void this.run(
+        "flushResponse",
+        "replace_response",
+        () => this.renderView(),
+        () => ({ deferred: true }),
+      );
+    }, delayMs);
+    this.state.flushTimer.unref?.();
+  }
+
+  private cancelFlush(): void {
+    if (this.state.flushTimer === null) return;
+    clearTimeout(this.state.flushTimer);
+    this.state.flushTimer = null;
+  }
+
+  private async renderView(options?: ReplaceResponseOptions): Promise<void> {
+    if (this.state.working && !this.state.source.trim()) return;
+    const prepared =
+      this.platform.prepareSource?.(this.state.source, this.state.working) ?? this.state.source;
+    const display = this.provisional(prepared, this.state.working);
+    if (display === this.state.shown) return;
+    try {
+      await this.writeView(prepared, display, options);
+    } finally {
+      this.state.lastWriteAt = this.now();
+    }
+    this.state.shown = display;
+  }
+
+  private async writeView(
+    prepared: string,
+    display: string,
+    options: ReplaceResponseOptions | undefined,
+  ): Promise<void> {
+    const stream = this.platform.stream;
+    const canStream =
+      stream !== undefined &&
+      this.state.working &&
+      !this.state.streamUnavailable &&
+      (this.state.responseId === null ||
+        (this.state.streamActive && prepared.startsWith(this.state.streamedSource)));
+    try {
+      if (canStream && this.state.responseId === null) {
+        this.state.responseId = await stream.start(prepared);
+        this.state.streamActive = true;
+        this.state.streamedSource = prepared;
+      } else if (canStream && this.state.responseId !== null) {
+        const delta = prepared.slice(this.state.streamedSource.length);
+        if (delta) await stream.append(this.state.responseId, delta);
+        this.state.streamedSource = prepared;
+      } else {
+        if (this.state.streamActive) await this.stopNativeStream();
+        await this.renderRaw(display, "render", options, prepared);
+      }
+    } catch (err) {
+      if (!canStream) throw err;
+      this.state.streamUnavailable = true;
+      log.logWarning(
+        "Native response streaming unavailable; falling back to message updates",
+        errorMessage(err),
+      );
+      if (this.state.streamActive) await this.stopNativeStream().catch(() => undefined);
+      await this.renderRaw(display, "render", options, prepared);
+    }
   }
 
   private async replaceSubagentProgress(
     progress: SubagentProgressSnapshot,
     finalText?: string,
+    options?: ReplaceResponseOptions,
   ): Promise<void> {
     const dashboard = this.platform.formatSubagentProgress!(progress);
-    await this.responder.replaceResponse(finalText ? `${dashboard}\n\n${finalText}` : dashboard);
+    await this.responder.replaceResponse(
+      finalText ? `${dashboard}\n\n${finalText}` : dashboard,
+      options,
+    );
   }
 
   private async respondDiagnostic(
@@ -446,27 +424,14 @@ class ProgressiveRenderer {
       "set_working",
       async () => {
         this.state.working = working;
-        if (!working) this.stopTyping();
+        if (!working) {
+          this.stopTyping();
+          this.cancelFlush();
+        }
         await this.platform.onWorkingChanged?.(working, this.state.responseId);
-        if (
-          this.state.responseId === null ||
-          (!this.platform.workingIndicator && !this.platform.stream)
-        ) {
-          return;
-        }
-        if (working && !this.state.source.trim()) return;
-        if (this.state.streamActive && !working) {
-          await this.stopNativeStream();
-          return;
-        }
-        if (this.state.responseId !== null) {
-          this.state.source = await this.renderRaw(
-            this.provisional(this.state.source, working),
-            "render",
-            undefined,
-            this.state.source,
-          );
-        }
+        if (this.state.responseId === null) return;
+        if (!working && this.state.streamActive) await this.stopNativeStream();
+        await this.renderView();
       },
       () => ({ working }),
     );
@@ -493,6 +458,8 @@ class ProgressiveRenderer {
       "respond",
       async () => {
         this.stopTyping();
+        this.cancelFlush();
+        this.state.shown = null;
         if (this.state.streamActive) await this.stopNativeStream().catch(() => undefined);
         for (const id of [...this.state.extraIds, ...this.state.continuationIds]) {
           try {
@@ -511,7 +478,7 @@ class ProgressiveRenderer {
         this.state.streamUnavailable = false;
         this.state.streamedSource = "";
         this.state.streamActive = false;
-        this.state.resetDelta = false;
+        this.state.lastWriteAt = 0;
         this.state.working = true;
       },
       () => ({}),

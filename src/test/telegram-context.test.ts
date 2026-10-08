@@ -130,8 +130,8 @@ describe("respond() — non-threaded", () => {
     const { responder } = createTelegramAdapters(event, bot);
 
     await responder.respond("partial");
-    await responder.appendResponseDelta?.(" delta");
-    await responder.finishResponse?.("canonical final");
+    await responder.replaceResponse("partial delta");
+    await responder.replaceResponse("canonical final", { final: true });
 
     expect(bot.logBotResponse).toHaveBeenCalledOnce();
     expect(bot.logBotResponse).toHaveBeenCalledWith(
@@ -342,7 +342,7 @@ describe("replaceResponse()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
     await responder.respond("original text");
-    await responder.replaceResponse("replacement");
+    await responder.replaceResponse("replacement", { final: true });
     const updateCall = firstCall(vi.mocked(bot.updateMessage).mock.calls, "updateMessage");
     expect(updateCall[2]).not.toContain("original text");
     expect(updateCall[2]).toContain("replacement");
@@ -478,10 +478,10 @@ describe("streaming lifecycle", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createTelegramAdapters(event, bot);
 
-    await responder.appendResponseDelta?.("hello");
+    await responder.replaceResponse("hello");
     vi.advanceTimersByTime(2000);
-    await responder.appendResponseDelta?.(" world".repeat(20));
-    await responder.finishResponse?.("hello final");
+    await responder.replaceResponse(`hello${" world".repeat(20)}`);
+    await responder.replaceResponse("hello final", { final: true });
     vi.useRealTimers();
 
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, expect.stringContaining("hello"));

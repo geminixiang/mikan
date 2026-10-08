@@ -26,15 +26,12 @@ const NO_PLATFORM_TOOLS: PlatformToolRoles = {
 };
 
 function makeResponder(): ConversationResponder & {
-  appendResponseDelta: ReturnType<typeof vi.fn>;
-  finishResponse: ReturnType<typeof vi.fn>;
   replaceResponse: ReturnType<typeof vi.fn>;
   respond: ReturnType<typeof vi.fn>;
   respondDiagnostic: ReturnType<typeof vi.fn>;
 } {
   return {
-    appendResponseDelta: vi.fn().mockResolvedValue(undefined),
-    finishResponse: vi.fn().mockResolvedValue(undefined),
+    showsPartialAnswer: true,
     replaceResponse: vi.fn().mockResolvedValue(undefined),
     respond: vi.fn().mockResolvedValue(undefined),
     respondDiagnostic: vi.fn().mockResolvedValue(undefined),
@@ -120,11 +117,10 @@ describe("presenter event routing", () => {
     expect(vi.getTimerCount()).toBe(1);
     runQueue.dispose();
     expect(vi.getTimerCount()).toBe(0);
-    await emit({ type: "message_end", message: fauxAssistantMessage("ignored") });
+    await emit({ type: "text_delta", delta: "ignored" });
     await vi.runAllTimersAsync();
     await runQueue.wait();
     expect(responder.replaceResponse).not.toHaveBeenCalled();
-    expect(responder.finishResponse).not.toHaveBeenCalled();
 
     const nextResponder = makeResponder();
     const next = activateRunPresentation(runState, {
@@ -135,11 +131,10 @@ describe("presenter event routing", () => {
       triggerAttribution: undefined,
     });
     try {
-      await emit({ type: "message_end", message: fauxAssistantMessage("next run") });
+      await emit({ type: "text_delta", delta: "next run" });
       await next.wait();
-      expect(nextResponder.finishResponse).toHaveBeenCalledWith("next run");
-      expect(responder.finishResponse).not.toHaveBeenCalled();
-      expect(nextResponder.replaceResponse).not.toHaveBeenCalled();
+      expect(nextResponder.replaceResponse.mock.calls).toEqual([["next run"]]);
+      expect(responder.replaceResponse).not.toHaveBeenCalled();
     } finally {
       next.dispose();
     }
@@ -149,8 +144,8 @@ describe("presenter event routing", () => {
     const { emit, responder, runQueue } = attachPresenter();
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    responder.finishResponse.mockImplementation(() => gate);
-    await emit({ type: "message_end", message: fauxAssistantMessage("queued answer") });
+    responder.replaceResponse.mockImplementation(() => gate);
+    await emit({ type: "text_delta", delta: "queued answer" });
     let settled = false;
     const waiting = runQueue.wait().then(() => {
       settled = true;
@@ -158,9 +153,7 @@ describe("presenter event routing", () => {
     try {
       runQueue.dispose();
       await Promise.resolve();
-      expect(responder.finishResponse).toHaveBeenCalledWith(
-        "queued answer\n\n_Triggered by @alice_",
-      );
+      expect(responder.replaceResponse).toHaveBeenCalledWith("queued answer");
       expect(settled).toBe(false);
     } finally {
       release();
@@ -185,12 +178,16 @@ describe("presenter event routing", () => {
     expect(runState.responseModel).toBe(complete.model);
     expect(runState.firstTokenLatencyMs).toBeTypeOf("number");
     expect(runState.stopReason).toBe("stop");
-    expect(responder.appendResponseDelta).toHaveBeenCalledWith("Hel");
-    expect(responder.finishResponse).toHaveBeenCalledWith("Hello\n\n_Triggered by @alice_");
+    expect(responder.replaceResponse.mock.calls).toEqual([["Hel"]]);
   });
 
   test("keeps the tool checklist above the final answer while the answer streams", async () => {
-    const { emit, responder, runQueue } = attachPresenter();
+    const presenter = attachPresenter();
+    const { responder, runQueue } = presenter;
+    const emit = async (event: HarnessEvent) => {
+      await presenter.emit(event);
+      await runQueue.wait();
+    };
     const partial = fauxAssistantMessage("Done");
 
     await emit({
@@ -212,14 +209,21 @@ describe("presenter event routing", () => {
     }
     await runQueue.wait();
 
-    expect(responder.appendResponseDelta.mock.calls.map(([delta]) => delta)).toEqual([
+    expect(responder.replaceResponse.mock.calls.map(([view]) => view)).toEqual([
+      "• Inspect file",
+      "✓ Inspect file",
       "✓ Inspect file\n\nDo",
-      "ne",
+      "✓ Inspect file\n\nDone",
     ]);
   });
 
-  test("re-attaches the checklist to the first answer delta after each later tool call", async () => {
-    const { emit, responder, runQueue } = attachPresenter();
+  test("keeps the text written before a tool call until the next answer replaces it", async () => {
+    const presenter = attachPresenter();
+    const { responder, runQueue } = presenter;
+    const emit = async (event: HarnessEvent) => {
+      await presenter.emit(event);
+      await runQueue.wait();
+    };
     const streamDelta = (delta: string) => emit({ type: "text_delta", delta });
 
     await streamDelta("Checking");
@@ -239,8 +243,10 @@ describe("presenter event routing", () => {
     await streamDelta("Done");
     await runQueue.wait();
 
-    expect(responder.appendResponseDelta.mock.calls.map(([delta]) => delta)).toEqual([
+    expect(responder.replaceResponse.mock.calls.map(([view]) => view)).toEqual([
       "Checking",
+      "• Inspect file\n\nChecking",
+      "✓ Inspect file\n\nChecking",
       "✓ Inspect file\n\nDone",
     ]);
   });
@@ -356,7 +362,7 @@ describe("presenter event routing", () => {
     await runQueue.wait();
 
     expect(runState.finalResponseHandledByTool).toBe(true);
-    expect(responder.finishResponse).not.toHaveBeenCalled();
+    expect(JSON.stringify(responder.replaceResponse.mock.calls)).not.toContain("do not post this");
   });
 
   test("a failed or undeclared tool call does not claim the final response", async () => {
@@ -488,11 +494,9 @@ describe("presenter event routing", () => {
       expect([...runState.toolProgress.keys()]).toEqual(["first", "second"]);
       expect(responder.replaceResponse).toHaveBeenLastCalledWith("✓ first\n✗ second");
 
-      await emit({ type: "message_end", message: fauxAssistantMessage("answer") });
+      await emit({ type: "text_delta", delta: "answer" });
       await runQueue.wait();
-      expect(responder.finishResponse).toHaveBeenLastCalledWith(
-        "✓ first\n✗ second\n\nanswer\n\n_Triggered by @alice_",
-      );
+      expect(responder.replaceResponse).toHaveBeenLastCalledWith("✓ first\n✗ second\n\nanswer");
     } finally {
       runQueue.dispose();
     }
@@ -533,7 +537,8 @@ describe("presenter event routing", () => {
     );
 
     await emit({ type: "text_delta", delta: "hidden" });
-    expect(responder.appendResponseDelta).not.toHaveBeenCalled();
+    await runQueue.wait();
+    expect(JSON.stringify(responder.replaceResponse.mock.calls)).not.toContain("hidden");
   });
 
   test("routes compaction, retry, and budget lifecycle diagnostics", async () => {
@@ -557,7 +562,7 @@ describe("presenter event routing", () => {
     });
     await runQueue.wait();
 
-    expect(responder.respond.mock.calls.map(([text]) => text)).toEqual([
+    expect(responder.replaceResponse.mock.calls.map(([text]) => text)).toEqual([
       "_Compacting context..._",
       "_Retrying (1/3)..._",
     ]);
@@ -641,11 +646,9 @@ describe("presenter event routing", () => {
         result: { content: [{ type: "text", text: "contents" }] },
         isError: false,
       });
-      await emit({ type: "message_end", message: fauxAssistantMessage("first answer") });
+      await emit({ type: "text_delta", delta: "first answer" });
       await runQueue.wait();
-      expect(responder.finishResponse).toHaveBeenLastCalledWith(
-        "✓ Inspect file\n\nfirst answer\n\n_Triggered by @alice_",
-      );
+      expect(responder.replaceResponse).toHaveBeenLastCalledWith("✓ Inspect file\n\nfirst answer");
 
       await emit({
         type: "tool_execution_start",
@@ -693,12 +696,11 @@ describe("presenter event routing", () => {
     try {
       expect(resettableRunState(runState)).toEqual(resettableRunState());
       expect(runState.triggerAttribution).toBeUndefined();
-      await emit({ type: "message_end", message: fauxAssistantMessage("second answer") });
+      const previousCalls = responder.replaceResponse.mock.calls.length;
+      await emit({ type: "text_delta", delta: "second answer" });
       await next.wait();
-      expect(nextResponder.finishResponse).toHaveBeenCalledTimes(1);
-      expect(nextResponder.finishResponse).toHaveBeenCalledWith("second answer");
-      expect(nextResponder.replaceResponse).not.toHaveBeenCalled();
-      expect(responder.finishResponse).toHaveBeenCalledTimes(1);
+      expect(nextResponder.replaceResponse.mock.calls).toEqual([["second answer"]]);
+      expect(responder.replaceResponse).toHaveBeenCalledTimes(previousCalls);
     } finally {
       next.dispose();
     }

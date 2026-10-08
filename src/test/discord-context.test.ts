@@ -388,7 +388,7 @@ describe("replaceResponse()", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
     await responder.respond("original text");
-    await responder.replaceResponse("replacement");
+    await responder.replaceResponse("replacement", { final: true });
     const updateCall = firstCall(vi.mocked(bot.updateMessageRaw).mock.calls, "updateMessageRaw");
     expect(updateCall[2]).not.toContain("original text");
     expect(updateCall[2]).toContain("replacement");
@@ -508,10 +508,10 @@ describe("streaming lifecycle", () => {
     const event = makeEvent({ thread_ts: undefined });
     const { responder } = createDiscordAdapters(event, bot);
 
-    await responder.appendResponseDelta?.("hello");
+    await responder.replaceResponse("hello");
     vi.advanceTimersByTime(2000);
-    await responder.appendResponseDelta?.(" world".repeat(20));
-    await responder.finishResponse?.("hello final");
+    await responder.replaceResponse(`hello${" world".repeat(20)}`);
+    await responder.replaceResponse("hello final", { final: true });
     vi.useRealTimers();
 
     expect(bot.postReply).toHaveBeenCalledWith("CH001", "MSG001", expect.stringContaining("hello"));

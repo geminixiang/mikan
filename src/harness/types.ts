@@ -65,6 +65,8 @@ export interface RunnerSessionState {
   subagentProgressShown: boolean;
   suppressResponseDeltas: boolean;
   answerStreamStarted: boolean;
+  answerText: string;
+  notice: string;
   workAcknowledged: boolean;
   publishRunEvent: RunEventListener | undefined;
   lastSubagentProgressAt: number;
