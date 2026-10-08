@@ -11,6 +11,12 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- `jev_browser` writes the text it types or selects with the conversation's chat model, the one
+  the office's `settings.json` resolves, instead of `openai/gpt-4o-mini` called directly on
+  OpenRouter, so it no longer needs `OPENROUTER_API_KEY` and follows the office's provider.
+
 ## [1.2.1] - 2026-10-09
 
 ### Added
