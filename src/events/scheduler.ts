@@ -241,7 +241,7 @@ export function buildEventPrompt(event: MikanEvent): string {
     case "periodic":
       return [
         "Handle the following recurring task.",
-        "Respond concisely. If there is nothing actionable to report, reply with [SILENT].",
+        "Respond concisely.",
         "",
         `Task: ${event.text}`,
       ].join("\n");

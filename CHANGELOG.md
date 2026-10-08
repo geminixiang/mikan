@@ -11,6 +11,14 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- A periodic event run always posts its answer. The `[SILENT]` reply that deleted the message
+  is removed, along with the prompt rules that told the agent to use it or to react with eyes
+  instead of reporting nothing new, because a job that kept answering `[SILENT]` could stall for
+  days without anyone noticing. An event whose own text still asks for `[SILENT]` now posts that
+  text; edit the event to say what it should report instead.
+
 ## [1.1.0] - 2026-10-08
 
 ### Added

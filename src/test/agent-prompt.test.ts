@@ -197,6 +197,24 @@ describe("host sandbox environment description", () => {
     expect(prompt).not.toMatch(/saluting_face/);
   });
 
+  test("offers no way to answer a run without replying", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const prompt = buildSystemPrompt({
+      workspacePath: workspaceDir,
+      office,
+      memory: "(no memory)",
+      sandboxConfig: { type: "host" },
+      platform: PLATFORM,
+      skills: [],
+      projection: resolveWorkspaceProjection(office),
+      scratch: NO_SCRATCH,
+    });
+
+    expect(prompt).not.toContain("[SILENT]");
+    expect(prompt).not.toMatch(/nothing to report/i);
+  });
+
   test("points history questions at log.jsonl, never at host-only session files", () => {
     const workspace = createWorkspace({ root: workspaceDir, stateDir });
     const office = workspace.office(createOfficeAddress("slack", "C123"));

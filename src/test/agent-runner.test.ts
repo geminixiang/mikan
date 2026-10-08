@@ -501,19 +501,7 @@ describe("PiAgentWrapper.run", () => {
     expect(uploadedContent).toBe("<h1>Report</h1>");
   });
 
-  test("[SILENT] responses delete the placeholder instead of replacing it", async () => {
-    const { runner, faux } = await createTestRunner();
-    faux.setResponses([fauxAssistantMessage("[SILENT]")]);
-    const responder = makeResponder();
-
-    const result = await runner.run(makeMessage(), responder, platform);
-
-    expect(result.stopReason).toBe("stop");
-    expect(responder.deleteResponse).toHaveBeenCalledTimes(1);
-    expect(responder.replaceResponse).not.toHaveBeenCalled();
-  });
-
-  test("[SILENT] responses post no usage summary where the deleted reply stood", async () => {
+  test("a reply reading [SILENT] is published like any other reply", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("[SILENT]")]);
     const responder = makeResponder();
@@ -523,8 +511,9 @@ describe("PiAgentWrapper.run", () => {
       diagnostics: { showUsageSummary: true },
     });
 
-    expect(responder.deleteResponse).toHaveBeenCalledTimes(1);
-    expect(responder.respondDiagnostic).not.toHaveBeenCalled();
+    expect(responder.deleteResponse).not.toHaveBeenCalled();
+    expect(String(responder.replaceResponse.mock.calls.at(-1)?.[0])).toContain("[SILENT]");
+    expect(responder.respondDiagnostic).toHaveBeenCalled();
   });
 
   test("the usage summary includes the spend of subagents the run delegated to", async () => {
@@ -694,7 +683,6 @@ describe("PiAgentWrapper.run", () => {
       linked: true,
       attribution: "[event: daily.json]",
     },
-    { id: "event:daily.json", answer: "[SILENT]", tokens: 1, linked: false },
     { id: "event:daily.json", answer: "", tokens: 1, linked: false },
     { id: "event:daily.json", answer: "", error: "provider exploded", tokens: 1, linked: false },
     { id: "1000.1", answer: "report", tokens: 0, linked: false, attribution: "@alice" },

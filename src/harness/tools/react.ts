@@ -18,7 +18,7 @@ export function createReactTool(): {
   const { tool, setFn } = defineHostFnTool<(emoji: string) => Promise<void>, typeof reactSchema>({
     name: REACT_TOOL,
     description:
-      "Add an emoji reaction to the message you are responding to. mikan already reacts on its own when work starts; use this for a lightweight signal such as eyes on a background check with nothing to report.",
+      "Add an emoji reaction to the message you are responding to. mikan already reacts on its own when work starts.",
     parameters: reactSchema,
     unavailable: "Reactions are not supported in this conversation.",
     run: async (reactFn, { emoji }) => {

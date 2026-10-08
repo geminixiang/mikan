@@ -333,10 +333,6 @@ export async function finalizeRunResponse(
     log.logInfo("Final response already handled by tool - skipping final replacement");
     return;
   }
-  if (isSilentResponse(finalText)) {
-    await deleteForSilentResponse(responder);
-    return;
-  }
   if (!finalText.trim()) return;
   const published = await publishFinalResponse(responder, runState, finalText, options);
   const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
@@ -344,20 +340,6 @@ export async function finalizeRunResponse(
   );
   if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
     await responder.notifyCompletion?.();
-}
-
-function isSilentResponse(finalText: string): boolean {
-  return finalText.trim().startsWith("[SILENT]");
-}
-
-async function deleteForSilentResponse(responder: ConversationResponder): Promise<void> {
-  try {
-    await responder.deleteResponse();
-    log.logInfo("Silent response - deleted message and thread");
-  } catch (err) {
-    const errMsg = errorMessage(err);
-    log.logWarning("Failed to delete message for silent response", errMsg);
-  }
 }
 
 function resolveSingleCompletedProfile(runState: RunnerSessionState): string | undefined {
@@ -503,8 +485,7 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   if (
     platform.diagnostics?.showUsageSummary === true &&
     !runState.finalResponseHandledByTool &&
-    !statusOnly &&
-    !isSilentResponse(getFinalAssistantText(session))
+    !statusOnly
   ) {
     runState.queue!.enqueue(
       () => responder.respondDiagnostic(summary, { style: "muted" }),

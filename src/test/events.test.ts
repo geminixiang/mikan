@@ -280,7 +280,7 @@ describe("event prompt building", () => {
     expect(prompt).toContain("Do not greet");
   });
 
-  test("builds a recurring-task prompt with a silent-reply hint for periodic events", () => {
+  test("builds a recurring-task prompt without a silent-reply marker for periodic events", () => {
     const prompt = buildEventPrompt({
       type: "periodic",
       platform: "slack",
@@ -291,7 +291,7 @@ describe("event prompt building", () => {
       timezone: "UTC",
     });
     expect(prompt).toContain("Task: check CI");
-    expect(prompt).toContain("[SILENT]");
+    expect(prompt).not.toContain("[SILENT]");
   });
 
   test("builds an event prompt for immediate events", () => {

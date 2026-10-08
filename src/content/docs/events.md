@@ -107,7 +107,3 @@ The agent's `event` tool fills routing fields automatically. Use it instead of h
 - Invalid, undeliverable, or queue-overflow immediate/one-shot files are also deleted; inspect logs or Sentry for the failure.
 - **Periodic** files stay in place. Delete the file to cancel the event.
 - At most 5 events can be queued at once. Additional immediate/one-shot files are discarded as described above.
-
-## Silent responses
-
-For periodic events that have nothing to report, respond exactly with `[SILENT]`. The harness deletes the status message and does not post to the platform, avoiding channel spam.
