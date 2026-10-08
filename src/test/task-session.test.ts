@@ -116,3 +116,39 @@ test("a finished task's answer is written to its requester without a model turn"
   expect(transcript).toContain("[background task D123:1.000001 finished] the answer");
   expect(faux.state.callCount).toBe(1);
 });
+
+async function startedTask(office: Office, key: string): Promise<void> {
+  await (await SessionStore.open(office, "D123")).close();
+  const task = await SessionStore.openTask(office, key, "D123");
+  await task.recordRun({ startedAt: Date.now() });
+  await task.close();
+}
+
+test("an interrupted task resumes twice, then its run is closed as aborted", async () => {
+  const { office } = setup();
+  const key = "D123:1.000001";
+  await startedTask(office, key);
+
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("exhausted");
+
+  expect(await SessionStore.interruptedSince(office, [key], 0)).toEqual([]);
+  expect((await SessionStore.inspectExecution(office, key)).result?.status).toBe("aborted");
+});
+
+test("a run that ends resets the automatic resume count", async () => {
+  const { office } = setup();
+  const key = "D123:1.000001";
+  await startedTask(office, key);
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
+
+  const task = await SessionStore.openTask(office, key, "D123");
+  await task.recordRun({ startedAt: Date.now() });
+  await task.recordRun({ endedAt: Date.now(), status: "completed" });
+  await task.recordRun({ startedAt: Date.now() });
+  await task.close();
+
+  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
+});

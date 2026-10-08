@@ -48,6 +48,13 @@ export function formatResumingTask(source: PlatformSource): string {
   );
 }
 
+export function formatTaskResumesExhausted(source: PlatformSource): string {
+  return formatItalic(
+    resolvePlatformName(source),
+    "Interrupted again after two automatic restarts; not continuing this task. Ask me to continue when you are ready.",
+  );
+}
+
 export function formatAlreadyWorking(
   source: PlatformSource,
   stopCommand: string,

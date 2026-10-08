@@ -38,6 +38,7 @@ import type {
   ChatHistoryMessageIdentity,
   ImportedSession,
   ImportedSessionEntry,
+  ResumeClaim,
   SessionHarnessBinding,
   SessionContext,
   SessionEntry,
@@ -78,6 +79,7 @@ const TaskAnchors = defineExtension({ name: "mikan.task-anchors", tasks: [TaskAn
 type SessionDocState = Partial<{
   name: string;
   run: Partial<SessionRunRecord>;
+  resumes: number;
 }>;
 
 const SessionDoc = defineDoc<SessionDocState>({
@@ -782,6 +784,24 @@ export class SessionStore implements SessionInspection {
     });
   }
 
+  static async claimResume(office: Office, key: string, max: number): Promise<ResumeClaim> {
+    return withOfficeStorage(office, async (storage) => {
+      const session = await lookupSession(storage, key);
+      if (!session) return "exhausted";
+      return session.conversation.commit(async (tx) => {
+        const doc = await tx.doc(SessionDoc, session.conversation.id);
+        const resumes = doc.resumes ?? 0;
+        if (resumes < max) {
+          doc.resumes = resumes + 1;
+          return "resume";
+        }
+        doc.run = { ...doc.run, endedAt: Date.now(), status: "aborted" };
+        doc.resumes = undefined;
+        return "exhausted";
+      }, context);
+    });
+  }
+
   static async interruptedSince(
     office: Office,
     keys: readonly string[],
@@ -984,6 +1004,7 @@ export class SessionStore implements SessionInspection {
   async recordRun(run: SessionRunRecord): Promise<void> {
     await this.updateSessionDoc((doc) => {
       doc.run = { ...run };
+      if (run.endedAt !== undefined) doc.resumes = undefined;
     });
   }
 

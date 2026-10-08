@@ -850,6 +850,40 @@ test("a task interrupted by a restart resumes in its thread and finishes", async
   }
 });
 
+test("a task interrupted again after two automatic resumes stops and says so once", async () => {
+  const info = vi.spyOn(log, "logInfo");
+  const root = await interruptedTask();
+  const key = `D123:${root}`;
+  await SessionStore.claimResume(dmOffice(), key, 2);
+  await SessionStore.claimResume(dmOffice(), key, 2);
+
+  const restarted = await restartSlack();
+  try {
+    await vi.waitFor(() =>
+      expect(
+        trace.some((line) => line.startsWith(`post:${root}:`) && /not continuing/i.test(line)),
+      ).toBe(true),
+    );
+    expect(faux.state.callCount).toBe(0);
+  } finally {
+    await restarted.stop();
+  }
+
+  trace.length = 0;
+  info.mockClear();
+  const again = await restartSlack();
+  try {
+    await vi.waitFor(() =>
+      expect(
+        info.mock.calls.some((c) => String(c[0]).includes("Resumed 0 interrupted tasks")),
+      ).toBe(true),
+    );
+    expect(trace.some((line) => line.startsWith(`post:${root}:`))).toBe(false);
+  } finally {
+    await again.stop();
+  }
+});
+
 test("restart resumes only recent, unfinished tasks that recorded their start", async () => {
   const info = vi.spyOn(log, "logInfo");
   await interruptedTask({ ended: true });

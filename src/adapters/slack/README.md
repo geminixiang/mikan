@@ -52,7 +52,10 @@ recorded a start in the last 24 hours and never recorded an end: it posts a
 notice in the thread and queues `RESUMED_TASK_PROMPT` on the task session. The
 window keeps tasks interrupted before this behavior existed, which never recorded
 a start time, from resuming. A stopped task recorded an end, so it does not
-resume. Resume runs before backfill because backfill can take minutes on a large
+resume. A task resumes at most twice in a row: `SessionStore.claimResume` counts
+resumes in the task's session document and resets the count whenever a run ends.
+Past the cap it closes the run as aborted and posts one notice, so a task whose
+step crashes the daemon cannot crash it again on every restart. Resume runs before backfill because backfill can take minutes on a large
 workspace; scanning a 57 MB DM log for task roots takes about 0.1 s.
 
 Task response finalization posts one fresh in-thread message mentioning the current

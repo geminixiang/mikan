@@ -52,7 +52,12 @@ import type {
   SuggestedPrompt,
 } from "./types.js";
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
-import { PRODUCT_NAME, formatForceStopped, formatResumingTask } from "../messages.js";
+import {
+  PRODUCT_NAME,
+  formatForceStopped,
+  formatResumingTask,
+  formatTaskResumesExhausted,
+} from "../messages.js";
 import {
   MessagingEventQueue,
   MessagingIntakeTracker,
@@ -99,6 +104,7 @@ import { errorMessage, isRecord } from "../../unknown-values.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
 const TASK_RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_TASK_RESUMES = 2;
 
 interface SlackIncomingMessage {
   text?: string;
@@ -989,6 +995,15 @@ export class SlackMessagingBot implements MessagingBot {
       if (!requester) continue;
       for (const sessionKey of interrupted) {
         const root = keys.get(sessionKey)!;
+        if (
+          (await SessionStore.claimResume(office, sessionKey, MAX_TASK_RESUMES)) === "exhausted"
+        ) {
+          log.logInfo(
+            `Not resuming task ${sessionKey}: interrupted after ${MAX_TASK_RESUMES} resumes`,
+          );
+          await this.postInThread(channelId, root, formatTaskResumesExhausted(this));
+          continue;
+        }
         log.logInfo(`Resuming interrupted task ${sessionKey}`);
         await this.postInThread(channelId, root, formatResumingTask(this));
         this.enqueueTaskRun({

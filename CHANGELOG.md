@@ -26,6 +26,10 @@ change in a minor release.
 
 ### Fixed
 
+- A DM task resumes after a restart at most twice in a row. Before, a task whose step crashed
+  the daemon was resumed on every restart for up to 24 hours, crashing it again each time; now
+  the third interruption stops the task and says so once in its thread.
+
 - A scheduled event's reply no longer ends with two signatures. The system prompt told the agent
   that event messages start with an `[EVENT:<file>:…]` prefix, which events stopped carrying in
   May, so the agent signed the reply as `[event: unknown]` and mikan added the real signature.
