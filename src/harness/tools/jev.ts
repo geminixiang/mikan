@@ -18,7 +18,7 @@ const entrySchema = Type.Any({
 const questionSchema = Type.Object({
   type: Type.Union([Type.Literal("boolean"), Type.Literal("choice"), Type.Literal("score")], {
     description:
-      "boolean: yes/no, answered as a probability 0-1. choice: pick one option from a set; answered with a probability per option and a confidence. score: place the state on an ordered rubric; answered with a score (fractional between levels), a probability per level, and a confidence.",
+      "boolean: yes/no, answered as a probability 0-1. choice: pick one option from a set; answered with a probability per option and a confidence. score: place the state on an ordered rubric; answered with a score (fractional between levels) and a confidence.",
   }),
   instructions: entrySchema,
   criteria: Type.Optional(

@@ -208,7 +208,9 @@ describe("jev_browser tool", () => {
   function answerOperation(choice: string) {
     return jsonResponse({
       model: "typesafe/jev-1.0",
-      answers: { operation: { type: "choice", choice, probabilities: { [choice]: 1 } } },
+      answers: {
+        operation: { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 },
+      },
     });
   }
 
@@ -559,9 +561,21 @@ describe("jev_browser tool", () => {
         jsonResponse({
           model: "typesafe/jev-1.0",
           answers: {
-            operation: { type: "choice", choice: operation, probabilities: { [operation]: 1 } },
+            operation: {
+              type: "choice",
+              choice: operation,
+              probabilities: { [operation]: 1 },
+              confidence: 1,
+            },
             ...(target
-              ? { click_target: { type: "choice", choice: target, probabilities: { [target]: 1 } } }
+              ? {
+                  click_target: {
+                    type: "choice",
+                    choice: target,
+                    probabilities: { [target]: 1 },
+                    confidence: 1,
+                  },
+                }
               : {}),
           },
         }),
@@ -601,7 +615,14 @@ describe("jev_browser tool", () => {
     fetchMock.mockResolvedValue(
       jsonResponse({
         model: "typesafe/jev-1.0",
-        answers: { operation: { type: "choice", choice: "DONE", probabilities: { DONE: 0.9 } } },
+        answers: {
+          operation: {
+            type: "choice",
+            choice: "DONE",
+            probabilities: { DONE: 0.9 },
+            confidence: 1,
+          },
+        },
       }),
     );
 
@@ -653,7 +674,9 @@ describe("jev_browser tool", () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         model: "typesafe/jev-1.0",
-        answers: { operation: { type: "choice", choice: "DONE", probabilities: { DONE: 1 } } },
+        answers: {
+          operation: { type: "choice", choice: "DONE", probabilities: { DONE: 1 }, confidence: 1 },
+        },
       }),
     );
     const signal = new AbortController().signal;
@@ -781,7 +804,14 @@ describe("jev_browser tool", () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
           model: "typesafe/jev-1.0",
-          answers: { operation: { type: "choice", choice: "CLICK", probabilities: { CLICK: 1 } } },
+          answers: {
+            operation: {
+              type: "choice",
+              choice: "CLICK",
+              probabilities: { CLICK: 1 },
+              confidence: 1,
+            },
+          },
         }),
       );
       const signal = new AbortController().signal;
@@ -856,7 +886,14 @@ describe("jev_browser tool", () => {
     fetchMock.mockResolvedValue(
       jsonResponse({
         model: "typesafe/jev-1.0",
-        answers: { operation: { type: "choice", choice: "DONE", probabilities: { DONE: 0.9 } } },
+        answers: {
+          operation: {
+            type: "choice",
+            choice: "DONE",
+            probabilities: { DONE: 0.9 },
+            confidence: 1,
+          },
+        },
       }),
     );
 
@@ -1208,7 +1245,9 @@ describe("jev_browser tool", () => {
       fetchMock.mockResolvedValueOnce(
         jsonResponse({
           model: "typesafe/jev-1.0",
-          answers: { operation: { type: "choice", choice, probabilities: { [choice]: 1 } } },
+          answers: {
+            operation: { type: "choice", choice, probabilities: { [choice]: 1 }, confidence: 1 },
+          },
         }),
       );
     }

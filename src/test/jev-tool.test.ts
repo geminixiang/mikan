@@ -85,7 +85,7 @@ describe("jev tool", () => {
     });
   });
 
-  it("returns choice probabilities, confidence, and score legend", async () => {
+  it("returns choice probabilities and the confidence of choice and score answers", async () => {
     const tool = createJevTool();
     evaluateWithJevMock.mockResolvedValue({
       answers: {
@@ -98,8 +98,6 @@ describe("jev tool", () => {
         sev: {
           type: "score",
           score: 1.2,
-          probabilities: { "0": 0.1, "1": 0.6, "2": 0.3 },
-          legend: { "0": "low", "1": "mid", "2": "high" },
           confidence: 0.5,
         },
       },
@@ -118,7 +116,7 @@ describe("jev tool", () => {
 
     expect(parse(result).answers).toMatchObject({
       dept: { choice: "billing", probabilities: { billing: 0.9 }, confidence: 0.85 },
-      sev: { score: 1.2, legend: { "1": "mid" }, confidence: 0.5 },
+      sev: { score: 1.2, confidence: 0.5 },
     });
   });
 
@@ -158,7 +156,7 @@ describe("jev tool", () => {
 
   it("passes request errors through unchanged", async () => {
     const tool = createJevTool();
-    evaluateWithJevMock.mockRejectedValue(new JevRequestError("rate limited", 429));
+    evaluateWithJevMock.mockRejectedValue(new JevRequestError("rate limited"));
     await expect(
       tool.execute("c", { label: "l", state: "x", questions: booleanQ }),
     ).rejects.toThrow("rate limited");

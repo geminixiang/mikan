@@ -13,6 +13,11 @@ change in a minor release.
 
 ### Changed
 
+- Jev decisions go through pi-ai's classifier support instead of `@geminixiang/jev`, which is
+  removed. The model, `OPENROUTER_API_KEY`, timeout, and retries stay the same; requests go to
+  OpenRouter's System One endpoint, a text state is sent as `{ "text": … }`, score answers no
+  longer carry per-level probabilities, and cost is the token count at pi-ai's catalog price.
+
 - A periodic event run always posts its answer. The `[SILENT]` reply that deleted the message
   is removed, along with the prompt rules that told the agent to use it or to react with eyes
   instead of reporting nothing new, because a job that kept answering `[SILENT]` could stall for

@@ -237,22 +237,21 @@ siblings.
 
 ## Jev
 
-`jev.ts` is a thin adapter over [`@geminixiang/jev`](https://github.com/geminixiang/jev)
-for Jev (`typesafe/jev`), a typed-decision model that scores a shared `state`
-against typed questions instead of generating text. It has no place in
-`models.ts`'s catalog: `Provider`/`Model`/`stream()` are chat/completion
-shaped, and Jev's boolean-probability/choice/score answers do not fit that
-contract; `@geminixiang/jev` is a pi-ai-shaped SDK for a different, typed-decision
-API, so it does not go through pi-ai's provider machinery either. `evaluateWithJev`
-is a plain function callers use directly — classification, routing, or guardrail
-call sites each own their own questions and interpret the returned
-probabilities; there is no shared call site or `/model`-style selection for
-it. mikan pins the `openrouter` backend (the same `OPENROUTER_API_KEY` pi-ai's
-`openrouter` chat provider reads; see `env-manifest.ts`) and adapts
-`@geminixiang/jev`'s request/answer shapes to the caller-facing contract this
-file has always exposed, so a future backend or dependency change stays
-isolated to this one file. A missing key or unresolvable auth surfaces as
-`JevNotConfiguredError` before making a request.
+`jev.ts` asks Jev (`~typesafe/jev-latest` on OpenRouter), a typed-decision model
+that scores a shared `state` against boolean, choice, and score questions
+instead of generating text, through pi-ai's classifier support
+(`Models.classify()` with the `typesafe-system-one` API). It builds its own
+`builtinModels()` with mikan's `readEnv` auth context instead of using
+`MikanModels`, so `models.json` cannot redirect it yet. `evaluateWithJev` is a
+plain function callers use directly — each call site owns its questions and
+interprets the returned probabilities. It keeps the caller-facing contract
+this file has always exposed: a text `state` is sent as `{ "text": … }`, and
+JSON instructions or criteria are sent as JSON text, because pi-ai's classifier
+context takes an object state and string questions. A missing key surfaces as
+`JevNotConfiguredError` before a request; a failed or aborted classification
+as `JevRequestError`. Requests time out after 30 seconds and retry twice on
+408, 409, 429, and 5xx, as the previous SDK did. Cost is the token count at
+pi-ai's catalog price.
 
 Jev is reached four ways — harness-internal decision points (Slack auto-reply
 `addressed`, DM task intent), the `jev` tool (`tools/jev.ts`, a direct

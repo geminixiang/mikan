@@ -3,12 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 const recordJevOutcomeMock = vi.hoisted(() => vi.fn());
 vi.mock("../observability/index.js", () => ({ recordJevOutcome: recordJevOutcomeMock }));
 
-import {
-  JEV_MODEL_ID,
-  JevNotConfiguredError,
-  JevRequestError,
-  evaluateWithJev,
-} from "../harness/jev.js";
+import { JevNotConfiguredError, JevRequestError, evaluateWithJev } from "../harness/jev.js";
+
+const SYSTEM_ONE_URL = "https://openrouter.ai/api/v1/systemone";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -19,6 +16,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 interface JevRequestBody {
   model: string;
+  state: unknown;
   questions: Record<string, unknown>;
 }
 
@@ -48,7 +46,7 @@ describe("evaluateWithJev", () => {
     global.fetch = originalFetch;
   });
 
-  test("throws JevNotConfiguredError when OPENROUTER_API_KEY is unset", async () => {
+  test("throws JevNotConfiguredError without a request when OPENROUTER_API_KEY is unset", async () => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.MIKAN_OPENROUTER_API_KEY;
     await expect(
@@ -59,56 +57,101 @@ describe("evaluateWithJev", () => {
       ),
     ).rejects.toThrow(JevNotConfiguredError);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(recordJevOutcomeMock).toHaveBeenCalledWith(
+      expect.objectContaining({ caller: "jev_tool", status: "error" }),
+    );
   });
 
-  test("translates a boolean question to noul and back", async () => {
+  test("asks Jev on OpenRouter through pi-ai's System One classifier", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     fetchMock.mockResolvedValue(
       jsonResponse({
-        model: "typesafe/jev-1.0",
+        model: "typesafe/jev-1.13",
         answers: { q: { type: "noul", noul: 0.9 } },
-        usage: { input_tokens: 10, output_tokens: 2, cost: 0.0001 },
+        usage: { input_tokens: 1000, output_tokens: 0 },
       }),
     );
 
-    const questions = { q: { type: "boolean" as const, instructions: "is it urgent?" } };
-    const result = await evaluateWithJev("a support ticket", questions, { caller: "jev_tool" });
+    const result = await evaluateWithJev(
+      "a support ticket",
+      { q: { type: "boolean", instructions: "is it urgent?" } },
+      { caller: "jev_tool" },
+    );
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://openrouter.ai/api/alpha/decisions",
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(SYSTEM_ONE_URL);
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
+        headers: expect.objectContaining({ authorization: "Bearer test-key" }),
       }),
     );
-    const sent = requestBody(fetchMock, 0);
-    expect(sent.model).toBe(JEV_MODEL_ID);
-    expect(sent.questions.q).toEqual({
-      type: "noul",
-      instructions: "is it urgent?",
-      criteria: { true: "Yes", false: "No" },
+    expect(requestBody(fetchMock, 0)).toEqual({
+      model: "~typesafe/jev-latest",
+      state: { text: "a support ticket" },
+      questions: {
+        q: {
+          type: "noul",
+          instructions: "is it urgent?",
+          criteria: { true: "Yes", false: "No" },
+        },
+      },
     });
     expect(result.answers.q).toEqual({ type: "boolean", probability: 0.9 });
-    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 2, cost: 0.0001 });
+    expect(result.usage).toEqual({
+      inputTokens: 1000,
+      outputTokens: 0,
+      cost: expect.closeTo(0.000042, 12),
+    });
     expect(recordJevOutcomeMock).toHaveBeenCalledWith(
       expect.objectContaining({
         caller: "jev_tool",
         status: "ok",
-        inputTokens: 10,
-        outputTokens: 2,
-        costUsd: 0.0001,
+        inputTokens: 1000,
+        outputTokens: 0,
+        costUsd: expect.closeTo(0.000042, 12),
       }),
     );
   });
 
-  test("passes choice and score questions through and translates answers", async () => {
+  test("sends an object state as is and JSON criteria as text", async () => {
+    process.env.OPENROUTER_API_KEY = "test-key";
+    fetchMock.mockResolvedValue(jsonResponse({ answers: { q: { type: "noul", noul: 0.2 } } }));
+
+    await evaluateWithJev(
+      { goal: "find the button", page: "..." },
+      {
+        q: {
+          type: "boolean",
+          instructions: { ask: "is it visible?" },
+          criteria: { true: { means: "shown" }, false: "hidden" },
+        },
+      },
+      { caller: "jev_browser" },
+    );
+
+    expect(requestBody(fetchMock, 0)).toMatchObject({
+      state: { goal: "find the button", page: "..." },
+      questions: {
+        q: {
+          instructions: '{"ask":"is it visible?"}',
+          criteria: { true: '{"means":"shown"}', false: "hidden" },
+        },
+      },
+    });
+  });
+
+  test("returns choice and score answers with their confidence", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     fetchMock.mockResolvedValue(
       jsonResponse({
-        model: "typesafe/jev-1.0",
         answers: {
-          department: { type: "choice", choice: "billing", probabilities: { billing: 0.9 } },
-          frustration: { type: "score", score: 1.2, probabilities: { "1": 0.8 } },
+          department: {
+            type: "choice",
+            choice: "billing",
+            probabilities: { billing: 0.9, technical: 0.1 },
+            confidence: 0.8,
+          },
+          frustration: { type: "score", score: 1.2, confidence: 0.7 },
         },
       }),
     );
@@ -133,31 +176,13 @@ describe("evaluateWithJev", () => {
     expect(result.answers.department).toEqual({
       type: "choice",
       choice: "billing",
-      probabilities: { billing: 0.9 },
+      probabilities: { billing: 0.9, technical: 0.1 },
+      confidence: 0.8,
     });
-    expect(result.answers.frustration).toEqual({
-      type: "score",
-      score: 1.2,
-      probabilities: { "1": 0.8 },
-    });
+    expect(result.answers.frustration).toEqual({ type: "score", score: 1.2, confidence: 0.7 });
   });
 
-  test("allows overriding the model id", async () => {
-    process.env.OPENROUTER_API_KEY = "test-key";
-    fetchMock.mockResolvedValue(
-      jsonResponse({ model: "typesafe/jev-preview", answers: { q: { type: "noul", noul: 0.1 } } }),
-    );
-
-    await evaluateWithJev(
-      "state",
-      { q: { type: "boolean", instructions: "is it?" } },
-      { model: "~typesafe/jev-preview", caller: "jev_tool" },
-    );
-
-    expect(requestBody(fetchMock, 0).model).toBe("~typesafe/jev-preview");
-  });
-
-  test("throws JevRequestError on a non-ok response", async () => {
+  test("throws JevRequestError on a non-ok response and records the failure", async () => {
     process.env.OPENROUTER_API_KEY = "test-key";
     fetchMock.mockResolvedValue(
       jsonResponse({ error: { message: "Missing Authentication header", code: 401 } }, 401),
@@ -170,21 +195,6 @@ describe("evaluateWithJev", () => {
         { caller: "jev_tool" },
       ),
     ).rejects.toThrow(JevRequestError);
-    expect(recordJevOutcomeMock).toHaveBeenCalledWith(
-      expect.objectContaining({ caller: "jev_tool", status: "error" }),
-    );
-  });
-
-  test("reports an error outcome when the API key is missing, since a request was still attempted", async () => {
-    delete process.env.OPENROUTER_API_KEY;
-    delete process.env.MIKAN_OPENROUTER_API_KEY;
-    await expect(
-      evaluateWithJev(
-        "state",
-        { q: { type: "boolean", instructions: "is it?" } },
-        { caller: "jev_tool" },
-      ),
-    ).rejects.toThrow(JevNotConfiguredError);
     expect(recordJevOutcomeMock).toHaveBeenCalledWith(
       expect.objectContaining({ caller: "jev_tool", status: "error" }),
     );

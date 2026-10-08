@@ -1,21 +1,19 @@
-import {
-  createBuiltinJevModels,
-  JevAPIError,
-  JevAuthError,
-  JevConfigError,
-  JevConnectionError,
-  JevResponseError,
-  JevTimeoutError,
-  type AnswerFor as GeminixiangAnswerFor,
-  type Entry as GeminixiangEntry,
-  type Question as GeminixiangQuestion,
-} from "@geminixiang/jev";
-import type { AuthContext } from "@earendil-works/pi-ai";
+import type {
+  AuthContext,
+  ClassifierAnswer,
+  ClassifierQuestion,
+  JsonObject,
+} from "@earendil-works/pi-ai";
+import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readEnv } from "../env-manifest.js";
+import { isRecord } from "../unknown-values.js";
 import { recordJevOutcome } from "../observability/index.js";
 import type { JevCaller } from "../observability/types.js";
 
-export const JEV_MODEL_ID = "~typesafe/jev-latest";
+const JEV_PROVIDER = "openrouter";
+const JEV_MODEL_ID = "~typesafe/jev-latest";
+const JEV_TIMEOUT_MS = 30_000;
+const JEV_MAX_RETRIES = 2;
 
 export type JevEntry = string | number | boolean | null | JevEntry[] | { [key: string]: JevEntry };
 
@@ -34,17 +32,11 @@ type JevAnswer<QUESTION extends JevQuestion> = QUESTION extends { type: "choice"
   ? {
       type: "choice";
       choice: string;
-      probabilities?: Record<string, number>;
-      confidence?: number;
+      probabilities: Record<string, number>;
+      confidence: number;
     }
   : QUESTION extends { type: "score" }
-    ? {
-        type: "score";
-        score: number;
-        probabilities?: Record<string, number>;
-        legend?: Record<string, string>;
-        confidence?: number;
-      }
+    ? { type: "score"; score: number; confidence: number }
     : { type: "boolean"; probability: number };
 
 export interface JevResult<QUESTIONS extends JevQuestions> {
@@ -67,19 +59,14 @@ export class JevNotConfiguredError extends Error {
 }
 
 export class JevRequestError extends Error {
-  constructor(
-    message: string,
-    public readonly status: number,
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = "JevRequestError";
   }
 }
 
 export interface EvaluateWithJevOptions {
-  model?: string;
   abortSignal?: AbortSignal;
-  headers?: Record<string, string>;
   caller: JevCaller;
 }
 
@@ -92,22 +79,33 @@ const mikanAuthContext: AuthContext = {
   },
 };
 
-let cachedModels: ReturnType<typeof createBuiltinJevModels> | undefined;
+let cachedModels: ReturnType<typeof builtinModels> | undefined;
 
 function models() {
-  cachedModels ??= createBuiltinJevModels({ authContext: mikanAuthContext });
+  cachedModels ??= builtinModels({ authContext: mikanAuthContext });
   return cachedModels;
 }
 
-function toGeminixiangQuestion(question: JevQuestion): GeminixiangQuestion {
-  const instructions = question.instructions as GeminixiangEntry;
+function text(entry: JevEntry | undefined, fallback: string): string {
+  if (entry === undefined || entry === null) return fallback;
+  return typeof entry === "string" ? entry : JSON.stringify(entry);
+}
+
+function toState(state: JevEntry): JsonObject {
+  if (typeof state === "string") return { text: state };
+  if (isRecord(state)) return state;
+  return { value: state };
+}
+
+function toClassifierQuestion(question: JevQuestion): ClassifierQuestion {
+  const instructions = text(question.instructions, "");
   if (question.type === "boolean") {
     return {
-      type: "noul",
+      type: "bool",
       instructions,
       criteria: {
-        true: (question.criteria?.true as GeminixiangEntry) ?? "Yes",
-        false: (question.criteria?.false as GeminixiangEntry) ?? "No",
+        true: text(question.criteria?.true, "Yes"),
+        false: text(question.criteria?.false, "No"),
       },
     };
   }
@@ -115,37 +113,22 @@ function toGeminixiangQuestion(question: JevQuestion): GeminixiangQuestion {
     return {
       type: "choice",
       instructions,
-      criteria: question.criteria as Record<string, GeminixiangEntry>,
+      criteria: Object.fromEntries(
+        Object.entries(question.criteria).map(([id, value]) => [id, text(value, id)]),
+      ),
     };
   }
-  const [first, second, ...rest] = question.criteria as GeminixiangEntry[];
-  if (first === undefined || second === undefined) {
-    throw new Error("score questions need at least two levels");
-  }
-  return { type: "score", instructions, criteria: [first, second, ...rest] };
-}
-
-function fromGeminixiangAnswer(
-  answer: GeminixiangAnswerFor<GeminixiangQuestion>,
-): JevAnswer<JevQuestion> {
-  if (answer.type === "noul") {
-    return { type: "boolean", probability: answer.noul };
-  }
-  if (answer.type === "choice") {
-    return {
-      type: "choice",
-      choice: answer.choice,
-      probabilities: answer.probabilities as Record<string, number>,
-      confidence: answer.confidence,
-    };
-  }
+  if (question.criteria.length < 2) throw new Error("score questions need at least two levels");
   return {
     type: "score",
-    score: answer.score,
-    probabilities: answer.probabilities,
-    legend: answer.legend as Record<string, string> | undefined,
-    confidence: answer.confidence,
+    instructions,
+    criteria: question.criteria.map((level) => text(level, "")),
   };
+}
+
+function fromClassifierAnswer(answer: ClassifierAnswer): JevAnswer<JevQuestion> {
+  if (answer.type === "bool") return { type: "boolean", probability: answer.probability };
+  return answer;
 }
 
 export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
@@ -153,67 +136,56 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
   questions: QUESTIONS,
   options: EvaluateWithJevOptions,
 ): Promise<JevResult<QUESTIONS>> {
-  const catalogModel = models().getModel("openrouter", "jev-latest");
-  if (!catalogModel) throw new JevNotConfiguredError();
-  const model = options.model ? { ...catalogModel, slug: options.model } : catalogModel;
-
-  const wireQuestions: Record<string, GeminixiangQuestion> = {};
-  for (const [id, question] of Object.entries(questions)) {
-    wireQuestions[id] = toGeminixiangQuestion(question);
-  }
-
   const startedAt = Date.now();
-  let result;
-  try {
-    result = await models().evaluate(
-      model,
-      { state: state as GeminixiangEntry, questions: wireQuestions },
-      { headers: options.headers, signal: options.abortSignal },
-    );
-  } catch (error) {
+  const fail = (error: Error): never => {
     recordJevOutcome({
       caller: options.caller,
       status: "error",
-      errorType: error instanceof Error ? error.name : "Error",
+      errorType: error.name,
       durationMs: Date.now() - startedAt,
     });
-    if (error instanceof JevAuthError || error instanceof JevConfigError) {
-      throw new JevNotConfiguredError();
-    }
-    if (error instanceof JevAPIError) {
-      throw new JevRequestError(error.message, error.status);
-    }
-    if (
-      error instanceof JevResponseError ||
-      error instanceof JevConnectionError ||
-      error instanceof JevTimeoutError
-    ) {
-      throw new JevRequestError(error.message, 502);
-    }
     throw error;
+  };
+
+  const model = models().getModelOfType("classifier", JEV_PROVIDER, JEV_MODEL_ID);
+  if (!model || !(await models().getAuth(model))) return fail(new JevNotConfiguredError());
+
+  const result = await models().classify(
+    model,
+    {
+      state: toState(state),
+      questions: Object.fromEntries(
+        Object.entries(questions).map(([id, question]) => [id, toClassifierQuestion(question)]),
+      ),
+    },
+    { signal: options.abortSignal, timeoutMs: JEV_TIMEOUT_MS, maxRetries: JEV_MAX_RETRIES },
+  );
+  if (result.stopReason !== "stop") {
+    return fail(new JevRequestError(result.errorMessage ?? `Jev request ${result.stopReason}`));
   }
+
   recordJevOutcome({
     caller: options.caller,
     status: "ok",
-    inputTokens: result.usage.input,
-    outputTokens: result.usage.output,
-    costUsd: result.usage.cost.total,
+    inputTokens: result.usage?.input,
+    outputTokens: result.usage?.output,
+    costUsd: result.usage?.cost.total,
     durationMs: Date.now() - startedAt,
   });
 
   const answers = {} as { [ID in keyof QUESTIONS]: JevAnswer<QUESTIONS[ID]> };
   for (const id of Object.keys(questions)) {
     const answer = result.answers[id];
-    if (!answer) throw new JevRequestError(`Jev response missing answer for "${id}"`, 502);
-    (answers as Record<string, JevAnswer<JevQuestion>>)[id] = fromGeminixiangAnswer(answer);
+    if (!answer) return fail(new JevRequestError(`Jev response missing answer for "${id}"`));
+    (answers as Record<string, JevAnswer<JevQuestion>>)[id] = fromClassifierAnswer(answer);
   }
 
   return {
     answers,
     usage: {
-      inputTokens: result.usage.input,
-      outputTokens: result.usage.output,
-      cost: result.usage.cost.total,
+      inputTokens: result.usage?.input,
+      outputTokens: result.usage?.output,
+      cost: result.usage?.cost.total,
     },
     model: result.model,
   };
