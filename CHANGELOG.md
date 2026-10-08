@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-09
+
 ### Added
 
 - Jev can run on any service that speaks TypeSafe's System One protocol, such as an LLM gateway.
@@ -22,12 +24,10 @@ change in a minor release.
 
 - `jev_browser` writes text for form fields with the conversation's chat model instead of
   `openai/gpt-4o-mini` on OpenRouter, so it no longer needs `OPENROUTER_API_KEY`.
-
 - Jev decisions go through pi-ai's classifier support instead of `@geminixiang/jev`, which is
   removed. The model, `OPENROUTER_API_KEY`, timeout, and retries stay the same; requests go to
   OpenRouter's System One endpoint, a text state is sent as `{ "text": … }`, score answers no
   longer carry per-level probabilities, and cost is the token count at pi-ai's catalog price.
-
 - A periodic event run always posts its answer. The `[SILENT]` reply that deleted the message
   is removed, along with the prompt rules that told the agent to use it or to react with eyes
   instead of reporting nothing new, because a job that kept answering `[SILENT]` could stall for
@@ -39,7 +39,6 @@ change in a minor release.
 - A DM task resumes after a restart at most twice in a row. Before, a task whose step crashed
   the daemon was resumed on every restart for up to 24 hours, crashing it again each time; now
   the third interruption stops the task and says so once in its thread.
-
 - A scheduled event's reply no longer ends with two signatures. The system prompt told the agent
   that event messages start with an `[EVENT:<file>:…]` prefix, which events stopped carrying in
   May, so the agent signed the reply as `[event: unknown]` and mikan added the real signature.
