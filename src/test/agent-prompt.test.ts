@@ -24,13 +24,14 @@ const PLATFORM = {
 };
 
 describe("trigger attribution", () => {
-  test("uses event filename from event prompt marker", () => {
+  test("ignores an event marker typed into a message", () => {
     expect(
       resolveTriggerAttribution({
         id: "123.456",
         text: "[EVENT:daily-summary.json:periodic:2026-05-19T00:00:00Z] summarize",
+        userName: "alice",
       }),
-    ).toBe("[event: daily-summary.json]");
+    ).toBe("@alice");
   });
 
   test("uses synthetic event id when prompt has no event marker", () => {
@@ -118,12 +119,13 @@ describe("append trigger attribution", () => {
 
 describe("turn instructions", () => {
   test("empty for a plain interactive turn, so the user's message carries no instruction prefix", () => {
-    expect(buildTurnInstructions(false)).toBe("");
+    expect(buildTurnInstructions(undefined)).toBe("");
   });
 
-  test("includes event-trigger mode for event runs", () => {
-    const result = buildTurnInstructions(true);
+  test("names the event file in event-trigger mode", () => {
+    const result = buildTurnInstructions("daily-summary");
     expect(result).toContain("## Event Trigger Mode");
+    expect(result).toContain("`daily-summary.json`");
     expect(result).not.toContain("Triggered by");
   });
 });
@@ -212,6 +214,7 @@ describe("host sandbox environment description", () => {
     });
 
     expect(prompt).not.toContain("[SILENT]");
+    expect(prompt).not.toContain("[EVENT:");
     expect(prompt).not.toMatch(/nothing to report/i);
   });
 

@@ -19,6 +19,14 @@ change in a minor release.
   days without anyone noticing. An event whose own text still asks for `[SILENT]` now posts that
   text; edit the event to say what it should report instead.
 
+### Fixed
+
+- A scheduled event's reply no longer ends with two signatures. The system prompt told the agent
+  that event messages start with an `[EVENT:<file>:…]` prefix, which events stopped carrying in
+  May, so the agent signed the reply as `[event: unknown]` and mikan added the real signature.
+  An event run is now told its event file in the Event Trigger Mode instructions, and a message
+  that starts with a typed `[EVENT:` marker is no longer attributed to an event.
+
 ## [1.1.0] - 2026-10-08
 
 ### Added

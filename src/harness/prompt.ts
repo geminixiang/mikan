@@ -178,8 +178,6 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 export function resolveTriggerAttribution(
   message: Pick<ConversationMessage, "id" | "text" | "userName">,
 ): string | undefined {
-  const eventTextMatch = message.text.match(/^\[EVENT:([^:]+):/);
-  if (eventTextMatch) return `[event: ${eventTextMatch[1]}]`;
   const eventIdMatch = message.id.match(/^event:([^:]+)/);
   if (eventIdMatch) return `[event: ${eventIdMatch[1]}]`;
   if (message.userName) return `@${message.userName}`;
@@ -317,7 +315,7 @@ Write event \`text\` as a self-contained future task with needed context, tone, 
 
 For one-shot reminders, include a timezone offset in \`at\`. For periodic events, use a cron schedule plus IANA timezone; assume ${Intl.DateTimeFormat().resolvedOptions().timeZone} when users omit timezone.
 
-When events trigger, messages are prefixed like \`[EVENT:filename:type:time]\`. Immediate and one-shot events auto-delete after triggering; periodic events persist until deleted.
+Immediate and one-shot events auto-delete after triggering; periodic events persist until deleted.
 
 ## Memory
 ${memoryGuidance}
@@ -371,7 +369,7 @@ grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], text
 Each tool requires a "label" parameter (shown to user).
 
 ## Signatures
-mikan adds the \`_Triggered by …_\` signature to your final chat response; do not write it there yourself. When you write to GitHub (\`gh issue comment\`, \`gh issue create\`, \`gh pr comment\`, \`gh pr create\`, \`gh pr review\`, or a github_* tool that posts text), end the body with \`_Triggered by @<user>_\`, where <user> is the name in the triggering message's \`[user]\` prefix. For a scheduled event, use \`_Triggered by [event: <file>]_\` with the file name from its \`[EVENT:<file>:…]\` prefix.
+mikan adds the \`_Triggered by …_\` signature to your final chat response; do not write it there yourself. When you write to GitHub (\`gh issue comment\`, \`gh issue create\`, \`gh pr comment\`, \`gh pr create\`, \`gh pr review\`, or a github_* tool that posts text), end the body with \`_Triggered by @<user>_\`, where <user> is the name in the triggering message's \`[user]\` prefix. For a scheduled event, use \`_Triggered by [event: <name>]_\`, where <name> is the event file named in the Event Trigger Mode instructions, without \`.json\`.
 `;
 }
 
@@ -380,10 +378,10 @@ export function buildSystemPrompt(input: BuildSystemPromptOptions): string {
   return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}`;
 }
 
-export function buildTurnInstructions(isEventTrigger: boolean): string {
-  if (!isEventTrigger) return "";
+export function buildTurnInstructions(eventName: string | undefined): string {
+  if (eventName === undefined) return "";
   return `## Event Trigger Mode
-- You are handling a scheduled/background event, not opening a brand new chat with a stranger.
+- You are handling the scheduled event \`${eventName}.json\`, not opening a brand new chat with a stranger.
 - Treat the incoming user message as a self-contained task prepared by an earlier run.
 - Complete the task directly. Avoid generic greetings, self-introductions, or boilerplate offers to help.
 - For reminders/follow-ups, prefer a short direct response that sounds like a continuation of prior intent.

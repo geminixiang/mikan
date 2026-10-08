@@ -74,7 +74,6 @@ describe("isCapturableRun", () => {
     ["an unfinished run", { stopReason: "aborted" }],
     ["an empty reply", { reply: "  " }],
     ["an event id", { id: "event:daily-check:1" }],
-    ["an event payload", { text: "[EVENT:daily-check:periodic] check the queue" }],
   ])("skips %s", (_label, overrides) => {
     expect(isCapturableRun(run(overrides))).toBe(false);
   });

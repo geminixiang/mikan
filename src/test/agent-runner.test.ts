@@ -501,6 +501,21 @@ describe("PiAgentWrapper.run", () => {
     expect(uploadedContent).toBe("<h1>Report</h1>");
   });
 
+  test("an event run is told the file of the event that started it", async () => {
+    const { runner, faux } = await createTestRunner();
+    let input = "";
+    faux.setResponses([
+      (context: Context) => {
+        input = JSON.stringify(context.messages.at(-1)?.content ?? "");
+        return fauxAssistantMessage("done");
+      },
+    ]);
+
+    await runner.run(makeMessage({ id: "event:daily-check" }), makeResponder(), platform);
+
+    expect(input).toContain("`daily-check.json`");
+  });
+
   test("a reply reading [SILENT] is published like any other reply", async () => {
     const { runner, faux } = await createTestRunner();
     faux.setResponses([fauxAssistantMessage("[SILENT]")]);
