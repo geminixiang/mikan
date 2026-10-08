@@ -244,7 +244,7 @@ export class MikanAgentSession {
       );
       await this.installRunTools(attached, tools);
       if (!(await this.checkCallBudget())) return;
-      await this.sessionStore.recordRun({});
+      await this.sessionStore.recordRun({ startedAt: Date.now() });
       stream = await watchEvents(attached.harness, attached.conversation.id, context);
       this.observedUsage = sumUsageState(stream.snapshot.usage);
       stream.start((events) => this.handleDurableEvents(events));

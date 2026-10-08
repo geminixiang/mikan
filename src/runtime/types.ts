@@ -38,6 +38,7 @@ export interface ConversationRuntimeState {
   runner: PiAgentWrapper;
   stopRequested: boolean;
   shutdownAborted?: boolean;
+  detachOnShutdown?: boolean;
   stopNoticeOwned?: boolean;
   lastAccessedAt: number;
   startedAt: number;

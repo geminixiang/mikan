@@ -1,5 +1,7 @@
 import type { ConversationLogMessage, RunAnswer } from "../../types.js";
 import { appendBotResponseLog, appendOfficeLog, readOfficeLog } from "../../office/log.js";
+import { SessionStore } from "../../sessions/session-store.js";
+import { RESUMED_TASK_PROMPT, resumedTaskRunId, taskRunId } from "../../harness/tools/task.js";
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
 import { WebAPIRateLimitedError, WebClient } from "@slack/web-api";
@@ -50,7 +52,7 @@ import type {
   SuggestedPrompt,
 } from "./types.js";
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
-import { PRODUCT_NAME, formatForceStopped } from "../messages.js";
+import { PRODUCT_NAME, formatForceStopped, formatResumingTask } from "../messages.js";
 import {
   MessagingEventQueue,
   MessagingIntakeTracker,
@@ -96,6 +98,7 @@ import { StreamStartLimiter } from "./stream-limits.js";
 import { errorMessage, isRecord } from "../../unknown-values.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
+const TASK_RESUME_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 interface SlackIncomingMessage {
   text?: string;
@@ -280,6 +283,7 @@ export class SlackMessagingBot implements MessagingBot {
   private streamStarts = new StreamStartLimiter();
   private stopped = false;
   private queues = new Map<string, MessagingEventQueue>();
+  private readonly taskQueueKeys = new Set<string>();
   private intake = new MessagingIntakeTracker("Slack");
   private readonly recentMessageKeys = new Set<string>();
   private agentSurfaceUnavailable = false;
@@ -345,50 +349,19 @@ export class SlackMessagingBot implements MessagingBot {
         });
         const sessionKey = resolveSlackSessionKey(event.channel, root);
         try {
-          await registerThreadSession({
-            office: this.office(event.channel),
+          const store = await SessionStore.openTask(
+            this.office(event.channel),
             sessionKey,
-          });
-          const child: SlackEvent = {
+            event.sessionKey ?? event.channel,
+          );
+          await store.close();
+          this.enqueueTaskRun({
             ...event,
-            ts: `task:${root}`,
+            ts: taskRunId(root),
             thread_ts: root,
             sessionKey,
             text: task,
-          };
-          if (
-            !this.getQueue(sessionKey).enqueue(async () => {
-              try {
-                await this.handler.handleEvent(
-                  {
-                    ...child,
-                    attachments: child.attachments?.map((a) => ({
-                      name: a.original,
-                      localPath: a.localPath,
-                    })),
-                  },
-                  this,
-                  this.createContext(child),
-                );
-              } catch (error) {
-                reportUserFacingError(error, {
-                  domain: "mikan",
-                  surface: "task_handoff",
-                  operation: "start_task_run",
-                  severity: "error",
-                  platform: "slack",
-                  context: { conversationId: event.channel, sessionKey, threadTs: root },
-                });
-                await this.postInThread(
-                  event.channel,
-                  root,
-                  "Task could not start. Please reply here to try again.",
-                );
-                throw error;
-              }
-            })
-          )
-            throw new Error("Task queue is closed.");
+          });
         } catch (error) {
           await this.updateMessage(event.channel, root, `${message}\n\nTask could not start.`);
           throw error;
@@ -448,6 +421,9 @@ export class SlackMessagingBot implements MessagingBot {
 
     log.logConnected("Slack");
 
+    void this.resumeInterruptedTasks().catch((error) => {
+      log.logWarning("Could not resume interrupted tasks", String(error));
+    });
     void this.backfillAllChannels(this.startupTs).catch((error) => {
       log.logWarning("Slack backfill failed", String(error));
     });
@@ -459,7 +435,11 @@ export class SlackMessagingBot implements MessagingBot {
       await this.socketClient.disconnect();
     } finally {
       await this.intake.close();
-      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+      const closing = [...this.queues].map(([key, queue]) => ({
+        waits: !this.taskQueueKeys.has(key),
+        closed: queue.close(),
+      }));
+      await Promise.all(closing.filter(({ waits }) => waits).map(({ closed }) => closed));
     }
   }
 
@@ -950,6 +930,82 @@ export class SlackMessagingBot implements MessagingBot {
     return (await this.hasKnownThreadSession(conversationId, sessionKey))
       ? sessionKey
       : conversationId;
+  }
+
+  private enqueueTaskRun(child: SlackEvent & { thread_ts: string; sessionKey: string }): void {
+    const { channel, thread_ts: root, sessionKey } = child;
+    this.taskQueueKeys.add(sessionKey);
+    const enqueued = this.getQueue(sessionKey).enqueue(async () => {
+      try {
+        await this.handler.handleEvent(
+          {
+            ...child,
+            attachments: child.attachments?.map((a) => ({
+              name: a.original,
+              localPath: a.localPath,
+            })),
+          },
+          this,
+          this.createContext(child),
+        );
+      } catch (error) {
+        reportUserFacingError(error, {
+          domain: "mikan",
+          surface: "task_handoff",
+          operation: "start_task_run",
+          severity: "error",
+          platform: "slack",
+          context: { conversationId: channel, sessionKey, threadTs: root },
+        });
+        await this.postInThread(
+          channel,
+          root,
+          "Task could not start. Please reply here to try again.",
+        );
+        throw error;
+      }
+    });
+    if (!enqueued) throw new Error("Task queue is closed.");
+  }
+
+  private async resumeInterruptedTasks(): Promise<void> {
+    const since = Date.now() - TASK_RESUME_WINDOW_MS;
+    let resumed = 0;
+    for (const channelId of this.channels.keys()) {
+      if (this.stopped) return;
+      if (this.channelKindFor(channelId) !== "im") continue;
+      const office = this.office(channelId);
+      if (!existsSync(office.logPath)) continue;
+      const roots = [...readTaskRoots(office).keys()].filter(
+        (root) => Number(root) * 1000 >= since,
+      );
+      if (roots.length === 0) continue;
+      const keys = new Map(roots.map((root) => [resolveSlackSessionKey(channelId, root), root]));
+      const interrupted = await SessionStore.interruptedSince(office, [...keys.keys()], since);
+      if (interrupted.length === 0) continue;
+      const requester = readOfficeLog(office).findLast(
+        (entry) => !entry.isMessagingBot && entry.user,
+      )?.user;
+      if (!requester) continue;
+      for (const sessionKey of interrupted) {
+        const root = keys.get(sessionKey)!;
+        log.logInfo(`Resuming interrupted task ${sessionKey}`);
+        await this.postInThread(channelId, root, formatResumingTask(this));
+        this.enqueueTaskRun({
+          type: "dm",
+          conversationKind: "direct",
+          address: createOfficeAddress("slack", channelId),
+          channel: channelId,
+          user: requester,
+          ts: resumedTaskRunId(root),
+          thread_ts: root,
+          sessionKey,
+          text: RESUMED_TASK_PROMPT,
+        });
+        resumed += 1;
+      }
+    }
+    log.logInfo(`Resumed ${resumed} interrupted tasks`);
   }
 
   private isTaskThread(channel: string, root: string): boolean {

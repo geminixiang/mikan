@@ -56,6 +56,9 @@ import type {
   SessionStateOptions,
 } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
+import { SessionStore } from "../sessions/session-store.js";
+import { stripTriggerSignature } from "../sessions/history-line.js";
+import { isTaskRunId } from "../harness/tools/task.js";
 
 type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
 
@@ -259,6 +262,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       const lease = await this.acquireRunLease(options, sessionKey);
       const { state } = lease;
+      state.detachOnShutdown = isTaskRunId(event.ts);
       log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
       const runPromise = this.sessions.settle(state, () =>
         this.executeRun(options, sessionKey, state),
@@ -338,6 +342,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       if (result?.stopReason === "aborted") {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
+      } else if (result && state.detachOnShutdown) {
+        await this.reportTaskOutcome(event.address, sessionKey, result.finalText ?? "");
       }
       if (result) {
         this.memoryCapture?.capture({
@@ -349,6 +355,22 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       }
     } finally {
       recordGauge("agent.sessions.active", this.sessions.settlementCount() - 1);
+    }
+  }
+
+  private async reportTaskOutcome(
+    address: OfficeAddress,
+    sessionKey: string,
+    answer: string,
+  ): Promise<void> {
+    try {
+      await SessionStore.reportTaskOutcome(
+        this.options.workspace.office(address),
+        sessionKey,
+        stripTriggerSignature(answer),
+      );
+    } catch (error) {
+      log.logWarning(`[${sessionKey}] Could not report the task outcome`, errorMessage(error));
     }
   }
 

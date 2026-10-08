@@ -19,6 +19,8 @@ import {
   createRegistry,
   defineDoc,
   defineEntry,
+  defineExtension,
+  defineTask,
   type Conversation,
   type ConversationId,
   type EntryId,
@@ -55,6 +57,23 @@ import { errorMessage, isRecord } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
+
+const TaskAnchor = defineTask<null, { phase: "done" }, null>({
+  name: "mikan.task-anchor",
+  version: 1,
+  initial: () => ({ phase: "done" }),
+  phases: {
+    done: (_task, runtime, taskContext) =>
+      runtime.commit(
+        () => ({ status: "terminal", outcome: { status: "completed", result: null } }),
+        taskContext,
+      ),
+  },
+  abort: (_task, runtime, taskContext) =>
+    runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), taskContext),
+});
+
+const TaskAnchors = defineExtension({ name: "mikan.task-anchors", tasks: [TaskAnchor] });
 
 type SessionDocState = Partial<{
   name: string;
@@ -210,7 +229,9 @@ class OfficeStorage {
   private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
   private readonly writers = new Set<ConversationId>();
 
-  private constructor(private readonly path: string | null) {}
+  private constructor(private readonly path: string | null) {
+    this.registry.install(TaskAnchors);
+  }
 
   get harness(): Harness {
     if (!this.opened) throw new Error("Office session storage is not open");
@@ -309,7 +330,7 @@ class OfficeStorage {
 
   private async abortUnfinishedWork(): Promise<void> {
     const { tasks } = await this.harness.inspect(context);
-    const unowned = tasks.filter((task) => !task.record.owner);
+    const unowned = tasks.filter((task) => !task.record.owner && !task.record.background);
     if (unowned.length === 0) return;
     log.logWarning(
       `Aborting ${unowned.length} durable tasks left unfinished by a previous process`,
@@ -393,6 +414,31 @@ async function createSession(
     const created = record;
     await conversation.commit((tx) => writeSessionIndex(tx, key, created), context);
   }
+  return { conversation, record };
+}
+
+async function createTaskSession(
+  storage: OfficeStorage,
+  key: string,
+  requesterKey: string,
+): Promise<{ conversation: Conversation; record: SessionIndexRecord }> {
+  const requester = await lookupSession(storage, requesterKey);
+  if (!requester) throw new Error(`Task requester session not found: ${requesterKey}`);
+  const record = await requester.conversation.commit(async (tx) => {
+    const anchor = await tx.createTask(TaskAnchor, null, {
+      ownership: { kind: "conversation" },
+      background: true,
+    });
+    const child = await tx.createConversation({ ownership: { kind: "task", taskId: anchor } });
+    const created = { conversationId: child.id, id: randomUUID(), createdAt: Date.now() };
+    await writeSessionIndex(tx, key, created);
+    return created;
+  }, context);
+  const conversation = await storage.harness.conversation(
+    record.conversationId as ConversationId,
+    context,
+  );
+  if (!conversation) throw new Error(`Task session was not created: ${key}`);
   return { conversation, record };
 }
 
@@ -589,10 +635,26 @@ export class SessionStore implements SessionInspection {
     private readonly header: SessionHeader,
   ) {}
 
-  static async open(office: Office, key: string): Promise<SessionStore> {
+  static open(office: Office, key: string): Promise<SessionStore> {
+    return SessionStore.openOrCreate(office, key, (storage) => createSession(storage, key));
+  }
+
+  static openTask(office: Office, key: string, requesterKey: string): Promise<SessionStore> {
+    return SessionStore.openOrCreate(office, key, (storage) =>
+      createTaskSession(storage, key, requesterKey),
+    );
+  }
+
+  private static async openOrCreate(
+    office: Office,
+    key: string,
+    create: (
+      storage: OfficeStorage,
+    ) => Promise<{ conversation: Conversation; record: SessionIndexRecord }>,
+  ): Promise<SessionStore> {
     const storage = await OfficeStorage.acquire(office.sessionsPath);
     try {
-      const session = (await lookupSession(storage, key)) ?? (await createSession(storage, key));
+      const session = (await lookupSession(storage, key)) ?? (await create(storage));
       storage.claimWriter(session.conversation.id, key);
       return new SessionStore(storage, session.conversation, {
         id: session.record.id,
@@ -691,6 +753,53 @@ export class SessionStore implements SessionInspection {
         name,
         await readContext(conversation),
       );
+    });
+  }
+
+  static async reportTaskOutcome(office: Office, key: string, answer: string): Promise<void> {
+    await withOfficeStorage(office, async (storage) => {
+      const task = await lookupSession(storage, key);
+      if (!task) return;
+      const view = await task.conversation.viewState(context);
+      const owner = view.value.conversation.owner;
+      view.dispose();
+      if (!owner) return;
+      const requester = await storage.harness.conversation(owner.conversationId, context);
+      if (!requester) return;
+      const message: Message = {
+        role: "user",
+        content: `[background task ${key} finished] ${answer}`,
+        timestamp: Date.now(),
+      };
+      await requester.submit(
+        {
+          type: "write",
+          requestId: `task-report:${task.conversation.id}:${randomUUID()}`,
+          entry: { kind: UserEntry.kind, model: [durableMessage(message)] },
+        },
+        context,
+      );
+    });
+  }
+
+  static async interruptedSince(
+    office: Office,
+    keys: readonly string[],
+    sinceMs: number,
+  ): Promise<string[]> {
+    if (keys.length === 0 || !existsSync(office.sessionsPath)) return [];
+    return withOfficeStorage(office, async (storage) => {
+      const interrupted: string[] = [];
+      for (const key of keys) {
+        const session = await lookupSession(storage, key);
+        if (!session) continue;
+        const run = (await storage.harness.snapshot(SessionDoc, session.conversation.id, context))
+          ?.run;
+        if (run?.startedAt !== undefined && run.startedAt >= sinceMs && run.endedAt === undefined) {
+          interrupted.push(key);
+        }
+      }
+      return interrupted;
     });
   }
 

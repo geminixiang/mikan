@@ -19,6 +19,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { createWorkspace, createOfficeAddress } from "../office/index.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
+import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanModels } from "../harness/models.js";
 import { JevNotConfiguredError } from "../harness/jev.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
@@ -29,6 +30,8 @@ import {
   readTaskRoots,
 } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
+import { SessionStore } from "../sessions/session-store.js";
+import * as log from "../log.js";
 import type {
   SlackSocketConnection,
   SlackSocketEventArgs,
@@ -761,4 +764,150 @@ test("task admission failure is reported without tool payload content", async ()
   );
   const admission = report.mock.calls.find((c) => c[1].operation === "admit_task");
   expect(JSON.stringify(admission)).not.toContain("LONG TASK CONTEXT");
+});
+
+const dmOffice = () => workspace.office(createOfficeAddress("slack", "D123"));
+const DAY_SECONDS = 24 * 60 * 60;
+
+async function interruptedTask(
+  options: { ageSeconds?: number; ended?: boolean; legacy?: boolean } = {},
+) {
+  const office = dmOffice();
+  office.ensure();
+  const now = Date.now();
+  const root = `${Math.floor(now / 1000) - (options.ageSeconds ?? 60)}.000001`;
+  const line = (entry: object) => appendFileSync(office.logPath, `${JSON.stringify(entry)}\n`);
+  line({
+    date: new Date(now).toISOString(),
+    ts: "1.000001",
+    user: "U1",
+    userName: "u1",
+    text: "investigate",
+    isMessagingBot: false,
+  });
+  line({
+    date: new Date(now).toISOString(),
+    ts: root,
+    user: "bot",
+    text: "On it.",
+    isMessagingBot: true,
+    taskRoot: true,
+  });
+  await (await SessionStore.open(office, "D123")).close();
+  const task = await SessionStore.openTask(office, `D123:${root}`, "D123");
+  if (!options.legacy) await task.recordRun({ startedAt: now - (options.ageSeconds ?? 60) * 1000 });
+  if (options.ended) await task.recordRun({ endedAt: now, status: "completed" });
+  await task.close();
+  return root;
+}
+
+async function restartSlack(): Promise<SlackMessagingBot> {
+  const api = fakeSlackWebApi();
+  api.conversations.list = async (args) => ({
+    ok: true,
+    channels: (args as { types?: string }).types === "im" ? [{ id: "D123", user: "U1" }] : [],
+  });
+  const restarted = new SlackMessagingBot(runtime, {
+    appToken: "test",
+    botToken: "test",
+    workspace,
+    webApi: api,
+    socket: new FakeSlackSocket(),
+  });
+  vi.spyOn(restarted, "postMessage").mockImplementation(async (_c, text, thread) => {
+    trace.push(`post:${thread ?? "channel"}:${text}`);
+    return eventTs();
+  });
+  vi.spyOn(restarted, "updateMessage").mockImplementation(async (_c, ts, text) => {
+    trace.push(`update:${ts}:${text}`);
+  });
+  vi.spyOn(restarted, "setAssistantStatus").mockResolvedValue(undefined);
+  vi.spyOn(restarted, "tryReserveStreamStart").mockReturnValue(false);
+  await restarted.start();
+  return restarted;
+}
+
+test("a task interrupted by a restart resumes in its thread and finishes", async () => {
+  const root = await interruptedTask();
+  let resumedWith = "";
+  faux.setResponses([
+    (context) => {
+      resumedWith = JSON.stringify(context.messages);
+      return fauxAssistantMessage("resumed result");
+    },
+  ]);
+  const restarted = await restartSlack();
+  try {
+    await vi.waitFor(() =>
+      expect(trace.some((line) => line.includes("resumed result"))).toBe(true),
+    );
+    expect(resumedWith).toMatch(/restarted/i);
+    expect(trace.some((line) => line.startsWith(`post:${root}:`) && /restart/i.test(line))).toBe(
+      true,
+    );
+  } finally {
+    await restarted.stop();
+  }
+});
+
+test("restart resumes only recent, unfinished tasks that recorded their start", async () => {
+  const info = vi.spyOn(log, "logInfo");
+  await interruptedTask({ ended: true });
+  await interruptedTask({ legacy: true });
+  await interruptedTask({ ageSeconds: 2 * DAY_SECONDS });
+  const restarted = await restartSlack();
+  try {
+    await vi.waitFor(() =>
+      expect(
+        info.mock.calls.some((c) => String(c[0]).includes("Resumed 0 interrupted tasks")),
+      ).toBe(true),
+    );
+    expect(faux.state.callCount).toBe(0);
+  } finally {
+    await restarted.stop();
+  }
+});
+
+test("a finished task reports its answer to the requester's conversation without a signature", async () => {
+  faux.setResponses([
+    handoff(),
+    callHold(),
+    fauxAssistantMessage("finished result\n\n_Triggered by @u1_"),
+  ]);
+  await startTask();
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  await vi.waitFor(async () => {
+    const requester = await SessionStore.inspect(dmOffice(), "D123");
+    const transcript = JSON.stringify((await requester!.buildSessionContext()).messages);
+    expect(transcript).toContain("finished result");
+    expect(transcript).toMatch(/background task .* finished/);
+    expect(transcript).not.toContain("Triggered by");
+  });
+});
+
+test("shutdown leaves a running task for the next process instead of waiting for it", async () => {
+  faux.setResponses([handoff(), callHold()]);
+  await startTask();
+  const startedAt = Date.now();
+  await bot.stop();
+  await runtime.shutdown(60_000);
+  expect(Date.now() - startedAt).toBeLessThan(5_000);
+  expect(aborted).toBe(false);
+  expect(trace).not.toContain("tool:end");
+});
+
+test("a task run is not offered the task tools", async () => {
+  let taskTools: string[] = [];
+  faux.setResponses([
+    handoff(),
+    (context) => {
+      taskTools = getCurrentTools(context.messages).map((tool) => tool.name);
+      return fauxAssistantMessage("done");
+    },
+  ]);
+  await dm("investigate this");
+  await vi.waitFor(() => expect(taskTools.length).toBeGreaterThan(0));
+  expect(taskTools).not.toContain("task_status");
+  expect(taskTools).not.toContain("start_task");
 });

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Tasks run as background child conversations
@@ -47,10 +47,10 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 2. **A task starts from its brief only.** It does not fork the requester's transcript or inherit its tool history, so each task is a self-contained piece of background work.
 3. **The child is configured without `start_task` and `task_status`**, and with its own mikan extension.
 4. **The outcome is written to the requester's transcript** as a write submission when a task run settles, so the requester knows the result without starting a model turn or posting another message. The task's thread still shows the answer.
-5. **Opening office storage aborts unfinished work only in ownerless conversations**, and never background tasks. Task-owned conversations resume.
-6. **The runtime resumes task conversations at startup.** It finds task sessions with a live run and queues a resume on each, which binds the session and waits for the interrupted run with a notice that tells the model a tool call was interrupted.
-7. **Shutdown stops waiting for task runs.** The drain covers foreground runs only; task work stays pending and resumes after the restart.
-8. **Status and stop come from pi-durable state.** `task_status` reads each child's live run instead of the office log. Stop aborts the child. Steering stays as it is: Jev classifies a reply, and a steer is a `whenBusy: "steer"` submission to the child.
+5. **Opening office storage aborts the interrupted generation in every conversation, task children included, but never a background task.** pi-durable would otherwise drive the pending generation as soon as anything in the office submits, before the task's session is bound, and the request fails with no model binding.
+6. **The runtime resumes a task with a new input.** At startup the Slack bot finds DM tasks whose run recorded a start in the last 24 hours and never recorded an end, posts a notice in the thread, and queues a resume prompt on the task's session. The prompt tells the model the step in progress was interrupted. Runs started before this change recorded no start time, so they never resume; a stopped task recorded an end.
+7. **Shutdown stops waiting for task runs.** The drain covers foreground runs only; task work is left to resume after the restart.
+8. **Status and stop come from pi-durable state** (not yet done; status still reads the office log and the runtime). `task_status` reads each child's live run instead of the office log. Stop aborts the child. Steering stays as it is: Jev classifies a reply, and a steer is a `whenBusy: "steer"` submission to the child.
 9. **Tasks open in three steps**, each after the previous one is stable:
    - Top-level Slack DMs, as today.
    - Top-level Slack channel messages, which start a task thread as in DMs.
@@ -69,12 +69,22 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 - A deploy no longer waits for long tasks, and a task that outlives a restart finishes instead of being dropped.
 - A tool call interrupted by a restart is not replayed; the model sees it as interrupted and may run it again. Startup ends the interrupted command's guest process group before any run resumes, so the rerun does not race the old copy.
 - Each task costs one extra conversation record and one anchor task; its transcript was already stored as a thread session.
-- Slack's log-scanned task status is removed. `taskRoot` log entries stay readable for tasks started before the change.
+- Slack's log-scanned task status goes away with decision 8. `taskRoot` log entries stay readable for tasks started before the change, and still mark which DM threads are tasks.
 - [ADR 0020](0020-subagents-as-owned-child-conversations.md) is rejected; subagents stay as they are.
 
-## Open questions before acceptance
+## Resolved before acceptance
 
-- The progress message posted before a crash stays at "…"; the resumed run posts a new one.
-- Startup checks every Slack conversation with task roots, opening its office storage; the cost across production offices is unmeasured.
-- A pending task run can start before its session is bound if another conversation in the same office submits first; the prototype did not hit it, and the request would fail with no model binding.
+Measured on the implementation, against the same local daemon and test workspace.
+
+| Question                                                       | Result                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A command keeps running in the container after the daemon dies | Startup kills every recorded guest process group before resuming (1.0.2). After `kill -9`, the old `sleep 120` was gone once the daemon restarted; the resumed task reran it and posted the output.                                        |
+| A pending task run starts before its session is bound          | Reproduced in a test: a message to the requester after a restart drove the task's pending generation, which faulted with "Provider request has no active session binding". Decisions 5 and 6 abort it at open and resume with a new input. |
+| Startup cost of finding task roots                             | Reading a 57 MB office log takes about 0.1 s. Only DM offices are read, and resume runs before backfill.                                                                                                                                   |
+| The progress message posted before a crash stays at "…"        | It stays, and the notice "Restarted for an update; continuing this task." follows it in the thread, so the stale message reads as interrupted.                                                                                             |
+| `SIGTERM` while a task runs a 300 s command                    | The daemon exited in 1 s; after the restart the task resumed.                                                                                                                                                                              |
+| Requester asked for the result without tools                   | The DM answered with the task's output, read from the report written to its transcript.                                                                                                                                                    |
+
+## Open questions
+
 - In channels, who may steer or stop another person's task? Today only the requester's text steers.

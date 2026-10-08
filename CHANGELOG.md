@@ -11,6 +11,19 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- A DM task survives a restart. A deploy no longer waits up to five minutes for running
+  tasks, and a task interrupted by a deploy or crash in the last 24 hours resumes in its
+  thread with a notice. A stopped task stays stopped.
+- A finished task's answer is written to the DM conversation that started it, so a later
+  question in the DM can be answered from the result.
+
+### Fixed
+
+- A task run is no longer offered `task_status` and `start_task`, which made one of three
+  test tasks report its own status instead of doing the work.
+
 ## [1.0.2] - 2026-10-08
 
 ### Changed

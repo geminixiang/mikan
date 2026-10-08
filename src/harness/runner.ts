@@ -53,7 +53,7 @@ import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import type { PlatformToolPack } from "./tools/types.js";
-import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { isTaskRunId, START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
 import {
   buildPromptPayload,
@@ -495,7 +495,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   await session.sessionStore.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: message.id });
   await session.prompt(prepared.userMessage, {
     allowTaskHandoff: responder.startTask !== undefined,
-    allowTaskStatus: responder.getTaskStatus !== undefined,
+    allowTaskStatus: responder.getTaskStatus !== undefined && !isTaskRunId(message.id),
     images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
     budget: isEventRun ? DEFAULT_EVENT_BUDGET : undefined,
   });

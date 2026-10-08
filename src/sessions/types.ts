@@ -72,6 +72,7 @@ export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCom
 export type SessionRunStatus = "completed" | "aborted" | "failed";
 
 export interface SessionRunRecord {
+  startedAt?: number;
   endedAt?: number;
   status?: SessionRunStatus;
 }

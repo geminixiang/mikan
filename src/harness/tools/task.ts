@@ -5,6 +5,24 @@ import type { ConversationResponder } from "../../types.js";
 export const START_TASK_TOOL = "start_task";
 export const TASK_STATUS_TOOL = "task_status";
 
+const TASK_RUN_ID_PREFIX = "task:";
+const RESUMED_TASK_RUN_ID_PREFIX = "resume:";
+
+export const RESUMED_TASK_PROMPT =
+  "[mikan] The service restarted while you were working on this task, so the step in progress was interrupted. Check what that step already did, rerun it only if it is safe to repeat, and finish the task.";
+
+export function taskRunId(root: string): string {
+  return `${TASK_RUN_ID_PREFIX}${root}`;
+}
+
+export function resumedTaskRunId(root: string): string {
+  return `${RESUMED_TASK_RUN_ID_PREFIX}${root}`;
+}
+
+export function isTaskRunId(id: string): boolean {
+  return id.startsWith(TASK_RUN_ID_PREFIX) || id.startsWith(RESUMED_TASK_RUN_ID_PREFIX);
+}
+
 export function createTaskTool() {
   let start: ConversationResponder["startTask"];
   const parameters = Type.Object({

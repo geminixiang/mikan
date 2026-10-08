@@ -41,6 +41,13 @@ export function formatRestarting(source: PlatformSource): string {
   );
 }
 
+export function formatResumingTask(source: PlatformSource): string {
+  return formatItalic(
+    resolvePlatformName(source),
+    "Restarted for an update; continuing this task.",
+  );
+}
+
 export function formatAlreadyWorking(
   source: PlatformSource,
   stopCommand: string,

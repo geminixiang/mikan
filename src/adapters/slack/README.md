@@ -25,8 +25,9 @@ This directory implements the Slack platform adapter and Slack-specific session/
 
 Top-level DM responders expose `startTask(message, task)`. Admission posts a
 persistent acknowledgement, records `taskRoot` on its platform log entry, creates
-an empty scoped session, and queues a self-contained task plus the original
-attachments under that root. Task output uses the thread responder; it does not
+the task's session as a child conversation owned by a background task of the DM
+session (`SessionStore.openTask`, ADR 0021), and queues a self-contained task plus
+the original attachments under that root. Task output uses the thread responder; it does not
 replace the acknowledgement. Ordinary event scheduling is unchanged.
 
 Text in a DM task thread, and top-level DM text while a task thread is running,
@@ -41,7 +42,16 @@ steering, and top-level text is a normal turn — the pre-Jev behavior. Idle
 threads use normal prompt execution (including explicit continuation after
 stop). Stop keeps its magic-word path. Shared channels and non-task threads
 retain their existing trigger/queue policy. Task-root recognition survives
-restart through the office log, but automatic crash recovery is not implemented.
+restart through the office log.
+
+A task run outlives a restart. Shutdown closes task queues without waiting for
+them, and at startup the bot resumes, before backfill, every DM task whose run
+recorded a start in the last 24 hours and never recorded an end: it posts a
+notice in the thread and queues `RESUMED_TASK_PROMPT` on the task session. The
+window keeps tasks interrupted before this behavior existed, which never recorded
+a start time, from resuming. A stopped task recorded an end, so it does not
+resume. Resume runs before backfill because backfill can take minutes on a large
+workspace; scanning a 57 MB DM log for task roots takes about 0.1 s.
 
 Task response finalization posts one fresh in-thread message mentioning the current
 requester after a normal textual completion. Aborted, error and silent turns do

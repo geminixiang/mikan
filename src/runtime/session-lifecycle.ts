@@ -342,7 +342,13 @@ export class SessionLifecycle {
   }
 
   async closeAll(): Promise<void> {
-    const states = Array.from(this.states.values());
+    const detached = this.detachedSessionIds();
+    if (detached.size > 0) {
+      log.logInfo(`Leaving ${detached.size} task runs to resume after restart`);
+    }
+    const states = Array.from(this.states.entries()).flatMap(([id, state]) =>
+      detached.has(id) ? [] : [state],
+    );
     this.states.clear();
     for (const state of states) {
       const id = runtimeSessionId(state.address, state.sessionKey);
@@ -404,6 +410,7 @@ export class SessionLifecycle {
         `${timeoutMs}ms`,
       );
       for (const state of this.runningStates()) {
+        if (state.detachOnShutdown) continue;
         state.shutdownAborted = true;
         state.runner.abort();
       }
@@ -447,6 +454,15 @@ export class SessionLifecycle {
     for (const sessionId of this.settlementSessions.values()) {
       sessionIds.add(sessionId);
     }
+    for (const sessionId of this.detachedSessionIds()) sessionIds.delete(sessionId);
     return sessionIds.size;
+  }
+
+  private detachedSessionIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const [id, state] of this.states) {
+      if (state.running && state.detachOnShutdown) ids.add(id);
+    }
+    return ids;
   }
 }
