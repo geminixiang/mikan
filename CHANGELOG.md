@@ -13,6 +13,10 @@ change in a minor release.
 
 ### Changed
 
+- Pi packages are upgraded to 1.1.0. Retryable "server busy" provider errors are retried, the
+  first system prompt leads the model context so tool changes keep the prompt cache, and
+  each tool result records how long it ran. The container sandbox implements Pi's new file
+  reader in one `docker exec` per read, as before.
 - A DM task survives a restart. A deploy no longer waits up to five minutes for running
   tasks, and a task interrupted by a deploy or crash in the last 24 hours resumes in its
   thread with a notice. A stopped task stays stopped.

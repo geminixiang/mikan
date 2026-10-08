@@ -71,6 +71,8 @@ async function seedHistory(session: MikanAgentSession) {
 const retryError = () =>
   fauxAssistantMessage("", { stopReason: "error", errorMessage: "503 service unavailable" });
 
+const PI_CONTEXT_RETENTION_MS = 10 * 60_000;
+
 describe("harness run cancellation", () => {
   test.each([
     { runFails: false, cancellation: "success" },
@@ -137,6 +139,7 @@ describe("harness run cancellation", () => {
     }
     expect(abort).toHaveBeenCalledOnce();
     expect(session.isActiveRun).toBe(false);
+    await vi.advanceTimersByTimeAsync(PI_CONTEXT_RETENTION_MS);
     expect(vi.getTimerCount()).toBe(0);
     const duration = session.getLastRunStats().durationMs;
     await vi.advanceTimersByTimeAsync(200);
@@ -508,6 +511,7 @@ describe("harness run cancellation", () => {
     await run;
     expect(abortedEarly).toBe(false);
     expect(abortedAtDeadline).toBe(true);
+    await vi.advanceTimersByTimeAsync(PI_CONTEXT_RETENTION_MS);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -529,6 +533,7 @@ describe("harness run cancellation", () => {
     const duration = session.getLastRunStats().durationMs;
     await vi.advanceTimersByTimeAsync(200);
     expect(session.getLastRunStats().durationMs).toBe(duration);
+    await vi.advanceTimersByTimeAsync(PI_CONTEXT_RETENTION_MS);
     expect(vi.getTimerCount()).toBe(0);
     await session.prompt("second");
     expect(faux.state.callCount).toBe(2);

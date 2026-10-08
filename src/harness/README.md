@@ -130,6 +130,13 @@ File and shell behavior comes from `@earendil-works/pi-durable/tools`. mikan's
 thin adapter preserves their schemas, adds the presentation `label`, and the
 Harness supplies the run's authorized sandbox `ExecutionEnv` as `api.env`.
 Execution tools fail without one; there is no implicit host fallback.
+Host mode uses Pi's `NodeExecutionEnv`. Container sandboxes use
+`execution-env.ts`, which runs each file operation as a `docker exec`, so it
+keeps every round trip to one: `openBinaryReader` checks the file and returns
+its bytes in a single command, then reads, scans lines, and reports metadata
+from that snapshot, and `openDirReader` pages one `listDir`. It does not offer
+`watch` (`not_supported`), which no mikan tool uses. Its `exec` reports stdout
+and stderr as separate chunks, in that order, rather than interleaved.
 Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
 adapts them, forwarding progress `details` and awaiting the last update before
 the result.

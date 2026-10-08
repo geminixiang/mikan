@@ -4,11 +4,16 @@ import type { Context } from "@earendil-works/chord";
 import {
   ExecutionError,
   FileError,
+  LineScanner,
   err,
   ok,
+  type BinaryReader,
+  type DirReader,
   type ExecutionEnv,
   type FileInfo,
   type FileKind,
+  type FileWatcher,
+  type LineScan,
   type Result,
   type ShellExecOptions,
   type ShellExecResult,
@@ -21,6 +26,13 @@ import { execAppendFile, execWriteFile, shellEscape } from "../sandbox/utils.js"
 import { errorMessage } from "../unknown-values.js";
 
 const SPILL_DIR = ".mikan/bash-output";
+
+const READ_REGULAR_FILE = [
+  'if [ "$2" = 1 ] && [ -L "$1" ]; then echo link;',
+  'elif [ -d "$1" ]; then echo directory;',
+  'elif [ -f "$1" ]; then echo "file $(date -r "$1" +%s)"; base64 < "$1";',
+  'elif [ -e "$1" ]; then echo other; else echo missing; fi',
+].join(" ");
 
 export function createSandboxExecutionEnv(
   executor: Executor,
@@ -152,6 +164,45 @@ class ShellExecutionEnv implements ExecutionEnv {
     });
   }
 
+  async openBinaryReader(
+    path: string,
+    options: { noFollow?: boolean } | undefined,
+    context: Context,
+  ): Promise<Result<BinaryReader, FileError>> {
+    return this.fileOp(async () => {
+      const { stdout } = await this.run(
+        `sh -c ${shellEscape(READ_REGULAR_FILE)} _ ${shellEscape(path)} ${options?.noFollow ? 1 : 0}`,
+        context,
+      );
+      const headerEnd = stdout.indexOf("\n");
+      const [kind, mtime] = stdout.slice(0, headerEnd).split(" ");
+      if (kind === "missing") throw new FileError("not_found", `No such file: ${path}`, path);
+      if (kind === "directory")
+        throw new FileError("is_directory", `Is a directory: ${path}`, path);
+      if (kind !== "file") throw new FileError("invalid", `Not a regular file: ${path}`, path);
+      const bytes = Buffer.from(stdout.slice(headerEnd + 1).replace(/\s+/g, ""), "base64");
+      return new SnapshotBinaryReader(bytes, {
+        name: posix.basename(path),
+        path,
+        kind: "file",
+        size: bytes.length,
+        mtimeMs: (Number.parseInt(mtime ?? "", 10) || 0) * 1000,
+      });
+    });
+  }
+
+  openDirReader(path: string, context: Context): Promise<Result<DirReader, FileError>> {
+    return this.fileOp(async () => {
+      const listed = await this.listDir(path, context);
+      if (!listed.ok) throw listed.error;
+      return new SnapshotDirReader(listed.value);
+    });
+  }
+
+  async watch(): Promise<Result<FileWatcher, FileError>> {
+    return err(new FileError("not_supported", "The sandbox does not report file changes"));
+  }
+
   async listDir(path: string, context: Context): Promise<Result<FileInfo[], FileError>> {
     return this.fileOp(async () => {
       const { stdout } = await this.run(`ls -A ${shellEscape(path)}`, context);
@@ -232,18 +283,25 @@ class ShellExecutionEnv implements ExecutionEnv {
   async cleanup(_context: Context): Promise<void> {}
 
   async exec(
-    command: string,
+    command: string | readonly string[],
     options: ShellExecOptions | undefined,
     context: Context,
   ): Promise<Result<ShellExecResult, ExecutionError>> {
     try {
-      const result = await this.executor.exec(command, {
+      const shellCommand =
+        typeof command === "string" ? command : command.map(shellEscape).join(" ");
+      const result = await this.executor.exec(shellCommand, {
         cwd: options?.cwd || undefined,
         timeout: options?.timeout || undefined,
         signal: context.abortSignal,
       });
-      const combined = [result.stdout, result.stderr].filter((part) => part.length > 0).join("\n");
-      if (combined.length > 0) options?.onOutput?.(combined, context);
+      const stdout =
+        result.stdout.length > 0 && result.stderr.length > 0 ? `${result.stdout}\n` : result.stdout;
+      if (stdout.length > 0) options?.onOutput?.(stdout, context, { stream: "stdout" });
+      if (result.stderr.length > 0) {
+        options?.onOutput?.(result.stderr, context, { stream: "stderr" });
+      }
+      const combined = `${stdout}${result.stderr}`;
       return ok({ exitCode: result.code, spillPath: await this.spill(combined, options, context) });
     } catch (error) {
       return err(toExecutionError(error, context));
@@ -293,6 +351,55 @@ class ShellExecutionEnv implements ExecutionEnv {
   }
 }
 
+class SnapshotBinaryReader implements BinaryReader {
+  constructor(
+    private readonly bytes: Uint8Array,
+    private readonly metadata: FileInfo,
+  ) {}
+
+  async info(_context: Context): Promise<Result<FileInfo, FileError>> {
+    return ok(this.metadata);
+  }
+
+  async read(
+    offset: number,
+    length: number,
+    _context: Context,
+  ): Promise<Result<Uint8Array, FileError>> {
+    return ok(this.bytes.subarray(offset, offset + length));
+  }
+
+  async scanLines(
+    options: { startLine: number; endLine?: number },
+    _context: Context,
+  ): Promise<Result<LineScan, FileError>> {
+    const scanner = new LineScanner(options.startLine, options.endLine);
+    scanner.push(this.bytes);
+    return ok(scanner.finish());
+  }
+
+  async close(_context: Context): Promise<void> {}
+}
+
+class SnapshotDirReader implements DirReader {
+  private offset = 0;
+
+  constructor(private readonly entries: FileInfo[]) {}
+
+  async next(
+    maxEntries: number,
+    _context: Context,
+  ): Promise<Result<{ entries: FileInfo[]; done: boolean }, FileError>> {
+    const page = this.entries.slice(this.offset, this.offset + Math.max(1, maxEntries));
+    this.offset += page.length;
+    return ok({ entries: page, done: this.offset >= this.entries.length });
+  }
+
+  async close(_context: Context): Promise<void> {
+    this.offset = this.entries.length;
+  }
+}
+
 class ShellTextLineReader implements TextLineReader {
   private offset = 0;
 
@@ -317,6 +424,7 @@ class ShellTextLineReader implements TextLineReader {
 }
 
 function toFileError(error: unknown): FileError {
+  if (error instanceof FileError) return error;
   const message = errorMessage(error);
   if (/aborted/i.test(message)) return new FileError("aborted", message);
   if (/no such file|not found/i.test(message)) return new FileError("not_found", message);

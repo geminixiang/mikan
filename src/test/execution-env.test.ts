@@ -5,6 +5,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -221,5 +222,74 @@ describe("sandbox execution env", () => {
     const spilled = await env.readTextFile(result.value.spillPath!, TODO_CONTEXT);
     expect(spilled.ok).toBe(true);
     if (spilled.ok) expect(spilled.value.trimEnd().split("\n").at(-1)).toBe("5000");
+  });
+
+  test("opens a file for positional reads and line scans", async () => {
+    const env = onlyShellEnv(dir);
+    const path = join(dir, "lines.txt");
+    writeFileSync(path, "first\nsecond 橘子\nthird\n");
+    const opened = await env.openBinaryReader(path, undefined, TODO_CONTEXT);
+    if (!opened.ok) throw opened.error;
+    const reader = opened.value;
+    const info = await reader.info(TODO_CONTEXT);
+    expect(info.ok && info.value.size).toBe(Buffer.byteLength("first\nsecond 橘子\nthird\n"));
+    const bytes = await reader.read(6, 6, TODO_CONTEXT);
+    expect(bytes.ok && Buffer.from(bytes.value).toString()).toBe("second");
+    const scan = await reader.scanLines({ startLine: 1, endLine: 2 }, TODO_CONTEXT);
+    expect(scan.ok && scan.value).toMatchObject({ newlines: 3, start: 6 });
+    await reader.close(TODO_CONTEXT);
+  });
+
+  test("binary reader refuses a final symlink with noFollow, a directory, and a missing path", async () => {
+    const env = onlyShellEnv(dir);
+    writeFileSync(join(dir, "target.txt"), "x");
+    symlinkSync(join(dir, "target.txt"), join(dir, "link.txt"));
+    mkdirSync(join(dir, "folder"));
+    const code = async (path: string, noFollow?: boolean) => {
+      const result = await env.openBinaryReader(join(dir, path), { noFollow }, TODO_CONTEXT);
+      if (result.ok) await result.value.close(TODO_CONTEXT);
+      return result.ok ? "ok" : result.error.code;
+    };
+    expect(await code("link.txt", true)).toBe("invalid");
+    expect(await code("link.txt")).toBe("ok");
+    expect(await code("folder")).toBe("is_directory");
+    expect(await code("missing.txt")).toBe("not_found");
+  });
+
+  test("lists a directory in pages", async () => {
+    const env = onlyShellEnv(dir);
+    for (const name of ["a.txt", "b.txt", "c.txt"]) writeFileSync(join(dir, name), name);
+    const opened = await env.openDirReader(dir, TODO_CONTEXT);
+    if (!opened.ok) throw opened.error;
+    const first = await opened.value.next(2, TODO_CONTEXT);
+    const second = await opened.value.next(2, TODO_CONTEXT);
+    await opened.value.close(TODO_CONTEXT);
+    expect(first.ok && first.value).toMatchObject({ done: false });
+    expect(second.ok && second.value.done).toBe(true);
+    const names = [first, second].flatMap((page) =>
+      page.ok ? page.value.entries.map((entry) => entry.name) : [],
+    );
+    expect(names.toSorted()).toEqual(["a.txt", "b.txt", "c.txt"]);
+  });
+
+  test("does not offer file watching", async () => {
+    const env = onlyShellEnv(dir);
+    const watched = await env.watch([{ path: dir }], () => {}, TODO_CONTEXT);
+    expect(watched.ok ? "ok" : watched.error.code).toBe("not_supported");
+  });
+
+  test("exec runs an argv command without a shell and names each output stream", async () => {
+    const env = onlyShellEnv(dir);
+    const chunks: Array<[string, string]> = [];
+    const result = await env.exec(
+      ["sh", "-c", 'printf "%s|" "$1"; echo oops >&2', "_", "a b $HOME"],
+      { onOutput: (text, _context, info) => chunks.push([info.stream, text]) },
+      TODO_CONTEXT,
+    );
+    expect(result.ok && result.value.exitCode).toBe(0);
+    expect(chunks).toEqual([
+      ["stdout", "a b $HOME|\n"],
+      ["stderr", "oops\n"],
+    ]);
   });
 });

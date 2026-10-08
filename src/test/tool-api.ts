@@ -9,6 +9,7 @@ import {
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { createModels } from "@earendil-works/pi-ai";
 import type { MikanHarnessTool, MikanToolResult } from "../harness/types.js";
 
 export const TEST_CONTEXT = BACKGROUND_CONTEXT;
@@ -35,6 +36,8 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
     callId: options.callId ?? "call-1",
     env: options.env,
     registry: createRegistry().snapshot(),
+    models: createModels(),
+    outputWindow: undefined,
     agent: async () => unsupported("agent"),
     output: (chunk) => {
       chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk));
