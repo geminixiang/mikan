@@ -11,17 +11,27 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-08
+
+### Added
+
+- A DM task survives a restart. A deploy no longer waits up to five minutes for running
+  tasks, and a task interrupted by a deploy or crash in the last 24 hours resumes in its
+  thread with a notice. A stopped task stays stopped.
+- A finished task's answer is written to the DM conversation that started it, so a later
+  question in the DM can be answered from the result.
+
 ### Changed
 
 - Pi packages are upgraded to 1.1.0. Retryable "server busy" provider errors are retried, the
   first system prompt leads the model context so tool changes keep the prompt cache, and
   each tool result records how long it ran. The container sandbox implements Pi's new file
   reader in one `docker exec` per read, as before.
-- A DM task survives a restart. A deploy no longer waits up to five minutes for running
-  tasks, and a task interrupted by a deploy or crash in the last 24 hours resumes in its
-  thread with a notice. A stopped task stays stopped.
-- A finished task's answer is written to the DM conversation that started it, so a later
-  question in the DM can be answered from the result.
+- Embedders: `ConversationResponder` no longer has `appendResponseDelta` or
+  `finishResponse`. `replaceResponse` always receives the whole main message, with
+  `{ final: true }` on the final write, and a responder sets `showsPartialAnswer` to receive
+  the answer while it is written. A responder that implemented the removed methods stops
+  receiving streamed text until it handles `replaceResponse` this way.
 
 ### Fixed
 
