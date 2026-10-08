@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-10-09
+
 ### Changed
 
 - `jev_browser` writes the text it types or selects with the conversation's chat model, the one
