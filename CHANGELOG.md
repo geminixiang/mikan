@@ -11,6 +11,12 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `/new` in a DM no longer waits for running background tasks or other DM threads, and
+  messages sent after it no longer wait with them; it resets its own session as soon as that
+  session is idle ([#158](https://github.com/geminixiang/mikan/issues/158)).
+
 ## [1.2.2] - 2026-10-09
 
 ### Changed

@@ -707,6 +707,41 @@ describe("ConversationRuntime lifecycle", () => {
     });
     expect(await resetCount()).toBe(1);
   });
+
+  test("new and later top-level messages do not wait for a run in another session", async () => {
+    let releaseThread!: () => void;
+    const threadGate = new Promise<void>((resolve) => (releaseThread = resolve));
+    const threadRunner = fakeRunner();
+    vi.mocked(threadRunner.run).mockImplementation(async () => {
+      await threadGate;
+      return { stopReason: "stop" };
+    });
+    const topLevelRunner = fakeRunner();
+    const runtime = makeRuntime({
+      runnerFactory: vi.fn<RunnerFactory>(async (options) =>
+        options.sessionKey === "C123" ? topLevelRunner : threadRunner,
+      ),
+    });
+    await createSession();
+    await registerThreadSession({ office, sessionKey: "C123:1000.5" });
+    const thread = makeEventAndContext("task:1000.5");
+    thread.event.thread_ts = "1000.5";
+    thread.event.sessionKey = "C123:1000.5";
+    thread.context.message.sessionKey = "C123:1000.5";
+    thread.context.message.threadTs = "1000.5";
+    const threadRun = runtime.handleEvent(thread.event, bot, thread.context);
+    await vi.waitFor(() => expect(threadRunner.run).toHaveBeenCalledOnce());
+
+    await runtime.handleNewCommand(newCommandOptions());
+    const next = makeEventAndContext("1000.6");
+    await runtime.handleEvent(next.event, bot, next.context);
+
+    expect(await resetCount()).toBe(1);
+    expect(topLevelRunner.run).toHaveBeenCalledOnce();
+    expect(runtime.isRunning(testAddress, "C123:1000.5")).toBe(true);
+    releaseThread();
+    await threadRun;
+  });
 });
 
 describe("ChatHistorySync session scope", () => {

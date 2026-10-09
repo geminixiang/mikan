@@ -331,19 +331,6 @@ describe("SessionLifecycle", () => {
       release();
       await blocked;
     });
-
-    test("a maintenance barrier only holds its own office", async () => {
-      const lifecycle = new SessionLifecycle();
-      let releaseMaintenance!: () => void;
-      const maintenanceGate = new Promise<void>((resolve) => (releaseMaintenance = resolve));
-      const maintenance = lifecycle.runConversationMaintenance(discord, () => maintenanceGate);
-
-      const release = await lifecycle.acquireConversationWork(telegram);
-      release();
-
-      releaseMaintenance();
-      await maintenance;
-    });
   });
 });
 

@@ -8,18 +8,6 @@ const DEFAULT_MAX_SESSIONS = 500;
 const DEFAULT_IDLE_TIMEOUT_MS = 3_600_000;
 const MATERIALIZATION_ABORT_GRACE_MS = 5_000;
 
-interface ConversationBarrier {
-  activeWork: number;
-  pendingMaintenance: number;
-  maintenanceTail: Promise<void>;
-  activeWaiters: Array<() => void>;
-  workWaiters: Array<() => void>;
-}
-
-function releaseWaiters(waiters: Array<() => void>): void {
-  for (const resolve of waiters.splice(0)) resolve();
-}
-
 function runtimeSessionId(address: OfficeAddress, sessionKey: string): string {
   return `${officeKey(address)}|${sessionKey}`;
 }
@@ -31,7 +19,6 @@ export class SessionLifecycle {
   private readonly queues = new Map<string, Promise<void>>();
   private readonly leases = new Map<string, number>();
   private readonly settlementSessions = new Map<Promise<void>, string>();
-  private readonly conversationBarriers = new Map<string, ConversationBarrier>();
   private readonly pendingConversationClears = new Set<string>();
   private readonly conversationGenerations = new Map<string, number>();
   private readonly maxSessions: number;
@@ -179,60 +166,6 @@ export class SessionLifecycle {
     } finally {
       if (this.queues.get(id) === next) this.queues.delete(id);
     }
-  }
-
-  async acquireConversationWork(address: OfficeAddress): Promise<() => void> {
-    const barrier = this.getConversationBarrier(address);
-    while (barrier.pendingMaintenance > 0) {
-      await new Promise<void>((resolve) => barrier.workWaiters.push(resolve));
-    }
-    barrier.activeWork++;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      barrier.activeWork--;
-      if (barrier.activeWork === 0) releaseWaiters(barrier.activeWaiters);
-    };
-  }
-
-  async runConversationMaintenance<T>(
-    address: OfficeAddress,
-    maintenance: () => Promise<T>,
-  ): Promise<T> {
-    const barrier = this.getConversationBarrier(address);
-    barrier.pendingMaintenance++;
-    const previousMaintenance = barrier.maintenanceTail;
-    let finishMaintenance!: () => void;
-    const maintenanceTurn = new Promise<void>((resolve) => (finishMaintenance = resolve));
-    barrier.maintenanceTail = previousMaintenance.then(() => maintenanceTurn);
-
-    await previousMaintenance;
-    if (barrier.activeWork > 0) {
-      await new Promise<void>((resolve) => barrier.activeWaiters.push(resolve));
-    }
-    try {
-      return await maintenance();
-    } finally {
-      finishMaintenance();
-      barrier.pendingMaintenance--;
-      if (barrier.pendingMaintenance === 0) releaseWaiters(barrier.workWaiters);
-    }
-  }
-
-  private getConversationBarrier(address: OfficeAddress): ConversationBarrier {
-    const key = officeKey(address);
-    const existing = this.conversationBarriers.get(key);
-    if (existing) return existing;
-    const barrier: ConversationBarrier = {
-      activeWork: 0,
-      pendingMaintenance: 0,
-      maintenanceTail: Promise.resolve(),
-      activeWaiters: [],
-      workWaiters: [],
-    };
-    this.conversationBarriers.set(key, barrier);
-    return barrier;
   }
 
   runningStates(): ConversationRuntimeState[] {

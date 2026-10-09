@@ -212,9 +212,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       await activeState.runSettlement;
     }
 
-    await this.sessions.runConversationMaintenance(address, async () => {
-      await this.resetSession(address, sessionKey, bot);
-    });
+    await this.resetSession(address, sessionKey, bot);
   }
 
   private async resetSession(
@@ -255,24 +253,18 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const sessionKey = deriveSessionKey(event);
     if (await this.handledBeforeRun(options, sessionKey)) return;
 
-    const address = event.address;
-    const releaseConversationWork = await this.sessions.acquireConversationWork(address);
-    try {
-      await this.waitForParentSession(address, sessionKey);
+    await this.waitForParentSession(event.address, sessionKey);
 
-      const lease = await this.acquireRunLease(options, sessionKey);
-      const { state } = lease;
-      state.detachOnShutdown = isTaskRunId(event.ts);
-      log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
-      const runPromise = this.sessions.settle(state, () =>
-        this.executeRun(options, sessionKey, state),
-      );
-      lease.release();
-      recordGauge("agent.sessions.active", this.sessions.settlementCount());
-      await runPromise;
-    } finally {
-      releaseConversationWork();
-    }
+    const lease = await this.acquireRunLease(options, sessionKey);
+    const { state } = lease;
+    state.detachOnShutdown = isTaskRunId(event.ts);
+    log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
+    const runPromise = this.sessions.settle(state, () =>
+      this.executeRun(options, sessionKey, state),
+    );
+    lease.release();
+    recordGauge("agent.sessions.active", this.sessions.settlementCount());
+    await runPromise;
   }
 
   private async handledBeforeRun(options: RunSessionOptions, sessionKey: string): Promise<boolean> {
