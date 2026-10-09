@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,10 +43,15 @@ function context(dryRun = false): MigrationContext {
   };
 }
 
-async function importedAnswer(key: string, input: number, cause?: string): Promise<void> {
+async function importedAnswer(
+  key: string,
+  input: number,
+  cause?: string,
+  withUsage = true,
+): Promise<void> {
   const session = await SessionStore.open(office, key);
   if (cause) await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: cause });
-  await session.appendMessage({
+  const answer: AssistantMessage = {
     role: "assistant",
     content: [{ type: "text", text: "imported answer" }],
     api: "openai-responses",
@@ -61,7 +67,9 @@ async function importedAnswer(key: string, input: number, cause?: string): Promi
     },
     stopReason: "stop",
     timestamp: 1,
-  });
+  };
+  if (!withUsage) Reflect.deleteProperty(answer, "usage");
+  await session.appendMessage(answer);
   await session.close();
 }
 
@@ -84,6 +92,16 @@ test("records the spend of imported answers once, and only in the session that h
   expect(await spentTokens("C1")).toBe(12);
   expect((await SessionStore.spend(office, "C1"))?.usage.cost.total).toBeCloseTo(0.3);
   expect(await spentTokens("C1:1000.1")).toBe(0);
+});
+
+test("skips imported answers that recorded no usage", async () => {
+  await importedAnswer("C1", 10, undefined, false);
+  await importedAnswer("C1", 10);
+
+  await sessionUsageMigration.run(context());
+
+  expect(await spentTokens("C1")).toBe(12);
+  expect(await SessionStore.ownResponseUsage(office, "C1")).toHaveLength(1);
 });
 
 test("does nothing for an office without session storage", async () => {
