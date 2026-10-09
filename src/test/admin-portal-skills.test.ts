@@ -15,7 +15,8 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { handleAdminRequest, InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import type { AdminServices } from "../adapters/web/admin/types.js";
-import { SessionStore } from "../sessions/session-store.js";
+import { SessionStore, backfillImportedUsage } from "../sessions/session-store.js";
+import { RUN_CAUSE_CUSTOM_TYPE } from "../sessions/types.js";
 
 const CONVERSATION_ID = "C-SKILLS";
 const ADDRESS = createOfficeAddress("slack", CONVERSATION_ID);
@@ -179,11 +180,12 @@ describe("Admin response metadata", () => {
     });
   });
 
-  test("returns session usage without an unused session id", async () => {
+  test("returns each session's own spend without an unused session id", async () => {
     const office = createWorkspace({ root: workspaceDir, stateDir: join(base, "state") }).office(
       ADDRESS,
     );
     const session = await SessionStore.open(office, ADDRESS.conversationId);
+    await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: "1000.1" });
     await session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "done" }],
@@ -202,13 +204,22 @@ describe("Admin response metadata", () => {
       timestamp: Date.now(),
     });
     await session.close();
+    await backfillImportedUsage(office.sessionsPath, false);
+    const thread = `${ADDRESS.conversationId}:1000.1`;
+    await SessionStore.forkRun(
+      office,
+      thread,
+      { sessionKey: ADDRESS.conversationId, messageId: "1000.1" },
+      [],
+    );
 
-    const response = await get<{ sessions: unknown[] }>("/admin/api/session-usage");
+    const response = await get<{ sessions: { sessionKey: string }[] }>("/admin/api/session-usage");
 
     expect(response.status).toBe(200);
     expect(response.body.sessions).toHaveLength(1);
     expect(response.body.sessions[0]).toMatchObject({
       conversationId: CONVERSATION_ID,
+      sessionKey: ADDRESS.conversationId,
       input: 1,
       output: 2,
       total: 3,

@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Message, Models } from "@earendil-works/pi-ai";
+import type { Message, Models, Usage } from "@earendil-works/pi-ai";
 import { calculateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   AssistantEntry,
@@ -15,6 +15,7 @@ import {
   ProviderDoc,
   ROOT_CONVERSATION_ID,
   ToolResultEntry,
+  UsageDoc,
   UserEntry,
   createRegistry,
   defineDoc,
@@ -50,11 +51,14 @@ import type {
   SessionListing,
   SessionRunRecord,
   SessionExecution,
+  SessionSpend,
+  ResponseUsage,
   TaskBrief,
   TaskSessionState,
 } from "./types.js";
 import { RUN_CAUSE_CUSTOM_TYPE } from "./types.js";
 import { loadMcpTools } from "../harness/mcp.js";
+import { addUsage, createEmptyUsage, sumUsageState } from "../harness/session.js";
 import type { McpServerConfig, McpServerSummary, McpToolsResult } from "../harness/types.js";
 import * as log from "../log.js";
 import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
@@ -85,6 +89,7 @@ type SessionDocState = Partial<{
   name: string;
   run: Partial<SessionRunRecord>;
   resumes: number;
+  importedUsage: true;
 }>;
 
 const SessionDoc = defineDoc<SessionDocState>({
@@ -630,6 +635,83 @@ export async function importOfficeSessions(
   protectStorageFiles(path);
 }
 
+export async function backfillImportedUsage(path: string, dryRun: boolean): Promise<number> {
+  const harness = await Harness.open(
+    await openNodeSqliteStorage(path),
+    { models: {} as Models, registry: createRegistry(), settings: { extensions: [] } },
+    context,
+  );
+  try {
+    let backfilled = 0;
+    let cursor: Cursor | undefined;
+    do {
+      const page = await harness.commit((tx) => tx.scanConversations({}, 100, cursor), context);
+      for (const conversation of page.items) {
+        const imported = await importedUsage(harness, conversation.id);
+        if (imported.size === 0) continue;
+        backfilled += 1;
+        if (!dryRun) await recordImportedUsage(harness, conversation.id, imported);
+      }
+      cursor = page.next;
+    } while (cursor !== undefined);
+    return backfilled;
+  } finally {
+    await harness.close(context);
+  }
+}
+
+async function importedUsage(
+  harness: Harness,
+  conversationId: ConversationId,
+): Promise<Map<string, Usage>> {
+  const byModel = new Map<string, Usage>();
+  if ((await harness.snapshot(SessionDoc, conversationId, context))?.importedUsage) return byModel;
+  let cursor: Cursor | undefined;
+  do {
+    const page = await harness.commit(
+      (tx) => tx.scanEntries({ conversationId }, ENTRY_PAGE_SIZE, cursor),
+      context,
+    );
+    for (const record of page.items) {
+      const message = record.model?.[0];
+      if (
+        record.conversationId !== conversationId ||
+        record.byTaskId !== undefined ||
+        !AssistantEntry.is(record) ||
+        message?.role !== "assistant"
+      ) {
+        continue;
+      }
+      const key = `${message.provider}/${message.model}`;
+      const total = byModel.get(key) ?? createEmptyUsage();
+      addUsage(total, message.usage);
+      byModel.set(key, total);
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return byModel;
+}
+
+async function recordImportedUsage(
+  harness: Harness,
+  conversationId: ConversationId,
+  imported: ReadonlyMap<string, Usage>,
+): Promise<void> {
+  await harness.commit(async (tx) => {
+    const doc = await tx.doc(SessionDoc, conversationId);
+    if (doc.importedUsage) return;
+    const ledger = await tx.doc(UsageDoc, conversationId);
+    for (const [key, usage] of imported) {
+      const merged = createEmptyUsage();
+      const recorded = ledger.models[key];
+      if (recorded) addUsage(merged, recorded);
+      addUsage(merged, usage);
+      ledger.models[key] = merged;
+    }
+    doc.importedUsage = true;
+  }, context);
+}
+
 export async function readImportedContexts(path: string): Promise<Map<string, AgentMessage[]>> {
   const harness = await Harness.open(
     await openNodeSqliteStorage(path),
@@ -918,6 +1000,36 @@ export class SessionStore implements SessionInspection {
       const session = await lookupSession(storage, key);
       if (!session) return { open: false, started: false };
       return readExecution(storage, session.conversation.id);
+    });
+  }
+
+  static async spend(office: Office, key: string): Promise<SessionSpend | undefined> {
+    if (!existsSync(office.sessionsPath)) return undefined;
+    return withOfficeStorage(office, async (storage) => {
+      const session = await lookupSession(storage, key);
+      if (!session) return undefined;
+      const ledger = await storage.harness.snapshot(UsageDoc, session.conversation.id, context);
+      const newest = (await session.conversation.entries({}, 1, undefined, context)).items[0];
+      const timestamp = newest && toSessionEntry(newest, session.record.id)?.timestamp;
+      return {
+        usage: sumUsageState(ledger ?? { models: {}, tools: {} }),
+        updatedAt: timestamp || session.record.createdAt,
+      };
+    });
+  }
+
+  static async ownResponseUsage(office: Office, key: string): Promise<ResponseUsage[]> {
+    if (!existsSync(office.sessionsPath)) return [];
+    return withOfficeStorage(office, async (storage) => {
+      const session = await lookupSession(storage, key);
+      if (!session) return [];
+      const id = session.conversation.id;
+      return (await readRecords(session.conversation)).flatMap((record) => {
+        const message = record.model?.[0];
+        return record.conversationId === id && message?.role === "assistant"
+          ? [{ timestamp: message.timestamp, usage: message.usage }]
+          : [];
+      });
     });
   }
 

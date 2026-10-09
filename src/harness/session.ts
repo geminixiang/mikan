@@ -868,7 +868,7 @@ export function createEmptyUsage(): Usage {
   };
 }
 
-function addUsage(total: Usage, usage: Usage): void {
+export function addUsage(total: Usage, usage: Usage): void {
   total.input += usage.input;
   total.output += usage.output;
   total.cacheRead += usage.cacheRead;
@@ -888,7 +888,7 @@ function addUsage(total: Usage, usage: Usage): void {
   }
 }
 
-function sumUsageState(state: UsageState): Usage {
+export function sumUsageState(state: UsageState): Usage {
   const total = createEmptyUsage();
   for (const usage of [...Object.values(state.models), ...Object.values(state.tools)]) {
     addUsage(total, usage);

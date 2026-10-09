@@ -16,6 +16,9 @@ change in a minor release.
 - MCP tool results reach the model through pi-mcp's `toLlmContent`, so an image embedded as a
   resource is passed to the model as an image instead of a placeholder line; other resource,
   link, and audio placeholders use pi-mcp's wording.
+- `mikan migrate` has a new step, `0013-session-usage`, that records the spend of sessions
+  imported from 0.5.3 in pi-durable's usage ledger. Run `mikan migrate` after upgrading; the
+  daemon does not start while the step is pending.
 - Slack DM tasks are found, and their status and acknowledgement read, from pi-durable's task
   records instead of `log.jsonl`, so `task_status` and the in-thread status reply keep working
   after a restart with a lost or rotated log, and a status reply in a task thread no longer scans
@@ -24,6 +27,9 @@ change in a minor release.
 
 ### Fixed
 
+- The Admin portal's usage views count each session's own spend: a thread started from the run
+  that caused it no longer repeats the spend of the conversation it was started from. Session
+  totals come from pi-durable's usage ledger, so they now include failed attempts and compaction.
 - `/new` in a DM no longer waits for running background tasks or other DM threads, and
   messages sent after it no longer wait with them; it resets its own session as soon as that
   session is idle ([#158](https://github.com/geminixiang/mikan/issues/158)).

@@ -10,6 +10,7 @@ import { officeLayoutMigration } from "./office-layout.js";
 import { officeSessionsMigration } from "./office-sessions.js";
 import { sandboxContainersMigration } from "./sandbox-containers.js";
 import { sessionsSqliteMigration } from "./sessions-sqlite.js";
+import { sessionUsageMigration } from "./session-usage.js";
 import type { AppliedMigration, Migration, MigrationContext } from "./types.js";
 import { workspaceEventsMigration } from "./workspace-events.js";
 
@@ -23,6 +24,7 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
   officeSessionsMigration,
   sessionsSqliteMigration,
   legacyOfficeFilesMigration,
+  sessionUsageMigration,
 ]);
 
 const RECORD_FILENAME = "migrations.json";
