@@ -1,8 +1,8 @@
-import { readOfficeLog } from "../../office/log.js";
 import type { Office } from "../../office/types.js";
-import { resolveSlackSessionKey } from "./session.js";
+import { parseSlackSessionKey } from "./session.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import { SessionStore } from "../../sessions/session-store.js";
+import type { TaskSessionState } from "../../sessions/types.js";
 import type { TaskStatus, RunningSession } from "../../types.js";
 
 export function isTaskStatusQuestion(text: string): boolean {
@@ -11,70 +11,67 @@ export function isTaskStatusQuestion(text: string): boolean {
   );
 }
 
-export function readTaskRoots(office: Office): Map<string, string> {
-  const roots = new Map<string, string>();
-  for (const entry of readOfficeLog(office)) {
-    if (entry.taskRoot === true && entry.isMessagingBot === true && typeof entry.ts === "string")
-      roots.set(entry.ts, String(entry.text ?? ""));
-  }
-  return roots;
-}
-
 export async function querySlackTasks(
   office: Office,
   channel: string,
   running: RunningSession[],
   sessionKey?: string,
 ): Promise<TaskStatus[]> {
-  const roots = readTaskRoots(office);
-  const matching = [...roots]
-    .toReversed()
-    .filter(([root]) => !sessionKey || resolveSlackSessionKey(channel, root) === sessionKey);
   const activeByKey = new Map(
     running
       .filter((s) => s.address.platform === "slack" && s.address.conversationId === channel)
       .map((s) => [s.sessionKey, s]),
   );
-  const selected = matching.filter(
-    ([root], index) => index < 10 || activeByKey.has(resolveSlackSessionKey(channel, root)),
-  );
-  const observations: TaskStatus[] = [];
-  for (const [root, acknowledgement] of selected) {
-    const key = resolveSlackSessionKey(channel, root);
-    const active = activeByKey.get(key);
-    const observation: TaskStatus = {
-      sessionKey: key,
-      threadTs: root,
-      acknowledgement,
-      observedAt: new Date().toISOString(),
-      status: "unknown",
-    };
-    try {
-      const state = await SessionStore.inspectExecution(office, key);
-      const finishedThisRun =
-        !state.open && state.result && (!active || state.result.endedAt >= active.startedAt);
-      if (finishedThisRun && state.result) {
-        observation.status = state.result.status;
-        observation.endedAt = new Date(state.result.endedAt).toISOString();
-      } else if (active) {
-        observation.status = active.stopping ? "stopping" : "running";
-        observation.currentTool = active.currentTool;
-      } else if (!state.started) {
-        observation.status = "queued";
-      }
-    } catch (error) {
-      reportUserFacingError(error, {
-        domain: "mikan",
-        surface: "task_status",
-        operation: "inspect_task_status",
-        severity: "warning",
-        platform: "slack",
-        context: { conversationId: channel, sessionKey: key, threadTs: root },
-      });
-    }
-    observations.push(observation);
+  let tasks: TaskSessionState[];
+  try {
+    tasks = await SessionStore.listTasks(office, channel);
+  } catch (error) {
+    reportUserFacingError(error, {
+      domain: "mikan",
+      surface: "task_status",
+      operation: "inspect_task_status",
+      severity: "warning",
+      platform: "slack",
+      context: { conversationId: channel },
+    });
+    return [];
   }
-  return observations;
+  const observedAt = new Date().toISOString();
+  return tasks
+    .filter((task) => !sessionKey || task.sessionKey === sessionKey)
+    .filter((task, index) => index < 10 || activeByKey.has(task.sessionKey))
+    .flatMap((task) => {
+      const ref = parseSlackSessionKey(task.sessionKey);
+      if (ref.kind !== "thread") return [];
+      return [observeTask(task, ref.threadTs, activeByKey.get(task.sessionKey), observedAt)];
+    });
+}
+
+function observeTask(
+  task: TaskSessionState,
+  threadTs: string,
+  active: RunningSession | undefined,
+  observedAt: string,
+): TaskStatus {
+  const observation: TaskStatus = {
+    sessionKey: task.sessionKey,
+    threadTs,
+    acknowledgement: task.acknowledgement ?? "",
+    observedAt,
+    status: "unknown",
+  };
+  const finishedThisRun =
+    !task.open && task.result && (!active || task.result.endedAt >= active.startedAt);
+  if (finishedThisRun && task.result) {
+    observation.status = task.result.status;
+    observation.endedAt = new Date(task.result.endedAt).toISOString();
+  } else if (active) {
+    observation.status = active.stopping ? "stopping" : "running";
+    observation.currentTool = active.currentTool;
+  } else if (!task.started) {
+    observation.status = "queued";
+  }
+  return observation;
 }
 
 export function formatTaskStatus(tasks: TaskStatus[]): string {

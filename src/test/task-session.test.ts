@@ -64,7 +64,9 @@ test("a task interrupted by a restart resumes with a new input after another con
   const requester = await SessionStore.open(office, "D123");
   faux.setResponses([fauxAssistantMessage("hello")]);
   await wrap(requester).prompt("hi");
-  const task = await SessionStore.openTask(office, "D123:1.000001", "D123");
+  const task = await SessionStore.openTask(office, "D123:1.000001", "D123", {
+    acknowledgement: "On it.",
+  });
   faux.setResponses([fauxAssistantMessage(fauxToolCall("slow", {}), { stopReason: "toolUse" })]);
   const interrupted = wrap(task)
     .prompt("long task")
@@ -80,7 +82,9 @@ test("a task interrupted by a restart resumes with a new input after another con
   const reopened = await SessionStore.open(office, "D123");
   faux.setResponses([fauxAssistantMessage("requester answer")]);
   await wrap(reopened).prompt("a message while the task is pending");
-  const resumedTask = await SessionStore.openTask(office, "D123:1.000001", "D123");
+  const resumedTask = await SessionStore.openTask(office, "D123:1.000001", "D123", {
+    acknowledgement: "On it.",
+  });
   let resumedWith = "";
   faux.setResponses([
     (context) => {
@@ -106,7 +110,9 @@ test("a finished task's answer is written to its requester without a model turn"
   faux.setResponses([fauxAssistantMessage("hello")]);
   await wrap(requester).prompt("hi");
   await requester.close();
-  await (await SessionStore.openTask(office, "D123:1.000001", "D123")).close();
+  await (
+    await SessionStore.openTask(office, "D123:1.000001", "D123", { acknowledgement: "On it." })
+  ).close();
 
   await SessionStore.reportTaskOutcome(office, "D123:1.000001", "the answer");
 
@@ -119,7 +125,7 @@ test("a finished task's answer is written to its requester without a model turn"
 
 async function startedTask(office: Office, key: string): Promise<void> {
   await (await SessionStore.open(office, "D123")).close();
-  const task = await SessionStore.openTask(office, key, "D123");
+  const task = await SessionStore.openTask(office, key, "D123", { acknowledgement: "On it." });
   await task.recordRun({ startedAt: Date.now() });
   await task.close();
 }
@@ -144,7 +150,7 @@ test("a run that ends resets the automatic resume count", async () => {
   expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
   expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
 
-  const task = await SessionStore.openTask(office, key, "D123");
+  const task = await SessionStore.openTask(office, key, "D123", { acknowledgement: "On it." });
   await task.recordRun({ startedAt: Date.now() });
   await task.recordRun({ endedAt: Date.now(), status: "completed" });
   await task.recordRun({ startedAt: Date.now() });

@@ -11,6 +11,14 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- Slack DM tasks are found, and their status and acknowledgement read, from pi-durable's task
+  records instead of `log.jsonl`, so `task_status` and the in-thread status reply keep working
+  after a restart with a lost or rotated log, and a status reply in a task thread no longer scans
+  the log for task roots (0.5 s to 0.14 s with a 50 MB log). Task threads started before 1.1.0 are no longer recognized as
+  tasks, and tasks started from 1.1.0 to 1.2.2 list without their acknowledgement.
+
 ### Fixed
 
 - `/new` in a DM no longer waits for running background tasks or other DM threads, and

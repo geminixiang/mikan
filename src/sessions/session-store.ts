@@ -23,12 +23,15 @@ import {
   defineTask,
   type Conversation,
   type ConversationId,
+  type ConversationRecord,
+  type Cursor,
   type EntryId,
   type EntryRecord,
   type HarnessOptions,
   type HarnessSettings,
   type Registry,
   type Storage,
+  type TaskId,
   type Tx,
 } from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -46,7 +49,9 @@ import type {
   SessionInspection,
   SessionListing,
   SessionRunRecord,
-  SessionRunStatus,
+  SessionExecution,
+  TaskBrief,
+  TaskSessionState,
 } from "./types.js";
 import { RUN_CAUSE_CUSTOM_TYPE } from "./types.js";
 import { loadMcpTools } from "../harness/mcp.js";
@@ -59,7 +64,7 @@ import { errorMessage, isRecord } from "../unknown-values.js";
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
 
-const TaskAnchor = defineTask<null, { phase: "done" }, null>({
+const TaskAnchor = defineTask<TaskBrief | null, { phase: "done" }, null>({
   name: "mikan.task-anchor",
   version: 1,
   initial: () => ({ phase: "done" }),
@@ -380,6 +385,65 @@ class OfficeStorage {
   }
 }
 
+const OWNED_CONVERSATION_PAGE_SIZE = 100;
+
+async function ownedConversations(
+  storage: OfficeStorage,
+  ownerConversationId: number,
+): Promise<ConversationRecord[]> {
+  return storage.harness.commit(async (tx) => {
+    const owned: ConversationRecord[] = [];
+    let cursor: Cursor | undefined;
+    do {
+      const page = await tx.scanConversations(
+        { ownerConversationId: ownerConversationId as ConversationId, order: "descending" },
+        OWNED_CONVERSATION_PAGE_SIZE,
+        cursor,
+      );
+      owned.push(...page.items);
+      cursor = page.next;
+    } while (cursor !== undefined);
+    return owned;
+  }, context);
+}
+
+async function readTaskState(
+  storage: OfficeStorage,
+  sessionKey: string,
+  conversationId: ConversationId,
+  anchorId: TaskId,
+): Promise<TaskSessionState> {
+  const anchor = await storage.harness.commit((tx) => tx.task(anchorId), context);
+  return {
+    sessionKey,
+    acknowledgement: briefAcknowledgement(anchor?.input),
+    ...(await readExecution(storage, conversationId)),
+  };
+}
+
+async function readExecution(
+  storage: OfficeStorage,
+  conversationId: ConversationId,
+): Promise<SessionExecution> {
+  const live = await storage.harness.snapshot(LiveDoc, conversationId, context);
+  const run = (await storage.harness.snapshot(SessionDoc, conversationId, context))?.run;
+  const open = live?.run !== undefined;
+  return {
+    open,
+    started: open || run !== undefined,
+    result:
+      run?.endedAt !== undefined && run.status !== undefined
+        ? { status: run.status, endedAt: run.endedAt }
+        : undefined,
+  };
+}
+
+function briefAcknowledgement(input: JsonValue | undefined): string | undefined {
+  return isRecord(input) && typeof input.acknowledgement === "string"
+    ? input.acknowledgement
+    : undefined;
+}
+
 function writeSessionIndex(tx: Tx, key: string, record: SessionIndexRecord): Promise<void> {
   return tx.doc(SessionIndexDoc).then((doc) => {
     doc.sessions[key] = record;
@@ -423,11 +487,12 @@ async function createTaskSession(
   storage: OfficeStorage,
   key: string,
   requesterKey: string,
+  brief: TaskBrief,
 ): Promise<{ conversation: Conversation; record: SessionIndexRecord }> {
   const requester = await lookupSession(storage, requesterKey);
   if (!requester) throw new Error(`Task requester session not found: ${requesterKey}`);
   const record = await requester.conversation.commit(async (tx) => {
-    const anchor = await tx.createTask(TaskAnchor, null, {
+    const anchor = await tx.createTask(TaskAnchor, brief, {
       ownership: { kind: "conversation" },
       background: true,
     });
@@ -641,9 +706,14 @@ export class SessionStore implements SessionInspection {
     return SessionStore.openOrCreate(office, key, (storage) => createSession(storage, key));
   }
 
-  static openTask(office: Office, key: string, requesterKey: string): Promise<SessionStore> {
+  static openTask(
+    office: Office,
+    key: string,
+    requesterKey: string,
+    brief: TaskBrief,
+  ): Promise<SessionStore> {
     return SessionStore.openOrCreate(office, key, (storage) =>
-      createTaskSession(storage, key, requesterKey),
+      createTaskSession(storage, key, requesterKey, brief),
     );
   }
 
@@ -823,30 +893,44 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  static async inspectExecution(
-    office: Office,
-    key: string,
-  ): Promise<{
-    open: boolean;
-    started: boolean;
-    result?: { status: SessionRunStatus; endedAt: number };
-  }> {
+  static async listTasks(office: Office, requesterKey: string): Promise<TaskSessionState[]> {
+    if (!existsSync(office.sessionsPath)) return [];
+    return withOfficeStorage(office, async (storage) => {
+      const index = await storage.index();
+      const requester = index[requesterKey];
+      if (!requester) return [];
+      const keyOf = new Map(
+        Object.entries(index).map(([key, record]) => [record.conversationId, key]),
+      );
+      const tasks: TaskSessionState[] = [];
+      for (const child of await ownedConversations(storage, requester.conversationId)) {
+        const sessionKey = keyOf.get(child.id);
+        if (sessionKey === undefined || child.owner === undefined) continue;
+        tasks.push(await readTaskState(storage, sessionKey, child.id, child.owner.taskId));
+      }
+      return tasks;
+    });
+  }
+
+  static async inspectExecution(office: Office, key: string): Promise<SessionExecution> {
     if (!existsSync(office.sessionsPath)) return { open: false, started: false };
     return withOfficeStorage(office, async (storage) => {
       const session = await lookupSession(storage, key);
       if (!session) return { open: false, started: false };
-      const id = session.conversation.id;
-      const live = await storage.harness.snapshot(LiveDoc, id, context);
-      const run = (await storage.harness.snapshot(SessionDoc, id, context))?.run;
-      const open = live?.run !== undefined;
-      return {
-        open,
-        started: open || run !== undefined,
-        result:
-          run?.endedAt !== undefined && run.status !== undefined
-            ? { status: run.status, endedAt: run.endedAt }
-            : undefined,
-      };
+      return readExecution(storage, session.conversation.id);
+    });
+  }
+
+  static async isTask(office: Office, key: string): Promise<boolean> {
+    if (!existsSync(office.sessionsPath)) return false;
+    return withOfficeStorage(office, async (storage) => {
+      const record = (await storage.index())[key];
+      if (!record) return false;
+      const conversation = await storage.harness.commit(
+        (tx) => tx.conversation(record.conversationId as ConversationId),
+        context,
+      );
+      return conversation?.owner !== undefined;
     });
   }
 

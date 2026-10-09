@@ -50,7 +50,7 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 5. **Opening office storage aborts the interrupted generation in every conversation, task children included, but never a background task.** pi-durable would otherwise drive the pending generation as soon as anything in the office submits, before the task's session is bound, and the request fails with no model binding.
 6. **The runtime resumes a task with a new input.** At startup the Slack bot finds DM tasks whose run recorded a start in the last 24 hours and never recorded an end, posts a notice in the thread, and queues a resume prompt on the task's session. The prompt tells the model the step in progress was interrupted. Runs started before this change recorded no start time, so they never resume; a stopped task recorded an end. A task resumes at most twice without a run ending; the third interruption closes its run as aborted and posts one notice, because a step that kills the daemon would otherwise kill it on every restart for up to a day.
 7. **Shutdown stops waiting for task runs.** The drain covers foreground runs only; task work is left to resume after the restart.
-8. **Status and stop come from pi-durable state** (not yet done; status still reads the office log and the runtime). `task_status` reads each child's live run instead of the office log. Stop aborts the child. Steering stays as it is: Jev classifies a reply, and a steer is a `whenBusy: "steer"` submission to the child.
+8. **Status and stop come from pi-durable state.** Task membership, acknowledgements, and run state are read from pi-durable since the change after 1.2.2; the current step still comes from the runtime while this process runs the task. `task_status` reads each child's live run instead of the office log. Stop aborts the child. Steering stays as it is: Jev classifies a reply, and a steer is a `whenBusy: "steer"` submission to the child.
 9. **Tasks open in three steps**, each after the previous one is stable:
    - Top-level Slack DMs, as today.
    - Top-level Slack channel messages, which start a task thread as in DMs.
@@ -69,7 +69,7 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 - A deploy no longer waits for long tasks, and a task that outlives a restart finishes instead of being dropped.
 - A tool call interrupted by a restart is not replayed; the model sees it as interrupted and may run it again. Startup ends the interrupted command's guest process group before any run resumes, so the rerun does not race the old copy.
 - Each task costs one extra conversation record and one anchor task; its transcript was already stored as a thread session.
-- Slack's log-scanned task status goes away with decision 8. `taskRoot` log entries stay readable for tasks started before the change, and still mark which DM threads are tasks.
+- Slack's log-scanned task status goes away with decision 8. Tasks are found through pi-durable's ownership index, so task threads from before 1.1.0, which were ordinary thread sessions, are no longer recognized, and tasks from 1.1.0 to 1.2.2 list without an acknowledgement.
 - [ADR 0020](0020-subagents-as-owned-child-conversations.md) is rejected; subagents stay as they are.
 
 ## Resolved before acceptance
