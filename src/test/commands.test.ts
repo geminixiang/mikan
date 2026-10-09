@@ -171,6 +171,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     workspace: testWorkspace("/tmp/no-such-working-dir"),
     runtime: {
       handleNewCommand: vi.fn(),
+      handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
       refreshConversation: vi.fn().mockReturnValue(true),
     },
     sandbox,
@@ -192,6 +193,12 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     sessionKey: args.conversationId ?? "C123",
     commandText: args.commandText,
     privateConversation: args.privateConversation ?? false,
+    messagingInfo: {
+      name: args.platform ?? "slack",
+      formattingGuide: "",
+      channels: [],
+      users: [],
+    },
     services,
   };
 }
@@ -540,6 +547,7 @@ describe("LoginCommandHandler", () => {
         provisioner,
         runtime: {
           handleNewCommand: vi.fn(),
+          handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
           refreshConversation: vi.fn().mockReturnValue(false),
         },
         sandbox: { type: "image", image: "ubuntu:24.04" },
@@ -650,6 +658,7 @@ describe("SandboxCommandHandler", () => {
         sandbox: { type: "image", image: "ubuntu:24.04" },
         runtime: {
           handleNewCommand: vi.fn(),
+          handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
           refreshConversation: vi.fn().mockReturnValue(refreshResult),
         },
         resourceController: fakeResourceController(),

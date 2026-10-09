@@ -74,6 +74,20 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     telegramCommand: true,
   },
   {
+    name: "compact",
+    description: "Summarize older messages to free up context",
+    arg: {
+      name: "instructions",
+      description: "What the summary should keep",
+      required: false,
+    },
+    slackCommand: "/pi-compact",
+    slackRoute: { includeText: true },
+    discord: true,
+    telegramMenu: {},
+    telegramCommand: true,
+  },
+  {
     name: "admin",
     description: "Open the admin portal",
     slackCommand: "/pi-admin",

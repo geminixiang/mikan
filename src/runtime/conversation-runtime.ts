@@ -3,6 +3,8 @@ import type {
   ConversationContext,
   ConversationMessage,
   ConversationEvent,
+  CompactOutcome,
+  HandleCompactCommandOptions,
   HandleNewCommandOptions,
   OfficeAddress,
   PlatformName,
@@ -215,6 +217,22 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     await this.resetSession(address, sessionKey, bot);
   }
 
+  async handleCompactCommand(options: HandleCompactCommandOptions): Promise<CompactOutcome> {
+    const { address, sessionKey, platform, instructions } = options;
+    assertSessionKeyBelongsToConversation(sessionKey, address.conversationId);
+    const lease = await this.acquireState({
+      address,
+      sessionKey,
+      trustModel: platform.trustModel ?? "membership",
+      platformWorkspaceId: platform.workspaceId,
+    });
+    try {
+      return await lease.state.runner.compact(instructions);
+    } finally {
+      lease.release();
+    }
+  }
+
   private async resetSession(
     address: OfficeAddress,
     sessionKey: string,
@@ -398,6 +416,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       commandText: event.text,
       privateConversation: isPrivateConversation(event),
+      messagingInfo: context.platform,
       services: this.commandServices,
     });
   }

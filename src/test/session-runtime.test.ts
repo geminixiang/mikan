@@ -170,6 +170,7 @@ function fakeRunner(): PiAgentWrapper {
     abort: vi.fn(),
     dispose: vi.fn().mockResolvedValue(undefined),
     getCurrentStep: vi.fn(),
+    compact: vi.fn().mockResolvedValue({ compacted: false }),
   };
 }
 
@@ -741,6 +742,72 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runtime.isRunning(testAddress, "C123:1000.5")).toBe(true);
     releaseThread();
     await threadRun;
+  });
+});
+
+describe("ConversationRuntime compact command", () => {
+  async function longChannel(
+    runtime: ReturnType<typeof makeRuntime>,
+    faux: ReturnType<typeof fauxProvider>,
+  ) {
+    for (let i = 0; i < 5; i++) {
+      faux.setResponses([fauxAssistantMessage(`answer ${i} ${"detail ".repeat(2500)}`)]);
+      const { event, context } = makeEventAndContext(`2000.${i}`);
+      event.text = `question ${i} ${"context ".repeat(2500)}`;
+      context.message.text = event.text;
+      await runtime.handleEvent(event, bot, context);
+    }
+  }
+
+  function compactCommand(text: string) {
+    const { event, context } = makeEventAndContext("2000.9");
+    event.text = text;
+    context.message.text = text;
+    return { event, context };
+  }
+
+  test("compact summarizes a shared conversation with the given instructions and reports the sizes", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime({ models });
+    await longChannel(runtime, faux);
+    let summaryRequest = "";
+    faux.setResponses([
+      (context) => {
+        summaryRequest = JSON.stringify(context.messages.at(-1));
+        return fauxAssistantMessage("SUMMARY: five questions were answered.");
+      },
+    ]);
+    const { event, context } = compactCommand("/compact keep the question numbers");
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(summaryRequest).toContain("keep the question numbers");
+    expect(context.responder.respondDiagnostic).toHaveBeenCalledWith(
+      expect.stringMatching(/Context compacted: about [\d,]+ → [\d,]+ tokens/),
+      { style: "muted" },
+    );
+    const inspection = await SessionStore.inspect(office, "C123");
+    expect(JSON.stringify((await inspection!.buildSessionContext()).messages[0])).toContain(
+      "SUMMARY",
+    );
+  });
+
+  test("compact reports when there is nothing to compact", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime({ models });
+    faux.setResponses([fauxAssistantMessage("hi")]);
+    const first = makeEventAndContext("2001.1");
+    await runtime.handleEvent(first.event, bot, first.context);
+    const calls = faux.state.callCount;
+    const { event, context } = compactCommand("/compact");
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(faux.state.callCount).toBe(calls);
+    expect(context.responder.respondDiagnostic).toHaveBeenCalledWith(
+      expect.stringContaining("Nothing to compact yet"),
+      { style: "muted" },
+    );
   });
 });
 

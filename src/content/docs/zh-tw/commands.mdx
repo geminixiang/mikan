@@ -26,6 +26,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                                          |
 | `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                                     |
 | `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                                             |
+| `/compact [instructions]` / `/pi-compact`          | 摘要較早的訊息以騰出上下文；DM 與頻道都能使用。instructions 指定摘要要保留的內容。較早的訊息仍留在工作階段歷史中。      |
 | `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                  |
 | `stop` / `/stop`                                   | 停止相符的執行中工作。在 Slack 上建議使用文字形式，讓 thread-local routing 保持準確。                                   |
 | `/pi-auto-reply <on\|off\|jev>`                    | 讓目前的 Slack channel 回覆每一則訊息（`on`）、只回覆 mention（`off`），或由 Jev 判斷訊息是否在對 mikan 說話（`jev`）。 |
@@ -52,7 +53,8 @@ Visibility 跟隨 Slack 對話類型（ADR 0008）：公開頻道是 public offi
   原生 slash commands 也必須向平台註冊。指令清單位於 `src/adapters/commands/manifest.ts`：Discord 的
   application commands 與 Telegram 的指令選單會在啟動時由它派生，Slack 的路由也辨識清單中的 `/pi-*`
   名稱。由於 Discord 會拒絕長度超過 100 個字元的 option description，清單中的參數說明會由 command
-  測試檢查長度。Slack 的 `/pi-login`、`/pi-session`、`/pi-new`、`/pi-model`、`/pi-sandbox`、
+  測試檢查長度。Slack 的
+  `/pi-login`、`/pi-session`、`/pi-new`、`/pi-compact`、`/pi-model`、`/pi-sandbox`、
   `/pi-auto-reply` 與 `/pi-admin` 也必須註冊在 Slack App manifest。
 </Aside>
 

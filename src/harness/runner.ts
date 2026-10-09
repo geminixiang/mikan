@@ -650,6 +650,7 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   let stopped = false;
   return {
     steer: (message) => steerRun(session, activeMessage, message),
+    compact: (instructions) => session.compact(instructions),
     async syncChatHistory(currentMessageId?: string): Promise<void> {
       await chatSessionManager.syncSessionManager({
         office,

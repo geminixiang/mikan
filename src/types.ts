@@ -189,6 +189,13 @@ export interface RunningSession {
   stopping?: boolean;
 }
 
+export interface HandleCompactCommandOptions {
+  address: OfficeAddress;
+  sessionKey: string;
+  platform: MessagingInfo;
+  instructions?: string;
+}
+
 export interface HandleNewCommandOptions {
   bot: MessagingBot;
   message: ConversationMessage;
@@ -213,8 +220,13 @@ export interface MessagingEventHandler {
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
 }
 
+export type CompactOutcome =
+  | { compacted: false }
+  | { compacted: true; tokensBefore: number; tokensAfter: number };
+
 export interface PiAgentWrapper {
   steer?(message: ConversationMessage): Promise<boolean>;
+  compact(instructions?: string): Promise<CompactOutcome>;
   syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,

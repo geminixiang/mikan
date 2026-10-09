@@ -13,6 +13,7 @@ function fakeRunner(overrides: Partial<PiAgentWrapper> = {}): PiAgentWrapper {
     abort: vi.fn(),
     getCurrentStep: vi.fn().mockReturnValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
+    compact: vi.fn().mockResolvedValue({ compacted: false }),
     ...overrides,
   };
 }

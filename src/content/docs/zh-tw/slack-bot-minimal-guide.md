@@ -80,6 +80,7 @@ Token 會以 `xoxb-` 開頭。
 
 - `/pi-login` → login portal
 - `/pi-new` → 開始新的 DM session
+- `/pi-compact` → 摘要較早的訊息以騰出上下文
 - `/pi-session` → session viewer
 - `/pi-model` → 切換此 conversation 的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
 - `/pi-sandbox` → 查看或調整此 conversation 的 sandbox

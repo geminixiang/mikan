@@ -13,6 +13,10 @@ change in a minor release.
 
 ### Added
 
+- `/compact [instructions]` (`/pi-compact` in Slack) summarizes a session's older messages with
+  pi-durable's compaction to free up context, in DMs and at a channel's top level, and reports the
+  context size before and after. Earlier messages stay in the session history. Existing Slack apps
+  must add `/pi-compact` to their slash commands; the example manifests include it.
 - Codemode `store(key, value)` and `load(key)` keep JSON values across scripts in a conversation,
   as in Pi, instead of only within one script. Values survive a restart, a thread started from a
   run sees the values as of that run, and `/new` clears them. They are kept in a pi-durable

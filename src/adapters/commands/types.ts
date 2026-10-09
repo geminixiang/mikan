@@ -7,7 +7,10 @@ import type { SandboxConfig } from "../../sandbox/types.js";
 import type {
   SandboxResourceController,
   ConversationContext,
+  CompactOutcome,
+  HandleCompactCommandOptions,
   HandleNewCommandOptions,
+  MessagingInfo,
   MessagingBot,
   OfficeAddress,
   PlatformName,
@@ -59,6 +62,7 @@ export interface AdminTokenStoreLike {
 
 interface CommandRuntimeBridge extends RunnerCacheControl {
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
+  handleCompactCommand(options: HandleCompactCommandOptions): Promise<CompactOutcome>;
 }
 
 export interface CommandServices {
@@ -86,6 +90,7 @@ export interface CommandContext {
   sessionKey: string;
   commandText: string;
   privateConversation: boolean;
+  messagingInfo: MessagingInfo;
   services: CommandServices;
 }
 

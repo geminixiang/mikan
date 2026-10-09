@@ -14,6 +14,7 @@ import type {
   Usage,
 } from "@earendil-works/pi-ai";
 import { contentText, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   AgentDoc,
   DEFAULT_COMPACTION_POLICY,
@@ -27,11 +28,13 @@ import {
   watchEvents,
   type AgentEvent as DurableEvent,
   type AgentEventStream,
+  type Conversation,
   type MessageChange,
   type ToolExecutionApi,
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { SessionStore } from "../sessions/session-store.js";
+import type { CompactOutcome } from "../types.js";
 import type { AttachedSessionHarness, SessionRunStatus } from "../sessions/types.js";
 import type {
   BudgetSettings,
@@ -189,6 +192,24 @@ export class MikanAgentSession {
 
   async prompt(text: string, options?: RunOptions): Promise<void> {
     await this.run(text, options);
+  }
+
+  async compact(instructions?: string): Promise<CompactOutcome> {
+    if (this.runActive) throw new Error("Agent is already processing a prompt");
+    const { harness, conversation } = await this.attach();
+    const tokensBefore = await contextTokens(conversation);
+    const taskId = await conversation.compact(instructions, context);
+    const { outcome } = (await harness.waitForTask(taskId, context)).state;
+    if (outcome.status !== "completed") {
+      throw new Error(
+        outcome.status === "failed" ? outcome.error.message : `Compaction ${outcome.status}`,
+      );
+    }
+    const submissionId = outcome.result.submissionId;
+    if (submissionId === undefined) return { compacted: false };
+    const placed = await (await harness.submission(submissionId, context))?.wait(context);
+    if (placed?.status !== "done") return { compacted: false };
+    return { compacted: true, tokensBefore, tokensAfter: await contextTokens(conversation) };
   }
 
   async steer(text: string): Promise<boolean> {
@@ -855,6 +876,11 @@ function resolveHarnessSettings(overrides?: {
     retry: { ...DEFAULT_RETRY_SETTINGS, ...overrides?.retry },
     budget: { ...DEFAULT_BUDGET_SETTINGS, ...overrides?.budget },
   };
+}
+
+async function contextTokens(conversation: Conversation): Promise<number> {
+  const { messages } = await conversation.context(context);
+  return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
 
 export function createEmptyUsage(): Usage {
