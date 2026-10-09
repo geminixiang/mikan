@@ -114,8 +114,13 @@ must cooperate with their signal. Defaults are a 60-second script deadline,
 a 64-MiB VM heap, and up to 40,000 text characters of emitted output; the
 options header can request another deadline or a smaller output budget.
 
-Durable `store`/`load` and classifier helpers are not implemented. Store values
-last only for one script. Codemode does not reconnect MCP clients or expand grants.
+`store`/`load` values live in the conversation's `mikan.script-store` pi-durable
+document (`ScriptStoreDoc` in `src/sessions/session-store.ts`). A successful
+script's writes are committed after it ends, as Pi appends them to the branch; a
+failed script writes nothing. The document is rewindable and forks as of the fork
+point, so a thread started from a run sees the values that run left, and `/new`
+(`SessionStore.reset`) clears it. Classifier helpers are not implemented.
+Codemode does not reconnect MCP clients or expand grants.
 
 ## MCP exposure and deferred discovery
 

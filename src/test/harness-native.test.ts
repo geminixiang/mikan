@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, expectTypeOf, test, vi } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  type FauxResponseFactory,
+} from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
@@ -201,6 +206,49 @@ test("codemode filters nested results and obeys per-prompt grants", async () => 
   expect(session.getLastRunStats().toolCallCounts).toMatchObject({ codemode: 1, temporary: 2 });
   await session.prompt("try again");
   expect(invoke).toHaveBeenCalledTimes(2);
+});
+
+const storeCall = (code: string) =>
+  fauxAssistantMessage(fauxToolCall("codemode", { label: "Store", code }), {
+    stopReason: "toolUse",
+  });
+
+test("codemode store values last across calls and a restart, and /new clears them", async () => {
+  const { faux, file, wrap } = setup();
+  const loaded: string[] = [];
+  const captureLoad = (context: Parameters<FauxResponseFactory>[0]) => {
+    const result = context.messages.findLast((m) => m.role === "toolResult");
+    loaded.push(JSON.stringify(result?.content));
+    return fauxAssistantMessage("done");
+  };
+  const noop: AgentTool = {
+    name: "noop",
+    label: "noop",
+    description: "No-op",
+    parameters: { type: "object", properties: {} },
+    execute: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: {} }),
+  };
+  const store = await openSessionAt(file);
+  faux.setResponses([
+    storeCall('store("k", "v1"); store("gone", 1); text("stored")'),
+    storeCall('store("gone", undefined); text(String(load("k")) + "/" + String(load("gone")))'),
+    captureLoad,
+  ]);
+  await wrap(store).prompt("store", { tools: [noop] });
+  await store.close();
+  const reopened = await openSessionAt(file);
+  const session = wrap(reopened);
+  faux.setResponses([storeCall('text(String(load("k")))'), captureLoad]);
+  await session.prompt("load after reopen", { tools: [noop] });
+  await reopened.reset();
+  faux.setResponses([storeCall('text(String(load("k")))'), captureLoad]);
+  await session.prompt("load after reset", { tools: [noop] });
+
+  expect(loaded).toEqual([
+    expect.stringContaining("v1/undefined"),
+    expect.stringContaining("v1"),
+    expect.stringContaining("undefined"),
+  ]);
 });
 
 test.each([

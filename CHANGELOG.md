@@ -11,6 +11,13 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Added
+
+- Codemode `store(key, value)` and `load(key)` keep JSON values across scripts in a conversation,
+  as in Pi, instead of only within one script. Values survive a restart, a thread started from a
+  run sees the values as of that run, and `/new` clears them. They are kept in a pi-durable
+  document of the conversation.
+
 ### Changed
 
 - MCP tool results reach the model through pi-mcp's `toLlmContent`, so an image embedded as a
