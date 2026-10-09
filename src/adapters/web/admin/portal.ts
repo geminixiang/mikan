@@ -19,8 +19,6 @@ import {
   validateSkill,
 } from "../../../harness/skills.js";
 import { SessionStore } from "../../../sessions/session-store.js";
-import type { SessionEntry } from "../../../sessions/types.js";
-import type { Usage } from "@earendil-works/pi-ai";
 import type { EventStore } from "../../../events/index.js";
 import { InMemoryTokenStore } from "../token-store.js";
 import type { AdminToken, AdminTokenCreateOptions } from "./types.js";
@@ -395,48 +393,28 @@ async function readSessionUsage(
   label: string,
 ): Promise<SessionUsageRow[]> {
   try {
-    const manager = await SessionStore.inspect(office, sessionKey);
-    if (!manager) return [];
-    const header = manager.getHeader();
-
-    const entries = await manager.getEntries();
-    const usage = entries.reduce(
-      (sum, entry) => {
-        const item = assistantUsage(entry);
-        if (!item) return sum;
-        sum.input += numberOrZero(item.input);
-        sum.output += numberOrZero(item.output);
-        sum.cacheRead += numberOrZero(item.cacheRead);
-        sum.cacheWrite += numberOrZero(item.cacheWrite);
-        sum.cost += numberOrZero(item.cost?.total);
-        return sum;
-      },
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 },
-    );
-    const total = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+    const spend = await SessionStore.spend(office, sessionKey);
+    if (!spend) return [];
+    const { input, output, cacheRead, cacheWrite, cost } = spend.usage;
+    const total = input + output + cacheRead + cacheWrite;
     if (total <= 0) return [];
-
     return [
       {
         conversationId,
         label,
         sessionKey,
-        updatedAt:
-          entries.length > 0
-            ? new Date(entries.at(-1)!.timestamp).toISOString()
-            : new Date(header.createdAt).toISOString(),
-        ...usage,
+        updatedAt: new Date(spend.updatedAt).toISOString(),
+        input,
+        output,
+        cacheRead,
+        cacheWrite,
+        cost: cost.total,
         total,
       },
     ];
   } catch {
     return [];
   }
-}
-
-function assistantUsage(entry: SessionEntry): Partial<Usage> | undefined {
-  if (entry.type !== "message" || entry.message.role !== "assistant") return undefined;
-  return entry.message.usage;
 }
 
 function numberOrZero(value: unknown): number {
@@ -542,12 +520,9 @@ async function accumulateSessionUsageByDay(
   flags: { hasOlder: boolean },
 ): Promise<void> {
   try {
-    const manager = await SessionStore.inspect(office, sessionKey);
-    if (!manager) return;
-
-    for (const entry of await manager.getEntries()) {
-      const usage = assistantUsage(entry);
-      if (!usage || !entry.timestamp) continue;
+    for (const entry of await SessionStore.ownResponseUsage(office, sessionKey)) {
+      const usage = entry.usage;
+      if (!entry.timestamp) continue;
 
       const when = new Date(entry.timestamp);
       if (Number.isNaN(when.getTime())) continue;

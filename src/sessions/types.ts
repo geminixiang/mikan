@@ -1,7 +1,7 @@
 import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { Message, Models } from "@earendil-works/pi-ai";
+import type { Message, Models, Usage } from "@earendil-works/pi-ai";
 import type {
   Conversation,
   Harness,
@@ -81,6 +81,16 @@ export interface SessionRunRecord {
 
 export interface TaskBrief {
   acknowledgement: string;
+}
+
+export interface ResponseUsage {
+  timestamp: number;
+  usage: Usage;
+}
+
+export interface SessionSpend {
+  usage: Usage;
+  updatedAt: number;
 }
 
 export interface SessionExecution {
