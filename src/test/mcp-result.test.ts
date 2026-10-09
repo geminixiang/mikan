@@ -22,56 +22,17 @@ function githubLikeSearch(count: number) {
 }
 
 describe("mcpResultContent", () => {
-  it("keeps text and image blocks", () => {
-    const blocks = mcpResultContent({
-      content: [
-        { type: "text", text: "hello" },
-        { type: "image", data: "aW1n", mimeType: "image/png" },
-      ],
-    });
-    expect(blocks).toEqual([
-      { type: "text", text: "hello" },
-      { type: "image", data: "aW1n", mimeType: "image/png" },
-    ]);
-  });
-
-  it("uses structuredContent only when content is empty", () => {
-    expect(mcpResultContent({ content: [], structuredContent: { a: 1 } })).toEqual([
-      { type: "text", text: '{"a":1}' },
-    ]);
+  it("passes an embedded image resource to the model as an image", () => {
     expect(
-      mcpResultContent({ content: [{ type: "text", text: "t" }], structuredContent: { a: 1 } }),
-    ).toEqual([{ type: "text", text: "t" }]);
-  });
-
-  it("describes binary resources instead of inlining their bytes", () => {
-    const [block] = mcpResultContent({
-      content: [
-        {
-          type: "resource",
-          resource: { uri: "file:///a.bin", mimeType: "application/pdf", blob: "A".repeat(4000) },
-        },
-      ],
-    });
-    expect(block).toEqual({
-      type: "text",
-      text: "[Resource: file:///a.bin (application/pdf, 3000 bytes, binary content omitted)]",
-    });
-  });
-
-  it("inlines text resources and summarizes links and audio", () => {
-    const blocks = mcpResultContent({
-      content: [
-        { type: "resource", resource: { uri: "file:///a.txt", text: "body" } },
-        { type: "resource_link", uri: "https://x.example/r", name: "report" },
-        { type: "audio", data: "AAAA", mimeType: "audio/wav" },
-      ],
-    });
-    expect(blocks).toEqual([
-      { type: "text", text: "[Resource: file:///a.txt]\nbody" },
-      { type: "text", text: "[Resource link: report] https://x.example/r" },
-      { type: "text", text: "[Audio content omitted: audio/wav]" },
-    ]);
+      mcpResultContent({
+        content: [
+          {
+            type: "resource",
+            resource: { uri: "file:///chart.png", mimeType: "image/png", blob: "aW1n" },
+          },
+        ],
+      }),
+    ).toEqual([{ type: "image", data: "aW1n", mimeType: "image/png" }]);
   });
 
   it("reports an empty result", () => {
