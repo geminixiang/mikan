@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Message, Models, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, Models, Usage } from "@earendil-works/pi-ai";
 import { calculateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
   AssistantEntry,
@@ -687,7 +687,7 @@ async function importedUsage(
         record.conversationId !== conversationId ||
         record.byTaskId !== undefined ||
         !AssistantEntry.is(record) ||
-        message?.role !== "assistant"
+        !recordsUsage(message)
       ) {
         continue;
       }
@@ -699,6 +699,10 @@ async function importedUsage(
     cursor = page.next;
   } while (cursor !== undefined);
   return byModel;
+}
+
+function recordsUsage(message: AgentMessage | undefined): message is AssistantMessage {
+  return message?.role === "assistant" && isRecord(message.usage);
 }
 
 async function recordImportedUsage(
@@ -1035,7 +1039,7 @@ export class SessionStore implements SessionInspection {
       const id = session.conversation.id;
       return (await readRecords(session.conversation)).flatMap((record) => {
         const message = record.model?.[0];
-        return record.conversationId === id && message?.role === "assistant"
+        return record.conversationId === id && recordsUsage(message)
           ? [{ timestamp: message.timestamp, usage: message.usage }]
           : [];
       });
