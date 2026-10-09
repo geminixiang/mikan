@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   CodemodeSandbox,
+  type CodemodeStoreWrites,
   mcpStructuredContentSchema,
   parseCodemodeSource,
   renderDeclarations,
@@ -11,6 +12,7 @@ import {
   type CodemodeJsonSchema,
 } from "@earendil-works/pi-codemode";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
+import type { Context } from "@earendil-works/chord";
 import { withAbortSignal } from "@earendil-works/chord/context";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
@@ -20,6 +22,7 @@ import { tagHarnessTool } from "./pi-tools.js";
 import { START_TASK_TOOL } from "./task.js";
 import { mcpNamespaceKey, searchTools, TOOL_SEARCH_TOOL } from "./tool-search.js";
 import { isRecord } from "../../unknown-values.js";
+import { ScriptStoreDoc } from "../../sessions/session-store.js";
 
 const TEXT_OUTPUT_SCHEMA: CodemodeJsonSchema = { type: "string" };
 
@@ -151,7 +154,7 @@ export function createCodemodeTool(options: CodemodeToolOptions): MikanHarnessTo
 
 Global output helpers:
 - text(value) and console.* append text; image(dataUrlOrImageContent) forwards an image; exit() ends the script successfully.
-- return value emits the final value. store/load values last only for this script, not across calls.
+- return value emits the final value. store(key, value) and load(key) keep JSON values across codemode calls in this conversation; storing undefined deletes a key.
 - ALL_TOOLS lists the authorized nested tools as { name, description } entries.
 
 Global discovery helpers (async functions, not methods on tools):
@@ -216,7 +219,12 @@ return data.items.map(({ id, title }) => ({ id, title }));
         memoryLimitBytes: 64 * 1024 * 1024,
       });
       try {
-        const result = await sandbox.execute(source.code, { signal: context.abortSignal });
+        const saved = await api.snapshot(ScriptStoreDoc, api.conversationId, context);
+        const result = await sandbox.execute(source.code, {
+          signal: context.abortSignal,
+          store: saved?.values ?? {},
+        });
+        if (result.ok) await saveStoreWrites(api, result.storeWrites, context);
         const output = [...result.output];
         if (result.ok && result.value !== undefined)
           output.push({ type: "text", text: JSON.stringify(result.value) });
@@ -238,6 +246,19 @@ return data.items.map(({ id, title }) => ({ id, title }));
       }
     },
   });
+}
+
+async function saveStoreWrites(
+  api: ToolExecutionApi,
+  writes: CodemodeStoreWrites,
+  context: Context,
+): Promise<void> {
+  if (writes.delete.length === 0 && Object.keys(writes.set).length === 0) return;
+  await api.commit(async (tx) => {
+    const store = await tx.doc(ScriptStoreDoc, api.conversationId);
+    for (const key of writes.delete) delete store.values[key];
+    Object.assign(store.values, writes.set);
+  }, context);
 }
 
 function nestedApi(

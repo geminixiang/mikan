@@ -101,6 +101,15 @@ const SessionDoc = defineDoc<SessionDocState>({
   initial: () => ({}),
 });
 
+export const ScriptStoreDoc = defineDoc<{ values: Record<string, JsonValue> }>({
+  kind: "mikan.script-store",
+  version: 1,
+  scope: "conversation",
+  history: "rewindable",
+  fork: "asOf",
+  initial: () => ({ values: {} }),
+});
+
 type SessionIndexRecord = Required<{
   conversationId: number;
   id: string;
@@ -1188,7 +1197,12 @@ export class SessionStore implements SessionInspection {
   }
 
   async reset(): Promise<void> {
-    await this.mutate(() => this.conversation.reset(undefined, context));
+    await this.mutate(async () => {
+      await this.conversation.reset(undefined, context);
+      await this.conversation.commit(async (tx) => {
+        (await tx.doc(ScriptStoreDoc, this.conversation.id)).values = {};
+      }, context);
+    });
   }
 
   async setSessionName(name: string): Promise<void> {
