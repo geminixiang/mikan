@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { ImageContent, JsonValue, TextContent } from "@earendil-works/pi-ai";
 import type { Context } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import { toLlmContent, type CallToolResult } from "@earendil-works/pi-mcp";
 import type { MikanToolResult } from "./types.js";
 import { redactSecrets } from "./tools/secret-redaction.js";
 import { isRecord } from "../unknown-values.js";
@@ -14,12 +15,6 @@ export interface McpTextLimits {
 export interface BoundedMcpText {
   text: string;
   digest?: true;
-}
-
-export interface McpCallResult {
-  content?: unknown;
-  structuredContent?: unknown;
-  isError?: boolean;
 }
 
 const SPILL_DIR = [".mikan", "mcp-output"];
@@ -45,57 +40,11 @@ const DIGEST_LEVELS: readonly DigestLevel[] = [
   { stringChars: 16, arrayItems: 1, depth: 2 },
 ];
 
-type RawBlock = Record<string, unknown>;
-
-function isRawBlock(value: unknown): value is RawBlock {
-  return isRecord(value);
-}
-
-function stringField(block: RawBlock, key: string): string | undefined {
-  const value = block[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-function describeResource(resource: RawBlock): string {
-  const uri = stringField(resource, "uri") ?? "(no URI)";
-  const text = stringField(resource, "text");
-  if (text !== undefined) return `[Resource: ${uri}]\n${text}`;
-  const blob = stringField(resource, "blob");
-  const mimeType = stringField(resource, "mimeType") ?? "unknown type";
-  const size = blob === undefined ? "no content" : `${Buffer.byteLength(blob, "base64")} bytes`;
-  return `[Resource: ${uri} (${mimeType}, ${size}, binary content omitted)]`;
-}
-
-function blockContent(block: RawBlock): TextContent | ImageContent {
-  const text = stringField(block, "text");
-  if (block.type === "text" && text !== undefined) return { type: "text", text };
-  const data = stringField(block, "data");
-  const mimeType = stringField(block, "mimeType");
-  if (block.type === "image" && data !== undefined && mimeType !== undefined) {
-    return { type: "image", data, mimeType };
-  }
-  if (block.type === "resource" && isRawBlock(block.resource)) {
-    return { type: "text", text: describeResource(block.resource) };
-  }
-  if (block.type === "resource_link") {
-    const uri = stringField(block, "uri") ?? "(no URI)";
-    return { type: "text", text: `[Resource link: ${stringField(block, "name") ?? uri}] ${uri}` };
-  }
-  if (block.type === "audio") {
-    return { type: "text", text: `[Audio content omitted: ${mimeType ?? "audio/*"}]` };
-  }
-  return { type: "text", text: JSON.stringify(block) };
-}
-
-export function mcpResultContent(result: McpCallResult): (TextContent | ImageContent)[] {
-  const blocks = (Array.isArray(result.content) ? result.content : [])
-    .filter(isRawBlock)
-    .map(blockContent);
-  if (blocks.length > 0) return blocks;
-  if (result.structuredContent !== undefined && result.structuredContent !== null) {
-    return [{ type: "text", text: JSON.stringify(result.structuredContent) }];
-  }
-  return [{ type: "text", text: "(empty result)" }];
+export function mcpResultContent(
+  result: Pick<CallToolResult, "content" | "structuredContent">,
+): (TextContent | ImageContent)[] {
+  const content = toLlmContent(result);
+  return content.length > 0 ? content : [{ type: "text", text: "(empty result)" }];
 }
 
 function parseJson(text: string): { value: unknown } | undefined {
@@ -120,7 +69,7 @@ function digest(value: unknown, level: DigestLevel, depth = 0): unknown {
     const hidden = value.length - kept.length;
     return hidden > 0 ? [...kept, `…[+${hidden} more items]`] : kept;
   }
-  if (isRawBlock(value)) {
+  if (isRecord(value)) {
     if (depth >= level.depth) return `{…${Object.keys(value).length} keys}`;
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, digest(item, level, depth + 1)]),
@@ -218,7 +167,7 @@ function truncationNotice(
   return `[MCP result truncated: showing ${view}. ${full}, or re-query with filters or smaller pages.]`;
 }
 
-function scriptResult(result: McpCallResult): JsonValue {
+function scriptResult(result: CallToolResult): JsonValue {
   const copy: JsonValue = JSON.parse(
     JSON.stringify({
       content: Array.isArray(result.content) ? result.content : [],
@@ -230,7 +179,7 @@ function scriptResult(result: McpCallResult): JsonValue {
 }
 
 export async function guardMcpToolResult(
-  result: McpCallResult,
+  result: CallToolResult,
   env: ExecutionEnv | undefined,
   context: Context,
 ): Promise<MikanToolResult> {

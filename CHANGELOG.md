@@ -13,6 +13,9 @@ change in a minor release.
 
 ### Changed
 
+- MCP tool results reach the model through pi-mcp's `toLlmContent`, so an image embedded as a
+  resource is passed to the model as an image instead of a placeholder line; other resource,
+  link, and audio placeholders use pi-mcp's wording.
 - Slack DM tasks are found, and their status and acknowledgement read, from pi-durable's task
   records instead of `log.jsonl`, so `task_status` and the in-thread status reply keep working
   after a restart with a lost or rotated log, and a status reply in a task thread no longer scans
