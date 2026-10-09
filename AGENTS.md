@@ -58,19 +58,21 @@ These rules have guards. When a guard fails, follow the owner or budget it names
 
 Take every change except a documentation-only one through these steps in order. When a step fails, return to step 1.
 
-1. **Research**: read the code, its history, the ADRs, and the Pi docs and source until every unknown is listed with an answer and its source.
-2. **Research again**: verify each answer against code or a measurement, and hunt the cases the first pass missed: other platforms, other message paths, concurrency, existing data. Done when a full pass finds nothing new.
-3. **POC**: prototype each candidate on real data, outside `src/`.
-4. **Compare** before and after with numbers: correctness, cost, latency, storage, code size.
-5. **Evaluate** each candidate against the best-design bar below and pick the best that passes. If none passes, return to step 1.
-6. **Implement and test**, failing test first for a behavior change.
-7. **Ship**: push to `main` and see CI pass. When the change can alter the path a Slack message takes through a running daemon, also trigger the Slack E2E workflow (`slack-e2e.yml`) and see it pass. That path covers boot and onboarding, settings and model loading, Slack intake and replies, session storage and routing, the run loop and its tools, scheduled events, and any dependency the daemon loads, such as Pi. Changes outside it, such as `mikan migrate` steps, other platform adapters, the Admin portal, and test-only changes, are done when CI passes. State in the report which case applied.
+1. **Research**: read the code, its history, the ADRs, and the Pi docs, type declarations, and examples at the installed version until every unknown is listed with an answer and its source. Record the findings in `docs/research/`.
+2. **Research again**: verify each answer with an experiment outside `src/`, on a copy of real data or through a dependency's public API, and hunt the cases the first pass missed: other platforms, other message paths, concurrency, existing data. Correct in the research doc every earlier claim an experiment overturns. Done when a full pass finds nothing new.
+3. **Decide**: prototype each candidate outside `src/`, compare them with numbers (correctness, cost, latency, storage, code size), and evaluate them against the best-design bar below. Present each open choice with its trade-offs and continue with the one the user picks.
+4. **Acceptance eval**: before implementing, build a black-box eval of every behavior the change touches and run it on `main` as the baseline. Show the user each case with its baseline result and its expected result after the change, accepted regressions included, and implement once the user accepts them. Build it with the `mikan-acceptance-eval` skill.
+5. **Implement and test** on a branch in a worktree, failing test first for a behavior change.
+6. **Verify**: rerun the eval on the branch; every case must match its expected result. Then exercise the change on the real platform with a local daemon.
+7. **Ship**: open a PR whose body carries the eval's before and after table, see CI pass, and merge once the user approves. When the change can alter the path a Slack message takes through a running daemon, also trigger the Slack E2E workflow (`slack-e2e.yml`) on the branch and see it pass. That path covers boot and onboarding, settings and model loading, Slack intake and replies, session storage and routing, the run loop and its tools, scheduled events, and any dependency the daemon loads, such as Pi. Changes outside it, such as `mikan migrate` steps, other platform adapters, the Admin portal, and test-only changes, are done when CI passes. State in the report which case applied.
+
+A suspected bug is reproduced on the real platform before it is reported. Its issue states the steps, what the user saw with timings, and the cause, and its fix goes through the steps above.
 
 The best design meets these, and when they conflict, the earlier one wins:
 
 - **Built on Pi and existing dependencies**: hand each responsibility to pi-durable or another dependency through its public API; own code only where none offers it, with the reason recorded.
 - **Maintainable**: the least new code, state, and special cases; understandable from its README and ADR; unchanged by a Pi upgrade.
-- **Acceptable in its trade-offs**: every cost measured in step 4 and recorded in the report or ADR.
+- **Acceptable in its trade-offs**: every cost measured in steps 3 and 4 and recorded in the report or ADR.
 
 ## Boundaries
 
