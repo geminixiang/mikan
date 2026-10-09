@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -50,7 +51,7 @@ async function importedAnswer(
 ): Promise<void> {
   const session = await SessionStore.open(office, key);
   if (cause) await session.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: cause });
-  const answer = {
+  const answer: AssistantMessage = {
     role: "assistant",
     content: [{ type: "text", text: "imported answer" }],
     api: "openai-responses",
@@ -64,7 +65,7 @@ async function importedAnswer(
       totalTokens: input + 2,
       cost: { input: 0.1, output: 0.2, cacheRead: 0, cacheWrite: 0, total: 0.3 },
     },
-    stopReason: "stop" as const,
+    stopReason: "stop",
     timestamp: 1,
   };
   if (!withUsage) Reflect.deleteProperty(answer, "usage");

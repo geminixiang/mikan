@@ -15,8 +15,8 @@ change in a minor release.
 
 - `mikan migrate` step `0013-session-usage` no longer stops with
   `Cannot read properties of undefined (reading 'input')` on an imported answer that recorded no
-  usage, and the Admin portal's daily usage chart no longer drops a session holding one; such answers count as no
-  spend.
+  usage, and the Admin portal's daily usage chart no longer drops a session holding one; such
+  answers count as no spend.
 
 ## [1.3.0-beta.0]
 
