@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.3.0-beta.1]
+
 ### Fixed
 
 - `mikan migrate` step `0013-session-usage` no longer stops with
