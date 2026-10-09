@@ -86,6 +86,7 @@ For routing, mounts, vault behavior, and managed container details, see [src/con
 | `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows                     |
 | `session` / `/session`                           | Open a read-only web view of the current session               |
 | `/new` / `/pi-new`                               | Reset the current session                                      |
+| `/compact` / `/pi-compact`                       | Summarize older messages to free up context                    |
 | `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                    |
 | `/sandbox` / `/pi-sandbox [boost\|visibility …]` | Show sandbox status, boost limits, or narrow office visibility |
 | `/pi-auto-reply <on\|off\|jev>`                  | Set mention-free replies for the current Slack channel         |

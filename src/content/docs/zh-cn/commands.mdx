@@ -26,6 +26,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                                          |
 | `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                                           |
 | `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                                                 |
+| `/compact [instructions]` / `/pi-compact`          | 总结较早的消息以腾出上下文；DM 和频道均可使用。instructions 指定摘要要保留的内容。较早的消息仍保留在会话历史中。        |
 | `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                           |
 | `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                                             |
 | `/pi-auto-reply <on\|off\|jev>`                    | 让当前的 Slack channel 回复每一条消息（`on`）、只回复 mention（`off`），或由 Jev 判断消息是否在对 mikan 说话（`jev`）。 |

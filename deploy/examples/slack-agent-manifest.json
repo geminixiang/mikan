@@ -30,6 +30,11 @@
         "should_escape": false
       },
       {
+        "command": "/pi-compact",
+        "description": "summarize older messages to free up context",
+        "should_escape": false
+      },
+      {
         "command": "/pi-model",
         "description": "switch this conversation's LLM",
         "should_escape": false

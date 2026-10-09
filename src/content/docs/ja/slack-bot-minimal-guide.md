@@ -80,6 +80,7 @@ Socket Mode だけでローカル開発する場合、公開 request URL は不�
 
 - `/pi-login` → login portal
 - `/pi-new` → 新しい DM session を開始
+- `/pi-compact` → 古いメッセージを要約して context を空ける
 - `/pi-session` → session viewer
 - `/pi-model` → この conversation の LLM を切り替え（`provider/model[:thinking]`、例：`anthropic/claude-sonnet-4-6:off`）
 - `/pi-sandbox` → この conversation の sandbox を確認・調整

@@ -35,6 +35,11 @@
         "should_escape": false
       },
       {
+        "command": "/pi-compact",
+        "description": "summarize older messages to free up context",
+        "should_escape": false
+      },
+      {
         "command": "/pi-model",
         "description": "model",
         "should_escape": false
