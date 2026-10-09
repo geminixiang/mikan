@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.3.0-beta.0]
+
 ### Added
 
 - `/compact [instructions]` (`/pi-compact` in Slack) summarizes a session's older messages with
