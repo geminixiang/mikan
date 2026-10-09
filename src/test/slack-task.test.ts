@@ -24,11 +24,7 @@ import { MikanModels } from "../harness/models.js";
 import { JevNotConfiguredError } from "../harness/jev.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import * as observability from "../observability/index.js";
-import {
-  querySlackTasks,
-  isTaskStatusQuestion,
-  readTaskRoots,
-} from "../adapters/slack/task-status.js";
+import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { SessionStore } from "../sessions/session-store.js";
 import * as log from "../log.js";
@@ -658,13 +654,13 @@ test("status between admission and run start reports queued, not unknown", async
   const preparing = deferred();
   const release = deferred();
   beforePromptPayload.mockImplementation(async () => {
-    if (!readTaskRoots(office).size) return;
+    if ((await SessionStore.listTasks(office, "D123")).length === 0) return;
     preparing.resolve();
     await release.promise;
   });
   await dm("investigate this");
   await preparing.promise;
-  const root = [...readTaskRoots(office).keys()][0]!;
+  const root = (await SessionStore.listTasks(office, "D123"))[0]!.sessionKey.slice("D123:".length);
   const before = await querySlackTasks(office, "D123", [], `D123:${root}`);
   expect(before[0]?.status).toBe("queued");
   beforePromptPayload.mockReset();
@@ -680,16 +676,12 @@ test("recent status listing keeps an older active task even with ten newer task 
   faux.setResponses([handoff(), callHold()]);
   const root = await startTask();
   const office = workspace.office(createOfficeAddress("slack", "D123"));
-  for (let i = 0; i < 11; i++)
-    appendFileSync(
-      office.logPath,
-      JSON.stringify({
-        ts: `9999999999.${i}`,
-        taskRoot: true,
-        isMessagingBot: true,
-        text: `later ${i}`,
-      }) + "\n",
-    );
+  for (let i = 0; i < 11; i++) {
+    const later = await SessionStore.openTask(office, `D123:9999999999.${i}`, "D123", {
+      acknowledgement: `later ${i}`,
+    });
+    await later.close();
+  }
   const observations = await querySlackTasks(office, "D123", runtime.getRunningSessions());
   expect(observations.find((t) => t.threadTs === root)?.status).toBe("running");
 });
@@ -704,13 +696,12 @@ test("initial delegated reasoning-only task still notifies its requester", async
   );
 });
 
-test("task membership parser tolerates malformed logs and status isolates platform identity", async () => {
+test("status isolates platform identity", async () => {
   faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
   const root = await startTask();
   hold.resolve();
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   const office = workspace.office(createOfficeAddress("slack", "D123"));
-  appendFileSync(office.logPath, "not-json\nnull\n");
   const observations = await querySlackTasks(
     office,
     "D123",
@@ -726,6 +717,32 @@ test("task membership parser tolerates malformed logs and status isolates platfo
   );
   expect(observations[0]?.status).toBe("completed");
   expect(observations[0]?.currentTool).toBeUndefined();
+});
+
+test("tasks and their acknowledgements are read from the task record, not the office log", async () => {
+  faux.setResponses([handoff(), callHold(), fauxAssistantMessage("done")]);
+  const root = await startTask();
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  const office = workspace.office(createOfficeAddress("slack", "D123"));
+  rmSync(office.logPath);
+
+  const [task] = await querySlackTasks(office, "D123", []);
+
+  expect(task).toMatchObject({
+    sessionKey: `D123:${root}`,
+    threadTs: root,
+    acknowledgement: "On it, continuing here.",
+    status: "completed",
+  });
+  const calls = faux.state.callCount;
+  await dm("好了嗎？", root);
+  expect(bot.postMessage).toHaveBeenCalledWith(
+    "D123",
+    expect.stringContaining("這一輪執行已結束"),
+    root,
+  );
+  expect(faux.state.callCount).toBe(calls);
 });
 
 test("main DM pure status observes the single active task without a model turn", async () => {
@@ -794,7 +811,9 @@ async function interruptedTask(
     taskRoot: true,
   });
   await (await SessionStore.open(office, "D123")).close();
-  const task = await SessionStore.openTask(office, `D123:${root}`, "D123");
+  const task = await SessionStore.openTask(office, `D123:${root}`, "D123", {
+    acknowledgement: "On it.",
+  });
   if (!options.legacy) await task.recordRun({ startedAt: now - (options.ageSeconds ?? 60) * 1000 });
   if (options.ended) await task.recordRun({ endedAt: now, status: "completed" });
   await task.close();

@@ -26,9 +26,9 @@ This directory implements the Slack platform adapter and Slack-specific session/
 ## DM tasks
 
 Top-level DM responders expose `startTask(message, task)`. Admission posts a
-persistent acknowledgement, records `taskRoot` on its platform log entry, creates
-the task's session as a child conversation owned by a background task of the DM
-session (`SessionStore.openTask`, ADR 0021), and queues a self-contained task plus
+persistent acknowledgement, creates the task's session as a child conversation
+owned by a background task of the DM session whose input holds the
+acknowledgement (`SessionStore.openTask`, ADR 0021), and queues a self-contained task plus
 the original attachments under that root. Task output uses the thread responder; it does not
 replace the acknowledgement. Ordinary event scheduling is unchanged.
 
@@ -43,8 +43,11 @@ Without Jev the regex status shortcut decides `status`, thread text is tried as
 steering, and top-level text is a normal turn — the pre-Jev behavior. Idle
 threads use normal prompt execution (including explicit continuation after
 stop). Stop keeps its magic-word path. Shared channels and non-task threads
-retain their existing trigger/queue policy. Task-root recognition survives
-restart through the office log.
+retain their existing trigger/queue policy. Which threads are tasks, their
+acknowledgements, and their run state come from pi-durable (`SessionStore.listTasks`
+and `isTask`), not from the office log, so they survive a restart or a lost log.
+Task threads started before 1.1.0 were ordinary thread sessions and are not
+recognized.
 
 A task run outlives a restart. Shutdown closes task queues without waiting for
 them, and at startup the bot resumes, before backfill, every DM task whose run
@@ -56,7 +59,7 @@ resume. A task resumes at most twice in a row: `SessionStore.claimResume` counts
 resumes in the task's session document and resets the count whenever a run ends.
 Past the cap it closes the run as aborted and posts one notice, so a task whose
 step crashes the daemon cannot crash it again on every restart. Resume runs before backfill because backfill can take minutes on a large
-workspace; scanning a 57 MB DM log for task roots takes about 0.1 s.
+workspace; listing a DM's tasks reads only pi-durable's ownership index.
 
 Task response finalization posts one fresh in-thread message mentioning the current
 requester after a normal textual completion. Aborted, error and silent turns do

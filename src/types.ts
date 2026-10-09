@@ -265,7 +265,6 @@ export interface ConversationLogMessage {
   text?: string;
   attachments?: LoggedAttachment[];
   isMessagingBot?: boolean;
-  taskRoot?: boolean;
   platform?: PlatformName;
   slackBlocks?: object[];
   slackInteraction?: Record<string, unknown>;
