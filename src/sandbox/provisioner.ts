@@ -620,7 +620,10 @@ export class DockerContainerManager {
     failureLog: string,
   ): Promise<boolean> {
     try {
-      if (await this.containerExists(containerName)) await this.run(["rm", "-f", containerName]);
+      if (await this.containerExists(containerName)) {
+        await this.run(["kill", containerName]).catch(() => undefined);
+        await this.run(["rm", "-f", containerName]);
+      }
       log.logInfo(successLog);
       return true;
     } catch (err) {

@@ -753,6 +753,19 @@ describe("DockerContainerManager", () => {
     ).resolves.toBe("mikan-sandbox-slack-u123");
   });
 
+  test("kills a container before removing it, so removal never waits for a stop timeout", async () => {
+    const engine = new FakeEngine();
+    engine.seed("mikan-sandbox-alice", "alice", { labels: { "mikan.network": "bridge" } });
+
+    await manager(engine).provision("alice");
+
+    const removal = engine.calls.filter((args) => args[0] === "kill" || args[0] === "rm");
+    expect(removal).toEqual([
+      ["kill", "mikan-sandbox-alice"],
+      ["rm", "-f", "mikan-sandbox-alice"],
+    ]);
+  });
+
   test("remove deletes the container and the per-office network", async () => {
     const engine = new FakeEngine();
     const sandbox = manager(engine);

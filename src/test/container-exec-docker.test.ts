@@ -11,6 +11,11 @@ import { TEST_CONTEXT } from "./tool-api.js";
 import { containerEngine } from "../sandbox/engine.js";
 
 const ENGINE = containerEngine();
+
+function removeContainer(name: string): void {
+  spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
+  spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
+}
 const CANDIDATE_IMAGES = [
   "docker.io/library/debian:trixie-slim",
   "docker.io/library/alpine:latest",
@@ -55,7 +60,7 @@ function guestCommandLines(container: string): string[] {
 }
 
 afterAll(() => {
-  for (const name of containers) spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
+  for (const name of containers) removeContainer(name);
 });
 
 function containerEnv(container: string, docker?: string): ContainerExecutionEnv {

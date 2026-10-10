@@ -58,6 +58,7 @@ describe.runIf(available)(`DockerContainerManager on ${ENGINE}`, () => {
       const left = execFileSync(ENGINE, ["ps", "-a", "--filter", `name=^${name}$`, "-q"]);
       expect(left.toString().trim()).toBe("");
     } finally {
+      spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
       spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
       spawnSync(ENGINE, ["network", "rm", DockerContainerManager.networkName(key)], {
         stdio: "ignore",

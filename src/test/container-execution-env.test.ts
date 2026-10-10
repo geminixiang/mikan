@@ -11,6 +11,11 @@ import { containerEngine } from "../sandbox/engine.js";
 
 const ENGINE = containerEngine();
 
+function removeContainer(name: string): void {
+  spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
+  spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
+}
+
 interface Backend {
   name: string;
   makeDir(): string;
@@ -66,7 +71,7 @@ function containerBackend(image: string): Backend | undefined {
   const start = () => {
     container ??= `mikan-env-test-${randomUUID().slice(0, 8)}`;
     execFileSync(ENGINE, ["run", "-d", "--name", container, image, "sleep", "infinity"]);
-    cleanups.push(() => spawnSync(ENGINE, ["rm", "-f", container!], { stdio: "ignore" }));
+    cleanups.push(() => removeContainer(container!));
     return container;
   };
   return {
