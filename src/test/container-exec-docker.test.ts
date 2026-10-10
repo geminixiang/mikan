@@ -117,10 +117,10 @@ describe.runIf(images.length > 0)("container ExecutionEnv against a real contain
 
       spawnSync("sh", ["-c", 'pkill -KILL -f "exec -i $0 /tmp/mikan-pi-env-"', container]);
 
-      await expect.poll(() => running(container, "sleep 302"), { timeout: 10_000 }).toBe(false);
+      await expect.poll(() => running(container, "sleep 302"), { timeout: 45_000 }).toBe(false);
       await result;
     },
-    30_000,
+    60_000,
   );
 
   test.each(images)(

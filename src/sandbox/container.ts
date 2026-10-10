@@ -123,11 +123,11 @@ interface ContainerConnection {
 const connections = new Map<string, ContainerConnection>();
 
 function containerConnection(
-  engine: string,
+  configuredEngine: string | undefined,
   container: string,
   ensureReady: () => Promise<void>,
 ): Connection {
-  const key = `${engine}\0${container}`;
+  const key = `${configuredEngine ?? ""}\0${container}`;
   const existing = connections.get(key);
   if (existing) {
     existing.ensureReady = ensureReady;
@@ -138,6 +138,7 @@ function containerConnection(
     connection: new Connection({
       command: async () => {
         await entry.ensureReady();
+        const engine = configuredEngine ?? containerEngine();
         return [engine, "exec", "-i", container, await deployDaemon(engine, container)];
       },
       onLog: (text) => log.logWarning(`Sandbox ${container}`, text.trim()),
@@ -187,11 +188,11 @@ function readiedEnv(
 }
 
 export function createContainerExecutionEnv(options: ContainerExecutionEnvOptions): ExecutionEnv {
-  const engine = options.engine ?? containerEngine();
   const ensureReady =
-    options.ensureReady ?? (() => ensureContainerRunning(options.container, engine));
+    options.ensureReady ??
+    (() => ensureContainerRunning(options.container, options.engine ?? containerEngine()));
   const env = new RemoteExecutionEnv({
-    connection: containerConnection(engine, options.container, ensureReady),
+    connection: containerConnection(options.engine, options.container, ensureReady),
     id: `container:${options.container}`,
     cwd: options.cwd,
     shellEnv: withGitHubCredentialHelper(options.env),
