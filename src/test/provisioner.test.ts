@@ -185,7 +185,11 @@ function lines(values: string[]): string {
 }
 
 function manager(engine: FakeEngine, options: { limits?: object; boostLimits?: object } = {}) {
-  return new DockerContainerManager(IMAGE, { ...options, execFileImpl: engine.exec });
+  return new DockerContainerManager(IMAGE, {
+    ...options,
+    engine: "docker",
+    execFileImpl: engine.exec,
+  });
 }
 
 function infoLogs() {

@@ -142,7 +142,7 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     vars: [
       {
         name: "CONTAINER_ENGINE",
-        doc: "OCI engine CLI that runs container:* and image:* sandboxes: docker (default), podman, or nerdctl",
+        doc: "Override the container engine for container:* and image:* sandboxes; by default mikan uses the first of nerdctl, podman, docker that answers `info`",
       },
     ],
   },

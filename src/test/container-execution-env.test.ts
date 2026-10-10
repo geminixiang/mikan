@@ -195,8 +195,8 @@ for (const backend of backends) {
 
 describe("ContainerExecutionEnv without a backend", () => {
   test("names one file namespace per container", () => {
-    const first = new ContainerExecutionEnv({ container: "c", cwd: "/a" });
-    const second = new ContainerExecutionEnv({ container: "c", cwd: "/b" });
+    const first = new ContainerExecutionEnv({ container: "c", cwd: "/a", docker: "docker" });
+    const second = new ContainerExecutionEnv({ container: "c", cwd: "/b", docker: "docker" });
     expect(first.id).toBe(second.id);
   });
 

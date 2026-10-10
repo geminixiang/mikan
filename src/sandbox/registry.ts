@@ -30,9 +30,11 @@ async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
   try {
     await execSimple(engine, ["--version"]);
   } catch {
-    throw new SandboxError(`Error: container engine '${engine}' is not installed or not in PATH`);
+    throw new SandboxError(
+      `Error: no container engine found; install nerdctl, Podman, or Docker (tried '${engine}')`,
+    );
   }
-  console.log(`  Image auto-provisioning enabled. Image: ${config.image}`);
+  console.log(`  Image auto-provisioning enabled. Image: ${config.image} (engine: ${engine})`);
 }
 
 const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {

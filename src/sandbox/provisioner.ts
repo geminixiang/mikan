@@ -46,7 +46,7 @@ export class DockerContainerManager {
   private readonly boostedKeys = new Set<string>();
   private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: DockerExecFile;
-  private readonly engine: string;
+  private readonly configuredEngine: string | undefined;
 
   constructor(
     private readonly image: string,
@@ -55,7 +55,11 @@ export class DockerContainerManager {
     this.limits = options.limits;
     this.boostLimits = options.boostLimits;
     this.execFileImpl = options.execFileImpl ?? execFileAsync;
-    this.engine = options.engine ?? containerEngine();
+    this.configuredEngine = options.engine;
+  }
+
+  private get engine(): string {
+    return this.configuredEngine ?? containerEngine();
   }
 
   private run(args: string[]): Promise<{ stdout: string }> {

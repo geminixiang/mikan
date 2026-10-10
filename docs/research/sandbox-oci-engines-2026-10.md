@@ -32,17 +32,17 @@ On macOS nerdctl runs inside the VM, so a `--env-file` in the host temp director
 
 Keep one code path and use only what the three engines answer alike:
 
-| Need                        | Before                      | After                                                        |
-| --------------------------- | --------------------------- | ------------------------------------------------------------ |
-| Which CLI                   | `"docker"` literals         | `CONTAINER_ENGINE` (default `docker`), read in `engine.ts`   |
-| Container or network exists | parse "not found" messages  | `ps -a` / `network ls` with `name=^…$`                       |
-| Bind drift                  | `.HostConfig.Binds` strings | `.Mounts` source, destination, and `RW`                      |
-| Network and image drift     | `NetworkMode`, `.Image`     | `mikan.network` and `mikan.image-id` labels set at `run`     |
-| CPU limit                   | `--cpus`                    | `--cpu-period 100000 --cpu-quota <cpus × 100000>`            |
-| Command exit status         | `exec` exit code            | wrapper prints `mikan-exit-<random>:<status>` last on stderr |
-| Credentials                 | `--env-file` in host temp   | base64 lines on `exec -i` stdin, exported by the wrapper     |
-| Start time                  | RFC 3339 only               | also Podman's `YYYY-MM-DD HH:MM:SS.n +ZZZZ TZ`               |
-| Image for the ID label      | implicit pull by `run`      | explicit `pull` when the image is not local                  |
+| Need                        | Before                      | After                                                                               |
+| --------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| Which CLI                   | `"docker"` literals         | first of nerdctl, podman, docker whose `info` succeeds; `CONTAINER_ENGINE` pins one |
+| Container or network exists | parse "not found" messages  | `ps -a` / `network ls` with `name=^…$`                                              |
+| Bind drift                  | `.HostConfig.Binds` strings | `.Mounts` source, destination, and `RW`                                             |
+| Network and image drift     | `NetworkMode`, `.Image`     | `mikan.network` and `mikan.image-id` labels set at `run`                            |
+| CPU limit                   | `--cpus`                    | `--cpu-period 100000 --cpu-quota <cpus × 100000>`                                   |
+| Command exit status         | `exec` exit code            | wrapper prints `mikan-exit-<random>:<status>` last on stderr                        |
+| Credentials                 | `--env-file` in host temp   | base64 lines on `exec -i` stdin, exported by the wrapper                            |
+| Start time                  | RFC 3339 only               | also Podman's `YYYY-MM-DD HH:MM:SS.n +ZZZZ TZ`                                      |
+| Image for the ID label      | implicit pull by `run`      | explicit `pull` when the image is not local                                         |
 
 Rejected: a driver per engine (more code, the same commands), the Docker Engine HTTP API (no help for nerdctl), and requiring rootful engines (rootless Podman passes where the host delegates the CPU and memory controllers).
 

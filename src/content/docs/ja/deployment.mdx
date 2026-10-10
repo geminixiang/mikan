@@ -25,7 +25,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - 少なくとも 1 組の完全な Slack、Telegram、Discord、または GitHub credentials
 - PM2 ユーザーの永続的な `~/.mikan`（mikan の state を置く場所）。working directory の既定値は `~/.mikan/workspace`
-- `image:*` または `container:*` 使用時に PM2 user が利用できるコンテナエンジン：Docker（既定）、Podman、nerdctl。`CONTAINER_ENGINE` で選択します（[Image sandbox](/ja/sandbox/image/#コンテナエンジン) を参照）
+- `image:*` または `container:*` 使用時に PM2 user が利用できるコンテナエンジン：nerdctl、Podman、Docker のうち、最初に起動しているものを mikan が使います（[Image sandbox](/ja/sandbox/image/#コンテナエンジン) を参照）
 
 公開されている `mikan-sandbox` image は tool runtime であり、standalone mikan server image ではありません。PM2 は host 上で `mikan` を実行し、image mode は host Docker daemon を通じて containers を作成、管理します。
 

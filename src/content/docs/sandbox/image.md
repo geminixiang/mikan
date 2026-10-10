@@ -33,7 +33,7 @@ Features:
 
 ## Container engine
 
-mikan drives containers through the docker command set, which Docker, Podman, and nerdctl (containerd) all accept. Docker is the default; set `CONTAINER_ENGINE=podman` or `CONTAINER_ENGINE=nerdctl` (or a full path) in `~/.mikan/mikan.env` to use another engine, and replace `docker` with that engine in the commands on this page. Rootless Podman works when the host delegates the cgroup CPU and memory controllers to the user, which Podman machine on macOS does.
+mikan drives containers through the docker command set, which nerdctl (containerd), Podman, and Docker all accept. You do not choose the engine: with `container:*` or `image:*`, mikan uses the first of `nerdctl`, `podman`, and `docker` whose `info` succeeds, and logs the choice at startup. Replace `docker` with that engine in the commands on this page. Containers belong to the engine that created them, so a host that starts another engine later (for example a Podman machine at login) gets new containers, and the old engine's containers stay behind; set `CONTAINER_ENGINE` in `~/.mikan/mikan.env` to pin one. Rootless Podman works when the host delegates the cgroup CPU and memory controllers to the user, which Podman machine on macOS does.
 
 On macOS every engine runs Linux in a VM, and a bind mount reaches the container only from a folder the VM shares; keep the workspace and `~/.mikan` under your home directory.
 

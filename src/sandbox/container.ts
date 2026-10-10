@@ -58,7 +58,9 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
   try {
     await execSimple(engine, ["--version"]);
   } catch {
-    throw new SandboxError(`Error: container engine '${engine}' is not installed or not in PATH`);
+    throw new SandboxError(
+      `Error: no container engine found; install nerdctl, Podman, or Docker (tried '${engine}')`,
+    );
   }
 
   try {
@@ -82,7 +84,7 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
     ]);
   }
 
-  console.log(`  Container '${config.container}' is running.`);
+  console.log(`  Container '${config.container}' is running (engine: ${engine}).`);
 }
 
 const GROUP_FILE_PREFIX = "/tmp/mikan-exec-";
@@ -290,14 +292,14 @@ export class ContainerExecutionEnv implements ExecutionEnv {
   readonly id: string;
   readonly cwd: string;
   private readonly container: string;
-  private readonly docker: string;
+  private readonly engine: string | undefined;
   private readonly env: Record<string, string> | undefined;
   private readonly ensureReady: () => Promise<void>;
   private readonly running = new Map<string, ChildProcess>();
 
   constructor(options: ContainerExecutionEnvOptions) {
     this.container = options.container;
-    this.docker = options.docker ?? containerEngine();
+    this.engine = options.docker;
     this.id = `docker:${options.container}`;
     this.cwd = options.cwd;
     this.env = withGitHubCredentialHelper(options.env);
@@ -632,6 +634,10 @@ export class ContainerExecutionEnv implements ExecutionEnv {
       unlinkSignal();
       this.running.delete(groupFile);
     }
+  }
+
+  private get docker(): string {
+    return this.engine ?? containerEngine();
   }
 
   private resolve(path: string): string {
