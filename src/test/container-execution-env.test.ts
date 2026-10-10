@@ -130,6 +130,7 @@ for (const backend of backends) {
 
     test("readies the runtime once per environment and marks every operation as use", async () => {
       await inDir(backend, async (dir) => {
+        await backend.env(dir).exists(".", TEST_CONTEXT);
         let readied = 0;
         let used = 0;
         const env = backend.env(dir, {
