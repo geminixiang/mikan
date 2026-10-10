@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [docker, podman]
+        engine: [docker, podman, nerdctl]
 
     steps:
       - uses: actions/checkout@v5
@@ -67,18 +67,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install nerdctl
+        if: matrix.engine == 'nerdctl'
+        env:
+          NERDCTL_VERSION: 2.3.1
+          NERDCTL_SHA256: 7a0d8efcf55b10b57d831541266adb9c6ec3d55b44ec041c95f6eb994d1faab9
+        run: |
+          archive="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
+          curl -fsSLO "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
+          echo "${NERDCTL_SHA256}  ${archive}" | sha256sum -c -
+          sudo tar -xzf "${archive}" -C /usr/local bin/nerdctl libexec/cni
+          echo "ENGINE_PREFIX=sudo -E env PATH=$PATH" >> "$GITHUB_ENV"
+
       - name: Pull test images
         run: |
-          ${{ matrix.engine }} --version
+          $ENGINE_PREFIX ${{ matrix.engine }} --version
           for image in docker.io/library/debian:trixie-slim docker.io/library/alpine:latest; do
-            ${{ matrix.engine }} pull -q "$image"
+            $ENGINE_PREFIX ${{ matrix.engine }} pull -q "$image"
           done
 
       - name: Real-container sandbox tests
         env:
           CONTAINER_ENGINE: ${{ matrix.engine }}
         run: >-
-          npx vitest run
+          $ENGINE_PREFIX npx vitest run
           src/test/container-execution-env.test.ts
           src/test/container-exec-docker.test.ts
           src/test/container-provisioner-engine.test.ts
