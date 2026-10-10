@@ -31,6 +31,12 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - vault file credential 會自動 bind mount 進 container，target 由每個檔案的名稱推斷（見 [Vault](/zh-tw/sandbox/vault/)）
 - 每 10 分鐘檢查一次閒置 containers，至少閒置 10 分鐘後停止；視掃描時間而定，約在最後一次追蹤使用後 10–20 分鐘停止
 
+## 容器引擎
+
+mikan 透過 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受這套指令。不需要指定引擎：使用 `container:*` 或 `image:*` 時，mikan 依序檢查 `nerdctl`、`podman`、`docker`，採用第一個 `info` 成功的引擎，並在啟動時記錄。本頁指令中的 `docker` 請換成該引擎。Container 屬於建立它的引擎，所以如果 host 之後啟動了另一個引擎（例如登入時啟動 Podman machine），會建立新的 container，舊引擎的 container 會留著；要固定引擎，在 `~/.mikan/mikan.env` 設定 `CONTAINER_ENGINE`。rootless Podman 需要 host 把 cgroup 的 CPU 與 memory controller 委派給使用者，macOS 上的 Podman machine 已經委派。
+
+在 macOS 上，每個引擎都是在 VM 裡跑 Linux，bind mount 只能掛載 VM 有共享的資料夾；請把 workspace 與 `~/.mikan` 放在家目錄底下。
+
 ## 升級沙盒映像
 
 受管 container 可以隨時拋棄。只有它的 bind mount（conversation office、共享知識與 vault 檔案）會留下；寫在 container 其他位置的東西，包括 `/root`、安裝的套件與 `/etc` 的修改，都會在 container 被替換時消失。需要保留的東西請放在 workspace。

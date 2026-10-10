@@ -11,23 +11,6 @@ const execFileAsync = promisify(execFile);
 type ContainerStatus = "running" | "stopped" | "missing";
 type DriftReason = "binds" | "mount-content" | "network" | "image";
 
-function isDockerNotFoundError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const stderr = (err as { stderr?: unknown }).stderr;
-  const message = (err as { message?: unknown }).message;
-  const haystack = `${typeof stderr === "string" ? stderr : ""}\n${
-    typeof message === "string" ? message : ""
-  }`.toLowerCase();
-  return (
-    haystack.includes("no such network") ||
-    haystack.includes("no such container") ||
-    haystack.includes("no such object") ||
-    haystack.includes("network not found") ||
-    /network [^\n]+ not found/.test(haystack) ||
-    /error: no such [^\n]+/.test(haystack)
-  );
-}
-
 interface ContainerState {
   status: ContainerStatus;
   lastUsed: number;
@@ -41,9 +24,10 @@ import type {
   ResourceLimits,
   SandboxLimitStatus,
 } from "../types.js";
-import { errorMessage } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 import type { DockerExecFile } from "./types.js";
 import { sweepOrphanedCommands } from "./container.js";
+import { containerEngine } from "./engine.js";
 
 export class DockerContainerManager {
   private state = new Map<string, ContainerState>();
@@ -54,12 +38,15 @@ export class DockerContainerManager {
   private static readonly VAULT_ID_LABEL_KEY = "mikan.vault-id";
   private static readonly CONVERSATION_ID_LABEL_KEY = "mikan.conversation-id";
   private static readonly MOUNT_SIGNATURE_LABEL_KEY = "mikan.mount-signature";
+  private static readonly NETWORK_LABEL_KEY = "mikan.network";
+  private static readonly IMAGE_ID_LABEL_KEY = "mikan.image-id";
 
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
   private readonly boostedKeys = new Set<string>();
   private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: DockerExecFile;
+  private readonly configuredEngine: string | undefined;
 
   constructor(
     private readonly image: string,
@@ -68,6 +55,15 @@ export class DockerContainerManager {
     this.limits = options.limits;
     this.boostLimits = options.boostLimits;
     this.execFileImpl = options.execFileImpl ?? execFileAsync;
+    this.configuredEngine = options.engine;
+  }
+
+  private get engine(): string {
+    return this.configuredEngine ?? containerEngine();
+  }
+
+  private run(args: string[]): Promise<{ stdout: string }> {
+    return this.execFileImpl(this.engine, args);
   }
 
   static containerName(containerKey: string): string {
@@ -118,7 +114,7 @@ export class DockerContainerManager {
         await this.replaceContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} replaced from image ${this.image}`);
       } else if (status === "stopped") {
-        await this.execFileImpl("docker", ["start", containerName]);
+        await this.run(["start", containerName]);
         log.logInfo(`Container ${containerName} started`);
       } else if (status === "missing") {
         await this.runContainer(containerKey, containerName, mounts, options);
@@ -178,7 +174,7 @@ export class DockerContainerManager {
   private async stopInner(containerKey: string): Promise<void> {
     const containerName = this.getContainerName(containerKey);
     try {
-      await this.execFileImpl("docker", ["stop", containerName]);
+      await this.run(["stop", containerName]);
       this.setState(containerKey, "stopped", containerName);
       this.boostedKeys.delete(containerKey);
       this.overrideLimits.delete(containerKey);
@@ -206,7 +202,7 @@ export class DockerContainerManager {
     }
 
     try {
-      await this.execFileImpl("docker", ["network", "rm", networkName]);
+      await this.run(["network", "rm", networkName]);
       log.logInfo(`Network ${networkName} removed`);
     } catch (err) {
       log.logWarning(`Failed to remove network ${networkName}`, errorMessage(err));
@@ -254,7 +250,7 @@ export class DockerContainerManager {
     await Promise.all(
       Array.from(this.state.values())
         .filter((state) => state.status === "running")
-        .map((state) => sweepOrphanedCommands(state.containerName, this.execFileImpl)),
+        .map((state) => sweepOrphanedCommands(state.containerName, this.execFileImpl, this.engine)),
     );
 
     const running = Array.from(this.state.values()).filter((s) => s.status === "running").length;
@@ -311,7 +307,12 @@ export class DockerContainerManager {
         `${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}=${this.mountSignature(mounts)}`,
       );
     }
-    await this.execFileImpl("docker", [
+    labels.push("--label", `${DockerContainerManager.NETWORK_LABEL_KEY}=${networkName}`);
+    labels.push(
+      "--label",
+      `${DockerContainerManager.IMAGE_ID_LABEL_KEY}=${await this.pulledImageId()}`,
+    );
+    await this.run([
       "run",
       "-d",
       "--name",
@@ -342,7 +343,7 @@ export class DockerContainerManager {
 
   private resourceLimitArgs(limits: ResourceLimits | undefined): string[] {
     const args: string[] = [];
-    if (limits?.cpus) args.push("--cpus", limits.cpus);
+    if (limits?.cpus) args.push(...cpuQuotaArgs(limits.cpus));
     if (limits?.memory) {
       args.push("--memory", limits.memory);
       args.push("--memory-swap", limits.memory);
@@ -355,7 +356,7 @@ export class DockerContainerManager {
     if (limitArgs.length === 0) return;
     const args = ["update", ...limitArgs, containerName];
     try {
-      await this.execFileImpl("docker", args);
+      await this.run(args);
     } catch (err) {
       log.logWarning(
         `Failed to apply resource limits to container ${containerName}`,
@@ -415,14 +416,10 @@ export class DockerContainerManager {
   ): Promise<boolean> {
     if (mounts.length === 0) return false;
     const expected = this.mountSignature(mounts);
-    const { stdout } = await this.execFileImpl("docker", [
-      "inspect",
-      "-f",
-      `{{index .Config.Labels "${DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY}"}}`,
-      containerName,
-    ]);
-    const actual = this.normalizeDockerValue(stdout.trim());
-    return actual !== expected;
+    return (
+      (await this.label(containerName, DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY)) !==
+      expected
+    );
   }
 
   private mountSignature(mounts: ContainerMount[]): string {
@@ -450,52 +447,45 @@ export class DockerContainerManager {
     }
   }
 
-  private async inspectBindMounts(containerName: string): Promise<string[]> {
-    const { stdout } = await this.execFileImpl("docker", [
+  private async label(containerName: string, key: string): Promise<string | undefined> {
+    const { stdout } = await this.run([
       "inspect",
       "-f",
-      "{{json .HostConfig.Binds}}",
+      `{{index .Config.Labels "${key}"}}`,
       containerName,
     ]);
-    const payload = stdout.trim();
-    const parsed = JSON.parse(payload.length > 0 ? payload : "null") as unknown;
+    return this.normalizeDockerValue(stdout.trim());
+  }
 
-    if (parsed === null) {
-      return [];
-    }
-
-    if (!Array.isArray(parsed) || parsed.some((bind) => typeof bind !== "string")) {
-      throw new Error(`Unexpected docker bind mount payload for container "${containerName}"`);
-    }
-
-    return [...parsed].toSorted();
+  private async inspectBindMounts(containerName: string): Promise<string[]> {
+    const { stdout } = await this.run(["inspect", "-f", "{{json .Mounts}}", containerName]);
+    return parseBindMounts(stdout, containerName)
+      .map((mount) => `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`)
+      .toSorted();
   }
 
   private async hasImageDrift(containerName: string): Promise<boolean> {
     const desired = await this.localImageId();
     if (!desired) return false;
-    const { stdout } = await this.execFileImpl("docker", [
-      "inspect",
-      "-f",
-      "{{.Image}}",
-      containerName,
-    ]);
-    return stdout.trim() !== desired;
+    return (await this.label(containerName, DockerContainerManager.IMAGE_ID_LABEL_KEY)) !== desired;
   }
 
   private async localImageId(): Promise<string | undefined> {
     try {
-      const { stdout } = await this.execFileImpl("docker", [
-        "image",
-        "inspect",
-        "-f",
-        "{{.Id}}",
-        this.image,
-      ]);
+      const { stdout } = await this.run(["image", "inspect", "-f", "{{.Id}}", this.image]);
       return this.normalizeDockerValue(stdout.trim());
     } catch {
       return undefined;
     }
+  }
+
+  private async pulledImageId(): Promise<string> {
+    const local = await this.localImageId();
+    if (local) return local;
+    await this.run(["pull", this.image]);
+    const pulled = await this.localImageId();
+    if (!pulled) throw new Error(`Image ${this.image} has no ID after pulling it`);
+    return pulled;
   }
 
   private async replaceContainer(
@@ -515,24 +505,21 @@ export class DockerContainerManager {
 
   private async hasNetworkModeDrift(containerKey: string, containerName: string): Promise<boolean> {
     const expected = DockerContainerManager.networkName(containerKey);
-    const { stdout } = await this.execFileImpl("docker", [
-      "inspect",
-      "-f",
-      "{{.HostConfig.NetworkMode}}",
-      containerName,
-    ]);
-    return stdout.trim() !== expected;
+    return (await this.label(containerName, DockerContainerManager.NETWORK_LABEL_KEY)) !== expected;
   }
 
   private async ensureNetwork(containerKey: string): Promise<string> {
     const networkName = DockerContainerManager.networkName(containerKey);
-    try {
-      await this.execFileImpl("docker", ["network", "inspect", networkName]);
-      return networkName;
-    } catch (err) {
-      if (!isDockerNotFoundError(err)) throw err;
-    }
-    await this.execFileImpl("docker", [
+    const { stdout } = await this.run([
+      "network",
+      "ls",
+      "--filter",
+      `name=^${networkName}$`,
+      "--format",
+      "{{.Name}}",
+    ]);
+    if (this.parseNameLines(stdout).includes(networkName)) return networkName;
+    await this.run([
       "network",
       "create",
       "--driver",
@@ -548,24 +535,27 @@ export class DockerContainerManager {
     return networkName;
   }
 
+  private async containerExists(containerName: string): Promise<boolean> {
+    const { stdout } = await this.run([
+      "ps",
+      "-a",
+      "--filter",
+      `name=^${containerName}$`,
+      "--format",
+      "{{.Names}}",
+    ]);
+    return this.parseNameLines(stdout).includes(containerName);
+  }
+
   private async inspectStatus(containerName: string): Promise<ContainerStatus> {
-    try {
-      const { stdout } = await this.execFileImpl("docker", [
-        "inspect",
-        "-f",
-        "{{.State.Running}}",
-        containerName,
-      ]);
-      return stdout.trim() === "true" ? "running" : "stopped";
-    } catch (err) {
-      if (isDockerNotFoundError(err)) return "missing";
-      throw err;
-    }
+    if (!(await this.containerExists(containerName))) return "missing";
+    const { stdout } = await this.run(["inspect", "-f", "{{.State.Running}}", containerName]);
+    return stdout.trim() === "true" ? "running" : "stopped";
   }
 
   private async listContainerNamesByLabel(): Promise<string[]> {
     try {
-      const { stdout } = await this.execFileImpl("docker", [
+      const { stdout } = await this.run([
         "ps",
         "-a",
         "--filter",
@@ -593,16 +583,19 @@ export class DockerContainerManager {
     containerName: string,
   ): Promise<{ running: boolean; startedAtMs?: number; bindSources: string[] } | undefined> {
     try {
-      const { stdout } = await this.execFileImpl("docker", [
+      const { stdout } = await this.run([
         "inspect",
         "-f",
-        `{{.State.Running}}\t{{.State.StartedAt}}\t{{json .HostConfig.Binds}}`,
+        `{{.State.Running}}\t{{.State.StartedAt}}\t{{json .Mounts}}`,
         containerName,
       ]);
-      const [runningRaw, startedAtRaw, bindsRaw] = stdout.trim().split("\t");
+      const [runningRaw, startedAtRaw, mountsRaw] = stdout.trim().split("\t");
       const running = runningRaw === "true";
-      const startedAtMs = this.parseDockerTimestamp(startedAtRaw);
-      return { running, startedAtMs, bindSources: parseBindSources(bindsRaw) };
+      const startedAtMs = parseEngineTimestamp(this.normalizeDockerValue(startedAtRaw));
+      const bindSources = parseBindMounts(mountsRaw ?? "", containerName).map(
+        (mount) => mount.source,
+      );
+      return { running, startedAtMs, bindSources };
     } catch (err) {
       log.logWarning(
         `Failed to inspect container ${containerName} during reconcile`,
@@ -618,13 +611,6 @@ export class DockerContainerManager {
     return trimmed.length > 0 ? trimmed : undefined;
   }
 
-  private parseDockerTimestamp(value?: string): number | undefined {
-    const normalized = this.normalizeDockerValue(value);
-    if (!normalized || normalized.startsWith("0001-")) return undefined;
-    const parsed = Date.parse(normalized);
-    return Number.isNaN(parsed) ? undefined : parsed;
-  }
-
   private containerKeyFromContainerName(containerName: string): string | undefined {
     const prefix = DockerContainerManager.containerName("");
     if (!containerName.startsWith(prefix)) return undefined;
@@ -638,24 +624,57 @@ export class DockerContainerManager {
     failureLog: string,
   ): Promise<boolean> {
     try {
-      await this.execFileImpl("docker", ["rm", "-f", containerName]);
+      if (await this.containerExists(containerName)) {
+        await this.run(["kill", containerName]).catch(() => undefined);
+        await this.run(["rm", "-f", containerName]);
+      }
       log.logInfo(successLog);
       return true;
     } catch (err) {
-      const message = errorMessage(err);
-      if (/no such container/i.test(message)) return true;
-      log.logWarning(failureLog, message);
+      log.logWarning(failureLog, errorMessage(err));
       return false;
     }
   }
 }
 
-function parseBindSources(raw: string | undefined): string[] {
-  const parsed: unknown = JSON.parse(raw && raw.length > 0 ? raw : "null");
-  if (!Array.isArray(parsed)) return [];
-  return parsed
-    .filter((bind) => typeof bind === "string")
-    .map((bind) => bind.split(":", 1)[0] ?? bind);
+const CPU_PERIOD_MICROSECONDS = 100_000;
+
+function cpuQuotaArgs(cpus: string): string[] {
+  const quota = Math.round(Number(cpus) * CPU_PERIOD_MICROSECONDS);
+  if (!Number.isFinite(quota) || quota <= 0) throw new Error(`Invalid CPU limit: ${cpus}`);
+  return ["--cpu-period", String(CPU_PERIOD_MICROSECONDS), "--cpu-quota", String(quota)];
+}
+
+interface BindMount {
+  source: string;
+  target: string;
+  readOnly: boolean;
+}
+
+function parseBindMounts(raw: string, containerName: string): BindMount[] {
+  const payload = raw.trim();
+  const parsed: unknown = JSON.parse(payload.length > 0 ? payload : "null");
+  if (parsed === null) return [];
+  if (!Array.isArray(parsed)) {
+    throw new Error(`Unexpected mount payload for container "${containerName}"`);
+  }
+  return parsed.flatMap((entry: unknown) => {
+    if (!isRecord(entry) || entry.Type !== "bind") return [];
+    const { Source: source, Destination: target, RW: writable } = entry;
+    if (typeof source !== "string" || typeof target !== "string") return [];
+    return [{ source, target, readOnly: writable === false }];
+  });
+}
+
+const ENGINE_LOCAL_TIMESTAMP =
+  /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d+)?) ([+-]\d{2})(\d{2})/;
+
+function parseEngineTimestamp(value: string | undefined): number | undefined {
+  if (!value || value.startsWith("0001-")) return undefined;
+  const local = ENGINE_LOCAL_TIMESTAMP.exec(value);
+  const iso = local ? `${local[1]}T${local[2]}${local[3]}:${local[4]}` : value;
+  const parsed = Date.parse(iso);
+  return Number.isNaN(parsed) ? undefined : parsed;
 }
 
 function mountsWithin(sources: readonly string[], root: string): boolean {

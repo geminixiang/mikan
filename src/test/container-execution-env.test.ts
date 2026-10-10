@@ -7,6 +7,14 @@ import { afterAll, describe, expect, it, test } from "vitest";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
 import { ContainerExecutionEnv } from "../sandbox/container.js";
 import { TEST_CONTEXT } from "./tool-api.js";
+import { containerEngine } from "../sandbox/engine.js";
+
+const ENGINE = containerEngine();
+
+function removeContainer(name: string): void {
+  spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
+  spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
+}
 
 interface Backend {
   name: string;
@@ -56,31 +64,35 @@ function hostShimBackend(): Backend | undefined {
 }
 
 function containerBackend(image: string): Backend | undefined {
-  if (spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" }).status !== 0) {
+  if (spawnSync(ENGINE, ["image", "inspect", image], { stdio: "ignore" }).status !== 0) {
     return undefined;
   }
   let container: string | undefined;
   const start = () => {
     container ??= `mikan-env-test-${randomUUID().slice(0, 8)}`;
-    execFileSync("docker", ["run", "-d", "--rm", "--name", container, image, "sleep", "infinity"]);
-    cleanups.push(() => spawnSync("docker", ["rm", "-f", container!], { stdio: "ignore" }));
+    execFileSync(ENGINE, ["run", "-d", "--name", container, image, "sleep", "infinity"]);
+    cleanups.push(() => removeContainer(container!));
     return container;
   };
   return {
     name: image,
     makeDir: () => {
       const name = container ?? start();
-      return execFileSync("docker", ["exec", name, "mktemp", "-d"]).toString().trim();
+      return execFileSync(ENGINE, ["exec", name, "mktemp", "-d"]).toString().trim();
     },
-    removeDir: (dir) => execFileSync("docker", ["exec", container!, "rm", "-rf", dir]),
+    removeDir: (dir) => execFileSync(ENGINE, ["exec", container!, "rm", "-rf", dir]),
     env: (cwd, env) => new ContainerExecutionEnv({ container: container!, cwd, env }),
   };
 }
 
-const dockerUp = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
+const dockerUp = spawnSync(ENGINE, ["info"], { stdio: "ignore" }).status === 0;
 const backends = [
   hostShimBackend(),
-  ...(dockerUp ? ["debian:trixie-slim", "alpine:latest"].map(containerBackend) : []),
+  ...(dockerUp
+    ? ["docker.io/library/debian:trixie-slim", "docker.io/library/alpine:latest"].map(
+        containerBackend,
+      )
+    : []),
 ].filter((backend): backend is Backend => backend !== undefined);
 
 async function inDir<T>(backend: Backend, use: (dir: string) => Promise<T>): Promise<T> {
@@ -183,8 +195,8 @@ for (const backend of backends) {
 
 describe("ContainerExecutionEnv without a backend", () => {
   test("names one file namespace per container", () => {
-    const first = new ContainerExecutionEnv({ container: "c", cwd: "/a" });
-    const second = new ContainerExecutionEnv({ container: "c", cwd: "/b" });
+    const first = new ContainerExecutionEnv({ container: "c", cwd: "/a", docker: "docker" });
+    const second = new ContainerExecutionEnv({ container: "c", cwd: "/b", docker: "docker" });
     expect(first.id).toBe(second.id);
   });
 

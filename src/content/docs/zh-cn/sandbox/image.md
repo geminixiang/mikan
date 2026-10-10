@@ -31,6 +31,12 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - vault 文件凭证会自动 bind mount 到容器中，目标由每个文件的名称推断（参阅 [Vault](/zh-cn/sandbox/vault/)）
 - 每 10 分钟检查一次空闲容器，并在至少 10 分钟无活动后停止；根据扫描时间，停止大约发生在最后一次跟踪使用后的 10–20 分钟
 
+## 容器引擎
+
+mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受这套指令。不需要指定引擎：使用 `container:*` 或 `image:*` 时，mikan 依序检查 `nerdctl`、`podman`、`docker`，采用第一个 `info` 成功的引擎，并在启动时记录。本页指令中的 `docker` 请换成该引擎。容器属于创建它的引擎，所以如果主机之后启动了另一个引擎（例如登录时启动 Podman machine），会建立新的容器，旧引擎的容器会留着；要固定引擎，在 `~/.mikan/mikan.env` 设置 `CONTAINER_ENGINE`。rootless Podman 需要主机把 cgroup 的 CPU 和 memory controller 委派给用户，macOS 上的 Podman machine 已经委派。
+
+在 macOS 上，每个引擎都是在 VM 里运行 Linux，bind mount 只能挂载 VM 共享的文件夹；请把 workspace 和 `~/.mikan` 放在家目录下。
+
 ## 升级沙盒镜像
 
 受管理的容器可以随时丢弃。只有它的 bind mount（对话办公室、共享知识和 vault 文件）会保留；写在容器其他位置的内容，包括 `/root`、安装的软件包和 `/etc` 的修改，都会在容器被替换时消失。需要保留的内容请放在工作区。

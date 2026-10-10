@@ -6,9 +6,9 @@ This directory defines sandbox configuration, the execution environments tools r
 
 - `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
 - A backend without managed projection cannot enforce a private office's visibility; `warnUnenforcedPrivateOffice` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
-- Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
+- Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `rm -f` and `run`. A running container is never replaced for an image change.
 - `provision`, `stop`, and `remove` are serialized per key.
-- A backend is accepted by its contract, not its technology: per-office environment isolation, adjustable resource limits, a persistent workspace and vault, and a workspace mounted from the host on the same machine, on Linux and macOS ([ADR 0022](../../docs/adr/0022-sandbox-contract-not-a-container-engine.md)). Today it is the `docker` CLI, which inherits mikan's environment, so the deployment picks the engine.
+- A backend is accepted by its contract, not its technology: per-office environment isolation, adjustable resource limits, a persistent workspace and vault, and a workspace mounted from the host on the same machine, on Linux and macOS ([ADR 0022](../../docs/adr/0022-sandbox-contract-not-a-container-engine.md)). Today it is the docker command set, run by the first of `nerdctl`, `podman`, and `docker` whose `info` succeeds, detected once per process unless `CONTAINER_ENGINE` pins one (`engine.ts`). Containers belong to the engine that created them, so a host whose detected engine changes gets new containers and leaves the old ones behind. The provisioner uses only queries the three answer alike: `ps`/`network ls` name filters for existence, `.Mounts` for binds, mikan's `mikan.network` and `mikan.image-id` labels for network and image drift, and `--cpu-period`/`--cpu-quota` for CPU limits, because nerdctl ignores `update --cpus`, Podman reports binds with mount options and its network mode as `bridge`, and nerdctl reports `.Image` as a name. `src/test/container-provisioner-engine.test.ts` runs the provisioner against whichever engine is configured.
 - A sandbox reaches tools only as Pi's `ExecutionEnv` (`@earendil-works/pi-durable/env`): `host` is Pi's `NodeExecutionEnv` and `container` is `ContainerExecutionEnv`. `image` has no environment of its own; the harness resolver provisions its container and then builds a `container` environment for it. A new backend implements `ExecutionEnv` and passes `registerEnvConformance`, as `src/test/container-execution-env.test.ts` does, instead of adding a mikan-specific interface.
 - `ContainerExecutionEnv` does not offer `watch` (`not_supported`): no caller watches the sandbox, and polling would cost a `docker exec` per interval. Its `id` is `docker:<container>`, so Pi's edit and write queues serialize changes to one file across runs that share a container.
 - Killing the host `docker exec` client does not stop the command inside the container. `ContainerExecutionEnv` therefore starts each command under `setsid` in its own process group and records the group ID with the leader's start time in `/tmp/mikan-exec-<uuid>` in the guest. An abort, a timeout, or `cleanup()` runs a second `docker exec` that kills that group. At startup, `reconcile` sweeps every running managed container the same way, ending commands a crashed process left behind; a container is never shared between two live mikan processes, so every recorded group there is an orphan. The start time check keeps a stale file from killing a reused process ID, and IDs at or below 1 are never signalled, because `kill -- -1` reaches every process. Dash needs `kill -s KILL -- -<group>` and BusyBox rejects `--`, so the scripts try both. An image without `setsid` still runs commands, but a stop leaves them running.
@@ -103,13 +103,15 @@ translates between them for skill locations and upload paths.
 
 ### File transport
 
-`ContainerExecutionEnv` runs every file operation as one `docker exec` of a
+`ContainerExecutionEnv` runs every file operation as one `exec` of a
 POSIX script; the guest needs a GNU or BusyBox userland (`stat -c`, `realpath`,
 `truncate`, `mktemp`). File contents travel over stdin and stdout, never through
 shell arguments, so they survive every quoting layer and stay under ARG_MAX.
 Expected failures leave the script as exit statuses 70–74, which map to Pi's
 `not_found`, `is_directory`, `not_directory`, `invalid`, and
-`permission_denied`. Writes are staged beside the target and renamed, so an
+`permission_denied`. The guest reports every exit status as a final stderr line
+`mikan-exit-<random>:<status>`, which the host removes, because nerdctl's `exec`
+turns any nonzero status into 1. Writes are staged beside the target and renamed, so an
 interrupted write never truncates it. `openBinaryReader` reads the whole file
 once and serves ranges from that snapshot, which keeps the bytes it opened
 after a rename. A directory reader lists at its first page, so entries removed
@@ -117,5 +119,9 @@ after opening are not reported.
 
 Commands run argv under `setsid` (see Contracts). An argv whose program is not
 on the guest PATH exits 127 without output and is reported as `spawn_error`.
+Credentials reach a command over `exec -i` stdin, one base64 value per line,
+which the wrapper exports before running it with stdin closed; they never
+appear in argv or a host file, so a CLI that runs inside a VM (nerdctl on
+macOS) receives them too.
 Output streams to `onOutput` as it arrives; past the spill thresholds it is
 also piped into `<cwd>/.mikan/bash-output/<id>.log` in the guest.

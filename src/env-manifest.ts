@@ -136,6 +136,17 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
+    key: "sandbox",
+    title: "Sandbox",
+    kind: "feature",
+    vars: [
+      {
+        name: "CONTAINER_ENGINE",
+        doc: "Override the container engine for container:* and image:* sandboxes; by default mikan uses the first of nerdctl, podman, docker that answers `info`",
+      },
+    ],
+  },
+  {
     key: "observability",
     title: "Observability",
     kind: "feature",

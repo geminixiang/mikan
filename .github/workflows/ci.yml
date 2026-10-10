@@ -48,3 +48,37 @@ jobs:
 
       - name: Test with coverage check
         run: npm run test:coverage
+
+  sandbox-engines:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [docker, podman]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pull test images
+        run: |
+          ${{ matrix.engine }} --version
+          for image in docker.io/library/debian:trixie-slim docker.io/library/alpine:latest; do
+            ${{ matrix.engine }} pull -q "$image"
+          done
+
+      - name: Real-container sandbox tests
+        env:
+          CONTAINER_ENGINE: ${{ matrix.engine }}
+        run: >-
+          npx vitest run
+          src/test/container-execution-env.test.ts
+          src/test/container-exec-docker.test.ts
+          src/test/container-provisioner-engine.test.ts
