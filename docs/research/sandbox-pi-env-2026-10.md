@@ -41,3 +41,41 @@ The packaged Linux daemon was copied into a container and started with `<engine>
 - Output past the spill thresholds goes to a file under the guest's temp directory, not `<workspace>/.mikan/bash-output/`.
 - Each office with a running container keeps one `<engine> exec -i` client process on the host.
 - Commands left running by a version before this change are not swept at startup; they end when their container stops or is replaced.
+
+## Stability
+
+Measured on `main` after the change, on macOS with Docker (Colima), Podman 6.1.3 (machine), and nerdctl 2.3.1 (Colima containerd); the Linux side runs in CI on Docker, Podman, and nerdctl.
+
+### Test order
+
+The three real-container test files (67 tests) ran 20 times per engine with a random order and seed each time: Docker, Podman rootless, Podman rootful, and nerdctl all passed 20 of 20.
+
+### Soak with faults
+
+Five containers on `ghcr.io/geminixiang/mikan-sandbox:latest`, each with a worker running random operations back to back: text write and read-back, `exec` with a random exit status, 1.2 MB of output, abort after 300 ms, 300 KB binary round trip, and six parallel commands on one connection. About every 20 s one container got a fault: `restart`, `kill` and `rm` (replacement), `stop`, `SIGKILL` of the host `exec -i` client, or `SIGKILL` of the daemon in the container.
+
+| Engine  | Minutes | Operations | Faults | Corrupt results | Failures not near a fault | Recovery p50 / max | Failed operations per fault (max) |
+| ------- | ------- | ---------- | ------ | --------------- | ------------------------- | ------------------ | --------------------------------- |
+| Docker  | 60      | 259,193    | 174    | 0               | 0                         | 249 / 540 ms       | 2                                 |
+| Podman  | 15      | 42,114     | 44     | 0               | 0                         | 746 / 1,555 ms     | 2                                 |
+| nerdctl | 15      | 46,936     | 46     | 0               | 0                         | 532 / 1,074 ms     | 2                                 |
+
+Every failure was an operation in flight when its connection was lost (`pi-env connection lost`), which pi-env reports instead of retrying because a mutation's outcome is then unknown. Every container recovered. Median `exec` latency was the same in the first and second half of each run (1–4 ms). The host kept one `exec -i` client per container (two for the nerdctl shim, which goes through `limactl`), file descriptors stayed at 38, and each container ended with exactly one daemon.
+
+Memory: in a separate run that created 18,000 environments and ran every operation kind through them, the heap after GC stayed at 5.8–6.8 MB; RSS rose to about 240 MB in the first 10,000 rounds and then stayed flat, which is allocator retention of frame buffers, not a leak.
+
+### Process lifetime
+
+| Event                                                           | Docker                                                                                                          | Podman                                                                                                                                                     | nerdctl                                                                                                                                       |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| mikan killed with `SIGKILL`                                     | commands and client gone in 0.5 s                                                                               | 0.5 s                                                                                                                                                      | 0.5 s through Colima; on native Linux the stream stays open and the daemon's 30 s ping timeout ends them (28 s measured, CI test allows 45 s) |
+| Container replaced through `ensureReady` (`kill`, then `rm -f`) | next operation succeeds (15 of 15)                                                                              | 15 of 15                                                                                                                                                   | 15 of 15                                                                                                                                      |
+| Engine VM stopped, then started                                 | —                                                                                                               | operations fail at once with the engine's error; a running command settles as lost; the first operation after start succeeds 0.8 s later and files persist | same, settled by the 30 s ping timeout; first operation after start succeeds                                                                  |
+| mikan frozen (`SIGSTOP`) for 20 s / 40 s                        | a running command completes / settles as `connection timed out`, and the next operation reconnects              |                                                                                                                                                            |                                                                                                                                               |
+| Daemon killed with `SIGKILL` in the container                   | the running command keeps running until it exits or the container stops; a new daemon serves the next operation | same                                                                                                                                                       | same                                                                                                                                          |
+
+`rm -f` without a prior `kill` leaves Podman's `exec` client alive for about 10 s, so an operation right after a replacement can reach the dead stream; the provisioner already kills before removing.
+
+### Slack E2E
+
+Image mode with `ghcr.io/geminixiang/mikan-sandbox:latest`: 26 of 26 on Docker and 26 of 26 on Podman. The E2E script gives the daemon its own `HOME`, so Podman needs its connection configuration from the operator's `XDG_CONFIG_HOME`, as a deployment's own `HOME` provides.
