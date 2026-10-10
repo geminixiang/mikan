@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { EventStore } from "../events/index.js";
 import { createMikanTools } from "../harness/tools/index.js";
 import { createOfficeAddress } from "../office/index.js";
-import { HostExecutor } from "../sandbox/host.js";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import type { ConversationResponder } from "../types.js";
 import { runTestTool } from "./tool-api.js";
 
@@ -30,7 +30,10 @@ function eventStore(): EventStore {
 
 function boundAttachTool(uploadFile: ConversationResponder["uploadFile"]) {
   root = mkdtempSync(join(tmpdir(), "mikan-bind-run-"));
-  const { tools, bindRun } = createMikanTools(new HostExecutor(), eventStore());
+  const env = new NodeExecutionEnv({ cwd: root });
+  const { tools, bindRun } = createMikanTools(() => env, eventStore(), {
+    sandbox: { type: "host" },
+  });
   bindRun({
     message: { address, conversationKind: "shared", userId: "U1" },
     responder: { uploadFile } as Pick<ConversationResponder, "uploadFile"> as ConversationResponder,

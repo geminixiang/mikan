@@ -3,7 +3,8 @@ import { Type } from "typebox";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join, posix } from "node:path";
-import type { Executor } from "../../sandbox/types.js";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { getOrThrow, type ExecutionEnv } from "@earendil-works/pi-durable/env";
 
 const attachSchema = Type.Object({
   label: Type.String({ description: "Brief description of what you're sharing (shown to user)" }),
@@ -79,12 +80,20 @@ export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoo
   return runtimePath;
 }
 
+export async function readRuntimeFile(
+  env: ExecutionEnv | undefined,
+  runtimePath: string,
+): Promise<Uint8Array> {
+  if (!env) throw new Error("No execution environment: the run has not resolved its sandbox");
+  return getOrThrow(await env.readBinaryFile(runtimePath, BACKGROUND_CONTEXT));
+}
+
 export async function withStagedRuntimeFile(
-  executor: Executor,
+  env: ExecutionEnv | undefined,
   runtimePath: string,
   upload: (stagedPath: string) => Promise<void>,
 ): Promise<void> {
-  const content = Buffer.from(await executor.readFileBase64(runtimePath), "base64");
+  const content = await readRuntimeFile(env, runtimePath);
   let stagingDir: string | undefined;
   try {
     stagingDir = await mkdtemp(join(tmpdir(), "mikan-upload-"));

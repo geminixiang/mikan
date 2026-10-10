@@ -59,7 +59,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 - 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-durable` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 結果回寫 session，並透過 adapter 回傳給平台
-- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際 executor
+- 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際執行環境
 
 ### D. 執行環境層
 
@@ -68,11 +68,11 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- 統一抽象 `Executor`
+- 把每個 sandbox 提供為 Pi 的 `ExecutionEnv`
 - 依 workspace 能力把 sandbox runtime 分成兩類：
   - 非受管 projection：`host` / `container:<name>`
   - 受管 projection：`image:<image>`，會強制 private office visibility：無法觸及其他 private office，共用知識為唯讀
-- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` executor
+- 在 `image` 模式下自動建立與回收 Docker container，並把 `image:<image>` 解析成 concrete `container:<name>` 環境
 
 ### E. Conversation office 層
 
@@ -128,7 +128,7 @@ sequenceDiagram
   participant S as sessions/chat-history-sync.ts
   participant R as harness/runner.ts
   participant T as tools/*
-  participant X as sandbox Executor
+  participant X as sandbox ExecutionEnv
   participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply

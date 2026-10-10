@@ -10,8 +10,7 @@ import {
 } from "@earendil-works/pi-durable/tools";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
-import { HostExecutor } from "../sandbox/host.js";
-import { createSandboxExecutionEnv } from "../harness/execution-env.js";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
 import { runTestTool } from "./tool-api.js";
 
@@ -47,7 +46,7 @@ describe("sandbox tools", () => {
   beforeEach(() => {
     dir = join(tmpdir(), `mikan-sandbox-tools-${Date.now()}-${Math.random()}`);
     mkdirSync(dir, { recursive: true });
-    env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+    env = new NodeExecutionEnv({ cwd: dir });
     tools = createSandboxTools();
   });
 

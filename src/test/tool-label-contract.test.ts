@@ -1,11 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
 import { runTestTool, TEST_CONTEXT as TODO_CONTEXT } from "./tool-api.js";
-import type { SandboxConfig } from "../sandbox/types.js";
 import { createMikanTools } from "../harness/tools/index.js";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "../adapters/github/types.js";
-import { HostExecutor } from "../sandbox/host.js";
-import { createSandboxExecutionEnv } from "../harness/execution-env.js";
+import { ok } from "@earendil-works/pi-durable/env";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import type { EventStore } from "../events/index.js";
 import { createOfficeAddress } from "../office/index.js";
 
@@ -42,22 +41,18 @@ const EXEMPT_TOOL_NAMES = new Set([
 ]);
 
 describe("every agent-facing tool requires a label parameter", () => {
-  test.each<SandboxConfig>([
-    { type: "host" },
-    { type: "container", container: "office-test" },
-    { type: "image", image: "test-image" },
-  ])("assembled browser tool uses the supplied $type executor", async (config) => {
-    const exec = vi.fn().mockResolvedValue({
-      code: 0,
-      stdout: JSON.stringify({
-        success: true,
-        data: { path: "/workspace/scratch/page.png" },
-        error: null,
-      }),
-      stderr: "",
+  test("the assembled browser tool runs agent-browser through the run's environment", async () => {
+    const env = new NodeExecutionEnv({ cwd: "/workspace" });
+    const exec = vi.spyOn(env, "exec").mockImplementation(async (_command, options, context) => {
+      const data = { path: "/workspace/scratch/page.png" };
+      options?.onOutput?.(JSON.stringify({ success: true, data, error: null }), context, {
+        stream: "stdout",
+      });
+      return ok({ exitCode: 0 });
     });
-    const executor = Object.assign(new HostExecutor(), { getSandboxConfig: () => config, exec });
-    const { tools } = createMikanTools(executor, mockEventStore());
+    const { tools } = createMikanTools(() => env, mockEventStore(), {
+      sandbox: { type: "container", container: "office-test" },
+    });
     const browser = tools.find((tool) => tool.name === "jev_browser");
     expect(browser).toBeDefined();
     expect((browser!.parameters as { required: string[] }).required).toContain("label");
@@ -68,27 +63,30 @@ describe("every agent-facing tool requires a label parameter", () => {
         url: "https://example.com",
         commands: [["screenshot", "/workspace/scratch/page.png"]],
       },
-      { env: createSandboxExecutionEnv(executor, config.type, "/workspace") },
+      { env },
     );
+    const session = expect.stringMatching(/^mikan-jb-/);
     expect(exec.mock.calls.map(([command]) => command)).toEqual([
-      expect.stringMatching(
-        /^'agent-browser' '--session' 'mikan-jb-[^']+' 'open' 'https:\/\/example.com' '--json'$/,
-      ),
-      expect.stringMatching(
-        /^'agent-browser' '--session' 'mikan-jb-[^']+' 'screenshot' '\/workspace\/scratch\/page.png' '--json'$/,
-      ),
+      ["agent-browser", "--session", session, "open", "https://example.com", "--json"],
+      [
+        "agent-browser",
+        "--session",
+        session,
+        "screenshot",
+        "/workspace/scratch/page.png",
+        "--json",
+      ],
     ]);
     expect(
-      exec.mock.calls.every(([, options]) => options.signal === TODO_CONTEXT.abortSignal),
+      exec.mock.calls.every(([, , context]) => context.abortSignal === TODO_CONTEXT.abortSignal),
     ).toBe(true);
-    vi.restoreAllMocks();
   });
 
   test("across the full assembled tool list, including the GitHub platform pack", () => {
     const { tools } = createMikanTools(
-      new HostExecutor(),
+      () => undefined,
       mockEventStore(),
-      undefined,
+      { sandbox: { type: "host" } },
       [createGithubToolPack(mockGithubOps(), new Set(["triage", "push"]))],
       undefined,
     );

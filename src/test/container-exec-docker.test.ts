@@ -1,11 +1,13 @@
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
-import { ContainerExecutor, sweepOrphanedCommands } from "../sandbox/container.js";
-import { HostExecutor } from "../sandbox/host.js";
-
-const EMPTY_RESULT = { stdout: "", stderr: "", code: 0 };
+import { withAbortSignal } from "@earendil-works/chord/context";
+import { afterAll, describe, expect, test } from "vitest";
+import { ContainerExecutionEnv, sweepOrphanedCommands } from "../sandbox/container.js";
+import { TEST_CONTEXT } from "./tool-api.js";
 const CANDIDATE_IMAGES = ["debian:trixie-slim", "alpine:latest"];
 
 function localImages(): string[] {
@@ -47,25 +49,39 @@ function guestCommandLines(container: string): string[] {
     .filter(Boolean);
 }
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 afterAll(() => {
   for (const name of containers) spawnSync("docker", ["rm", "-f", name], { stdio: "ignore" });
 });
 
-describe.runIf(images.length > 0)("ContainerExecutor against a real container", () => {
+function containerEnv(container: string, docker?: string): ContainerExecutionEnv {
+  return new ContainerExecutionEnv({ container, cwd: "/tmp", docker, ensureReady: async () => {} });
+}
+
+function dockerWithoutGroupKill(): string {
+  const dir = mkdtempSync(join(tmpdir(), "mikan-docker-crash-"));
+  const docker = join(dir, "docker");
+  writeFileSync(docker, '#!/bin/sh\ncase "$*" in *stop_group*) exit 0 ;; esac\nexec docker "$@"\n');
+  chmodSync(docker, 0o755);
+  cleanupDirs.push(dir);
+  return docker;
+}
+
+const cleanupDirs: string[] = [];
+afterAll(() => {
+  for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+describe.runIf(images.length > 0)("ContainerExecutionEnv against a real container", () => {
   test.each(images)(
-    "stopping a command ends its whole process group in %s",
+    "aborting a command ends its whole process group in %s",
     async (image) => {
       const container = startContainer(image);
-      const executor = new ContainerExecutor(container, undefined, async () => {});
       const controller = new AbortController();
-      const running = executor.exec("sleep 300; echo finished", {
-        cwd: "/tmp",
-        signal: controller.signal,
-      });
+      const running = containerEnv(container).exec(
+        "sleep 300; echo finished",
+        undefined,
+        withAbortSignal(controller.signal, TEST_CONTEXT),
+      );
       await expect
         .poll(() => guestCommandLines(container).some((line) => line === "sleep 300"), {
           timeout: 10_000,
@@ -74,21 +90,44 @@ describe.runIf(images.length > 0)("ContainerExecutor against a real container", 
 
       controller.abort();
 
-      await expect(running).rejects.toThrow("Command aborted");
+      const result = await running;
+      expect(result.ok ? "ok" : result.error.code).toBe("aborted");
       expect(guestCommandLines(container).filter((line) => line.includes("sleep 300"))).toEqual([]);
     },
     30_000,
   );
 
   test.each(images)(
-    "keeps output and exit code of a finished command in %s",
+    "cleanup ends every command the environment still runs in %s",
     async (image) => {
       const container = startContainer(image);
-      const executor = new ContainerExecutor(container, undefined, async () => {});
+      const env = containerEnv(container);
+      const running = env.exec("sleep 301", undefined, TEST_CONTEXT);
+      await expect
+        .poll(() => guestCommandLines(container).includes("sleep 301"), { timeout: 10_000 })
+        .toBe(true);
 
-      const result = await executor.exec("echo out; echo err >&2; exit 7", { cwd: "/tmp" });
+      await env.cleanup(TEST_CONTEXT);
 
-      expect(result).toEqual({ stdout: "out\n", stderr: "err\n", code: 7 });
+      await running;
+      expect(guestCommandLines(container).filter((line) => line.includes("sleep 301"))).toEqual([]);
+    },
+    30_000,
+  );
+
+  test.each(images)(
+    "keeps output streams and exit code of a finished command in %s",
+    async (image) => {
+      const container = startContainer(image);
+      const output = { stdout: "", stderr: "" };
+      const result = await containerEnv(container).exec(
+        "echo out; echo err >&2; exit 7",
+        { onOutput: (text, _context, info) => (output[info.stream] += text) },
+        TEST_CONTEXT,
+      );
+
+      expect(result.ok && result.value.exitCode).toBe(7);
+      expect(output).toEqual({ stdout: "out\n", stderr: "err\n" });
     },
     30_000,
   );
@@ -97,22 +136,17 @@ describe.runIf(images.length > 0)("ContainerExecutor against a real container", 
     "the startup sweep ends a command left by a crashed process in %s",
     async (image) => {
       const container = startContainer(image);
-      const run = HostExecutor.prototype.exec;
-      let calls = 0;
-      vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(
-        function (this: HostExecutor, command, options) {
-          calls += 1;
-          return calls === 1 ? run.call(this, command, options) : Promise.resolve(EMPTY_RESULT);
-        },
-      );
-      const executor = new ContainerExecutor(container, undefined, async () => {});
       const controller = new AbortController();
-      const running = executor.exec("sleep 300", { cwd: "/tmp", signal: controller.signal });
+      const running = containerEnv(container, dockerWithoutGroupKill()).exec(
+        "sleep 300",
+        undefined,
+        withAbortSignal(controller.signal, TEST_CONTEXT),
+      );
       await expect
         .poll(() => guestCommandLines(container).includes("sleep 300"), { timeout: 10_000 })
         .toBe(true);
       controller.abort();
-      await expect(running).rejects.toThrow("Command aborted");
+      await running;
       expect(guestCommandLines(container)).toContain("sleep 300");
       execFileSync("docker", ["exec", container, "sh", "-c", 'echo "1 0" > /tmp/mikan-exec-stale']);
 

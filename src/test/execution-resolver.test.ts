@@ -123,7 +123,7 @@ describe("ActorExecutionResolver", () => {
       address: createOfficeAddress("slack", "C123"),
     });
 
-    expect(decision.executor.getSandboxConfig().type).toBe("container");
+    expect(decision.sandboxConfig.type).toBe("container");
     expect(decision.pathContext).toMatchObject({
       hostWorkspaceRoot: workspaceDir,
       runtimeWorkspaceRoot: "/workspace",

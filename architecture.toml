@@ -228,7 +228,7 @@ docs = "src/office/README.md"
 id = "executor"
 owner = "sandbox"
 consumers = ["harness"]
-interface = "Executor, SandboxAdapter"
+interface = "pi-durable ExecutionEnv, SandboxAdapter"
 docs = "src/sandbox/README.md"
 
 [[seams]]

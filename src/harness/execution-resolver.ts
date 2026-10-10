@@ -3,7 +3,11 @@ import { posix } from "node:path";
 import { loadGlobalSettings } from "../settings/index.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { ContainerMount, ActorContext, ExecutionPlan } from "../types.js";
-import { createExecutor, getSandboxCredentialCapabilities } from "../sandbox/registry.js";
+import {
+  createSandboxEnv,
+  getSandboxCredentialCapabilities,
+  getSandboxPathContext,
+} from "../sandbox/registry.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { reportUserFacingError } from "../observability/index.js";
 import { normalizeSharedVaultName } from "../vault/index.js";
@@ -23,16 +27,13 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext) {
     const { plan, projection } = this.resolvePlan(context);
-    const executor = createExecutor(
-      plan.sandboxConfig,
-      plan.env,
-      this.buildEnsureReadyCallback(plan, context.address.conversationId),
-    );
-    return {
-      executor,
-      pathContext: executor.getPathContext(this.workspace.root),
-      projection,
-    };
+    const pathContext = getSandboxPathContext(plan.sandboxConfig, this.workspace.root);
+    const env = createSandboxEnv(plan.sandboxConfig, {
+      cwd: pathContext.runtimeWorkspaceRoot,
+      env: plan.env,
+      ensureReady: this.buildEnsureReadyCallback(plan, context.address.conversationId),
+    });
+    return { env, sandboxConfig: plan.sandboxConfig, pathContext, projection };
   }
 
   private resolvePlan(context: ActorContext): {

@@ -1,8 +1,8 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type, type Static } from "typebox";
 import { randomUUID } from "node:crypto";
-import type { Executor } from "../../sandbox/types.js";
-import { shellEscape } from "../../sandbox/utils.js";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 import { isRecord } from "../../unknown-values.js";
@@ -10,6 +10,10 @@ import { isRecord } from "../../unknown-values.js";
 export const JEV_BROWSER_TOOL = "jev_browser";
 
 const AGENT_BROWSER_BIN = "agent-browser";
+const AGENT_BROWSER_UNAVAILABLE =
+  "agent-browser CLI is unavailable in the current sandbox. Ask the operator to provision " +
+  "agent-browser and its browser dependencies in this sandbox runtime/image, and ensure " +
+  "they are on its PATH. Installing on the mikan host will not fix a container sandbox.";
 const COMMAND_TIMEOUT_SECONDS = 90;
 const DEFAULT_MAX_STEPS = 20;
 const HARD_MAX_STEPS = 40;
@@ -113,13 +117,13 @@ function tabNumber(tab: BrowserTab): number {
 }
 
 async function closeOldestTabs(
-  executor: Executor,
+  env: ExecutionEnv,
   sessionId: string,
   keep: number,
   signal?: AbortSignal,
 ): Promise<string[]> {
   const listed = await runAgentBrowser<{ tabs?: BrowserTab[] }>(
-    executor,
+    env,
     sessionId,
     ["tab", "list"],
     signal,
@@ -131,7 +135,7 @@ async function closeOldestTabs(
     .slice(0, Math.max(0, tabs.length - keep));
   const closed: string[] = [];
   for (const tab of oldest) {
-    const result = await runAgentBrowser(executor, sessionId, ["tab", "close", tab.tabId], signal);
+    const result = await runAgentBrowser(env, sessionId, ["tab", "close", tab.tabId], signal);
     if (result.success) closed.push(tab.url ?? tab.tabId);
   }
   return closed;
@@ -181,26 +185,30 @@ function truncate(text: string, max: number): string {
 }
 
 async function runAgentBrowser<T = unknown>(
-  executor: Executor,
+  env: ExecutionEnv,
   sessionId: string,
   args: string[],
   signal?: AbortSignal,
 ): Promise<AgentBrowserResult<T>> {
-  const command = [AGENT_BROWSER_BIN, "--session", sessionId, ...args, "--json"]
-    .map(shellEscape)
-    .join(" ");
-  const { stdout, stderr, code } = await executor.exec(command, {
-    timeout: COMMAND_TIMEOUT_SECONDS,
-    signal,
-  });
+  const output = { stdout: "", stderr: "" };
+  const result = await env.exec(
+    [AGENT_BROWSER_BIN, "--session", sessionId, ...args, "--json"],
+    {
+      timeout: COMMAND_TIMEOUT_SECONDS,
+      onOutput: (text, _context, info) => {
+        output[info.stream] += text;
+      },
+    },
+    signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT,
+  );
   signal?.throwIfAborted();
-  if (code === 127) {
-    throw new Error(
-      "agent-browser CLI is unavailable in the current sandbox. Ask the operator to provision " +
-        "agent-browser and its browser dependencies in this sandbox runtime/image, and ensure " +
-        "they are on its PATH. Installing on the mikan host will not fix a container sandbox.",
-    );
+  if (!result.ok && result.error.code === "spawn_error") {
+    throw new Error(AGENT_BROWSER_UNAVAILABLE);
   }
+  if (!result.ok) throw result.error;
+  const { stdout, stderr } = output;
+  const code = result.value.exitCode;
+
   if (code === 0 && (args.includes("--help") || args[0] === "skills")) {
     return { success: true, data: { help: truncate(stdout, 16_000) } as T, error: null };
   }
@@ -363,20 +371,20 @@ function resolveTarget(
 }
 
 async function openPage(
-  executor: Executor,
+  env: ExecutionEnv,
   sessionId: string,
   url: string,
   inNewTab: boolean,
   signal?: AbortSignal,
 ): Promise<AgentBrowserResult<unknown>> {
-  if (!inNewTab) return runAgentBrowser(executor, sessionId, ["open", url], signal);
-  const tab = await runAgentBrowser(executor, sessionId, ["tab", "new"], signal);
+  if (!inNewTab) return runAgentBrowser(env, sessionId, ["open", url], signal);
+  const tab = await runAgentBrowser(env, sessionId, ["tab", "new"], signal);
   if (!tab.success) return tab;
-  return runAgentBrowser(executor, sessionId, ["open", url], signal);
+  return runAgentBrowser(env, sessionId, ["open", url], signal);
 }
 
 function createUnlockedJevBrowserTool(
-  executor: Executor,
+  getEnv: () => ExecutionEnv | undefined,
   generateText: FieldTextGenerator | undefined,
 ): AgentTool<typeof jevBrowserSchema> {
   const sessionId = `mikan-jb-${randomUUID()}`;
@@ -396,6 +404,8 @@ function createUnlockedJevBrowserTool(
     parameters: jevBrowserSchema,
     execute: async (_toolCallId, args: JevBrowserArgs, signal) => {
       if (signal?.aborted) throw new Error("Operation aborted");
+      const env = getEnv();
+      if (!env) throw new Error("No execution environment: the run has not resolved its sandbox");
       for (const command of args.commands ?? []) {
         if (!command.length) throw new Error("Browser commands cannot be empty.");
         if (
@@ -409,7 +419,7 @@ function createUnlockedJevBrowserTool(
         }
       }
       if (args.close === true && !args.url && !args.goal && !args.commands?.length) {
-        const result = await runAgentBrowser(executor, sessionId, ["close"], signal);
+        const result = await runAgentBrowser(env, sessionId, ["close"], signal);
         if (!result.success) throw new Error(`Failed to close the browser: ${result.error}`);
         browserOpen = false;
         closedByCall = true;
@@ -452,10 +462,10 @@ function createUnlockedJevBrowserTool(
         if (args.url) {
           if (browserOpen) {
             closedTabs.push(
-              ...(await closeOldestTabs(executor, sessionId, BROWSER_TAB_LIMIT - 1, signal)),
+              ...(await closeOldestTabs(env, sessionId, BROWSER_TAB_LIMIT - 1, signal)),
             );
           }
-          const openResult = await openPage(executor, sessionId, args.url, browserOpen, signal);
+          const openResult = await openPage(env, sessionId, args.url, browserOpen, signal);
           captureLifecycle(openResult);
           if (!openResult.success) {
             throw new Error(`Failed to open ${args.url}: ${openResult.error}`);
@@ -465,19 +475,14 @@ function createUnlockedJevBrowserTool(
         }
 
         if (args.frame !== undefined) {
-          const switched = await runAgentBrowser(
-            executor,
-            sessionId,
-            ["frame", args.frame],
-            signal,
-          );
+          const switched = await runAgentBrowser(env, sessionId, ["frame", args.frame], signal);
           if (!switched.success)
             throw new Error(`Failed to switch browser frame: ${switched.error}`);
         }
 
         for (const command of args.commands ?? []) {
           if (signal?.aborted) throw new Error("Operation aborted");
-          const result = await runAgentBrowser(executor, sessionId, command, signal);
+          const result = await runAgentBrowser(env, sessionId, command, signal);
           captureLifecycle(result);
           commandResults.push({
             command,
@@ -520,12 +525,7 @@ function createUnlockedJevBrowserTool(
         for (let step = 1; step <= maxSteps; step++) {
           if (signal?.aborted) throw new Error("Operation aborted");
 
-          const snap = await runAgentBrowser<SnapshotData>(
-            executor,
-            sessionId,
-            ["snapshot"],
-            signal,
-          );
+          const snap = await runAgentBrowser<SnapshotData>(env, sessionId, ["snapshot"], signal);
           captureLifecycle(snap);
           if (!snap.success || !snap.data) {
             status = "blocked";
@@ -607,7 +607,7 @@ function createUnlockedJevBrowserTool(
               operation === "WAIT"
                 ? ["wait", "1000"]
                 : ["scroll", operation === "SCROLL_DOWN" ? "down" : "up", "500"];
-            const action = await runAgentBrowser(executor, sessionId, command, signal);
+            const action = await runAgentBrowser(env, sessionId, command, signal);
             if (!action.success) {
               status = "blocked";
               message = `${operation} failed: ${action.error}`;
@@ -631,7 +631,7 @@ function createUnlockedJevBrowserTool(
 
           if (operation === "CLICK") {
             const clickResult = await runAgentBrowser(
-              executor,
+              env,
               sessionId,
               ["click", `@${targetRef}`],
               signal,
@@ -663,7 +663,7 @@ function createUnlockedJevBrowserTool(
           );
           const command = operation === "SELECT" ? "select" : "fill";
           const actResult = await runAgentBrowser(
-            executor,
+            env,
             sessionId,
             [command, `@${targetRef}`, text],
             signal,
@@ -677,7 +677,7 @@ function createUnlockedJevBrowserTool(
         }
         if (status === "step-limit") {
           const finalSnapshot = await runAgentBrowser<SnapshotData>(
-            executor,
+            env,
             sessionId,
             ["snapshot"],
             signal,
@@ -690,7 +690,7 @@ function createUnlockedJevBrowserTool(
         }
       } finally {
         if (args.close === true) {
-          await runAgentBrowser(executor, sessionId, ["close"])
+          await runAgentBrowser(env, sessionId, ["close"])
             .then((result) => {
               if (!result.success) return;
               browserOpen = false;
@@ -728,10 +728,10 @@ function createUnlockedJevBrowserTool(
 }
 
 export function createJevBrowserTool(
-  executor: Executor,
+  getEnv: () => ExecutionEnv | undefined,
   generateText?: FieldTextGenerator,
 ): AgentTool<typeof jevBrowserSchema> {
-  const tool = createUnlockedJevBrowserTool(executor, generateText);
+  const tool = createUnlockedJevBrowserTool(getEnv, generateText);
   const execute = tool.execute.bind(tool);
   let executionTail = Promise.resolve();
 

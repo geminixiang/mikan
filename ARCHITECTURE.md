@@ -35,7 +35,7 @@ A source-file refactor that preserves ownership and seams normally changes only 
 
 ## System model
 
-mikan is a multi-platform AI coding agent. Slack, Discord, Telegram, and GitHub adapters translate native events into a common conversation model. A conversation runtime serializes work and owns runner lifecycle. An agent runner constructs the authorized prompt, tools, credentials, and executor, then invokes mikan's harness over `pi-agent-core` and `pi-ai`.
+mikan is a multi-platform AI coding agent. Slack, Discord, Telegram, and GitHub adapters translate native events into a common conversation model. A conversation runtime serializes work and owns runner lifecycle. An agent runner constructs the authorized prompt, tools, credentials, and execution environment, then invokes mikan's harness over `pi-agent-core` and `pi-ai`.
 
 The central unit is the **Conversation office**: one platform conversation's persistent workspace, identity, host state, credentials, sessions, and Sandbox-runtime ownership. The office gives every major subsystem a common scope without exposing raw platform IDs as storage authority.
 
@@ -130,7 +130,7 @@ Every platform feeds the same intake and runtime model:
 6. Session lifecycle materializes or reuses the runner under a per-session transition, then grants the runtime a lease that prevents invalidation or eviction while it is in use. Conversation runtime materialization normalizes omitted platform trust to `membership`; that trust is fixed for the `OfficeAddress` and is not another cache dimension.
 7. Before connecting MCP tools, the runner gates on the fixed trust: `open-trigger` unconditionally uses an empty effective MCP map and skips default provisioning, while `membership` first fills in the deployment's default `open-connector` entry for a Slack office that has not declared one (minting that office's runtime token and saving it as an ordinary conversation `mcpServers` entry), then loads the merged settings map like any other MCP configuration.
 8. The sessions-owned `SessionStore` owns MCP connections alongside the session writer. If runner construction fails, the runner closes that owner; it disposes MCP connections before releasing the writer, preserves the original construction failure, and allows the same session to be reconstructed immediately.
-9. For each run, the runner resolves one execution decision containing the Workspace projection, concrete executor, and runtime paths; the executor is configured from the same decision's validated mounts and credential grant.
+9. For each run, the runner resolves one execution decision containing the Workspace projection, Pi `ExecutionEnv`, and runtime paths; the environment is configured from the same decision's validated mounts and credential grant.
 10. The harness runs model and tool turns while persisting session events, enforcing budgets, retrying eligible failures, and compacting context.
 11. The runner streams and finalizes the response through platform capabilities.
 12. Session lifecycle completes settlement, releases the runner lease, applies deferred invalidation, and only then makes the runner eligible for eviction.
@@ -141,7 +141,7 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 `src/harness/` owns run-level composition, the Pi execution integration, and platform-neutral agent tools. `runner.ts` prepares the authorized tools, execution context, and prompt; `session.ts` integrates Pi's model loop; `tools/` owns generic tool adapters including attach and the agent-facing event tool. Prompt construction, skills, response presentation, and persistent session ownership have explicit implementations within this module. Platform-specific tool packs remain in their adapters and are injected into each runner; the harness does not import a platform adapter implementation. Conversation queueing remains in the runtime, and platform SDK transports remain in adapters.
 
-A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, concrete executor, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
+A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, execution environment, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
 The presenter owns response delivery. The Conversation runtime invokes and settles the runner, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction.
 
@@ -153,7 +153,7 @@ Execution authority is resolved for every agent environment rather than inferred
 2. The harness-owned execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
 3. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
 4. Sandbox capability checks report when the selected backend cannot enforce a private office's visibility; only `image:*` enforces it, and the other backends are operator-selected trusted modes.
-5. The resulting execution decision carries the concrete executor, runtime path context, and projection to the runner; that executor was created from the same final non-overlapping mounts and credential grant.
+5. The resulting execution decision carries the execution environment, runtime path context, and projection to the runner; that environment was created from the same final non-overlapping mounts and credential grant.
 
 For every provider call, prompt authorization and filesystem authorization consume the same execution decision. Runner construction uses a bootstrap prompt to initialize the harness, but replaces it from the actor-specific decision before the model can see it. This prevents host-side memory or skills from bypassing an isolated filesystem view.
 
@@ -324,7 +324,7 @@ Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/`.
 
 <a id="inv-projection-coherence"></a>
 
-**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. A private office never receives another private office's data, no projection mounts the workspace root, and callers cannot independently recompute prompt visibility after executor resolution.
+**`projection-coherence`** — Runtime mounts and host-side prompt sources come from one Workspace-projection decision carried by the run's execution decision. A private office never receives another private office's data, no projection mounts the workspace root, and callers cannot independently recompute prompt visibility after execution resolution.
 
 Evidence: `src/office/projection.ts`.
 

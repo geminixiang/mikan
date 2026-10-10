@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runTestTool } from "./tool-api.js";
 import { validateToolArguments } from "@earendil-works/pi-ai";
-import { HostExecutor } from "../sandbox/host.js";
-import { createSandboxExecutionEnv } from "../harness/execution-env.js";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { adaptAgentTool, createSandboxTools, isHarnessTool } from "../harness/tools/pi-tools.js";
 import {
   redactSecrets,
@@ -122,7 +121,7 @@ describe("withSecretRedaction", () => {
   });
 
   test("redacts a configured secret that a real bash command echoes verbatim", async () => {
-    const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+    const env = new NodeExecutionEnv({ cwd: dir });
     const bash = withSecretRedaction(createSandboxBashTool());
     const validated = validateToolArguments(bash, {
       type: "toolCall",
@@ -139,7 +138,7 @@ describe("withSecretRedaction", () => {
   });
 
   test("leaves output untouched when it contains no configured secret", async () => {
-    const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+    const env = new NodeExecutionEnv({ cwd: dir });
     const bash = withSecretRedaction(createSandboxBashTool());
     const validated = validateToolArguments(bash, {
       type: "toolCall",
@@ -154,7 +153,7 @@ describe("withSecretRedaction", () => {
   });
 
   test("propagates a tool error unchanged instead of swallowing it", async () => {
-    const env = createSandboxExecutionEnv(new HostExecutor(), "host", dir);
+    const env = new NodeExecutionEnv({ cwd: dir });
     const bash = withSecretRedaction(createSandboxBashTool());
     const validated = validateToolArguments(bash, {
       type: "toolCall",

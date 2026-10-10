@@ -1,14 +1,18 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { afterAll, afterEach, describe, expect, test, vi } from "vitest";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { withAbortSignal } from "@earendil-works/chord/context";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import * as log from "../log.js";
-import { ContainerExecutor } from "../sandbox/container.js";
-import { HostExecutor } from "../sandbox/host.js";
+import { ContainerExecutionEnv } from "../sandbox/container.js";
 import { SandboxError } from "../sandbox/utils.js";
 import {
   warnUnenforcedPrivateOffice,
-  createExecutor,
+  createSandboxEnv,
   parseSandboxArg,
 } from "../sandbox/registry.js";
+import { TEST_CONTEXT } from "./tool-api.js";
 
 describe("parseSandboxArg", () => {
   afterEach(() => {
@@ -77,60 +81,93 @@ describe("warnUnenforcedPrivateOffice", () => {
   });
 });
 
-describe("createExecutor", () => {
-  test("creates host executor", () => {
-    expect(createExecutor({ type: "host" })).toBeInstanceOf(HostExecutor);
+describe("createSandboxEnv", () => {
+  test("creates Pi's Node environment for the host", () => {
+    expect(createSandboxEnv({ type: "host" }, { cwd: "/w" })).toBeInstanceOf(NodeExecutionEnv);
   });
 
-  test("creates container executor", () => {
-    expect(createExecutor({ type: "container", container: "mikan-sandbox" })).toBeInstanceOf(
-      ContainerExecutor,
-    );
+  test("creates a container environment", () => {
+    expect(
+      createSandboxEnv({ type: "container", container: "mikan-sandbox" }, { cwd: "/workspace" }),
+    ).toBeInstanceOf(ContainerExecutionEnv);
   });
 
-  test("rejects unresolved image executor", () => {
-    expect(() => createExecutor({ type: "image", image: "ubuntu:24.04" })).toThrowError(
-      SandboxError,
-    );
+  test("rejects an unresolved image sandbox", () => {
+    expect(() =>
+      createSandboxEnv({ type: "image", image: "ubuntu:24.04" }, { cwd: "/workspace" }),
+    ).toThrowError(SandboxError);
   });
 });
 
-describe("ContainerExecutor", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+function recordingDocker(): { docker: string; calls: () => string[][]; envFiles: () => string[] } {
+  const dir = mkdtempSync(join(tmpdir(), "mikan-docker-record-"));
+  dirs.push(dir);
+  const docker = join(dir, "docker");
+  writeFileSync(
+    docker,
+    [
+      "#!/bin/sh",
+      `sep=$(printf '\\037'); line=; for arg in "$@"; do line="$line$arg$sep"; done`,
+      `printf '%s\\n' "$line" >> ${dir}/calls`,
+      `prev=; for arg in "$@"; do [ "$prev" = --env-file ] && cat "$arg" >> ${dir}/env && echo --- >> ${dir}/env; prev=$arg; done`,
+      'case "$*" in *"sleep 300"*) exec sleep 30 ;; esac',
+    ].join("\n"),
+  );
+  chmodSync(docker, 0o755);
+  const read = (name: string) => {
+    try {
+      return readFileSync(join(dir, name), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  return {
+    docker,
+    calls: () =>
+      read("calls")
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => line.split("\x1f").slice(0, -1)),
+    envFiles: () => read("env").split("---\n").filter(Boolean),
+  };
+}
+
+const dirs: string[] = [];
+afterAll(() => {
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+});
+
+function env(docker: string, credentials?: Record<string, string>): ContainerExecutionEnv {
+  return new ContainerExecutionEnv({
+    container: "mikan-sandbox",
+    cwd: "/workspace",
+    env: credentials,
+    docker,
+    ensureReady: async () => {},
   });
+}
 
-  test("applies guest cwd only to docker, preserving host timeout and cancellation", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
-    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
-    const signal = new AbortController().signal;
+describe("ContainerExecutionEnv docker invocation", () => {
+  test("runs in the guest cwd as one argument, without a host shell", async () => {
+    const recorder = recordingDocker();
 
-    await executor.exec("pwd", { cwd: "/guest-only/work space", timeout: 5, signal });
+    await env(recorder.docker).exec("pwd", { cwd: "/guest-only/work space" }, TEST_CONTEXT);
 
-    expect(exec).toHaveBeenCalledWith(expect.stringContaining("-w '/guest-only/work space'"), {
-      timeout: 5,
-      signal,
-    });
+    const [call] = recorder.calls();
+    expect(call?.slice(0, 4)).toEqual(["exec", "-w", "/guest-only/work space", "mikan-sandbox"]);
+    expect(call?.slice(-3)).toEqual(["sh", "-c", "pwd"]);
   });
 
   test("configures the gh git credential helper through env without writing git config", async () => {
-    let envFile = "";
-    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
-      const path = /--env-file '([^']+)'/.exec(command)?.[1];
-      envFile = path ? readFileSync(path, "utf8") : "";
-      return { stdout: "", stderr: "", code: 0 };
-    });
-    const executor = new ContainerExecutor(
-      "mikan-sandbox",
-      { GH_TOKEN: "gho_test" },
-      async () => {},
+    const recorder = recordingDocker();
+
+    await env(recorder.docker, { GH_TOKEN: "gho_test" }).exec(
+      "git clone https://github.com/acme/skills.git",
+      undefined,
+      TEST_CONTEXT,
     );
 
-    await executor.exec("git clone https://github.com/acme/skills.git");
-
-    expect(envFile.split("\n")).toEqual([
+    expect(recorder.envFiles()[0]?.split("\n")).toEqual([
       "GH_TOKEN=gho_test",
       "GIT_CONFIG_COUNT=2",
       "GIT_CONFIG_KEY_0=credential.https://github.com.helper",
@@ -141,53 +178,45 @@ describe("ContainerExecutor", () => {
     ]);
   });
 
-  test.each([
-    ["aborted", "Command aborted"],
-    ["timed out", "Command timed out after 5 seconds"],
-  ])("kills the guest process group when the command is %s", async (_case, failure) => {
-    const commands: string[] = [];
-    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
-      commands.push(command);
-      if (commands.length === 1) throw new Error(failure);
-      return { stdout: "", stderr: "", code: 0 };
-    });
-    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
-    const controller = new AbortController();
-    if (failure === "Command aborted") controller.abort();
+  test("leaves env untouched without a GitHub token", async () => {
+    const recorder = recordingDocker();
 
-    await expect(
-      executor.exec("sleep 300", { timeout: 5, signal: controller.signal }),
-    ).rejects.toThrow(failure);
+    await env(recorder.docker, { FOO: "bar" }).exec("true", undefined, TEST_CONTEXT);
 
-    const groupFile = /'(\/tmp\/mikan-exec-[^']+)'/.exec(commands[0] ?? "")?.[1];
-    expect(groupFile).toBeDefined();
-    expect(commands).toHaveLength(2);
-    expect(commands[1]).toContain("docker exec mikan-sandbox sh -c");
-    expect(commands[1]).toContain(groupFile);
+    expect(recorder.envFiles()).toEqual(["FOO=bar\n"]);
   });
+
+  test.each(["aborted", "timeout"] as const)(
+    "kills the guest process group when the command is %s",
+    async (outcome) => {
+      const recorder = recordingDocker();
+      const controller = new AbortController();
+      const running = env(recorder.docker).exec(
+        "sleep 300",
+        outcome === "timeout" ? { timeout: 1 } : undefined,
+        withAbortSignal(controller.signal, TEST_CONTEXT),
+      );
+      await vi.waitFor(() => expect(recorder.calls()).toHaveLength(1));
+      if (outcome === "aborted") controller.abort();
+
+      const result = await running;
+
+      expect(result.ok ? "ok" : result.error.code).toBe(outcome);
+      const calls = recorder.calls();
+      const groupFile = calls[0]?.find((arg) => arg.startsWith("/tmp/mikan-exec-"));
+      expect(groupFile).toBeDefined();
+      expect(calls).toHaveLength(2);
+      expect(calls[1]?.slice(0, 4)).toEqual(["exec", "mikan-sandbox", "sh", "-c"]);
+      expect(calls[1]?.at(-1)).toBe(groupFile);
+    },
+  );
 
   test("does not kill anything after a command that finished", async () => {
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "ok", stderr: "", code: 0 });
-    const executor = new ContainerExecutor("mikan-sandbox", undefined, async () => {});
+    const recorder = recordingDocker();
 
-    await expect(executor.exec("true")).resolves.toMatchObject({ stdout: "ok" });
+    const result = await env(recorder.docker).exec("true", undefined, TEST_CONTEXT);
 
-    expect(exec).toHaveBeenCalledTimes(1);
-  });
-
-  test("leaves env untouched without a GitHub token", async () => {
-    let envFile = "";
-    vi.spyOn(HostExecutor.prototype, "exec").mockImplementation(async (command) => {
-      const path = /--env-file '([^']+)'/.exec(command)?.[1];
-      envFile = path ? readFileSync(path, "utf8") : "";
-      return { stdout: "", stderr: "", code: 0 };
-    });
-    const executor = new ContainerExecutor("mikan-sandbox", { FOO: "bar" }, async () => {});
-
-    await executor.exec("true");
-
-    expect(envFile).toBe("FOO=bar\n");
+    expect(result.ok && result.value.exitCode).toBe(0);
+    expect(recorder.calls()).toHaveLength(1);
   });
 });

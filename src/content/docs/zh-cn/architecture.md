@@ -59,7 +59,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 - 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-durable` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
 - 将工具调用连接到本地 `read/bash/edit/write/event/attach`
 - 将工具结果写回会话，并通过适配器返回回复
-- 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际 executor
+- 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际执行环境
 
 ### D. 执行环境层
 
@@ -68,11 +68,11 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- 提供统一的 `Executor` 抽象
+- 把每个沙箱提供为 Pi 的 `ExecutionEnv`
 - 按工作区能力划分沙箱运行时：
   - 非受管投影：`host` / `container:<name>`
   - 受管投影：`image:<image>`，强制执行 private 办公室的 visibility：无法触及其他 private 办公室，共享知识为只读
-- 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` executor
+- 在 `image` 模式下自动创建和回收 Docker 容器，将 `image:<image>` 解析为具体的 `container:<name>` 环境
 
 ### E. 对话办公室层
 
@@ -128,7 +128,7 @@ sequenceDiagram
   participant S as sessions/chat-history-sync.ts
   participant R as harness/runner.ts
   participant T as tools/*
-  participant X as sandbox Executor
+  participant X as sandbox ExecutionEnv
   participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply
