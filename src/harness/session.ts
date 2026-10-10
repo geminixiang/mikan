@@ -372,7 +372,7 @@ export class MikanAgentSession {
     this.attached = await this.sessionStore.bindHarness({
       models: this.options.models.models,
       requestModels: this.trackedModels(this.options.models.models),
-      env: () => this.options.toolContext?.env,
+      env: () => this.options.toolContext?.env(),
       settings: { retry, compaction },
       onReport: (error) => log.logWarning("Durable harness report", errorMessage(error)),
     });

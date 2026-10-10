@@ -12,11 +12,11 @@ import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools } from "./tools/index.js";
+import { readRuntimeFile } from "./tools/attach.js";
 import { createSubagentTool } from "./tools/subagent.js";
 import { createHistoryTool } from "./tools/history.js";
 import { adaptAgentTool } from "./tools/pi-tools.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
-import { createSandboxExecutionEnv } from "./execution-env.js";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -29,10 +29,11 @@ import { ActorExecutionResolver } from "./execution-resolver.js";
 import type { DockerContainerManager } from "../sandbox/provisioner.js";
 import {
   warnUnenforcedPrivateOffice,
-  createExecutor,
-  getUnresolvedSandboxPathContext,
+  createSandboxEnv,
+  getSandboxPathContext,
 } from "../sandbox/registry.js";
-import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { VaultManager } from "../vault/types.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import type {
@@ -148,56 +149,33 @@ function createRunnerExecutionContext(
   provisioner: DockerContainerManager | undefined,
   workspace: Workspace,
 ): RunnerExecutionContext {
-  const executionResolver =
+  const resolver =
     vaultManager && sandboxConfig.type !== "host"
       ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspace)
       : undefined;
-
-  let activeExecutor: Executor =
-    executionResolver !== undefined
-      ? createExecutor({ type: "host" })
-      : createExecutor(sandboxConfig);
-  const executor: Executor = {
-    exec(command, options) {
-      return activeExecutor.exec(command, options);
-    },
-    readFile(path, options) {
-      return activeExecutor.readFile(path, options);
-    },
-    readFileBase64(path, options) {
-      return activeExecutor.readFileBase64(path, options);
-    },
-    writeFile(path, content, options) {
-      return activeExecutor.writeFile(path, content, options);
-    },
-    getWorkspacePath(hostPath) {
-      return activeExecutor.getWorkspacePath(hostPath);
-    },
-    getSandboxConfig() {
-      return activeExecutor.getSandboxConfig();
-    },
-    getPathContext(hostWorkspaceRoot) {
-      return activeExecutor.getPathContext(hostWorkspaceRoot);
-    },
-  };
-
-  return {
-    executor,
-    async resolveForRun(context) {
-      if (executionResolver) {
-        const decision = await executionResolver.resolve(context);
-        activeExecutor = decision.executor;
+  if (!resolver) {
+    const pathContext = getSandboxPathContext(sandboxConfig, workspace.root);
+    const env = createSandboxEnv(sandboxConfig, { cwd: pathContext.runtimeWorkspaceRoot });
+    return {
+      env: () => env,
+      sandboxConfig: () => sandboxConfig,
+      async resolveForRun(context) {
         return {
-          pathContext: decision.pathContext,
-          projection: decision.projection,
+          pathContext,
+          projection: resolveWorkspaceProjection(workspace.office(context.address)),
         };
-      }
+      },
+    };
+  }
 
-      const office = workspace.office(context.address);
-      return {
-        pathContext: executor.getPathContext(workspace.root),
-        projection: resolveWorkspaceProjection(office),
-      };
+  let resolved: { env: ExecutionEnv; sandboxConfig: SandboxConfig } | undefined;
+  return {
+    env: () => resolved?.env,
+    sandboxConfig: () => resolved?.sandboxConfig ?? sandboxConfig,
+    async resolveForRun(context) {
+      const decision = await resolver.resolve(context);
+      resolved = decision;
+      return { pathContext: decision.pathContext, projection: decision.projection };
     },
   };
 }
@@ -248,8 +226,7 @@ interface PrepareRunParams {
   responder: ConversationResponder;
   platform: MessagingInfo;
   office: Office;
-  executor: Executor;
-  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  execution: RunnerExecutionContext;
   session: MikanAgentSession;
   bindTools: ReturnType<typeof createMikanTools>["bindRun"];
 }
@@ -262,9 +239,9 @@ interface RunPromptContext {
 }
 
 async function preparePromptContext(params: PrepareRunParams): Promise<RunPromptContext> {
-  const { message, platform, office, executor, resolveForRun, session } = params;
+  const { message, platform, office, execution, session } = params;
   const conversationId = office.address.conversationId;
-  const decision = await resolveForRun({
+  const decision = await execution.resolveForRun({
     address: message.address,
     userId: message.userId,
     trustModel: platform.trustModel,
@@ -282,7 +259,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     workspacePath: pathContext.runtimeWorkspaceRoot,
     office,
     memory,
-    sandboxConfig: executor.getSandboxConfig(),
+    sandboxConfig: execution.sandboxConfig(),
     platform,
     skills: conversationSkillLoad.skills,
     projection,
@@ -298,7 +275,7 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
 }
 
 async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunContext> {
-  const { message, platform, office, executor } = params;
+  const { message, platform, office, execution } = params;
   const sessionConversation = conversationIdOf(message.sessionKey);
   await mkdir(join(office.dir, "scratch"), { recursive: true });
   const { pathContext, memory, systemPrompt, triggerAttribution } =
@@ -319,7 +296,8 @@ async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunC
     message,
     pathContext.runtimeWorkspaceRoot,
     pathContext,
-    (runtimePath) => executor.readFileBase64(runtimePath),
+    async (runtimePath) =>
+      Buffer.from(await readRuntimeFile(execution.env(), runtimePath)).toString("base64"),
   );
   const turnInstructions = buildTurnInstructions(message.id.match(/^event:([^:]+)/)?.[1]);
   const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
@@ -561,8 +539,7 @@ interface RunnerInterfaceParams {
   sessionView: CreateRunnerOptions["sessionView"];
   runEvents: CreateRunnerOptions["runEvents"];
   runState: RunnerSessionState;
-  executor: Executor;
-  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  execution: RunnerExecutionContext;
   session: MikanAgentSession;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -615,14 +592,13 @@ function prepareRunnerTurn(
   responder: ConversationResponder,
   platform: MessagingInfo,
 ): ReturnType<typeof prepareRunContext> {
-  const { office, executor, resolveForRun, session, toolBindings } = params;
+  const { office, execution, session, toolBindings } = params;
   return prepareRunContext({
     message,
     responder,
     platform,
     office,
-    executor,
-    resolveForRun,
+    execution,
     session,
     bindTools: toolBindings.bindRun,
   });
@@ -722,8 +698,7 @@ async function finishRunnerCreation(params: {
   options: CreateRunnerOptions;
   conversationId: string;
   workspaceDir: string;
-  executor: Executor;
-  resolveForRun: RunnerExecutionContext["resolveForRun"];
+  execution: RunnerExecutionContext;
   model: Model<Api>;
   modelRegistry: MikanModels;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -737,8 +712,7 @@ async function finishRunnerCreation(params: {
     options,
     conversationId,
     workspaceDir,
-    executor,
-    resolveForRun,
+    execution,
     model,
     modelRegistry,
     agentConfig,
@@ -779,8 +753,7 @@ async function finishRunnerCreation(params: {
       sessionView,
       runEvents,
       runState,
-      executor,
-      resolveForRun,
+      execution,
       session,
       model,
       agentConfig,
@@ -825,16 +798,14 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const projection = resolveWorkspaceProjection(office);
   warnUnenforcedPrivateOffice(sandboxConfig, projection.visibility, office.key);
-  const { executor, resolveForRun } = createRunnerExecutionContext(
+  const execution = createRunnerExecutionContext(
     sandboxConfig,
     vaultManager,
     provisioner,
     office.workspace,
   );
-  const pathContext = getUnresolvedSandboxPathContext(sandboxConfig, workspaceDir);
-  const toolContext: MikanToolContext = {
-    env: createSandboxExecutionEnv(executor, sandboxConfig.type, pathContext.runtimeWorkspaceRoot),
-  };
+  const pathContext = getSandboxPathContext(sandboxConfig, workspaceDir);
+  const toolContext: MikanToolContext = { env: execution.env };
 
   const modelRegistry = options.models;
   if (modelRegistry.getError()) {
@@ -844,7 +815,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const platformToolPacks = (platformToolPackFactories ?? []).map((createPack) => createPack());
   const toolBindings = createMikanTools(
-    executor,
+    execution.env,
     new OfficeEventStore(office, options.eventScheduler),
     { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
     platformToolPacks,
@@ -883,8 +854,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     options,
     conversationId,
     workspaceDir,
-    executor,
-    resolveForRun,
+    execution,
     model,
     modelRegistry,
     agentConfig,

@@ -59,7 +59,7 @@ Responsibilities:
 - send user messages into mikan's own agent harness (`src/harness/`, built on `pi-durable` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
-- use `ActorExecutionResolver` to decide the actual executor by user/conversation/vault
+- use `ActorExecutionResolver` to decide the actual execution environment by user/conversation/vault
 
 ### D. Execution environment layer
 
@@ -68,11 +68,11 @@ Responsibilities:
 
 Responsibilities:
 
-- provide a unified `Executor` abstraction
+- provide each sandbox as Pi's `ExecutionEnv`
 - split sandbox runtimes by workspace capability:
   - unmanaged projection: `host` / `container:<name>`
   - managed projection: `image:<image>`, which enforces private office visibility: no reach into other private offices and read-only shared knowledge
-- in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` executor
+- in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` environment
 
 ### E. Conversation office layer
 
@@ -128,7 +128,7 @@ sequenceDiagram
   participant S as sessions/chat-history-sync.ts
   participant R as harness/runner.ts
   participant T as tools/*
-  participant X as sandbox Executor
+  participant X as sandbox ExecutionEnv
   participant W as Office dir / sessions.db
 
   U->>P: send message / mention / reply

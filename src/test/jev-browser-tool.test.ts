@@ -1,17 +1,40 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { Executor } from "../sandbox/types.js";
+import { tmpdir } from "node:os";
+import { ExecutionError, err, ok } from "@earendil-works/pi-durable/env";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 
-const execMock = vi.fn<Executor["exec"]>();
-const executor: Executor = {
-  exec: execMock,
-  getSandboxConfig: () => ({ type: "container", container: "browser-test" }),
-  readFile: vi.fn(),
-  readFileBase64: vi.fn(),
-  writeFile: vi.fn(),
-  getWorkspacePath: vi.fn(),
-  getPathContext: vi.fn(),
-};
+type ExecCall = (
+  command: string,
+  options: { timeout?: number; signal?: AbortSignal },
+) => Promise<{ stdout: string; stderr: string; code: number }>;
+
+const quote = (arg: string) => `'${arg.replace(/'/g, "'\\''")}'`;
+
+function fakeEnv(exec: ExecCall): () => NodeExecutionEnv {
+  const env = Object.assign(new NodeExecutionEnv({ cwd: tmpdir() }), {
+    exec: async (
+      command: string | readonly string[],
+      options: Parameters<NodeExecutionEnv["exec"]>[1],
+      context: Parameters<NodeExecutionEnv["exec"]>[2],
+    ) => {
+      const line = typeof command === "string" ? command : command.map(quote).join(" ");
+      try {
+        const result = await exec(line, { timeout: options?.timeout, signal: context.abortSignal });
+        if (result.code === 127) return err(new ExecutionError("spawn_error", result.stderr));
+        if (result.stdout) options?.onOutput?.(result.stdout, context, { stream: "stdout" });
+        if (result.stderr) options?.onOutput?.(result.stderr, context, { stream: "stderr" });
+        return ok({ exitCode: result.code });
+      } catch (error) {
+        return err(new ExecutionError("unknown", (error as Error).message));
+      }
+    },
+  });
+  return () => env;
+}
+
+const execMock = vi.fn<ExecCall>();
+const env = fakeEnv(execMock);
 
 const {
   buildQuestionPlan,
@@ -244,7 +267,7 @@ describe("jev_browser tool", () => {
       .mockResolvedValueOnce(answerOperation("DONE"));
     const generateText = vi.fn(async () => 'Here you go: {"text":"qa@example.com"}');
 
-    await createJevBrowserTool(executor, generateText).execute(
+    await createJevBrowserTool(env, generateText).execute(
       "type",
       { label: "test", goal: "Enter the email qa@example.com", maxSteps: 2 },
       undefined,
@@ -266,7 +289,7 @@ describe("jev_browser tool", () => {
     ]);
     fetchMock.mockResolvedValueOnce(answerType("e1"));
 
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "type",
       { label: "test", goal: "Enter an email" },
       undefined,
@@ -288,7 +311,7 @@ describe("jev_browser tool", () => {
     ),
   ])("rejects invalid argv $command before any browser side effect", async ({ command, error }) => {
     await expect(
-      createJevBrowserTool(executor).execute(
+      createJevBrowserTool(env).execute(
         "invalid",
         {
           label: "test",
@@ -310,7 +333,7 @@ describe("jev_browser tool", () => {
     ["key", "Enter"],
   ])("forwards valid %s %s argv", async (operation, key) => {
     mockAgentBrowser([{ success: true, data: null, error: null }]);
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "key",
       {
         label: "test",
@@ -331,7 +354,7 @@ describe("jev_browser tool", () => {
   ])("returns native plain-text help for $command", async ({ command }) => {
     const help = "Usage: agent-browser\n  press <key>\n";
     execMock.mockResolvedValue({ stdout: help, stderr: "", code: 0 });
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "help",
       {
         label: "Help",
@@ -353,7 +376,7 @@ describe("jev_browser tool", () => {
       { success: false, data: null, error: "No matching element" },
       { success: true, data: null },
     ]);
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "batch",
       {
         label: "test",
@@ -389,7 +412,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { snapshot, origin: "https://example.com/active", refs: {} } },
     ]);
     fetchMock.mockResolvedValueOnce(answerOperation("DONE"));
-    await createJevBrowserTool(executor).execute(
+    await createJevBrowserTool(env).execute(
       "page",
       {
         label: "test",
@@ -429,7 +452,7 @@ describe("jev_browser tool", () => {
     fetchMock
       .mockResolvedValueOnce(answerOperation("CLICK"))
       .mockResolvedValueOnce(answerOperation("DONE"));
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "filtered",
       {
         label: "test",
@@ -481,7 +504,7 @@ describe("jev_browser tool", () => {
       ]);
       for (const choice of ["WAIT", "WAIT", "WAIT", lastChoice])
         fetchMock.mockResolvedValueOnce(answerOperation(choice));
-      const result = await createJevBrowserTool(executor).execute(
+      const result = await createJevBrowserTool(env).execute(
         "progress",
         {
           label: "test",
@@ -517,7 +540,7 @@ describe("jev_browser tool", () => {
       }),
     );
     fetchMock.mockImplementation(async () => answerOperation("CLICK"));
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "cycle",
       { label: "test", goal: "Complete an item", maxSteps: 10 },
       undefined,
@@ -546,7 +569,7 @@ describe("jev_browser tool", () => {
       ),
     );
     fetchMock.mockImplementation(async () => answerOperation("WAIT"));
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "reset",
       {
         label: "test",
@@ -572,7 +595,7 @@ describe("jev_browser tool", () => {
         { success: false, error: "Browser disconnected" },
       ]);
       fetchMock.mockResolvedValueOnce(answerOperation(operation));
-      const result = await createJevBrowserTool(executor).execute(
+      const result = await createJevBrowserTool(env).execute(
         "failed-action",
         {
           label: "test",
@@ -644,7 +667,7 @@ describe("jev_browser tool", () => {
           },
         }),
       );
-      const result = await createJevBrowserTool(executor).execute(
+      const result = await createJevBrowserTool(env).execute(
         "invalid-decision",
         {
           label: "test",
@@ -690,7 +713,7 @@ describe("jev_browser tool", () => {
       }),
     );
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "Find the page's main heading text." },
@@ -705,7 +728,7 @@ describe("jev_browser tool", () => {
   });
 
   test("keeps its definition within a prompt budget and leaves code-enforced rules to their errors", () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const definition = JSON.stringify({
       name: tool.name,
       description: tool.description,
@@ -720,7 +743,7 @@ describe("jev_browser tool", () => {
   });
 
   test("declares frame as an optional string", () => {
-    const schema = createJevBrowserTool(executor).parameters;
+    const schema = createJevBrowserTool(env).parameters;
     expect(schema.properties.frame).toMatchObject({ type: "string" });
     expect(schema.required).not.toContain("frame");
   });
@@ -744,7 +767,7 @@ describe("jev_browser tool", () => {
       }),
     );
     const signal = new AbortController().signal;
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "frame",
       {
         label: "Complete form",
@@ -779,7 +802,7 @@ describe("jev_browser tool", () => {
 
   test("frame main returns an existing session to the parent before raw commands without reopening", async () => {
     mockAgentBrowser([{ success: true, data: null }]);
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "main",
       {
         label: "Return to parent",
@@ -809,7 +832,7 @@ describe("jev_browser tool", () => {
       ]);
       const signal = new AbortController().signal;
       await expect(
-        createJevBrowserTool(executor).execute(
+        createJevBrowserTool(env).execute(
           "missing-frame",
           {
             label: "Submit inside frame",
@@ -879,7 +902,7 @@ describe("jev_browser tool", () => {
         }),
       );
       const signal = new AbortController().signal;
-      const execution = createJevBrowserTool(executor).execute(
+      const execution = createJevBrowserTool(env).execute(
         "last-action",
         {
           label: "Submit",
@@ -917,7 +940,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { closed: true } },
     ]);
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "anything" },
@@ -961,7 +984,7 @@ describe("jev_browser tool", () => {
       }),
     );
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const result = await tool.execute(
       "call-1",
       {
@@ -998,7 +1021,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { closed: true }, error: null },
     ]);
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const result = await tool.execute(
       "call-1",
       { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
@@ -1028,7 +1051,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { started: true } },
     ]);
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const result = await tool.execute(
       "call-1",
       {
@@ -1065,7 +1088,7 @@ describe("jev_browser tool", () => {
 
   test("an explicitly closed named session requires url before reuse", async () => {
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
 
     await tool.execute("close", { label: "test", close: true }, undefined);
     execMock.mockClear();
@@ -1077,7 +1100,7 @@ describe("jev_browser tool", () => {
   });
 
   test("url can explicitly restart a named session after close", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
     await tool.execute("close", { label: "test", close: true }, undefined);
 
@@ -1101,7 +1124,7 @@ describe("jev_browser tool", () => {
   });
 
   test("a failed explicit restart keeps the closed-session guard", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
     await tool.execute("close", { label: "test", close: true }, undefined);
 
@@ -1132,7 +1155,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { title: "Example" } },
       { success: false, error: "close failed" },
     ]);
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     await tool.execute(
       "first",
       {
@@ -1164,7 +1187,7 @@ describe("jev_browser tool", () => {
         return { stdout: JSON.stringify({ success: true, data: {} }), stderr: "", code: 0 };
       });
     });
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     const first = tool.execute(
       "first-call",
       { label: "test", commands: [["get", "title"]] },
@@ -1195,7 +1218,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/shot.png" } },
     ]);
 
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     await tool.execute(
       "call-1",
       {
@@ -1212,7 +1235,7 @@ describe("jev_browser tool", () => {
   });
 
   test("reports browserContinuity as NOT continuous when the thread's browser was relaunched", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     mockAgentBrowser([
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
@@ -1239,7 +1262,7 @@ describe("jev_browser tool", () => {
   });
 
   test("reports browserContinuity as continuous when the thread's browser was reused", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     mockAgentBrowser([
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
@@ -1268,7 +1291,7 @@ describe("jev_browser tool", () => {
   test("quotes URL and eval argv literally, including shell substitutions", async () => {
     mockAgentBrowser([{ success: true, data: null, error: null }]);
     const signal = new AbortController().signal;
-    await createJevBrowserTool(executor).execute(
+    await createJevBrowserTool(env).execute(
       "quoting",
       {
         label: "test",
@@ -1316,7 +1339,7 @@ describe("jev_browser tool", () => {
       );
     }
     const signal = new AbortController().signal;
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "goal",
       { label: "test", goal: "Wait until ready", close: true },
       signal,
@@ -1336,21 +1359,20 @@ describe("jev_browser tool", () => {
 
   test("cleans up through the executor without the aborted signal after execution rejects", async () => {
     const controller = new AbortController();
-    const failure = new Error("Browser command aborted");
     execMock
       .mockImplementationOnce(async () => {
         controller.abort();
-        throw failure;
+        throw new Error("Browser command aborted");
       })
       .mockResolvedValueOnce({ stdout: '{"success":true}', stderr: "", code: 0 });
 
     await expect(
-      createJevBrowserTool(executor).execute(
+      createJevBrowserTool(env).execute(
         "abort",
         { label: "test", commands: [["eval", "1"]], close: true },
         controller.signal,
       ),
-    ).rejects.toBe(failure);
+    ).rejects.toMatchObject({ name: "AbortError" });
     expect(controller.signal.aborted).toBe(true);
     expect(sentCommands()).toEqual([
       [
@@ -1363,7 +1385,7 @@ describe("jev_browser tool", () => {
 
   test("does not execute or clean up when the signal is already aborted", async () => {
     await expect(
-      createJevBrowserTool(executor).execute(
+      createJevBrowserTool(env).execute(
         "aborted",
         { label: "test", commands: [["snapshot"]], close: true },
         AbortSignal.abort(),
@@ -1384,7 +1406,7 @@ describe("jev_browser tool", () => {
         stderr: "",
         code: 0,
       });
-    const result = await createJevBrowserTool(executor).execute(
+    const result = await createJevBrowserTool(env).execute(
       "nonzero",
       {
         label: "test",
@@ -1411,7 +1433,7 @@ describe("jev_browser tool", () => {
       stderr: "sh: agent-browser: command not found",
       code: 127,
     });
-    const execution = createJevBrowserTool(executor).execute(
+    const execution = createJevBrowserTool(env).execute(
       "missing",
       { label: "test", commands: [["snapshot"]] },
       undefined,
@@ -1426,14 +1448,14 @@ describe("jev_browser tool", () => {
 
   test("tools with different executors never cross-run", async () => {
     mockAgentBrowser([{ success: true, data: { owner: "first" }, error: null }]);
-    const otherExec = vi.fn<Executor["exec"]>().mockResolvedValue({
+    const otherExec = vi.fn<ExecCall>().mockResolvedValue({
       stdout: JSON.stringify({ success: true, data: { owner: "second" }, error: null }),
       stderr: "",
       code: 0,
     });
-    const otherExecutor = { ...executor, exec: otherExec } as Executor;
-    const first = createJevBrowserTool(executor);
-    const second = createJevBrowserTool(otherExecutor);
+    const otherEnv = fakeEnv(otherExec);
+    const first = createJevBrowserTool(env);
+    const second = createJevBrowserTool(otherEnv);
     const args = { label: "test", commands: [["get", "title"]] };
     for (const [tool, owner] of [
       [first, "first"],
@@ -1464,7 +1486,7 @@ describe("jev_browser tool", () => {
     async (commands) => {
       mockAgentBrowser([{ success: true, data: { closed: true } }]);
       const signal = new AbortController().signal;
-      const tool = createJevBrowserTool(executor);
+      const tool = createJevBrowserTool(env);
       const result = await tool.execute(
         "close-only",
         { label: "Close", close: true, commands },
@@ -1483,13 +1505,13 @@ describe("jev_browser tool", () => {
   test("close-only surfaces CLI failure without reporting closed or retrying cleanup", async () => {
     mockAgentBrowser([{ success: false, error: "close failed" }]);
     await expect(
-      createJevBrowserTool(executor).execute("close", { label: "Close", close: true }, undefined),
+      createJevBrowserTool(env).execute("close", { label: "Close", close: true }, undefined),
     ).rejects.toThrow("Failed to close the browser: close failed");
     expect(execMock).toHaveBeenCalledTimes(1);
   });
 
   test("successful commands without lifecycle metadata report unknown, not execution failure", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     mockAgentBrowser([
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
@@ -1513,7 +1535,7 @@ describe("jev_browser tool", () => {
   });
 
   test("rejects a call with neither goal nor commands", async () => {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     await expect(
       tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
     ).rejects.toThrow(/Provide goal or commands/);
@@ -1538,7 +1560,7 @@ describe("jev_browser tabs", () => {
   }
 
   async function openTwice(tabsAtSecondOpen: ReturnType<typeof tab>[]) {
-    const tool = createJevBrowserTool(executor);
+    const tool = createJevBrowserTool(env);
     answerBrowser([tab("t1", true)]);
     await tool.execute(
       "first",

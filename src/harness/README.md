@@ -10,11 +10,13 @@ this module.
 ## Run lifecycle
 
 `runner.ts` constructs the conversation-scoped `PiAgentWrapper` and uses
-`execution-resolver.ts` to bind each actor's authorized executor, runtime paths,
-workspace projection, Vault credentials, and managed image-container readiness
-to that run's tools and prompt. The resolver rejects overlapping mount targets
-before executor creation and reports provisioning failures without changing
-cleanup ownership. `prompt.ts` owns prompt construction; `presenter.ts` turns
+`execution-resolver.ts` to bind each actor's authorized `ExecutionEnv`, runtime
+paths, workspace projection, Vault credentials, and managed image-container
+readiness to that run's tools and prompt. The resolver rejects overlapping mount
+targets before the environment is created and reports provisioning failures
+without changing cleanup ownership. With a resolver, a runner has no
+environment until its first run resolves one, so a tool called earlier fails
+instead of reaching the host. `prompt.ts` owns prompt construction; `presenter.ts` turns
 session events into responder operations in two passes: a run observer records
 telemetry, run accounting, and daemon logs from the raw Pi event, then
 `run-events.ts` translates the event into a platform-neutral `RunEvent` that the
@@ -138,13 +140,10 @@ File and shell behavior comes from `@earendil-works/pi-durable/tools`. mikan's
 thin adapter preserves their schemas, adds the presentation `label`, and the
 Harness supplies the run's authorized sandbox `ExecutionEnv` as `api.env`.
 Execution tools fail without one; there is no implicit host fallback.
-Host mode uses Pi's `NodeExecutionEnv`. Container sandboxes use
-`execution-env.ts`, which runs each file operation as a `docker exec`, so it
-keeps every round trip to one: `openBinaryReader` checks the file and returns
-its bytes in a single command, then reads, scans lines, and reports metadata
-from that snapshot, and `openDirReader` pages one `listDir`. It does not offer
-`watch` (`not_supported`), which no mikan tool uses. Its `exec` reports stdout
-and stderr as separate chunks, in that order, rather than interleaved.
+Host mode uses Pi's `NodeExecutionEnv`; container sandboxes use
+`ContainerExecutionEnv` from `src/sandbox/`. Both pass Pi's
+`registerEnvConformance` suite except file watching, which neither Pi's tools
+nor mikan use.
 Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
 adapts them, forwarding progress `details` and awaiting the last update before
 the result.
@@ -275,13 +274,13 @@ four call sites instead of each one remembering to report it. The report
 never carries the judged state, questions, or answers.
 
 `jev_browser` runs **every** `agent-browser` command (including cleanup) through
-this runner's actor-resolved sandbox `Executor`, not a host subprocess. The CLI,
+this runner's actor-resolved sandbox `ExecutionEnv`, not a host subprocess. The CLI,
 Chrome, the runner's browser, and output files belong to that sandbox. Jev's decision
 requests still use the host-side adapter above. Tool assembly is not restricted
 to host mode; each backend must provision `agent-browser` and its browser
 runtime on the sandbox PATH. A missing CLI is a provisioning error: the tool
 does not install packages, use a global npm fallback, or launch a browser on
-the mikan host. Explicit host sandbox mode uses its configured host Executor.
+the mikan host. Explicit host sandbox mode runs it through Pi's `NodeExecutionEnv`.
 Session names inherit the runtime's isolation: explicitly shared host/container
 runtimes must use distinct names where separate browsers are desired.
 
@@ -290,9 +289,10 @@ runtimes must use distinct names where separate browsers are desired.
 - The harness receives platform-neutral messages, responders, tools, prompt
   sources, and execution context from `src/runtime/` and injected host capabilities.
 - Platform SDK objects and platform credentials do not enter the harness.
-- Sandbox filesystem/process operations cross only through the `Executor`
-  interface; Sandbox owns container provisioning while the harness resolver
-  supplies the authorized execution plan and readiness callback.
+- Sandbox filesystem/process operations cross only through Pi's `ExecutionEnv`;
+  Sandbox owns container provisioning and the environment implementations while
+  the harness resolver supplies the authorized execution plan and readiness
+  callback.
 - Scheduled-event payload schema, parsing and building belong to `src/events/index.ts`.
 - Session file naming, chat synchronization, and thread lineage stay
   in `src/sessions/`.

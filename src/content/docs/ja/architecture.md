@@ -59,7 +59,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-durable` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets and bounded subagents を実行する
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
 - tool の結果を session に書き戻し、adapter 経由でプラットフォームへ返す
-- `ActorExecutionResolver` により user/conversation/vault から実際の executor を決定する
+- `ActorExecutionResolver` により user/conversation/vault から実際の実行環境を決定する
 
 ### D. 実行環境レイヤー
 
@@ -68,11 +68,11 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- `Executor` を統一的に抽象化する
+- 各 sandbox を Pi の `ExecutionEnv` として提供する
 - sandbox runtime を workspace capability で分ける:
   - unmanaged projection: `host` / `container:<name>`
   - managed projection: `image:<image>`。private office の visibility を強制する: 他の private office には到達できず、共有知識は read-only
-- `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` executor に解決する
+- `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` 環境に解決する
 
 ### E. Conversation office レイヤー
 
@@ -128,7 +128,7 @@ sequenceDiagram
   participant S as sessions/chat-history-sync.ts
   participant R as harness/runner.ts
   participant T as tools/*
-  participant X as sandbox Executor
+  participant X as sandbox ExecutionEnv
   participant W as Office dir / sessions.db
 
   U->>P: メッセージ / mention / reply を送信

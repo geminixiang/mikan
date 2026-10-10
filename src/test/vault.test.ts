@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
-import { HostExecutor } from "../sandbox/host.js";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
@@ -403,7 +403,7 @@ describe("ActorExecutionResolver image mode", () => {
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(decision.executor.getSandboxConfig()).toEqual({
+    expect(decision.sandboxConfig).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -432,7 +432,7 @@ describe("ActorExecutionResolver image mode", () => {
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(decision.executor.getSandboxConfig()).toEqual({
+    expect(decision.sandboxConfig).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -530,7 +530,7 @@ describe("ActorExecutionResolver image mode", () => {
     });
 
     expect(vaultKey).toBe(officeKey(createOfficeAddress("slack", "D123")));
-    expect(decision.executor.getSandboxConfig()).toEqual({
+    expect(decision.sandboxConfig).toEqual({
       type: "container",
       container: `mikan-sandbox-${D123_OFFICE}`,
     });
@@ -550,10 +550,7 @@ describe("ActorExecutionResolver image mode", () => {
     const mgr = new FileVaultManager(tmpDir);
     const provision = vi
       .fn<DockerContainerManager["provision"]>()
-      .mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+      .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
@@ -565,7 +562,8 @@ describe("ActorExecutionResolver image mode", () => {
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
-    await decision.executor.exec("pwd");
+    const ran = await decision.env.exec("pwd", undefined, BACKGROUND_CONTEXT);
+    expect(ran.ok ? "ran" : ran.error.message).toContain("provisioning stops the call");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
       containerName: `mikan-sandbox-${D123_OFFICE}`,
@@ -577,12 +575,8 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
-    expect(exec).toHaveBeenCalledWith(
-      expect.stringMatching(
-        new RegExp(`^docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c .* 'pwd'$`),
-      ),
-      undefined,
-    );
+    expect(decision.env.id).toBe(`docker:mikan-sandbox-${D123_OFFICE}`);
+    expect(decision.env.cwd).toBe("/workspace");
   });
 
   test("a retired full override still gets the uniform office mounts", async () => {
@@ -595,10 +589,7 @@ describe("ActorExecutionResolver image mode", () => {
     const mgr = new FileVaultManager(tmpDir);
     const provision = vi
       .fn<DockerContainerManager["provision"]>()
-      .mockResolvedValue(`mikan-sandbox-${D123_OFFICE}`);
-    const exec = vi
-      .spyOn(HostExecutor.prototype, "exec")
-      .mockResolvedValue({ stdout: "", stderr: "", code: 0 });
+      .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
@@ -610,7 +601,8 @@ describe("ActorExecutionResolver image mode", () => {
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
-    await decision.executor.exec("pwd");
+    const ran = await decision.env.exec("pwd", undefined, BACKGROUND_CONTEXT);
+    expect(ran.ok ? "ran" : ran.error.message).toContain("provisioning stops the call");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
       containerName: `mikan-sandbox-${D123_OFFICE}`,
@@ -621,11 +613,7 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
       ],
     });
-    expect(exec).toHaveBeenCalledWith(
-      expect.stringMatching(
-        new RegExp(`^docker exec -w /workspace mikan-sandbox-${D123_OFFICE} sh -c .* 'pwd'$`),
-      ),
-      undefined,
-    );
+    expect(decision.env.id).toBe(`docker:mikan-sandbox-${D123_OFFICE}`);
+    expect(decision.env.cwd).toBe("/workspace");
   });
 });

@@ -3,7 +3,7 @@ import type { MikanAgentSession } from "./session.js";
 import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
-import type { Executor, RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
 import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -102,7 +102,8 @@ export interface UsageReportContext {
 }
 
 export interface RunnerExecutionContext {
-  executor: Executor;
+  env(): ExecutionEnv | undefined;
+  sandboxConfig(): SandboxConfig;
   resolveForRun(context: {
     address: OfficeAddress;
     userId: string;
@@ -382,7 +383,7 @@ export interface RunEventPublisher {
 }
 
 export interface MikanToolContext {
-  env: ExecutionEnv;
+  env(): ExecutionEnv | undefined;
 }
 
 export interface MikanToolResult {

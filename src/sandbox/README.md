@@ -1,6 +1,6 @@
 # src/sandbox
 
-This directory defines sandbox abstractions, concrete sandbox executors, and shared sandbox utilities.
+This directory defines sandbox configuration, the execution environments tools run in, managed container lifecycle, and shared sandbox utilities.
 
 ## Contracts
 
@@ -8,8 +8,9 @@ This directory defines sandbox abstractions, concrete sandbox executors, and sha
 - A backend without managed projection cannot enforce a private office's visibility; `warnUnenforcedPrivateOffice` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
 - Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `docker rm` + `docker run`. A running container is never replaced for an image change.
 - `provision`, `stop`, and `remove` are serialized per key.
-- Exec-only executors share the base64-chunked file transport (`execReadFile` / `execWriteFile`) in `utils.ts`.
-- Killing the host `docker exec` client does not stop the command inside the container. `ContainerExecutor` therefore starts each command under `setsid` in its own process group and records the group ID with the leader's start time in `/tmp/mikan-exec-<uuid>` in the guest. An abort or timeout runs a second `docker exec` that kills that group. At startup, `reconcile` sweeps every running managed container the same way, ending commands a crashed process left behind; a container is never shared between two live mikan processes, so every recorded group there is an orphan. The start time check keeps a stale file from killing a reused process ID, and IDs at or below 1 are never signalled, because `kill -- -1` reaches every process. Dash needs `kill -s KILL -- -<group>` and BusyBox rejects `--`, so the scripts try both. An image without `setsid` still runs commands, but a stop leaves them running.
+- A sandbox reaches tools only as Pi's `ExecutionEnv` (`@earendil-works/pi-durable/env`): `host` is Pi's `NodeExecutionEnv` and `container` is `ContainerExecutionEnv`. `image` has no environment of its own; the harness resolver provisions its container and then builds a `container` environment for it. A new backend implements `ExecutionEnv` and passes `registerEnvConformance`, as `src/test/container-execution-env.test.ts` does, instead of adding a mikan-specific interface.
+- `ContainerExecutionEnv` does not offer `watch` (`not_supported`): no caller watches the sandbox, and polling would cost a `docker exec` per interval. Its `id` is `docker:<container>`, so Pi's edit and write queues serialize changes to one file across runs that share a container.
+- Killing the host `docker exec` client does not stop the command inside the container. `ContainerExecutionEnv` therefore starts each command under `setsid` in its own process group and records the group ID with the leader's start time in `/tmp/mikan-exec-<uuid>` in the guest. An abort, a timeout, or `cleanup()` runs a second `docker exec` that kills that group. At startup, `reconcile` sweeps every running managed container the same way, ending commands a crashed process left behind; a container is never shared between two live mikan processes, so every recorded group there is an orphan. The start time check keeps a stale file from killing a reused process ID, and IDs at or below 1 are never signalled, because `kill -- -1` reaches every process. Dash needs `kill -s KILL -- -<group>` and BusyBox rejects `--`, so the scripts try both. An image without `setsid` still runs commands, but a stop leaves them running.
 
 ## Host / sandbox path boundary (image mode)
 
@@ -101,10 +102,19 @@ translates between them for skill locations and upload paths.
 
 ### File transport
 
-`Executor.readFile`/`writeFile` own file content transport: the host
-executor uses the filesystem directly; every exec-only executor (docker,
-ssh, HTTP) shares the base64-chunked implementation in `utils.ts`, so file
-contents never pass through shell argv, survive every quoting layer, stay
-under per-argument ARG_MAX, and are staged + renamed so an aborted write
-never truncates the target. Tools (write/edit, bash output spill) must use
-these instead of composing `printf`/`cat` shell strings.
+`ContainerExecutionEnv` runs every file operation as one `docker exec` of a
+POSIX script; the guest needs a GNU or BusyBox userland (`stat -c`, `realpath`,
+`truncate`, `mktemp`). File contents travel over stdin and stdout, never through
+shell arguments, so they survive every quoting layer and stay under ARG_MAX.
+Expected failures leave the script as exit statuses 70–74, which map to Pi's
+`not_found`, `is_directory`, `not_directory`, `invalid`, and
+`permission_denied`. Writes are staged beside the target and renamed, so an
+interrupted write never truncates it. `openBinaryReader` reads the whole file
+once and serves ranges from that snapshot, which keeps the bytes it opened
+after a rename. A directory reader lists at its first page, so entries removed
+after opening are not reported.
+
+Commands run argv under `setsid` (see Contracts). An argv whose program is not
+on the guest PATH exits 127 without output and is reported as `spawn_error`.
+Output streams to `onOutput` as it arrives; past the spill thresholds it is
+also piped into `<cwd>/.mikan/bash-output/<id>.log` in the guest.

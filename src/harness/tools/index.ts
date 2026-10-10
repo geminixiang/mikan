@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } from "./attach.js";
-import type { Executor, SandboxConfig } from "../../sandbox/types.js";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+import type { SandboxConfig } from "../../sandbox/types.js";
 import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
@@ -15,9 +16,9 @@ import { createSandboxTool } from "./sandbox.js";
 import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
-  executor: Executor,
+  env: () => ExecutionEnv | undefined,
   eventStore: EventStore,
-  sandboxController?: {
+  sandboxController: {
     sandbox: SandboxConfig;
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
   },
@@ -37,11 +38,9 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
-  const jevBrowserTool = createJevBrowserTool(executor, generateFieldText);
+  const jevBrowserTool = createJevBrowserTool(env, generateFieldText);
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
-  const { tool: sandboxTool, setSandboxContext } = createSandboxTool(
-    sandboxController ?? { sandbox: executor.getSandboxConfig() },
-  );
+  const { tool: sandboxTool, setSandboxContext } = createSandboxTool(sandboxController);
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
   return {
     tools: [
@@ -67,7 +66,7 @@ export function createMikanTools(
       setSandboxContext({ address, userId });
       setUploadFunction(async (filePath, title) => {
         const runtimePath = normalizeAttachRuntimePath(filePath, runtimeWorkspaceRoot);
-        await withStagedRuntimeFile(executor, runtimePath, (stagedPath) =>
+        await withStagedRuntimeFile(env(), runtimePath, (stagedPath) =>
           responder.uploadFile(stagedPath, title),
         );
       });

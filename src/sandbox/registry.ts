@@ -3,12 +3,13 @@ import { hostSandboxAdapter } from "./host.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 import * as log from "../log.js";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type {
-  Executor,
   ImageSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
   SandboxConfig,
+  SandboxEnvOptions,
 } from "./types.js";
 
 function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
@@ -101,25 +102,20 @@ export async function validateSandbox(config: SandboxConfig): Promise<void> {
   await requireSandboxAdapter(config.type).validate?.(config);
 }
 
-export function createExecutor(
-  config: SandboxConfig,
-  env?: Record<string, string>,
-  ensureReady?: () => Promise<void>,
-): Executor {
+export function createSandboxEnv(config: SandboxConfig, options: SandboxEnvOptions): ExecutionEnv {
   const adapter = requireSandboxAdapter(config.type);
-  if (!adapter.createExecutor) {
-    throw new SandboxError("Error: image sandbox must resolve to a concrete container executor");
+  if (!adapter.createEnv) {
+    throw new SandboxError("Error: image sandbox must resolve to a concrete container");
   }
-  return adapter.createExecutor(config, env, ensureReady);
+  return adapter.createEnv(config, options);
 }
 
-export function getUnresolvedSandboxPathContext(
+export function getSandboxPathContext(
   sandboxConfig: SandboxConfig,
   hostWorkspaceRoot: string,
 ): RuntimePathContext {
-  if (sandboxConfig.type === "image") {
-    return createMountedRuntimePathContext(hostWorkspaceRoot, GUEST_WORKSPACE_ROOT);
-  }
-
-  return createExecutor(sandboxConfig).getPathContext(hostWorkspaceRoot);
+  return createMountedRuntimePathContext(
+    hostWorkspaceRoot,
+    sandboxConfig.type === "host" ? hostWorkspaceRoot : GUEST_WORKSPACE_ROOT,
+  );
 }
