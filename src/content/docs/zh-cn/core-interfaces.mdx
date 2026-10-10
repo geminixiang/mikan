@@ -65,7 +65,7 @@ flowchart TD
 | Runtime to harness        | Runtime/session → Harness/tools                                                         | `handleEvent` 派生密钥并对一个密钥串行化，同时允许其他密钥并发运行。话题引导会等待正在运行的父会话封存。平台工具包是 per-runner 创建的，因为 `bindRun` 是可变的。                                                                                                                                                                                                 |
 | Run output                | Harness/tools → Platform entry                                                          | 框架发出的是**响应源**：平台中立的 Markdown/GFM，用户 mention 写作 `<@userName>`。把它转换成原生呈现完全是适配器的职责——Slack 在每条出站路径上把 `<@userName>` 解析为 `<@U…>`，且任何适配器都不得引导模型产出平台原生标记。可选的 responder 能力需特性检测。对于单次运行，响应操作保持调用顺序；适配器可以缓冲或流式输出，但不得向框架暴露框架持久化或 SDK 对象。 |
 | Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                     | 运行时提供主机工作区和一个 `<runtime workspace root>/<officeKey>` 形式的 runtime cwd；office key 在两侧命名同一个路径段，因此路径在边界处不会改变含义。沙箱注册表提供路径上下文（`getSandboxPathContext`）。提示词和工具输出使用 runtime 路径，而主机侧附件转换使用已声明的上下文。映射根之外的路径不会被转换。这是路径契约，而非文件系统隔离的声明。             |
-| Sandbox file transport    | Sandbox/workspace → Harness/tools                                                       | 工具使用 `ExecutionEnv` 的文件操作，绝不使用 shell 引用协议。容器环境通过 stdin 和 stdout 传输内容；写入采用暂存并重命名，失败以 Pi 的 `FileError` 代码返回。                                                                                                                                                                                                     |
+| Sandbox file transport    | Sandbox/workspace → Harness/tools                                                       | 工具使用 `ExecutionEnv` 的文件操作，绝不使用 shell 引用协议。容器环境以分帧字节把它们送到容器内 Pi 的 `pi-env` daemon，失败以 Pi 的 `FileError` 代码返回。                                                                                                                                                                                                        |
 | Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace               | `MessagingInfo.trustModel` 被传入 actor 解析；vault 策略按该值标识，而非按平台名称字符串。省略信任时默认为 `membership`；`open-trigger` 绝不接收环境共享 vault 副本，且只有 `image` 使用该环境路径。显式 vault 配置仍是独立的管理决策。                                                                                                                           |
 | Settings and live runners | Config/CLI（命令和 admin 是适配器）→ 配置磁盘与 Runtime/session                         | `applyConversationSettings` 在写入 LLM 更改**之前**清除缓存的 runner，并在忙碌时拒绝这两项操作。`applyOfficeVisibility` 对 visibility 更改采取同样做法，因为 mount 集合被固化在 runner 的环境中。全局 LLM 设置先写入，然后清除空闲 runner，忙碌的 runner 在其运行结束后清除，并报告为过期。沙箱资源限制和 Slack 回复设置在使用时重新读取，不会清除 runner。       |
 | Web capability bridge     | Vault/web/security → Runtime/session 与命令                                             | Portal store 是可选的运行时服务。设置了 portal URL 但缺少其后备 store 时，使用该 portal 会失败；其他情况下缺失的 store 产生禁用/未配置行为。路由 payload 是捆绑 UI 的契约，而非通用 REST API。                                                                                                                                                                    |
@@ -230,13 +230,13 @@ subagent 始终以一个具名 profile 启动——按运行自由配置不是�
 
 执行边界是 `@earendil-works/pi-durable/env` 的 Pi `ExecutionEnv`，Pi 自己的 `read`、`write`、`edit`、`bash` 工具正是针对这个接口编写的。mikan 不再添加自己的接口：
 
-| 沙箱        | 环境                                                                           |
-| ----------- | ------------------------------------------------------------------------------ |
-| `host`      | Pi 的 `NodeExecutionEnv`                                                       |
-| `container` | 基于 `docker exec` 的 `ContainerExecutionEnv`，命令运行在 guest 内独立的进程组 |
-| `image`     | 没有直接的环境：actor/vault 解析先 provision 容器，再使用它的 `container` 环境 |
+| 沙箱        | 环境                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| `host`      | Pi 的 `NodeExecutionEnv`                                                                   |
+| `container` | pi-env 的 `RemoteExecutionEnv`，通过一条 `exec -i` 连接与容器内 Pi 的 `pi-env` daemon 通信 |
+| `image`     | 没有直接的环境：actor/vault 解析先 provision 容器，再使用它的 `container` 环境             |
 
-除文件监看外，每个环境都必须通过 Pi 的 `registerEnvConformance` 测试集；`src/test/container-execution-env.test.ts` 负责运行它。工具实现调用环境的文件操作，而不是构建 `cat`、`printf` 或引用协议。
+每个环境都必须通过 Pi 的 `registerEnvConformance` 测试集；`src/test/container-execution-env.test.ts` 负责运行它。工具实现调用环境的文件操作，而不是构建 `cat`、`printf` 或引用协议。
 
 ### `SandboxAdapter`
 

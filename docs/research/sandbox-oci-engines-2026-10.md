@@ -1,5 +1,7 @@
 # Sandbox on Docker, Podman, and nerdctl
 
+> The data-plane parts of this study (exit-status marker, credentials over stdin, process-group files) were replaced by pi-env; see `sandbox-pi-env-2026-10.md`.
+
 Date: 2026-10-11. Engines: Docker 29 via Colima, Podman 6.1.3 machine (rootless and rootful, crun, cgroup v2), nerdctl 2.3.1 on containerd in a Colima containerd VM, all on macOS with `ghcr.io/geminixiang/mikan-sandbox:latest`.
 
 ## Question

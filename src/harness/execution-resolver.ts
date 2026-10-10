@@ -21,7 +21,7 @@ export class ActorExecutionResolver {
   constructor(
     private baseConfig: SandboxConfig,
     private vaultManager: Pick<VaultManager, "hasEntry" | "resolve" | "copySharedVaultTo">,
-    private provisioner: Pick<DockerContainerManager, "provision"> | undefined,
+    private provisioner: Pick<DockerContainerManager, "provision" | "markUsed"> | undefined,
     private workspace: Workspace,
   ) {}
 
@@ -32,6 +32,7 @@ export class ActorExecutionResolver {
       cwd: pathContext.runtimeWorkspaceRoot,
       env: plan.env,
       ensureReady: this.buildEnsureReadyCallback(plan, context.address.conversationId),
+      markUsed: () => this.provisioner?.markUsed(plan.resourceKey),
     });
     return { env, sandboxConfig: plan.sandboxConfig, pathContext, projection };
   }

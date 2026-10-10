@@ -21,11 +21,12 @@ export interface SandboxEnvOptions {
   cwd: string;
   env?: Record<string, string>;
   ensureReady?: () => Promise<void>;
+  markUsed?: () => void;
 }
 
 export interface ContainerExecutionEnvOptions extends SandboxEnvOptions {
   container: string;
-  docker?: string;
+  engine?: string;
 }
 
 export interface RuntimePathContext {

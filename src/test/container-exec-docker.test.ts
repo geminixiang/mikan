@@ -1,21 +1,12 @@
-import { execFile, execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import { withAbortSignal } from "@earendil-works/chord/context";
 import { afterAll, describe, expect, test } from "vitest";
-import { ContainerExecutionEnv, sweepOrphanedCommands } from "../sandbox/container.js";
-import { TEST_CONTEXT } from "./tool-api.js";
+import { createContainerExecutionEnv } from "../sandbox/container.js";
 import { containerEngine } from "../sandbox/engine.js";
+import { TEST_CONTEXT } from "./tool-api.js";
 
 const ENGINE = containerEngine();
-
-function removeContainer(name: string): void {
-  spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
-  spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
-}
 const CANDIDATE_IMAGES = [
   "docker.io/library/debian:trixie-slim",
   "docker.io/library/alpine:latest",
@@ -59,53 +50,44 @@ function guestCommandLines(container: string): string[] {
     .filter(Boolean);
 }
 
-afterAll(() => {
-  for (const name of containers) removeContainer(name);
-});
-
-function containerEnv(container: string, docker?: string): ContainerExecutionEnv {
-  return new ContainerExecutionEnv({ container, cwd: "/tmp", docker, ensureReady: async () => {} });
+function running(container: string, command: string): boolean {
+  return guestCommandLines(container).some((line) => line.endsWith(command));
 }
 
-function dockerWithoutGroupKill(): string {
-  const dir = mkdtempSync(join(tmpdir(), "mikan-docker-crash-"));
-  const docker = join(dir, "docker");
-  writeFileSync(
-    docker,
-    `#!/bin/sh\ncase "$*" in *stop_group*) exit 0 ;; esac\nexec ${JSON.stringify(ENGINE)} "$@"\n`,
-  );
-  chmodSync(docker, 0o755);
-  cleanupDirs.push(dir);
-  return docker;
-}
-
-const cleanupDirs: string[] = [];
 afterAll(() => {
-  for (const dir of cleanupDirs) rmSync(dir, { recursive: true, force: true });
+  for (const name of containers) {
+    spawnSync(ENGINE, ["kill", name], { stdio: "ignore" });
+    spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
+  }
 });
 
-describe.runIf(images.length > 0)("ContainerExecutionEnv against a real container", () => {
+function containerEnv(container: string) {
+  return createContainerExecutionEnv({
+    container,
+    cwd: "/tmp",
+    engine: ENGINE,
+    ensureReady: async () => {},
+  });
+}
+
+describe.runIf(images.length > 0)("container ExecutionEnv against a real container", () => {
   test.each(images)(
-    "aborting a command ends its whole process group in %s",
+    "aborting a command ends it in %s",
     async (image) => {
       const container = startContainer(image);
       const controller = new AbortController();
-      const running = containerEnv(container).exec(
+      const result = containerEnv(container).exec(
         "sleep 300; echo finished",
         undefined,
         withAbortSignal(controller.signal, TEST_CONTEXT),
       );
-      await expect
-        .poll(() => guestCommandLines(container).some((line) => line === "sleep 300"), {
-          timeout: 10_000,
-        })
-        .toBe(true);
+      await expect.poll(() => running(container, "sleep 300"), { timeout: 10_000 }).toBe(true);
 
       controller.abort();
 
-      const result = await running;
-      expect(result.ok ? "ok" : result.error.code).toBe("aborted");
-      expect(guestCommandLines(container).filter((line) => line.includes("sleep 300"))).toEqual([]);
+      const settled = await result;
+      expect(settled.ok ? "ok" : settled.error.code).toBe("aborted");
+      await expect.poll(() => running(container, "sleep 300"), { timeout: 5_000 }).toBe(false);
     },
     30_000,
   );
@@ -115,15 +97,28 @@ describe.runIf(images.length > 0)("ContainerExecutionEnv against a real containe
     async (image) => {
       const container = startContainer(image);
       const env = containerEnv(container);
-      const running = env.exec("sleep 301", undefined, TEST_CONTEXT);
-      await expect
-        .poll(() => guestCommandLines(container).includes("sleep 301"), { timeout: 10_000 })
-        .toBe(true);
+      const result = env.exec("sleep 301", undefined, TEST_CONTEXT);
+      await expect.poll(() => running(container, "sleep 301"), { timeout: 10_000 }).toBe(true);
 
       await env.cleanup(TEST_CONTEXT);
 
-      await running;
-      expect(guestCommandLines(container).filter((line) => line.includes("sleep 301"))).toEqual([]);
+      await result;
+      await expect.poll(() => running(container, "sleep 301"), { timeout: 5_000 }).toBe(false);
+    },
+    30_000,
+  );
+
+  test.each(images)(
+    "commands end when mikan's connection to the container ends in %s",
+    async (image) => {
+      const container = startContainer(image);
+      const result = containerEnv(container).exec("sleep 302", undefined, TEST_CONTEXT);
+      await expect.poll(() => running(container, "sleep 302"), { timeout: 10_000 }).toBe(true);
+
+      spawnSync("sh", ["-c", 'pkill -KILL -f "exec -i $0 /tmp/mikan-pi-env-"', container]);
+
+      await expect.poll(() => running(container, "sleep 302"), { timeout: 10_000 }).toBe(false);
+      await result;
     },
     30_000,
   );
@@ -146,29 +141,17 @@ describe.runIf(images.length > 0)("ContainerExecutionEnv against a real containe
   );
 
   test.each(images)(
-    "the startup sweep ends a command left by a crashed process in %s",
+    "reconnects after the container restarts in %s",
     async (image) => {
       const container = startContainer(image);
-      const controller = new AbortController();
-      const running = containerEnv(container, dockerWithoutGroupKill()).exec(
-        "sleep 300",
-        undefined,
-        withAbortSignal(controller.signal, TEST_CONTEXT),
-      );
+      const env = containerEnv(container);
+      expect((await env.writeFile("/tmp/kept", "kept", TEST_CONTEXT)).ok).toBe(true);
+
+      execFileSync(ENGINE, ["restart", "-t", "0", container]);
+
       await expect
-        .poll(() => guestCommandLines(container).includes("sleep 300"), { timeout: 10_000 })
-        .toBe(true);
-      controller.abort();
-      await running;
-      expect(guestCommandLines(container)).toContain("sleep 300");
-      execFileSync(ENGINE, ["exec", container, "sh", "-c", 'echo "1 0" > /tmp/mikan-exec-stale']);
-
-      await sweepOrphanedCommands(container, promisify(execFile));
-
-      expect(guestCommandLines(container).filter((line) => line.includes("sleep 300"))).toEqual([]);
-      expect(guestCommandLines(container)).toContain("sleep infinity");
-      const leftover = execFileSync(ENGINE, ["exec", container, "sh", "-c", "ls /tmp"]);
-      expect(leftover.toString()).not.toContain("mikan-exec-");
+        .poll(async () => await env.readTextFile("/tmp/kept", TEST_CONTEXT), { timeout: 10_000 })
+        .toEqual({ ok: true, value: "kept" });
     },
     30_000,
   );
