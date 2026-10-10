@@ -31,6 +31,12 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 - vault file credential は、各ファイル名から推定される target に従って自動で container へ bind mount されます（[Vault](/ja/sandbox/vault/) を参照）
 - idle containers は 10 分ごとに確認され、少なくとも 10 分間利用がないと停止します。scan timing により、最後に追跡された利用から約 10〜20 分後に停止します
 
+## コンテナエンジン
+
+mikan は docker のコマンド体系でコンテナを操作します。Docker、Podman、nerdctl（containerd）はいずれもこれを受け付けます。既定は Docker です。別のエンジンを使う場合は `~/.mikan/mikan.env` に `CONTAINER_ENGINE=podman` または `CONTAINER_ENGINE=nerdctl`（フルパスも可）を設定し、このページのコマンドの `docker` をそのエンジンに読み替えてください。rootless Podman は、host が cgroup の CPU と memory controller をユーザーに委譲している場合に動作します（macOS の Podman machine は委譲済みです）。
+
+macOS ではどのエンジンも VM 上で Linux を動かすため、bind mount は VM が共有するフォルダからしかコンテナに届きません。workspace と `~/.mikan` はホームディレクトリ配下に置いてください。
+
 ## サンドボックスイメージの更新
 
 管理下の container は使い捨てです。bind mount（conversation office、共有 knowledge、vault file）だけが残り、`/root`、インストールしたパッケージ、`/etc` の変更など container 内のそれ以外の場所に書いたものは、container が置き換えられると消えます。残したいものは workspace に置いてください。

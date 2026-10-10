@@ -2,11 +2,11 @@ ARG NODE_VERSION=24
 ARG BUN_VERSION=1.4
 ARG UV_VERSION=0.9
 
-FROM node:${NODE_VERSION}-trixie-slim AS node
-FROM oven/bun:${BUN_VERSION}-debian AS bun
+FROM docker.io/library/node:${NODE_VERSION}-trixie-slim AS node
+FROM docker.io/oven/bun:${BUN_VERSION}-debian AS bun
 FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 
-FROM debian:13-slim
+FROM docker.io/library/debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Taipei

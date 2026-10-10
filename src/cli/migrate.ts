@@ -7,6 +7,7 @@ import { InvalidArgumentError } from "commander";
 import { platformIsActive, readEnv } from "../env-manifest.js";
 import { pendingMigrations, runMigrations } from "../migrations/index.js";
 import { parseSandboxArg } from "../sandbox/registry.js";
+import { containerEngine } from "../sandbox/engine.js";
 import { globalSettingsPath } from "../settings/index.js";
 import type { DockerCli } from "../migrations/types.js";
 import { assertPlatformName } from "../office/index.js";
@@ -18,7 +19,8 @@ const PLATFORMS: readonly PlatformName[] = ["slack", "telegram", "discord", "git
 
 const execFileAsync = promisify(execFile);
 
-const dockerCli: DockerCli = async (args) => (await execFileAsync("docker", [...args])).stdout;
+const dockerCli: DockerCli = async (args) =>
+  (await execFileAsync(containerEngine(), [...args])).stdout;
 
 function collectOwner(value: string, owners: Map<string, PlatformName>): Map<string, PlatformName> {
   const separator = value.lastIndexOf("=");

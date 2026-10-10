@@ -350,6 +350,7 @@ export interface ProvisionOptions {
 }
 
 export interface DockerContainerManagerOptions {
+  engine?: string;
   limits?: ResourceLimits;
   boostLimits?: ResourceLimits;
   execFileImpl?: DockerExecFile;

@@ -136,6 +136,17 @@ export const ENV_MANIFEST: readonly EnvGroup[] = [
     ],
   },
   {
+    key: "sandbox",
+    title: "Sandbox",
+    kind: "feature",
+    vars: [
+      {
+        name: "CONTAINER_ENGINE",
+        doc: "OCI engine CLI that runs container:* and image:* sandboxes: docker (default), podman, or nerdctl",
+      },
+    ],
+  },
+  {
     key: "observability",
     title: "Observability",
     kind: "feature",

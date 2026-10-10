@@ -2,6 +2,7 @@ import { containerSandboxAdapter } from "./container.js";
 import { hostSandboxAdapter } from "./host.js";
 import { createMountedRuntimePathContext, execSimple, SandboxError } from "./utils.js";
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
+import { containerEngine } from "./engine.js";
 import * as log from "../log.js";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type {
@@ -25,10 +26,11 @@ function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
 }
 
 async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
+  const engine = containerEngine();
   try {
-    await execSimple("docker", ["--version"]);
+    await execSimple(engine, ["--version"]);
   } catch {
-    throw new SandboxError("Error: Docker is not installed or not in PATH");
+    throw new SandboxError(`Error: container engine '${engine}' is not installed or not in PATH`);
   }
   console.log(`  Image auto-provisioning enabled. Image: ${config.image}`);
 }

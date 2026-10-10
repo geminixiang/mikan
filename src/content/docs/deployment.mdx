@@ -25,7 +25,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - at least one complete Slack, Telegram, Discord, or GitHub credential set
 - a persistent `~/.mikan` for the PM2 user, where mikan keeps its state; the working directory defaults to `~/.mikan/workspace`
-- Docker available to the PM2 user when using `image:*` or `container:*`
+- A container engine available to the PM2 user when using `image:*` or `container:*`: Docker (default), Podman, or nerdctl, chosen with `CONTAINER_ENGINE` (see [Image sandbox](/sandbox/image/#container-engine))
 
 The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
 

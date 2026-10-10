@@ -8,12 +8,18 @@ import { withAbortSignal } from "@earendil-works/chord/context";
 import { afterAll, describe, expect, test } from "vitest";
 import { ContainerExecutionEnv, sweepOrphanedCommands } from "../sandbox/container.js";
 import { TEST_CONTEXT } from "./tool-api.js";
-const CANDIDATE_IMAGES = ["debian:trixie-slim", "alpine:latest"];
+import { containerEngine } from "../sandbox/engine.js";
+
+const ENGINE = containerEngine();
+const CANDIDATE_IMAGES = [
+  "docker.io/library/debian:trixie-slim",
+  "docker.io/library/alpine:latest",
+];
 
 function localImages(): string[] {
-  if (spawnSync("docker", ["info"], { stdio: "ignore" }).status !== 0) return [];
+  if (spawnSync(ENGINE, ["info"], { stdio: "ignore" }).status !== 0) return [];
   return CANDIDATE_IMAGES.filter(
-    (image) => spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" }).status === 0,
+    (image) => spawnSync(ENGINE, ["image", "inspect", image], { stdio: "ignore" }).status === 0,
   );
 }
 
@@ -22,10 +28,9 @@ const containers: string[] = [];
 
 function startContainer(image: string): string {
   const name = `mikan-exec-test-${randomUUID().slice(0, 8)}`;
-  execFileSync("docker", [
+  execFileSync(ENGINE, [
     "run",
     "-d",
-    "--rm",
     "--name",
     name,
     "--cap-drop",
@@ -42,7 +47,7 @@ function startContainer(image: string): string {
 
 function guestCommandLines(container: string): string[] {
   const script = 'for p in /proc/[0-9]*; do tr "\\0" " " < "$p/cmdline" 2>/dev/null; echo; done';
-  return execFileSync("docker", ["exec", container, "sh", "-c", script])
+  return execFileSync(ENGINE, ["exec", container, "sh", "-c", script])
     .toString()
     .split("\n")
     .map((line) => line.trim())
@@ -50,7 +55,7 @@ function guestCommandLines(container: string): string[] {
 }
 
 afterAll(() => {
-  for (const name of containers) spawnSync("docker", ["rm", "-f", name], { stdio: "ignore" });
+  for (const name of containers) spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
 });
 
 function containerEnv(container: string, docker?: string): ContainerExecutionEnv {
@@ -60,7 +65,10 @@ function containerEnv(container: string, docker?: string): ContainerExecutionEnv
 function dockerWithoutGroupKill(): string {
   const dir = mkdtempSync(join(tmpdir(), "mikan-docker-crash-"));
   const docker = join(dir, "docker");
-  writeFileSync(docker, '#!/bin/sh\ncase "$*" in *stop_group*) exit 0 ;; esac\nexec docker "$@"\n');
+  writeFileSync(
+    docker,
+    `#!/bin/sh\ncase "$*" in *stop_group*) exit 0 ;; esac\nexec ${JSON.stringify(ENGINE)} "$@"\n`,
+  );
   chmodSync(docker, 0o755);
   cleanupDirs.push(dir);
   return docker;
@@ -148,13 +156,13 @@ describe.runIf(images.length > 0)("ContainerExecutionEnv against a real containe
       controller.abort();
       await running;
       expect(guestCommandLines(container)).toContain("sleep 300");
-      execFileSync("docker", ["exec", container, "sh", "-c", 'echo "1 0" > /tmp/mikan-exec-stale']);
+      execFileSync(ENGINE, ["exec", container, "sh", "-c", 'echo "1 0" > /tmp/mikan-exec-stale']);
 
       await sweepOrphanedCommands(container, promisify(execFile));
 
       expect(guestCommandLines(container).filter((line) => line.includes("sleep 300"))).toEqual([]);
       expect(guestCommandLines(container)).toContain("sleep infinity");
-      const leftover = execFileSync("docker", ["exec", container, "sh", "-c", "ls /tmp"]);
+      const leftover = execFileSync(ENGINE, ["exec", container, "sh", "-c", "ls /tmp"]);
       expect(leftover.toString()).not.toContain("mikan-exec-");
     },
     30_000,

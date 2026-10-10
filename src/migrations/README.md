@@ -10,4 +10,4 @@ Every conversion of persisted files from an older format lives here ([ADR 0014](
 - Each step is idempotent: with nothing to convert it does nothing and is recorded as applied. Resolve anything ambiguous before writing, and throw with the path and the fix, for example `--owner <conversationId>=<platform>` or "merge A into B". A failed step is not recorded, and the steps before it stay applied.
 - With `dryRun`, a step reports each change through `report` and writes nothing.
 - Steps that need the deployment's sandbox mode get it from `--sandbox`, which must match the daemon's. Host and container vault names depend on it.
-- A step that talks to Docker uses the injected `DockerCli`. A missing `docker` executable means there are no containers to handle.
+- A step that talks to Docker uses the injected `DockerCli`. It runs the engine `CONTAINER_ENGINE` names; a missing executable means there are no containers to handle.

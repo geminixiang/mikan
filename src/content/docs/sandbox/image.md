@@ -31,6 +31,12 @@ Features:
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
 
+## Container engine
+
+mikan drives containers through the docker command set, which Docker, Podman, and nerdctl (containerd) all accept. Docker is the default; set `CONTAINER_ENGINE=podman` or `CONTAINER_ENGINE=nerdctl` (or a full path) in `~/.mikan/mikan.env` to use another engine, and replace `docker` with that engine in the commands on this page. Rootless Podman works when the host delegates the cgroup CPU and memory controllers to the user, which Podman machine on macOS does.
+
+On macOS every engine runs Linux in a VM, and a bind mount reaches the container only from a folder the VM shares; keep the workspace and `~/.mikan` under your home directory.
+
 ## Upgrading the sandbox image
 
 A managed container is disposable. Only its bind mounts (the conversation office, shared knowledge,

@@ -99,7 +99,11 @@ describe("createSandboxEnv", () => {
   });
 });
 
-function recordingDocker(): { docker: string; calls: () => string[][]; envFiles: () => string[] } {
+function recordingDocker(): {
+  docker: string;
+  calls: () => string[][];
+  envs: () => Array<Record<string, string>>;
+} {
   const dir = mkdtempSync(join(tmpdir(), "mikan-docker-record-"));
   dirs.push(dir);
   const docker = join(dir, "docker");
@@ -109,7 +113,7 @@ function recordingDocker(): { docker: string; calls: () => string[][]; envFiles:
       "#!/bin/sh",
       `sep=$(printf '\\037'); line=; for arg in "$@"; do line="$line$arg$sep"; done`,
       `printf '%s\\n' "$line" >> ${dir}/calls`,
-      `prev=; for arg in "$@"; do [ "$prev" = --env-file ] && cat "$arg" >> ${dir}/env && echo --- >> ${dir}/env; prev=$arg; done`,
+      `if [ "$2" = -i ]; then cat >> ${dir}/stdin; echo --- >> ${dir}/stdin; fi`,
       'case "$*" in *"sleep 300"*) exec sleep 30 ;; esac',
     ].join("\n"),
   );
@@ -128,7 +132,21 @@ function recordingDocker(): { docker: string; calls: () => string[][]; envFiles:
         .split("\n")
         .filter(Boolean)
         .map((line) => line.split("\x1f").slice(0, -1)),
-    envFiles: () => read("env").split("---\n").filter(Boolean),
+    envs: () =>
+      read("stdin")
+        .split("---\n")
+        .filter(Boolean)
+        .map((block) =>
+          Object.fromEntries(
+            block
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => {
+                const at = line.indexOf("=");
+                return [line.slice(0, at), Buffer.from(line.slice(at + 1), "base64").toString()];
+              }),
+          ),
+        ),
   };
 }
 
@@ -154,11 +172,17 @@ describe("ContainerExecutionEnv docker invocation", () => {
     await env(recorder.docker).exec("pwd", { cwd: "/guest-only/work space" }, TEST_CONTEXT);
 
     const [call] = recorder.calls();
-    expect(call?.slice(0, 4)).toEqual(["exec", "-w", "/guest-only/work space", "mikan-sandbox"]);
+    expect(call?.slice(0, 5)).toEqual([
+      "exec",
+      "-i",
+      "-w",
+      "/guest-only/work space",
+      "mikan-sandbox",
+    ]);
     expect(call?.slice(-3)).toEqual(["sh", "-c", "pwd"]);
   });
 
-  test("configures the gh git credential helper through env without writing git config", async () => {
+  test("passes credentials over stdin, never in argv or a file, with the gh git credential helper", async () => {
     const recorder = recordingDocker();
 
     await env(recorder.docker, { GH_TOKEN: "gho_test" }).exec(
@@ -167,15 +191,17 @@ describe("ContainerExecutionEnv docker invocation", () => {
       TEST_CONTEXT,
     );
 
-    expect(recorder.envFiles()[0]?.split("\n")).toEqual([
-      "GH_TOKEN=gho_test",
-      "GIT_CONFIG_COUNT=2",
-      "GIT_CONFIG_KEY_0=credential.https://github.com.helper",
-      "GIT_CONFIG_VALUE_0=",
-      "GIT_CONFIG_KEY_1=credential.https://github.com.helper",
-      "GIT_CONFIG_VALUE_1=!gh auth git-credential",
-      "",
+    expect(recorder.envs()).toEqual([
+      {
+        GH_TOKEN: "gho_test",
+        GIT_CONFIG_COUNT: "2",
+        GIT_CONFIG_KEY_0: "credential.https://github.com.helper",
+        GIT_CONFIG_VALUE_0: "",
+        GIT_CONFIG_KEY_1: "credential.https://github.com.helper",
+        GIT_CONFIG_VALUE_1: "!gh auth git-credential",
+      },
     ]);
+    expect(recorder.calls()[0]?.join(" ")).not.toContain("gho_test");
   });
 
   test("leaves env untouched without a GitHub token", async () => {
@@ -183,7 +209,7 @@ describe("ContainerExecutionEnv docker invocation", () => {
 
     await env(recorder.docker, { FOO: "bar" }).exec("true", undefined, TEST_CONTEXT);
 
-    expect(recorder.envFiles()).toEqual(["FOO=bar\n"]);
+    expect(recorder.envs()).toEqual([{ FOO: "bar" }]);
   });
 
   test.each(["aborted", "timeout"] as const)(

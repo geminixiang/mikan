@@ -1,8 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { constants as osConstants, tmpdir } from "node:os";
-import { join, posix } from "node:path";
+import { constants as osConstants } from "node:os";
+import { posix } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import {
   ExecutionError,
@@ -34,11 +33,10 @@ import type {
   SandboxAdapter,
 } from "./types.js";
 import { SandboxError, execSimple, linkAbortSignal } from "./utils.js";
+import { containerEngine } from "./engine.js";
 import { errorMessage } from "../unknown-values.js";
 import * as log from "../log.js";
 
-const PRIVATE_DIR_MODE = 0o700;
-const PRIVATE_FILE_MODE = 0o600;
 const SPILL_DIR = ".mikan/bash-output";
 
 function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
@@ -56,14 +54,15 @@ function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undef
 }
 
 async function validateContainerSandbox(config: ContainerSandboxConfig): Promise<void> {
+  const engine = containerEngine();
   try {
-    await execSimple("docker", ["--version"]);
+    await execSimple(engine, ["--version"]);
   } catch {
-    throw new SandboxError("Error: Docker is not installed or not in PATH");
+    throw new SandboxError(`Error: container engine '${engine}' is not installed or not in PATH`);
   }
 
   try {
-    const result = await execSimple("docker", [
+    const result = await execSimple(engine, [
       "inspect",
       "-f",
       "{{.State.Running}}",
@@ -71,7 +70,7 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
     ]);
     if (result.trim() !== "true") {
       throw new SandboxError(`Error: Container '${config.container}' is not running.`, [
-        `Start it with: docker start ${config.container}`,
+        `Start it with: ${engine} start ${config.container}`,
       ]);
     }
   } catch (error) {
@@ -79,7 +78,7 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
       throw error;
     }
     throw new SandboxError(`Error: Container '${config.container}' does not exist.`, [
-      `Create it with: docker run -d --name ${config.container} -v <workspace>:/workspace alpine:latest sleep infinity`,
+      `Create it with: ${engine} run -d --name ${config.container} -v <workspace>:/workspace docker.io/library/alpine:latest sleep infinity`,
     ]);
   }
 
@@ -88,13 +87,18 @@ async function validateContainerSandbox(config: ContainerSandboxConfig): Promise
 
 const GROUP_FILE_PREFIX = "/tmp/mikan-exec-";
 
+const READ_ENV_FROM_STDIN =
+  'while IFS= read -r line && [ -n "$line" ]; do export "${line%%=*}=$(printf %s "${line#*=}" | base64 -d)"; done;';
+
 const RUN_IN_PROCESS_GROUP = [
-  "group_file=$1; check=$2; shift 2;",
-  'if [ "$check" = 1 ] && ! command -v "$1" >/dev/null 2>&1; then exit 127; fi;',
+  "group_file=$1; check=$2; marker=$3; shift 3;",
+  READ_ENV_FROM_STDIN,
+  `report() { printf '\\n%s%s\\n' "$marker" "$1" >&2; exit 0; };`,
+  'if [ "$check" = 1 ] && ! command -v "$1" >/dev/null 2>&1; then report 127; fi;',
   "if command -v setsid >/dev/null 2>&1; then",
-  `setsid sh -c 'echo "$$ $(cut -d" " -f22 /proc/$$/stat)" > "$0"; exec "$@"' "$group_file" "$@" & wait $!;`,
-  'status=$?; rm -f "$group_file"; exit $status;',
-  'fi; exec "$@"',
+  `setsid sh -c 'echo "$$ $(cut -d" " -f22 /proc/$$/stat)" > "$0"; exec "$@"' "$group_file" "$@" </dev/null & wait $!;`,
+  'status=$?; rm -f "$group_file"; report $status;',
+  'fi; "$@" </dev/null; report $?',
 ].join(" ");
 
 const STOP_RECORDED_GROUP = [
@@ -118,9 +122,10 @@ const SWEEP_PROCESS_GROUPS = [
 export async function sweepOrphanedCommands(
   containerName: string,
   execFile: DockerExecFile,
+  engine = containerEngine(),
 ): Promise<void> {
   try {
-    await execFile("docker", ["exec", containerName, "sh", "-c", SWEEP_PROCESS_GROUPS]);
+    await execFile(engine, ["exec", containerName, "sh", "-c", SWEEP_PROCESS_GROUPS]);
   } catch (error) {
     log.logWarning(`Could not end leftover commands in ${containerName}`, errorMessage(error));
   }
@@ -226,6 +231,11 @@ function runDocker(
         options.onData ? options.onData(stream, chunk) : captured[stream].push(chunk),
       );
     }
+    child.on("exit", (_code, signal) => {
+      if (!signal) return;
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    });
     child.on("close", (code, signal) =>
       resolve({
         code: code ?? 128 + (signal ? (osConstants.signals[signal] ?? 0) : 0),
@@ -287,11 +297,12 @@ export class ContainerExecutionEnv implements ExecutionEnv {
 
   constructor(options: ContainerExecutionEnvOptions) {
     this.container = options.container;
-    this.docker = options.docker ?? "docker";
+    this.docker = options.docker ?? containerEngine();
     this.id = `docker:${options.container}`;
     this.cwd = options.cwd;
     this.env = withGitHubCredentialHelper(options.env);
-    this.ensureReady = options.ensureReady ?? (() => ensureContainerRunning(options.container));
+    this.ensureReady =
+      options.ensureReady ?? (() => ensureContainerRunning(options.container, this.docker));
   }
 
   async absolutePath(path: string, _context: Context): Promise<Result<string, FileError>> {
@@ -546,10 +557,9 @@ export class ContainerExecutionEnv implements ExecutionEnv {
     }
 
     const groupFile = `${GROUP_FILE_PREFIX}${randomUUID()}`;
-    const envVars = { ...this.env, ...options?.env };
-    const envFile = Object.keys(envVars).length > 0 ? createSecureEnvFile(envVars) : undefined;
+    const marker = exitMarker();
     const cwd = options?.cwd ? this.resolve(options.cwd) : this.cwd;
-    const output = new ExecOutput(options, context, () => {
+    const output = new ExecOutput(options, context, marker, () => {
       const path = posix.join(this.cwd, SPILL_DIR, `${randomBytes(8).toString("hex")}.log`);
       const args = [
         "exec",
@@ -565,7 +575,7 @@ export class ContainerExecutionEnv implements ExecutionEnv {
       this.docker,
       [
         "exec",
-        ...(envFile ? ["--env-file", envFile.envFilePath] : []),
+        "-i",
         "-w",
         cwd,
         this.container,
@@ -575,9 +585,13 @@ export class ContainerExecutionEnv implements ExecutionEnv {
         "sh",
         groupFile,
         typeof command === "string" ? "0" : "1",
+        marker,
         ...argv,
       ],
-      { onData: (stream, chunk) => output.push(stream, chunk) },
+      {
+        stdin: encodeEnvForStdin({ ...this.env, ...options?.env }),
+        onData: (stream, chunk) => output.push(stream, chunk),
+      },
     );
     this.running.set(groupFile, child);
 
@@ -606,17 +620,17 @@ export class ContainerExecutionEnv implements ExecutionEnv {
         if (spillPath !== undefined) error.spillPath = spillPath;
         return err(error);
       }
-      if (typeof command !== "string" && code === 127 && output.bytes === 0) {
+      const exitCode = output.exitStatus ?? code;
+      if (typeof command !== "string" && exitCode === 127 && output.bytes === 0) {
         return err(new ExecutionError("spawn_error", `Program not found: ${argv[0]}`));
       }
-      return ok(spillPath === undefined ? { exitCode: code } : { exitCode: code, spillPath });
+      return ok(spillPath === undefined ? { exitCode } : { exitCode, spillPath });
     } catch (error) {
       return err(new ExecutionError("spawn_error", errorMessage(error), toError(error)));
     } finally {
       if (timer) clearTimeout(timer);
       unlinkSignal();
       this.running.delete(groupFile);
-      envFile?.cleanup();
     }
   }
 
@@ -634,6 +648,7 @@ export class ContainerExecutionEnv implements ExecutionEnv {
     if (context.abortSignal?.aborted) return err(abortedFile(path));
     try {
       await this.ensureReady();
+      const marker = exitMarker();
       const { child, done } = runDocker(
         this.docker,
         [
@@ -642,7 +657,7 @@ export class ContainerExecutionEnv implements ExecutionEnv {
           this.container,
           "sh",
           "-c",
-          `${FILE_PRELUDE} ${script}`,
+          `${FILE_PRELUDE} ( ${script} ); printf '\\n%s%s\\n' '${marker}' "$?" >&2`,
           "sh",
           ...args,
         ],
@@ -651,9 +666,11 @@ export class ContainerExecutionEnv implements ExecutionEnv {
       const unlinkSignal = linkAbortSignal(context.abortSignal, () => child.kill("SIGKILL"));
       const outcome = await done.finally(unlinkSignal);
       if (context.abortSignal?.aborted) return err(abortedFile(path));
-      if (outcome.code === 0) return ok(outcome.stdout);
-      const stderr = outcome.stderr.toString();
-      const code = FILE_STATUS_CODES[outcome.code];
+      const reported = takeExitStatus(outcome.stderr, marker);
+      const status = reported.status ?? outcome.code;
+      if (status === 0) return ok(outcome.stdout);
+      const stderr = reported.rest.toString();
+      const code = FILE_STATUS_CODES[status];
       return err(
         code ? new FileError(code, stderr.trim(), path) : fileErrorFromStderr(stderr, path),
       );
@@ -685,6 +702,7 @@ export class ContainerExecutionEnv implements ExecutionEnv {
 
 class ExecOutput {
   bytes = 0;
+  exitStatus: number | undefined;
   callbackError: ExecutionError | undefined;
   onCallbackError: (() => void) | undefined;
   private newlines = 0;
@@ -692,10 +710,12 @@ class ExecOutput {
   private readonly prefix: Buffer[] = [];
   private spill: { path: string; child: ChildProcess; done: Promise<DockerOutcome> } | undefined;
   private finished = false;
+  private stderrTail = Buffer.alloc(0);
 
   constructor(
     private readonly options: ShellExecOptions | undefined,
     private readonly context: Context,
+    private readonly marker: string,
     private readonly openSpill: () => {
       path: string;
       child: ChildProcess;
@@ -704,12 +724,20 @@ class ExecOutput {
   ) {}
 
   push(stream: DockerStream, chunk: Buffer): void {
-    this.bytes += chunk.length;
-    this.emit(this.decoders[stream].decode(chunk), stream);
-    this.recordForSpill(chunk);
+    if (stream === "stdout") {
+      this.deliver(stream, chunk);
+      return;
+    }
+    const tail = Buffer.concat([this.stderrTail, chunk]);
+    const held = Math.min(tail.length, this.marker.length + EXIT_STATUS_MAX_CHARS);
+    this.stderrTail = tail.subarray(tail.length - held);
+    if (tail.length > held) this.deliver(stream, tail.subarray(0, tail.length - held));
   }
 
   async finish(): Promise<string | undefined> {
+    const reported = takeExitStatus(this.stderrTail, this.marker);
+    this.exitStatus = reported.status;
+    if (reported.rest.length > 0) this.deliver("stderr", reported.rest);
     this.emit(this.decoders.stdout.decode(), "stdout");
     this.emit(this.decoders.stderr.decode(), "stderr");
     this.finished = true;
@@ -717,6 +745,12 @@ class ExecOutput {
     this.spill.child.stdin?.end();
     const outcome = await this.spill.done.catch(() => undefined);
     return outcome?.code === 0 ? this.spill.path : undefined;
+  }
+
+  private deliver(stream: DockerStream, chunk: Buffer): void {
+    this.bytes += chunk.length;
+    this.emit(this.decoders[stream].decode(chunk), stream);
+    this.recordForSpill(chunk);
   }
 
   private emit(text: string, stream: DockerStream): void {
@@ -866,13 +900,13 @@ export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
     new ContainerExecutionEnv({ ...options, container: config.container }),
 };
 
-async function ensureContainerRunning(container: string): Promise<void> {
+async function ensureContainerRunning(container: string, engine: string): Promise<void> {
   try {
-    const running = await execSimple("docker", ["inspect", "-f", "{{.State.Running}}", container]);
+    const running = await execSimple(engine, ["inspect", "-f", "{{.State.Running}}", container]);
     if (running.trim() === "true") {
       return;
     }
-    await execSimple("docker", ["start", container]);
+    await execSimple(engine, ["start", container]);
   } catch (error) {
     const details = errorMessage(error);
     throw new Error(
@@ -883,24 +917,26 @@ async function ensureContainerRunning(container: string): Promise<void> {
   }
 }
 
-function createSecureEnvFile(env: Record<string, string>): {
-  envFilePath: string;
-  cleanup: () => void;
-} {
-  const tempDir = mkdtempSync(join(tmpdir(), "mikan-docker-env-"));
-  chmodSync(tempDir, PRIVATE_DIR_MODE);
-  const envFilePath = join(tempDir, "env.list");
-  const content =
-    Object.entries(env)
-      .map(([key, value]) => `${key}=${value.replace(/\r?\n/g, "")}`)
-      .join("\n") + "\n";
-  writeFileSync(envFilePath, content, { encoding: "utf-8", mode: PRIVATE_FILE_MODE });
-  chmodSync(envFilePath, PRIVATE_FILE_MODE);
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-  return {
-    envFilePath,
-    cleanup: () => {
-      rmSync(tempDir, { recursive: true, force: true });
-    },
-  };
+function encodeEnvForStdin(env: Record<string, string>): Buffer {
+  const lines = Object.entries(env)
+    .filter(([name]) => ENV_NAME.test(name))
+    .map(([name, value]) => `${name}=${Buffer.from(value).toString("base64")}\n`);
+  return Buffer.from(`${lines.join("")}\n`);
+}
+
+const EXIT_STATUS_MAX_CHARS = 8;
+
+function exitMarker(): string {
+  return `mikan-exit-${randomBytes(8).toString("hex")}:`;
+}
+
+function takeExitStatus(stderr: Buffer, marker: string): { status?: number; rest: Buffer } {
+  const text = stderr.toString("latin1");
+  const at = text.lastIndexOf(`\n${marker}`);
+  if (at === -1) return { rest: stderr };
+  const status = Number.parseInt(text.slice(at + 1 + marker.length), 10);
+  if (Number.isNaN(status)) return { rest: stderr };
+  return { status, rest: stderr.subarray(0, at) };
 }

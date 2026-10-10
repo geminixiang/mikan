@@ -7,6 +7,9 @@ import { afterAll, describe, expect, it, test } from "vitest";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
 import { ContainerExecutionEnv } from "../sandbox/container.js";
 import { TEST_CONTEXT } from "./tool-api.js";
+import { containerEngine } from "../sandbox/engine.js";
+
+const ENGINE = containerEngine();
 
 interface Backend {
   name: string;
@@ -56,31 +59,35 @@ function hostShimBackend(): Backend | undefined {
 }
 
 function containerBackend(image: string): Backend | undefined {
-  if (spawnSync("docker", ["image", "inspect", image], { stdio: "ignore" }).status !== 0) {
+  if (spawnSync(ENGINE, ["image", "inspect", image], { stdio: "ignore" }).status !== 0) {
     return undefined;
   }
   let container: string | undefined;
   const start = () => {
     container ??= `mikan-env-test-${randomUUID().slice(0, 8)}`;
-    execFileSync("docker", ["run", "-d", "--rm", "--name", container, image, "sleep", "infinity"]);
-    cleanups.push(() => spawnSync("docker", ["rm", "-f", container!], { stdio: "ignore" }));
+    execFileSync(ENGINE, ["run", "-d", "--name", container, image, "sleep", "infinity"]);
+    cleanups.push(() => spawnSync(ENGINE, ["rm", "-f", container!], { stdio: "ignore" }));
     return container;
   };
   return {
     name: image,
     makeDir: () => {
       const name = container ?? start();
-      return execFileSync("docker", ["exec", name, "mktemp", "-d"]).toString().trim();
+      return execFileSync(ENGINE, ["exec", name, "mktemp", "-d"]).toString().trim();
     },
-    removeDir: (dir) => execFileSync("docker", ["exec", container!, "rm", "-rf", dir]),
+    removeDir: (dir) => execFileSync(ENGINE, ["exec", container!, "rm", "-rf", dir]),
     env: (cwd, env) => new ContainerExecutionEnv({ container: container!, cwd, env }),
   };
 }
 
-const dockerUp = spawnSync("docker", ["info"], { stdio: "ignore" }).status === 0;
+const dockerUp = spawnSync(ENGINE, ["info"], { stdio: "ignore" }).status === 0;
 const backends = [
   hostShimBackend(),
-  ...(dockerUp ? ["debian:trixie-slim", "alpine:latest"].map(containerBackend) : []),
+  ...(dockerUp
+    ? ["docker.io/library/debian:trixie-slim", "docker.io/library/alpine:latest"].map(
+        containerBackend,
+      )
+    : []),
 ].filter((backend): backend is Backend => backend !== undefined);
 
 async function inDir<T>(backend: Backend, use: (dir: string) => Promise<T>): Promise<T> {
