@@ -582,22 +582,6 @@ describe("DockerContainerManager", () => {
     expect(engine.callsOf("stop")).toEqual([["stop", "mikan-sandbox-slack-u1"]]);
   });
 
-  test("reconcile ends commands a previous process left running in its containers", async () => {
-    const engine = new FakeEngine();
-    engine.seed("mikan-sandbox-slack-u1", "slack-u1", { mounts: mountedAt("/srv/a/workspace") });
-    engine.seed("mikan-sandbox-slack-u2", "slack-u2", {
-      running: false,
-      mounts: mountedAt("/srv/a/workspace"),
-    });
-    engine.seed("mikan-sandbox-slack-u3", "slack-u3", { mounts: mountedAt("/srv/b/workspace") });
-
-    await manager(engine).reconcile("/srv/a/workspace");
-
-    const sweeps = engine.callsOf("exec");
-    expect(sweeps.map((args) => args[1])).toEqual(["mikan-sandbox-slack-u1"]);
-    expect(sweeps[0]?.join(" ")).toContain("/tmp/mikan-exec-");
-  });
-
   test("concurrent provision calls for the same vaultId share one run", async () => {
     const engine = new FakeEngine();
     const run = createDeferred<void>();

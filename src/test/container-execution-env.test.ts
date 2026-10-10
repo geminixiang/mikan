@@ -4,8 +4,10 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it, test } from "vitest";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
-import { ContainerExecutionEnv } from "../sandbox/container.js";
+import { createContainerExecutionEnv } from "../sandbox/container.js";
+import type { ContainerExecutionEnvOptions } from "../sandbox/types.js";
 import { TEST_CONTEXT } from "./tool-api.js";
 import { containerEngine } from "../sandbox/engine.js";
 
@@ -16,11 +18,13 @@ function removeContainer(name: string): void {
   spawnSync(ENGINE, ["rm", "-f", name], { stdio: "ignore" });
 }
 
+type EnvOverrides = Partial<Omit<ContainerExecutionEnvOptions, "cwd">>;
+
 interface Backend {
   name: string;
   makeDir(): string;
   removeDir(dir: string): void;
-  env(cwd: string, env?: Record<string, string>): ContainerExecutionEnv;
+  env(cwd: string, overrides?: EnvOverrides): ExecutionEnv;
 }
 
 const cleanups: Array<() => void> = [];
@@ -32,33 +36,29 @@ function hostShimBackend(): Backend | undefined {
   if (process.platform !== "linux") return undefined;
   const shimDir = mkdtempSync(join(tmpdir(), "mikan-docker-shim-"));
   cleanups.push(() => rmSync(shimDir, { recursive: true, force: true }));
-  const docker = join(shimDir, "docker");
+  const engine = join(shimDir, "docker");
   writeFileSync(
-    docker,
+    engine,
     [
       "#!/bin/sh",
-      '[ "$1" = exec ] || exit 2; shift; cwd=',
-      'while :; do case "$1" in',
-      "  -i) shift ;;",
-      '  --env-file) while IFS= read -r line; do export "$line"; done < "$2"; shift 2 ;;',
-      "  -w) cwd=$2; shift 2 ;;",
-      "  *) break ;;",
-      "esac; done",
-      'shift; if [ -n "$cwd" ]; then cd "$cwd" || exit 126; fi; exec "$@"',
+      '[ "$1" = exec ] || exit 2; shift',
+      '[ "$1" = -i ] && shift',
+      'shift; exec "$@"',
     ].join("\n"),
   );
-  chmodSync(docker, 0o755);
+  chmodSync(engine, 0o755);
+  const container = `shim-${randomUUID().slice(0, 8)}`;
   return {
     name: "host shim",
     makeDir: () => mkdtempSync(join(tmpdir(), "mikan-container-env-")),
     removeDir: (dir) => rmSync(dir, { recursive: true, force: true }),
-    env: (cwd, env) =>
-      new ContainerExecutionEnv({
-        container: "shim",
+    env: (cwd, overrides) =>
+      createContainerExecutionEnv({
+        container,
         cwd,
-        env,
-        docker,
+        engine,
         ensureReady: async () => {},
+        ...overrides,
       }),
   };
 }
@@ -81,14 +81,15 @@ function containerBackend(image: string): Backend | undefined {
       return execFileSync(ENGINE, ["exec", name, "mktemp", "-d"]).toString().trim();
     },
     removeDir: (dir) => execFileSync(ENGINE, ["exec", container!, "rm", "-rf", dir]),
-    env: (cwd, env) => new ContainerExecutionEnv({ container: container!, cwd, env }),
+    env: (cwd, overrides) =>
+      createContainerExecutionEnv({ container: container!, cwd, engine: ENGINE, ...overrides }),
   };
 }
 
-const dockerUp = spawnSync(ENGINE, ["info"], { stdio: "ignore" }).status === 0;
+const engineUp = spawnSync(ENGINE, ["info"], { stdio: "ignore" }).status === 0;
 const backends = [
   hostShimBackend(),
-  ...(dockerUp
+  ...(engineUp
     ? ["docker.io/library/debian:trixie-slim", "docker.io/library/alpine:latest"].map(
         containerBackend,
       )
@@ -106,57 +107,17 @@ async function inDir<T>(backend: Backend, use: (dir: string) => Promise<T>): Pro
 
 for (const backend of backends) {
   registerEnvConformance(
-    {
-      describe,
-      expect,
-      it: (name, run, timeout) =>
-        name.startsWith("watch") ? it.skip(name, run, timeout) : it(name, run, timeout),
-    },
-    `ContainerExecutionEnv conformance (${backend.name})`,
+    { describe, expect, it },
+    `container ExecutionEnv conformance (${backend.name})`,
     (use) => inDir(backend, (dir) => use(backend.env(dir))),
   );
 
-  describe(`ContainerExecutionEnv (${backend.name})`, () => {
-    test("does not offer file watching", async () => {
-      await inDir(backend, async (dir) => {
-        const watched = await backend.env(dir).watch([{ path: dir }], () => {}, TEST_CONTEXT);
-        expect(watched.ok ? "ok" : watched.error.code).toBe("not_supported");
-      });
-    });
-
-    test("round-trips shell-hostile content and leaves no staging file", async () => {
-      await inDir(backend, async (dir) => {
-        const env = backend.env(dir);
-        const content = `it's "$HOME" \`whoami\` 100%\n\\n not a newline\n橘子 🍊\n`;
-        expect((await env.writeFile("config.sh", content, TEST_CONTEXT)).ok).toBe(true);
-        expect(await env.readTextFile("config.sh", TEST_CONTEXT)).toEqual({
-          ok: true,
-          value: content,
-        });
-        const listed = await env.listDir(".", TEST_CONTEXT);
-        expect(listed.ok && listed.value.map((entry) => entry.name)).toEqual(["config.sh"]);
-      });
-    });
-
-    test("writes and appends large binary content", async () => {
-      await inDir(backend, async (dir) => {
-        const env = backend.env(dir);
-        const initial = Uint8Array.from({ length: 300_000 }, (_, index) => index % 251);
-        const appended = Uint8Array.from({ length: 70_000 }, (_, index) => 255 - (index % 251));
-        expect((await env.writeFile("large.bin", initial, TEST_CONTEXT)).ok).toBe(true);
-        expect((await env.appendFile("large.bin", appended, TEST_CONTEXT)).ok).toBe(true);
-        const read = await env.readBinaryFile("large.bin", TEST_CONTEXT);
-        expect(read.ok && Buffer.from(read.value)).toEqual(
-          Buffer.concat([Buffer.from(initial), Buffer.from(appended)]),
-        );
-      });
-    });
-
+  describe(`container ExecutionEnv (${backend.name})`, () => {
     test("injects credentials and the GitHub credential helper into commands", async () => {
       await inDir(backend, async (dir) => {
         let output = "";
         const result = await backend
-          .env(dir, { GH_TOKEN: "token" })
+          .env(dir, { env: { GH_TOKEN: "token" } })
           .exec(
             'printf "%s|%s" "$GH_TOKEN" "$GIT_CONFIG_VALUE_1"',
             { onOutput: (text) => (output += text) },
@@ -167,48 +128,58 @@ for (const backend of backends) {
       });
     });
 
-    test("spills output past the thresholds into the workspace", async () => {
+    test("readies the runtime once per environment and marks every operation as use", async () => {
       await inDir(backend, async (dir) => {
-        const env = backend.env(dir);
-        let streamed = "";
-        const result = await env.exec(
-          "i=1; while [ $i -le 5000 ]; do echo $i; i=$((i+1)); done",
-          {
-            spill: { afterLines: 10, afterBytes: 1_000_000 },
-            onOutput: (text) => (streamed += text),
-          },
-          TEST_CONTEXT,
-        );
-        if (!result.ok) throw result.error;
-        expect(result.value.spillPath).toMatch(
-          new RegExp(`^${dir}/\\.mikan/bash-output/.+\\.log$`),
-        );
-        expect(streamed.trimEnd().split("\n").at(-1)).toBe("5000");
-        expect(await env.readTextFile(result.value.spillPath!, TEST_CONTEXT)).toEqual({
-          ok: true,
-          value: streamed,
+        let readied = 0;
+        let used = 0;
+        const env = backend.env(dir, {
+          ensureReady: async () => void readied++,
+          markUsed: () => void used++,
         });
+
+        await env.writeFile("a.txt", "a", TEST_CONTEXT);
+        await env.readTextFile("a.txt", TEST_CONTEXT);
+        await env.exec("true", undefined, TEST_CONTEXT);
+
+        expect(readied).toBe(1);
+        expect(used).toBe(3);
+      });
+    });
+
+    test("a runtime that cannot be readied fails the operation as a result", async () => {
+      await inDir(backend, async (dir) => {
+        const env = backend.env(dir, {
+          ensureReady: async () => {
+            throw new Error("provisioning failed");
+          },
+        });
+
+        const read = await env.readTextFile("a.txt", TEST_CONTEXT);
+        const exec = await env.exec("true", undefined, TEST_CONTEXT);
+
+        expect(read.ok ? "ok" : read.error.message).toContain("provisioning failed");
+        expect(exec.ok ? "ok" : exec.error.message).toContain("provisioning failed");
       });
     });
   });
 }
 
-describe("ContainerExecutionEnv without a backend", () => {
+describe("container ExecutionEnv without a backend", () => {
   test("names one file namespace per container", () => {
-    const first = new ContainerExecutionEnv({ container: "c", cwd: "/a", docker: "docker" });
-    const second = new ContainerExecutionEnv({ container: "c", cwd: "/b", docker: "docker" });
+    const first = createContainerExecutionEnv({ container: "c", cwd: "/a", engine: "docker" });
+    const second = createContainerExecutionEnv({ container: "c", cwd: "/b", engine: "docker" });
     expect(first.id).toBe(second.id);
   });
 
-  test("reports a missing docker CLI by its path", async () => {
-    const docker = join(tmpdir(), `no-docker-${randomUUID()}`);
-    const env = new ContainerExecutionEnv({
+  test("reports a missing engine CLI by its path", async () => {
+    const engine = join(tmpdir(), `no-engine-${randomUUID()}`);
+    const env = createContainerExecutionEnv({
       container: "c",
       cwd: "/",
-      docker,
+      engine,
       ensureReady: async () => {},
     });
     const result = await env.exec("true", undefined, TEST_CONTEXT);
-    expect(result.ok ? "ok" : result.error.message).toContain(docker);
+    expect(result.ok ? "ok" : result.error.message).toContain(engine);
   });
 });

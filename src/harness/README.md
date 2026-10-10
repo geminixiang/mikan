@@ -141,9 +141,8 @@ thin adapter preserves their schemas, adds the presentation `label`, and the
 Harness supplies the run's authorized sandbox `ExecutionEnv` as `api.env`.
 Execution tools fail without one; there is no implicit host fallback.
 Host mode uses Pi's `NodeExecutionEnv`; container sandboxes use
-`ContainerExecutionEnv` from `src/sandbox/`. Both pass Pi's
-`registerEnvConformance` suite except file watching, which neither Pi's tools
-nor mikan use.
+pi-env's `RemoteExecutionEnv` through `src/sandbox/container.ts`. Both pass
+Pi's `registerEnvConformance` suite.
 Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
 adapts them, forwarding progress `details` and awaiting the last update before
 the result.

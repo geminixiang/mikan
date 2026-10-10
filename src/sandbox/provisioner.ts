@@ -26,7 +26,6 @@ import type {
 } from "../types.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 import type { DockerExecFile } from "./types.js";
-import { sweepOrphanedCommands } from "./container.js";
 import { containerEngine } from "./engine.js";
 
 export class DockerContainerManager {
@@ -167,6 +166,11 @@ export class DockerContainerManager {
     return this.boostLimits;
   }
 
+  markUsed(containerKey: string): void {
+    const state = this.state.get(containerKey);
+    if (state) state.lastUsed = Date.now();
+  }
+
   stop(containerKey: string): Promise<void> {
     return this.serialize(containerKey, () => this.stopInner(containerKey));
   }
@@ -246,12 +250,6 @@ export class DockerContainerManager {
       const lastUsed = details.startedAtMs ?? Date.now();
       this.state.set(containerKey, { status, lastUsed, containerName });
     }
-
-    await Promise.all(
-      Array.from(this.state.values())
-        .filter((state) => state.status === "running")
-        .map((state) => sweepOrphanedCommands(state.containerName, this.execFileImpl, this.engine)),
-    );
 
     const running = Array.from(this.state.values()).filter((s) => s.status === "running").length;
     const stopped = this.state.size - running;

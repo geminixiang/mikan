@@ -554,7 +554,7 @@ describe("ActorExecutionResolver image mode", () => {
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
-      { provision },
+      { provision, markUsed: () => {} },
       workspace(),
     );
 
@@ -575,7 +575,7 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(vaultsDir, vaultKey, ".ssh"), target: "/root/.ssh" },
       ],
     });
-    expect(decision.env.id).toBe(`docker:mikan-sandbox-${D123_OFFICE}`);
+    expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
     expect(decision.env.cwd).toBe("/workspace");
   });
 
@@ -593,7 +593,7 @@ describe("ActorExecutionResolver image mode", () => {
     const resolver = new ActorExecutionResolver(
       { type: "image", image: "ubuntu:24.04" },
       mgr,
-      { provision },
+      { provision, markUsed: () => {} },
       workspace(),
     );
 
@@ -613,7 +613,7 @@ describe("ActorExecutionResolver image mode", () => {
         { source: join(tmpDir, "skills"), target: "/workspace/skills", readOnly: true },
       ],
     });
-    expect(decision.env.id).toBe(`docker:mikan-sandbox-${D123_OFFICE}`);
+    expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
     expect(decision.env.cwd).toBe("/workspace");
   });
 });
