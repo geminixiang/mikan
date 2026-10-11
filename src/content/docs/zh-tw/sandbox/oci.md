@@ -28,6 +28,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 都有自己的 bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
 - 建立 managed container 時會加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 與 `--pids-limit=1024`
+- container 使用執行 mikan 的主機時區（`TZ`）；image 本身不設定時區，其他情況下是 UTC
 - container 內的 workspace mount 跟隨該 office 的 visibility（ADR 0008）：public office 可寫入共用的 `MEMORY.md` 與 `skills/`，private office 只能讀取，且沒有任何 office 能觸及另一個 private office
 - vault env 會在執行時注入
 - vault file credential 會自動 bind mount 進 container，target 由每個檔案的名稱推斷（見 [Vault](/zh-tw/sandbox/vault/)）

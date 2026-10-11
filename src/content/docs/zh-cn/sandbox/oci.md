@@ -28,6 +28,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - mikan 为每个对话创建隔离的 vault 和容器
 - 每个容器都有自己的 Docker bridge 网络，以隔离容器间的直接网络连接；出站网络访问仍保持启用
 - 管理的容器使用 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 和 `--pids-limit=1024` 创建
+- 容器使用运行 mikan 的主机时区（`TZ`）；镜像本身不设置时区，其他情况下为 UTC
 - 容器内的工作区挂载跟随办公室的 visibility（ADR 0008）：public 办公室可写入共享的 `MEMORY.md` 和 `skills/`，private 办公室只能读取，且没有办公室能触及另一间 private 办公室
 - vault 环境变量在执行时注入
 - vault 文件凭证会自动 bind mount 到容器中，目标由每个文件的名称推断（参阅 [Vault](/zh-cn/sandbox/vault/)）

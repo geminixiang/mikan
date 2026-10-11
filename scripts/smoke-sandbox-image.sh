@@ -56,6 +56,10 @@ docker run --rm "$image" sh -c '
   pip install six 2>&1 | grep -q "uv run --with"
 '
 
+echo "== the image is UTC and follows TZ from the provisioner"
+test "$(docker run --rm "$image" date +%Z)" = UTC
+test "$(docker run --rm -e TZ=Asia/Tokyo "$image" date +%Z)" = JST
+
 echo "== agent-browser drives chromium"
 docker run --rm --tmpfs /root "$image" sh -c '
   set -e

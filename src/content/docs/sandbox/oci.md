@@ -28,6 +28,7 @@ Features:
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
+- containers use the time zone of the host running mikan (`TZ`); the image itself sets none, so it stays UTC elsewhere
 - inside the container, workspace mounts follow the office's visibility (ADR 0008): public offices write the shared `MEMORY.md` and `skills/`, private offices read them, and no office reaches another private office
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))

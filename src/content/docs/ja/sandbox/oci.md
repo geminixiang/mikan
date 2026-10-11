@@ -28,6 +28,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - mikan は conversation ごとに独立した vault と container を作成します
 - 各 container は専用の Docker bridge network に接続され、container 間の直接通信が分離されます。outbound network access は引き続き有効です
 - managed container 作成時は `--cap-drop=ALL`、`--security-opt=no-new-privileges`、`--pids-limit=1024` を付けます
+- container は mikan を実行している host のタイムゾーン（`TZ`）を使います。image 自体は設定しないため、それ以外では UTC です
 - container 内の workspace mount は office の visibility（ADR 0008）に従います。public office は共有の `MEMORY.md` と `skills/` に書き込み、private office はそれらを読み取るだけで、どの office も別の private office には到達できません
 - vault env は実行時に注入されます
 - vault file credential は、各ファイル名から推定される target に従って自動で container へ bind mount されます（[Vault](/ja/sandbox/vault/) を参照）
