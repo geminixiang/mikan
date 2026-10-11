@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, test } from "vitest";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
 import { createContainerExecutionEnv } from "../sandbox/container.js";
@@ -25,6 +25,7 @@ interface Backend {
   makeDir(): string;
   removeDir(dir: string): void;
   env(cwd: string, overrides?: EnvOverrides): ExecutionEnv;
+  connect?(): Promise<void>;
 }
 
 const cleanups: Array<() => void> = [];
@@ -83,6 +84,14 @@ function containerBackend(image: string): Backend | undefined {
     removeDir: (dir) => execFileSync(ENGINE, ["exec", container!, "rm", "-rf", dir]),
     env: (cwd, overrides) =>
       createContainerExecutionEnv({ container: container!, cwd, engine: ENGINE, ...overrides }),
+    connect: async () => {
+      const env = createContainerExecutionEnv({
+        container: container ?? start(),
+        cwd: "/",
+        engine: ENGINE,
+      });
+      await env.exists(".", TEST_CONTEXT);
+    },
   };
 }
 
@@ -95,6 +104,10 @@ const backends = [
       )
     : []),
 ].filter((backend): backend is Backend => backend !== undefined);
+
+beforeAll(async () => {
+  for (const backend of backends) await backend.connect?.();
+}, 120_000);
 
 async function inDir<T>(backend: Backend, use: (dir: string) => Promise<T>): Promise<T> {
   const dir = backend.makeDir();
