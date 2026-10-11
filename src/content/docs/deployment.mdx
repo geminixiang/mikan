@@ -52,14 +52,7 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    that file; `mikan env` lists every variable and what is currently set. An existing
    `~/.mikan/ecosystem.config.cjs` is kept as it is.
 
-3. Pull the sandbox image you picked. Onboard prints this line; the published image is about
-   900 MB:
-
-   ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   ```
-
-4. Start and persist the process:
+3. Start and persist the process:
 
    ```bash
    pm2 start ~/.mikan/ecosystem.config.cjs
@@ -67,7 +60,7 @@ The published `mikan-sandbox` image is a tool runtime, not a standalone mikan se
    pm2 startup
    ```
 
-5. Run the command printed by `pm2 startup` to enable boot startup.
+4. Run the command printed by `pm2 startup` to enable boot startup.
 
 </Steps>
 

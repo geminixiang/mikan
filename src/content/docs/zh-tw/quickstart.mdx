@@ -39,14 +39,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. 拉取 sandbox image，並在前景啟動 mikan：
+4. 在前景啟動 mikan；它會在啟動時拉取 sandbox image：
 
    ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci
    ```
 
-   image 約 900 MB，第一次拉取要等幾分鐘。working directory 預設為 `~/.mikan/workspace`，並會自動建立；在旗標後面傳入路徑即可改用其他位置。
+   image 約 900 MB，第一次啟動要等幾分鐘。working directory 預設為 `~/.mikan/workspace`，並會自動建立；在旗標後面傳入路徑即可改用其他位置。
 
    在那個 workspace 裡，每個對話都有自己的 **office**：一個存放該對話記憶、附件、工作階段記錄、skills 與工作區的目錄。Office 目錄是以 office key（`v1-telegram-…`）命名，而不是原始 chat id，因此要查看哪個 office 對應哪個對話，請使用 `mikan office list`。
 

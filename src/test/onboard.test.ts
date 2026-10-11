@@ -81,7 +81,7 @@ describe("runOnboardWizard", () => {
     expect(transcript).not.toMatch(/Model \[|Image \[/);
     expect(transcript).not.toContain("cloudflare");
     expect(transcript).not.toMatch(/\bhost —/);
-    expect(transcript).toContain("docker pull ghcr.io/geminixiang/mikan-sandbox:latest");
+    expect(transcript).toContain("mikan --sandbox=oci\n");
     expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf-8")).llm.model).toBe(
       "claude-sonnet-4-6",
     );
@@ -105,7 +105,7 @@ describe("runOnboardWizard", () => {
     expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
       'args: "--sandbox=oci:acme/sandbox:1",',
     );
-    expect(io.transcript.join("\n")).toContain("docker pull acme/sandbox:1");
+    expect(io.transcript.join("\n")).toContain("mikan --sandbox=oci:acme/sandbox:1");
   });
 
   test("offers the minimal Debian image as a menu choice", async () => {

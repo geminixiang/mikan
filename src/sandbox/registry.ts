@@ -4,6 +4,7 @@ import { createMountedRuntimePathContext, execSimple, SandboxError } from "./uti
 import { GUEST_WORKSPACE_ROOT } from "./layout.js";
 import { containerEngine } from "./engine.js";
 import * as log from "../log.js";
+import { publishedSandboxImage } from "./published-image.js";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type {
   OciSandboxConfig,
@@ -15,8 +16,12 @@ import type {
 
 const OCI_PREFIX = "oci:";
 const DEPRECATED_OCI_PREFIX = "image:";
+export const PUBLISHED_SANDBOX_SPEC = "oci";
 
 function parseOciSandboxArg(value: string): OciSandboxConfig | undefined {
+  if (value === PUBLISHED_SANDBOX_SPEC) {
+    return { type: "oci", image: publishedSandboxImage() };
+  }
   const deprecated = value.startsWith(DEPRECATED_OCI_PREFIX);
   if (!deprecated && !value.startsWith(OCI_PREFIX)) return undefined;
   const image = value.slice(deprecated ? DEPRECATED_OCI_PREFIX.length : OCI_PREFIX.length);
@@ -105,7 +110,7 @@ export function parseSandboxArg(value: string): SandboxConfig {
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', or 'oci:<image>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', 'oci', or 'oci:<image>'`,
   );
 }
 

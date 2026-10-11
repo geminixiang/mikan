@@ -49,13 +49,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    ecosystem 文件或 PM2 自身的环境。之后要添加平台或变量时，直接编辑这个文件；`mikan env` 会列出
    所有变量及当前的设置状态。已存在的 `~/.mikan/ecosystem.config.cjs` 会保持不变。
 
-3. 拉取你选择的沙箱镜像。onboard 会打印这一行；官方镜像约 900 MB：
-
-   ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   ```
-
-4. 启动并持久保存进程：
+3. 启动并持久保存进程：
 
    ```bash
    pm2 start ~/.mikan/ecosystem.config.cjs
@@ -63,7 +57,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-5. 运行 `pm2 startup` 输出的命令，启用开机启动。
+4. 运行 `pm2 startup` 输出的命令，启用开机启动。
 
 </Steps>
 

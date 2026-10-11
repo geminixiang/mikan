@@ -110,7 +110,7 @@ Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack
 - **推荐做法。** 使用受管理的沙箱，它为每个对话提供独立容器，无需更改设置即可强制执行办公室 visibility：
 
   ```bash
-  mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+  mikan --sandbox=oci
   ```
 
 - **Host 模式**，仅限在你已经信任其访问整个工作区的机器上：每个对话（包括 DM 和私密频道）都能读取其他所有对话的文件。

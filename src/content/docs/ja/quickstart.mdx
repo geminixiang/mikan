@@ -39,14 +39,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. sandbox image を pull し、mikan をフォアグラウンドで起動します：
+4. mikan をフォアグラウンドで起動します。起動時に sandbox image を pull します：
 
    ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci
    ```
 
-   image は約 900 MB なので、初回の pull には数分かかります。working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはフラグの後にパスを渡します。
+   image は約 900 MB なので、初回の起動には数分かかります。working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはフラグの後にパスを渡します。
 
    その workspace の中で、各会話は自分の **office** を持ちます。これは、その会話のメモリー、添付ファイル、セッションログ、skills、作業領域を保持するディレクトリです。office ディレクトリは生のチャット id ではなく office key（`v1-telegram-…`）で命名されるため、どの office がどの会話のものかを確認するには `mikan office list` を使います。
 

@@ -4,6 +4,7 @@ import { readFileSync, statSync } from "node:fs";
 import { isAbsolute, relative } from "node:path";
 import { promisify } from "node:util";
 import * as log from "../log.js";
+import { isPublishedSandboxImage } from "./published-image.js";
 import { reportUserFacingError } from "../observability/index.js";
 
 const execFileAsync = promisify(execFile);
@@ -47,6 +48,7 @@ export class DockerContainerManager {
   private readonly execFileImpl: DockerExecFile;
   private readonly configuredEngine: string | undefined;
   private readonly timeZone: string;
+  private imagePull?: Promise<void>;
 
   constructor(
     private readonly image: string,
@@ -112,8 +114,11 @@ export class DockerContainerManager {
           : await this.runtimeDrift(containerKey, containerName, mounts, status);
       if (drift) {
         log.logInfo(`Container ${containerName} is out of date (${drift}); replacing container`);
+        const previousImage =
+          drift === "image" ? await this.containerImage(containerName) : undefined;
         await this.replaceContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} replaced from image ${this.image}`);
+        if (previousImage) await this.removeImageIfUnused(previousImage);
       } else if (status === "stopped") {
         await this.run(["start", containerName]);
         log.logInfo(`Container ${containerName} started`);
@@ -481,7 +486,46 @@ export class DockerContainerManager {
     }
   }
 
+  prepareImage(): Promise<void> {
+    this.imagePull ??= this.pullImage();
+    return this.imagePull;
+  }
+
+  private async pullImage(): Promise<void> {
+    try {
+      await this.run(["pull", this.image]);
+      log.logInfo(`Sandbox image ${this.image} is current`);
+    } catch (err) {
+      log.logWarning(
+        `Could not pull sandbox image ${this.image}; offices keep the local image if there is one`,
+        errorMessage(err),
+      );
+    }
+  }
+
+  private async containerImage(containerName: string): Promise<string | undefined> {
+    const { stdout } = await this.run([
+      "inspect",
+      "-f",
+      `{{.Config.Image}}\t{{index .Config.Labels "${DockerContainerManager.IMAGE_ID_LABEL_KEY}"}}`,
+      containerName,
+    ]);
+    const [reference = "", imageId] = stdout.trim().split("\t");
+    if (reference !== this.image && isPublishedSandboxImage(reference)) return reference;
+    return this.normalizeDockerValue(imageId);
+  }
+
+  private async removeImageIfUnused(image: string): Promise<void> {
+    try {
+      await this.run(["rmi", image]);
+      log.logInfo(`Removed sandbox image ${image}, which no container uses`);
+    } catch {
+      return;
+    }
+  }
+
   private async pulledImageId(): Promise<string> {
+    await this.imagePull;
     const local = await this.localImageId();
     if (local) return local;
     await this.run(["pull", this.image]);

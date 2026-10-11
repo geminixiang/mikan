@@ -39,14 +39,13 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. Pull the sandbox image and start mikan in the foreground:
+4. Start mikan in the foreground; it pulls the sandbox image on start:
 
    ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci
    ```
 
-   The image is about 900 MB, so the first pull takes a few minutes. The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path after the flags to use a different one.
+   The image is about 900 MB, so the first start takes a few minutes. The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path after the flags to use a different one.
 
    Inside that workspace, each conversation gets its own **office**: a directory holding that conversation's memory, attachments, session logs, skills, and working area. Office directories are named by office key (`v1-telegram-…`) rather than by the raw chat id, so `mikan office list` is the way to see which office belongs to which conversation.
 

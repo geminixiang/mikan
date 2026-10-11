@@ -39,14 +39,13 @@ import { Aside, Steps } from "@astrojs/starlight/components";
    export TELEGRAM_BOT_TOKEN="123456:ABC-..."
    ```
 
-4. 拉取沙箱镜像，并在前台启动 mikan：
+4. 在前台启动 mikan；它会在启动时拉取沙箱镜像：
 
    ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci
    ```
 
-   镜像约 900 MB，首次拉取需要几分钟。工作目录默认为 `~/.mikan/workspace` 并会自动创建；在参数后面传入路径可使用其他目录。
+   镜像约 900 MB，首次启动需要几分钟。工作目录默认为 `~/.mikan/workspace` 并会自动创建；在参数后面传入路径可使用其他目录。
 
    在该工作区内，每个对话都有自己的**办公室**：一个目录，存放该对话的记忆、附件、会话日志、技能和工作区域。办公室目录按 office key（`v1-telegram-…`）命名，而不是按原始聊天 id，因此要查看哪间办公室属于哪个对话，请使用 `mikan office list`。
 

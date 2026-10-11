@@ -4,12 +4,13 @@ description: 使用 mikan 管理的 per-conversation OCI container（nerdctl、P
 ---
 
 ```bash
-# Pull the prebuilt image from GHCR
-# Each mikan release publishes :<version>; stable releases also move :latest
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+# Run mikan with managed per-conversation containers from the image
+# published for this mikan version (ghcr.io/geminixiang/mikan-sandbox:<version>);
+# mikan pulls it on start
+mikan --sandbox=oci /path/to/workspace
 
-# Run mikan with managed per-conversation containers
-mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+# Or any other image
+mikan --sandbox=oci:docker.io/library/debian:trixie-slim /path/to/workspace
 ```
 
 如果你想自行客製 image，也可以本地 build：
@@ -44,10 +45,11 @@ mikan 透過 docker 指令集操作容器，nerdctl（containerd）、Podman、D
 
 受管 container 可以隨時拋棄。只有它的 bind mount（conversation office、共享知識與 vault 檔案）會留下；寫在 container 其他位置的東西，包括 `/root`、安裝的套件與 `/etc` 的修改，都會在 container 被替換時消失。需要保留的東西請放在 workspace。
 
-1. 在 host 上用 mikan 使用的 tag 拉取新映像（`docker pull …:latest`）。mikan 不會自行拉取；請保留前一個 image ID 以便回滾。
+1. 升級 mikan 並重新啟動。mikan 啟動時會在背景拉取映像：使用 `--sandbox=oci` 時，拉取為新版 mikan 發佈的映像；使用 `oci:<image>` 時，重新拉取同一個參照，所以 `:latest` 這類會移動的 tag 也會更新。拉取失敗會記錄警告，office 繼續使用本機的映像。
 2. 執行中的 container 不會被中斷。container 因閒置而停止後，下一則訊息會用新映像替換它（`docker rm` + `docker run`）。
+3. 舊的官方映像上最後一個 container 被替換後，mikan 會刪除該映像。你自己 build 或打 tag 的映像不會被動到。
 
-回滾：把 tag 指回前一個 image ID，讓 container 再被替換一次。
+回滾：執行前一個 mikan 版本（或用 `--sandbox=oci:<image>` 指定前一個映像），讓 container 再被替換一次。
 
 ## Mount 與 conversation office
 

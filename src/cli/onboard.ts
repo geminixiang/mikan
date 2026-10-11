@@ -9,9 +9,10 @@ import { atomicWritePrivateFile } from "../file-guards.js";
 import {
   MINIMAL_SANDBOX_IMAGE,
   PM2_ECOSYSTEM_FILENAME,
-  PUBLISHED_SANDBOX_IMAGE,
   renderPm2Ecosystem,
 } from "./pm2-ecosystem.js";
+import { PUBLISHED_SANDBOX_SPEC } from "../sandbox/registry.js";
+import { publishedSandboxImage } from "../sandbox/published-image.js";
 import type { OnboardIo } from "./types.js";
 
 class OnboardAborted extends Error {
@@ -126,20 +127,22 @@ async function askLlm(
   return { llm: { provider, model: ids[0]! }, modelsJson };
 }
 
-async function askSandboxImage(io: OnboardIo): Promise<string> {
-  io.print("\nStep 3/3 — sandbox image (one Docker container per conversation; needs Docker)");
+async function askSandboxSpec(io: OnboardIo): Promise<string> {
+  io.print(
+    "\nStep 3/3 — sandbox image (one container per conversation; needs nerdctl, Podman, or Docker)",
+  );
   const index = await askChoice(
     io,
     [
-      `${PUBLISHED_SANDBOX_IMAGE} (recommended: git, gh, node, python, curl)`,
+      `${publishedSandboxImage()} (recommended: git, gh, gcloud, node, python, browser; follows mikan upgrades)`,
       `${MINIMAL_SANDBOX_IMAGE} (minimal: shell only, no git or package installs)`,
       "Another image from Docker Hub or a registry…",
     ],
     "Sandbox image",
   );
-  if (index === 0) return PUBLISHED_SANDBOX_IMAGE;
-  if (index === 1) return MINIMAL_SANDBOX_IMAGE;
-  return askRequired(io, "  Image (e.g. registry/name:tag): ");
+  if (index === 0) return PUBLISHED_SANDBOX_SPEC;
+  if (index === 1) return `oci:${MINIMAL_SANDBOX_IMAGE}`;
+  return `oci:${await askRequired(io, "  Image (e.g. registry/name:tag): ")}`;
 }
 
 export function renderEnvFile(existing: string | undefined, vars: Record<string, string>): string {
@@ -177,7 +180,7 @@ export async function runOnboardWizard(
   const env: Record<string, string> = {};
   const { githubRepos } = await askAdapter(io, env);
   const { llm, modelsJson } = await askLlm(io, env);
-  const image = await askSandboxImage(io);
+  const sandboxSpec = await askSandboxSpec(io);
 
   const modelsPath = join(stateDir, "models.json");
   if (modelsJson && existsSync(modelsPath)) {
@@ -187,7 +190,7 @@ export async function runOnboardWizard(
     return 1;
   }
   io.print(
-    `Review settings\nProvider: ${llm.provider}\nModel: ${llm.model}\nSandbox: oci:${image}\nSettings: ${settingsPath}\nCredentials: ${paths?.envFilePath ?? join(stateDir, "mikan.env")}${modelsJson ? `\nModels: ${modelsPath}` : ""}\nSecrets are hidden.`,
+    `Review settings\nProvider: ${llm.provider}\nModel: ${llm.model}\nSandbox: ${sandboxSpec}\nSettings: ${settingsPath}\nCredentials: ${paths?.envFilePath ?? join(stateDir, "mikan.env")}${modelsJson ? `\nModels: ${modelsPath}` : ""}\nSecrets are hidden.`,
   );
   if (!(await io.confirm("Save these settings?"))) {
     io.print("Onboarding cancelled; nothing was written.");
@@ -214,16 +217,16 @@ export async function runOnboardWizard(
   if (existsSync(ecosystemPath)) {
     io.print(`Kept existing ${ecosystemPath}`);
   } else {
-    atomicWritePrivateFile(ecosystemPath, renderPm2Ecosystem(image));
+    atomicWritePrivateFile(ecosystemPath, renderPm2Ecosystem(sandboxSpec));
     io.print(`Wrote ${ecosystemPath}`);
   }
 
   io.print("Next steps:");
-  io.print(`  1. docker pull ${image}`);
-  io.print(`  2. pm2 start ${ecosystemPath} && pm2 save`);
+  io.print(`  pm2 start ${ecosystemPath} && pm2 save`);
   io.print(
-    `  Foreground instead: set -a; source ${envFilePath}; set +a; mikan --sandbox=oci:${image}`,
+    `  Foreground instead: set -a; source ${envFilePath}; set +a; mikan --sandbox=${sandboxSpec}`,
   );
+  io.print("  mikan pulls the sandbox image on start.");
   return 0;
 }
 
