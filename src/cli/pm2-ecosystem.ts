@@ -1,10 +1,8 @@
-export const PUBLISHED_SANDBOX_IMAGE = "ghcr.io/geminixiang/mikan-sandbox:latest";
-
 export const MINIMAL_SANDBOX_IMAGE = "debian:trixie-slim";
 
 export const PM2_ECOSYSTEM_FILENAME = "ecosystem.config.cjs";
 
-export function renderPm2Ecosystem(image: string): string {
+export function renderPm2Ecosystem(sandboxSpec: string): string {
   return `const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -41,7 +39,7 @@ module.exports = {
       name: "mikan",
       script: "mikan",
 
-      args: ${JSON.stringify(`--sandbox=oci:${image}`)},
+      args: ${JSON.stringify(`--sandbox=${sandboxSpec}`)},
 
       env: loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")),
 

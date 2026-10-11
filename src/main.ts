@@ -3,8 +3,6 @@
 import "./observability/instrument.js";
 
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { MessagingBot } from "./types.js";
 import { GithubMessagingBot } from "./adapters/github/bot.js";
 import { createGithubToolPack } from "./adapters/github/tool-pack.js";
@@ -42,7 +40,8 @@ import { useJevModels } from "./harness/jev.js";
 import { defaultModelsJsonPath, MikanModels } from "./harness/models.js";
 import { RunEventHub } from "./harness/run-events.js";
 import { readEnv } from "./env-manifest.js";
-import { ensureDirExists, readJsonFileIfExists } from "./file-guards.js";
+import { ensureDirExists } from "./file-guards.js";
+import { packageVersion } from "./package-version.js";
 import { SandboxError } from "./sandbox/utils.js";
 import { validateSandbox } from "./sandbox/registry.js";
 import { helpText, resolveBoot } from "./cli/boot.js";
@@ -63,26 +62,7 @@ import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
 import { MemoryCapture } from "./memory-capture/index.js";
-import { errorMessage, isRecord } from "./unknown-values.js";
-
-function getVersion(): string {
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
-  const possiblePaths = [
-    join(moduleDir, "package.json"),
-    join(dirname(moduleDir), "package.json"),
-    join(process.cwd(), "package.json"),
-  ];
-
-  for (const pkgPath of possiblePaths) {
-    const pkg = readJsonFileIfExists(
-      pkgPath,
-      (value): value is { version?: unknown } => isRecord(value),
-      () => "Ignoring package.json while resolving version",
-    );
-    if (typeof pkg?.version === "string" && pkg.version) return pkg.version;
-  }
-  return "unknown";
-}
+import { errorMessage } from "./unknown-values.js";
 
 const SLACK_APP_TOKEN = readEnv("SLACK_APP_TOKEN");
 const SLACK_BOT_TOKEN = readEnv("SLACK_BOT_TOKEN");
@@ -191,7 +171,7 @@ if (plan.mode === "env") {
 }
 
 if (plan.mode === "version") {
-  console.log(getVersion());
+  console.log(packageVersion());
   process.exit(0);
 }
 
@@ -304,6 +284,7 @@ const provisioner =
       })
     : undefined;
 const resourceController = sandbox.type === "oci" ? provisioner : undefined;
+void provisioner?.prepareImage();
 
 if (sandbox.type === "oci") {
   ensureDirExists(workspace.skillsDir);

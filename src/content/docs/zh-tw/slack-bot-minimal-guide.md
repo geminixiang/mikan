@@ -110,7 +110,7 @@ Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的
 - **建議做法。** 使用受管理的 sandbox，它會給每個對話自己的 container，而且不必更動設定就能強制 office visibility：
 
   ```bash
-  mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+  mikan --sandbox=oci
   ```
 
 - **Host 模式**，只適用於你已經信任其掌握整個 workspace 的機器：每個對話（包括 DM 與私密頻道）都能讀取其他所有對話的檔案。

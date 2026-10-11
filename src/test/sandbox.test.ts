@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import * as log from "../log.js";
@@ -28,6 +30,16 @@ describe("parseSandboxArg", () => {
     const warn = vi.spyOn(log, "logWarning");
     expect(parseSandboxArg("oci:ubuntu:24.04")).toEqual({ type: "oci", image: "ubuntu:24.04" });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("oci alone runs the sandbox image published for this mikan version", () => {
+    const { version } = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
+      version: string;
+    };
+    expect(parseSandboxArg("oci")).toEqual({
+      type: "oci",
+      image: `ghcr.io/geminixiang/mikan-sandbox:${version}`,
+    });
   });
 
   test("accepts the former image: spelling with a deprecation warning", () => {

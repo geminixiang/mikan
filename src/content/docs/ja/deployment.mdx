@@ -52,13 +52,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    この file を編集します。`mikan env` はすべての変数と現在の設定状況を表示します。既存の
    `~/.mikan/ecosystem.config.cjs` はそのまま残ります。
 
-3. 選んだ sandbox image を pull します。onboard がこの行を表示します。公開 image は約 900 MB です：
-
-   ```bash
-   docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   ```
-
-4. process を起動し、永続化します：
+3. process を起動し、永続化します：
 
    ```bash
    pm2 start ~/.mikan/ecosystem.config.cjs
@@ -66,7 +60,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
    pm2 startup
    ```
 
-5. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
+4. `pm2 startup` が出力したコマンドを実行し、boot 時の自動起動を有効にします。
 
 </Steps>
 

@@ -15,6 +15,7 @@ interface FakeMount {
 }
 
 interface FakeContainer {
+  image?: string;
   running: boolean;
   mounts: FakeMount[];
   labels: Record<string, string>;
@@ -37,6 +38,7 @@ function parseRun(args: string[]): { name: string; container: FakeContainer } {
     startedAt: "2026-04-22T00:00:00Z",
   };
   let name = "";
+  container.image = args.at(-3);
   for (let index = 1; index < args.length; index++) {
     const value = args[index + 1] ?? "";
     if (args[index] === "--name") name = value;
@@ -106,6 +108,12 @@ class FakeEngine {
       case "pull":
         this.images.set(name, "sha256:pulled");
         return { stdout: "" };
+      case "rmi":
+        if ([...this.containers.values()].some((c) => c.image === name)) {
+          throw new Error(`conflict: unable to delete ${name} (must be forced)`);
+        }
+        this.images.delete(name);
+        return { stdout: `Untagged: ${name}\n` };
       case "network":
         return { stdout: this.network(args) };
       case "run": {
@@ -149,6 +157,9 @@ class FakeEngine {
       })),
     );
     if (template === "{{.State.Running}}") return String(container.running);
+    if (template.startsWith("{{.Config.Image}}\t")) {
+      return `${container.image ?? ""}\t${container.labels["mikan.image-id"] ?? "<no value>"}`;
+    }
     if (template === "{{json .Mounts}}") return mounts;
     if (template.startsWith("{{.State.Running}}\t")) {
       return `${container.running}\t${container.startedAt}\t${mounts}`;
@@ -508,6 +519,120 @@ describe("DockerContainerManager", () => {
       expect(engine.callsOf("start")).toEqual([]);
     },
   );
+
+  describe("keeping offices on the configured image", () => {
+    const OLD = "ghcr.io/geminixiang/mikan-sandbox:1.0.0";
+
+    test("preparing the image pulls it once, and a new container reuses that pull", async () => {
+      const engine = new FakeEngine();
+      engine.images.clear();
+      const sandbox = manager(engine);
+
+      await sandbox.prepareImage();
+      await sandbox.provision("alice");
+
+      expect(engine.callsOf("pull")).toEqual([["pull", IMAGE]]);
+      expect(engine.callsOf("run")[0]).toContain("mikan.image-id=sha256:pulled");
+    });
+
+    test("a pulled image newer than a stopped office's replaces its container", async () => {
+      const engine = new FakeEngine();
+      engine.images.clear();
+      engine.seed("mikan-sandbox-alice", "alice", {
+        running: false,
+        image: IMAGE,
+        labels: { "mikan.image-id": "sha256:current" },
+      });
+      const sandbox = manager(engine);
+
+      await sandbox.prepareImage();
+      await sandbox.provision("alice");
+
+      expect(engine.containers.get("mikan-sandbox-alice")?.labels["mikan.image-id"]).toBe(
+        "sha256:pulled",
+      );
+    });
+
+    test("a failed pull is a warning, and offices keep their local image", async () => {
+      const engine = new FakeEngine();
+      engine.failures.set("pull", new Error("manifest unknown"));
+      engine.seed("mikan-sandbox-alice", "alice", { running: false, image: IMAGE });
+      const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+      const sandbox = manager(engine);
+
+      await expect(sandbox.prepareImage()).resolves.toBeUndefined();
+      await sandbox.provision("alice");
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining(`Could not pull sandbox image ${IMAGE}`),
+        expect.stringContaining("manifest unknown"),
+      );
+      expect(engine.callsOf("run")).toEqual([]);
+      warn.mockRestore();
+    });
+
+    test("the last office to leave an older image removes it", async () => {
+      const engine = new FakeEngine();
+      engine.images.set(OLD, "sha256:old");
+      for (const key of ["alice", "bob"]) {
+        engine.seed(`mikan-sandbox-${key}`, key, {
+          running: false,
+          image: OLD,
+          labels: { "mikan.image-id": "sha256:old" },
+        });
+      }
+      const sandbox = manager(engine);
+
+      await sandbox.provision("alice");
+      const afterFirst = engine.images.has(OLD);
+      await sandbox.provision("bob");
+
+      expect([afterFirst, engine.images.has(OLD)]).toEqual([true, false]);
+      expect(engine.callsOf("rmi")).toEqual([
+        ["rmi", OLD],
+        ["rmi", OLD],
+      ]);
+    });
+
+    test("an office on an older image of the same reference removes that image by ID", async () => {
+      const engine = new FakeEngine();
+      engine.seed("mikan-sandbox-alice", "alice", {
+        running: false,
+        image: IMAGE,
+        labels: { "mikan.image-id": "sha256:old" },
+      });
+
+      await manager(engine).provision("alice");
+
+      expect(engine.callsOf("rmi")).toEqual([["rmi", "sha256:old"]]);
+    });
+
+    test("an operator's own image is removed only by ID, which engines refuse while it keeps a name", async () => {
+      const engine = new FakeEngine();
+      engine.images.set("acme/sandbox:dev", "sha256:old");
+      engine.seed("mikan-sandbox-alice", "alice", {
+        running: false,
+        image: "acme/sandbox:dev",
+        labels: { "mikan.image-id": "sha256:old" },
+      });
+
+      await manager(engine).provision("alice");
+
+      expect(engine.callsOf("rmi")).toEqual([["rmi", "sha256:old"]]);
+    });
+
+    test("replacing a container for anything but its image removes no image", async () => {
+      const engine = new FakeEngine();
+      engine.seed("mikan-sandbox-alice", "alice", { running: false, image: IMAGE });
+
+      await manager(engine).provision("alice", {
+        mounts: [{ source: "/w/a", target: "/workspace/a" }],
+      });
+
+      expect(engine.callsOf("run")).toHaveLength(1);
+      expect(engine.callsOf("rmi")).toEqual([]);
+    });
+  });
 
   test("a new container mounts only the office projection, with no home volume", async () => {
     const engine = new FakeEngine();

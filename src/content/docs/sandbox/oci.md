@@ -4,12 +4,13 @@ description: Use mikan-managed per-conversation OCI containers on nerdctl, Podma
 ---
 
 ```bash
-# Pull the prebuilt image from GHCR
-# Each mikan release publishes :<version>; stable releases also move :latest
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+# Run mikan with managed per-conversation containers from the image
+# published for this mikan version (ghcr.io/geminixiang/mikan-sandbox:<version>);
+# mikan pulls it on start
+mikan --sandbox=oci /path/to/workspace
 
-# Run mikan with managed per-conversation containers
-mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+# Or any other image
+mikan --sandbox=oci:docker.io/library/debian:trixie-slim /path/to/workspace
 ```
 
 If you want to customize the image yourself, you can also build locally:
@@ -47,12 +48,17 @@ and vault files) outlive it; anything written elsewhere in the container, includ
 installs, and `/etc` edits, is discarded when the container is replaced. Keep anything durable in
 the workspace.
 
-1. Pull the new image on the host under the tag mikan runs with (`docker pull …:latest`). mikan never
-   pulls by itself; keep the previous image ID around for rollback.
+1. Upgrade mikan and restart it. On start mikan pulls its image in the background: with
+   `--sandbox=oci`, the image published for the new mikan version; with `oci:<image>`, the same
+   reference again, so a moved tag such as `:latest` is refreshed. A failed pull logs a warning and
+   offices keep the local image.
 2. A running container is never interrupted. Once a container has been stopped for idleness, the
    next message replaces it from the new image (`docker rm` + `docker run`).
+3. When the last container on an older published image is replaced, mikan removes that image. An
+   image you built or tagged yourself is left alone.
 
-Rollback: re-tag the previous image ID and let containers be replaced again.
+Rollback: run the previous mikan version (or pass `--sandbox=oci:<image>` with the previous image)
+and let containers be replaced again.
 
 ## Mounts and the conversation office
 

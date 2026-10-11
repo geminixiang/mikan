@@ -50,11 +50,10 @@ You need Node.js 24.15 or later and a container engine: nerdctl, Podman, or Dock
 ```bash
 npm i -g @geminixiang/mikan pm2
 mikan onboard                                  # pick a chat platform, a model, and a sandbox image
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 pm2 start ~/.mikan/ecosystem.config.cjs && pm2 save
 ```
 
-That's it: `@mention` the bot in a channel or send it a DM. `mikan onboard` prints the exact `docker pull` line for the image you picked; the recommended image is about 900 MB, so the pull takes a few minutes the first time. Run `pm2 startup` once if mikan should start on boot.
+That's it: `@mention` the bot in a channel or send it a DM. mikan pulls the sandbox image when it starts, and pulls the matching image again after each upgrade; the recommended image is about 900 MB, so the first start takes a few minutes. Run `pm2 startup` once if mikan should start on boot.
 
 Everything lives in `~/.mikan`: `settings.json` for behavior (model, sandbox limits, reply modes), `mikan.env` for secrets and platform tokens, and `ecosystem.config.cjs` for process supervision. To add another platform later, put its tokens in `mikan.env` and run `pm2 reload ~/.mikan/ecosystem.config.cjs` so pm2 rereads the file; `mikan env` lists every variable mikan reads.
 

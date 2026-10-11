@@ -114,7 +114,7 @@ office です。Host mode は private office を強制できず、一度だけ�
   せずに office visibility を強制できます：
 
   ```bash
-  mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
+  mikan --sandbox=oci
   ```
 
 - **Host mode** は、workspace 全体を任せられる、すでに信頼しているマシンでのみ使用してください。

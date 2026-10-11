@@ -4,12 +4,13 @@ description: mikan 管理の per-conversation OCI container（nerdctl、Podman�
 ---
 
 ```bash
-# Pull the prebuilt image from GHCR
-# Each mikan release publishes :<version>; stable releases also move :latest
-docker pull ghcr.io/geminixiang/mikan-sandbox:latest
+# Run mikan with managed per-conversation containers from the image
+# published for this mikan version (ghcr.io/geminixiang/mikan-sandbox:<version>);
+# mikan pulls it on start
+mikan --sandbox=oci /path/to/workspace
 
-# Run mikan with managed per-conversation containers
-mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+# Or any other image
+mikan --sandbox=oci:docker.io/library/debian:trixie-slim /path/to/workspace
 ```
 
 image を自分でカスタマイズしたい場合は、ローカルで build することもできます：
@@ -44,10 +45,11 @@ macOS ではどのエンジンも VM 上で Linux を動かすため、bind moun
 
 管理下の container は使い捨てです。bind mount（conversation office、共有 knowledge、vault file）だけが残り、`/root`、インストールしたパッケージ、`/etc` の変更など container 内のそれ以外の場所に書いたものは、container が置き換えられると消えます。残したいものは workspace に置いてください。
 
-1. mikan が使う tag で新しいイメージを host に pull します（`docker pull …:latest`）。mikan が自分で pull することはありません。rollback に備えて以前の image ID を残しておきます。
+1. mikan をアップグレードして再起動します。mikan は起動時にバックグラウンドでイメージを pull します。`--sandbox=oci` なら新しい mikan のバージョン用に公開されたイメージ、`oci:<image>` なら同じ参照をもう一度 pull するので、`:latest` のように動く tag も更新されます。pull に失敗すると警告を記録し、office はローカルのイメージを使い続けます。
 2. 実行中の container が中断されることはありません。idle で停止した container は、次のメッセージで新しいイメージから置き換えられます（`docker rm` + `docker run`）。
+3. 古い公開イメージを使う最後の container が置き換えられると、mikan はそのイメージを削除します。自分で build や tag したイメージには触れません。
 
-Rollback: 以前の image ID を tag し直し、container をもう一度置き換えさせます。
+Rollback: 以前の mikan のバージョンを実行する（または以前のイメージを `--sandbox=oci:<image>` で指定する）と、container がもう一度置き換えられます。
 
 ## Mount と conversation office
 
