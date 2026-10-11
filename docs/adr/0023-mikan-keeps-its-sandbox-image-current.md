@@ -15,7 +15,7 @@ ADR 0009 left pulling to deployments: mikan compared containers with the local i
 - **One image per release.** A release publishes `:<version>`; stable releases also move `:latest`. A release whose Dockerfile is unchanged and whose image is under 30 days old tags the previous image instead of rebuilding it, so most upgrades download nothing and replace no container, while tools still refresh about monthly.
 - **The version picks the image.** `--sandbox=oci` resolves to that release's tag, so mikan and its sandbox upgrade and roll back together. `oci:<image>` keeps any other image.
 - **mikan pulls.** A pull at start is a manifest check when nothing changed. A failed pull is a warning, and offices keep the local image; an image that exists only locally keeps working. Creating a container waits for the same pull rather than starting another.
-- **mikan removes only what it stopped using.** After replacing a container for image drift, it runs `rmi` without force on the old container's published reference, or on its image ID otherwise. Engines refuse while any container uses the image, and an image ID while a name still points to it, so an operator's own images and tags stay.
+- **mikan removes only what it stopped using.** After replacing a container whose image differs from the configured one, for any drift reason, it runs `rmi` without force on the old container's published reference, or on its image ID when no name points to that image any more. Engines refuse while any container uses the image, and an image with a name is never removed by ID, because Docker deletes it even then, so an operator's own images and tags stay.
 
 ## Considered options
 

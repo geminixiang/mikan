@@ -61,6 +61,7 @@ class FakeEngine {
   readonly calls: string[][] = [];
   readonly failures = new Map<string, Error>();
   readonly holds = new Map<string, Promise<unknown>>();
+  readonly removedImageIds: string[] = [];
   readonly exec = vi.fn<DockerExecFile>(async (_file, args) => this.handle(args));
 
   seed(name: string, key: string, overrides: Partial<FakeContainer> = {}): FakeContainer {
@@ -101,6 +102,9 @@ class FakeEngine {
       case "inspect":
         return { stdout: `${this.inspect(args[2] ?? "", name)}\n` };
       case "image": {
+        if (args.includes("{{len .RepoTags}}")) {
+          return { stdout: `${[...this.images.values()].filter((id) => id === name).length}\n` };
+        }
         const id = this.images.get(name);
         if (!id) throw new Error(`Error: no such image: ${name}`);
         return { stdout: `${id}\n` };
@@ -113,6 +117,7 @@ class FakeEngine {
           throw new Error(`conflict: unable to delete ${name} (must be forced)`);
         }
         this.images.delete(name);
+        this.removedImageIds.push(name);
         return { stdout: `Untagged: ${name}\n` };
       case "network":
         return { stdout: this.network(args) };
@@ -607,7 +612,7 @@ describe("DockerContainerManager", () => {
       expect(engine.callsOf("rmi")).toEqual([["rmi", "sha256:old"]]);
     });
 
-    test("an operator's own image is removed only by ID, which engines refuse while it keeps a name", async () => {
+    test("an operator's own image that still has a name is never removed", async () => {
       const engine = new FakeEngine();
       engine.images.set("acme/sandbox:dev", "sha256:old");
       engine.seed("mikan-sandbox-alice", "alice", {
@@ -618,10 +623,26 @@ describe("DockerContainerManager", () => {
 
       await manager(engine).provision("alice");
 
-      expect(engine.callsOf("rmi")).toEqual([["rmi", "sha256:old"]]);
+      expect(engine.callsOf("rmi")).toEqual([]);
+      expect(engine.images.get("acme/sandbox:dev")).toBe("sha256:old");
     });
 
-    test("replacing a container for anything but its image removes no image", async () => {
+    test("an office replaced for its network still releases its older image", async () => {
+      const engine = new FakeEngine();
+      engine.images.set(OLD, "sha256:old");
+      engine.seed("mikan-sandbox-alice", "alice", {
+        running: false,
+        image: OLD,
+        labels: { "mikan.image-id": "sha256:old", "mikan.network": "legacy-network" },
+      });
+
+      await manager(engine).provision("alice");
+
+      expect(engine.callsOf("rmi")).toEqual([["rmi", OLD]]);
+      expect(engine.images.has(OLD)).toBe(false);
+    });
+
+    test("replacing a container that is already on the configured image removes no image", async () => {
       const engine = new FakeEngine();
       engine.seed("mikan-sandbox-alice", "alice", { running: false, image: IMAGE });
 
