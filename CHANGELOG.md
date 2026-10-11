@@ -39,6 +39,9 @@ change in a minor release.
   40–180 ms, and commands end as soon as mikan disconnects. String commands run with `bash` when
   the container has it, and oversized command output is saved in the container's temporary
   directory.
+- Each office with a running container keeps one `<engine> exec -i` client process on the host,
+  the connection to its `pi-env` daemon. Commands left by a version before this one are no longer
+  swept at startup; they end when their container stops or is replaced.
 - Each container gets the mikan host's time zone. The sandbox image no longer sets
   `TZ=Asia/Taipei` and is about 390 MB smaller: `vim`, `nano`, `less`, `bash-completion`,
   `python3-venv`, `gnupg`, and gcloud's precompiled Python files are gone.
@@ -47,6 +50,13 @@ change in a minor release.
   mounts are kept; packages installed inside the container are not. On a host running more than
   one engine, mikan may pick a different engine and create new containers there; set
   `CONTAINER_ENGINE=docker` to keep Docker.
+
+### Security
+
+- With a vault resolver, a conversation has no execution environment until its first run resolves
+  one, so a tool call that arrives earlier fails instead of running on the host.
+- Container credentials reach the sandbox through the `pi-env` connection instead of command
+  arguments or a host-side env file.
 
 ## [1.3.0] - 2026-10-10
 
