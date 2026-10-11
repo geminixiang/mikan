@@ -354,6 +354,7 @@ export interface DockerContainerManagerOptions {
   limits?: ResourceLimits;
   boostLimits?: ResourceLimits;
   execFileImpl?: DockerExecFile;
+  timeZone?: string;
 }
 
 export interface ExecutionPlan {

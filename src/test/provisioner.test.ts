@@ -189,6 +189,7 @@ function manager(engine: FakeEngine, options: { limits?: object; boostLimits?: o
     ...options,
     engine: "docker",
     execFileImpl: engine.exec,
+    timeZone: "Europe/Lisbon",
   });
 }
 
@@ -228,6 +229,19 @@ describe("DockerContainerManager", () => {
     expect(engine.callsOf("rm")).toEqual([]);
   });
 
+  test("containers run in the host's time zone by default", async () => {
+    const engine = new FakeEngine();
+    const sandbox = new DockerContainerManager(IMAGE, {
+      engine: "docker",
+      execFileImpl: engine.exec,
+    });
+
+    await sandbox.provision("slack-u123");
+
+    const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(engine.callsOf("run")[0]).toContain(`TZ=${hostZone}`);
+  });
+
   test("re-checks a cached container and recreates it when it was deleted", async () => {
     const engine = new FakeEngine();
     engine.seed("mikan-sandbox-slack-u123", "slack-u123");
@@ -251,6 +265,8 @@ describe("DockerContainerManager", () => {
         "no-new-privileges",
         "--pids-limit",
         "1024",
+        "--env",
+        "TZ=Europe/Lisbon",
         "--label",
         "mikan.managed=true",
         "--label",
@@ -305,6 +321,8 @@ describe("DockerContainerManager", () => {
       "no-new-privileges",
       "--pids-limit",
       "1024",
+      "--env",
+      "TZ=Europe/Lisbon",
       "--label",
       "mikan.managed=true",
       "--label",

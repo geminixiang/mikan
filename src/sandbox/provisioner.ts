@@ -46,6 +46,7 @@ export class DockerContainerManager {
   private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: DockerExecFile;
   private readonly configuredEngine: string | undefined;
+  private readonly timeZone: string;
 
   constructor(
     private readonly image: string,
@@ -55,6 +56,7 @@ export class DockerContainerManager {
     this.boostLimits = options.boostLimits;
     this.execFileImpl = options.execFileImpl ?? execFileAsync;
     this.configuredEngine = options.engine;
+    this.timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   }
 
   private get engine(): string {
@@ -323,6 +325,8 @@ export class DockerContainerManager {
       "no-new-privileges",
       "--pids-limit",
       "1024",
+      "--env",
+      `TZ=${this.timeZone}`,
       ...labels,
       ...this.resourceLimitArgs(this.effectiveLimits(containerKey)),
       ...this.mountArgs(mounts),

@@ -9,7 +9,6 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv
 FROM docker.io/library/debian:13-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=Asia/Taipei
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
 ENV NPM_CONFIG_PREFIX=/root/.local
 ENV CLOUDSDK_CORE_DISABLE_PROMPTS=1
@@ -19,9 +18,7 @@ ENV CLOUDSDK_COMPONENT_MANAGER_DISABLE_UPDATE_CHECK=true
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  apt-transport-https \
   bash \
-  bash-completion \
   build-essential \
   ca-certificates \
   chromium \
@@ -32,20 +29,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   fonts-liberation \
   fonts-noto-cjk \
   git \
-  gnupg \
   imagemagick \
   jq \
-  less \
-  lsb-release \
-  nano \
   openssh-client \
   python-is-python3 \
   python3-pip \
-  python3-venv \
   ripgrep \
   tini \
+  tzdata \
   unzip \
-  vim \
   wget \
   xz-utils \
   zip \
@@ -73,12 +65,12 @@ COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 COPY --from=uv /uv /uvx /usr/local/bin/
 RUN ln -s bun /usr/local/bin/bunx && rm -f /usr/local/bin/docker-entrypoint.sh
 
-RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
-    | gpg --dearmor -o /etc/apt/keyrings/cloud.google.gpg \
-  && echo "deb [signed-by=/etc/apt/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" \
+RUN curl -fsSL -o /etc/apt/keyrings/cloud.google.asc https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+  && echo "deb [signed-by=/etc/apt/keyrings/cloud.google.asc] https://packages.cloud.google.com/apt cloud-sdk main" \
     > /etc/apt/sources.list.d/google-cloud-sdk.list \
   && apt-get update \
   && apt-get install -y --no-install-recommends google-cloud-cli \
+  && find /usr/lib/google-cloud-sdk -name __pycache__ -type d -prune -exec rm -rf {} + \
   && rm -rf /var/lib/apt/lists/*
 
 # The gws npm postinstall downloads its native binary with Node fetch, which can
