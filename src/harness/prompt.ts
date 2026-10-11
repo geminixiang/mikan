@@ -364,6 +364,7 @@ grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], text
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
 - jev: Ask Jev (a fast calibrated decision model) boolean / choice / score questions about a state you supply; returns probabilities and confidence, never text. Use it whenever you need to classify, detect, score, rank, route, pick among known candidates, or verify.
+- web_fetch: Read a public web page or API as text. For versions, releases, prices, and dates, read the official page, registry, or API instead of answering from memory, and cite the URL.
 - react: Add an emoji reaction to the triggering message. mikan already acknowledges work on its own when your first tool starts, so do not react before starting work. Use a short name without colons (e.g. eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
 
 Each tool requires a "label" parameter (shown to user).

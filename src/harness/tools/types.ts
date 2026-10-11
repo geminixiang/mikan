@@ -22,3 +22,27 @@ export interface MikanToolRunContext {
   platformName: string;
   runtimeWorkspaceRoot: string;
 }
+
+export interface WebFetchAddress {
+  address: string;
+  family: number;
+}
+
+export type WebFetchLookup = (hostname: string) => Promise<WebFetchAddress[]>;
+
+export interface WebFetchResponse {
+  status: number;
+  ok: boolean;
+  headers: { get(name: string): string | null };
+  body: ReadableStream<Uint8Array> | null;
+}
+
+export type WebFetchRequest = (
+  url: string,
+  init: { redirect: "manual"; signal: AbortSignal; headers: Record<string, string> },
+) => Promise<WebFetchResponse>;
+
+export interface WebFetchToolOptions {
+  fetch?: WebFetchRequest;
+  lookup?: WebFetchLookup;
+}
