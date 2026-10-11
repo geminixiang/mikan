@@ -176,7 +176,7 @@ warning. Pick one before your first real conversation:
   enforces office visibility with no settings change:
 
   ```bash
-  mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+  mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
   ```
 
 - **Host mode**, only on a machine you already trust with the whole workspace: every conversation,

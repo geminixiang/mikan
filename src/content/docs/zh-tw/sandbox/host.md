@@ -22,11 +22,11 @@ mikan --sandbox=host /path/to/workspace
 Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
-平台推導使這點適用於 DM、Slack 私人頻道、外部共享與未知的對話，以及所有 Telegram、Discord、GitHub 對話。`/pi-sandbox` 聊天指令在 host 模式下無法使用——它只服務受管的 `image:*` sandbox。
+平台推導使這點適用於 DM、Slack 私人頻道、外部共享與未知的對話，以及所有 Telegram、Discord、GitHub 對話。`/pi-sandbox` 聊天指令在 host 模式下無法使用——它只服務受管的 `oci:*` sandbox。
 
 適合：
 
 - 在你已經信任其掌握整個 workspace 的機器上做本機開發
 - 不希望 mikan 把 vault credential 放進 host command process
 
-不適合共享或多租戶部署：host 模式讓每個對話都擁有與 mikan 自身相同的檔案系統與 process 視野。那些情境請改用 [`image:<image>`](/zh-tw/sandbox/image/)。
+不適合共享或多租戶部署：host 模式讓每個對話都擁有與 mikan 自身相同的檔案系統與 process 視野。那些情境請改用 [`oci:<image>`](/zh-tw/sandbox/oci/)。

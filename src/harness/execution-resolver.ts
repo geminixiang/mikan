@@ -90,7 +90,7 @@ export class ActorExecutionResolver {
   }
 
   private resolveSandboxConfig(resourceKey: string): SandboxConfig {
-    if (this.baseConfig.type !== "image") return this.baseConfig;
+    if (this.baseConfig.type !== "oci") return this.baseConfig;
     return {
       type: "container",
       container: DockerContainerManager.containerName(resourceKey),
@@ -101,7 +101,7 @@ export class ActorExecutionResolver {
     plan: ExecutionPlan,
     conversationId: string,
   ): (() => Promise<void>) | undefined {
-    if (this.baseConfig.type !== "image" || plan.sandboxConfig.type !== "container") {
+    if (this.baseConfig.type !== "oci" || plan.sandboxConfig.type !== "container") {
       return undefined;
     }
 
@@ -121,7 +121,7 @@ export class ActorExecutionResolver {
           operation: "ensure_image_container_ready",
           severity: "error",
           context: {
-            sandboxType: "image",
+            sandboxType: "oci",
             conversationId,
             credentialKey: plan.credentialKey,
             resourceKey: plan.resourceKey,

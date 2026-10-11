@@ -187,7 +187,7 @@ export async function runOnboardWizard(
     return 1;
   }
   io.print(
-    `Review settings\nProvider: ${llm.provider}\nModel: ${llm.model}\nSandbox: image:${image}\nSettings: ${settingsPath}\nCredentials: ${paths?.envFilePath ?? join(stateDir, "mikan.env")}${modelsJson ? `\nModels: ${modelsPath}` : ""}\nSecrets are hidden.`,
+    `Review settings\nProvider: ${llm.provider}\nModel: ${llm.model}\nSandbox: oci:${image}\nSettings: ${settingsPath}\nCredentials: ${paths?.envFilePath ?? join(stateDir, "mikan.env")}${modelsJson ? `\nModels: ${modelsPath}` : ""}\nSecrets are hidden.`,
   );
   if (!(await io.confirm("Save these settings?"))) {
     io.print("Onboarding cancelled; nothing was written.");
@@ -222,7 +222,7 @@ export async function runOnboardWizard(
   io.print(`  1. docker pull ${image}`);
   io.print(`  2. pm2 start ${ecosystemPath} && pm2 save`);
   io.print(
-    `  Foreground instead: set -a; source ${envFilePath}; set +a; mikan --sandbox=image:${image}`,
+    `  Foreground instead: set -a; source ${envFilePath}; set +a; mikan --sandbox=oci:${image}`,
   );
   return 0;
 }

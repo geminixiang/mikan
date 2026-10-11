@@ -51,7 +51,7 @@ export GOOGLE_CLOUD_SDK_OAUTH_SCOPES="openid https://www.googleapis.com/auth/use
 ## 3. 使用 `/pi-login`
 
 ```bash
-mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 在與 bot 的私訊中輸入：

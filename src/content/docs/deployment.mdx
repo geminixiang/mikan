@@ -25,9 +25,9 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - at least one complete Slack, Telegram, Discord, or GitHub credential set
 - a persistent `~/.mikan` for the PM2 user, where mikan keeps its state; the working directory defaults to `~/.mikan/workspace`
-- A container engine available to the PM2 user when using `image:*` or `container:*`: nerdctl, Podman, or Docker; mikan uses the first one running (see [Image sandbox](/sandbox/image/#container-engine))
+- A container engine available to the PM2 user when using `oci:*` or `container:*`: nerdctl, Podman, or Docker; mikan uses the first one running (see [OCI sandbox](/sandbox/oci/#container-engine))
 
-The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; image mode creates and manages containers through the host Docker daemon.
+The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; oci mode creates and manages containers through the host Docker daemon.
 
 ## PM2 deployment
 
@@ -113,7 +113,7 @@ Check for pending migrations after installing a new version. `--dry-run` only re
 while the daemon runs. Pass the same `--sandbox` and workspace the daemon uses:
 
 ```bash
-mikan migrate --sandbox=image:mikan-sandbox:latest --dry-run
+mikan migrate --sandbox=oci:mikan-sandbox:latest --dry-run
 ```
 
 If it prints `No pending migrations.`, reload as above. Otherwise stop the daemon, apply them, and
@@ -121,7 +121,7 @@ start it again:
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=image:mikan-sandbox:latest
+mikan migrate --sandbox=oci:mikan-sandbox:latest
 pm2 start mikan
 ```
 
@@ -143,7 +143,7 @@ start and prints the `mikan migrate` command for your install.
 3. **Move state to `~/.mikan`.** 1.0 has no `--state-dir`; if 0.5.3 kept its state elsewhere,
    move that directory to `~/.mikan`, and remove `--state-dir` from the command line your process
    manager runs.
-4. **Choose a supported sandbox.** 1.0 runs `host`, `container:<name>`, and `image:<image>`. A
+4. **Choose a supported sandbox.** 1.0 runs `host`, `container:<name>`, and `oci:<image>`. A
    0.5.3 install on `firecracker:*` or `cloudflare:*` must pick one of these first.
 5. **Move provider keys.** Keys that 0.5.3 read from `~/.pi/mikan/auth.json` are not migrated;
    set them in `~/.mikan/mikan.env`, or keep them in `models.json`.
@@ -151,8 +151,8 @@ start and prints the `mikan migrate` command for your install.
    preview, then apply:
 
    ```bash
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest
    ```
 
 7. **Start and check the log.** For each `settings.json`, the daemon logs

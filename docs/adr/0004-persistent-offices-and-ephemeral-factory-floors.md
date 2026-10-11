@@ -4,7 +4,7 @@ status: accepted
 
 # Persistent offices and ephemeral factory floors are different execution products
 
-A conversation's default execution environment is a persistent, single-node office runtime: one durable workspace, strong environment isolation, and continuity across turns and runtime restarts. Managed `image:*`, local Gondolin, and a future correctly provisioned Firecracker path fit this role. Elastic remote sandboxes instead form a factory floor for temporary, repetitive, outsourced, and highly parallel Subagent work. Factory jobs receive explicitly packaged inputs and capabilities, return explicit results, and discard both environment and local data after completion; they are not selectable as a conversation's default office.
+A conversation's default execution environment is a persistent, single-node office runtime: one durable workspace, strong environment isolation, and continuity across turns and runtime restarts. Managed `oci:*`, local Gondolin, and a future correctly provisioned Firecracker path fit this role. Elastic remote sandboxes instead form a factory floor for temporary, repetitive, outsourced, and highly parallel Subagent work. Factory jobs receive explicitly packaged inputs and capabilities, return explicit results, and discard both environment and local data after completion; they are not selectable as a conversation's default office.
 
 ## Considered Options
 

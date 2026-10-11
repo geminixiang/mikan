@@ -60,7 +60,7 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
     .option("--workspace <dir>", "Workspace directory (default: ~/.mikan/workspace)")
     .requiredOption(
       "--sandbox <spec>",
-      "The daemon's --sandbox value: host | container:<name> | image:<image>",
+      "The daemon's --sandbox value: host | container:<name> | oci:<image>",
       nonEmptyValue,
     )
     .option("--dry-run", "List what each pending migration would change, without writing")

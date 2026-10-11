@@ -1,7 +1,7 @@
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { OfficeAddress } from "../types.js";
 
-export type SandboxConfig = HostSandboxConfig | ContainerSandboxConfig | ImageSandboxConfig;
+export type SandboxConfig = HostSandboxConfig | ContainerSandboxConfig | OciSandboxConfig;
 
 export interface HostSandboxConfig {
   type: "host";
@@ -12,8 +12,8 @@ export interface ContainerSandboxConfig {
   container: string;
 }
 
-export interface ImageSandboxConfig {
-  type: "image";
+export interface OciSandboxConfig {
+  type: "oci";
   image: string;
 }
 

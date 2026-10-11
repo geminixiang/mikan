@@ -52,7 +52,7 @@ describe("ActorExecutionResolver", () => {
       "utf-8",
     );
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -71,7 +71,7 @@ describe("ActorExecutionResolver", () => {
     mkdirSync(settingsDir, { recursive: true });
     writeFileSync(join(settingsDir, "settings.json"), "{ invalid json }", "utf-8");
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -85,7 +85,7 @@ describe("ActorExecutionResolver", () => {
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -112,7 +112,7 @@ describe("ActorExecutionResolver", () => {
   test("materializes the conversation office directory on resolve", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -135,7 +135,7 @@ describe("ActorExecutionResolver", () => {
   test("recreates a deleted private conversation directory on the next projection", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -178,7 +178,7 @@ describe("ActorExecutionResolver", () => {
       }),
     });
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),
@@ -200,7 +200,7 @@ describe("ActorExecutionResolver", () => {
       },
     });
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),
@@ -241,7 +241,7 @@ describe("ActorExecutionResolver", () => {
     const address = createOfficeAddress("slack", "C123");
     recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       currentWorkspace,
@@ -290,7 +290,7 @@ describe("ActorExecutionResolver", () => {
       }),
     });
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       vault,
       undefined,
       workspace(),

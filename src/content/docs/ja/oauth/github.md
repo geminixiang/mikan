@@ -46,7 +46,7 @@ mikan --sandbox=container:mikan-tools /path/to/workspace
 または、ユーザーごとに管理されたコンテナ（managed per-user container）を使用する場合：
 
 ```bash
-mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 または：

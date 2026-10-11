@@ -59,7 +59,7 @@ into two conversation identities on case-sensitive filesystems.
 The separator is `_`, not the `gh:<owner>/<repo>#<number>` spelling this
 design first proposed: ids are used verbatim as a single path segment, so `/`
 is out, and conversation dirs are bind-mounted with docker's `-v source:target`
-syntax in image mode, so `:` is out too. `-` is out for a subtler reason:
+syntax in oci mode, so `:` is out too. `-` is out for a subtler reason:
 owners and repos may both contain `-`, so `GH-foo-bar-baz-42` cannot be parsed
 back to a unique (owner, repo) — two real repos would collide onto one
 conversation. `_` is unambiguous under GitHub's name grammar: owners never

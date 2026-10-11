@@ -513,7 +513,7 @@ describe("LoginCommandHandler", () => {
       services: {
         vaultManager,
         provisioner,
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
       },
     });
 
@@ -527,7 +527,7 @@ describe("LoginCommandHandler", () => {
     );
     expect(remove).toHaveBeenCalledWith(
       runtimeResourceKey(
-        { type: "image", image: "ubuntu:24.04" },
+        { type: "oci", image: "ubuntu:24.04" },
         { userId: "U123", address: createOfficeAddress("slack", "C123") },
       ),
     );
@@ -550,7 +550,7 @@ describe("LoginCommandHandler", () => {
           handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
           refreshConversation: vi.fn().mockReturnValue(false),
         },
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
       },
     });
 
@@ -572,7 +572,7 @@ describe("LoginCommandHandler", () => {
       vaultConversationId: "C123",
       services: {
         linkTokenStore,
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
         vaultManager,
       },
     });
@@ -617,7 +617,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workspace: testWorkspace(workingDir),
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
         resourceController: fakeResourceController({
           getLimitStatus: () => ({ limits: { cpus: "0.5", memory: "1g" }, boosted: false }),
           getDefaultLimits: () => ({ cpus: "0.5", memory: "1g" }),
@@ -638,7 +638,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workspace: testWorkspace(workingDir),
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
         resourceController: fakeResourceController(),
       },
     });
@@ -655,7 +655,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workspace: testWorkspace(workingDir),
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
         runtime: {
           handleNewCommand: vi.fn(),
           handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
@@ -734,7 +734,7 @@ describe("SandboxCommandHandler", () => {
       conversationId: "C123",
       services: {
         workspace: testWorkspace(workingDir),
-        sandbox: { type: "image", image: "ubuntu:24.04" },
+        sandbox: { type: "oci", image: "ubuntu:24.04" },
         resourceController: fakeResourceController({
           boost,
           getBoostLimits: () => ({ cpus: "2", memory: "4g" }),

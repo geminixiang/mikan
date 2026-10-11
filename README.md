@@ -11,7 +11,7 @@ Self-hosted AI coding agent that works in your team's chat.
 
 - **One office per conversation** — every Slack channel and DM gets its own workspace, sandbox, credentials, and memory; each thread runs as its own session.
 - **Where your team already talks** — Slack, Telegram, Discord, and GitHub (experimental).
-- **Real tools, contained** — in `image:` mode, commands run in a per-office Docker sandbox with credentials from that office's vault.
+- **Real tools, contained** — in `oci:` mode, commands run in a per-office container with credentials from that office's vault.
 
 Upgrading from 0.5.3? Follow [Upgrading from 0.5.3](src/content/docs/deployment.mdx#upgrading-from-053); `mikan migrate` converts the state in place.
 
@@ -27,7 +27,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Chat / conversation data** is the platform-facing record: `log.jsonl`, attachments, and conversation files.
 - **Session orchestration** turns platform events into agent runs, handles top-level/thread scopes, and persists agent sessions in one host-only SQLite `sessions.db` per office under the State dir.
 - **mikan agent harness** (`src/harness/`, built on pi-durable and pi-ai) owns run preparation, authorized prompts/tools, response presentation, and native Pi session integration. Pi handles the model/tool loop, persistence, compaction, retries, and cancellation.
-- **Sandbox runtime** is where tool commands execute: host, or a Docker container or image.
+- **Sandbox runtime** is where tool commands execute: host, an existing container, or a container mikan manages per office.
 - **Vault** provides runtime credentials as env vars and mounted secret files.
 
 ## Features
@@ -35,7 +35,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 - **Multi-platform** — Slack, Telegram, Discord, and GitHub (experimental) adapters
 - **Concurrent conversations** — Slack threads, Discord replies/threads, and Telegram reply chains run as independent sessions
 - **Conversation offices** — one office directory and one sandbox runtime per conversation, with public/private visibility derived from the platform conversation type
-- **Sandbox execution** — one managed Docker container per conversation office
+- **Sandbox execution** — one managed container per conversation office, on nerdctl, Podman, or Docker
 - **Credential vaults** — `/login` stores credentials under `~/.mikan` and injects env into sandbox runs
 - **Web session viewer** — read-only web view of the current session via `session` / `/session`
 - **Persistent memory** — workspace-level and per-office `MEMORY.md`
@@ -45,7 +45,7 @@ mikan keeps the chat record, agent session, and execution runtime separate:
 
 ## Quick Start
 
-You need Node.js 24.15 or later and Docker.
+You need Node.js 24.15 or later and a container engine: nerdctl, Podman, or Docker.
 
 ```bash
 npm i -g @geminixiang/mikan pm2
@@ -58,7 +58,7 @@ That's it: `@mention` the bot in a channel or send it a DM. `mikan onboard` prin
 
 Everything lives in `~/.mikan`: `settings.json` for behavior (model, sandbox limits, reply modes), `mikan.env` for secrets and platform tokens, and `ecosystem.config.cjs` for process supervision. To add another platform later, put its tokens in `mikan.env` and run `pm2 reload ~/.mikan/ecosystem.config.cjs` so pm2 rereads the file; `mikan env` lists every variable mikan reads.
 
-Upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=image:<image> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for graceful shutdown and the health endpoint.
+Upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=oci:<image> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for graceful shutdown and the health endpoint.
 
 ## Platforms
 
@@ -71,7 +71,7 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-Use `image:<image>`: mikan starts one Docker container and one credential vault per conversation office, and enforces office visibility. `mikan onboard` sets it up.
+Use `oci:<image>`: mikan starts one container and one credential vault per conversation office, and enforces office visibility. `mikan onboard` sets it up.
 
 `host` (run directly on the machine) and `container:<name>` (one shared, existing container) still work but are not recommended: they give the agent the whole machine or one shared filesystem, skip `/login` credential injection, and do not enforce office visibility.
 

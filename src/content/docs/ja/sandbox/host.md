@@ -26,7 +26,7 @@ Sandbox 'host' cannot enforce private office visibility for <office-key>
 
 platform による導出により、これは DM、Slack private channel、外部共有および種別不明の conversation、
 そしてすべての Telegram・Discord・GitHub の conversation に当てはまります。`/pi-sandbox` チャットコマンドは
-host mode では利用できません。管理型の `image:*` sandbox 専用です。
+host mode では利用できません。管理型の `oci:*` sandbox 専用です。
 
 適している用途：
 
@@ -35,4 +35,4 @@ host mode では利用できません。管理型の `image:*` sandbox 専用で
 
 共有環境やマルチテナントのデプロイには適していません。host mode では、すべての conversation が mikan
 自身と同じファイルシステムとプロセスの視界を持ちます。そうした環境では代わりに
-[`image:<image>`](/ja/sandbox/image/) を使用してください。
+[`oci:<image>`](/ja/sandbox/oci/) を使用してください。

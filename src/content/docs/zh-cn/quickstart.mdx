@@ -5,7 +5,7 @@ description: 使用 Telegram 与 Docker 沙箱，约 15 分钟从零到收到第
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-本指南约 15 分钟就能让机器人回复你的消息。示例使用 Telegram（只需要一个 token）。你需要 Node.js 24.15 以上和 Docker（也可以用 Podman 或 nerdctl，见 [Image sandbox](/zh-cn/sandbox/image/#容器引擎)）。最后附上其他平台和用 PM2 常驻运行的链接。
+本指南约 15 分钟就能让机器人回复你的消息。示例使用 Telegram（只需要一个 token）。你需要 Node.js 24.15 以上和 Docker（也可以用 Podman 或 nerdctl，见 [OCI sandbox](/zh-cn/sandbox/oci/#容器引擎)）。最后附上其他平台和用 PM2 常驻运行的链接。
 
 ## 前置要求
 
@@ -43,7 +43,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
    镜像约 900 MB，首次拉取需要几分钟。工作目录默认为 `~/.mikan/workspace` 并会自动创建；在参数后面传入路径可使用其他目录。
@@ -64,7 +64,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 ## 下一步
 
 - **改用 Slack、Discord 或 GitHub** — 每个平台需要各自的凭证；参阅 [Slack 最小设置指南](/zh-cn/slack-bot-minimal-guide/)、[Discord 接入层](/zh-cn/platform-adapters/discord/)和 [GitHub 接入层](/zh-cn/platform-adapters/github/)。
-- **正式使用的隔离** — 拉取预构建的沙箱镜像并以 `--sandbox=image:...` 启动；参阅 [Image 沙箱](/zh-cn/sandbox/image/)。
+- **正式使用的隔离** — 拉取预构建的沙箱镜像并以 `--sandbox=oci:...` 启动；参阅 [OCI 沙箱](/zh-cn/sandbox/oci/)。
 - **为 agent 工具提供凭证** — 在私聊中输入 `/login` 可打开 vault portal 存放 API key 和 OAuth 凭证；参阅 [Vault](/zh-cn/sandbox/vault/)。
 - **以服务方式运行** — PM2 设置、升级和健康检查参阅[部署](/zh-cn/deployment/)。
 - **完整设置与命令** — [配置](/zh-cn/configuration/)和[聊天命令](/zh-cn/commands/)。

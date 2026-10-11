@@ -81,7 +81,7 @@ Slack auto-reply is changed with `/pi-auto-reply on|off|jev` and stored in the c
 
 Office visibility follows the Slack conversation type (ADR 0008); conversations on Telegram, Discord, and GitHub are always private. Public channels are **public** offices: every other office can read them under `/workspace/public/<office key>` (read-only), and they may write the workspace-global `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, externally shared channels, and conversations whose kind has not been observed are **private** offices: visible only to themselves, reading shared knowledge and public offices without writing back. Every office receives the same mount shape; nothing mounts the workspace root.
 
-Only `image:*` enforces visibility. `host` and `container:*` run every office in one filesystem and are trusted deployments; a private office there is served with a one-time logged warning.
+Only `oci:*` enforces visibility. `host` and `container:*` run every office in one filesystem and are trusted deployments; a private office there is served with a one-time logged warning.
 
 The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `visibility`, and legacy `sandbox.image.workspaceMount`) are ignored if present and never change the projection. No setting lets an office reach another private office.
 
@@ -158,7 +158,7 @@ See [Platform adapters](/platform-adapters/) for platform-specific setup and per
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | `mikan onboard`                                                        | Create the required global settings file                                                |
 | `mikan [--sandbox=<mode>] [working-directory]`                         | Start configured platform bots; the working directory defaults to `~/.mikan/workspace`  |
-| `--sandbox=host \| container:<name> \| image:<image>`                  | Select tool execution mode; default is `host`                                           |
+| `--sandbox=host \| container:<name> \| oci:<image>`                    | Select tool execution mode; default is `host`                                           |
 | `mikan env`                                                            | Show the full environment-variable inventory and what is currently set                  |
 | `mikan --version`                                                      | Print the installed version                                                             |
 | `mikan --help`                                                         | Show CLI usage and the platform-token summary                                           |

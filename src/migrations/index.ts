@@ -101,8 +101,8 @@ function sandboxSpec(sandbox: SandboxConfig): string {
       return "host";
     case "container":
       return `container:${sandbox.container}`;
-    case "image":
-      return `image:${sandbox.image}`;
+    case "oci":
+      return `oci:${sandbox.image}`;
   }
 }
 

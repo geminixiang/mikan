@@ -392,7 +392,7 @@ describe("ActorExecutionResolver image mode", () => {
   test("uses platform-namespaced vault ids for new users", async () => {
     const mgr = new FileVaultManager(tmpDir);
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       undefined,
       workspace(),
@@ -422,7 +422,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
       workspace(),
@@ -457,7 +457,7 @@ describe("ActorExecutionResolver image mode", () => {
 
     const mgr = new FileVaultManager(tmpDir);
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       undefined,
       workspace(),
@@ -481,7 +481,7 @@ describe("ActorExecutionResolver image mode", () => {
 
   test("does not copy the default shared vault over an existing image sandbox vault", async () => {
     const vaultKey = credentialAuthorizationKey(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       {
         userId: "U123",
         address: createOfficeAddress("slack", "D123"),
@@ -500,7 +500,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
       workspace(),
@@ -517,7 +517,7 @@ describe("ActorExecutionResolver image mode", () => {
 
   test("login and execution use the same generated vault key in image mode", async () => {
     const mgr = new FileVaultManager(tmpDir);
-    const baseConfig = { type: "image", image: "ubuntu:24.04" } as const;
+    const baseConfig = { type: "oci", image: "ubuntu:24.04" } as const;
     const vaultKey = credentialAuthorizationKey(baseConfig, {
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
@@ -538,7 +538,7 @@ describe("ActorExecutionResolver image mode", () => {
 
   test("provisions per-conversation container with inferred vault mounts", async () => {
     const vaultKey = credentialAuthorizationKey(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       {
         userId: "U123",
         address: createOfficeAddress("slack", "D123"),
@@ -552,7 +552,7 @@ describe("ActorExecutionResolver image mode", () => {
       .fn<DockerContainerManager["provision"]>()
       .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       { provision, markUsed: () => {} },
       workspace(),
@@ -591,7 +591,7 @@ describe("ActorExecutionResolver image mode", () => {
       .fn<DockerContainerManager["provision"]>()
       .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
-      { type: "image", image: "ubuntu:24.04" },
+      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       { provision, markUsed: () => {} },
       workspace(),

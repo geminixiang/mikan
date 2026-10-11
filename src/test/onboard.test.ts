@@ -103,7 +103,7 @@ describe("runOnboardWizard", () => {
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
 
     expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
-      'args: "--sandbox=image:acme/sandbox:1",',
+      'args: "--sandbox=oci:acme/sandbox:1",',
     );
     expect(io.transcript.join("\n")).toContain("docker pull acme/sandbox:1");
   });
@@ -113,7 +113,7 @@ describe("runOnboardWizard", () => {
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
 
     expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
-      'args: "--sandbox=image:debian:trixie-slim",',
+      'args: "--sandbox=oci:debian:trixie-slim",',
     );
   });
 

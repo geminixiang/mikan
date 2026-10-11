@@ -10,27 +10,27 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
     visibility，屬於受信任部署。
   </Card>
   <Card title="主線隔離" icon="rocket">
-    `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 與資源限制。
+    `oci:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 與資源限制。
   </Card>
 </CardGrid>
 
 <Aside type="note" title="sandbox 的定位">
-  `image:*` 的對象是共用一台 VM 的團隊。每個 office 有自己的資源限制、檔案系統隔離與獨立環境。它不是
+  `oci:*` 的對象是共用一台 VM 的團隊。每個 office 有自己的資源限制、檔案系統隔離與獨立環境。它不是
   E2B 或 SaaS sandbox 那種對抗惡意租戶的強隔離：container 共用宿主機 kernel，VM
   上的人彼此互信。憑證會進到 sandbox，只是因為開發工作（`gh`、`gcloud`、`gws`）需要它們。
 </Aside>
 
 <Aside type="caution" title="模式名稱">
-  `docker:*` 不是可用模式；請改用 `container:*` 或 `image:*`。
+  `docker:*` 不是可用模式；請改用 `container:*` 或 `oci:*`。
 </Aside>
 
 ## 支援模式
 
-| 模式               | 執行位置              | Vault env injection | Vault key             | 備註                                                           |
-| ------------------ | --------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
-| `host`             | 宿主機                | 不注入              | 由平台使用者推導      | 僅供本機開發；無法強制 office visibility                       |
-| `container:<name>` | 既有 Docker container | 注入                | 由 container 名稱推導 | one container one vault；多人共用同一 container 就共用該 vault |
-| `image:<image>`    | mikan 管理的 Docker   | 注入                | office key            | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container` |
+| 模式               | 執行位置                   | Vault env injection | Vault key             | 備註                                                           |
+| ------------------ | -------------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
+| `host`             | 宿主機                     | 不注入              | 由平台使用者推導      | 僅供本機開發；無法強制 office visibility                       |
+| `container:<name>` | 既有 Docker container      | 注入                | 由 container 名稱推導 | one container one vault；多人共用同一 container 就共用該 vault |
+| `oci:<image>`      | mikan 管理的 OCI container | 注入                | office key            | 目前最推薦的隔離模式；`1 conversation = 1 vault = 1 container` |
 
 office key 是帶版本的 `v1-<platform>-<readable-id>-<hash>` 片段，同時也是該對話在 workspace 底下的目錄名稱。詳見 [Conversation offices](#conversation-offices)。
 
@@ -46,7 +46,7 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 | `MEMORY.md`、`skills/`——共用知識           | 可讀寫        | 唯讀           |
 | `public/<office-key>/`——所有 public office | 唯讀          | 唯讀           |
 
-沒有任何佈局會掛載 workspace root。admin portal 或 `/pi-sandbox visibility private` 可把公開頻道縮為 private；不能放寬超過 Slack 的設定。只有 `image:*` 會強制執行 visibility；其他模式回報 `managedProjection: false`，private office 在這些模式下會照常服務並記錄一次警告。欄位語意與已退役的 door policy 設定見 [設定](/zh-tw/configuration/)。
+沒有任何佈局會掛載 workspace root。admin portal 或 `/pi-sandbox visibility private` 可把公開頻道縮為 private；不能放寬超過 Slack 的設定。只有 `oci:*` 會強制執行 visibility；其他模式回報 `managedProjection: false`，private office 在這些模式下會照常服務並記錄一次警告。欄位語意與已退役的 door policy 設定見 [設定](/zh-tw/configuration/)。
 
 <Aside type="caution" title="visibility 不是額外的 sandbox">
   Visibility 決定哪些宿主機目錄會被投影進 runtime，它不是執行邊界：不論 office 的 visibility
@@ -66,7 +66,7 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
   href="container/"
 />
 <LinkCard
-  title="Image sandbox"
+  title="OCI sandbox"
   description="由 mikan 管理 per-conversation container 與資源限制。"
   href="image/"
 />
@@ -75,7 +75,7 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 
 ## 能力差異
 
-`image:<image>` <Badge text="推薦" variant="success" /> 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
+`oci:<image>` <Badge text="推薦" variant="success" /> 是目前主要開發與推薦的 sandbox 模式；其他模式保留為本機開發、相容、或實驗用途，部分能力不會補齊。
 
 | ------------------------------------ | -------- | ------------------ | --------------- | --------------------- | --------------- | -------------- |
 | command 執行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

@@ -79,7 +79,7 @@ Slack auto-reply 可通过 `/pi-auto-reply on|off|jev` 修改，并以 conversat
 
 Office visibility 跟随 Slack 对话类型（ADR 0008）；Telegram、Discord、GitHub 的对话一律是 private。公开频道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 只读它，且它可以写入工作区全局的 `MEMORY.md` 与 `skills/`。私有频道、DM、群组 DM、外部共享频道，以及尚未观察到类型的对话都是 **private** office：只有自己可见，可读共享知识与 public office，但不会写回。每个 office 的挂载形状相同；没有任何布局会挂载工作区根目录。
 
-只有 `image:*` 会强制执行 visibility。`host`、`container:*` 让所有 office 共用同一个文件系统，属于受信任部署；private office 在这些模式下会照常服务，并记录一次警告。
+只有 `oci:*` 会强制执行 visibility。`host`、`container:*` 让所有 office 共用同一个文件系统，属于受信任部署；private office 在这些模式下会照常服务，并记录一次警告。
 
 已退役的门禁策略设置（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及旧版 `sandbox.image.workspaceMount`）如果存在会被忽略，也不会改变投影。没有任何设置能让一个办公室访问另一个 private 办公室。
 

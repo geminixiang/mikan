@@ -16,7 +16,7 @@ This is a boundary rule, not only a statement about Cloudflare: isolation is not
 
 ## Consequences
 
-The trust decision in `allowsAmbientDefaultSharedVault` collapses to `image` alone, without a hand-maintained list of "isolated" sandbox types. That list is exactly how the problem propagates: `19845f7` added `agent-sandbox` to it by pattern-matching topology (isolated + per-conversation) instead of trust, and the same reasoning would wrongly pull in `gondolin`. `sandbox.defaultSharedVault` is a convenience for a trusted internal team sharing one credential set, which is `image:*` and nothing else.
+The trust decision in `allowsAmbientDefaultSharedVault` collapses to `oci` alone, without a hand-maintained list of "isolated" sandbox types. That list is exactly how the problem propagates: `19845f7` added `agent-sandbox` to it by pattern-matching topology (isolated + per-conversation) instead of trust, and the same reasoning would wrongly pull in `gondolin`. `sandbox.defaultSharedVault` is a convenience for a trusted internal team sharing one credential set, which is `oci:*` and nothing else.
 
 `Executor` also stops having to answer `getWorkspacePath` / `getPathContext` for something with no workspace.
 

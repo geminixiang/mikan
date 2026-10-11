@@ -6,26 +6,33 @@ import { containerEngine } from "./engine.js";
 import * as log from "../log.js";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type {
-  ImageSandboxConfig,
+  OciSandboxConfig,
   RuntimePathContext,
   SandboxAdapter,
   SandboxConfig,
   SandboxEnvOptions,
 } from "./types.js";
 
-function parseImageSandboxArg(value: string): ImageSandboxConfig | undefined {
-  if (!value.startsWith("image:")) {
-    return undefined;
-  }
+const OCI_PREFIX = "oci:";
+const DEPRECATED_OCI_PREFIX = "image:";
 
-  const image = value.slice("image:".length);
+function parseOciSandboxArg(value: string): OciSandboxConfig | undefined {
+  const deprecated = value.startsWith(DEPRECATED_OCI_PREFIX);
+  if (!deprecated && !value.startsWith(OCI_PREFIX)) return undefined;
+  const image = value.slice(deprecated ? DEPRECATED_OCI_PREFIX.length : OCI_PREFIX.length);
   if (!image) {
-    throw new SandboxError("Error: image sandbox requires image name (e.g., image:ubuntu:24.04)");
+    throw new SandboxError("Error: oci sandbox requires an image (e.g., oci:ubuntu:24.04)");
   }
-  return { type: "image", image };
+  if (deprecated) {
+    log.logWarning(
+      `--sandbox=${value} is deprecated`,
+      `use --sandbox=${OCI_PREFIX}${image}; ${DEPRECATED_OCI_PREFIX} will be removed in the next major release`,
+    );
+  }
+  return { type: "oci", image };
 }
 
-async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
+async function validateOciSandbox(config: OciSandboxConfig): Promise<void> {
   const engine = containerEngine();
   try {
     await execSimple(engine, ["--version"]);
@@ -34,18 +41,18 @@ async function validateImageSandbox(config: ImageSandboxConfig): Promise<void> {
       `Error: no container engine found; install nerdctl, Podman, or Docker (tried '${engine}')`,
     );
   }
-  console.log(`  Image auto-provisioning enabled. Image: ${config.image} (engine: ${engine})`);
+  console.log(`  OCI sandbox enabled. Image: ${config.image} (engine: ${engine})`);
 }
 
-const imageSandboxAdapter: SandboxAdapter<ImageSandboxConfig> = {
-  type: "image",
+const ociSandboxAdapter: SandboxAdapter<OciSandboxConfig> = {
+  type: "oci",
   credentials: { env: true, fileMounts: true },
   workspace: { managedProjection: true },
-  parse: parseImageSandboxArg,
-  validate: validateImageSandbox,
+  parse: parseOciSandboxArg,
+  validate: validateOciSandbox,
 };
 
-const sandboxAdapters = [hostSandboxAdapter, containerSandboxAdapter, imageSandboxAdapter] as const;
+const sandboxAdapters = [hostSandboxAdapter, containerSandboxAdapter, ociSandboxAdapter] as const;
 const sandboxAdapterByType = new Map(
   sandboxAdapters.map((adapter) => [adapter.type, adapter]),
 ) as Map<SandboxConfig["type"], SandboxAdapter>;
@@ -79,7 +86,7 @@ export function warnUnenforcedPrivateOffice(
   warnedUnenforcedPrivacy.add(officeKey);
   log.logWarning(
     `Sandbox '${sandboxConfig.type}' cannot enforce private office visibility for ${officeKey}`,
-    "host and container backends share one filesystem; use image:* to isolate private channels and DMs",
+    "host and container backends share one filesystem; use oci:* to isolate private channels and DMs",
   );
 }
 
@@ -93,12 +100,12 @@ export function parseSandboxArg(value: string): SandboxConfig {
 
   if (value.startsWith("docker:")) {
     throw new SandboxError(
-      `Error: '${value}' is not supported. Use 'container:<container-name>' for the shared-container mode or 'image:<image-name>' for mikan-managed per-user containers.`,
+      `Error: '${value}' is not supported. Use 'container:<container-name>' for the shared-container mode or 'oci:<image>' for mikan-managed per-office containers.`,
     );
   }
 
   throw new SandboxError(
-    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', or 'image:<image-name>'`,
+    `Error: Invalid sandbox type '${value}'. Use 'host', 'container:<container-name>', or 'oci:<image>'`,
   );
 }
 

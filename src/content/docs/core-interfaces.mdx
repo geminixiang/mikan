@@ -66,7 +66,7 @@ The producer/consumer pairs below are the supported bridges. The named producer 
 | Run output                | Harness/tools → Platform entry                                                               | The harness emits **response source**: platform-neutral Markdown/GFM, with user mentions written as `<@userName>`. Converting that into native presentation is wholly the adapter's job — Slack resolves `<@userName>` to `<@U…>` on every outgoing path, and no adapter may steer the model toward platform-native markup. Optional responder capabilities are feature-detected. For one run, response operations retain call order; adapters may buffer or stream, but must not expose harness persistence or SDK objects to the harness. |
 | Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                          | Runtime supplies the host workspace and a runtime cwd of `<runtime workspace root>/<officeKey>`; the office key names the same segment on both sides, so the path does not change meaning at the boundary. The sandbox registry supplies the path context (`getSandboxPathContext`). Prompts and tool output use runtime paths, while host-side attachment translation uses the declared context. Paths outside the mapped root are not translated. This is a path contract, not a claim of filesystem isolation.                           |
 | Sandbox file transport    | Sandbox/workspace → Harness/tools                                                            | Tools use the `ExecutionEnv` file operations, never shell quoting protocols. The container environment sends them to Pi's `pi-env` daemon in the container as framed bytes, and failures return Pi's `FileError` codes.                                                                                                                                                                                                                                                                                                                     |
-| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace                    | `MessagingInfo.trustModel` is passed into actor resolution; vault policy is keyed to that value, not platform-name strings. Omitted trust defaults to `membership`; `open-trigger` never receives an ambient shared-vault copy, and only `image` use that ambient path. Explicit vault provisioning remains a separate administrative decision.                                                                                                                                                                                             |
+| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace                    | `MessagingInfo.trustModel` is passed into actor resolution; vault policy is keyed to that value, not platform-name strings. Omitted trust defaults to `membership`; `open-trigger` never receives an ambient shared-vault copy, and only `oci` use that ambient path. Explicit vault provisioning remains a separate administrative decision.                                                                                                                                                                                               |
 | Settings and live runners | Config/CLI (commands and admin are adapters) → config disk and Runtime/session               | `applyConversationSettings` clears the cached runner **before** writing an LLM change and refuses both actions while busy. `applyOfficeVisibility` behaves the same way for a visibility change, since the mount set is baked into the runner's environment. Global LLM settings write first, then clear idle runners, clear busy ones once their run settles, and report those as stale. Sandbox resource limits and Slack reply settings are re-read at use time and do not clear runners.                                                |
 | Web capability bridge     | Vault/web/security → Runtime/session and commands                                            | Portal stores are optional runtime services. A portal URL without its backing store fails when that portal is used; absent stores otherwise produce disabled/not-configured behavior. Route payloads are bundled-UI contracts, not a general REST API.                                                                                                                                                                                                                                                                                      |
 | Scheduled events          | Harness/tools and Admin → Runtime/session through `OfficeEventStore`                         | Records live in the office's host-only State dir; no sandbox mounts them. The `event` tool and Admin reach an office's events only through a store bound to that office, and a payload must address the store's own office. Writers use `buildEventPayload`; readers use `parseEventPayload`. Secrets do not belong in event text.                                                                                                                                                                                                          |
@@ -141,7 +141,7 @@ The host-facing platform port. It combines:
 - intake scheduling: `enqueueEvent`;
 - discovery/policy: `getMessagingInfo()`.
 
-`MessagingInfo.trustModel` is security-sensitive. `membership` permits the ambient shared vault when the sandbox type is `image`. A surface where anyone can trigger the agent must return `open-trigger`.
+`MessagingInfo.trustModel` is security-sensitive. `membership` permits the ambient shared vault when the sandbox type is `oci`. A surface where anyone can trigger the agent must return `open-trigger`.
 
 `MessagingBot` is the single host-facing adapter interface; lifecycle and messaging capabilities are not split across a second shallow interface.
 
@@ -224,7 +224,7 @@ Sources: `src/sandbox/types.ts` and `src/sandbox/registry.ts`.
 
 ### `SandboxConfig`
 
-The discriminated union currently supports `host`, `container`, and `image`. Parsing syntax and maturity are documented under [Sandbox](/sandbox/).
+The discriminated union currently supports `host`, `container`, and `oci`. Parsing syntax and maturity are documented under [Sandbox](/sandbox/).
 
 ### `ExecutionEnv`
 
@@ -234,13 +234,13 @@ The execution boundary is Pi's `ExecutionEnv` from `@earendil-works/pi-durable/e
 | ----------- | ------------------------------------------------------------------------------------------------------------- |
 | `host`      | Pi's `NodeExecutionEnv`                                                                                       |
 | `container` | pi-env's `RemoteExecutionEnv`, talking to Pi's `pi-env` daemon in the container over one `exec -i` connection |
-| `image`     | None directly: actor/vault resolution provisions a container, then uses its `container` env                   |
+| `oci`       | None directly: actor/vault resolution provisions a container, then uses its `container` env                   |
 
 Every environment must pass Pi's `registerEnvConformance` suite; `src/test/container-execution-env.test.ts` runs it. Tool implementations call the environment's file operations instead of building `cat`, `printf`, or quoting protocols.
 
 ### `SandboxAdapter`
 
-An adapter recognizes one CLI value, optionally validates it, and optionally creates an environment. `image` deliberately has no direct environment: actor/vault resolution provisions a concrete container first.
+An adapter recognizes one CLI value, optionally validates it, and optionally creates an environment. `oci` deliberately has no direct environment: actor/vault resolution provisions a concrete container first.
 
 Adapter registration is a closed list inside `src/sandbox/registry.ts`, and the package exports neither `SandboxAdapter` nor the registry.
 

@@ -59,8 +59,8 @@ export function createSandboxTool(controller: SandboxToolController): {
       if (!sandboxContext) {
         throw new Error("Sandbox context not configured");
       }
-      if (controller.sandbox.type !== "image" || !controller.resourceController) {
-        throw new Error("The sandbox tool only supports image:* managed sandboxes");
+      if (controller.sandbox.type !== "oci" || !controller.resourceController) {
+        throw new Error("The sandbox tool only supports oci:* managed sandboxes");
       }
 
       const containerKey = runtimeResourceKey(controller.sandbox, {

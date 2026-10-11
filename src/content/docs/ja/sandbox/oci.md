@@ -1,6 +1,6 @@
 ---
-title: Image sandbox
-description: mikan 管理の per-conversation Docker container と vault 分離を使用します。
+title: OCI sandbox
+description: mikan 管理の per-conversation OCI container（nerdctl、Podman、Docker）と vault 分離を使用します。
 ---
 
 ```bash
@@ -9,15 +9,17 @@ description: mikan 管理の per-conversation Docker container と vault 分離�
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers
-mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
 ```
 
 image を自分でカスタマイズしたい場合は、ローカルで build することもできます：
 
 ```bash
 docker build -f deploy/docker/mikan-sandbox.Dockerfile -t mikan-sandbox:latest .
-mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 ```
+
+このモードは以前 `image:<image>` という名前でした。この書き方は次のメジャーリリースまで引き続き使え、起動時に非推奨の警告を出します。
 
 特徴：
 
@@ -33,7 +35,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## コンテナエンジン
 
-mikan は docker のコマンド体系でコンテナを操作します。nerdctl（containerd）、Podman、Docker はいずれもこれを受け付けます。エンジンを選ぶ必要はありません。`container:*` または `image:*` では、mikan は `nerdctl`、`podman`、`docker` の順に `info` が成功した最初のものを使い、起動時に記録します。このページのコマンドの `docker` はそのエンジンに読み替えてください。コンテナは作成したエンジンに属するため、後から別のエンジンが起動する host（ログイン時に Podman machine を起動するなど）では新しいコンテナが作られ、元のエンジンのコンテナは残ります。固定したい場合は `~/.mikan/mikan.env` に `CONTAINER_ENGINE` を設定してください。rootless Podman は、host が cgroup の CPU と memory controller をユーザーに委譲している場合に動作します（macOS の Podman machine は委譲済みです）。
+mikan は docker のコマンド体系でコンテナを操作します。nerdctl（containerd）、Podman、Docker はいずれもこれを受け付けます。エンジンを選ぶ必要はありません。`container:*` または `oci:*` では、mikan は `nerdctl`、`podman`、`docker` の順に `info` が成功した最初のものを使い、起動時に記録します。このページのコマンドの `docker` はそのエンジンに読み替えてください。コンテナは作成したエンジンに属するため、後から別のエンジンが起動する host（ログイン時に Podman machine を起動するなど）では新しいコンテナが作られ、元のエンジンのコンテナは残ります。固定したい場合は `~/.mikan/mikan.env` に `CONTAINER_ENGINE` を設定してください。rootless Podman は、host が cgroup の CPU と memory controller をユーザーに委譲している場合に動作します（macOS の Podman machine は委譲済みです）。
 
 macOS ではどのエンジンも VM 上で Linux を動かすため、bind mount は VM が共有するフォルダからしかコンテナに届きません。workspace と `~/.mikan` はホームディレクトリ配下に置いてください。
 

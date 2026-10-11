@@ -25,9 +25,9 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - 少なくとも 1 組の完全な Slack、Telegram、Discord、または GitHub credentials
 - PM2 ユーザーの永続的な `~/.mikan`（mikan の state を置く場所）。working directory の既定値は `~/.mikan/workspace`
-- `image:*` または `container:*` 使用時に PM2 user が利用できるコンテナエンジン：nerdctl、Podman、Docker のうち、最初に起動しているものを mikan が使います（[Image sandbox](/ja/sandbox/image/#コンテナエンジン) を参照）
+- `oci:*` または `container:*` 使用時に PM2 user が利用できるコンテナエンジン：nerdctl、Podman、Docker のうち、最初に起動しているものを mikan が使います（[OCI sandbox](/ja/sandbox/oci/#コンテナエンジン) を参照）
 
-公開されている `mikan-sandbox` image は tool runtime であり、standalone mikan server image ではありません。PM2 は host 上で `mikan` を実行し、image mode は host Docker daemon を通じて containers を作成、管理します。
+公開されている `mikan-sandbox` image は tool runtime であり、standalone mikan server image ではありません。PM2 は host 上で `mikan` を実行し、oci mode は host Docker daemon を通じて containers を作成、管理します。
 
 ## PM2 デプロイ
 
@@ -109,14 +109,14 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 新しいバージョンをインストールしたら、未適用のマイグレーションを確認します。`--dry-run` は読み取りだけなので、daemon の実行中でも安全です。daemon と同じ `--sandbox` と workspace を指定します:
 
 ```bash
-mikan migrate --sandbox=image:mikan-sandbox:latest --dry-run
+mikan migrate --sandbox=oci:mikan-sandbox:latest --dry-run
 ```
 
 `No pending migrations.` と表示されたら、上の手順で reload します。そうでなければ daemon を停止し、適用してから再起動します:
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=image:mikan-sandbox:latest
+mikan migrate --sandbox=oci:mikan-sandbox:latest
 pm2 start mikan
 ```
 
@@ -129,13 +129,13 @@ pm2 start mikan
 1. **バックアップする。** 0.5.3 の daemon を止め、state directory と working directory の両方をコピーします。マイグレーションは両方の directory を rename します。
 2. **1.0 をインストールする。** Node.js 24.15.0 以降が必要です: `npm i -g @geminixiang/mikan@latest`。
 3. **state を `~/.mikan` に移す。** 1.0 には `--state-dir` がありません。0.5.3 が state を別の場所に置いていた場合は、その directory を `~/.mikan` に移動し、process manager が実行するコマンドから `--state-dir` を外してください。
-4. **サポートされる sandbox を選ぶ。** 1.0 が動かすのは `host`、`container:<name>`、`image:<image>` です。`firecracker:*` や `cloudflare:*` を使っていた 0.5.3 のインストールは、先にこのいずれかへ切り替えてください。
+4. **サポートされる sandbox を選ぶ。** 1.0 が動かすのは `host`、`container:<name>`、`oci:<image>` です。`firecracker:*` や `cloudflare:*` を使っていた 0.5.3 のインストールは、先にこのいずれかへ切り替えてください。
 5. **provider key を移す。** 0.5.3 が `~/.pi/mikan/auth.json` から読んでいた key は移行されません。`~/.mikan/mikan.env` に設定するか、`models.json` に置いてください。
 6. **マイグレーションする。** 0.5.3 の working directory と、daemon が今後使う sandbox を渡し、プレビューしてから適用します:
 
    ```bash
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest
    ```
 
 7. **起動してログを確認する。** daemon は各 `settings.json` について `Settings that mikan ignores; remove them from <path>` を記録し、1.0 が読まなくなった `llm.autoReply` などの 0.5.3 の設定を挙げます。読まなくなった環境変数についても、代わりの設定とともに `Environment variable that mikan ignores` を記録します。それらを削除し、`sentry.dsn` の設定は `SENTRY_DSN` に移してください。

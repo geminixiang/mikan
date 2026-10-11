@@ -18,7 +18,7 @@ function bootCommand() {
     .description("Multi-platform chat agent daemon")
     .helpOption(false)
     .argument("[working-directory...]", "Workspace directory (default: ~/.mikan/workspace)")
-    .option("--sandbox <spec>", "host | container:<name> | image:<image[:tag]>", nonEmptyValue)
+    .option("--sandbox <spec>", "host | container:<name> | oci:<image[:tag]>", nonEmptyValue)
     .option("--onboard", "Interactive first-run setup (also: mikan onboard)")
     .option("-v, --version", "Print version")
     .option("-V", "Print version")

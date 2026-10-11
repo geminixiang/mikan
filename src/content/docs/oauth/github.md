@@ -46,13 +46,13 @@ mikan --sandbox=container:mikan-tools /path/to/workspace
 Or use a managed per-user container:
 
 ```bash
-mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 Or:
 
 ```bash
-mikan --sandbox=image:ubuntu:24.04 /path/to/workspace
+mikan --sandbox=oci:ubuntu:24.04 /path/to/workspace
 ```
 
 ## 4. Use `/login`

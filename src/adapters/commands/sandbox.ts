@@ -29,9 +29,9 @@ export class SandboxCommandHandler implements CommandHandler {
     const parsed = parseSandboxCommand(context.commandText);
     if (!parsed) return false;
 
-    if (context.services.sandbox.type !== "image" || !context.services.resourceController) {
+    if (context.services.sandbox.type !== "oci" || !context.services.resourceController) {
       await replySummary(context, "Sandbox", [
-        "`/pi-sandbox` 目前只支援 `image:*` managed sandbox。",
+        "`/pi-sandbox` 目前只支援 `oci:*` managed sandbox。",
       ]);
       return true;
     }
