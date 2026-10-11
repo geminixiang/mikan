@@ -53,7 +53,7 @@ export function createMikanTools(
       adaptAgentTool(reactTool),
       adaptAgentTool(jevTool),
       adaptAgentTool(jevBrowserTool),
-      adaptAgentTool(createWebFetchTool()),
+      createWebFetchTool(),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
     ].map(withSecretRedaction),

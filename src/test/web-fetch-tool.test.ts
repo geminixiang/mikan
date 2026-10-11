@@ -1,173 +1,186 @@
-import { describe, expect, test, vi } from "vitest";
-import { createWebFetchTool, WEB_FETCH_TOOL } from "../harness/tools/web-fetch.js";
-import type { WebFetchLookup } from "../harness/tools/types.js";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer, type RequestListener, type Server } from "node:http";
+import { BlockList } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import {
+  createWebFetchTool,
+  isNonPublicAddress,
+  WEB_FETCH_TOOL,
+} from "../harness/tools/web-fetch.js";
+import { runTestTool } from "./tool-api.js";
 
-const PUBLIC: WebFetchLookup = async () => [{ address: "93.184.216.34", family: 4 }];
-const MIXED: WebFetchLookup = async () => [
-  { address: "93.184.216.34", family: 4 },
-  { address: "10.0.0.5", family: 4 },
-];
-const LOCALHOST_AWARE: WebFetchLookup = async (host) =>
-  host === "localhost" ? [{ address: "127.0.0.1", family: 4 }] : PUBLIC(host);
+const PAGE = `<html><head><title>Example Releases</title><script>var hidden = 1</script></head><body>
+<nav><a href="/menu">menu</a></nav><main><h1>Releases</h1><p>Latest: <a href="/v2.4.0">v2.4.0</a> on 2026-10-07</p></main></body></html>`;
 
-function html(body: string): string {
-  return `<html><head><title>Example Releases</title><script>var hidden = 1</script><style>p{}</style></head><body><nav>menu</nav><main><h1>Releases</h1>${body}</main></body></html>`;
+let publicServer: Server;
+let privateServer: Server;
+let publicBase = "";
+let privateBase = "";
+let privateHits = 0;
+const cwd = mkdtempSync(join(tmpdir(), "mikan-web-fetch-"));
+
+function listen(handler: RequestListener, host: string): Promise<Server> {
+  const server = createServer(handler);
+  return new Promise((resolve) => server.listen(0, host, () => resolve(server)));
 }
 
-function fakeFetch(routes: Record<string, () => Response>) {
-  return vi.fn(async (input: string | URL | Request) => {
-    const url = String(input instanceof Request ? input.url : input);
-    const route = routes[url];
-    if (!route) throw new Error(`unexpected request ${url}`);
-    return route();
-  });
+function port(server: Server): number {
+  const address = server.address();
+  return typeof address === "object" && address ? address.port : 0;
 }
 
-async function call(tool: ReturnType<typeof createWebFetchTool>, args: Record<string, unknown>) {
-  const result = await tool.execute("call-1", { label: "Read", ...args } as never, undefined);
+const onlyIpv6Loopback = new BlockList();
+onlyIpv6Loopback.addAddress("::1", "ipv6");
+
+beforeAll(async () => {
+  privateServer = await listen((_req, res) => {
+    privateHits += 1;
+    res.end("internal secret");
+  }, "::1");
+  privateBase = `http://[::1]:${port(privateServer)}`;
+  publicServer = await listen((req, res) => {
+    if (req.url === "/page") {
+      res.setHeader("content-type", "text/html; charset=utf-8");
+      return res.end(PAGE);
+    }
+    if (req.url === "/old") {
+      res.writeHead(301, { location: "/page" });
+      return res.end();
+    }
+    if (req.url === "/to-private") {
+      res.writeHead(302, { location: `${privateBase}/meta-data` });
+      return res.end();
+    }
+    if (req.url === "/api.json") {
+      res.setHeader("content-type", "application/json");
+      return res.end(JSON.stringify({ latest: "2.4.0" }));
+    }
+    if (req.url === "/big.json") {
+      res.setHeader("content-type", "application/json");
+      return res.end(
+        JSON.stringify({
+          latest: "9.9.9",
+          versions: Array.from({ length: 5000 }, (_, i) => `1.0.${i}`),
+        }),
+      );
+    }
+    if (req.url === "/file.zip") {
+      res.setHeader("content-type", "application/zip");
+      return res.end("PK");
+    }
+    res.statusCode = 404;
+    return res.end("not here");
+  }, "127.0.0.1");
+  publicBase = `http://127.0.0.1:${port(publicServer)}`;
+});
+
+afterAll(() => {
+  publicServer.close();
+  privateServer.close();
+  rmSync(cwd, { recursive: true, force: true });
+});
+
+async function fetchText(url: string, blocked = onlyIpv6Loopback) {
+  const result = await runTestTool(
+    createWebFetchTool({ blocked }),
+    { label: "Read", url },
+    { env: new NodeExecutionEnv({ cwd }) },
+  );
   return result.content.map((part) => (part.type === "text" ? part.text : "")).join("");
 }
 
 describe("web_fetch tool", () => {
-  test("requires a label and a url, and offers offset and find", () => {
+  test("takes a label and a url", () => {
     const tool = createWebFetchTool();
     expect(tool.name).toBe(WEB_FETCH_TOOL);
-    expect(tool.parameters.required).toEqual(["label", "url"]);
-    expect(Object.keys(tool.parameters.properties)).toEqual(["label", "url", "offset", "find"]);
+    expect(tool.parameters).toMatchObject({ required: ["label", "url"] });
   });
 
-  test("returns readable page text without scripts, styles, or navigation, keeping links", async () => {
-    const fetch = fakeFetch({
-      "https://example.com/releases": () =>
-        new Response(html('<p>Latest: <a href="/v2.4.0">v2.4.0</a> on 2026-10-07 &amp; more</p>'), {
-          headers: { "content-type": "text/html; charset=utf-8" },
-        }),
-    });
-    const text = await call(createWebFetchTool({ fetch, lookup: PUBLIC }), {
-      url: "https://example.com/releases",
-    });
-    expect(text).toContain("URL: https://example.com/releases");
-    expect(text).toContain("Title: Example Releases");
-    expect(text).toContain("[v2.4.0](https://example.com/v2.4.0) on 2026-10-07 & more");
+  test("returns HTML as Markdown without scripts or navigation, keeping links", async () => {
+    const text = await fetchText(`${publicBase}/page`);
+    expect(text).toContain(`[v2.4.0](${publicBase}/v2.4.0) on 2026-10-07`);
     expect(text).not.toContain("hidden");
     expect(text).not.toContain("menu");
   });
 
+  test("follows redirects and reports the final url", async () => {
+    expect(await fetchText(`${publicBase}/old`)).toContain(`Redirected to ${publicBase}/page`);
+  });
+
+  test("returns JSON as it is", async () => {
+    expect(await fetchText(`${publicBase}/api.json`)).toContain('{"latest":"2.4.0"}');
+  });
+
+  test("bounds a large result and saves the whole one in the workspace", async () => {
+    const text = await fetchText(`${publicBase}/big.json`);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(50 * 1024);
+    expect(text).toContain('"latest":"9.9.9"');
+    const spillPath = /Full result: (\S+)/.exec(text)?.[1];
+    expect(spillPath?.startsWith(cwd)).toBe(true);
+    expect(JSON.parse(readFileSync(spillPath!, "utf8")).versions).toHaveLength(5000);
+  });
+
+  test("refuses a non-public address at connect time", async () => {
+    privateHits = 0;
+    await expect(fetchText(`${privateBase}/meta-data`)).rejects.toThrow(
+      /web_fetch refuses non-public address ::1/,
+    );
+    expect(privateHits).toBe(0);
+  });
+
+  test("refuses a redirect to a non-public address", async () => {
+    privateHits = 0;
+    await expect(fetchText(`${publicBase}/to-private`)).rejects.toThrow(
+      /web_fetch refuses non-public address ::1/,
+    );
+    expect(privateHits).toBe(0);
+  });
+
+  test("blocks loopback by default", async () => {
+    await expect(
+      runTestTool(createWebFetchTool(), { label: "Read", url: `${publicBase}/page` }),
+    ).rejects.toThrow(/web_fetch refuses non-public address 127\.0\.0\.1/);
+  });
+
   test.each([
-    "http://127.0.0.1:8080/v1/models",
-    "http://169.254.169.254/latest/meta-data/",
-    "http://localhost:3000/",
-    "http://[::1]/",
-    "http://[::ffff:10.0.0.1]/",
-    "http://10.1.2.3/",
-    "http://192.168.1.1/",
-    "http://100.64.0.1/",
-    "file:///etc/passwd",
-  ])("refuses %s without sending a request", async (url) => {
-    const fetch = fakeFetch({});
-    await expect(
-      call(createWebFetchTool({ fetch, lookup: LOCALHOST_AWARE }), { url }),
-    ).rejects.toThrow(/private|loopback|link-local|http/);
-    expect(fetch).not.toHaveBeenCalled();
+    ["127.0.0.1", true],
+    ["169.254.169.254", true],
+    ["10.1.2.3", true],
+    ["172.16.0.1", true],
+    ["192.168.1.1", true],
+    ["100.64.0.1", true],
+    ["0.0.0.0", true],
+    ["224.0.0.1", true],
+    ["::1", true],
+    ["::", true],
+    ["fd00::1", true],
+    ["fe80::1", true],
+    ["::ffff:192.168.1.1", true],
+    ["93.184.216.34", false],
+    ["2606:2800:220:1:248:1893:25c8:1946", false],
+    ["::ffff:93.184.216.34", false],
+  ])("treats %s as non-public: %s", (address, blocked) => {
+    expect(isNonPublicAddress(address)).toBe(blocked);
   });
 
-  test("refuses a public name that resolves to any private address", async () => {
-    const fetch = fakeFetch({});
-    await expect(
-      call(createWebFetchTool({ fetch, lookup: MIXED }), { url: "https://rebind.example.com/" }),
-    ).rejects.toThrow(/private/);
-    expect(fetch).not.toHaveBeenCalled();
-  });
-
-  test("refuses at connect time when the name resolves differently than it did on the check", async () => {
-    const http = await import("node:http");
-    const server = http.createServer((_req, res) => res.end("internal secret"));
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const { port } = server.address() as { port: number };
-    try {
-      await expect(
-        call(createWebFetchTool({ lookup: PUBLIC }), { url: `http://localhost:${port}/` }),
-      ).rejects.toThrow(
-        /web_fetch failed for http:\/\/localhost:\d+\/: web_fetch refuses loopback/,
-      );
-    } finally {
-      server.close();
-    }
-  });
-
-  test("checks every redirect hop and stops at a private target", async () => {
-    const fetch = fakeFetch({
-      "https://example.com/go": () =>
-        new Response(null, {
-          status: 302,
-          headers: { location: "http://169.254.169.254/latest/meta-data/" },
-        }),
-    });
-    await expect(
-      call(createWebFetchTool({ fetch, lookup: PUBLIC }), { url: "https://example.com/go" }),
-    ).rejects.toThrow(/link-local/);
-    expect(fetch).toHaveBeenCalledTimes(1);
-  });
-
-  test("follows a public redirect and reports the final url", async () => {
-    const fetch = fakeFetch({
-      "https://example.com/old": () =>
-        new Response(null, { status: 301, headers: { location: "/new" } }),
-      "https://example.com/new": () =>
-        new Response("plain body", { headers: { "content-type": "text/plain" } }),
-    });
-    const text = await call(createWebFetchTool({ fetch, lookup: PUBLIC }), {
-      url: "https://example.com/old",
-    });
-    expect(text).toContain("URL: https://example.com/new");
-    expect(text).toContain("plain body");
-  });
-
-  test("returns long content in windows and tells the model how to continue", async () => {
-    const long = `${"x".repeat(30_000)}MARKER version 9.9.9`;
-    const fetch = fakeFetch({
-      "https://example.com/long": () =>
-        new Response(long, { headers: { "content-type": "text/plain" } }),
-    });
-    const tool = createWebFetchTool({ fetch, lookup: PUBLIC });
-    const first = await call(tool, { url: "https://example.com/long" });
-    expect(first).toContain(`Showing characters 0-12000 of ${long.length}`);
-    expect(first).toContain("offset=12000");
-    expect(first).not.toContain("MARKER");
-    const found = await call(tool, { url: "https://example.com/long", find: "marker" });
-    expect(found).toContain("MARKER version 9.9.9");
-    const missing = await call(tool, { url: "https://example.com/long", find: "absent" });
-    expect(missing).toContain('"absent" was not found');
-  });
-
-  test("returns JSON as raw text", async () => {
-    const body = JSON.stringify({ latest: "2.4.0", versions: ["1.0.0"] });
-    const fetch = fakeFetch({
-      "https://example.org/api.json": () =>
-        new Response(body, { headers: { "content-type": "application/json" } }),
-    });
-    const text = await call(createWebFetchTool({ fetch, lookup: PUBLIC }), {
-      url: "https://example.org/api.json",
-    });
-    expect(text).toContain(body);
+  test("refuses URLs that are not http or https", async () => {
+    await expect(fetchText("file:///etc/passwd")).rejects.toThrow(
+      "web_fetch supports only http and https URLs, not file:",
+    );
   });
 
   test("reports the HTTP status of a failed response", async () => {
-    const fetch = fakeFetch({
-      "https://example.com/missing": () => new Response("not here", { status: 404 }),
-    });
-    await expect(
-      call(createWebFetchTool({ fetch, lookup: PUBLIC }), { url: "https://example.com/missing" }),
-    ).rejects.toThrow("HTTP 404 for https://example.com/missing");
+    await expect(fetchText(`${publicBase}/missing`)).rejects.toThrow(
+      `web_fetch got HTTP 404 for ${publicBase}/missing`,
+    );
   });
 
   test("refuses binary content types", async () => {
-    const fetch = fakeFetch({
-      "https://example.com/file.zip": () =>
-        new Response("PK", { headers: { "content-type": "application/zip" } }),
-    });
-    await expect(
-      call(createWebFetchTool({ fetch, lookup: PUBLIC }), { url: "https://example.com/file.zip" }),
-    ).rejects.toThrow("Unsupported content type application/zip");
+    await expect(fetchText(`${publicBase}/file.zip`)).rejects.toThrow(
+      "Unsupported content type application/zip",
+    );
   });
 });

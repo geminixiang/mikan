@@ -13,11 +13,12 @@ change in a minor release.
 
 ### Added
 
-- `web_fetch` reads a public web page or API from the host and returns its text in
-  12,000-character windows, so the agent can check versions, releases, and dates against the
-  official source instead of answering from memory. It needs no key and refuses private,
-  loopback, and link-local addresses, including through redirects. It does not go through an
-  HTTP proxy configured for the daemon.
+- `web_fetch` reads a public web page or API from the host so the agent can check versions,
+  releases, and dates against the official source instead of answering from memory. HTML is
+  returned as Markdown without navigation; long results are bounded like MCP results, with the
+  full text saved in the workspace. It needs no key and refuses private, loopback, and link-local
+  addresses, including through redirects. It does not go through an HTTP proxy configured for
+  the daemon.
 
 ## [1.3.0] - 2026-10-10
 
