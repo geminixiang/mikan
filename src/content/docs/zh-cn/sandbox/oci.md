@@ -1,6 +1,6 @@
 ---
-title: Image 沙箱
-description: 使用 mikan 管理的按对话 Docker 容器和 vault 隔离。
+title: OCI 沙箱
+description: 使用 mikan 管理的按对话 OCI 容器（nerdctl、Podman 或 Docker）和 vault 隔离。
 ---
 
 ```bash
@@ -9,15 +9,17 @@ description: 使用 mikan 管理的按对话 Docker 容器和 vault 隔离。
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers
-mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
 ```
 
 如果要自行定制镜像，也可以在本地构建：
 
 ```bash
 docker build -f deploy/docker/mikan-sandbox.Dockerfile -t mikan-sandbox:latest .
-mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 ```
+
+这个模式以前叫 `image:<image>`；这种写法在下一个主版本之前仍然可用，并会在启动时输出弃用警告。
 
 特性：
 
@@ -33,7 +35,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## 容器引擎
 
-mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受这套指令。不需要指定引擎：使用 `container:*` 或 `image:*` 时，mikan 依序检查 `nerdctl`、`podman`、`docker`，采用第一个 `info` 成功的引擎，并在启动时记录。本页指令中的 `docker` 请换成该引擎。容器属于创建它的引擎，所以如果主机之后启动了另一个引擎（例如登录时启动 Podman machine），会建立新的容器，旧引擎的容器会留着；要固定引擎，在 `~/.mikan/mikan.env` 设置 `CONTAINER_ENGINE`。rootless Podman 需要主机把 cgroup 的 CPU 和 memory controller 委派给用户，macOS 上的 Podman machine 已经委派。
+mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受这套指令。不需要指定引擎：使用 `container:*` 或 `oci:*` 时，mikan 依序检查 `nerdctl`、`podman`、`docker`，采用第一个 `info` 成功的引擎，并在启动时记录。本页指令中的 `docker` 请换成该引擎。容器属于创建它的引擎，所以如果主机之后启动了另一个引擎（例如登录时启动 Podman machine），会建立新的容器，旧引擎的容器会留着；要固定引擎，在 `~/.mikan/mikan.env` 设置 `CONTAINER_ENGINE`。rootless Podman 需要主机把 cgroup 的 CPU 和 memory controller 委派给用户，macOS 上的 Podman machine 已经委派。
 
 在 macOS 上，每个引擎都是在 VM 里运行 Linux，bind mount 只能挂载 VM 共享的文件夹；请把 workspace 和 `~/.mikan` 放在家目录下。
 

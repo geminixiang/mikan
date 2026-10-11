@@ -152,7 +152,7 @@ Execution authority is resolved for every agent environment rather than inferred
 1. Workspace projection resolves the office's visibility into both runtime mounts and authorized prompt sources.
 2. The harness-owned execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
 3. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
-4. Sandbox capability checks report when the selected backend cannot enforce a private office's visibility; only `image:*` enforces it, and the other backends are operator-selected trusted modes.
+4. Sandbox capability checks report when the selected backend cannot enforce a private office's visibility; only `oci:*` enforces it, and the other backends are operator-selected trusted modes.
 5. The resulting execution decision carries the execution environment, runtime path context, and projection to the runner; that environment was created from the same final non-overlapping mounts and credential grant.
 
 For every provider call, prompt authorization and filesystem authorization consume the same execution decision. Runner construction uses a bootstrap prompt to initialize the harness, but replaces it from the actor-specific decision before the model can see it. This prevents host-side memory or skills from bypassing an isolated filesystem view.
@@ -340,7 +340,7 @@ Evidence: `src/settings/index.ts`, `src/file-guards.ts`, `src/office/index.ts`, 
 
 <a id="inv-execution-policy-enforcement"></a>
 
-**`execution-policy-enforcement`** — Only `image:*` enforces office visibility (read-only global knowledge, no reach into other private offices). Host, shared-container, and remote backends are operator-selected trusted modes: a private office there is served with a one-time logged warning per office rather than a wider projection being silently presented as enforced.
+**`execution-policy-enforcement`** — Only `oci:*` enforces office visibility (read-only global knowledge, no reach into other private offices). Host, shared-container, and remote backends are operator-selected trusted modes: a private office there is served with a one-time logged warning per office rather than a wider projection being silently presented as enforced.
 
 Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/registry.ts`.
 

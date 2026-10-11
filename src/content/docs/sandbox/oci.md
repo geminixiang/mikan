@@ -1,6 +1,6 @@
 ---
-title: Image sandbox
-description: Use mikan-managed per-conversation Docker containers and vault isolation.
+title: OCI sandbox
+description: Use mikan-managed per-conversation OCI containers on nerdctl, Podman, or Docker, with vault isolation.
 ---
 
 ```bash
@@ -9,22 +9,24 @@ description: Use mikan-managed per-conversation Docker containers and vault isol
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers
-mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
 ```
 
 If you want to customize the image yourself, you can also build locally:
 
 ```bash
 docker build -f deploy/docker/mikan-sandbox.Dockerfile -t mikan-sandbox:latest .
-mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 ```
+
+This mode was called `image:<image>` before; that spelling still works and logs a deprecation warning until the next major release.
 
 Features:
 
 - the standard tool image includes Node.js 24, Chromium, CJK fonts, ffmpeg, and the pinned `agent-browser` 0.38.1 runtime used by `jev_browser`
 - the image installs its tools under `/usr/local` and `/opt`, never under `/root`; `npm i -g` and `uv tool install` from inside the sandbox go to `/root/.local`, which is on `PATH`; Python packages go through uv (`uv run --with <package>`), because the system pip refuses installs
 - mikan creates an isolated vault and container for each conversation
-- each container gets its own Docker bridge network, separating direct container-to-container networking; outbound network access remains enabled
+- each container gets its own bridge network, separating direct container-to-container networking; outbound network access remains enabled
 - managed containers are created with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and `--pids-limit=1024`
 - inside the container, workspace mounts follow the office's visibility (ADR 0008): public offices write the shared `MEMORY.md` and `skills/`, private offices read them, and no office reaches another private office
 - vault env is injected at execution time
@@ -33,7 +35,7 @@ Features:
 
 ## Container engine
 
-mikan drives containers through the docker command set, which nerdctl (containerd), Podman, and Docker all accept. You do not choose the engine: with `container:*` or `image:*`, mikan uses the first of `nerdctl`, `podman`, and `docker` whose `info` succeeds, and logs the choice at startup. Replace `docker` with that engine in the commands on this page. Containers belong to the engine that created them, so a host that starts another engine later (for example a Podman machine at login) gets new containers, and the old engine's containers stay behind; set `CONTAINER_ENGINE` in `~/.mikan/mikan.env` to pin one. Rootless Podman works when the host delegates the cgroup CPU and memory controllers to the user, which Podman machine on macOS does.
+mikan drives containers through the docker command set, which nerdctl (containerd), Podman, and Docker all accept. You do not choose the engine: with `container:*` or `oci:*`, mikan uses the first of `nerdctl`, `podman`, and `docker` whose `info` succeeds, and logs the choice at startup. Replace `docker` with that engine in the commands on this page. Containers belong to the engine that created them, so a host that starts another engine later (for example a Podman machine at login) gets new containers, and the old engine's containers stay behind; set `CONTAINER_ENGINE` in `~/.mikan/mikan.env` to pin one. Rootless Podman works when the host delegates the cgroup CPU and memory controllers to the user, which Podman machine on macOS does.
 
 On macOS every engine runs Linux in a VM, and a bind mount reaches the container only from a folder the VM shares; keep the workspace and `~/.mikan` under your home directory.
 

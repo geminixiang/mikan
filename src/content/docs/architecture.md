@@ -71,8 +71,8 @@ Responsibilities:
 - provide each sandbox as Pi's `ExecutionEnv`
 - split sandbox runtimes by workspace capability:
   - unmanaged projection: `host` / `container:<name>`
-  - managed projection: `image:<image>`, which enforces private office visibility: no reach into other private offices and read-only shared knowledge
-- in `image` mode, automatically create and recycle Docker containers, resolving `image:<image>` to a concrete `container:<name>` environment
+  - managed projection: `oci:<image>`, which enforces private office visibility: no reach into other private offices and read-only shared knowledge
+- in `oci` mode, automatically create and recycle containers, resolving `oci:<image>` to a concrete `container:<name>` environment
 
 ### E. Conversation office layer
 
@@ -230,7 +230,7 @@ Key points:
 - credentials do not go directly into the workspace
 - vaults live in `~/.mikan`
 - at execution time, the office's vault is routed to the corresponding sandbox
-- `image` mode keys the vault by office key — the same string that names the office in the workspace and the registry; `container:<name>` uses a shared container vault; `host` keys by user and does not inject vault env
+- `oci` mode keys the vault by office key — the same string that names the office in the workspace and the registry; `container:<name>` uses a shared container vault; `host` keys by user and does not inject vault env
 - sandbox resource names (container names) are still derived from the raw conversation id. A collision there costs a runtime recreate, never credential access
 
 ## 6. Differences between events and normal chats

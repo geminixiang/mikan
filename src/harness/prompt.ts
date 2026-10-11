@@ -155,7 +155,7 @@ export function getMemory(projection: WorkspaceProjection): string {
 
 function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: string): string {
   switch (sandboxType) {
-    case "image":
+    case "oci":
       return `You are running inside a managed per-conversation container.
 - Runtime workspace root: ${workspaceRoot}
 - Bash commands start in: ${workspaceRoot}
@@ -301,7 +301,7 @@ ${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)
 function buildOperatingPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
   const { memory, projection, sandboxConfig } = input;
   const { workspaceRoot, conversationPath } = paths;
-  const isContainerLike = sandboxConfig.type === "container" || sandboxConfig.type === "image";
+  const isContainerLike = sandboxConfig.type === "container" || sandboxConfig.type === "oci";
   const globalMemoryReadOnly = projection.promptSources.globalKnowledgeReadOnly === true;
   const memoryGuidance = globalMemoryReadOnly
     ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this private office: you can read what public channels have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`

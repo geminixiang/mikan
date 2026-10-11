@@ -23,9 +23,9 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - 至少一組完整的 Slack、Telegram、Discord 或 GitHub 憑證
 - PM2 使用者持久存在的 `~/.mikan`，mikan 的狀態都放在這裡；working directory 預設為 `~/.mikan/workspace`
-- 使用 `image:*` 或 `container:*` 時，PM2 使用者必須可使用的容器引擎：nerdctl、Podman 或 Docker，mikan 採用第一個正在執行的（見 [Image sandbox](/zh-tw/sandbox/image/#容器引擎)）
+- 使用 `oci:*` 或 `container:*` 時，PM2 使用者必須可使用的容器引擎：nerdctl、Podman 或 Docker，mikan 採用第一個正在執行的（見 [OCI sandbox](/zh-tw/sandbox/oci/#容器引擎)）
 
-發布的 `mikan-sandbox` image 是工具 runtime，不是可獨立運作的 mikan server image。PM2 在 host 上執行 `mikan`；image 模式透過 host Docker daemon 建立並管理 containers。
+發布的 `mikan-sandbox` image 是工具 runtime，不是可獨立運作的 mikan server image。PM2 在 host 上執行 `mikan`；oci 模式透過 host Docker daemon 建立並管理 containers。
 
 ## PM2 部署
 
@@ -103,14 +103,14 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 安裝新版本後，先檢查有沒有待套用的遷移。`--dry-run` 只會讀取，daemon 執行中也可以安全使用。請帶入與 daemon 相同的 `--sandbox` 與 workspace：
 
 ```bash
-mikan migrate --sandbox=image:mikan-sandbox:latest --dry-run
+mikan migrate --sandbox=oci:mikan-sandbox:latest --dry-run
 ```
 
 如果印出 `No pending migrations.`，照上面的方式重新載入即可。否則先停止 daemon、套用遷移，再重新啟動：
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=image:mikan-sandbox:latest
+mikan migrate --sandbox=oci:mikan-sandbox:latest
 pm2 start mikan
 ```
 
@@ -123,13 +123,13 @@ pm2 start mikan
 1. **備份。** 停止 0.5.3 的 daemon，複製它的 state directory 與 working directory。遷移會改名兩邊的目錄。
 2. **安裝 1.0。** 需要 Node.js 24.15.0 以上：`npm i -g @geminixiang/mikan@latest`。
 3. **把狀態搬到 `~/.mikan`。** 1.0 沒有 `--state-dir`；如果 0.5.3 的狀態放在其他位置，請把該目錄搬到 `~/.mikan`，並從 process manager 執行的指令中拿掉 `--state-dir`。
-4. **選擇支援的沙盒。** 1.0 支援 `host`、`container:<name>` 與 `image:<image>`。使用 `firecracker:*` 或 `cloudflare:*` 的 0.5.3 安裝，要先改用其中一種。
+4. **選擇支援的沙盒。** 1.0 支援 `host`、`container:<name>` 與 `oci:<image>`。使用 `firecracker:*` 或 `cloudflare:*` 的 0.5.3 安裝，要先改用其中一種。
 5. **搬移 provider key。** 0.5.3 從 `~/.pi/mikan/auth.json` 讀取的 key 不會被遷移；請設定到 `~/.mikan/mikan.env`，或保留在 `models.json`。
 6. **遷移。** 傳入 0.5.3 的 working directory 與 daemon 之後要用的沙盒，先預覽再套用：
 
    ```bash
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest --dry-run
-   mikan migrate --workspace /srv/mikan --sandbox=image:mikan-sandbox:latest
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest --dry-run
+   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest
    ```
 
 7. **啟動並檢查 log。** daemon 會針對每個 `settings.json` 記錄 `Settings that mikan ignores; remove them from <path>`，列出 1.0 不再讀取的 0.5.3 設定，例如 `llm.autoReply`；也會針對每個不再讀取的環境變數記錄 `Environment variable that mikan ignores`，並說明該改用什麼。請把它們刪掉；`sentry.dsn` 設定要改成 `SENTRY_DSN` 環境變數。

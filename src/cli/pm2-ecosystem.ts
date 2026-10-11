@@ -41,7 +41,7 @@ module.exports = {
       name: "mikan",
       script: "mikan",
 
-      args: ${JSON.stringify(`--sandbox=image:${image}`)},
+      args: ${JSON.stringify(`--sandbox=oci:${image}`)},
 
       env: loadEnvFile(path.join(os.homedir(), ".mikan", "mikan.env")),
 

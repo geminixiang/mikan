@@ -10,12 +10,12 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
     private office の visibility を強制できない trusted deployment です。
   </Card>
   <Card title="主流の隔離" icon="rocket">
-    `image:<image>` は mikan が lifecycle、workspace mount、vault env、リソース制限を管理します。
+    `oci:<image>` は mikan が lifecycle、workspace mount、vault env、リソース制限を管理します。
   </Card>
 </CardGrid>
 
 <Aside type="note" title="sandbox の位置づけ">
-  `image:*` は 1 台の VM を共有するチーム向けです。office
+  `oci:*` は 1 台の VM を共有するチーム向けです。office
   ごとにリソース制限、ファイルシステムの隔離、独立した環境を 提供します。E2B や SaaS sandbox
   のような悪意あるテナントを想定した強い隔離ではありません。container は host kernel を共有し、VM
   上の利用者は互いに信頼されています。認証情報が sandbox に入るのは、開発作業（`gh`、
@@ -23,16 +23,16 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 </Aside>
 
 <Aside type="caution" title="モード名">
-  `docker:*` は利用可能なモードではありません。`container:*` または `image:*` を使ってください。
+  `docker:*` は利用可能なモードではありません。`container:*` または `oci:*` を使ってください。
 </Aside>
 
 ## 対応モード
 
-| モード             | 実行場所              | Vault env injection | Vault key                        | 備考                                                                                  |
-| ------------------ | --------------------- | ------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
-| `host`             | ホストマシン          | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                    |
-| `container:<name>` | 既存 Docker container | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します |
-| `image:<image>`    | mikan 管理の Docker   | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`            |
+| モード             | 実行場所                   | Vault env injection | Vault key                        | 備考                                                                                  |
+| ------------------ | -------------------------- | ------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
+| `host`             | ホストマシン               | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                    |
+| `container:<name>` | 既存 Docker container      | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します |
+| `oci:<image>`      | mikan 管理の OCI container | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`            |
 
 office key は、workspace 配下でその conversation の directory も命名する、バージョン付きの
 `v1-<platform>-<readable-id>-<hash>` セグメントです。[Conversation office](#conversation-office) を
@@ -52,7 +52,7 @@ runtime が workspace のどの部分を見るかは、その office の **visib
 | `MEMORY.md`、`skills/` — 共有知識               | 読み書き      | 読み取り専用   |
 | `public/<office-key>/` — すべての public office | 読み取り専用  | 読み取り専用   |
 
-workspace root を mount する layout はありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `image:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
+workspace root を mount する layout はありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `oci:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
 
 <Aside type="caution" title="visibility は追加の sandbox ではありません">
   visibility が決めるのは、どの host directory が runtime に投影されるかです。実行の境界では
@@ -77,7 +77,7 @@ workspace root を mount する layout はありません。admin portal また�
   href="container/"
 />
 <LinkCard
-  title="Image sandbox"
+  title="OCI sandbox"
   description="mikan が per-conversation container とリソース制限を管理します。"
   href="image/"
 />
@@ -86,7 +86,7 @@ workspace root を mount する layout はありません。admin portal また�
 
 ## 機能差分
 
-`image:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
+`oci:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
 
 | ------------------------------------ | ------------ | ------------------- | --------------- | --------------------- | ------------------- | -------------- |
 | command 実行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

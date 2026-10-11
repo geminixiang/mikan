@@ -179,7 +179,7 @@ descriptions), re-serializes JSON text compactly, and bounds the text by Pi's
 Oversized JSON becomes a structural digest that keeps every key, array counts
 and scalar pagination fields while shortening long strings, arrays and deep
 nesting; other text keeps its head. The full result is spilled, as indented JSON
-so `read` and `grep` work line by line, through the execution env to `<runtime cwd>/.mikan/mcp-output/` (image mode: the
+so `read` and `grep` work line by line, through the execution env to `<runtime cwd>/.mikan/mcp-output/` (oci mode: the
 container's `/workspace/.mikan`, outside the office mount), and the notice names
 that path. Error results are bounded the same way. MCP tools are wrapped with
 `withSecretRedaction`, which scrubs only mikan's own manifest secrets.

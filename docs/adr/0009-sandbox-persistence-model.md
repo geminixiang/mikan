@@ -4,7 +4,7 @@ status: superseded by [ADR 0014](0014-versioned-state-migrations.md)
 
 # A managed sandbox is an image plus a home volume
 
-A managed `image:*` sandbox is a disposable container built from two durable parts: the image, which mikan owns, and a per-office named volume at `/root`, which the user owns. Workspace directories stay host bind mounts. Anything else written to the container filesystem (`/usr`, `/etc`, `/var`, `/tmp`) belongs to that container instance and does not survive a runtime upgrade. Upgrading means `docker rm` and `docker run` with the same volume.
+A managed `oci:*` sandbox is a disposable container built from two durable parts: the image, which mikan owns, and a per-office named volume at `/root`, which the user owns. Workspace directories stay host bind mounts. Anything else written to the container filesystem (`/usr`, `/etc`, `/var`, `/tmp`) belongs to that container instance and does not survive a runtime upgrade. Upgrading means `docker rm` and `docker run` with the same volume.
 
 Each rule below uses a Docker or Linux mechanism that already exists. mikan adds no locks, snapshots, replay, or quota logic of its own.
 

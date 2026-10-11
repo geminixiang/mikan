@@ -38,7 +38,7 @@ Each vault is a directory under `vaults/` and may contain:
 
 mikan infers mount targets from file names/paths — `gws.json` → `/root/.config/gws/credentials.json`, `gcloud-adc.json` → `/root/.config/gcloud/application_default_credentials.json`, `.ssh/` → `/root/.ssh`, `.kube/` → `/root/.kube`, `.config/gh/` → `/root/.config/gh` — and anything else defaults to `/root/<relative-path>`. The target is derived from the file name every time the vault is resolved; it is not stored as metadata, so renaming a credential file changes where it lands. The built-in OAuth flows pick names that already infer to the right place and set the matching env var (for example `GOOGLE_APPLICATION_CREDENTIALS`) to it.
 
-In image mode these are bind mounts and are writable from inside the sandbox, so tools may update them — keep backups for credentials whose mutation would matter.
+In oci mode these are bind mounts and are writable from inside the sandbox, so tools may update them — keep backups for credentials whose mutation would matter.
 
 Example:
 
@@ -73,19 +73,19 @@ This is a data boundary, not an execution boundary. Anything the conversation's 
 | ------------------ | ------------------- | ----------------------- | ------------------------------- |
 | `host`             | not injected        | refused                 | derived from the platform user  |
 | `container:<name>` | injected            | refused                 | derived from the container name |
-| `image:<image>`    | injected            | projected (bind mounts) | the office key                  |
+| `oci:<image>`      | injected            | projected (bind mounts) | the office key                  |
 
 **Refused means the run fails, not that the file is quietly ignored.** A vault whose directory holds
 any file other than `env` resolves to a file mount, and a mode that cannot mount files raises
 `Sandbox type "<type>" does not support vault file mounts` instead of running with an incomplete
 credential set. So on those modes, keep credentials in `env` only — a stray `gws.json` left in the
-vault from an earlier `image` deployment will stop the conversation from running.
+vault from an earlier `oci` deployment will stop the conversation from running.
 
 The office key is derived by hashing the platform name together with the platform's raw conversation id, so two platforms that share a raw id cannot resolve each other's credentials. `mikan migrate` renames 0.5.3 vault directories to office keys; if both directories exist, it stops for a manual merge instead of picking one.
 
 ## Shared vaults
 
-`sandbox.defaultSharedVault` names a profile under `vaults/shared/` that is copied into a new conversation's vault on first use. That ambient copy only happens for membership-gated platforms (Slack, Discord, Telegram, and GitHub, which only collaborators with write access can trigger) on the isolated `image` topology. Open-trigger surfaces never inherit it; an admin can still provision a vault for a specific conversation explicitly.
+`sandbox.defaultSharedVault` names a profile under `vaults/shared/` that is copied into a new conversation's vault on first use. That ambient copy only happens for membership-gated platforms (Slack, Discord, Telegram, and GitHub, which only collaborators with write access can trigger) on the isolated `oci` topology. Open-trigger surfaces never inherit it; an admin can still provision a vault for a specific conversation explicitly.
 
 ## `/pi-login`
 

@@ -6,7 +6,7 @@ import {
 } from "../sandbox/identity.js";
 import { createOfficeAddress, officeKey } from "../office/index.js";
 
-const image = { type: "image", image: "ubuntu" } as const;
+const image = { type: "oci", image: "ubuntu" } as const;
 
 describe("sandbox identity", () => {
   test("keeps readable segments while adding collision-safe identity", () => {

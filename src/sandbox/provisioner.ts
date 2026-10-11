@@ -366,7 +366,7 @@ export class DockerContainerManager {
         operation: "apply_resource_limits",
         severity: "warning",
         context: {
-          sandboxType: "image",
+          sandboxType: "oci",
           containerKey,
           containerName,
           limitArgCount: limitArgs.length,

@@ -10,18 +10,18 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
     visibility，属于受信任部署。
   </Card>
   <Card title="主线隔离" icon="rocket">
-    `image:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
+    `oci:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
   </Card>
 </CardGrid>
 
 <Aside type="note" title="sandbox 的定位">
-  `image:*` 面向共用一台 VM 的团队。每个 office 有自己的资源限制、文件系统隔离与独立环境。它不是 E2B
+  `oci:*` 面向共用一台 VM 的团队。每个 office 有自己的资源限制、文件系统隔离与独立环境。它不是 E2B
   或 SaaS sandbox 那种对抗恶意租户的强隔离：container 共用宿主机 kernel，VM
   上的人彼此互信。凭证会进入 sandbox，只是因为开发工作（`gh`、`gcloud`、`gws`）需要它们。
 </Aside>
 
 <Aside type="caution" title="模式名称">
-  `docker:*` 不是可用模式；请改用 `container:*` 或 `image:*`。
+  `docker:*` 不是可用模式；请改用 `container:*` 或 `oci:*`。
 </Aside>
 
 ## 支持模式
@@ -30,7 +30,7 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 | ------------------ | --------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
 | `host`             | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；无法强制 office visibility                       |
 | `container:<name>` | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault |
-| `image:<image>`    | mikan 管理的 Docker   | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container` |
+| `oci:<image>`      | mikan 管理的 OCI 容器 | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container` |
 
 office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，它同时也命名该对话在 workspace 下的目录。参阅[对话办公室](#对话办公室)。
 
@@ -46,7 +46,7 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
 | `MEMORY.md`、`skills/`——共享知识           | 可读写        | 只读           |
 | `public/<office-key>/`——所有 public office | 只读          | 只读           |
 
-没有任何布局会挂载 workspace 根目录。admin portal 或 `/pi-sandbox visibility private` 可把公开频道收窄为 private；不能放宽超过 Slack 的设置。只有 `image:*` 会强制执行 visibility；其他模式报告 `managedProjection: false`，private office 在这些模式下会照常服务并记录一次警告。字段语义与已退役的门禁策略设置见[配置](/zh-cn/configuration/)。
+没有任何布局会挂载 workspace 根目录。admin portal 或 `/pi-sandbox visibility private` 可把公开频道收窄为 private；不能放宽超过 Slack 的设置。只有 `oci:*` 会强制执行 visibility；其他模式报告 `managedProjection: false`，private office 在这些模式下会照常服务并记录一次警告。字段语义与已退役的门禁策略设置见[配置](/zh-cn/configuration/)。
 
 <Aside type="caution" title="visibility 不是额外的 sandbox">
   Visibility 决定哪些主机目录被投影进 runtime。它不是执行边界：无论办公室的 visibility 为何，`host`
@@ -66,7 +66,7 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
   href="container/"
 />
 <LinkCard
-  title="Image sandbox"
+  title="OCI sandbox"
   description="由 mikan 管理 per-conversation container 与资源限制。"
   href="image/"
 />
@@ -75,7 +75,7 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
 
 ## 能力差异
 
-`image:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
+`oci:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
 
 | ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
 | command 执行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |

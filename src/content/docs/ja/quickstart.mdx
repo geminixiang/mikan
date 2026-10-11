@@ -5,7 +5,7 @@ description: Telegram と Docker sandbox を使い、約 15 分でボットの�
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-このガイドでは、約 15 分でボットがメッセージに返信するところまで進めます。token が 1 つで済む Telegram を使います。Node.js 24.15 以上と Docker が必要です（Podman や nerdctl も使えます。[Image sandbox](/ja/sandbox/image/#コンテナエンジン) を参照）。最後に、他のプラットフォームや PM2 での常駐実行へのリンクを示します。
+このガイドでは、約 15 分でボットがメッセージに返信するところまで進めます。token が 1 つで済む Telegram を使います。Node.js 24.15 以上と Docker が必要です（Podman や nerdctl も使えます。[OCI sandbox](/ja/sandbox/oci/#コンテナエンジン) を参照）。最後に、他のプラットフォームや PM2 での常駐実行へのリンクを示します。
 
 ## 前提条件
 
@@ -43,7 +43,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
    image は約 900 MB なので、初回の pull には数分かかります。working directory は既定で `~/.mikan/workspace` になり、自動的に作成されます。別の場所を使うにはフラグの後にパスを渡します。
@@ -64,7 +64,7 @@ import { Aside, Steps } from "@astrojs/starlight/components";
 ## 次のステップ
 
 - **Telegram の代わりに Slack、Discord、GitHub を使う** — 各プラットフォームには固有の認証情報が必要です。[Slack 最小セットアップガイド](/ja/slack-bot-minimal-guide/)、[Discord アダプター](/ja/platform-adapters/discord/)、[GitHub アダプター](/ja/platform-adapters/github/)を参照してください。
-- **本番利用での分離** — ビルド済み sandbox image を pull し、`--sandbox=image:...` で起動します。[Image sandbox](/ja/sandbox/image/) を参照してください。
+- **本番利用での分離** — ビルド済み sandbox image を pull し、`--sandbox=oci:...` で起動します。[OCI sandbox](/ja/sandbox/oci/) を参照してください。
 - **agent の tools 用の認証情報** — DM で `/login` を入力すると、API key や OAuth 認証情報を保存する vault portal が開きます。[Vault](/ja/sandbox/vault/) を参照してください。
 - **サービスとして実行する** — PM2 のセットアップ、アップグレード、ヘルスチェックは[デプロイ](/ja/deployment/)を参照してください。
 - **すべての設定とコマンド** — [設定](/ja/configuration/)と[チャットコマンド](/ja/commands/)。

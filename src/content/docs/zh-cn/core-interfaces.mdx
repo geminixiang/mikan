@@ -66,7 +66,7 @@ flowchart TD
 | Run output                | Harness/tools → Platform entry                                                          | 框架发出的是**响应源**：平台中立的 Markdown/GFM，用户 mention 写作 `<@userName>`。把它转换成原生呈现完全是适配器的职责——Slack 在每条出站路径上把 `<@userName>` 解析为 `<@U…>`，且任何适配器都不得引导模型产出平台原生标记。可选的 responder 能力需特性检测。对于单次运行，响应操作保持调用顺序；适配器可以缓冲或流式输出，但不得向框架暴露框架持久化或 SDK 对象。 |
 | Runtime ↔ sandbox path    | Runtime/session → Sandbox/workspace → Harness/tools                                     | 运行时提供主机工作区和一个 `<runtime workspace root>/<officeKey>` 形式的 runtime cwd；office key 在两侧命名同一个路径段，因此路径在边界处不会改变含义。沙箱注册表提供路径上下文（`getSandboxPathContext`）。提示词和工具输出使用 runtime 路径，而主机侧附件转换使用已声明的上下文。映射根之外的路径不会被转换。这是路径契约，而非文件系统隔离的声明。             |
 | Sandbox file transport    | Sandbox/workspace → Harness/tools                                                       | 工具使用 `ExecutionEnv` 的文件操作，绝不使用 shell 引用协议。容器环境以分帧字节把它们送到容器内 Pi 的 `pi-env` daemon，失败以 Pi 的 `FileError` 代码返回。                                                                                                                                                                                                        |
-| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace               | `MessagingInfo.trustModel` 被传入 actor 解析；vault 策略按该值标识，而非按平台名称字符串。省略信任时默认为 `membership`；`open-trigger` 绝不接收环境共享 vault 副本，且只有 `image` 使用该环境路径。显式 vault 配置仍是独立的管理决策。                                                                                                                           |
+| Trust and vault           | Platform entry → Runtime/session → Vault/web/security → Sandbox/workspace               | `MessagingInfo.trustModel` 被传入 actor 解析；vault 策略按该值标识，而非按平台名称字符串。省略信任时默认为 `membership`；`open-trigger` 绝不接收环境共享 vault 副本，且只有 `oci` 使用该环境路径。显式 vault 配置仍是独立的管理决策。                                                                                                                             |
 | Settings and live runners | Config/CLI（命令和 admin 是适配器）→ 配置磁盘与 Runtime/session                         | `applyConversationSettings` 在写入 LLM 更改**之前**清除缓存的 runner，并在忙碌时拒绝这两项操作。`applyOfficeVisibility` 对 visibility 更改采取同样做法，因为 mount 集合被固化在 runner 的环境中。全局 LLM 设置先写入，然后清除空闲 runner，忙碌的 runner 在其运行结束后清除，并报告为过期。沙箱资源限制和 Slack 回复设置在使用时重新读取，不会清除 runner。       |
 | Web capability bridge     | Vault/web/security → Runtime/session 与命令                                             | Portal store 是可选的运行时服务。设置了 portal URL 但缺少其后备 store 时，使用该 portal 会失败；其他情况下缺失的 store 产生禁用/未配置行为。路由 payload 是捆绑 UI 的契约，而非通用 REST API。                                                                                                                                                                    |
 | Scheduled events          | Harness/tools 与 Admin → 经 `OfficeEventStore` 到 Runtime/session                       | 记录存放在办公室仅主机可见的 State dir；任何沙箱都不会 mount 它。`event` 工具和 Admin 只能通过绑定该办公室的 store 访问其事件，payload 也必须指向 store 自己的办公室。写入方使用 `buildEventPayload`；读取方使用 `parseEventPayload`。secret 不属于事件文本。                                                                                                     |
@@ -141,7 +141,7 @@ interface ConversationContext {
 - 接收调度：`enqueueEvent`；
 - 发现/策略：`getMessagingInfo()`。
 
-`MessagingInfo.trustModel` 是安全敏感的。当沙箱类型是 `image` 时，`membership` 允许环境共享 vault。任何人都能触发 agent 的触发面必须返回 `open-trigger`。
+`MessagingInfo.trustModel` 是安全敏感的。当沙箱类型是 `oci` 时，`membership` 允许环境共享 vault。任何人都能触发 agent 的触发面必须返回 `open-trigger`。
 
 `MessagingBot` 是唯一面向 host 的 adapter 接口；生命周期与 messaging capability 不再拆分到另一个浅接口。
 
@@ -224,7 +224,7 @@ subagent 始终以一个具名 profile 启动——按运行自由配置不是�
 
 ### `SandboxConfig`
 
-该可辨识联合目前支持 `host`、`container` 和 `image`。解析语法与成熟度记录在 [沙箱](/zh-cn/sandbox/)。
+该可辨识联合目前支持 `host`、`container` 和 `oci`。解析语法与成熟度记录在 [沙箱](/zh-cn/sandbox/)。
 
 ### `ExecutionEnv`
 
@@ -234,13 +234,13 @@ subagent 始终以一个具名 profile 启动——按运行自由配置不是�
 | ----------- | ------------------------------------------------------------------------------------------ |
 | `host`      | Pi 的 `NodeExecutionEnv`                                                                   |
 | `container` | pi-env 的 `RemoteExecutionEnv`，通过一条 `exec -i` 连接与容器内 Pi 的 `pi-env` daemon 通信 |
-| `image`     | 没有直接的环境：actor/vault 解析先 provision 容器，再使用它的 `container` 环境             |
+| `oci`       | 没有直接的环境：actor/vault 解析先 provision 容器，再使用它的 `container` 环境             |
 
 每个环境都必须通过 Pi 的 `registerEnvConformance` 测试集；`src/test/container-execution-env.test.ts` 负责运行它。工具实现调用环境的文件操作，而不是构建 `cat`、`printf` 或引用协议。
 
 ### `SandboxAdapter`
 
-适配器识别一个 CLI 值，可选地验证它，并可选地创建一个环境。`image` 有意没有直接的环境：actor/vault 解析会先 provision 一个具体的容器。
+适配器识别一个 CLI 值，可选地验证它，并可选地创建一个环境。`oci` 有意没有直接的环境：actor/vault 解析会先 provision 一个具体的容器。
 
 适配器注册是 `src/sandbox/registry.ts` 内部的封闭列表，包既不导出 `SandboxAdapter`，也不导出该注册表。
 

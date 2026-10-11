@@ -60,8 +60,8 @@ describe("resolveBoot", () => {
       type: "container",
       container: "dev",
     });
-    expect(resolveBoot(["--sandbox=image:ghcr.io/x/y:latest"]).sandbox).toMatchObject({
-      type: "image",
+    expect(resolveBoot(["--sandbox=oci:ghcr.io/x/y:latest"]).sandbox).toMatchObject({
+      type: "oci",
     });
   });
 

@@ -26,7 +26,7 @@ Sandbox 'host' cannot enforce private office visibility for <office-key>
 
 Platform derivation makes this apply to DMs, Slack private channels, externally shared and unknown
 conversations, and every Telegram, Discord, and GitHub conversation. The `/pi-sandbox` chat command
-is not available in host mode — it only serves the managed `image:*` sandboxes.
+is not available in host mode — it only serves the managed `oci:*` sandboxes.
 
 Suitable for:
 
@@ -34,4 +34,4 @@ Suitable for:
 - cases where you do not want mikan to put vault credentials into host command processes
 
 Not suitable for shared or multi-tenant deployments: host mode gives every conversation the same
-filesystem and process view as mikan itself. Use [`image:<image>`](/sandbox/image/) there instead.
+filesystem and process view as mikan itself. Use [`oci:<image>`](/sandbox/oci/) there instead.

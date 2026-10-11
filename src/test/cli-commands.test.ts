@@ -62,7 +62,7 @@ describe("mikan migrate", () => {
   test("applies every migration to an install with nothing to convert, then has nothing pending", async () => {
     const { stateDir, workspace } = legacyInstall(tempRoot());
     const output = vi.spyOn(console, "log").mockImplementation(() => {});
-    const args = ["--workspace", workspace, "--sandbox", "image:mikan-sandbox:latest"];
+    const args = ["--workspace", workspace, "--sandbox", "oci:mikan-sandbox:latest"];
 
     expect(await runMigrateCommand(args, missingDocker)).toBe(0);
     expect(output).toHaveBeenCalledWith(`Applied ${MIGRATIONS.length}.`);

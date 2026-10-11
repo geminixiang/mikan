@@ -3,18 +3,18 @@ import { allowsAmbientDefaultSharedVault } from "../vault/index.js";
 
 describe("allowsAmbientDefaultSharedVault", () => {
   test("membership + image allows ambient copy", () => {
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "image" }),
-    ).toBe(true);
+    expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "oci" })).toBe(
+      true,
+    );
   });
 
   test("defaults omitted trustModel to membership", () => {
-    expect(allowsAmbientDefaultSharedVault({ sandboxType: "image" })).toBe(true);
+    expect(allowsAmbientDefaultSharedVault({ sandboxType: "oci" })).toBe(true);
   });
 
   test("open-trigger never allows ambient copy", () => {
     expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "image" }),
+      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "oci" }),
     ).toBe(false);
   });
 

@@ -7,6 +7,12 @@ import remarkGfm from "remark-gfm";
 export default defineConfig({
   root: new URL("..", import.meta.url).pathname,
   site: "https://geminixiang.github.io/",
+  redirects: {
+    "/sandbox/image/": "/sandbox/oci/",
+    "/ja/sandbox/image/": "/ja/sandbox/oci/",
+    "/zh-cn/sandbox/image/": "/zh-cn/sandbox/oci/",
+    "/zh-tw/sandbox/image/": "/zh-tw/sandbox/oci/",
+  },
   devToolbar: { enabled: false },
   vite: {
     server: {
@@ -157,9 +163,9 @@ export default defineConfig({
                       link: "/sandbox/container/",
                     },
                     {
-                      label: "Image",
-                      translations: { "zh-TW": "Image", "zh-CN": "Image", ja: "Image" },
-                      link: "/sandbox/image/",
+                      label: "OCI",
+                      translations: { "zh-TW": "OCI", "zh-CN": "OCI", ja: "OCI" },
+                      link: "/sandbox/oci/",
                     },
                   ],
                 },

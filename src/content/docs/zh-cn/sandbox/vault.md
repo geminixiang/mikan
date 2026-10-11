@@ -71,15 +71,15 @@ Vault 中的材料并不是同一类无差别的 secret：
 | ------------------ | ------------------ | ------------------ | --------------------- |
 | `host`             | 不注入             | 拒绝               | 由平台用户派生        |
 | `container:<name>` | 注入               | 拒绝               | 由 container 名称派生 |
-| `image:<image>`    | 注入               | 投影（bind mount） | office key            |
+| `oci:<image>`      | 注入               | 投影（bind mount） | office key            |
 
-**拒绝意味着运行会失败，而不是该文件被悄悄忽略。** vault 目录中只要存有 `env` 以外的任何文件，就会解析出一个文件 mount，而无法 mount 文件的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是带着不完整的凭证集合运行。因此在这些模式上，请只用 `env` 保存凭证——早先 `image` 部署遗留在 vault 中的一个多余 `gws.json`，就会让该对话无法运行。
+**拒绝意味着运行会失败，而不是该文件被悄悄忽略。** vault 目录中只要存有 `env` 以外的任何文件，就会解析出一个文件 mount，而无法 mount 文件的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是带着不完整的凭证集合运行。因此在这些模式上，请只用 `env` 保存凭证——早先 `oci` 部署遗留在 vault 中的一个多余 `gws.json`，就会让该对话无法运行。
 
 office key 由平台名称与平台的原始对话 id 一起哈希派生，因此两个共用同一原始 id 的平台无法解析到彼此的凭证。`mikan migrate` 会把 0.5.3 的 vault 目录重命名为 office key；若两个目录同时存在，它会停止以便手动合并，而不是自行选一个。
 
 ## 共享 vault
 
-`sandbox.defaultSharedVault` 指定 `vaults/shared/` 下的一个配置文件，它会在新对话首次使用时被复制进该对话的 vault。这种环境复制只发生在基于成员身份把关的平台（Slack、Discord、Telegram，以及只有具备 write 权限的协作者才能触发的 GitHub）上，且仅限隔离的 `image` 拓扑。开放触发面绝不会继承它——管理员仍然可以为某个特定对话显式配置 vault。
+`sandbox.defaultSharedVault` 指定 `vaults/shared/` 下的一个配置文件，它会在新对话首次使用时被复制进该对话的 vault。这种环境复制只发生在基于成员身份把关的平台（Slack、Discord、Telegram，以及只有具备 write 权限的协作者才能触发的 GitHub）上，且仅限隔离的 `oci` 拓扑。开放触发面绝不会继承它——管理员仍然可以为某个特定对话显式配置 vault。
 
 ## `/pi-login`
 

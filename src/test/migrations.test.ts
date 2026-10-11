@@ -66,7 +66,7 @@ function context(overrides: Partial<MigrationContext> = {}): MigrationContext {
     dryRun: false,
     owners: new Map(),
     enabledPlatforms: ["slack"],
-    sandbox: { type: "image", image: "mikan-sandbox:latest" },
+    sandbox: { type: "oci", image: "mikan-sandbox:latest" },
     piAgentDir,
     modelsPath: join(stateDir, "models.json"),
     docker: async (args) => {

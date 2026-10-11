@@ -24,11 +24,23 @@ describe("parseSandboxArg", () => {
     });
   });
 
-  test("parses image sandbox for managed per-user containers", () => {
-    expect(parseSandboxArg("image:ubuntu:24.04")).toEqual({
-      type: "image",
-      image: "ubuntu:24.04",
-    });
+  test("parses the oci sandbox for mikan-managed per-office containers", () => {
+    const warn = vi.spyOn(log, "logWarning");
+    expect(parseSandboxArg("oci:ubuntu:24.04")).toEqual({ type: "oci", image: "ubuntu:24.04" });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("accepts the former image: spelling with a deprecation warning", () => {
+    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    expect(parseSandboxArg("image:ubuntu:24.04")).toEqual({ type: "oci", image: "ubuntu:24.04" });
+    expect(warn).toHaveBeenCalledWith(
+      "--sandbox=image:ubuntu:24.04 is deprecated",
+      "use --sandbox=oci:ubuntu:24.04; image: will be removed in the next major release",
+    );
+  });
+
+  test("an oci sandbox needs an image", () => {
+    expect(() => parseSandboxArg("oci:")).toThrowError(SandboxError);
   });
 
   test("removed backends are rejected as invalid sandbox types", () => {
@@ -69,7 +81,7 @@ describe("warnUnenforcedPrivateOffice", () => {
 
   test("image mode enforces visibility silently", () => {
     const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
-    warnUnenforcedPrivateOffice({ type: "image", image: "ubuntu:24.04" }, "private", "k");
+    warnUnenforcedPrivateOffice({ type: "oci", image: "ubuntu:24.04" }, "private", "k");
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -91,7 +103,7 @@ describe("createSandboxEnv", () => {
 
   test("rejects an unresolved image sandbox", () => {
     expect(() =>
-      createSandboxEnv({ type: "image", image: "ubuntu:24.04" }, { cwd: "/workspace" }),
+      createSandboxEnv({ type: "oci", image: "ubuntu:24.04" }, { cwd: "/workspace" }),
     ).toThrowError(SandboxError);
   });
 });

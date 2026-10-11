@@ -5,7 +5,7 @@ import { createSandboxTool } from "../harness/tools/sandbox.js";
 describe("createSandboxTool", () => {
   test("serializes state-changing limit operations", () => {
     const { tool } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
     });
 
     expect(tool.executionMode).toBe("sequential");
@@ -17,7 +17,7 @@ describe("createSandboxTool", () => {
       boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,
@@ -48,7 +48,7 @@ describe("createSandboxTool", () => {
       boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus,
         setLimits: vi.fn(),
@@ -71,7 +71,7 @@ describe("createSandboxTool", () => {
       boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,
@@ -98,13 +98,13 @@ describe("createSandboxTool", () => {
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await expect(tool.execute("tool-call", { label: "test", action: "status" })).rejects.toThrow(
-      /only supports image:\*/,
+      /only supports oci:\*/,
     );
   });
 
   test("requires sandbox context before execution", async () => {
     const { tool } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits: vi.fn(),
@@ -119,7 +119,7 @@ describe("createSandboxTool", () => {
   test("rejects limit values containing shell metacharacters", async () => {
     const setLimits = vi.fn();
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits,
@@ -135,7 +135,7 @@ describe("createSandboxTool", () => {
 
   test("rejects set without limits", async () => {
     const { tool, setSandboxContext } = createSandboxTool({
-      sandbox: { type: "image", image: "ubuntu:24.04" },
+      sandbox: { type: "oci", image: "ubuntu:24.04" },
       resourceController: {
         getLimitStatus: vi.fn(),
         setLimits: vi.fn(),

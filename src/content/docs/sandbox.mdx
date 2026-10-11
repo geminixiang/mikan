@@ -11,28 +11,28 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
     filesystem, so it cannot enforce a private office's visibility and is a trusted deployment.
   </Card>
   <Card title="Mainline isolation" icon="rocket">
-    `image:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
+    `oci:<image>` lets mikan manage lifecycle, workspace mounts, vault env, and resource limits.
   </Card>
 </CardGrid>
 
 <Aside type="note" title="What the sandbox is for">
-  `image:*` targets a team sharing one VM. Each office gets resource limits, an isolated filesystem,
+  `oci:*` targets a team sharing one VM. Each office gets resource limits, an isolated filesystem,
   and its own environment. It is not a hostile multi-tenant boundary like E2B or a SaaS sandbox:
   containers share the host kernel and everyone on the VM is trusted. Credentials enter the sandbox
   only because development work (`gh`, `gcloud`, `gws`) needs them.
 </Aside>
 
 <Aside type="caution" title="Mode names">
-  `docker:*` is not a supported mode; use `container:*` or `image:*` instead.
+  `docker:*` is not a supported mode; use `container:*` or `oci:*` instead.
 </Aside>
 
 ## Supported modes
 
-| Mode               | Execution location        | Vault env injection | Vault key                       | Notes                                                                               |
-| ------------------ | ------------------------- | ------------------- | ------------------------------- | ----------------------------------------------------------------------------------- |
-| `host`             | host machine              | not injected        | derived from the platform user  | Local development only; requires a trusted read-write projection                    |
-| `container:<name>` | existing Docker container | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault |
-| `image:<image>`    | Docker managed by mikan   | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`        |
+| Mode               | Execution location             | Vault env injection | Vault key                       | Notes                                                                               |
+| ------------------ | ------------------------------ | ------------------- | ------------------------------- | ----------------------------------------------------------------------------------- |
+| `host`             | host machine                   | not injected        | derived from the platform user  | Local development only; requires a trusted read-write projection                    |
+| `container:<name>` | existing Docker container      | injected            | derived from the container name | one container one vault; multiple people sharing one container also share its vault |
+| `oci:<image>`      | OCI container managed by mikan | injected            | the office key                  | Current recommended isolation mode; `1 conversation = 1 vault = 1 container`        |
 
 The office key is the versioned `v1-<platform>-<readable-id>-<hash>` segment that also names the
 conversation's directory under the workspace. See [Conversation offices](#conversation-offices).
@@ -55,7 +55,7 @@ only the read-only flags differ:
 | `public/<office-key>/` — every public office | read-only     | read-only      |
 
 Nothing mounts the workspace root. The admin portal or `/pi-sandbox visibility private` can narrow a
-public channel; nothing can widen beyond Slack. Only `image:*` enforces visibility; the other modes
+public channel; nothing can widen beyond Slack. Only `oci:*` enforces visibility; the other modes
 report `managedProjection: false` and serve a private office with a one-time logged warning. Field
 semantics and the retired door-policy settings are documented in [Configuration](/configuration/).
 
@@ -84,29 +84,29 @@ office layout, together with their vaults, settings, sessions, and events; see
   href="container/"
 />
 <LinkCard
-  title="Image sandbox"
+  title="OCI sandbox"
   description="Let mikan manage per-conversation containers and resource limits."
   href="image/"
 />
 
 ## Capability differences
 
-`image:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
+`oci:<image>` <Badge text="recommended" variant="success" /> is the primary developed and recommended sandbox mode today; the other modes are kept for local development, compatibility, or experiments, and some capabilities will not be filled in.
 
-| Capability                                   | `host`         | `container:<name>`     | `image:<image>` |
-| -------------------------------------------- | -------------- | ---------------------- | --------------- |
-| command execution                            | ✅             | ✅                     | ✅              |
-| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅              |
-| per-conversation container / runtime         | ❌             | ❌                     | ✅              |
-| per-conversation vault env                   | ❌             | ❌                     | ✅              |
-| automatic vault file projection / bind mount | ❌             | ❌                     | ✅              |
-| automatic workspace mount                    | host           | self-managed           | ✅              |
-| enforced office visibility                   | ❌             | ❌                     | ✅              |
-| idle auto-stop / recreate                    | not applicable | ❌                     | ✅              |
-| default CPU / memory limits                  | ❌             | ❌                     | ✅              |
-| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅              |
-| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅              |
-| recommendation level                         | local dev      | legacy / compatibility | mainline        |
+| Capability                                   | `host`         | `container:<name>`     | `oci:<image>` |
+| -------------------------------------------- | -------------- | ---------------------- | ------------- |
+| command execution                            | ✅             | ✅                     | ✅            |
+| mikan-managed runtime lifecycle              | not applicable | ❌                     | ✅            |
+| per-conversation container / runtime         | ❌             | ❌                     | ✅            |
+| per-conversation vault env                   | ❌             | ❌                     | ✅            |
+| automatic vault file projection / bind mount | ❌             | ❌                     | ✅            |
+| automatic workspace mount                    | host           | self-managed           | ✅            |
+| enforced office visibility                   | ❌             | ❌                     | ✅            |
+| idle auto-stop / recreate                    | not applicable | ❌                     | ✅            |
+| default CPU / memory limits                  | ❌             | ❌                     | ✅            |
+| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅            |
+| agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅            |
+| recommendation level                         | local dev      | legacy / compatibility | mainline      |
 
 Most ❌ rows are refusals rather than silent downgrades. The exception is office visibility: a mode
 that cannot enforce it logs `Sandbox '<type>' cannot enforce private office visibility` once per

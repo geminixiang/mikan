@@ -51,7 +51,7 @@ export GOOGLE_WORKSPACE_CLI_OAUTH_SCOPES="https://www.googleapis.com/auth/drive 
 ## 3. `/login` の使用
 
 ```bash
-mikan --sandbox=image:mikan-sandbox:tools /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 ボットとのダイレクトメッセージ（DM）で以下を入力します：

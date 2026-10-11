@@ -71,8 +71,8 @@ description: mikan のプラットフォーム接続、conversation office、セ
 - 各 sandbox を Pi の `ExecutionEnv` として提供する
 - sandbox runtime を workspace capability で分ける:
   - unmanaged projection: `host` / `container:<name>`
-  - managed projection: `image:<image>`。private office の visibility を強制する: 他の private office には到達できず、共有知識は read-only
-- `image` モードでは Docker container を自動作成・回収し、`image:<image>` を concrete な `container:<name>` 環境に解決する
+  - managed projection: `oci:<image>`。private office の visibility を強制する: 他の private office には到達できず、共有知識は read-only
+- `oci` モードでは container を自動作成・回収し、`oci:<image>` を concrete な `container:<name>` 環境に解決する
 
 ### E. Conversation office レイヤー
 
@@ -229,7 +229,7 @@ flowchart TD
 - 認証情報は workspace に直接入りません
 - vault は `~/.mikan` に保存されます
 - 実行時にだけ office の vault から対応する sandbox へルーティングされます
-- `image` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
+- `oci` モードは office key で vault を索きます — workspace と registry で office を指すのと同じ文字列です。`container:<name>` は shared container vault を使い、`host` は user で索き、vault env を注入しません
 
 ## 6. Events と通常会話の違い
 

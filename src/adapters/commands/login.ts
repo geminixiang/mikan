@@ -44,7 +44,7 @@ function ensureLoginVault(context: CommandContext): string {
 }
 
 async function refreshCopiedVaultRuntime(context: CommandContext): Promise<string | undefined> {
-  if (context.services.sandbox.type !== "image") return undefined;
+  if (context.services.sandbox.type !== "oci") return undefined;
 
   const targetAddress = createOfficeAddress(
     context.address.platform,

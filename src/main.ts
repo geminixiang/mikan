@@ -258,7 +258,7 @@ if (vaultManager.isEnabled()) {
   console.log(
     sandbox.type === "container"
       ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "image"
+      : sandbox.type === "oci"
         ? "  Vault system enabled. Conversation-scoped credential routing active."
         : "  Vault system enabled. Host mode will not inject vault env.",
   );
@@ -297,15 +297,15 @@ const sandboxBoostLimits =
     : undefined;
 
 const provisioner =
-  sandbox.type === "image"
+  sandbox.type === "oci"
     ? new DockerContainerManager(sandbox.image, {
         limits: sandboxLimits,
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
-const resourceController = sandbox.type === "image" ? provisioner : undefined;
+const resourceController = sandbox.type === "oci" ? provisioner : undefined;
 
-if (sandbox.type === "image") {
+if (sandbox.type === "oci") {
   ensureDirExists(workspace.skillsDir);
   ensureDirExists(workspace.agentsDir);
   try {
@@ -430,7 +430,7 @@ const sandboxDesc =
     ? "host"
     : sandbox.type === "container"
       ? `container:${sandbox.container}`
-      : `image:${sandbox.image}`;
+      : `oci:${sandbox.image}`;
 log.logStartup(workingDir, sandboxDesc);
 logHarnessStartupSummary();
 

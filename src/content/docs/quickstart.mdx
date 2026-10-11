@@ -5,7 +5,7 @@ description: Go from zero to your first bot reply in about 15 minutes with Teleg
 
 import { Aside, Steps } from "@astrojs/starlight/components";
 
-This guide gets a working bot replying to you in about 15 minutes. It uses Telegram because it needs only one token. You need Node.js 24.15 or later and Docker (Podman and nerdctl also work; see [Image sandbox](/sandbox/image/#container-engine)). At the end, links point to the other platforms and to running mikan under PM2.
+This guide gets a working bot replying to you in about 15 minutes. It uses Telegram because it needs only one token. You need Node.js 24.15 or later and Docker (Podman and nerdctl also work; see [OCI sandbox](/sandbox/oci/#container-engine)). At the end, links point to the other platforms and to running mikan under PM2.
 
 ## Prerequisites
 
@@ -43,7 +43,7 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 
    ```bash
    docker pull ghcr.io/geminixiang/mikan-sandbox:latest
-   mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest
+   mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest
    ```
 
    The image is about 900 MB, so the first pull takes a few minutes. The working directory defaults to `~/.mikan/workspace` and is created automatically; pass a path after the flags to use a different one.
@@ -64,7 +64,7 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
 ## Where to go next
 
 - **Slack, Discord, or GitHub instead of Telegram** — each platform needs its own credentials; see the [Slack minimal setup guide](/slack-bot-minimal-guide/), [Discord adapter](/platform-adapters/discord/), and [GitHub adapter](/platform-adapters/github/).
-- **Isolation for real use** — pull the prebuilt sandbox image and start with `--sandbox=image:...`; see [Image sandbox](/sandbox/image/).
+- **Isolation for real use** — pull the prebuilt sandbox image and start with `--sandbox=oci:...`; see [OCI sandbox](/sandbox/oci/).
 - **Credentials for the agent's tools** — `/login` in a DM opens a vault portal for API keys and OAuth; see [Vault](/sandbox/vault/).
 - **Run it as a service** — PM2 setup, upgrades, and health checks are covered in [Deployment](/deployment/).
 - **All settings and commands** — [Configuration](/configuration/) and [Chat commands](/commands/).

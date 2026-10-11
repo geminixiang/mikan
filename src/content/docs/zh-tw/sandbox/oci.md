@@ -1,6 +1,6 @@
 ---
-title: Image sandbox
-description: 使用 mikan 管理的 per-conversation Docker container 與 vault 隔離。
+title: OCI sandbox
+description: 使用 mikan 管理的 per-conversation OCI container（nerdctl、Podman 或 Docker）與 vault 隔離。
 ---
 
 ```bash
@@ -9,22 +9,24 @@ description: 使用 mikan 管理的 per-conversation Docker container 與 vault 
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers
-mikan --sandbox=image:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:ghcr.io/geminixiang/mikan-sandbox:latest /path/to/workspace
 ```
 
 如果你想自行客製 image，也可以本地 build：
 
 ```bash
 docker build -f deploy/docker/mikan-sandbox.Dockerfile -t mikan-sandbox:latest .
-mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
+mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 ```
+
+這個模式以前叫 `image:<image>`；這種寫法在下一個主要版本之前仍然可用，並會在啟動時輸出棄用警告。
 
 特性：
 
 - 標準工具 image 內建 Node.js 24、Chromium、中日韓字型、ffmpeg，以及供 `jev_browser` 使用並鎖定版本的 `agent-browser` 0.38.1 runtime
 - image 內建工具安裝在 `/usr/local` 與 `/opt`，不放在 `/root`；在 sandbox 內執行 `npm i -g`、`uv tool install` 會裝到 `/root/.local`，且該目錄已在 `PATH` 中；Python 套件用 uv 管理（`uv run --with <套件>`），因為系統 pip 會拒絕安裝
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
-- 每個 container 都有自己的 Docker bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
+- 每個 container 都有自己的 bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用
 - 建立 managed container 時會加上 `--cap-drop=ALL`、`--security-opt=no-new-privileges` 與 `--pids-limit=1024`
 - container 內的 workspace mount 跟隨該 office 的 visibility（ADR 0008）：public office 可寫入共用的 `MEMORY.md` 與 `skills/`，private office 只能讀取，且沒有任何 office 能觸及另一個 private office
 - vault env 會在執行時注入
@@ -33,7 +35,7 @@ mikan --sandbox=image:mikan-sandbox:latest /path/to/workspace
 
 ## 容器引擎
 
-mikan 透過 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受這套指令。不需要指定引擎：使用 `container:*` 或 `image:*` 時，mikan 依序檢查 `nerdctl`、`podman`、`docker`，採用第一個 `info` 成功的引擎，並在啟動時記錄。本頁指令中的 `docker` 請換成該引擎。Container 屬於建立它的引擎，所以如果 host 之後啟動了另一個引擎（例如登入時啟動 Podman machine），會建立新的 container，舊引擎的 container 會留著；要固定引擎，在 `~/.mikan/mikan.env` 設定 `CONTAINER_ENGINE`。rootless Podman 需要 host 把 cgroup 的 CPU 與 memory controller 委派給使用者，macOS 上的 Podman machine 已經委派。
+mikan 透過 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受這套指令。不需要指定引擎：使用 `container:*` 或 `oci:*` 時，mikan 依序檢查 `nerdctl`、`podman`、`docker`，採用第一個 `info` 成功的引擎，並在啟動時記錄。本頁指令中的 `docker` 請換成該引擎。Container 屬於建立它的引擎，所以如果 host 之後啟動了另一個引擎（例如登入時啟動 Podman machine），會建立新的 container，舊引擎的 container 會留著；要固定引擎，在 `~/.mikan/mikan.env` 設定 `CONTAINER_ENGINE`。rootless Podman 需要 host 把 cgroup 的 CPU 與 memory controller 委派給使用者，macOS 上的 Podman machine 已經委派。
 
 在 macOS 上，每個引擎都是在 VM 裡跑 Linux，bind mount 只能掛載 VM 有共享的資料夾；請把 workspace 與 `~/.mikan` 放在家目錄底下。
 

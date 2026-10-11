@@ -21,7 +21,8 @@
 
 ## Execution surfaces
 
-- **Default office runtime**: The persistent, single-node Sandbox runtime assigned to one Conversation office. It provides strong environment isolation and a durable Workspace projection that survives turns and runtime restarts. The managed `image:*` runtime belongs here. _Avoid_: treating a remote ephemeral worker as a default office.
+- **Default office runtime**: The persistent, single-node Sandbox runtime assigned to one Conversation office. It provides strong environment isolation and a durable Workspace projection that survives turns and runtime restarts. The managed `oci:*` runtime belongs here. _Avoid_: treating a remote ephemeral worker as a default office.
+- **OCI sandbox**: The `--sandbox=oci:<image>` backend for Default office runtimes: mikan creates and manages one container per Conversation office from an OCI image, on whichever engine (nerdctl, Podman, Docker) is available. _Formerly_: `image:<image>`, still accepted with a deprecation warning.
 - **Office coworker**: A bounded Subagent launched inside a Default office runtime to help with a task. Coworkers share the office's authorized working context and are intentionally limited in number; they are not elastic factory capacity.
 - **Factory floor**: An elastic execution surface for repetitive, outsourced, or highly parallel work. Each factory job receives a temporary environment and temporary data, returns an explicit result, and is then discarded. Kubernetes Agent Sandbox, Cloud Run sandbox, Cloudflare Sandbox, and E2B are intended future adapters. A Factory floor is not a Conversation office and never becomes the default persistent runtime.
 - **Factory worker**: A Subagent assigned to one ephemeral Factory floor job. It receives only explicitly packaged inputs and capabilities, cannot assume durable local state, and must return all durable results before teardown.
