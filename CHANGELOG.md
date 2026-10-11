@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.4.0-beta.0]
+
 ### Added
 
 - `web_fetch` reads a public web page or API from the host so the agent can check versions,
@@ -19,6 +21,32 @@ change in a minor release.
   full text saved in the workspace. It needs no key and refuses private, loopback, and link-local
   addresses, including through redirects. It does not go through an HTTP proxy configured for
   the daemon.
+- The OCI sandbox runs on nerdctl, Podman, or Docker. mikan uses the first engine whose `info`
+  succeeds, in that order, and logs its choice; set `CONTAINER_ENGINE` to pin one.
+- `--sandbox=oci` without an image uses `ghcr.io/geminixiang/mikan-sandbox:<mikan version>`, so
+  the sandbox image upgrades and rolls back with mikan. At startup mikan pulls the configured
+  image in the background; a failed pull logs a warning and offices keep the local image. A
+  stopped office's container is replaced when its image changed, and the old image is removed
+  once no container uses it. A running container is never replaced.
+
+### Changed
+
+- `--sandbox=image:<image>` is now `--sandbox=oci:<image>`. `image:` still works, prints a
+  deprecation warning, and will be removed in the next major release; existing containers and
+  vaults are kept. `mikan onboard` and the PM2 template write `--sandbox=oci`.
+- Container tools run through Pi's `pi-env` daemon over one connection per container, instead of
+  one engine `exec` per operation: file operations and commands take about 1 ms instead of
+  40–180 ms, and commands end as soon as mikan disconnects. String commands run with `bash` when
+  the container has it, and oversized command output is saved in the container's temporary
+  directory.
+- Each container gets the mikan host's time zone. The sandbox image no longer sets
+  `TZ=Asia/Taipei` and is about 390 MB smaller: `vim`, `nano`, `less`, `bash-completion`,
+  `python3-venv`, `gnupg`, and gcloud's precompiled Python files are gone.
+- Existing containers are recreated once on first use after upgrading, because mikan now
+  identifies a container's network and image by labels it writes at creation. Workspace and vault
+  mounts are kept; packages installed inside the container are not. On a host running more than
+  one engine, mikan may pick a different engine and create new containers there; set
+  `CONTAINER_ENGINE=docker` to keep Docker.
 
 ## [1.3.0] - 2026-10-10
 
