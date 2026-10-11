@@ -5,7 +5,7 @@ description: 使用 mikan 管理的按对话 OCI 容器（nerdctl、Podman 或 D
 
 ```bash
 # Pull the prebuilt image from GHCR
-# Only mikan releases publish the image: :<version>, :latest, :tools, and :beta for prereleases
+# Each mikan release publishes :<version>; stable releases also move :latest
 docker pull ghcr.io/geminixiang/mikan-sandbox:latest
 
 # Run mikan with managed per-conversation containers
