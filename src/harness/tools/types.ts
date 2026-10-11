@@ -1,3 +1,4 @@
+import type { BlockList } from "node:net";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "typebox";
 import type { ConversationMessage, ConversationResponder } from "../../types.js";
@@ -21,4 +22,8 @@ export interface MikanToolRunContext {
   responder: ConversationResponder;
   platformName: string;
   runtimeWorkspaceRoot: string;
+}
+
+export interface WebFetchToolOptions {
+  blocked?: BlockList;
 }

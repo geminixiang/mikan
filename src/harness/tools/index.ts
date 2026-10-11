@@ -13,6 +13,7 @@ import { createJevTool } from "./jev.js";
 import { createJevBrowserTool, type FieldTextGenerator } from "./jev-browser.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
+import { createWebFetchTool } from "./web-fetch.js";
 import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
@@ -52,6 +53,7 @@ export function createMikanTools(
       adaptAgentTool(reactTool),
       adaptAgentTool(jevTool),
       adaptAgentTool(jevBrowserTool),
+      createWebFetchTool(),
       ...taskTools.map(adaptAgentTool),
       ...packTools.map(adaptAgentTool),
     ].map(withSecretRedaction),
