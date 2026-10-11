@@ -11,7 +11,7 @@ change in a minor release.
 
 ## [Unreleased]
 
-## [1.4.0-beta.0]
+## [1.4.0] - 2026-10-11
 
 ### Added
 
@@ -26,8 +26,9 @@ change in a minor release.
 - `--sandbox=oci` without an image uses `ghcr.io/geminixiang/mikan-sandbox:<mikan version>`, so
   the sandbox image upgrades and rolls back with mikan. At startup mikan pulls the configured
   image in the background; a failed pull logs a warning and offices keep the local image. A
-  stopped office's container is replaced when its image changed, and the old image is removed
-  once no container uses it. A running container is never replaced.
+  stopped office's container is replaced when its image changed. After any replacement, the
+  previous image is removed once no container uses it; an image that still has another name is
+  kept. A running container is never replaced.
 
 ### Changed
 
