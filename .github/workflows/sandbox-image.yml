@@ -68,13 +68,13 @@ jobs:
           set -euo pipefail
 
           if ! previous=$(docker buildx imagetools inspect "${IMAGE}:latest" \
-            --format '{{ index (index .Image "linux/amd64").Config.Labels "io.github.mikan.sandbox.inputs" }} {{ (index .Image "linux/amd64").Created }} {{ .Manifest.Digest }}'); then
+            --format '{{ (index .Image "linux/amd64").Created.Unix }}|{{ .Manifest.Digest }}|{{ index (index .Image "linux/amd64").Config.Labels "io.github.mikan.sandbox.inputs" }}'); then
             echo "No published image to reuse; building"
             echo "digest=" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          read -r inputs created digest <<< "${previous}"
-          age_days=$(( ( $(date +%s) - $(date -d "${created}" +%s) ) / 86400 ))
+          IFS='|' read -r created digest inputs <<< "${previous}"
+          age_days=$(( ( $(date +%s) - created ) / 86400 ))
 
           if [[ "${inputs}" == "${INPUTS}" && "${age_days}" -lt "${MAX_AGE_DAYS}" ]]; then
             echo "Reusing ${IMAGE}@${digest}: same Dockerfile, built ${age_days} days ago"
