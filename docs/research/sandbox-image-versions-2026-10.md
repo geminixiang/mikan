@@ -16,13 +16,13 @@ Each release publishes `ghcr.io/geminixiang/mikan-sandbox:<version>`, and stable
 
 ## Engine behavior the design relies on
 
-| Behavior                                                                               | Result                                                                                            |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `pull` of a reference already present and current                                      | completes after a manifest check and changes nothing                                              |
-| `pull` of a reference the registry lacks                                               | fails; a local image with that reference stays usable                                             |
-| `rmi <reference>` without `-f` while any container, running or stopped, uses the image | refused (nerdctl: "image is being used by stopped container"; Docker when it is the only name)    |
-| `rmi <image ID>`                                                                       | Docker refuses while several names point to the image; nerdctl answers "no such image" for any ID |
-| a tag moved by a pull or `tag` on nerdctl                                              | leaves no unnamed image behind                                                                    |
+| Behavior                                                                               | Result                                                                                                                                       |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pull` of a reference already present and current                                      | completes after a manifest check and changes nothing                                                                                         |
+| `pull` of a reference the registry lacks                                               | fails; a local image with that reference stays usable                                                                                        |
+| `rmi <reference>` without `-f` while any container, running or stopped, uses the image | refused (nerdctl: "image is being used by stopped container"; Docker when it is the only name)                                               |
+| `rmi <image ID>`                                                                       | Docker refuses while several names point to the image but deletes an image with exactly one name; nerdctl answers "no such image" for any ID |
+| a tag moved by a pull or `tag` on nerdctl                                              | leaves no unnamed image behind                                                                                                               |
 
 ## Design
 
@@ -54,3 +54,7 @@ Rejected:
 | C7 running office during an upgrade                          | stays on 1.0.0              | stays on 1.0.0                            |
 | C8 new office after upgrading                                | 1.1.0                       | 1.1.0                                     |
 | C9 `:latest` moved on the registry, daemon restarted         | stays on 1.0.0              | moves to 1.1.0                            |
+
+## Correction after the first production run
+
+mikan 1.4.0-beta.0 on the production deployment replaced its first two offices for `network` and `binds` drift, not `image`, and all 33 containers on the previous `:latest` carry a network label from an older format. Removal ran only for `image` drift, so those images would never have been released. Removal now follows any replacement whose old image differs from the configured one. The same review found that Docker deletes an image by ID when one name still points to it, so an image is removed by ID only when it has no name.

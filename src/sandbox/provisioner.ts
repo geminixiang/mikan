@@ -114,11 +114,10 @@ export class DockerContainerManager {
           : await this.runtimeDrift(containerKey, containerName, mounts, status);
       if (drift) {
         log.logInfo(`Container ${containerName} is out of date (${drift}); replacing container`);
-        const previousImage =
-          drift === "image" ? await this.containerImage(containerName) : undefined;
+        const leftBehind = await this.imageLeftBehind(containerName);
         await this.replaceContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} replaced from image ${this.image}`);
-        if (previousImage) await this.removeImageIfUnused(previousImage);
+        if (leftBehind) await this.removeImageIfUnused(leftBehind);
       } else if (status === "stopped") {
         await this.run(["start", containerName]);
         log.logInfo(`Container ${containerName} started`);
@@ -503,16 +502,28 @@ export class DockerContainerManager {
     }
   }
 
-  private async containerImage(containerName: string): Promise<string | undefined> {
+  private async imageLeftBehind(containerName: string): Promise<string | undefined> {
     const { stdout } = await this.run([
       "inspect",
       "-f",
       `{{.Config.Image}}\t{{index .Config.Labels "${DockerContainerManager.IMAGE_ID_LABEL_KEY}"}}`,
       containerName,
     ]);
-    const [reference = "", imageId] = stdout.trim().split("\t");
+    const [reference = "", label] = stdout.trim().split("\t");
+    const imageId = this.normalizeDockerValue(label);
+    if (imageId && imageId === (await this.localImageId())) return undefined;
     if (reference !== this.image && isPublishedSandboxImage(reference)) return reference;
-    return this.normalizeDockerValue(imageId);
+    if (imageId && (await this.isUnnamedImage(imageId))) return imageId;
+    return undefined;
+  }
+
+  private async isUnnamedImage(imageId: string): Promise<boolean> {
+    try {
+      const { stdout } = await this.run(["image", "inspect", "-f", "{{len .RepoTags}}", imageId]);
+      return stdout.trim() === "0";
+    } catch {
+      return false;
+    }
   }
 
   private async removeImageIfUnused(image: string): Promise<void> {
