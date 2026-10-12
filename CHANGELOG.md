@@ -11,11 +11,7 @@ change in a minor release.
 
 ## [Unreleased]
 
-### Changed
-
-- Upgraded Pi to 1.2.0. Pi 1.2 removed an export mikan 1.4.0 imports, so a fresh install of 1.4.0
-  now fails to start; this release works with it. A nonzero `bash` exit is now an error result that
-  carries the output and the exit code, instead of a thrown error.
+## [1.5.0-beta.0]
 
 ### Added
 
@@ -40,6 +36,9 @@ change in a minor release.
 - `jev_browser` closes only tabs it opened when it passes its three-tab limit, so tabs a person
   opened stay open.
 - The sandbox image adds `sway`, `wayvnc`, and `foot` (about 1 MB) and the `mikan-desktop` script.
+- Upgraded Pi to 1.2.0. Pi 1.2 removed an export mikan 1.4.0 imports, so a fresh install of 1.4.0
+  now fails to start; this release works with it. A nonzero `bash` exit is now an error result that
+  carries the output and the exit code, instead of a thrown error.
 
 ## [1.4.0] - 2026-10-11
 
