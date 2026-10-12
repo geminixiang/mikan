@@ -31,6 +31,7 @@ import {
   type Conversation,
   type MessageChange,
   type ToolExecutionApi,
+  type ToolRegistration,
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { SessionStore } from "../sessions/session-store.js";
@@ -469,9 +470,11 @@ export class MikanAgentSession {
     }
     const hasCodemode = tools.some((tool) => tool.name === "codemode");
     const registered = tools.map((tool) =>
-      hasCodemode && tool.exposure === undefined && isCodemodeCallable(tool)
-        ? withScriptCallNote(tool)
-        : tool,
+      toPiTool(
+        hasCodemode && tool.exposure === undefined && isCodemodeCallable(tool)
+          ? withScriptCallNote(tool)
+          : tool,
+      ),
     );
     registry.install(
       defineExtension({
@@ -490,7 +493,12 @@ export class MikanAgentSession {
           }),
           hook(ToolTask, {
             beforeTool: async (call, api) => this.beforeTool(call, api),
-            afterTool: (call, result) => this.afterTool(call.id, result),
+            afterTool: (call, result) => {
+              const notice = this.takeLoopNotice(call.id);
+              return notice === undefined
+                ? undefined
+                : { ...result, output: withNotice(result.output, notice) };
+            },
           }),
         ],
       }),
@@ -500,7 +508,10 @@ export class MikanAgentSession {
         model: { provider: this.model.provider, modelId: this.model.id },
         thinkingLevel: this.options.thinkingLevel,
         extensions: [registry.snapshot().extension(extensionName)!],
-        tools: registered.filter((tool) => tool.exposure === undefined || loaded.has(tool.name)),
+        tools: registered.filter((_, index) => {
+          const tool = tools[index]!;
+          return tool.exposure === undefined || loaded.has(tool.name);
+        }),
       },
       context,
     );
@@ -536,14 +547,10 @@ export class MikanAgentSession {
     return this.checkToolLoop(call.id, call.name, call.arguments);
   }
 
-  private afterTool<T extends { content?: (TextContent | ImageContent)[] }>(
-    callId: string,
-    result: T,
-  ): T | undefined {
+  private takeLoopNotice(callId: string): string | undefined {
     const notice = this.loopNotices.get(callId);
-    if (notice === undefined) return undefined;
     this.loopNotices.delete(callId);
-    return { ...result, content: [...(result.content ?? []), { type: "text", text: notice }] };
+    return notice;
   }
 
   private async executeNestedTool(
@@ -560,7 +567,8 @@ export class MikanAgentSession {
       if (verdict?.block) throw new Error(verdict.block);
       toolContext.abortSignal?.throwIfAborted();
       result = await tool.execute(args, api, toolContext);
-      result = this.afterTool(id, result) ?? result;
+      const notice = this.takeLoopNotice(id);
+      if (notice !== undefined) result = { ...result, content: withNotice(result.content, notice) };
     } catch (error) {
       result = { content: [{ type: "text", text: errorMessage(error) }], isError: true };
     } finally {
@@ -976,4 +984,26 @@ function applyMessageChanges(
     }
   }
   return next;
+}
+
+function withNotice(
+  content: readonly (TextContent | ImageContent)[] | undefined,
+  notice: string,
+): (TextContent | ImageContent)[] {
+  return [...(content ?? []), { type: "text", text: notice }];
+}
+
+function toPiTool(tool: MikanHarnessTool): ToolRegistration {
+  const { outputSchema: _outputSchema, execute, ...registration } = tool;
+  return {
+    ...registration,
+    execute: async (args, api, toolContext) => {
+      const {
+        content,
+        structuredContent: _structured,
+        ...result
+      } = await execute(args, api, toolContext);
+      return { ...result, output: content };
+    },
+  };
 }

@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   CodemodeSandbox,
   type CodemodeStoreWrites,
-  mcpStructuredContentSchema,
   parseCodemodeSource,
   renderDeclarations,
   renderToolOutputType,
@@ -41,7 +40,7 @@ function describeOutput(schema: CodemodeJsonSchema): string {
   if (type === "string") return "a string";
   const properties =
     isRecord(schema) && isRecord(schema.properties) ? schema.properties : undefined;
-  if (properties && mcpStructuredContentSchema(schema) === undefined) {
+  if (properties) {
     const required = new Set(
       isRecord(schema) && Array.isArray(schema.required) ? schema.required : [],
     );
