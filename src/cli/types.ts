@@ -10,9 +10,10 @@ export interface OnboardIo {
 }
 
 export interface BootPlan {
-  mode: "migrate" | "office" | "env" | "help" | "version" | "onboard" | "run";
+  mode: "migrate" | "office" | "env" | "slack" | "help" | "version" | "onboard" | "run";
   migrateArgs?: string[];
   officeArgs?: string[];
+  slackArgs?: string[];
   stateDir: string;
   workingDir: string;
   workingDirExplicit: boolean;

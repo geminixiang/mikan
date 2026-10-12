@@ -1,4 +1,4 @@
-import type { WebClient } from "@slack/web-api";
+import type { AppsManifestUpdateArguments, WebClient } from "@slack/web-api";
 import type { Attachment, ConversationKind, OfficeAddress } from "../../types.js";
 import type { Workspace } from "../../office/types.js";
 import type { SlackMessagingBot } from "./bot.js";
@@ -166,3 +166,43 @@ export interface AssistantSurfaceOps {
   setTitle(channel: string, threadTs: string, title: string): Promise<void>;
   channelName(channelId: string): string | undefined;
 }
+
+export type SlackAppManifest = AppsManifestUpdateArguments["manifest"];
+
+export interface SlackAppCustomization {
+  display_information?: {
+    name?: string;
+    description?: string;
+    long_description?: string;
+    background_color?: string;
+  };
+}
+
+export interface SlackConfigTokens {
+  token: string;
+  refreshToken: string;
+}
+
+export interface SlackAppApi {
+  rotate(refreshToken: string): Promise<SlackConfigTokens & { userId: string }>;
+  export(token: string, appId: string): Promise<unknown>;
+  update(
+    token: string,
+    appId: string,
+    manifest: SlackAppManifest,
+  ): Promise<{ permissionsUpdated: boolean }>;
+  create(token: string, manifest: SlackAppManifest): Promise<{ appId: string; installUrl: string }>;
+  delete(token: string, appId: string): Promise<void>;
+}
+
+export interface SlackBotApi {
+  appId(): Promise<string>;
+  scopes(): Promise<string[]>;
+  directMessage(userId: string, text: string): Promise<void>;
+}
+
+export type SlackAppSyncResult =
+  | { status: "no-token" }
+  | { status: "failed"; reason: string }
+  | { status: "unchanged"; appId: string }
+  | { status: "updated"; appId: string; missingScopes: string[] };

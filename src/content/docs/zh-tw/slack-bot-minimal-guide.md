@@ -3,6 +3,16 @@ title: Slack Bot 最小設定指南
 description: 透過 Socket Mode 執行 mikan 所需的最小 Slack app 權限、事件與 manifest 設定。
 ---
 
+## 讓 mikan 建立並更新 app
+
+mikan 可以替你建立 Slack app 並保持設定最新：新版加了 slash command、scope 或 event 時，不必再到 Slack 設定頁修改。這需要一組 Slack app configuration token：打開 [api.slack.com/apps](https://api.slack.com/apps)，在頁面最下方的 **Your App Configuration Tokens** 為你的 workspace 產生一組，複製其中的 **Refresh Token**（`xoxe-1-…`）。
+
+- 新 app：執行 `mikan onboard`，選 Slack，再選 **Create a new Slack app for me**。mikan 會建立 app、印出安裝連結，並請你貼上 bot token 與 Socket Mode token；這兩步 Slack 只在網頁上提供。
+- 既有 app：執行 `mikan slack token` 並貼上 refresh token。mikan 下次啟動時會以自己的 manifest 取代 app 設定；在 Slack 上手動加的設定會被移除。
+- 名稱與描述：`mikan slack set --name <名稱> --description <描述>` 會存到 `~/.mikan/slack.json`，下次啟動時套用。在 Slack 設定頁的修改會被覆蓋。
+
+mikan 每次啟動都會輪換 token，並把最新的一組存在 `~/.mikan/slack-config-token.json`（0600）。每次輪換都會讓前一組失效，所以一組 token 只給一個 mikan 使用。新版加了 scope 時，mikan 會私訊產生 token 的人重新安裝的連結，在那之前 bot 以既有權限照常運作。token 屬於產生它的人；那個人離開 workspace 後，請改存另一位協作者的 token。mikan 套用的是下方的一般 app manifest，若你的 app 是用 agent manifest 建的，請不要存 token。
+
 你也可以使用 `deploy/examples/slack-app-manifest.json` 的範例 manifest 建立 app。
 
 ## 1. 建立 Slack app

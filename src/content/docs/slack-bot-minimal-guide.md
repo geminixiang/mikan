@@ -3,6 +3,31 @@ title: Slack Bot minimal setup guide
 description: Minimal Slack app permissions, events, and manifest settings required to run mikan through Socket Mode.
 ---
 
+## Let mikan create and update the app
+
+mikan can create the Slack app and keep it configured, so a release that adds a slash command,
+scope, or event needs no change in Slack's settings. It needs a Slack app configuration token:
+open [api.slack.com/apps](https://api.slack.com/apps), find **Your App Configuration Tokens** at
+the bottom, generate one for your workspace, and copy its **Refresh Token** (`xoxe-1-…`).
+
+- New app: run `mikan onboard`, pick Slack, then **Create a new Slack app for me**. mikan creates
+  the app, prints its install link, and asks for the bot token and the Socket Mode token, the two
+  steps Slack keeps in its web pages.
+- Existing app: run `mikan slack token` and paste the refresh token. On its next start mikan
+  replaces the app's configuration with its own manifest; settings added by hand in Slack are
+  removed.
+- Name and description: `mikan slack set --name <name> --description <text>` saves them in
+  `~/.mikan/slack.json`, and the next start applies them. Edits made in Slack's settings pages are
+  overwritten.
+
+mikan rotates the token on every start and keeps the newest one in
+`~/.mikan/slack-config-token.json` (0600). Each rotation revokes the previous token, so give one
+token to one mikan install. When a release adds a scope, mikan DMs the person who created the
+token a reinstall link; the bot keeps running with the scopes it has until then. The token
+belongs to that person: if they leave the workspace, store a token from another collaborator.
+mikan applies the classic manifest below, so do not store a token for an app built from the
+agent manifest.
+
 You can also create the app from an example manifest. There are two, because
 Slack offers two surfaces and mikan serves both:
 
