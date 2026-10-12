@@ -9,6 +9,7 @@ import {
   SLACK_APP_CUSTOMIZATION_FILE,
   SLACK_CONFIG_TOKEN_FILE,
   slackAppManifest,
+  slackBotNameProblem,
   syncSlackApp,
   writeSlackAppCustomization,
 } from "../adapters/slack/app-config.js";
@@ -63,6 +64,10 @@ function reorderKeys<T>(value: T): T {
   return value;
 }
 
+function withoutNames(m: ReturnType<typeof slackAppManifest>) {
+  return { ...m, display_information: undefined, features: { ...m.features, bot_user: undefined } };
+}
+
 describe("the built-in Slack app manifest", () => {
   test("has a slash command for every command that declares one", () => {
     const commands = slackAppManifest().features?.slash_commands?.map((c) => c.command);
@@ -82,16 +87,24 @@ describe("the built-in Slack app manifest", () => {
     expect(example).toEqual(slackAppManifest());
   });
 
-  test("customization replaces only the display information it names", () => {
-    const manifest = slackAppManifest({ display_information: { name: "acme-bot" } });
+  test("customization replaces the display information it names and the bot's name", () => {
+    const manifest = slackAppManifest({ display_information: { name: "Acme Bot" } });
     expect(manifest.display_information).toEqual({
       ...slackAppManifest().display_information,
-      name: "acme-bot",
+      name: "Acme Bot",
     });
-    expect({ ...manifest, display_information: undefined }).toEqual({
-      ...slackAppManifest(),
-      display_information: undefined,
-    });
+    expect(manifest.features?.bot_user?.display_name).toBe("Acme Bot");
+    expect(withoutNames(manifest)).toEqual(withoutNames(slackAppManifest()));
+  });
+
+  test("a name Slack cannot use as a username leaves the bot named mikan", () => {
+    expect(slackBotNameProblem("Pi.bot_1 -x")).toBeUndefined();
+    for (const name of ["小橘", "Pi 助理", "é", "Pi!", "a".repeat(81)]) {
+      expect(slackBotNameProblem(name)).toBeDefined();
+      expect(
+        slackAppManifest({ display_information: { name } }).features?.bot_user?.display_name,
+      ).toBe("mikan");
+    }
   });
 });
 

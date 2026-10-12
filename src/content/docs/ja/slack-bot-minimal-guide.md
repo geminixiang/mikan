@@ -9,7 +9,7 @@ mikan は Slack app を作成し、設定を最新に保てます。新しいリ
 
 - 新しい app：`mikan onboard` を実行し、Slack を選んでから **Create a new Slack app for me** を選びます。mikan が app を作成してインストールリンクを表示し、bot token と Socket Mode token を尋ねます。この 2 つの手順は Slack の Web ページでしか行えません。
 - 既存の app：`mikan slack token` を実行して refresh token を貼り付けます。次回の起動時に mikan が自身の manifest で app の設定を置き換えます。Slack 上で手動で追加した設定は削除されます。
-- 名前と説明：`mikan slack set --name <名前> --description <説明>` で `~/.mikan/slack.json` に保存され、次回の起動時に適用されます。Slack の設定ページでの変更は上書きされます。
+- 名前と説明：`mikan slack set --name <名前> --description <説明>` で `~/.mikan/slack.json` に保存され、次回の起動時に適用されます。名前は app 名と会話での bot の表示名の両方になります。Slack の bot 名は英字、数字、スペース、`.`、`_`、`-` しか使えないため、それ以外の名前（日本語など）では bot は `mikan` のままです。Slack の設定ページでの変更は上書きされます。
 
 mikan は起動のたびに token をローテーションし、最新のものを `~/.mikan/slack-config-token.json`（0600）に保存します。ローテーションすると以前の token は無効になるため、1 つの token は 1 つの mikan だけで使ってください。リリースで scope が増えると、mikan は token を作成した人に再インストールのリンクを DM で送り、それまで bot は今の権限のまま動き続けます。token は作成した人に属するため、その人がワークスペースを離れたら別のコラボレーターの token を保存してください。mikan が適用するのは下記の通常の app manifest なので、agent manifest で作った app には token を保存しないでください。
 

@@ -25,7 +25,7 @@ change in a minor release.
   `mikan onboard` creates the app from mikan's manifest, and every start replaces the app's
   configuration with the manifest of the running release, so new slash commands, scopes, and events
   need no edit in Slack's settings. Store a token for an existing app with `mikan slack token`, and
-  set the app's name and description with `mikan slack set`. Settings added by hand in Slack are
+  set the app's and bot's name and the description with `mikan slack set`. Settings added by hand in Slack are
   removed. When a release adds a scope, mikan DMs the token's owner a reinstall link. Without a
   token nothing changes.
 

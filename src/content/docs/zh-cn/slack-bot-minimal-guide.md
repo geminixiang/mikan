@@ -9,7 +9,7 @@ mikan 可以替你创建 Slack app 并保持配置最新：新版本加了 slash
 
 - 新 app：运行 `mikan onboard`，选 Slack，再选 **Create a new Slack app for me**。mikan 会创建 app、打印安装链接，并请你粘贴 bot token 和 Socket Mode token；这两步 Slack 只在网页上提供。
 - 已有 app：运行 `mikan slack token` 并粘贴 refresh token。mikan 下次启动时会用自己的 manifest 替换 app 配置；在 Slack 上手动添加的设置会被移除。
-- 名称和描述：`mikan slack set --name <名称> --description <描述>` 会保存到 `~/.mikan/slack.json`，下次启动时应用。在 Slack 设置页的修改会被覆盖。
+- 名称和描述：`mikan slack set --name <名称> --description <描述>` 会保存到 `~/.mikan/slack.json`，下次启动时应用。名称同时是 app 名称和 bot 在对话中的显示名称；Slack 的 bot 名称只接受英文字母、数字、空格、`.`、`_`、`-`，其他名称（例如中文）会让 bot 保持 `mikan`。在 Slack 设置页的修改会被覆盖。
 
 mikan 每次启动都会轮换 token，并把最新的一组保存在 `~/.mikan/slack-config-token.json`（0600）。每次轮换都会让上一组失效，所以一个 token 只给一个 mikan 使用。新版本加了 scope 时，mikan 会私信生成 token 的人重新安装的链接，在此之前 bot 以现有权限照常运行。token 属于生成它的人；此人离开 workspace 后，请改存另一位协作者的 token。mikan 应用的是下方的普通 app manifest，如果你的 app 是用 agent manifest 创建的，请不要保存 token。
 

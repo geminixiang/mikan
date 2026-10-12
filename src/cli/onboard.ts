@@ -18,6 +18,7 @@ import {
   createSlackApp,
   slackAppApi,
   slackAppCustomizationProblem,
+  slackBotNameProblem,
   writeConfigTokens,
   writeSlackAppCustomization,
 } from "../adapters/slack/app-config.js";
@@ -82,7 +83,7 @@ async function askChoice(io: OnboardIo, labels: string[], prompt: string): Promi
 
 async function askSlackDisplay(io: OnboardIo): Promise<SlackAppCustomization> {
   for (;;) {
-    const name = (await io.ask("  App name [mikan]: ")).trim();
+    const name = (await io.ask("  App and bot name [mikan]: ")).trim();
     const description = (await io.ask("  Short description [mikan Slack assistant]: ")).trim();
     const display_information = {
       ...(name ? { name } : {}),
@@ -90,7 +91,11 @@ async function askSlackDisplay(io: OnboardIo): Promise<SlackAppCustomization> {
     };
     const customization = Object.keys(display_information).length ? { display_information } : {};
     const problem = slackAppCustomizationProblem(customization);
-    if (!problem) return customization;
+    if (!problem) {
+      const botNameProblem = name ? slackBotNameProblem(name) : undefined;
+      if (botNameProblem) io.print(`  ${botNameProblem}`);
+      return customization;
+    }
     io.print(`  ${problem}`);
   }
 }

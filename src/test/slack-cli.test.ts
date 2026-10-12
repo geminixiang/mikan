@@ -98,4 +98,13 @@ describe("mikan slack", () => {
     expect(code).toBe(1);
     expect(existsSync(join(stateDir, SLACK_CONFIG_TOKEN_FILE))).toBe(false);
   });
+
+  test("set says when the bot keeps its name because Slack cannot use the new one", async () => {
+    const log = vi.mocked(console.log);
+
+    expect(await runSlackCommand(["set", "--name", "小橘"], { stateDir, apps: apps() })).toBe(0);
+
+    expect(customization()).toEqual({ display_information: { name: "小橘" } });
+    expect(log.mock.calls.flat().join("\n")).toMatch(/bot.*mikan/);
+  });
 });
