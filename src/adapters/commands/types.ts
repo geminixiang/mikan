@@ -2,7 +2,6 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import type { Workspace } from "../../office/types.js";
-import type { OfficeDesktop } from "../../sandbox/desktop.js";
 import type { DockerContainerManager } from "../../sandbox/provisioner.js";
 import type { SandboxConfig } from "../../sandbox/types.js";
 import type {
@@ -18,6 +17,7 @@ import type {
   RunnerCacheControl,
   SessionViewTokenStoreLike,
   DesktopTokenStoreLike,
+  OpenDesktop,
 } from "../../types.js";
 import type { VaultManager } from "../../vault/types.js";
 import type { AdminTokenCreateOptions } from "../web/admin/types.js";
@@ -77,7 +77,7 @@ export interface CommandServices {
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore: SessionViewTokenStoreLike;
   desktopTokenStore?: DesktopTokenStoreLike;
-  desktop?: OfficeDesktop;
+  openDesktop?: OpenDesktop;
   adminTokenStore: AdminTokenStoreLike;
   portalBaseUrl?: string;
 }

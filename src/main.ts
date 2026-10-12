@@ -27,6 +27,7 @@ import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
 import { InMemoryDesktopTokenStore } from "./adapters/web/desktop/index.js";
 import { OfficeDesktop } from "./sandbox/desktop.js";
+import { createDesktopOpener } from "./harness/desktop.js";
 import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
 import { DockerContainerManager } from "./sandbox/provisioner.js";
 import {
@@ -302,6 +303,10 @@ const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
 const desktopTokenStore = new InMemoryDesktopTokenStore();
 const desktop = provisioner ? new OfficeDesktop(provisioner) : undefined;
+const openDesktop =
+  provisioner && desktop
+    ? createDesktopOpener({ sandbox, vaultManager, provisioner, workspace, desktop })
+    : undefined;
 const runEvents = new RunEventHub();
 const adminTokenStore = new InMemoryAdminTokenStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
@@ -404,7 +409,7 @@ const handler = createConversationRuntime({
   linkTokenStore,
   sessionViewTokenStore,
   desktopTokenStore,
-  desktop,
+  openDesktop,
   adminTokenStore,
   openConnector,
   runEvents,

@@ -1,4 +1,3 @@
-import { ActorExecutionResolver } from "../../harness/execution-resolver.js";
 import { commandForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler } from "./types.js";
 import { portalNotConfiguredLines, replySummaryPrivately } from "./utils.js";
@@ -21,8 +20,8 @@ export class DesktopCommandHandler implements CommandHandler {
       return true;
     }
 
-    const { sandbox, provisioner, desktop, desktopTokenStore, portalBaseUrl } = context.services;
-    if (sandbox.type !== "oci" || !provisioner || !desktop) {
+    const { sandbox, openDesktop, desktopTokenStore, portalBaseUrl } = context.services;
+    if (sandbox.type !== "oci" || !openDesktop) {
       await replySummaryPrivately(context, TITLE, [
         "The desktop runs in a sandbox that mikan manages; start mikan with --sandbox=oci to use it.",
       ]);
@@ -33,18 +32,11 @@ export class DesktopCommandHandler implements CommandHandler {
       return true;
     }
 
-    const resolver = new ActorExecutionResolver(
-      sandbox,
-      context.services.vaultManager,
-      provisioner,
-      context.services.workspace,
-    );
-    const containerKey = await resolver.prepare({
+    const started = await openDesktop({
       address: context.address,
       userId: context.platformUserId,
-      trustModel: context.messagingInfo.trustModel ?? "membership",
+      trustModel: context.messagingInfo.trustModel,
     });
-    const started = await desktop.start(containerKey);
     if (started === "outdated-image") {
       await replySummaryPrivately(context, TITLE, [
         "This conversation's sandbox is still running an older sandbox image without the desktop.",

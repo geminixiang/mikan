@@ -30,5 +30,5 @@ export interface WebFetchToolOptions {
 
 export interface DesktopAccess {
   link(platformUserId: string): string;
-  open(): Promise<boolean>;
+  open(platformUserId: string): Promise<boolean>;
 }

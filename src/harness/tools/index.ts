@@ -80,7 +80,7 @@ export function createMikanTools(
       jevBrowserTool.setHandOff(
         desktopAccess
           ? {
-              openDesktop: desktopAccess.open,
+              openDesktop: () => desktopAccess.open(userId),
               announce: (step) =>
                 responder.respond(
                   formatBrowserHandOff(

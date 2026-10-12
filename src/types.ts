@@ -5,8 +5,7 @@ import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
-import type { OfficeDesktop } from "./sandbox/desktop.js";
-import type { DockerExecFile, SandboxConfig } from "./sandbox/types.js";
+import type { DesktopStart, DockerExecFile, SandboxConfig } from "./sandbox/types.js";
 import type { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
@@ -424,7 +423,7 @@ export interface CreateRunnerOptions {
   desktop?: {
     tokenStore: DesktopTokenStoreLike;
     portalBaseUrl?: string;
-    office: Pick<OfficeDesktop, "start">;
+    open: OpenDesktop;
   };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models: MikanModels;
@@ -449,6 +448,8 @@ export interface DesktopTokenCreateOptions {
   platformUserId: string;
   office: Office;
 }
+
+export type OpenDesktop = (actor: ActorContext) => Promise<DesktopStart>;
 
 export interface DesktopTokenStoreLike {
   create(options: DesktopTokenCreateOptions): { token: string };

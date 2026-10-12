@@ -144,11 +144,11 @@ async function createConfiguredAgentSession(params: {
 }
 
 function desktopAccess(
-  options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office">,
+  options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office" | "trustModel">,
 ): DesktopAccess | undefined {
   const desktop = options.desktop;
   if (!desktop?.portalBaseUrl || options.sandboxConfig.type !== "oci") return undefined;
-  const { tokenStore, portalBaseUrl, office: officeDesktop } = desktop;
+  const { tokenStore, portalBaseUrl, open } = desktop;
   return {
     link: (platformUserId) => {
       const { token } = tokenStore.create({
@@ -158,7 +158,12 @@ function desktopAccess(
       });
       return `${portalBaseUrl}/desktop?token=${token}`;
     },
-    open: async () => (await officeDesktop.start(options.office.key)) === "ready",
+    open: async (platformUserId) =>
+      (await open({
+        address: options.office.address,
+        userId: platformUserId,
+        trustModel: options.trustModel,
+      })) === "ready",
   };
 }
 

@@ -21,6 +21,7 @@ import { SandboxCommandHandler } from "../adapters/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../adapters/commands/session-view.js";
 import { DesktopCommandHandler } from "../adapters/commands/desktop.js";
 import { OfficeDesktop } from "../sandbox/desktop.js";
+import { createDesktopOpener } from "../harness/desktop.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { recordPlatformChannelKind } from "../office/projection.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
@@ -904,7 +905,10 @@ describe("DesktopCommandHandler", () => {
   const handler = new DesktopCommandHandler();
   const oci: SandboxConfig = { type: "oci", image: "ghcr.io/example/sandbox:1" };
 
-  function desktopServices(desktopExec: (args: string[]) => Promise<{ stdout: string }>) {
+  function desktopServices(
+    desktopExec: (args: string[]) => Promise<{ stdout: string }>,
+    running = true,
+  ) {
     const provisioner = new DockerContainerManager("ghcr.io/example/sandbox:1", {
       engine: "docker",
     });
@@ -913,18 +917,25 @@ describe("DesktopCommandHandler", () => {
       .mockImplementation(async (key: string) => DockerContainerManager.containerName(key));
     const created: { platformUserId: string; office: string }[] = [];
     const desktopExecFile = vi.fn(async (_file: string, args: string[]) => desktopExec(args));
+    const workspace = testWorkspace(mkdtempSync(join(tmpdir(), "desktop-cmd-")));
     return {
       provision,
       created,
       desktopExecFile,
       services: {
-        workspace: testWorkspace(mkdtempSync(join(tmpdir(), "desktop-cmd-"))),
+        workspace,
         sandbox: oci,
         provisioner,
-        desktop: new OfficeDesktop(
-          { engine: "docker", retain: () => () => {}, isRunning: () => true },
-          { execFile: desktopExecFile },
-        ),
+        openDesktop: createDesktopOpener({
+          sandbox: oci,
+          vaultManager: fakeVaultManager(),
+          provisioner,
+          workspace,
+          desktop: new OfficeDesktop(
+            { engine: "docker", retain: () => () => {}, isRunning: () => running },
+            { execFile: desktopExecFile },
+          ),
+        }),
         desktopTokenStore: {
           create(options: { platformUserId: string; office: { key: string } }) {
             created.push({ platformUserId: options.platformUserId, office: options.office.key });
@@ -1000,18 +1011,8 @@ describe("DesktopCommandHandler", () => {
   });
 
   test("a sandbox that is not running is reported as such, not as an old image", async () => {
-    const { services } = desktopServices(async () => ({ stdout: "" }));
-    const ctx = buildContext({
-      commandText: "/pi-desktop",
-      privateConversation: true,
-      services: {
-        ...services,
-        desktop: new OfficeDesktop(
-          { engine: "docker", retain: () => () => {}, isRunning: () => false },
-          { execFile: vi.fn(async () => ({ stdout: "" })) },
-        ),
-      },
-    });
+    const { services } = desktopServices(async () => ({ stdout: "" }), false);
+    const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true, services });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
 

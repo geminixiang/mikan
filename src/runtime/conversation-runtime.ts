@@ -556,11 +556,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           }
         : undefined,
       desktop:
-        this.options.desktopTokenStore && this.options.desktop
+        this.options.desktopTokenStore && this.options.openDesktop
           ? {
               tokenStore: this.options.desktopTokenStore,
               portalBaseUrl: this.options.portalBaseUrl,
-              office: this.options.desktop,
+              open: this.options.openDesktop,
             }
           : undefined,
       platformToolPackFactories: this.options.platformToolPackFactories,
