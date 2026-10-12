@@ -17,7 +17,9 @@ the bottom, generate one for your workspace, and copy its **Refresh Token** (`xo
   replaces the app's configuration with its own manifest; settings added by hand in Slack are
   removed.
 - Name and description: `mikan slack set --name <name> --description <text>` saves them in
-  `~/.mikan/slack.json`, and the next start applies them. Edits made in Slack's settings pages are
+  `~/.mikan/slack.json`, and the next start applies them. The name is both the app's name and the
+  bot's name in conversations; Slack accepts only letters, digits, spaces, `.`, `_`, and `-` in a
+  bot's name, so for any other name the bot stays `mikan`. Edits made in Slack's settings pages are
   overwritten.
 
 mikan rotates the token on every start and keeps the newest one in

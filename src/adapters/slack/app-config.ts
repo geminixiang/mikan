@@ -65,6 +65,20 @@ const ConfigTokenFileSchema = Type.Object({
   refresh_token: Type.String({ minLength: 1 }),
 });
 
+const DEFAULT_BOT_NAME = "mikan";
+const SLACK_BOT_NAME = /^[A-Za-z0-9 ._-]{1,80}$/;
+
+export function slackBotNameProblem(name: string): string | undefined {
+  return SLACK_BOT_NAME.test(name)
+    ? undefined
+    : `Slack names the bot user only with letters, digits, spaces, ".", "_", and "-" (up to 80), so the bot keeps the name ${DEFAULT_BOT_NAME}.`;
+}
+
+function botName(customization: SlackAppCustomization): string {
+  const name = customization.display_information?.name;
+  return name !== undefined && slackBotNameProblem(name) === undefined ? name : DEFAULT_BOT_NAME;
+}
+
 export function slackAppManifest(customization: SlackAppCustomization = {}): SlackAppManifest {
   const manifest = {
     display_information: {
@@ -79,7 +93,7 @@ export function slackAppManifest(customization: SlackAppCustomization = {}): Sla
         messages_tab_enabled: true,
         messages_tab_read_only_enabled: false,
       },
-      bot_user: { display_name: "mikan", always_online: true },
+      bot_user: { display_name: botName(customization), always_online: true },
       slash_commands: COMMAND_MANIFEST.flatMap((entry) =>
         entry.slackCommand
           ? [

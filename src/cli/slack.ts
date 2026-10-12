@@ -2,6 +2,7 @@ import * as prompts from "@clack/prompts";
 import {
   readSlackAppCustomization,
   slackAppApi,
+  slackBotNameProblem,
   writeConfigTokens,
   writeSlackAppCustomization,
 } from "../adapters/slack/app-config.js";
@@ -78,6 +79,8 @@ function setDisplay(stateDir: string, options: SetOptions): number {
     console.error(errorMessage(error));
     return 1;
   }
+  const botNameProblem = options.name === undefined ? undefined : slackBotNameProblem(options.name);
+  if (botNameProblem) console.log(botNameProblem);
   console.log("Saved slack.json. mikan applies it to the Slack app on its next start.");
   return 0;
 }
@@ -104,7 +107,7 @@ export async function runSlackCommand(
   command
     .command("set")
     .description("Customize the app's name and description (saved in slack.json)")
-    .option("--name <name>", "App name, up to 35 characters")
+    .option("--name <name>", "App and bot name, up to 35 characters")
     .option("--description <text>", "Short description, up to 140 characters")
     .option("--long-description <text>", "Long description, up to 4000 characters")
     .option("--background-color <hex>", "Background color such as #4d5673")
