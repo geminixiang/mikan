@@ -110,3 +110,53 @@ describe("parseDesktopStatus", () => {
     expect(parseDesktopStatus(stdout)).toEqual(expected);
   });
 });
+
+describe("OfficeDesktop viewers", () => {
+  test("browser control goes back to the agent once the last viewer has been gone for the grace period", async () => {
+    vi.useFakeTimers();
+    try {
+      const execFile = vi.fn(async () => ({ stdout: "" }));
+      const children: Array<
+        EventEmitter & { stdin: PassThrough; stdout: PassThrough; kill: () => void }
+      > = [];
+      const office = new OfficeDesktop(
+        { engine: "docker", retain: () => () => {}, isRunning: () => true },
+        {
+          execFile,
+          spawn: () => {
+            const child = Object.assign(new EventEmitter(), {
+              stdin: new PassThrough(),
+              stdout: new PassThrough(),
+              kill: vi.fn(),
+            });
+            children.push(child);
+            return child;
+          },
+          handBackDelayMs: 5_000,
+        },
+      );
+      const handBacks = () =>
+        execFile.mock.calls.filter((call) =>
+          (call as unknown[])[1]?.toString().includes("control,agent"),
+        ).length;
+
+      const first = office.connect("v1-slack-d1-abc");
+      const second = office.connect("v1-slack-d1-abc");
+      first.close();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(handBacks()).toBe(0);
+
+      second.close();
+      await vi.advanceTimersByTimeAsync(2_000);
+      const reload = office.connect("v1-slack-d1-abc");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(handBacks()).toBe(0);
+
+      reload.close();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(handBacks()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

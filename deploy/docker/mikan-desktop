@@ -54,13 +54,13 @@ case "${1:-}" in
     running && exit 0
     if sway_running; then
       pkill -x wayvnc || true
-      SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -1) swaymsg exec "$0 vnc" >/dev/null 9>&-
+      SWAYSOCK="$XDG_RUNTIME_DIR/sway-ipc.$(id -u).$(pgrep -xo sway).sock" swaymsg exec "$0 vnc" >/dev/null 9>&-
       wait_running
       exit
     fi
     pkill -x wayvnc || true
     pkill -x sway || true
-    rm -f "$XDG_RUNTIME_DIR"/wayland-*
+    rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc.*
     WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
       setsid sway -c /etc/mikan/sway.conf </dev/null >"$LOG_FILE" 2>&1 9>&- &
     wait_running

@@ -19,6 +19,7 @@ type DesktopContainers = Pick<DockerContainerManager, "engine" | "retain" | "isR
 
 interface DesktopProcessRunners {
   execFile?: DockerExecFile;
+  handBackDelayMs?: number;
   spawn?: (
     file: string,
     args: string[],
@@ -29,6 +30,8 @@ interface DesktopProcessRunners {
 const MISSING_COMMAND = /executable file not found|not found in \$PATH/i;
 
 const DESKTOP_EXEC_TIMEOUT_MS = 20_000;
+
+const HAND_BACK_DELAY_MS = 10_000;
 
 const execFileAsync = promisify(execFile);
 
@@ -47,6 +50,9 @@ export function parseDesktopStatus(stdout: string): DesktopStatus {
 export class OfficeDesktop {
   private readonly execFile: NonNullable<DesktopProcessRunners["execFile"]>;
   private readonly spawn: NonNullable<DesktopProcessRunners["spawn"]>;
+  private readonly handBackDelayMs: number;
+  private readonly viewers = new Map<string, number>();
+  private readonly handBacks = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly containers: DesktopContainers,
@@ -56,6 +62,7 @@ export class OfficeDesktop {
       runners.execFile ??
       ((file, args) => execFileAsync(file, args, { timeout: DESKTOP_EXEC_TIMEOUT_MS }));
     this.spawn = runners.spawn ?? spawn;
+    this.handBackDelayMs = runners.handBackDelayMs ?? HAND_BACK_DELAY_MS;
   }
 
   async start(containerKey: string): Promise<DesktopStart> {
@@ -91,11 +98,13 @@ export class OfficeDesktop {
       { stdio: ["pipe", "pipe", "ignore"] },
     );
     const retained = this.containers.retain(containerKey);
+    const left = this.joinViewer(containerKey);
     let released = false;
     const release = () => {
       if (released) return;
       released = true;
       retained();
+      left();
     };
     const close = () => {
       release();
@@ -108,6 +117,26 @@ export class OfficeDesktop {
       throw new Error(`${this.containers.engine} exec for ${container} has no stdio`);
     }
     return { input: child.stdin, output: child.stdout, process: child, close };
+  }
+
+  private joinViewer(containerKey: string): () => void {
+    clearTimeout(this.handBacks.get(containerKey));
+    this.handBacks.delete(containerKey);
+    this.viewers.set(containerKey, (this.viewers.get(containerKey) ?? 0) + 1);
+    return () => {
+      const remaining = (this.viewers.get(containerKey) ?? 1) - 1;
+      if (remaining > 0) {
+        this.viewers.set(containerKey, remaining);
+        return;
+      }
+      this.viewers.delete(containerKey);
+      const timer = setTimeout(() => {
+        this.handBacks.delete(containerKey);
+        this.setBrowserOwner(containerKey, "agent").catch(() => {});
+      }, this.handBackDelayMs);
+      timer.unref();
+      this.handBacks.set(containerKey, timer);
+    };
   }
 
   private desktopCommand(containerKey: string, args: string[]): Promise<{ stdout: string }> {

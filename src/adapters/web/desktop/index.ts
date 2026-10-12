@@ -133,28 +133,6 @@ function refuse(socket: Duplex, status: number, reason: string): void {
   setTimeout(() => socket.destroy(), REFUSAL_GRACE_MS).unref();
 }
 
-const viewers = new WeakMap<object, Map<string, number>>();
-
-function trackViewer(options: DesktopWebOptions, containerKey: string): () => void {
-  const counts = viewers.get(options.desktop) ?? new Map<string, number>();
-  viewers.set(options.desktop, counts);
-  counts.set(containerKey, (counts.get(containerKey) ?? 0) + 1);
-  let left = false;
-  return () => {
-    if (left) return;
-    left = true;
-    const remaining = (counts.get(containerKey) ?? 1) - 1;
-    if (remaining > 0) {
-      counts.set(containerKey, remaining);
-      return;
-    }
-    counts.delete(containerKey);
-    options.desktop.setBrowserOwner(containerKey, "agent").catch((error: unknown) => {
-      log.logWarning("Desktop control reset failed", errorMessage(error));
-    });
-  };
-}
-
 function upstreamRequest(req: IncomingMessage): string {
   const lines = ["GET / HTTP/1.1", "Host: 127.0.0.1"];
   for (let i = 0; i < req.rawHeaders.length; i += 2) {
@@ -192,14 +170,12 @@ export async function handleDesktopUpgrade(
   }
   if (socket.destroyed) return true;
   const stream = options.desktop.connect(token.containerKey);
-  const leave = trackViewer(options, token.containerKey);
   const expiry = setTimeout(() => close(), Math.max(0, token.expiresAt - Date.now()));
   expiry.unref();
   function close() {
     clearTimeout(expiry);
     stream.close();
     socket.destroy();
-    leave();
   }
   stream.input.on("error", close);
   stream.output.on("error", close);

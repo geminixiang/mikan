@@ -78,16 +78,11 @@ export function createMikanTools(
       imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
       bindTasks(responder);
       jevBrowserTool.setHandOff(
-        desktopAccess
+        desktopAccess && message.conversationKind === "direct"
           ? {
               openDesktop: () => desktopAccess.open(userId),
               announce: (step) =>
-                responder.respond(
-                  formatBrowserHandOff(
-                    step,
-                    message.conversationKind === "direct" ? desktopAccess.link(userId) : undefined,
-                  ),
-                ),
+                responder.respond(`${step}\n\nOpen the desktop: ${desktopAccess.link(userId)}`),
             }
           : undefined,
       );
@@ -101,10 +96,4 @@ export function createMikanTools(
       }
     },
   };
-}
-
-function formatBrowserHandOff(step: string, link: string | undefined): string {
-  return link
-    ? `${step}\n\nOpen the desktop: ${link}`
-    : `${step}\n\nAsk for a private desktop link with the desktop command.`;
 }

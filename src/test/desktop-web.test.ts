@@ -162,7 +162,7 @@ describe("desktop WebSocket failures", () => {
       await resetAfterSending(port, upgradeRequest(token));
       await vi.waitFor(() => expect(desktop.start).toHaveBeenCalled());
       release();
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await desktop.start.mock.results.at(-1)?.value;
       const forwarded = await resetAfterSending(
         port,
         `GET /desktop/ws HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Forwarded-Host: a b\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n`,
@@ -187,18 +187,6 @@ describe("desktop WebSocket failures", () => {
     const closed = new Promise((resolve) => socket.addEventListener("close", resolve));
     await closed;
     output.end();
-  });
-
-  test("the browser goes back to the agent when the last viewer leaves", async () => {
-    const { desktop, output } = fakeDesktop();
-    const { base, token, key } = await serve(desktop);
-
-    const socket = new WebSocket(`${base.replace("http", "ws")}/desktop/ws?token=${token}`);
-    await vi.waitFor(() => expect(desktop.connect).toHaveBeenCalled());
-    output.end();
-    await new Promise((resolve) => socket.addEventListener("close", resolve));
-
-    await vi.waitFor(() => expect(desktop.setBrowserOwner).toHaveBeenCalledWith(key, "agent"));
   });
 
   test("a malformed noVNC path is a 404, not a server error", async () => {

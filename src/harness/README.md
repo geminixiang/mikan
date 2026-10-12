@@ -16,7 +16,7 @@ readiness to that run's tools and prompt. The resolver rejects overlapping mount
 targets before the environment is created and reports provisioning failures
 without changing cleanup ownership. With a resolver, a runner has no
 environment until its first run resolves one, so a tool called earlier fails
-instead of reaching the host. `desktop.ts` builds the one `OpenDesktop` service, which readies an actor's office container through the same resolver and starts its desktop; the composition root hands it to the `/pi-desktop` command and to runners for `jev_browser`'s `handOff`, so the desktop key comes from the resolver alone. `prompt.ts` owns prompt construction; `presenter.ts` turns
+instead of reaching the host. `desktop.ts` builds the one `OpenDesktop` service, which readies an actor's office container through the same resolver and starts its desktop; the composition root hands it to the `/pi-desktop` command and to runners for `jev_browser`'s `handOff`, so the command builds no resolver of its own. In `oci` mode the resolver's resource key is the office key, which desktop tokens also carry. `prompt.ts` owns prompt construction; `presenter.ts` turns
 session events into responder operations in two passes: a run observer records
 telemetry, run accounting, and daemon logs from the raw Pi event, then
 `run-events.ts` translates the event into a platform-neutral `RunEvent` that the

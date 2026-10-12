@@ -243,6 +243,7 @@ interface BrowserTarget {
   env: ExecutionEnv;
   sessionId: string;
   launchEnv?: Record<string, string>;
+  onLaunch?: (onDesktop: boolean) => void;
 }
 
 async function runAgentBrowser<T = unknown>(
@@ -275,7 +276,12 @@ async function runAgentBrowser<T = unknown>(
   }
   if (stdout.trim()) {
     try {
-      return JSON.parse(stdout) as AgentBrowserResult<T>;
+      const parsed = JSON.parse(stdout) as AgentBrowserResult<T>;
+      const lifecycle = lifecycleOf(parsed);
+      if (lifecycle?.launched === true || lifecycle?.relaunchedBrowser === true) {
+        browser.onLaunch?.(browser.launchEnv !== undefined);
+      }
+      return parsed;
     } catch (error) {
       if (code === 0)
         throw new Error("Invalid agent-browser JSON response in sandbox", { cause: error });
@@ -456,8 +462,11 @@ interface JevBrowserOptions {
   desktop?: boolean;
 }
 
+const NO_PAGE_TO_HAND_OFF =
+  "The browser has no page to hand over. Open the page with url first; it now opens on the desktop. Then call handOff again.";
+
 const HAND_OFF_UNAVAILABLE =
-  "Handing the browser to a person needs the office desktop, which this conversation's sandbox does not have; ask the person in chat instead.";
+  "Handing the browser to a person needs the office desktop and a direct message to send its link privately; this conversation has neither, so ask the person in chat instead.";
 
 async function setBrowserControl(
   env: ExecutionEnv,
@@ -493,7 +502,8 @@ function createUnlockedJevBrowserTool(
   generateText: FieldTextGenerator | undefined,
   options: JevBrowserOptions,
 ): JevBrowserTool {
-  const sessionId = `mikan-jb-${randomUUID()}`;
+  const newSessionId = () => `mikan-jb-${randomUUID()}`;
+  let sessionId = newSessionId();
   const agentTargets = new Set<string>();
   let handOff: BrowserHandOff | undefined;
   let browserOpen = false;
@@ -501,30 +511,49 @@ function createUnlockedJevBrowserTool(
   const desktopStatus = (env: ExecutionEnv, signal?: AbortSignal) =>
     options.desktop ? readDesktopStatus(env, signal) : Promise.resolve(NO_DESKTOP_STATUS);
 
+  const target = (env: ExecutionEnv, launchEnv?: Record<string, string>): BrowserTarget => ({
+    env,
+    sessionId,
+    launchEnv,
+    onLaunch: (onDesktop) => {
+      openedOnDesktop = onDesktop;
+    },
+  });
+
+  async function moveBrowserToDesktop(env: ExecutionEnv, display: string, signal?: AbortSignal) {
+    const headless = target(env);
+    let launchedNow = false;
+    headless.onLaunch = () => {
+      launchedNow = true;
+    };
+    const current = await runAgentBrowser<{ url?: string }>(headless, ["get", "url"], signal);
+    const url = current.success && !launchedNow ? current.data?.url : undefined;
+    await runAgentBrowser(headless, ["close"], signal);
+    agentTargets.clear();
+    browserOpen = false;
+    openedOnDesktop = false;
+    sessionId = newSessionId();
+    if (!url) throw new Error(NO_PAGE_TO_HAND_OFF);
+    const reopened = await runAgentBrowser(
+      target(env, desktopLaunchEnv(display)),
+      ["open", url],
+      signal,
+    );
+    if (!reopened.success) {
+      throw new Error(
+        `Could not reopen ${url} on the desktop: ${reopened.error}. ${NO_PAGE_TO_HAND_OFF}`,
+      );
+    }
+    const opened = targetIdOf(reopened);
+    if (opened) agentTargets.add(opened);
+    browserOpen = true;
+  }
+
   async function handBrowserToPerson(env: ExecutionEnv, step: string, signal?: AbortSignal) {
     if (!handOff || !(await handOff.openDesktop())) throw new Error(HAND_OFF_UNAVAILABLE);
     const desktop = await desktopStatus(env, signal);
     if (!desktop.display) throw new Error(HAND_OFF_UNAVAILABLE);
-    if (browserOpen && !openedOnDesktop) {
-      const headless: BrowserTarget = { env, sessionId };
-      const current = await runAgentBrowser<{ url?: string }>(headless, ["get", "url"], signal);
-      const url = current.success ? current.data?.url : undefined;
-      await runAgentBrowser(headless, ["close"], signal);
-      agentTargets.clear();
-      browserOpen = false;
-      if (url) {
-        const onDesktop: BrowserTarget = {
-          env,
-          sessionId,
-          launchEnv: desktopLaunchEnv(desktop.display),
-        };
-        const reopened = await runAgentBrowser(onDesktop, ["open", url], signal);
-        const target = targetIdOf(reopened);
-        if (target) agentTargets.add(target);
-        browserOpen = reopened.success;
-        openedOnDesktop = reopened.success;
-      }
-    }
+    if (!openedOnDesktop) await moveBrowserToDesktop(env, desktop.display, signal);
     if (!(await setBrowserControl(env, "user", signal))) throw new Error(HAND_OFF_UNAVAILABLE);
     try {
       await handOff.announce(step);
@@ -574,12 +603,7 @@ function createUnlockedJevBrowserTool(
       }
       const desktop = await desktopStatus(env, signal);
       if (desktop.control === "user") return personHasControlResult();
-      const browser: BrowserTarget = {
-        env,
-        sessionId,
-        launchEnv: desktop.display ? desktopLaunchEnv(desktop.display) : undefined,
-      };
-      if (!browserOpen) openedOnDesktop = desktop.display !== undefined;
+      const browser = target(env, desktop.display ? desktopLaunchEnv(desktop.display) : undefined);
       const ownTabs = desktop.display ? agentTargets : undefined;
       if (args.close === true && !args.url && !args.goal && !args.commands?.length) {
         const result = await runAgentBrowser(browser, ["close"], signal);
