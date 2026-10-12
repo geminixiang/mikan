@@ -44,6 +44,7 @@ export class DockerContainerManager {
   private readonly limits?: ResourceLimits;
   private readonly boostLimits?: ResourceLimits;
   private readonly boostedKeys = new Set<string>();
+  private readonly retained = new Map<string, number>();
   private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: DockerExecFile;
   private readonly configuredEngine: string | undefined;
@@ -61,7 +62,7 @@ export class DockerContainerManager {
     this.timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   }
 
-  private get engine(): string {
+  get engine(): string {
     return this.configuredEngine ?? containerEngine();
   }
 
@@ -177,6 +178,23 @@ export class DockerContainerManager {
     if (state) state.lastUsed = Date.now();
   }
 
+  isRunning(containerKey: string): boolean {
+    return this.state.get(containerKey)?.status === "running";
+  }
+
+  retain(containerKey: string): () => void {
+    this.retained.set(containerKey, (this.retained.get(containerKey) ?? 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (this.retained.get(containerKey) ?? 1) - 1;
+      if (remaining > 0) this.retained.set(containerKey, remaining);
+      else this.retained.delete(containerKey);
+      this.markUsed(containerKey);
+    };
+  }
+
   stop(containerKey: string): Promise<void> {
     return this.serialize(containerKey, () => this.stopInner(containerKey));
   }
@@ -227,6 +245,7 @@ export class DockerContainerManager {
     const now = Date.now();
     const toStop: string[] = [];
     for (const [containerKey, containerState] of this.state) {
+      if (this.retained.has(containerKey)) continue;
       if (containerState.status === "running" && now - containerState.lastUsed > maxIdleMs) {
         toStop.push(containerKey);
       }

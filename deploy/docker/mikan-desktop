@@ -1,0 +1,104 @@
+#!/bin/bash
+# The office desktop that mikan shares with people (ADR 0025): a headless Sway
+# session with wayvnc on 127.0.0.1:6080. mikan runs this from the host with
+# `<engine> exec`; jev_browser reads `status` to draw on the display and to
+# respect who controls the browser.
+set -euo pipefail
+
+export XDG_RUNTIME_DIR=/run/user/0
+export LANG=C.UTF-8
+VNC_PORT=6080
+CONTROL_FILE=/dev/shm/mikan-browser-control
+LOG_FILE=/tmp/mikan-desktop.log
+
+display_socket() {
+  local socket
+  for socket in "$XDG_RUNTIME_DIR"/wayland-*; do
+    case "$socket" in *.lock) continue ;; esac
+    if [ -S "$socket" ]; then
+      basename "$socket"
+      return
+    fi
+  done
+}
+
+sway_running() {
+  [ -n "$(display_socket)" ] && pgrep -x sway >/dev/null
+}
+
+vnc_listening() {
+  local port
+  port=$(printf '%04X' "$VNC_PORT")
+  awk -v port=":$port" '$2 ~ port"$" && $4 == "0A" { found = 1 } END { exit !found }' /proc/net/tcp
+}
+
+running() {
+  sway_running && pgrep -x wayvnc >/dev/null && vnc_listening
+}
+
+wait_running() {
+  for _ in $(seq 100); do
+    running && return 0
+    sleep 0.1
+  done
+  tail -20 "$LOG_FILE" >&2
+  return 1
+}
+
+case "${1:-}" in
+  start)
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    exec 9>"$XDG_RUNTIME_DIR/.mikan-desktop.lock"
+    flock 9
+    running && exit 0
+    if sway_running; then
+      pkill -x wayvnc || true
+      SWAYSOCK="$XDG_RUNTIME_DIR/sway-ipc.$(id -u).$(pgrep -xo sway).sock" swaymsg exec "$0 vnc" >/dev/null 9>&-
+      wait_running
+      exit
+    fi
+    pkill -x wayvnc || true
+    pkill -x sway || true
+    rm -f "$XDG_RUNTIME_DIR"/wayland-* "$XDG_RUNTIME_DIR"/sway-ipc.*
+    WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
+      setsid sway -c /etc/mikan/sway.conf </dev/null >"$LOG_FILE" 2>&1 9>&- &
+    wait_running
+    ;;
+  vnc)
+    exec wayvnc --websocket --max-fps=60 127.0.0.1 "$VNC_PORT"
+    ;;
+  status)
+    display=""
+    control=agent
+    if running; then
+      display=$(display_socket)
+      control=$(cat "$CONTROL_FILE" 2>/dev/null || echo agent)
+    fi
+    printf '{"display":"%s","control":"%s"}\n' "$display" "$control"
+    ;;
+  control)
+    case "${2:-}" in
+      agent | user) echo "$2" >"$CONTROL_FILE" ;;
+      *)
+        echo "usage: mikan-desktop control agent|user" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  connect)
+    running || exit 3
+    exec node -e '
+      const socket = require("node:net").connect(Number(process.argv[1]), "127.0.0.1");
+      process.stdin.pipe(socket);
+      socket.pipe(process.stdout);
+      socket.on("close", () => process.exit(0));
+      socket.on("error", () => process.exit(1));
+      process.stdin.on("end", () => socket.end());
+    ' "$VNC_PORT"
+    ;;
+  *)
+    echo "usage: mikan-desktop start|status|control agent|user|connect" >&2
+    exit 2
+    ;;
+esac

@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   file \
   fonts-liberation \
   fonts-noto-cjk \
+  foot \
   git \
   imagemagick \
   jq \
@@ -35,9 +36,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   python-is-python3 \
   python3-pip \
   ripgrep \
+  sway \
   tini \
   tzdata \
   unzip \
+  wayvnc \
   wget \
   xz-utils \
   zip \
@@ -111,6 +114,9 @@ RUN printf '%s\n' '[externally-managed]' \
     ' Run a script with its packages: uv run --with pandas --with matplotlib script.py' \
     ' Or create a project venv: uv venv .venv && uv pip install --python .venv pandas' \
     > "$(python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')/EXTERNALLY-MANAGED"
+
+COPY deploy/docker/mikan-desktop /usr/local/bin/mikan-desktop
+COPY deploy/docker/mikan-sway.conf /etc/mikan/sway.conf
 
 RUN rmdir /root/.ssh 2>/dev/null; test "$(ls -A /root | tr "\n" " ")" = ".bashrc .profile " || (ls -la /root && exit 1)
 

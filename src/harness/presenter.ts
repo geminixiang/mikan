@@ -36,6 +36,7 @@ import {
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
 import { toRunEvent, toolResultText } from "./run-events.js";
 import { REACT_TOOL } from "./tools/react.js";
 
@@ -667,9 +668,16 @@ function observeToolEnd(event: ToolEndEvent, context: RunObserverContext): void 
     return;
   }
   log.logToolSuccess(logCtx, event.toolName, durationMs, resultStr);
-  if (context.platformToolRoles.finalResponseTools.has(event.toolName)) {
+  if (
+    context.platformToolRoles.finalResponseTools.has(event.toolName) ||
+    (event.toolName === JEV_BROWSER_TOOL && handedBrowserToPerson(event.result))
+  ) {
     runState.finalResponseHandledByTool = true;
   }
+}
+
+function handedBrowserToPerson(result: unknown): boolean {
+  return isRecord(result) && isRecord(result.details) && result.details.handedOff === true;
 }
 
 function observeMessageStart(event: MessageStartEvent, context: RunObserverContext): void {

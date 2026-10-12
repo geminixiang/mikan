@@ -711,6 +711,27 @@ describe("DockerContainerManager", () => {
     expect(engine.callsOf("stop")).toEqual([["stop", "mikan-sandbox-slack-u111"]]);
   });
 
+  test("stopIdle keeps a container while a viewer retains it, and counts the release as use", async () => {
+    const engine = new FakeEngine();
+    const sandbox = manager(engine);
+    const provisionedAt = Date.parse("2026-04-22T00:00:00.000Z");
+    vi.useFakeTimers({ toFake: ["Date"], now: provisionedAt });
+
+    await sandbox.provision("slack-u111");
+    const release = sandbox.retain("slack-u111");
+    vi.setSystemTime(provisionedAt + 7200000);
+    await sandbox.stopIdle(3600000);
+    expect(engine.callsOf("stop")).toEqual([]);
+
+    release();
+    await sandbox.stopIdle(3600000);
+    expect(engine.callsOf("stop")).toEqual([]);
+
+    vi.setSystemTime(provisionedAt + 7200000 + 3600001);
+    await sandbox.stopIdle(3600000);
+    expect(engine.callsOf("stop")).toEqual([["stop", "mikan-sandbox-slack-u111"]]);
+  });
+
   test.each([
     ["Docker's RFC 3339", "2026-04-22T00:00:00.000000000Z"],
     ["Podman's local time", "2026-04-22 08:00:00.000000000 +0800 CST"],

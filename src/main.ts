@@ -25,6 +25,9 @@ import { createProcessShutdownHandler, runShutdownSteps } from "./cli/process-li
 import { closeWebServer, startWebServer } from "./adapters/web/server.js";
 import { InMemoryAdminTokenStore } from "./adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "./adapters/web/login/portal.js";
+import { InMemoryDesktopTokenStore } from "./adapters/web/desktop/index.js";
+import { OfficeDesktop } from "./sandbox/desktop.js";
+import { createDesktopOpener } from "./harness/desktop.js";
 import { InMemorySessionViewTokenStore } from "./adapters/web/session-view/portal.js";
 import { DockerContainerManager } from "./sandbox/provisioner.js";
 import {
@@ -298,10 +301,17 @@ if (sandbox.type === "oci") {
 
 const linkTokenStore = new InMemoryLinkTokenStore();
 const sessionViewTokenStore = new InMemorySessionViewTokenStore();
+const desktopTokenStore = new InMemoryDesktopTokenStore();
+const desktop = provisioner ? new OfficeDesktop(provisioner) : undefined;
+const openDesktop =
+  provisioner && desktop
+    ? createDesktopOpener({ sandbox, vaultManager, provisioner, workspace, desktop })
+    : undefined;
 const runEvents = new RunEventHub();
 const adminTokenStore = new InMemoryAdminTokenStore();
 setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
+setInterval(() => desktopTokenStore.purge(), 5 * 60 * 1000).unref();
 setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
@@ -398,6 +408,8 @@ const handler = createConversationRuntime({
   resourceController,
   linkTokenStore,
   sessionViewTokenStore,
+  desktopTokenStore,
+  openDesktop,
   adminTokenStore,
   openConnector,
   runEvents,
@@ -502,6 +514,7 @@ const webServer = LINK_PORT
       },
       sessionViewTokenStore,
       sessionViewInteractive: { handler, botsByPlatform, runEvents },
+      desktop: desktop ? { tokenStore: desktopTokenStore, desktop } : undefined,
       adminOptions: {
         adminTokenStore,
         workspace,

@@ -19,6 +19,14 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     telegramMenu: {},
   },
   {
+    name: "desktop",
+    description: "Open this conversation's desktop to watch or use its browser",
+    slackCommand: "/pi-desktop",
+    slackRoute: {},
+    discord: true,
+    telegramMenu: {},
+  },
+  {
     name: "model",
     description: "Switch this conversation's LLM model",
     arg: {

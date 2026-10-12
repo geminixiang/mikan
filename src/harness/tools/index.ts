@@ -14,7 +14,7 @@ import { createJevBrowserTool, type FieldTextGenerator } from "./jev-browser.js"
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import { createWebFetchTool } from "./web-fetch.js";
-import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
+import type { DesktopAccess, MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
   env: () => ExecutionEnv | undefined,
@@ -30,6 +30,7 @@ export function createMikanTools(
     outputDir: string;
   },
   generateFieldText?: FieldTextGenerator,
+  desktopAccess?: DesktopAccess,
 ): {
   tools: MikanHarnessTool[];
   bindRun: (ctx: MikanToolRunContext) => void;
@@ -39,7 +40,9 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
-  const jevBrowserTool = createJevBrowserTool(env, generateFieldText);
+  const jevBrowserTool = createJevBrowserTool(env, generateFieldText, {
+    desktop: sandboxController.sandbox.type === "oci",
+  });
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(sandboxController);
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
@@ -74,6 +77,15 @@ export function createMikanTools(
       });
       imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
       bindTasks(responder);
+      jevBrowserTool.setHandOff(
+        desktopAccess && message.conversationKind === "direct"
+          ? {
+              openDesktop: () => desktopAccess.open(userId),
+              announce: (step) =>
+                responder.respond(`${step}\n\nOpen the desktop: ${desktopAccess.link(userId)}`),
+            }
+          : undefined,
+      );
       setReactFunction(responder.react ? (emoji) => responder.react!(emoji) : null);
       for (const pack of platformToolPacks) {
         pack.bindRun({

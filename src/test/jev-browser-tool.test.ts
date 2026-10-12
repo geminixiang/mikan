@@ -6,7 +6,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 
 type ExecCall = (
   command: string,
-  options: { timeout?: number; signal?: AbortSignal },
+  options: { timeout?: number; signal?: AbortSignal; env?: Record<string, string> },
 ) => Promise<{ stdout: string; stderr: string; code: number }>;
 
 const quote = (arg: string) => `'${arg.replace(/'/g, "'\\''")}'`;
@@ -19,8 +19,13 @@ function fakeEnv(exec: ExecCall): () => NodeExecutionEnv {
       context: Parameters<NodeExecutionEnv["exec"]>[2],
     ) => {
       const line = typeof command === "string" ? command : command.map(quote).join(" ");
+      const run = line.startsWith("'mikan-desktop'") ? desktopMock : exec;
       try {
-        const result = await exec(line, { timeout: options?.timeout, signal: context.abortSignal });
+        const result = await run(line, {
+          timeout: options?.timeout,
+          signal: context.abortSignal,
+          env: options?.env,
+        });
         if (result.code === 127) return err(new ExecutionError("spawn_error", result.stderr));
         if (result.stdout) options?.onOutput?.(result.stdout, context, { stream: "stdout" });
         if (result.stderr) options?.onOutput?.(result.stderr, context, { stream: "stderr" });
@@ -34,6 +39,9 @@ function fakeEnv(exec: ExecCall): () => NodeExecutionEnv {
 }
 
 const execMock = vi.fn<ExecCall>();
+const desktopMock = vi.fn<ExecCall>();
+const noDesktop = async () => ({ stdout: "", stderr: "mikan-desktop: not found", code: 127 });
+desktopMock.mockImplementation(noDesktop);
 const env = fakeEnv(execMock);
 
 const {
@@ -67,7 +75,7 @@ function requestBody(
 }
 
 function sentCommands(): unknown[] {
-  return execMock.mock.calls.map(([command, options]) => [
+  return execMock.mock.calls.map(([command, { env: _env, ...options }]) => [
     command.replace(/'--session' 'mikan-jb-[^']+'/, "'--session' 'S'"),
     options,
   ]);
@@ -1590,19 +1598,58 @@ describe("jev_browser tabs", () => {
     ]);
   });
 
-  test("opening a tab past the limit closes the oldest inactive tabs first and reports them", async () => {
-    const parsed = await openTwice([tab("t4"), tab("t2"), tab("t7", true), tab("t5")]);
+  test("past the limit it closes the oldest tabs it opened, never a tab a person opened", async () => {
+    const tabs: Array<{ tabId: string; targetId: string; active: boolean; url: string }> = [];
+    let next = 1;
+    const activate = (tabId: string) => tabs.forEach((t) => (t.active = t.tabId === tabId));
+    execMock.mockImplementation(async (command) => {
+      let data: unknown = { targetId: tabs.find((t) => t.active)?.targetId };
+      if (command.includes("'tab' 'list'")) data = { tabs };
+      else if (command.includes("'tab' 'new'")) {
+        const tabId = `t${next++}`;
+        tabs.push({ tabId, targetId: `agent-${tabId}`, active: false, url: "about:blank" });
+        activate(tabId);
+        data = { tabId, targetId: `agent-${tabId}` };
+      } else if (command.includes("'tab' 'close'")) {
+        const id = /'close' '(t\d+)'/.exec(command)?.[1];
+        tabs.splice(
+          tabs.findIndex((t) => t.tabId === id),
+          1,
+        );
+      } else if (command.includes("'open'")) {
+        if (tabs.length === 0) {
+          tabs.push({ tabId: `t${next}`, targetId: `agent-t${next}`, active: true, url: "" });
+          next++;
+        }
+        const url = /'open' '([^']+)'/.exec(command)?.[1] ?? "";
+        const active = tabs.find((t) => t.active)!;
+        active.url = url;
+        data = { targetId: active.targetId };
+      }
+      return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
+    });
+    desktopMock.mockImplementation(async () => ({
+      stdout: JSON.stringify({ display: "wayland-1", control: "agent" }),
+      stderr: "",
+      code: 0,
+    }));
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    const open = (url: string) =>
+      tool.execute("call", { label: "test", url, commands: [["get", "title"]] }, undefined);
 
-    const sent = sentCommands().map((call) => (call as [string])[0]);
-    expect(sent.slice(1, 3)).toEqual([
-      "'agent-browser' '--session' 'S' 'tab' 'close' 't2' '--json'",
-      "'agent-browser' '--session' 'S' 'tab' 'close' 't4' '--json'",
+    await open("https://one.test/");
+    tabs.push({ tabId: `t${next}`, targetId: "person", active: false, url: "https://mine.test/" });
+    next++;
+    for (const url of ["https://two.test/", "https://three.test/", "https://four.test/"]) {
+      await open(url);
+    }
+
+    expect(tabs.map((t) => t.url)).toEqual([
+      "https://mine.test/",
+      "https://two.test/",
+      "https://three.test/",
+      "https://four.test/",
     ]);
-    expect(sent.slice(3, 5)).toEqual([
-      "'agent-browser' '--session' 'S' 'tab' 'new' '--json'",
-      "'agent-browser' '--session' 'S' 'open' 'https://next.test/' '--json'",
-    ]);
-    expect(parsed.closedOldTabs).toEqual(["https://t2.test/", "https://t4.test/"]);
   });
 
   test("a call within the limit closes no tab and reports none", async () => {
@@ -1641,4 +1688,362 @@ describe("describeContinuity", () => {
       expect(describeContinuity(true, metadata)).toMatch(/^NOT continuous:/);
     },
   );
+});
+
+function handOffHook(overrides: { openDesktop?: () => Promise<boolean> } = {}) {
+  return {
+    openDesktop: vi.fn(overrides.openDesktop ?? (async () => true)),
+    announce: vi.fn(async (_step: string) => {}),
+  };
+}
+
+function lifecycleBrowser(urls: { current: string }, launches: { next: boolean }) {
+  execMock.mockImplementation(async (command) => {
+    const launched = launches.next;
+    launches.next = false;
+    if (command.includes("'close'")) launches.next = true;
+    const lifecycle = { launched, relaunchedBrowser: false, reused: !launched };
+    const data = command.includes("'get' 'url'")
+      ? { lifecycle, url: launched ? "about:blank" : urls.current }
+      : { lifecycle, targetId: "x", title: "T" };
+    const open = /'open' '([^']+)'/.exec(command)?.[1];
+    if (open) urls.current = open;
+    return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
+  });
+}
+
+describe("jev_browser on the office desktop", () => {
+  beforeEach(() => {
+    execMock.mockReset();
+    desktopMock.mockReset();
+    desktopMock.mockImplementation(noDesktop);
+  });
+  afterEach(() => {
+    desktopMock.mockImplementation(noDesktop);
+  });
+
+  function answerBrowser() {
+    execMock.mockImplementation(async () => ({
+      stdout: JSON.stringify({
+        success: true,
+        data: { targetId: "x", title: "Title" },
+        error: null,
+      }),
+      stderr: "",
+      code: 0,
+    }));
+  }
+
+  function desktopStatus(status: { display: string; control: string }) {
+    desktopMock.mockImplementation(async (command) => ({
+      stdout: command.includes("'status'") ? JSON.stringify(status) : "",
+      stderr: "",
+      code: 0,
+    }));
+  }
+
+  test("draws the browser on the desktop while it runs", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    answerBrowser();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(execMock.mock.calls[0]?.[1].env).toEqual({
+      AGENT_BROWSER_HEADED: "1",
+      AGENT_BROWSER_ARGS: "--ozone-platform=wayland",
+      WAYLAND_DISPLAY: "/run/user/0/wayland-1",
+    });
+  });
+
+  test("stays headless when the sandbox has no desktop", async () => {
+    answerBrowser();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(execMock.mock.calls[0]?.[1].env).toBeUndefined();
+  });
+
+  test("leaves the browser alone while a person controls it", async () => {
+    desktopStatus({ display: "wayland-1", control: "user" });
+    answerBrowser();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+
+    const result = await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(execMock).not.toHaveBeenCalled();
+    expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
+      status: "person-has-control",
+      message: expect.stringMatching(/Hand back/),
+    });
+  });
+
+  test("handOff gives the browser to the person, posts the step, and ends the turn", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    const result = await tool.execute(
+      "call",
+      { label: "t", handOff: "Please sign in to example.com" },
+      undefined,
+    );
+
+    expect(hook.openDesktop).toHaveBeenCalled();
+    expect(desktopMock.mock.calls.map(([command]) => command)).toContain(
+      "'mikan-desktop' 'control' 'user'",
+    );
+    expect(hook.announce).toHaveBeenCalledWith("Please sign in to example.com");
+    expect(execMock).not.toHaveBeenCalled();
+    expect(result.terminate).toBe(true);
+    expect(result.details).toEqual({ handedOff: true });
+  });
+
+  test("handOff reopens a headless browser's page on the desktop so the person can see it", async () => {
+    let display = "";
+    desktopMock.mockImplementation(async (command) => ({
+      stdout: command.includes("'status'") ? JSON.stringify({ display, control: "agent" }) : "",
+      stderr: "",
+      code: 0,
+    }));
+    execMock.mockImplementation(async (command) => ({
+      stdout: JSON.stringify({
+        success: true,
+        data: command.includes("'get' 'url'")
+          ? { url: "https://login.test/form" }
+          : { targetId: "x", title: "T" },
+        error: null,
+      }),
+      stderr: "",
+      code: 0,
+    }));
+    const hook = handOffHook({
+      openDesktop: async () => {
+        display = "wayland-1";
+        return true;
+      },
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://login.test/form", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+
+    const calls = sentCommands().map((call) => (call as [string])[0]);
+    expect(calls).toEqual([
+      "'agent-browser' '--session' 'S' 'get' 'url' '--json'",
+      "'agent-browser' '--session' 'S' 'close' '--json'",
+      "'agent-browser' '--session' 'S' 'open' 'https://login.test/form' '--json'",
+    ]);
+    expect(execMock.mock.calls[2]?.[1].env).toMatchObject({ AGENT_BROWSER_HEADED: "1" });
+    expect(hook.announce).toHaveBeenCalledWith("Sign in");
+  });
+
+  test("handOff reopens a page the model opened with raw commands", async () => {
+    let display = "";
+    desktopMock.mockImplementation(async (command) => ({
+      stdout: command.includes("'status'") ? JSON.stringify({ display, control: "agent" }) : "",
+      stderr: "",
+      code: 0,
+    }));
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook({
+      openDesktop: async () => {
+        display = "wayland-1";
+        return true;
+      },
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", commands: [["open", "https://login.test/"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+
+    const calls = sentCommands().map((call) => (call as [string])[0]);
+    expect(calls.at(-1)).toBe(
+      "'agent-browser' '--session' 'S' 'open' 'https://login.test/' '--json'",
+    );
+    expect(execMock.mock.calls.at(-1)?.[1].env).toMatchObject({ AGENT_BROWSER_HEADED: "1" });
+  });
+
+  test("handOff reopens on the desktop after the headed browser was relaunched headless", async () => {
+    let display = "wayland-1";
+    desktopMock.mockImplementation(async (command) => ({
+      stdout: command.includes("'status'") ? JSON.stringify({ display, control: "agent" }) : "",
+      stderr: "",
+      code: 0,
+    }));
+    const launches = { next: true };
+    lifecycleBrowser({ current: "" }, launches);
+    const hook = handOffHook({
+      openDesktop: async () => {
+        display = "wayland-1";
+        return true;
+      },
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://one.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+    display = "";
+    launches.next = true;
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://two.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+
+    const calls = sentCommands().map((call) => (call as [string])[0]);
+    expect(calls.at(-1)).toBe(
+      "'agent-browser' '--session' 'S' 'open' 'https://two.test/' '--json'",
+    );
+  });
+
+  test("handOff without an open page asks the model to open it first and keeps control", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+    ).rejects.toThrow(/url/);
+
+    expect(hook.announce).not.toHaveBeenCalled();
+    expect(desktopMock.mock.calls.map(([command]) => command)).not.toContain(
+      "'mikan-desktop' 'control' 'user'",
+    );
+  });
+
+  test("handOff gives the browser back to the agent when the step cannot be posted", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    hook.announce.mockRejectedValue(new Error("slack down"));
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+    ).rejects.toThrow(/slack down/);
+
+    expect(desktopMock.mock.calls.map(([command]) => command).at(-1)).toBe(
+      "'mikan-desktop' 'control' 'agent'",
+    );
+  });
+
+  test("handOff is used alone", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(handOffHook());
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in", url: "https://a.test/" }, undefined),
+    ).rejects.toThrow(/alone/);
+  });
+
+  test("handOff reports a sandbox without the desktop", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(handOffHook({ openDesktop: async () => false }));
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+    ).rejects.toThrow(/desktop/);
+  });
+
+  test("without a desktop the tab limit still closes the oldest inactive tabs", async () => {
+    let listed = false;
+    execMock.mockImplementation(async (command) => {
+      const tabs = [
+        { tabId: "t1", targetId: "a", active: false, url: "https://a.test/" },
+        { tabId: "t2", targetId: "b", active: false, url: "https://b.test/" },
+        { tabId: "t3", targetId: "c", active: true, url: "https://c.test/" },
+      ];
+      const data = command.includes("'tab' 'list'")
+        ? ((listed = true), { tabs })
+        : { targetId: "x" };
+      return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    await tool.execute(
+      "first",
+      { label: "t", url: "https://one.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute(
+      "second",
+      { label: "t", url: "https://two.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(listed).toBe(true);
+    expect(sentCommands().map((call) => (call as [string])[0])).toContain(
+      "'agent-browser' '--session' 'S' 'tab' 'close' 't1' '--json'",
+    );
+  });
+
+  test("a sandbox type without a desktop never asks for its status", async () => {
+    answerBrowser();
+    const tool = createJevBrowserTool(env);
+
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(desktopMock).not.toHaveBeenCalled();
+  });
+
+  test("handOff without a desktop to share is an error the model can act on", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Please sign in" }, undefined),
+    ).rejects.toThrow(/desktop/);
+  });
 });

@@ -37,6 +37,12 @@ export class ActorExecutionResolver {
     return { env, sandboxConfig: plan.sandboxConfig, pathContext, projection };
   }
 
+  async prepare(context: ActorContext): Promise<string> {
+    const { plan } = this.resolvePlan(context);
+    await this.buildEnsureReadyCallback(plan, context.address.conversationId)?.();
+    return plan.resourceKey;
+  }
+
   private resolvePlan(context: ActorContext): {
     plan: ExecutionPlan;
     projection: WorkspaceProjection;

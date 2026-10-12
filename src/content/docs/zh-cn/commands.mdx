@@ -25,6 +25,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `/login` / `/pi-login`                             | 打开有效期 15 分钟的登录/vault 链接。仅限 DM。                                                                          |
 | `session` / `/session` / `/pi-session`             | 打开当前会话查看器。仅限 DM。                                                                                           |
+| `/desktop` / `/pi-desktop`                         | 私下获取这个对话桌面的 24 小时链接：看着或操作 agent 使用的浏览器、接手控制权、打开终端。需要 `oci:*`。                 |
 | `/new` / `/pi-new`                                 | 重置当前会话。仅限 DM。                                                                                                 |
 | `/compact [instructions]` / `/pi-compact`          | 总结较早的消息以腾出上下文；DM 和频道均可使用。instructions 指定摘要要保留的内容。较早的消息仍保留在会话历史中。        |
 | `/model` / `/pi-model [provider/model[:thinking]]` | 显示或切换当前对话模型。思考级别：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                           |

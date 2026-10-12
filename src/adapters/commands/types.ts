@@ -16,6 +16,8 @@ import type {
   PlatformName,
   RunnerCacheControl,
   SessionViewTokenStoreLike,
+  DesktopTokenStoreLike,
+  OpenDesktop,
 } from "../../types.js";
 import type { VaultManager } from "../../vault/types.js";
 import type { AdminTokenCreateOptions } from "../web/admin/types.js";
@@ -74,6 +76,8 @@ export interface CommandServices {
   resourceController?: SandboxResourceController;
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore: SessionViewTokenStoreLike;
+  desktopTokenStore?: DesktopTokenStoreLike;
+  openDesktop?: OpenDesktop;
   adminTokenStore: AdminTokenStoreLike;
   portalBaseUrl?: string;
 }

@@ -1,6 +1,7 @@
 import { AdminCommandHandler } from "./admin.js";
 import { AutoReplyCommandHandler } from "./auto-reply.js";
 import { CompactCommandHandler } from "./compact.js";
+import { DesktopCommandHandler } from "./desktop.js";
 import { LoginCommandHandler } from "./login.js";
 import { COMMAND_MANIFEST } from "./manifest.js";
 import { ModelCommandHandler } from "./model.js";
@@ -14,6 +15,7 @@ const HANDLER_FACTORIES: Record<string, (modelRegistry: ModelRegistry) => Comman
   autoreply: () => new AutoReplyCommandHandler(),
   login: () => new LoginCommandHandler(),
   session: () => new SessionViewCommandHandler(),
+  desktop: () => new DesktopCommandHandler(),
   model: (modelRegistry) => new ModelCommandHandler(modelRegistry),
   sandbox: () => new SandboxCommandHandler(),
   new: () => new NewCommandHandler(),

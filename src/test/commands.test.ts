@@ -19,6 +19,9 @@ import { ModelCommandHandler } from "../adapters/commands/model.js";
 import { NewCommandHandler } from "../adapters/commands/new.js";
 import { SandboxCommandHandler } from "../adapters/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../adapters/commands/session-view.js";
+import { DesktopCommandHandler } from "../adapters/commands/desktop.js";
+import { OfficeDesktop } from "../sandbox/desktop.js";
+import { createDesktopOpener } from "../harness/desktop.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import { recordPlatformChannelKind } from "../office/projection.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
@@ -895,5 +898,132 @@ describe("NewCommandHandler", () => {
       bot: ctx.bot,
       message: expect.objectContaining({ sessionKey: "D123", userId: "U123" }),
     });
+  });
+});
+
+describe("DesktopCommandHandler", () => {
+  const handler = new DesktopCommandHandler();
+  const oci: SandboxConfig = { type: "oci", image: "ghcr.io/example/sandbox:1" };
+
+  function desktopServices(
+    desktopExec: (args: string[]) => Promise<{ stdout: string }>,
+    running = true,
+  ) {
+    const provisioner = new DockerContainerManager("ghcr.io/example/sandbox:1", {
+      engine: "docker",
+    });
+    const provision = vi
+      .spyOn(provisioner, "provision")
+      .mockImplementation(async (key: string) => DockerContainerManager.containerName(key));
+    const created: { platformUserId: string; office: string }[] = [];
+    const desktopExecFile = vi.fn(async (_file: string, args: string[]) => desktopExec(args));
+    const workspace = testWorkspace(mkdtempSync(join(tmpdir(), "desktop-cmd-")));
+    return {
+      provision,
+      created,
+      desktopExecFile,
+      services: {
+        workspace,
+        sandbox: oci,
+        provisioner,
+        openDesktop: createDesktopOpener({
+          sandbox: oci,
+          vaultManager: fakeVaultManager(),
+          provisioner,
+          workspace,
+          desktop: new OfficeDesktop(
+            { engine: "docker", retain: () => () => {}, isRunning: () => running },
+            { execFile: desktopExecFile },
+          ),
+        }),
+        desktopTokenStore: {
+          create(options: { platformUserId: string; office: { key: string } }) {
+            created.push({ platformUserId: options.platformUserId, office: options.office.key });
+            return { token: "tok-desktop" };
+          },
+        },
+      },
+    };
+  }
+
+  test("declines unrelated commands", async () => {
+    expect(await handler.tryHandle(buildContext({ commandText: "/session" }))).toBe(false);
+  });
+
+  test("readies the office sandbox, starts its desktop, and sends a private link", async () => {
+    const { services, provision, created, desktopExecFile } = desktopServices(async () => ({
+      stdout: "",
+    }));
+    const ctx = buildContext({
+      commandText: "/pi-desktop",
+      conversationId: "D123",
+      privateConversation: true,
+      services,
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    const key = officeKey(createOfficeAddress("slack", "D123"));
+    expect(provision).toHaveBeenCalledWith(
+      key,
+      expect.objectContaining({ conversationId: "D123" }),
+    );
+    expect(desktopExecFile).toHaveBeenCalledWith("docker", [
+      "exec",
+      DockerContainerManager.containerName(key),
+      "mikan-desktop",
+      "start",
+    ]);
+    expect(created).toEqual([{ platformUserId: "U123", office: key }]);
+    expect(ctx.responder.responses.join("\n")).toContain(
+      "https://portal.example/desktop?token=tok-desktop",
+    );
+  });
+
+  test("a sandbox still running an image without the desktop gets an explanation, not a link", async () => {
+    const { services, created } = desktopServices(async () => {
+      throw Object.assign(new Error("exec failed"), {
+        stderr: 'exec: "mikan-desktop": executable file not found in $PATH',
+      });
+    });
+    const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true, services });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(created).toEqual([]);
+    expect(ctx.responder.responses.join("\n")).toMatch(/older sandbox image/);
+  });
+
+  test("a shared conversation without private replies never gets a link", async () => {
+    const { services, created, provision } = desktopServices(async () => ({ stdout: "" }));
+    const ctx = buildContext({
+      commandText: "/desktop",
+      platform: "telegram",
+      privateConversation: false,
+      services,
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(created).toEqual([]);
+    expect(provision).not.toHaveBeenCalled();
+    expect(ctx.responder.responses.join("\n")).toMatch(/direct message/);
+  });
+
+  test("a sandbox that is not running is reported as such, not as an old image", async () => {
+    const { services } = desktopServices(async () => ({ stdout: "" }), false);
+    const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true, services });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(ctx.responder.responses.join("\n")).toMatch(/could not start/);
+  });
+
+  test("other sandbox modes have no desktop", async () => {
+    const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(ctx.responder.responses.join("\n")).toMatch(/--sandbox=oci/);
   });
 });

@@ -11,6 +11,23 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Added
+
+- `/pi-desktop` (`/desktop` on other platforms) sends a private 24-hour link to the conversation's
+  desktop in the managed `oci` sandbox: watch or use the browser the agent drives, open its tabs,
+  DevTools, or a terminal. "Take control" pauses the agent's browser until you hand it back, and the
+  agent can hand you a step such as signing in with `jev_browser`'s `handOff`, which posts the step
+  with a link and ends its turn. The desktop starts on the first link, stops with the sandbox's idle
+  stop, and keeps the sandbox from stopping while someone has it open. It needs the sandbox image of
+  this release; an office whose sandbox still runs an older image gets it after the sandbox idles out.
+  Register `/pi-desktop` in the Slack app manifest.
+
+### Changed
+
+- `jev_browser` closes only tabs it opened when it passes its three-tab limit, so tabs a person
+  opened stay open.
+- The sandbox image adds `sway`, `wayvnc`, and `foot` (about 1 MB) and the `mikan-desktop` script.
+
 ## [1.4.0] - 2026-10-11
 
 ### Added
