@@ -10,6 +10,12 @@ import { parseGithubPolicy } from "./adapters/github/policy.js";
 import type { GithubPolicy, PlatformGithubOps } from "./adapters/github/types.js";
 import { TelegramMessagingBot } from "./adapters/telegram/bot.js";
 import { SlackMessagingBot as SlackMessagingBotClass } from "./adapters/slack/bot.js";
+import {
+  describeSlackAppSync,
+  slackAppApi,
+  slackBotApi,
+  syncSlackApp,
+} from "./adapters/slack/app-config.js";
 import { createSlackToolPack } from "./adapters/slack/tool-pack.js";
 import type { PlatformSlackOps } from "./adapters/slack/types.js";
 import { SLACK_BLOCKKIT_TOOL } from "./adapters/slack/tools/blockkit.js";
@@ -59,6 +65,7 @@ import {
 import { FileVaultManager } from "./vault/index.js";
 import { runMigrateCommand } from "./cli/migrate.js";
 import { runOfficeCommand } from "./cli/office.js";
+import { runSlackCommand } from "./cli/slack.js";
 import { formatPendingMigrations, pendingMigrations } from "./migrations/index.js";
 import { createOfficeAddress, createWorkspace, listRegisteredOffices } from "./office/index.js";
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
@@ -151,6 +158,10 @@ try {
   plan = resolveBoot();
 } catch (error) {
   handleStartupError(error);
+}
+
+if (plan.mode === "slack") {
+  process.exit(await runSlackCommand(plan.slackArgs ?? []));
 }
 
 if (plan.mode === "office") {
@@ -458,6 +469,16 @@ if (hasSlack) {
   });
   botsByPlatform.slack = slackMessagingBot;
   log.logInfo("Platform: Slack");
+  const appSync = await syncSlackApp({
+    stateDir,
+    apps: slackAppApi(),
+    bot: slackBotApi(slackMessagingBotToken),
+  });
+  const appSyncLine = describeSlackAppSync(appSync);
+  if (appSyncLine) {
+    if (appSync.status === "failed") log.logWarning(appSyncLine);
+    else log.logInfo(appSyncLine);
+  }
 }
 if (hasTelegram) {
   const telegramToken = TELEGRAM_BOT_TOKEN;

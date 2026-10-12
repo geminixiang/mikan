@@ -4,7 +4,7 @@ import { parseSandboxArg } from "../sandbox/registry.js";
 import type { BootPlan } from "./types.js";
 import { cliCommand, nonEmptyValue, stateDirPath } from "./arg-grammar.js";
 
-const SUBCOMMANDS = ["migrate", "office", "env"] as const;
+const SUBCOMMANDS = ["migrate", "office", "env", "slack"] as const;
 
 interface BootOptions {
   sandbox?: string;
@@ -53,6 +53,7 @@ function subcommandPlan(args: string[]): BootPlan | undefined {
     mode,
     migrateArgs: mode === "migrate" ? args.slice(1) : undefined,
     officeArgs: mode === "office" ? args.slice(1) : undefined,
+    slackArgs: mode === "slack" ? args.slice(1) : undefined,
     stateDir,
     workingDir: join(stateDir, "workspace"),
     workingDirExplicit: false,
@@ -75,6 +76,8 @@ Commands:
   mikan migrate --sandbox <spec> [--dry-run]  Apply pending state migrations (stop the daemon first).
   mikan office list          List office keys with their platform and conversation id.
   mikan env                  Show environment-variable inventory.
+  mikan slack token          Store a Slack configuration token; mikan then keeps the Slack app configured.
+  mikan slack set --name …   Customize the Slack app's name and description.
   mikan onboard              Interactive first-run setup.
 
 Environment (platform tokens select which chat adapters start):

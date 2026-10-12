@@ -27,7 +27,7 @@ This guide gets a working bot replying to you in about 15 minutes. It uses Teleg
    mikan onboard
    ```
 
-   Three questions — chat adapter (with its tokens), LLM provider (with its API key), and sandbox image — produce `~/.mikan/settings.json`, `~/.mikan/mikan.env` (0600), and `~/.mikan/ecosystem.config.cjs`. Pick the recommended image. A custom OpenAI-compatible endpoint (vLLM, a proxy) also writes `~/.mikan/models.json`. Non-interactive stdin writes the settings template only. See [Configuration](/configuration/) for every field.
+   Picking Slack, mikan can create the Slack app for you from a Slack configuration token; see [Slack Bot minimal setup guide](/slack-bot-minimal-guide/). Three questions — chat adapter (with its tokens), LLM provider (with its API key), and sandbox image — produce `~/.mikan/settings.json`, `~/.mikan/mikan.env` (0600), and `~/.mikan/ecosystem.config.cjs`. Pick the recommended image. A custom OpenAI-compatible endpoint (vLLM, a proxy) also writes `~/.mikan/models.json`. Non-interactive stdin writes the settings template only. See [Configuration](/configuration/) for every field.
 
    Keys can equally come from plain environment variables (`<PROVIDER>_API_KEY`, e.g. `ANTHROPIC_API_KEY`); the env file is just a persistent home for them that the pm2 template loads.
 

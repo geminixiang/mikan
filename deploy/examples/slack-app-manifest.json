@@ -17,47 +17,51 @@
     "slash_commands": [
       {
         "command": "/pi-login",
-        "description": "login",
-        "should_escape": false
-      },
-      {
-        "command": "/pi-new",
-        "description": "start a new session",
-        "should_escape": false
-      },
-      {
-        "command": "/pi-compact",
-        "description": "summarize older messages to free up context",
-        "should_escape": false
-      },
-      {
-        "command": "/pi-model",
-        "description": "switch this conversation's LLM",
+        "description": "Store credentials in your private vault",
         "should_escape": false
       },
       {
         "command": "/pi-session",
-        "description": "session viewer",
+        "description": "Open the current session in the web viewer",
         "should_escape": false
       },
       {
         "command": "/pi-desktop",
-        "description": "office desktop",
+        "description": "Open this conversation's desktop to watch or use its browser",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-model",
+        "description": "Switch this conversation's LLM model",
+        "usage_hint": "provider/model[:thinking], e.g. anthropic/claude-sonnet-4-6:off",
         "should_escape": false
       },
       {
         "command": "/pi-sandbox",
-        "description": "sandbox",
+        "description": "Show sandbox status or boost limits",
+        "usage_hint": "'boost' temporarily applies the configured boost limits",
         "should_escape": false
       },
       {
         "command": "/pi-auto-reply",
-        "description": "on | off | jev",
+        "description": "Enable, disable, or Jev-assist replies without mentions",
+        "usage_hint": "on, off, or jev",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-new",
+        "description": "Reset conversation history and start fresh",
+        "should_escape": false
+      },
+      {
+        "command": "/pi-compact",
+        "description": "Summarize older messages to free up context",
+        "usage_hint": "What the summary should keep",
         "should_escape": false
       },
       {
         "command": "/pi-admin",
-        "description": "open admin portal",
+        "description": "Open the admin portal",
         "should_escape": false
       }
     ]
@@ -66,21 +70,21 @@
     "redirect_urls": ["https://localhost"],
     "scopes": {
       "bot": [
-        "reactions:write",
         "app_mentions:read",
         "channels:history",
         "channels:read",
         "chat:write",
         "chat:write.customize",
+        "commands",
         "files:read",
         "files:write",
         "groups:history",
         "groups:read",
         "im:history",
-        "im:write",
         "im:read",
-        "users:read",
-        "commands"
+        "im:write",
+        "reactions:write",
+        "users:read"
       ]
     },
     "pkce_enabled": false
@@ -101,6 +105,7 @@
     "org_deploy_enabled": false,
     "socket_mode_enabled": true,
     "token_rotation_enabled": false,
+    "app_level_token_rotation_enabled": false,
     "is_mcp_enabled": false
   }
 }

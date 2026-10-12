@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { renderEnvFile, runOnboardWizard } from "../cli/onboard.js";
 import { pendingMigrations } from "../migrations/index.js";
 import type { OnboardIo } from "../cli/types.js";
+import { slackAppManifest } from "../adapters/slack/app-config.js";
+import type { SlackAppApi } from "../adapters/slack/types.js";
 
 let dir: string;
 
@@ -42,6 +44,23 @@ function scriptedIo(answers: string[]): OnboardIo & { transcript: string[] } {
   };
 }
 
+function slackApps(): SlackAppApi {
+  return {
+    rotate: vi.fn(async () => ({
+      token: "xoxe.xoxp-new",
+      refreshToken: "xoxe-1-new",
+      userId: "U0OWNER",
+    })),
+    export: vi.fn(),
+    update: vi.fn(),
+    create: vi.fn(async () => ({
+      appId: "A0123456789",
+      installUrl: "https://slack.com/oauth/v2/authorize?client_id=1.2",
+    })),
+    delete: vi.fn(async () => {}),
+  };
+}
+
 describe("renderEnvFile", () => {
   test("appends new vars to an empty file", () => {
     expect(renderEnvFile(undefined, { A: "1", B: "2" })).toBe("A=1\nB=2\n");
@@ -56,7 +75,7 @@ describe("renderEnvFile", () => {
 describe("runOnboardWizard", () => {
   test("slack + anthropic writes settings and env file", async () => {
     const envFile = join(dir, "mikan.env");
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     const code = await runOnboardWizard(dir, io, { envFilePath: envFile });
     expect(code).toBe(0);
 
@@ -74,7 +93,7 @@ describe("runOnboardWizard", () => {
   });
 
   test("uses the provider's default model and the published image without asking", async () => {
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
 
     const transcript = io.transcript.join("\n");
@@ -88,7 +107,7 @@ describe("runOnboardWizard", () => {
   });
 
   test("writes the maintained pm2 ecosystem file next to settings", async () => {
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
 
     const ecosystemFile = join(dir, "ecosystem.config.cjs");
@@ -99,7 +118,16 @@ describe("runOnboardWizard", () => {
   });
 
   test("a custom image goes into the ecosystem file and the next steps", async () => {
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "3", "acme/sandbox:1"]);
+    const io = scriptedIo([
+      "1",
+      "2",
+      "xapp-123",
+      "xoxb-456",
+      "1",
+      "sk-ant-789",
+      "3",
+      "acme/sandbox:1",
+    ]);
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
 
     expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
@@ -109,7 +137,7 @@ describe("runOnboardWizard", () => {
   });
 
   test("offers the minimal Debian image as a menu choice", async () => {
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "2"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "2"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
 
     expect(readFileSync(join(dir, "ecosystem.config.cjs"), "utf-8")).toContain(
@@ -120,14 +148,14 @@ describe("runOnboardWizard", () => {
   test("keeps an existing ecosystem file", async () => {
     const ecosystemFile = join(dir, "ecosystem.config.cjs");
     writeFileSync(ecosystemFile, "module.exports = { apps: [] };\n");
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") })).toBe(0);
     expect(readFileSync(ecosystemFile, "utf-8")).toBe("module.exports = { apps: [] };\n");
   });
 
   test("ends by listing only the variables that are set", async () => {
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
-    const io = scriptedIo(["1", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-123", "xoxb-456", "1", "sk-ant-789", "1"]);
     await runOnboardWizard(dir, io, { envFilePath: join(dir, "mikan.env") });
 
     const transcript = io.transcript.join("\n");
@@ -230,11 +258,64 @@ describe("runOnboardWizard", () => {
   test("preserves unrelated vars in an existing env file", async () => {
     const envFile = join(dir, "mikan.env");
     writeFileSync(envFile, "SENTRY_DSN=https://x@sentry.io/1\nSLACK_BOT_TOKEN=stale\n");
-    const io = scriptedIo(["1", "xapp-new", "xoxb-new", "1", "sk-ant", "1"]);
+    const io = scriptedIo(["1", "2", "xapp-new", "xoxb-new", "1", "sk-ant", "1"]);
     expect(await runOnboardWizard(dir, io, { envFilePath: envFile })).toBe(0);
     const envContent = readFileSync(envFile, "utf-8");
     expect(envContent).toContain("SENTRY_DSN=https://x@sentry.io/1");
     expect(envContent).toContain("SLACK_BOT_TOKEN=xoxb-new");
     expect(envContent).not.toContain("stale");
+  });
+
+  const CREATE_ANSWERS = ["1", "1", "xoxe-1-given", "acme-bot", "", "xoxb-made", "xapp-made"];
+
+  test("creates the Slack app from mikan's manifest and saves its configuration token and name", async () => {
+    const apps = slackApps();
+    const envFile = join(dir, "mikan.env");
+    const io = scriptedIo([...CREATE_ANSWERS, "1", "sk-ant", "1"]);
+
+    expect(await runOnboardWizard(dir, io, { envFilePath: envFile }, { slackApps: apps })).toBe(0);
+
+    expect(apps.rotate).toHaveBeenCalledWith("xoxe-1-given");
+    expect(apps.create).toHaveBeenCalledWith(
+      "xoxe.xoxp-new",
+      slackAppManifest({ display_information: { name: "acme-bot" } }),
+    );
+    const transcript = io.transcript.join("\n");
+    expect(transcript).toContain("https://slack.com/oauth/v2/authorize?client_id=1.2");
+    expect(transcript).toContain("https://api.slack.com/apps/A0123456789/general");
+    expect(transcript).not.toContain("xoxe-1-given");
+    const env = readFileSync(envFile, "utf-8");
+    expect(env).toContain("SLACK_BOT_TOKEN=xoxb-made");
+    expect(env).toContain("SLACK_APP_TOKEN=xapp-made");
+    expect(JSON.parse(readFileSync(join(dir, "slack.json"), "utf-8"))).toEqual({
+      display_information: { name: "acme-bot" },
+    });
+    const tokenFile = join(dir, "slack-config-token.json");
+    expect(JSON.parse(readFileSync(tokenFile, "utf-8")).refresh_token).toBe("xoxe-1-new");
+    expect(statSync(tokenFile).mode & 0o777).toBe(0o600);
+  });
+
+  test("declining to create the Slack app creates nothing and writes nothing", async () => {
+    const apps = slackApps();
+    const io = scriptedIo(CREATE_ANSWERS.slice(0, 5));
+    io.confirm = async () => false;
+
+    expect(await runOnboardWizard(dir, io, undefined, { slackApps: apps })).toBe(1);
+
+    expect(apps.create).not.toHaveBeenCalled();
+    expect(existsSync(join(dir, "settings.json"))).toBe(false);
+  });
+
+  test("declining to save after the app was created deletes that app", async () => {
+    const apps = slackApps();
+    const io = scriptedIo([...CREATE_ANSWERS, "1", "sk-ant", "1"]);
+    const confirms = [true, false];
+    io.confirm = async () => confirms.shift() ?? false;
+
+    expect(await runOnboardWizard(dir, io, undefined, { slackApps: apps })).toBe(1);
+
+    expect(apps.delete).toHaveBeenCalledWith("xoxe.xoxp-new", "A0123456789");
+    expect(existsSync(join(dir, "slack-config-token.json"))).toBe(false);
+    expect(existsSync(join(dir, "slack.json"))).toBe(false);
   });
 });

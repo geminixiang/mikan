@@ -20,7 +20,14 @@ change in a minor release.
   with a link and ends its turn. The desktop starts on the first link, stops with the sandbox's idle
   stop, and keeps the sandbox from stopping while someone has it open. It needs the sandbox image of
   this release; an office whose sandbox still runs an older image gets it after the sandbox idles out.
-  Register `/pi-desktop` in the Slack app manifest.
+  Register `/pi-desktop` in the Slack app manifest, or let mikan do it (next entry).
+- mikan creates and updates its Slack app (ADR 0026). With a Slack app configuration token,
+  `mikan onboard` creates the app from mikan's manifest, and every start replaces the app's
+  configuration with the manifest of the running release, so new slash commands, scopes, and events
+  need no edit in Slack's settings. Store a token for an existing app with `mikan slack token`, and
+  set the app's name and description with `mikan slack set`. Settings added by hand in Slack are
+  removed. When a release adds a scope, mikan DMs the token's owner a reinstall link. Without a
+  token nothing changes.
 
 ### Changed
 

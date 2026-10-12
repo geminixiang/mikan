@@ -14,6 +14,30 @@ import {
 import { PUBLISHED_SANDBOX_SPEC } from "../sandbox/registry.js";
 import { publishedSandboxImage } from "../sandbox/published-image.js";
 import type { OnboardIo } from "./types.js";
+import {
+  createSlackApp,
+  slackAppApi,
+  slackAppCustomizationProblem,
+  writeConfigTokens,
+  writeSlackAppCustomization,
+} from "../adapters/slack/app-config.js";
+import type {
+  SlackAppApi,
+  SlackAppCustomization,
+  SlackConfigTokens,
+} from "../adapters/slack/types.js";
+
+interface CreatedSlackApp {
+  appId: string;
+  tokens: SlackConfigTokens;
+  customization: SlackAppCustomization;
+}
+
+interface AdapterAnswers {
+  githubRepos?: string[];
+  slackApp?: CreatedSlackApp;
+  cancelled?: boolean;
+}
 
 class OnboardAborted extends Error {
   constructor() {
@@ -56,10 +80,51 @@ async function askChoice(io: OnboardIo, labels: string[], prompt: string): Promi
   return io.select(prompt, labels);
 }
 
+async function askSlackDisplay(io: OnboardIo): Promise<SlackAppCustomization> {
+  for (;;) {
+    const name = (await io.ask("  App name [mikan]: ")).trim();
+    const description = (await io.ask("  Short description [mikan Slack assistant]: ")).trim();
+    const display_information = {
+      ...(name ? { name } : {}),
+      ...(description ? { description } : {}),
+    };
+    const customization = Object.keys(display_information).length ? { display_information } : {};
+    const problem = slackAppCustomizationProblem(customization);
+    if (!problem) return customization;
+    io.print(`  ${problem}`);
+  }
+}
+
+async function createSlackAppInteractively(
+  io: OnboardIo,
+  env: Record<string, string>,
+  apps: SlackAppApi,
+): Promise<AdapterAnswers> {
+  io.print(
+    "  Open https://api.slack.com/apps, find Your App Configuration Tokens at the bottom, generate a token for your workspace, and copy its Refresh Token. mikan keeps it to update the app when you upgrade.",
+  );
+  const refreshToken = await askRequired(io, "  Configuration refresh token (xoxe-1-…): ", true);
+  const customization = await askSlackDisplay(io);
+  const name = customization.display_information?.name ?? "mikan";
+  if (!(await io.confirm(`Create the Slack app "${name}" now?`))) return { cancelled: true };
+  const created = await createSlackApp({ apps, refreshToken, customization });
+  io.print(`  Created Slack app ${created.appId}. Two steps Slack only offers in its web pages:`);
+  io.print(
+    `  1. Install it: ${created.installUrl}\n     Approve, then copy the Bot User OAuth Token (xoxb-…) from OAuth & Permissions.`,
+  );
+  io.print(
+    `  2. Create its Socket Mode token: https://api.slack.com/apps/${created.appId}/general\n     Under App-Level Tokens, generate a token with the connections:write scope and copy it (xapp-…).`,
+  );
+  env.SLACK_BOT_TOKEN = await askRequired(io, "  SLACK_BOT_TOKEN (xoxb-…): ", true);
+  env.SLACK_APP_TOKEN = await askRequired(io, "  SLACK_APP_TOKEN (xapp-…): ", true);
+  return { slackApp: { appId: created.appId, tokens: created.tokens, customization } };
+}
+
 async function askAdapter(
   io: OnboardIo,
   env: Record<string, string>,
-): Promise<{ githubRepos?: string[] }> {
+  apps: SlackAppApi,
+): Promise<AdapterAnswers> {
   const platforms = ENV_MANIFEST.filter((group) => group.kind === "platform");
   io.print("\nStep 1/3 — chat adapter");
   const index = await askChoice(
@@ -68,6 +133,18 @@ async function askAdapter(
     "Platform",
   );
   const group = platforms[index]!;
+  if (group.key === "slack") {
+    const create = await askChoice(
+      io,
+      [
+        "Create a new Slack app for me (needs a Slack configuration token)",
+        "Use a Slack app I already created",
+      ],
+      "Slack app",
+    );
+    if (create === 0) return createSlackAppInteractively(io, env, apps);
+    io.print("  Later, `mikan slack token` lets mikan keep this app configured when you upgrade.");
+  }
   for (const spec of group.vars.filter((v) => v.required)) {
     env[spec.name] = await askRequired(io, `  ${spec.name} (${spec.doc}): `, spec.secret);
   }
@@ -169,6 +246,7 @@ export async function runOnboardWizard(
   stateDir: string,
   io: OnboardIo,
   paths?: { envFilePath?: string },
+  deps: { slackApps?: SlackAppApi } = {},
 ): Promise<number> {
   const settingsPath = join(stateDir, "settings.json");
   if (existsSync(settingsPath)) {
@@ -178,7 +256,41 @@ export async function runOnboardWizard(
   }
 
   const env: Record<string, string> = {};
-  const { githubRepos } = await askAdapter(io, env);
+  const apps = deps.slackApps ?? slackAppApi();
+  const adapter = await askAdapter(io, env, apps);
+  if (adapter.cancelled) {
+    io.print("Onboarding cancelled; nothing was created or written.");
+    return 1;
+  }
+  const { slackApp } = adapter;
+  try {
+    const code = await finishOnboarding(stateDir, io, env, adapter, paths);
+    if (code !== 0) await discardSlackApp(io, apps, slackApp);
+    return code;
+  } catch (error) {
+    await discardSlackApp(io, apps, slackApp);
+    throw error;
+  }
+}
+
+async function discardSlackApp(
+  io: OnboardIo,
+  apps: SlackAppApi,
+  slackApp: CreatedSlackApp | undefined,
+): Promise<void> {
+  if (!slackApp) return;
+  await apps.delete(slackApp.tokens.token, slackApp.appId);
+  io.print(`Deleted the Slack app ${slackApp.appId} created during onboarding.`);
+}
+
+async function finishOnboarding(
+  stateDir: string,
+  io: OnboardIo,
+  env: Record<string, string>,
+  { githubRepos, slackApp }: AdapterAnswers,
+  paths?: { envFilePath?: string },
+): Promise<number> {
+  const settingsPath = join(stateDir, "settings.json");
   const { llm, modelsJson } = await askLlm(io, env);
   const sandboxSpec = await askSandboxSpec(io);
 
@@ -200,6 +312,14 @@ export async function runOnboardWizard(
   createGlobalSettingsFile(stateDir, { llm, githubRepos });
   recordAllMigrations(stateDir);
   io.print(`\nWrote ${settingsPath}`);
+
+  if (slackApp) {
+    writeConfigTokens(stateDir, slackApp.tokens);
+    if (slackApp.customization.display_information) {
+      writeSlackAppCustomization(stateDir, slackApp.customization);
+    }
+    io.print(`Wrote the Slack configuration token and app settings to ${stateDir}`);
+  }
 
   if (modelsJson) {
     atomicWritePrivateFile(modelsPath, `${modelsJson}\n`);
