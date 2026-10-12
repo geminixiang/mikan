@@ -143,6 +143,22 @@ async function createConfiguredAgentSession(params: {
   return session;
 }
 
+function desktopLinkFactory(
+  options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office">,
+): ((platformUserId: string) => string) | undefined {
+  const tokenStore = options.desktop?.tokenStore;
+  const portalBaseUrl = options.desktop?.portalBaseUrl;
+  if (!tokenStore || !portalBaseUrl || options.sandboxConfig.type !== "oci") return undefined;
+  return (platformUserId) => {
+    const { token } = tokenStore.create({
+      platform: options.office.address.platform,
+      platformUserId,
+      office: options.office,
+    });
+    return `${portalBaseUrl}/desktop?token=${token}`;
+  };
+}
+
 function createRunnerExecutionContext(
   sandboxConfig: SandboxConfig,
   vaultManager: VaultManager | undefined,
@@ -835,6 +851,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       }
       return contentText(reply.content);
     },
+    desktopLinkFactory(options),
   );
 
   const systemPrompt = await buildInitialSystemPrompt({

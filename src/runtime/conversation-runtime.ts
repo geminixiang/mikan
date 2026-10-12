@@ -555,6 +555,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
             portalBaseUrl: this.options.portalBaseUrl,
           }
         : undefined,
+      desktop: this.options.desktopTokenStore
+        ? { tokenStore: this.options.desktopTokenStore, portalBaseUrl: this.options.portalBaseUrl }
+        : undefined,
       platformToolPackFactories: this.options.platformToolPackFactories,
       models: this.resolvedModels,
       runEvents: this.options.runEvents,

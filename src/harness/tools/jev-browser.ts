@@ -6,6 +6,12 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 import { isRecord } from "../../unknown-values.js";
+import {
+  DESKTOP_COMMAND,
+  DESKTOP_RUNTIME_DIR,
+  parseDesktopStatus,
+  type DesktopStatus,
+} from "../../sandbox/desktop.js";
 
 export const JEV_BROWSER_TOOL = "jev_browser";
 
@@ -61,6 +67,12 @@ const jevBrowserSchema = Type.Object({
       maximum: HARD_MAX_STEPS,
     }),
   ),
+  handOff: Type.Optional(
+    Type.String({
+      description:
+        "Give the browser to the person on the office desktop for a step only they can do, such as signing in or solving a challenge: what they should do, in their language. Use alone; it posts the step with a desktop link and ends your turn. Continue after they say they are done.",
+    }),
+  ),
 });
 
 type JevBrowserArgs = Static<typeof jevBrowserSchema>;
@@ -108,6 +120,7 @@ function describeContinuity(expectedOpen: boolean, first: BrowserLifecycle | und
 
 interface BrowserTab {
   tabId: string;
+  targetId?: string;
   active?: boolean;
   url?: string;
 }
@@ -117,28 +130,71 @@ function tabNumber(tab: BrowserTab): number {
 }
 
 async function closeOldestTabs(
-  env: ExecutionEnv,
-  sessionId: string,
+  browser: BrowserTarget,
+  agentTargets: Set<string>,
   keep: number,
   signal?: AbortSignal,
 ): Promise<string[]> {
-  const listed = await runAgentBrowser<{ tabs?: BrowserTab[] }>(
-    env,
-    sessionId,
-    ["tab", "list"],
-    signal,
-  );
+  const listed = await runAgentBrowser<{ tabs?: BrowserTab[] }>(browser, ["tab", "list"], signal);
   const tabs = listed.success && Array.isArray(listed.data?.tabs) ? listed.data.tabs : [];
-  const oldest = tabs
+  const opened = tabs.filter((tab) => tab.targetId !== undefined && agentTargets.has(tab.targetId));
+  const oldest = opened
     .filter((tab) => !tab.active)
     .toSorted((a, b) => tabNumber(a) - tabNumber(b))
-    .slice(0, Math.max(0, tabs.length - keep));
+    .slice(0, Math.max(0, opened.length - keep));
   const closed: string[] = [];
   for (const tab of oldest) {
-    const result = await runAgentBrowser(env, sessionId, ["tab", "close", tab.tabId], signal);
-    if (result.success) closed.push(tab.url ?? tab.tabId);
+    const result = await runAgentBrowser(browser, ["tab", "close", tab.tabId], signal);
+    if (!result.success) continue;
+    if (tab.targetId) agentTargets.delete(tab.targetId);
+    closed.push(tab.url ?? tab.tabId);
   }
   return closed;
+}
+
+function targetIdOf(result: AgentBrowserResult<unknown>): string | undefined {
+  const data: unknown = result.data;
+  return isRecord(data) && typeof data.targetId === "string" ? data.targetId : undefined;
+}
+
+async function readDesktopStatus(env: ExecutionEnv, signal?: AbortSignal): Promise<DesktopStatus> {
+  let stdout = "";
+  const result = await env.exec(
+    [DESKTOP_COMMAND, "status"],
+    {
+      timeout: COMMAND_TIMEOUT_SECONDS,
+      onOutput: (text, _context, info) => {
+        if (info.stream === "stdout") stdout += text;
+      },
+    },
+    signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT,
+  );
+  if (!result.ok || result.value.exitCode !== 0) return { display: undefined, control: "agent" };
+  return parseDesktopStatus(stdout);
+}
+
+function desktopLaunchEnv(display: string): Record<string, string> {
+  return {
+    AGENT_BROWSER_HEADED: "1",
+    AGENT_BROWSER_ARGS: "--ozone-platform=wayland",
+    WAYLAND_DISPLAY: display,
+    XDG_RUNTIME_DIR: DESKTOP_RUNTIME_DIR,
+  };
+}
+
+const PERSON_HAS_CONTROL =
+  "A person is using this browser on the office desktop. Do not use the browser until they hand it back; tell them what you need and end your turn.";
+
+function personHasControlResult() {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({ status: "person-has-control", message: PERSON_HAS_CONTROL }),
+      },
+    ],
+    details: undefined,
+  };
 }
 
 interface HistoryEntry {
@@ -184,17 +240,23 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+interface BrowserTarget {
+  env: ExecutionEnv;
+  sessionId: string;
+  launchEnv?: Record<string, string>;
+}
+
 async function runAgentBrowser<T = unknown>(
-  env: ExecutionEnv,
-  sessionId: string,
+  browser: BrowserTarget,
   args: string[],
   signal?: AbortSignal,
 ): Promise<AgentBrowserResult<T>> {
   const output = { stdout: "", stderr: "" };
-  const result = await env.exec(
-    [AGENT_BROWSER_BIN, "--session", sessionId, ...args, "--json"],
+  const result = await browser.env.exec(
+    [AGENT_BROWSER_BIN, "--session", browser.sessionId, ...args, "--json"],
     {
       timeout: COMMAND_TIMEOUT_SECONDS,
+      env: browser.launchEnv,
       onOutput: (text, _context, info) => {
         output[info.stream] += text;
       },
@@ -371,31 +433,73 @@ function resolveTarget(
 }
 
 async function openPage(
-  env: ExecutionEnv,
-  sessionId: string,
+  browser: BrowserTarget,
   url: string,
   inNewTab: boolean,
   signal?: AbortSignal,
 ): Promise<AgentBrowserResult<unknown>> {
-  if (!inNewTab) return runAgentBrowser(env, sessionId, ["open", url], signal);
-  const tab = await runAgentBrowser(env, sessionId, ["tab", "new"], signal);
+  if (!inNewTab) return runAgentBrowser(browser, ["open", url], signal);
+  const tab = await runAgentBrowser(browser, ["tab", "new"], signal);
   if (!tab.success) return tab;
-  return runAgentBrowser(env, sessionId, ["open", url], signal);
+  return runAgentBrowser(browser, ["open", url], signal);
+}
+
+type BrowserHandOff = (step: string) => Promise<void>;
+
+export type JevBrowserTool = AgentTool<typeof jevBrowserSchema> & {
+  setHandOff(handOff: BrowserHandOff | undefined): void;
+};
+
+const HAND_OFF_UNAVAILABLE =
+  "Handing the browser to a person needs the office desktop, which this conversation does not have; ask the person in chat instead.";
+
+async function handBrowserToPerson(
+  env: ExecutionEnv,
+  step: string,
+  handOff: BrowserHandOff | undefined,
+  signal?: AbortSignal,
+) {
+  if (!handOff) throw new Error(HAND_OFF_UNAVAILABLE);
+  const result = await env.exec(
+    [DESKTOP_COMMAND, "control", "user"],
+    { timeout: COMMAND_TIMEOUT_SECONDS },
+    signal ? withAbortSignal(signal, BACKGROUND_CONTEXT) : BACKGROUND_CONTEXT,
+  );
+  if (!result.ok || result.value.exitCode !== 0) throw new Error(HAND_OFF_UNAVAILABLE);
+  await handOff(step);
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({
+          status: "handed-off",
+          message: "The person controls the browser now and was asked to do this step.",
+        }),
+      },
+    ],
+    details: { handedOff: true },
+    terminate: true,
+  };
 }
 
 function createUnlockedJevBrowserTool(
   getEnv: () => ExecutionEnv | undefined,
   generateText: FieldTextGenerator | undefined,
-): AgentTool<typeof jevBrowserSchema> {
+): JevBrowserTool {
   const sessionId = `mikan-jb-${randomUUID()}`;
+  const agentTargets = new Set<string>();
+  let handOff: BrowserHandOff | undefined;
   let browserOpen = false;
   let closedByCall = false;
   return {
+    setHandOff: (next) => {
+      handOff = next;
+    },
     name: JEV_BROWSER_TOOL,
     label: "jev browser",
     description: [
       "Control a real Chrome browser in this conversation's sandbox (not the host): give a goal that Jev drives step by step (click, type, select, scroll, wait), run raw agent-browser commands, or both; commands run first.",
-      `Each thread has one browser that stays open across calls; url opens a new tab, and past ${BROWSER_TAB_LIMIT} tabs the oldest closes.`,
+      `Each thread has one browser that stays open across calls; url opens a new tab, and past ${BROWSER_TAB_LIMIT} tabs it opened the oldest closes; tabs a person opened stay.`,
       "Read the page from lastPageSnapshot (accessibility text; the tool does not summarize) and command output from commandResults. A browserContinuity of unknown is missing metadata, not a failure.",
       'CLI success is not goal completion: verify the visible state. To submit a typed input, run ["press","Enter"]: press takes a key, not a ref. After navigation, snapshot again and use the new @refs. If content sits in an iframe, set frame instead of scrolling. find may act, not only read. When syntax is unclear, run ["<command>","--help"]; after one informed retry, report the blocker instead of trying more selectors.',
       "If agent-browser is missing from the sandbox, report it; never install it on the host.",
@@ -418,9 +522,20 @@ function createUnlockedJevBrowserTool(
           );
         }
       }
+      if (args.handOff !== undefined) {
+        return handBrowserToPerson(env, args.handOff, handOff, signal);
+      }
+      const desktop = await readDesktopStatus(env, signal);
+      if (desktop.control === "user") return personHasControlResult();
+      const browser: BrowserTarget = {
+        env,
+        sessionId,
+        launchEnv: desktop.display ? desktopLaunchEnv(desktop.display) : undefined,
+      };
       if (args.close === true && !args.url && !args.goal && !args.commands?.length) {
-        const result = await runAgentBrowser(env, sessionId, ["close"], signal);
+        const result = await runAgentBrowser(browser, ["close"], signal);
         if (!result.success) throw new Error(`Failed to close the browser: ${result.error}`);
+        agentTargets.clear();
         browserOpen = false;
         closedByCall = true;
         return {
@@ -462,28 +577,33 @@ function createUnlockedJevBrowserTool(
         if (args.url) {
           if (browserOpen) {
             closedTabs.push(
-              ...(await closeOldestTabs(env, sessionId, BROWSER_TAB_LIMIT - 1, signal)),
+              ...(await closeOldestTabs(browser, agentTargets, BROWSER_TAB_LIMIT - 1, signal)),
             );
           }
-          const openResult = await openPage(env, sessionId, args.url, browserOpen, signal);
+          const openResult = await openPage(browser, args.url, browserOpen, signal);
           captureLifecycle(openResult);
           if (!openResult.success) {
             throw new Error(`Failed to open ${args.url}: ${openResult.error}`);
           }
+          const opened = targetIdOf(openResult);
+          if (opened) agentTargets.add(opened);
           browserOpen = true;
           closedByCall = false;
         }
 
         if (args.frame !== undefined) {
-          const switched = await runAgentBrowser(env, sessionId, ["frame", args.frame], signal);
+          const switched = await runAgentBrowser(browser, ["frame", args.frame], signal);
           if (!switched.success)
             throw new Error(`Failed to switch browser frame: ${switched.error}`);
         }
 
         for (const command of args.commands ?? []) {
           if (signal?.aborted) throw new Error("Operation aborted");
-          const result = await runAgentBrowser(env, sessionId, command, signal);
+          const result = await runAgentBrowser(browser, command, signal);
           captureLifecycle(result);
+          const newTab =
+            command[0] === "tab" && command[1] === "new" ? targetIdOf(result) : undefined;
+          if (newTab) agentTargets.add(newTab);
           commandResults.push({
             command,
             success: result.success,
@@ -524,8 +644,13 @@ function createUnlockedJevBrowserTool(
 
         for (let step = 1; step <= maxSteps; step++) {
           if (signal?.aborted) throw new Error("Operation aborted");
+          if (step > 1 && (await readDesktopStatus(env, signal)).control === "user") {
+            status = "blocked";
+            message = PERSON_HAS_CONTROL;
+            break;
+          }
 
-          const snap = await runAgentBrowser<SnapshotData>(env, sessionId, ["snapshot"], signal);
+          const snap = await runAgentBrowser<SnapshotData>(browser, ["snapshot"], signal);
           captureLifecycle(snap);
           if (!snap.success || !snap.data) {
             status = "blocked";
@@ -607,7 +732,7 @@ function createUnlockedJevBrowserTool(
               operation === "WAIT"
                 ? ["wait", "1000"]
                 : ["scroll", operation === "SCROLL_DOWN" ? "down" : "up", "500"];
-            const action = await runAgentBrowser(env, sessionId, command, signal);
+            const action = await runAgentBrowser(browser, command, signal);
             if (!action.success) {
               status = "blocked";
               message = `${operation} failed: ${action.error}`;
@@ -630,12 +755,7 @@ function createUnlockedJevBrowserTool(
           const targetInfo = refs[targetRef];
 
           if (operation === "CLICK") {
-            const clickResult = await runAgentBrowser(
-              env,
-              sessionId,
-              ["click", `@${targetRef}`],
-              signal,
-            );
+            const clickResult = await runAgentBrowser(browser, ["click", `@${targetRef}`], signal);
             if (!clickResult.success) {
               status = "blocked";
               message = `Click on ${targetRef} failed: ${clickResult.error}`;
@@ -663,8 +783,7 @@ function createUnlockedJevBrowserTool(
           );
           const command = operation === "SELECT" ? "select" : "fill";
           const actResult = await runAgentBrowser(
-            env,
-            sessionId,
+            browser,
             [command, `@${targetRef}`, text],
             signal,
           );
@@ -676,12 +795,7 @@ function createUnlockedJevBrowserTool(
           history.push({ step, operation, target: targetRef, label: targetInfo?.name, text });
         }
         if (status === "step-limit") {
-          const finalSnapshot = await runAgentBrowser<SnapshotData>(
-            env,
-            sessionId,
-            ["snapshot"],
-            signal,
-          );
+          const finalSnapshot = await runAgentBrowser<SnapshotData>(browser, ["snapshot"], signal);
           if (!finalSnapshot.success || !finalSnapshot.data) {
             throw new Error(`Final snapshot failed: ${finalSnapshot.error}`);
           }
@@ -690,9 +804,10 @@ function createUnlockedJevBrowserTool(
         }
       } finally {
         if (args.close === true) {
-          await runAgentBrowser(env, sessionId, ["close"])
+          await runAgentBrowser(browser, ["close"])
             .then((result) => {
               if (!result.success) return;
+              agentTargets.clear();
               browserOpen = false;
               closedByCall = true;
             })
@@ -730,7 +845,7 @@ function createUnlockedJevBrowserTool(
 export function createJevBrowserTool(
   getEnv: () => ExecutionEnv | undefined,
   generateText?: FieldTextGenerator,
-): AgentTool<typeof jevBrowserSchema> {
+): JevBrowserTool {
   const tool = createUnlockedJevBrowserTool(getEnv, generateText);
   const execute = tool.execute.bind(tool);
   let executionTail = Promise.resolve();

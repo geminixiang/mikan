@@ -67,6 +67,7 @@ describe("every agent-facing tool requires a label parameter", () => {
     );
     const session = expect.stringMatching(/^mikan-jb-/);
     expect(exec.mock.calls.map(([command]) => command)).toEqual([
+      ["mikan-desktop", "status"],
       ["agent-browser", "--session", session, "open", "https://example.com", "--json"],
       [
         "agent-browser",

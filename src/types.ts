@@ -420,6 +420,10 @@ export interface CreateRunnerOptions {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   };
+  desktop?: {
+    tokenStore: DesktopTokenStoreLike;
+    portalBaseUrl?: string;
+  };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models: MikanModels;
   runEvents?: RunEventPublisher;
@@ -436,4 +440,14 @@ export interface SessionViewTokenCreateOptions {
 
 export interface SessionViewTokenStoreLike {
   create(options: SessionViewTokenCreateOptions): { token: string };
+}
+
+export interface DesktopTokenCreateOptions {
+  platform: PlatformName;
+  platformUserId: string;
+  office: Office;
+}
+
+export interface DesktopTokenStoreLike {
+  create(options: DesktopTokenCreateOptions): { token: string };
 }

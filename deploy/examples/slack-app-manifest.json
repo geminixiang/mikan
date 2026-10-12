@@ -41,6 +41,11 @@
         "should_escape": false
       },
       {
+        "command": "/pi-desktop",
+        "description": "office desktop",
+        "should_escape": false
+      },
+      {
         "command": "/pi-sandbox",
         "description": "sandbox",
         "should_escape": false

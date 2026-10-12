@@ -30,6 +30,7 @@ export function createMikanTools(
     outputDir: string;
   },
   generateFieldText?: FieldTextGenerator,
+  desktopLink?: (platformUserId: string) => string,
 ): {
   tools: MikanHarnessTool[];
   bindRun: (ctx: MikanToolRunContext) => void;
@@ -74,6 +75,17 @@ export function createMikanTools(
       });
       imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
       bindTasks(responder);
+      jevBrowserTool.setHandOff(
+        desktopLink
+          ? (step) =>
+              responder.respond(
+                formatBrowserHandOff(
+                  step,
+                  message.conversationKind === "direct" ? desktopLink(userId) : undefined,
+                ),
+              )
+          : undefined,
+      );
       setReactFunction(responder.react ? (emoji) => responder.react!(emoji) : null);
       for (const pack of platformToolPacks) {
         pack.bindRun({
@@ -84,4 +96,10 @@ export function createMikanTools(
       }
     },
   };
+}
+
+function formatBrowserHandOff(step: string, link: string | undefined): string {
+  return link
+    ? `${step}\n\nOpen the desktop: ${link}`
+    : `${step}\n\nOpen the desktop with the desktop command (/pi-desktop in Slack).`;
 }

@@ -365,6 +365,28 @@ describe("presenter event routing", () => {
     expect(JSON.stringify(responder.replaceResponse.mock.calls)).not.toContain("do not post this");
   });
 
+  test("a browser handed to a person claims the final response, a normal browser call does not", async () => {
+    const { emit, runState } = attachPresenter();
+
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "browse-1",
+      toolName: "jev_browser",
+      result: { content: [{ type: "text", text: "{}" }] },
+      isError: false,
+    });
+    expect(runState.finalResponseHandledByTool).toBe(false);
+
+    await emit({
+      type: "tool_execution_end",
+      toolCallId: "browse-2",
+      toolName: "jev_browser",
+      result: { content: [{ type: "text", text: "{}" }], details: { handedOff: true } },
+      isError: false,
+    });
+    expect(runState.finalResponseHandledByTool).toBe(true);
+  });
+
   test("a failed or undeclared tool call does not claim the final response", async () => {
     const { emit, runState } = attachPresenter({
       platformTools: new Set(["post_card"]),

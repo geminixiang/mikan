@@ -1,4 +1,10 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Duplex } from "node:stream";
+import {
+  handleDesktopRequest,
+  handleDesktopUpgrade,
+  type DesktopWebOptions,
+} from "./desktop/index.js";
 import type { MessagingBot, PlatformName } from "../../types.js";
 import { resolveLinkBaseUrl } from "../../env-manifest.js";
 import * as log from "../../log.js";
@@ -37,6 +43,7 @@ interface StartWebServerOptions {
     eventScheduler?: () => EventScheduleSink | undefined;
   };
   githubWebhook?: GithubWebhookOptions;
+  desktop?: DesktopWebOptions;
 }
 
 export function startWebServer(options: StartWebServerOptions): Server {
@@ -97,6 +104,8 @@ export function startWebServer(options: StartWebServerOptions): Server {
         return;
       }
 
+      if (await handleDesktopRequest(req, res, url, options.desktop)) return;
+
       if (loginHandler(req, res, url)) return;
 
       res.writeHead(404);
@@ -119,6 +128,18 @@ export function startWebServer(options: StartWebServerOptions): Server {
           "MIKAN_LINK_URL=https://your-host.example.com for production.",
       );
     }
+  });
+
+  server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const url = new URL(req.url ?? "/", requestBaseUrl(req));
+    handleDesktopUpgrade(req, socket, head, url, options.desktop)
+      .then((handled) => {
+        if (!handled) socket.destroy();
+      })
+      .catch((err: unknown) => {
+        log.logWarning("Web server upgrade error", errorMessage(err));
+        socket.destroy();
+      });
   });
 
   server.on("error", (err) => {
