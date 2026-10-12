@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { connect } from "node:net";
+import { connect, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { PassThrough } from "node:stream";
@@ -12,11 +12,14 @@ import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { VaultManager } from "../vault/types.js";
 
 let server: Server | undefined;
+const sockets = new Set<Socket>();
 afterEach(async () => {
   if (server) {
     server.close();
+    for (const socket of sockets) socket.destroy();
     await once(server, "close");
   }
+  sockets.clear();
   server = undefined;
 });
 
@@ -54,6 +57,7 @@ async function serveWithStore(desktop: ReturnType<typeof fakeDesktop>["desktop"]
     notify: async () => {},
     desktop: { tokenStore, desktop },
   });
+  server.on("connection", (socket: Socket) => sockets.add(socket));
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
   return { base: `http://127.0.0.1:${port}`, port, token, key: office.key, tokenStore };
@@ -144,7 +148,7 @@ async function resetAfterSending(port: number, request: string): Promise<void> {
 
 describe("desktop WebSocket failures", () => {
   test("a client that resets during refusal or desktop start does not crash the daemon", async () => {
-    const { desktop } = fakeDesktop();
+    const { desktop, output } = fakeDesktop();
     let release!: () => void;
     desktop.start.mockImplementation(
       () => new Promise((resolve) => (release = () => resolve("ready"))),
@@ -167,6 +171,7 @@ describe("desktop WebSocket failures", () => {
       expect((await fetch(`${base}/health`)).status).toBe(200);
     } finally {
       process.off("uncaughtException", onError);
+      output.end();
     }
     expect(errors).toEqual([]);
   });
