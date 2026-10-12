@@ -152,7 +152,7 @@ describe("withSecretRedaction", () => {
     expect(textOf(result as never)).toContain("hello-from-bash");
   });
 
-  test("propagates a tool error unchanged instead of swallowing it", async () => {
+  test("keeps a tool's error result and its diagnostics", async () => {
     const env = new NodeExecutionEnv({ cwd: dir });
     const bash = withSecretRedaction(createSandboxBashTool());
     const validated = validateToolArguments(bash, {
@@ -162,6 +162,9 @@ describe("withSecretRedaction", () => {
       arguments: { command: "exit 7", label: "fail" },
     });
 
-    await expect(runTestTool(bash, validated, { env })).rejects.toThrow(/exit/i);
+    const result = await runTestTool(bash, validated, { env });
+
+    expect(result.isError).toBe(true);
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "exit_code" }));
   });
 });

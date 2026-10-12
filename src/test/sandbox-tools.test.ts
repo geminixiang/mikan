@@ -170,7 +170,12 @@ describe("sandbox tools", () => {
     expect(textOf(await run("bash", { command: "printf minimal-bash" }))).toContain("minimal-bash");
   });
 
-  test("bash reports a non-zero exit", async () => {
-    await expect(run("bash", { command: "exit 7", label: "fail" })).rejects.toThrow(/exit/i);
+  test("bash reports a non-zero exit as an error result with its exit code", async () => {
+    const result = await run("bash", { command: "exit 7", label: "fail" });
+
+    expect(result.isError).toBe(true);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "exit_code", message: expect.stringContaining("7") }),
+    );
   });
 });

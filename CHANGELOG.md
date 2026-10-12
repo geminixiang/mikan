@@ -11,6 +11,12 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded Pi to 1.2.0. Pi 1.2 removed an export mikan 1.4.0 imports, so a fresh install of 1.4.0
+  now fails to start; this release works with it. A nonzero `bash` exit is now an error result that
+  carries the output and the exit code, instead of a thrown error.
+
 ### Added
 
 - `/pi-desktop` (`/desktop` on other platforms) sends a private 24-hour link to the conversation's

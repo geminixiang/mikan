@@ -11,6 +11,7 @@ import type { Context, JsonValue } from "@earendil-works/chord";
 import type {
   CompactionPolicy,
   ToolControl,
+  ToolDiagnostic,
   ToolExecutionApi,
   ToolRegistration,
 } from "@earendil-works/pi-durable";
@@ -390,6 +391,7 @@ export interface MikanToolResult {
   content?: (TextContent | ImageContent)[];
   details?: JsonValue;
   isError?: boolean;
+  diagnostics?: readonly ToolDiagnostic[];
   structuredContent?: ModelJsonValue;
   usage?: Usage;
   control?: ToolControl;

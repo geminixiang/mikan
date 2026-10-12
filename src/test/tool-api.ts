@@ -42,6 +42,8 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
     output: (chunk) => {
       chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk));
     },
+    retainedOutput: () => ({ text: chunks.join(""), truncated: false }),
+    executeTool: async () => unsupported("executeTool"),
     diagnostic: (diagnostic) => {
       diagnostics.push(diagnostic);
     },
@@ -69,5 +71,7 @@ export async function runTestTool(
   const { api, output } = createTestToolApi(options);
   const context = options.signal ? withAbortSignal(options.signal, TEST_CONTEXT) : TEST_CONTEXT;
   const result = await tool.execute(args, api, context);
-  return { ...result, content: result.content ?? [{ type: "text", text: output() }] };
+  const content =
+    "output" in result ? result.output : "content" in result ? result.content : undefined;
+  return { ...result, content: content ? [...content] : [{ type: "text", text: output() }] };
 }

@@ -43,7 +43,12 @@ function withLabel(tool: ToolRegistration): MikanHarnessTool {
         throw new Error(`Tool ${tool.name} requires an execution env; supply an authorized one.`);
       }
       const { label: _label, ...rest } = args as Record<string, unknown>;
-      return tool.execute(rest, api, context);
+      const {
+        output,
+        structuredOutput: _structured,
+        ...result
+      } = await tool.execute(rest, api, context);
+      return { ...result, content: output ? [...output] : undefined };
     },
   });
 }
