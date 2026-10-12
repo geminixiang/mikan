@@ -497,12 +497,15 @@ function handedOffResult() {
   };
 }
 
+function newSessionId(): string {
+  return `mikan-jb-${randomUUID()}`;
+}
+
 function createUnlockedJevBrowserTool(
   getEnv: () => ExecutionEnv | undefined,
   generateText: FieldTextGenerator | undefined,
   options: JevBrowserOptions,
 ): JevBrowserTool {
-  const newSessionId = () => `mikan-jb-${randomUUID()}`;
   let sessionId = newSessionId();
   const agentTargets = new Set<string>();
   let handOff: BrowserHandOff | undefined;
