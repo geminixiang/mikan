@@ -53,7 +53,7 @@ import { OfficeEventStore } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import type { PlatformToolPack } from "./tools/types.js";
+import type { DesktopAccess, PlatformToolPack } from "./tools/types.js";
 import { isTaskRunId, START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { loadMikanSkills } from "./skills.js";
 import {
@@ -143,19 +143,22 @@ async function createConfiguredAgentSession(params: {
   return session;
 }
 
-function desktopLinkFactory(
+function desktopAccess(
   options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office">,
-): ((platformUserId: string) => string) | undefined {
-  const tokenStore = options.desktop?.tokenStore;
-  const portalBaseUrl = options.desktop?.portalBaseUrl;
-  if (!tokenStore || !portalBaseUrl || options.sandboxConfig.type !== "oci") return undefined;
-  return (platformUserId) => {
-    const { token } = tokenStore.create({
-      platform: options.office.address.platform,
-      platformUserId,
-      office: options.office,
-    });
-    return `${portalBaseUrl}/desktop?token=${token}`;
+): DesktopAccess | undefined {
+  const desktop = options.desktop;
+  if (!desktop?.portalBaseUrl || options.sandboxConfig.type !== "oci") return undefined;
+  const { tokenStore, portalBaseUrl, office: officeDesktop } = desktop;
+  return {
+    link: (platformUserId) => {
+      const { token } = tokenStore.create({
+        platform: options.office.address.platform,
+        platformUserId,
+        office: options.office,
+      });
+      return `${portalBaseUrl}/desktop?token=${token}`;
+    },
+    open: async () => (await officeDesktop.start(options.office.key)) === "ready",
   };
 }
 
@@ -851,7 +854,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       }
       return contentText(reply.content);
     },
-    desktopLinkFactory(options),
+    desktopAccess(options),
   );
 
   const systemPrompt = await buildInitialSystemPrompt({

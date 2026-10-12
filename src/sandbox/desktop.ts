@@ -1,40 +1,24 @@
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { Readable, Writable } from "node:stream";
 import { isRecord } from "../unknown-values.js";
 import { DockerContainerManager } from "./provisioner.js";
+import type {
+  BrowserOwner,
+  DesktopProcess,
+  DesktopStart,
+  DesktopStatus,
+  DesktopStream,
+  DockerExecFile,
+} from "./types.js";
 
 export const DESKTOP_COMMAND = "mikan-desktop";
 
 export const DESKTOP_RUNTIME_DIR = "/run/user/0";
 
-export type BrowserOwner = "agent" | "user";
-
-export interface DesktopStatus {
-  display?: string;
-  control: BrowserOwner;
-}
-
-export type DesktopStart = "ready" | "outdated-image" | "stopped";
-
-interface DesktopProcess {
-  stdin: Writable | null;
-  stdout: Readable | null;
-  kill(): unknown;
-  once(event: "exit" | "error", listener: () => void): unknown;
-}
-
-export interface DesktopStream {
-  input: Writable;
-  output: Readable;
-  process: Pick<DesktopProcess, "once">;
-  close(): void;
-}
-
 type DesktopContainers = Pick<DockerContainerManager, "engine" | "retain" | "isRunning">;
 
 interface DesktopProcessRunners {
-  execFile?: (file: string, args: string[]) => Promise<{ stdout: string }>;
+  execFile?: DockerExecFile;
   spawn?: (
     file: string,
     args: string[],
@@ -42,7 +26,11 @@ interface DesktopProcessRunners {
   ) => DesktopProcess;
 }
 
-const MISSING_COMMAND = /executable file not found|not found in \$PATH|no such file or directory/i;
+const MISSING_COMMAND = /executable file not found|not found in \$PATH/i;
+
+const DESKTOP_EXEC_TIMEOUT_MS = 20_000;
+
+const execFileAsync = promisify(execFile);
 
 export function parseDesktopStatus(stdout: string): DesktopStatus {
   let parsed: unknown;
@@ -64,7 +52,9 @@ export class OfficeDesktop {
     private readonly containers: DesktopContainers,
     runners: DesktopProcessRunners = {},
   ) {
-    this.execFile = runners.execFile ?? promisify(execFile);
+    this.execFile =
+      runners.execFile ??
+      ((file, args) => execFileAsync(file, args, { timeout: DESKTOP_EXEC_TIMEOUT_MS }));
     this.spawn = runners.spawn ?? spawn;
   }
 

@@ -5,6 +5,7 @@ import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
+import type { OfficeDesktop } from "./sandbox/desktop.js";
 import type { DockerExecFile, SandboxConfig } from "./sandbox/types.js";
 import type { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
@@ -423,6 +424,7 @@ export interface CreateRunnerOptions {
   desktop?: {
     tokenStore: DesktopTokenStoreLike;
     portalBaseUrl?: string;
+    office: Pick<OfficeDesktop, "start">;
   };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models: MikanModels;

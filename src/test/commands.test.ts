@@ -983,6 +983,41 @@ describe("DesktopCommandHandler", () => {
     expect(ctx.responder.responses.join("\n")).toMatch(/older sandbox image/);
   });
 
+  test("a shared conversation without private replies never gets a link", async () => {
+    const { services, created, provision } = desktopServices(async () => ({ stdout: "" }));
+    const ctx = buildContext({
+      commandText: "/desktop",
+      platform: "telegram",
+      privateConversation: false,
+      services,
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(created).toEqual([]);
+    expect(provision).not.toHaveBeenCalled();
+    expect(ctx.responder.responses.join("\n")).toMatch(/direct message/);
+  });
+
+  test("a sandbox that is not running is reported as such, not as an old image", async () => {
+    const { services } = desktopServices(async () => ({ stdout: "" }));
+    const ctx = buildContext({
+      commandText: "/pi-desktop",
+      privateConversation: true,
+      services: {
+        ...services,
+        desktop: new OfficeDesktop(
+          { engine: "docker", retain: () => () => {}, isRunning: () => false },
+          { execFile: vi.fn(async () => ({ stdout: "" })) },
+        ),
+      },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+
+    expect(ctx.responder.responses.join("\n")).toMatch(/could not start/);
+  });
+
   test("other sandbox modes have no desktop", async () => {
     const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true });
 

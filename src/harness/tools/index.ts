@@ -14,7 +14,7 @@ import { createJevBrowserTool, type FieldTextGenerator } from "./jev-browser.js"
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
 import { createWebFetchTool } from "./web-fetch.js";
-import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
+import type { DesktopAccess, MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
   env: () => ExecutionEnv | undefined,
@@ -30,7 +30,7 @@ export function createMikanTools(
     outputDir: string;
   },
   generateFieldText?: FieldTextGenerator,
-  desktopLink?: (platformUserId: string) => string,
+  desktopAccess?: DesktopAccess,
 ): {
   tools: MikanHarnessTool[];
   bindRun: (ctx: MikanToolRunContext) => void;
@@ -40,7 +40,9 @@ export function createMikanTools(
   const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
-  const jevBrowserTool = createJevBrowserTool(env, generateFieldText);
+  const jevBrowserTool = createJevBrowserTool(env, generateFieldText, {
+    desktop: sandboxController.sandbox.type === "oci",
+  });
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(sandboxController);
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
@@ -76,14 +78,17 @@ export function createMikanTools(
       imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
       bindTasks(responder);
       jevBrowserTool.setHandOff(
-        desktopLink
-          ? (step) =>
-              responder.respond(
-                formatBrowserHandOff(
-                  step,
-                  message.conversationKind === "direct" ? desktopLink(userId) : undefined,
+        desktopAccess
+          ? {
+              openDesktop: desktopAccess.open,
+              announce: (step) =>
+                responder.respond(
+                  formatBrowserHandOff(
+                    step,
+                    message.conversationKind === "direct" ? desktopAccess.link(userId) : undefined,
+                  ),
                 ),
-              )
+            }
           : undefined,
       );
       setReactFunction(responder.react ? (emoji) => responder.react!(emoji) : null);
@@ -101,5 +106,5 @@ export function createMikanTools(
 function formatBrowserHandOff(step: string, link: string | undefined): string {
   return link
     ? `${step}\n\nOpen the desktop: ${link}`
-    : `${step}\n\nOpen the desktop with the desktop command (/pi-desktop in Slack).`;
+    : `${step}\n\nAsk for a private desktop link with the desktop command.`;
 }

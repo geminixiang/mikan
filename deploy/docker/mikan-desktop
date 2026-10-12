@@ -22,6 +22,10 @@ display_socket() {
   done
 }
 
+sway_running() {
+  [ -n "$(display_socket)" ] && pgrep -x sway >/dev/null
+}
+
 vnc_listening() {
   local port
   port=$(printf '%04X' "$VNC_PORT")
@@ -29,25 +33,40 @@ vnc_listening() {
 }
 
 running() {
-  [ -n "$(display_socket)" ] && pgrep -x sway >/dev/null && vnc_listening
+  sway_running && pgrep -x wayvnc >/dev/null && vnc_listening
+}
+
+wait_running() {
+  for _ in $(seq 100); do
+    running && return 0
+    sleep 0.1
+  done
+  tail -20 "$LOG_FILE" >&2
+  return 1
 }
 
 case "${1:-}" in
   start)
-    running && exit 0
-    pkill -x wayvnc || true
-    pkill -x sway || true
     mkdir -p "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
+    exec 9>"$XDG_RUNTIME_DIR/.mikan-desktop.lock"
+    flock 9
+    running && exit 0
+    if sway_running; then
+      pkill -x wayvnc || true
+      SWAYSOCK=$(ls "$XDG_RUNTIME_DIR"/sway-ipc.*.sock | head -1) swaymsg exec "$0 vnc" >/dev/null 9>&-
+      wait_running
+      exit
+    fi
+    pkill -x wayvnc || true
+    pkill -x sway || true
     rm -f "$XDG_RUNTIME_DIR"/wayland-*
     WLR_BACKENDS=headless WLR_RENDERER=pixman WLR_LIBINPUT_NO_DEVICES=1 \
-      setsid sway -c /etc/mikan/sway.conf </dev/null >"$LOG_FILE" 2>&1 &
-    for _ in $(seq 100); do
-      running && exit 0
-      sleep 0.1
-    done
-    tail -20 "$LOG_FILE" >&2
-    exit 1
+      setsid sway -c /etc/mikan/sway.conf </dev/null >"$LOG_FILE" 2>&1 9>&- &
+    wait_running
+    ;;
+  vnc)
+    exec wayvnc --websocket --max-fps=60 127.0.0.1 "$VNC_PORT"
     ;;
   status)
     display=""

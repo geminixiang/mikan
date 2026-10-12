@@ -31,6 +31,8 @@ rfb.scaleViewport = true;
 rfb.focusOnClick = true;
 rfb.addEventListener("connect", () => { state.textContent = "Connected"; rfb.focus(); });
 rfb.addEventListener("disconnect", (event) => {
+  clearInterval(polling);
+  toggle.disabled = true;
   state.textContent = event.detail.clean ? "Disconnected" : "Connection lost. Reload or ask for a new link.";
 });
 
@@ -55,7 +57,7 @@ toggle.addEventListener("click", () => {
   control("POST", { owner: owner.dataset.owner === "user" ? "agent" : "user" });
 });
 control("GET");
-setInterval(() => control("GET"), 5000);
+const polling = setInterval(() => control("GET"), 5000);
 `;
 
 export function renderDesktopPage(): string {

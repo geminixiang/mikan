@@ -10,6 +10,17 @@ export class DesktopCommandHandler implements CommandHandler {
   async tryHandle(context: CommandContext): Promise<boolean> {
     if (!matchCommand(context.commandText, DESKTOP_COMMANDS)) return false;
 
+    if (
+      !context.privateConversation &&
+      !context.bot.postPrivate &&
+      !context.bot.postPrivateDiagnostic
+    ) {
+      await replySummaryPrivately(context, TITLE, [
+        "A desktop link gives full use of this conversation's sandbox, so it is sent only privately. Ask for it in a direct message with the bot.",
+      ]);
+      return true;
+    }
+
     const { sandbox, provisioner, desktop, desktopTokenStore, portalBaseUrl } = context.services;
     if (sandbox.type !== "oci" || !provisioner || !desktop) {
       await replySummaryPrivately(context, TITLE, [
@@ -34,10 +45,16 @@ export class DesktopCommandHandler implements CommandHandler {
       trustModel: context.messagingInfo.trustModel ?? "membership",
     });
     const started = await desktop.start(containerKey);
-    if (started !== "ready") {
+    if (started === "outdated-image") {
       await replySummaryPrivately(context, TITLE, [
         "This conversation's sandbox is still running an older sandbox image without the desktop.",
         "It moves to the current image once it has been idle and stops; ask again after that.",
+      ]);
+      return true;
+    }
+    if (started === "stopped") {
+      await replySummaryPrivately(context, TITLE, [
+        "This conversation's sandbox could not start. Try again, or ask the operator to check it.",
       ]);
       return true;
     }

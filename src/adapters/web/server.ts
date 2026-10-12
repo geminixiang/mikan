@@ -131,8 +131,12 @@ export function startWebServer(options: StartWebServerOptions): Server {
   });
 
   server.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
-    const url = new URL(req.url ?? "/", requestBaseUrl(req));
-    handleDesktopUpgrade(req, socket, head, url, options.desktop)
+    socket.on("error", () => socket.destroy());
+    Promise.resolve()
+      .then(() => {
+        const url = new URL(req.url ?? "/", requestBaseUrl(req));
+        return handleDesktopUpgrade(req, socket, head, url, options.desktop);
+      })
       .then((handled) => {
         if (!handled) socket.destroy();
       })

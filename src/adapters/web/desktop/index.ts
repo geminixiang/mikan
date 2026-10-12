@@ -36,7 +36,12 @@ const novncRoot = realpathSync(
 );
 
 function novncFile(pathname: string): string | undefined {
-  const relative = decodeURIComponent(pathname.slice(NOVNC_PREFIX.length));
+  let relative: string;
+  try {
+    relative = decodeURIComponent(pathname.slice(NOVNC_PREFIX.length));
+  } catch {
+    return undefined;
+  }
   if (!NOVNC_DIRS.some((dir) => relative.startsWith(`${dir}/`))) return undefined;
   if (extname(relative) !== ".js") return undefined;
   const file = join(novncRoot, relative);
@@ -121,8 +126,33 @@ export async function handleDesktopRequest(
   return true;
 }
 
+const REFUSAL_GRACE_MS = 1_000;
+
 function refuse(socket: Duplex, status: number, reason: string): void {
   socket.end(`HTTP/1.1 ${status} ${reason}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+  setTimeout(() => socket.destroy(), REFUSAL_GRACE_MS).unref();
+}
+
+const viewers = new WeakMap<object, Map<string, number>>();
+
+function trackViewer(options: DesktopWebOptions, containerKey: string): () => void {
+  const counts = viewers.get(options.desktop) ?? new Map<string, number>();
+  viewers.set(options.desktop, counts);
+  counts.set(containerKey, (counts.get(containerKey) ?? 0) + 1);
+  let left = false;
+  return () => {
+    if (left) return;
+    left = true;
+    const remaining = (counts.get(containerKey) ?? 1) - 1;
+    if (remaining > 0) {
+      counts.set(containerKey, remaining);
+      return;
+    }
+    counts.delete(containerKey);
+    options.desktop.setBrowserOwner(containerKey, "agent").catch((error: unknown) => {
+      log.logWarning("Desktop control reset failed", errorMessage(error));
+    });
+  };
 }
 
 function upstreamRequest(req: IncomingMessage): string {
@@ -160,11 +190,17 @@ export async function handleDesktopUpgrade(
     refuse(socket, 409, "Conflict");
     return true;
   }
+  if (socket.destroyed) return true;
   const stream = options.desktop.connect(token.containerKey);
-  const close = () => {
+  const leave = trackViewer(options, token.containerKey);
+  const expiry = setTimeout(() => close(), Math.max(0, token.expiresAt - Date.now()));
+  expiry.unref();
+  function close() {
+    clearTimeout(expiry);
     stream.close();
     socket.destroy();
-  };
+    leave();
+  }
   stream.input.on("error", close);
   stream.output.on("error", close);
   stream.process.once("exit", close);

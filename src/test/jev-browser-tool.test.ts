@@ -1628,7 +1628,12 @@ describe("jev_browser tabs", () => {
       }
       return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
     });
-    const tool = createJevBrowserTool(env);
+    desktopMock.mockImplementation(async () => ({
+      stdout: JSON.stringify({ display: "wayland-1", control: "agent" }),
+      stderr: "",
+      code: 0,
+    }));
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
     const open = (url: string) =>
       tool.execute("call", { label: "test", url, commands: [["get", "title"]] }, undefined);
 
@@ -1685,6 +1690,13 @@ describe("describeContinuity", () => {
   );
 });
 
+function handOffHook(overrides: { openDesktop?: () => Promise<boolean> } = {}) {
+  return {
+    openDesktop: vi.fn(overrides.openDesktop ?? (async () => true)),
+    announce: vi.fn(async (_step: string) => {}),
+  };
+}
+
 describe("jev_browser on the office desktop", () => {
   beforeEach(() => {
     execMock.mockReset();
@@ -1718,7 +1730,7 @@ describe("jev_browser on the office desktop", () => {
   test("draws the browser on the desktop while it runs", async () => {
     desktopStatus({ display: "wayland-1", control: "agent" });
     answerBrowser();
-    const tool = createJevBrowserTool(env);
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
     await tool.execute(
       "call",
@@ -1729,14 +1741,13 @@ describe("jev_browser on the office desktop", () => {
     expect(execMock.mock.calls[0]?.[1].env).toEqual({
       AGENT_BROWSER_HEADED: "1",
       AGENT_BROWSER_ARGS: "--ozone-platform=wayland",
-      WAYLAND_DISPLAY: "wayland-1",
-      XDG_RUNTIME_DIR: "/run/user/0",
+      WAYLAND_DISPLAY: "/run/user/0/wayland-1",
     });
   });
 
   test("stays headless when the sandbox has no desktop", async () => {
     answerBrowser();
-    const tool = createJevBrowserTool(env);
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
     await tool.execute(
       "call",
@@ -1750,7 +1761,7 @@ describe("jev_browser on the office desktop", () => {
   test("leaves the browser alone while a person controls it", async () => {
     desktopStatus({ display: "wayland-1", control: "user" });
     answerBrowser();
-    const tool = createJevBrowserTool(env);
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
     const result = await tool.execute(
       "call",
@@ -1761,14 +1772,15 @@ describe("jev_browser on the office desktop", () => {
     expect(execMock).not.toHaveBeenCalled();
     expect(JSON.parse((result.content[0] as { text: string }).text)).toMatchObject({
       status: "person-has-control",
+      message: expect.stringMatching(/Hand back/),
     });
   });
 
   test("handOff gives the browser to the person, posts the step, and ends the turn", async () => {
     desktopStatus({ display: "wayland-1", control: "agent" });
-    const handOff = vi.fn(async () => {});
-    const tool = createJevBrowserTool(env);
-    tool.setHandOff(handOff);
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
 
     const result = await tool.execute(
       "call",
@@ -1776,17 +1788,143 @@ describe("jev_browser on the office desktop", () => {
       undefined,
     );
 
+    expect(hook.openDesktop).toHaveBeenCalled();
     expect(desktopMock.mock.calls.map(([command]) => command)).toContain(
       "'mikan-desktop' 'control' 'user'",
     );
-    expect(handOff).toHaveBeenCalledWith("Please sign in to example.com");
+    expect(hook.announce).toHaveBeenCalledWith("Please sign in to example.com");
     expect(execMock).not.toHaveBeenCalled();
     expect(result.terminate).toBe(true);
     expect(result.details).toEqual({ handedOff: true });
   });
 
-  test("handOff without a desktop to share is an error the model can act on", async () => {
+  test("handOff reopens a headless browser's page on the desktop so the person can see it", async () => {
+    let display = "";
+    desktopMock.mockImplementation(async (command) => ({
+      stdout: command.includes("'status'") ? JSON.stringify({ display, control: "agent" }) : "",
+      stderr: "",
+      code: 0,
+    }));
+    execMock.mockImplementation(async (command) => ({
+      stdout: JSON.stringify({
+        success: true,
+        data: command.includes("'get' 'url'")
+          ? { url: "https://login.test/form" }
+          : { targetId: "x", title: "T" },
+        error: null,
+      }),
+      stderr: "",
+      code: 0,
+    }));
+    const hook = handOffHook({
+      openDesktop: async () => {
+        display = "wayland-1";
+        return true;
+      },
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://login.test/form", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+
+    const calls = sentCommands().map((call) => (call as [string])[0]);
+    expect(calls).toEqual([
+      "'agent-browser' '--session' 'S' 'get' 'url' '--json'",
+      "'agent-browser' '--session' 'S' 'close' '--json'",
+      "'agent-browser' '--session' 'S' 'open' 'https://login.test/form' '--json'",
+    ]);
+    expect(execMock.mock.calls[2]?.[1].env).toMatchObject({ AGENT_BROWSER_HEADED: "1" });
+    expect(hook.announce).toHaveBeenCalledWith("Sign in");
+  });
+
+  test("handOff gives the browser back to the agent when the step cannot be posted", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    const hook = handOffHook();
+    hook.announce.mockRejectedValue(new Error("slack down"));
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+    ).rejects.toThrow(/slack down/);
+
+    expect(desktopMock.mock.calls.map(([command]) => command).at(-1)).toBe(
+      "'mikan-desktop' 'control' 'agent'",
+    );
+  });
+
+  test("handOff is used alone", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(handOffHook());
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in", url: "https://a.test/" }, undefined),
+    ).rejects.toThrow(/alone/);
+  });
+
+  test("handOff reports a sandbox without the desktop", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(handOffHook({ openDesktop: async () => false }));
+
+    await expect(
+      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+    ).rejects.toThrow(/desktop/);
+  });
+
+  test("without a desktop the tab limit still closes the oldest inactive tabs", async () => {
+    let listed = false;
+    execMock.mockImplementation(async (command) => {
+      const tabs = [
+        { tabId: "t1", targetId: "a", active: false, url: "https://a.test/" },
+        { tabId: "t2", targetId: "b", active: false, url: "https://b.test/" },
+        { tabId: "t3", targetId: "c", active: true, url: "https://c.test/" },
+      ];
+      const data = command.includes("'tab' 'list'")
+        ? ((listed = true), { tabs })
+        : { targetId: "x" };
+      return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
+    });
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    await tool.execute(
+      "first",
+      { label: "t", url: "https://one.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+    execMock.mockClear();
+
+    await tool.execute(
+      "second",
+      { label: "t", url: "https://two.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(listed).toBe(true);
+    expect(sentCommands().map((call) => (call as [string])[0])).toContain(
+      "'agent-browser' '--session' 'S' 'tab' 'close' 't1' '--json'",
+    );
+  });
+
+  test("a sandbox type without a desktop never asks for its status", async () => {
+    answerBrowser();
     const tool = createJevBrowserTool(env);
+
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    expect(desktopMock).not.toHaveBeenCalled();
+  });
+
+  test("handOff without a desktop to share is an error the model can act on", async () => {
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
     await expect(
       tool.execute("call", { label: "t", handOff: "Please sign in" }, undefined),
