@@ -18,6 +18,12 @@ change in a minor release.
   `jev_browser`'s goal loop. A stuck script now runs until the conversation is stopped, or until
   the run's budget ends it where one is set, as for scheduled events.
 
+### Fixed
+
+- `jev_browser` no longer refuses a call because the model filled `handOff` with an empty string,
+  as models that fill every optional field do; an empty `handOff` and `frame: "main"` count as not
+  given.
+
 ## [1.5.0] - 2026-10-13
 
 ### Added

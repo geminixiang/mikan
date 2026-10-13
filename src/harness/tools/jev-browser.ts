@@ -598,11 +598,13 @@ function createUnlockedJevBrowserTool(
           );
         }
       }
-      if (args.handOff !== undefined) {
-        if (args.url || args.goal || args.commands?.length || args.close || args.frame) {
+      const handOffStep = args.handOff?.trim();
+      if (handOffStep) {
+        const frame = args.frame === "main" ? undefined : args.frame;
+        if (args.url || args.goal || args.commands?.length || args.close || frame) {
           throw new Error("Use handOff alone, without url, goal, commands, frame, or close.");
         }
-        return handBrowserToPerson(env, args.handOff, signal);
+        return handBrowserToPerson(env, handOffStep, signal);
       }
       const desktop = await desktopStatus(env, signal);
       if (desktop.control === "user") return personHasControlResult();

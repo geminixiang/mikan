@@ -1953,6 +1953,63 @@ describe("jev_browser on the office desktop", () => {
     );
   });
 
+  test("an empty handOff, as models fill every optional field, is no hand-off", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+
+    await tool.execute(
+      "call",
+      {
+        label: "t",
+        url: "https://a.test/",
+        commands: [["get", "title"]],
+        frame: "main",
+        close: false,
+        handOff: " ",
+      },
+      undefined,
+    );
+
+    expect(hook.openDesktop).not.toHaveBeenCalled();
+    expect(hook.announce).not.toHaveBeenCalled();
+    expect(sentCommands().map((call) => (call as [string])[0])).toContain(
+      "'agent-browser' '--session' 'S' 'get' 'title' '--json'",
+    );
+  });
+
+  test("a real handOff ignores the empty defaults models fill in", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    const result = await tool.execute(
+      "call",
+      {
+        label: "t",
+        handOff: "Sign in",
+        url: "",
+        goal: "",
+        commands: [],
+        frame: "main",
+        close: false,
+      },
+      undefined,
+    );
+
+    expect(hook.announce).toHaveBeenCalledWith("Sign in");
+    expect(JSON.stringify(result.content)).toContain("handed-off");
+  });
+
   test("handOff gives the browser back to the agent when the step cannot be posted", async () => {
     desktopStatus({ display: "wayland-1", control: "agent" });
     lifecycleBrowser({ current: "" }, { next: true });
