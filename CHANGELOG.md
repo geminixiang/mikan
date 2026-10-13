@@ -11,6 +11,13 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- A codemode script has no deadline unless it sets `timeout_ms`, as in Pi. Before, mikan stopped
+  every script after 60 seconds, which cut off scripts that call slow tools such as
+  `jev_browser`'s goal loop. A stuck script now runs until the conversation is stopped, or until
+  the run's budget ends it where one is set, as for scheduled events.
+
 ## [1.5.0] - 2026-10-13
 
 ### Added

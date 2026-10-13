@@ -214,7 +214,7 @@ return data.items.map(({ id, title }) => ({ id, title }));
       const sandbox = new CodemodeSandbox({
         tools,
         globals,
-        timeoutMs: source.options.timeoutMs ?? 60_000,
+        timeoutMs: source.options.timeoutMs ?? Number.POSITIVE_INFINITY,
         memoryLimitBytes: 64 * 1024 * 1024,
       });
       try {
