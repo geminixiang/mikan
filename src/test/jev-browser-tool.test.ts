@@ -1542,11 +1542,44 @@ describe("jev_browser tool", () => {
     expect(data.browserContinuity).not.toContain("no agent-browser command completed");
   });
 
-  test("rejects a call with neither goal nor commands", async () => {
+  test("a url alone opens the page and reports where it landed, without a goal loop", async () => {
+    execMock.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        success: true,
+        data: {
+          url: "https://example.com/home",
+          title: "Example",
+          targetId: "T1",
+          lifecycle: { launched: true },
+        },
+        error: null,
+      }),
+      stderr: "",
+      code: 0,
+    });
     const tool = createJevBrowserTool(env);
-    await expect(
-      tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
-    ).rejects.toThrow(/Provide goal or commands/);
+
+    const result = await tool.execute(
+      "call-1",
+      { label: "test", url: "https://example.com" },
+      undefined,
+    );
+
+    const data = JSON.parse((result.content[0] as { text: string }).text);
+    expect(data).toMatchObject({
+      status: "opened",
+      finalUrl: "https://example.com/home",
+      title: "Example",
+    });
+    expect(data.commandResults).toBeUndefined();
+    expect(sentCommands()).toHaveLength(1);
+  });
+
+  test("rejects a call with no url, goal, or commands", async () => {
+    const tool = createJevBrowserTool(env);
+    await expect(tool.execute("call-1", { label: "test" }, undefined)).rejects.toThrow(
+      /Provide url, goal, or commands/,
+    );
     expect(execMock).not.toHaveBeenCalled();
   });
 });
@@ -1951,6 +1984,63 @@ describe("jev_browser on the office desktop", () => {
     expect(desktopMock.mock.calls.map(([command]) => command)).not.toContain(
       "'mikan-desktop' 'control' 'user'",
     );
+  });
+
+  test("an empty handOff, as models fill every optional field, is no hand-off", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+
+    await tool.execute(
+      "call",
+      {
+        label: "t",
+        url: "https://a.test/",
+        commands: [["get", "title"]],
+        frame: "main",
+        close: false,
+        handOff: " ",
+      },
+      undefined,
+    );
+
+    expect(hook.openDesktop).not.toHaveBeenCalled();
+    expect(hook.announce).not.toHaveBeenCalled();
+    expect(sentCommands().map((call) => (call as [string])[0])).toContain(
+      "'agent-browser' '--session' 'S' 'get' 'title' '--json'",
+    );
+  });
+
+  test("a real handOff ignores the empty defaults models fill in", async () => {
+    desktopStatus({ display: "wayland-1", control: "agent" });
+    lifecycleBrowser({ current: "" }, { next: true });
+    const hook = handOffHook();
+    const tool = createJevBrowserTool(env, undefined, { desktop: true });
+    tool.setHandOff(hook);
+    await tool.execute(
+      "call",
+      { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
+      undefined,
+    );
+
+    const result = await tool.execute(
+      "call",
+      {
+        label: "t",
+        handOff: "Sign in",
+        url: "",
+        goal: "",
+        commands: [],
+        frame: "main",
+        close: false,
+      },
+      undefined,
+    );
+
+    expect(hook.announce).toHaveBeenCalledWith("Sign in");
+    expect(JSON.stringify(result.content)).toContain("handed-off");
   });
 
   test("handOff gives the browser back to the agent when the step cannot be posted", async () => {

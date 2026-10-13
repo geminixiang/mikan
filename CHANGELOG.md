@@ -17,6 +17,15 @@ change in a minor release.
   every script after 60 seconds, which cut off scripts that call slow tools such as
   `jev_browser`'s goal loop. A stuck script now runs until the conversation is stopped, or until
   the run's budget ends it where one is set, as for scheduled events.
+- `jev_browser` with only `url` opens the page and returns its final URL and title, for example to
+  show it on the office desktop. Before, it refused the call, and models made up a goal that ran the
+  slower goal loop.
+
+### Fixed
+
+- `jev_browser` no longer refuses a call because the model filled `handOff` with an empty string,
+  as models that fill every optional field do; an empty `handOff` and `frame: "main"` count as not
+  given.
 
 ## [1.5.0] - 2026-10-13
 
