@@ -11,14 +11,7 @@ change in a minor release.
 
 ## [Unreleased]
 
-### Removed
-
-- The Slack App Home tab, which listed running tasks and scheduled jobs with force-stop buttons.
-  mikan's Slack manifest turns the tab off; an app synced from a configuration token loses it on
-  the next start, and an app configured by hand keeps showing an empty tab until it is turned off in
-  Slack's App Home settings. Use the stop command or the Admin portal to stop work.
-
-## [1.5.0-beta.0]
+## [1.5.0] - 2026-10-13
 
 ### Added
 
@@ -46,6 +39,13 @@ change in a minor release.
 - Upgraded Pi to 1.2.0. Pi 1.2 removed an export mikan 1.4.0 imports, so a fresh install of 1.4.0
   now fails to start; this release works with it. A nonzero `bash` exit is now an error result that
   carries the output and the exit code, instead of a thrown error.
+
+### Removed
+
+- The Slack App Home tab, which listed running tasks and scheduled jobs with force-stop buttons.
+  mikan's Slack manifest turns the tab off; an app synced from a configuration token loses it on
+  the next start, and an app configured by hand keeps showing an empty tab until it is turned off in
+  Slack's App Home settings. Use the stop command or the Admin portal to stop work.
 
 ## [1.4.0] - 2026-10-11
 
