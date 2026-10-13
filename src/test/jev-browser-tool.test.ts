@@ -1542,11 +1542,44 @@ describe("jev_browser tool", () => {
     expect(data.browserContinuity).not.toContain("no agent-browser command completed");
   });
 
-  test("rejects a call with neither goal nor commands", async () => {
+  test("a url alone opens the page and reports where it landed, without a goal loop", async () => {
+    execMock.mockResolvedValueOnce({
+      stdout: JSON.stringify({
+        success: true,
+        data: {
+          url: "https://example.com/home",
+          title: "Example",
+          targetId: "T1",
+          lifecycle: { launched: true },
+        },
+        error: null,
+      }),
+      stderr: "",
+      code: 0,
+    });
     const tool = createJevBrowserTool(env);
-    await expect(
-      tool.execute("call-1", { label: "test", url: "https://example.com" }, undefined),
-    ).rejects.toThrow(/Provide goal or commands/);
+
+    const result = await tool.execute(
+      "call-1",
+      { label: "test", url: "https://example.com" },
+      undefined,
+    );
+
+    const data = JSON.parse((result.content[0] as { text: string }).text);
+    expect(data).toMatchObject({
+      status: "opened",
+      finalUrl: "https://example.com/home",
+      title: "Example",
+    });
+    expect(data.commandResults).toBeUndefined();
+    expect(sentCommands()).toHaveLength(1);
+  });
+
+  test("rejects a call with no url, goal, or commands", async () => {
+    const tool = createJevBrowserTool(env);
+    await expect(tool.execute("call-1", { label: "test" }, undefined)).rejects.toThrow(
+      /Provide url, goal, or commands/,
+    );
     expect(execMock).not.toHaveBeenCalled();
   });
 });

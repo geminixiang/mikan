@@ -35,7 +35,7 @@ const jevBrowserSchema = Type.Object({
   url: Type.Optional(
     Type.String({
       description:
-        "Page to open first, in a new tab after the first call. Omit to keep working on the current tab.",
+        "Page to open first, in a new tab after the first call. Alone, it only opens the page and returns its final URL and title, for example to show it on the office desktop. Omit to keep working on the current tab.",
     }),
   ),
   frame: Type.Optional(
@@ -621,8 +621,10 @@ function createUnlockedJevBrowserTool(
           details: undefined,
         };
       }
-      if (!args.goal && !args.commands?.length) {
-        throw new Error("Provide goal or commands, or close: true to only close the browser.");
+      if (!args.url && !args.goal && !args.commands?.length) {
+        throw new Error(
+          "Provide url, goal, or commands, or close: true to only close the browser.",
+        );
       }
       if (!args.url && closedByCall) {
         throw new Error(
@@ -645,6 +647,7 @@ function createUnlockedJevBrowserTool(
       let status: "done" | "blocked" | "step-limit" | "no-goal" = "no-goal";
       let message = "No goal was given; ran commands only.";
       let finalUrl = args.url;
+      let openedTitle: string | undefined;
       let lastSnapshotText = "";
       let firstLifecycle: BrowserLifecycle | undefined;
       const captureLifecycle = (result: AgentBrowserResult<unknown>) => {
@@ -665,6 +668,9 @@ function createUnlockedJevBrowserTool(
           }
           const opened = targetIdOf(openResult);
           if (opened) agentTargets.add(opened);
+          const page = isRecord(openResult.data) ? openResult.data : {};
+          if (typeof page.url === "string") finalUrl = page.url;
+          if (typeof page.title === "string") openedTitle = page.title;
           browserOpen = true;
           closedByCall = false;
         }
@@ -673,6 +679,28 @@ function createUnlockedJevBrowserTool(
           const switched = await runAgentBrowser(browser, ["frame", args.frame], signal);
           if (!switched.success)
             throw new Error(`Failed to switch browser frame: ${switched.error}`);
+        }
+
+        if (!args.goal && !args.commands?.length) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    status: "opened",
+                    finalUrl,
+                    title: openedTitle,
+                    browserContinuity: describeContinuity(expectedOpen, firstLifecycle),
+                    closedOldTabs: closedTabs.length ? closedTabs : undefined,
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+            details: undefined,
+          };
         }
 
         for (const command of args.commands ?? []) {
