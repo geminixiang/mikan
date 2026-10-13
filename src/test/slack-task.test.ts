@@ -85,7 +85,6 @@ function fakeSlackWebApi(): SlackWebApi {
     },
     users: { list: async () => ({ ok: true, members: [] }) },
     reactions: { add: ok },
-    views: { publish: ok },
     files: { uploadV2: async () => ({ ok: true, files: [] }) },
     assistant: { threads: { setSuggestedPrompts: ok, setTitle: ok } },
     apiCall: ok,

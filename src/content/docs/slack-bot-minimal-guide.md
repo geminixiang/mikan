@@ -117,11 +117,9 @@ Then install or reinstall the app to your workspace and store the bot token as `
 
 The token starts with `xoxb-`.
 
-## 4. Enable App Home and Agent mode
+## 4. Enable Agent mode
 
-1. Go to **Features → App Home**.
-2. Enable **Home Tab**.
-3. Enable **Agent or Assistant** under **Agents & AI Apps**.
+1. Enable **Agent or Assistant** under **Agents & AI Apps**.
 
 This is what puts mikan in the **Agents & AI apps** sidebar with its own pane.
 Skip it for a classic app.

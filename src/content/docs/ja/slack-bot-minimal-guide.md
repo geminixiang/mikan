@@ -56,11 +56,9 @@ Token は `xapp-` で始まります。
 
 Token は `xoxb-` で始まります。
 
-## 4. App Home と Agent モードを有効化
+## 4. Agent モードを有効化
 
-1. **Features → App Home** に移動する。
-2. **Home Tab** を有効化する。
-3. **Agents & AI Apps** で **Agent or Assistant** を有効化する。
+1. **Agents & AI Apps** で **Agent or Assistant** を有効化する。
 
 これにより Slack の assistant UI が有効になります。mikan は `assistant:write` を通じて assistant working status を書き込みます。購読する assistant context events は Slack 互換性のために予約されており、別の agent trigger ではありません。
 

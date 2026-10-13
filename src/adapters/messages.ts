@@ -66,7 +66,3 @@ export function formatAlreadyWorking(
     options?.scope === "thread" ? "Already working in this thread." : "Already working.";
   return formatItalic(platformName, `${prefix} Send ${command} to cancel.`);
 }
-
-export function formatForceStopped(source: PlatformSource, actorLabel: string): string {
-  return formatItalic(resolvePlatformName(source), `Force stopped by ${actorLabel}.`);
-}

@@ -52,12 +52,7 @@ import type {
   SuggestedPrompt,
 } from "./types.js";
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
-import {
-  PRODUCT_NAME,
-  formatForceStopped,
-  formatResumingTask,
-  formatTaskResumesExhausted,
-} from "../messages.js";
+import { formatResumingTask, formatTaskResumesExhausted } from "../messages.js";
 import {
   MessagingEventQueue,
   MessagingIntakeTracker,
@@ -81,7 +76,6 @@ import {
   registerThreadSession,
 } from "../../sessions/chat-history-sync.js";
 import type { SlackPersonaIdentity } from "./persona.js";
-import { conversationIdOf } from "../../sessions/session-key.js";
 import {
   isSlackThreadSessionKey,
   parseSlackSessionKey,
@@ -1118,141 +1112,6 @@ export class SlackMessagingBot implements MessagingBot {
     );
   }
 
-  private appendRunningTasks(blocks: object[]): void {
-    const runningSessions = this.handler.getRunningSessions();
-    blocks.push(
-      { type: "divider" },
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `Running Tasks (${runningSessions.length})`,
-          emoji: true,
-        },
-      },
-    );
-    if (runningSessions.length === 0) {
-      blocks.push({
-        type: "context",
-        elements: [{ type: "mrkdwn", text: "_No tasks running right now._" }],
-      });
-      return;
-    }
-
-    const stuckThresholdMs = 10 * 60 * 1000;
-    for (const session of runningSessions) {
-      const channelId = conversationIdOf(session.sessionKey);
-      const channelName = this.channels.get(channelId)?.name;
-      const elapsed = Math.floor((Date.now() - session.startedAt) / 60000);
-      const elapsedStr = elapsed < 1 ? "<1 min" : `${elapsed} min`;
-      const lastActivity = session.lastActivityAt ? Date.now() - session.lastActivityAt : 0;
-      const isStuck = lastActivity > stuckThresholdMs;
-      let statusLine = `${isStuck ? "_stuck_" : "_running_"} · ${elapsedStr}`;
-      if (session.currentTool) statusLine += ` · ${session.currentTool}`;
-      if (isStuck) statusLine += ` · idle ${Math.floor(lastActivity / 60000)}m`;
-      blocks.push({
-        type: "context",
-        elements: [
-          {
-            type: "mrkdwn",
-            text: `*${channelName ? `#${channelName}` : channelId}* · ${statusLine}`,
-          },
-        ],
-      });
-      if (isStuck) {
-        blocks.push({
-          type: "context",
-          elements: [
-            { type: "mrkdwn", text: " " },
-            {
-              type: "button",
-              text: { type: "plain_text", text: "Force Stop", emoji: true },
-              action_id: `force_stop_${session.sessionKey.replace(/:/g, "_")}`,
-              value: session.sessionKey,
-              style: "danger",
-            },
-          ],
-        });
-      }
-    }
-  }
-
-  private appendScheduledJobs(blocks: object[], dmChannelId: string | undefined): void {
-    const periodicEvents =
-      dmChannelId && this.eventScheduler
-        ? this.eventScheduler.periodicEvents(createOfficeAddress("slack", dmChannelId))
-        : [];
-    blocks.push(
-      { type: "divider" },
-      {
-        type: "header",
-        text: {
-          type: "plain_text",
-          text: `Scheduled Jobs (${periodicEvents.length})`,
-          emoji: true,
-        },
-      },
-    );
-    if (periodicEvents.length === 0) {
-      blocks.push({
-        type: "context",
-        elements: [{ type: "mrkdwn", text: "_No scheduled jobs._" }],
-      });
-      return;
-    }
-
-    for (const event of periodicEvents) {
-      const channel =
-        event.platform === "slack" ? this.channels.get(event.conversationId) : undefined;
-      const channelId = channel ? `#${channel.name}` : event.conversationId;
-      const channelLabel = `${event.platform}:${channelId}`;
-      const nextRun = event.nextRun
-        ? new Date(event.nextRun).toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          })
-        : "—";
-      blocks.push({
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*${event.text}*\n└ \`${event.schedule}\` · ${channelLabel} · Next: ${nextRun}`,
-        },
-      });
-    }
-  }
-
-  private buildHomeView(dmChannelId: string | undefined): { type: "home"; blocks: KnownBlock[] } {
-    const blocks: object[] = [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: `*${PRODUCT_NAME}*\nStart a new task or check on running work.`,
-        },
-        accessory: {
-          type: "image",
-          image_url: "https://media1.tenor.com/m/lfDATg4Bhc0AAAAC/happy-cat.gif",
-          alt_text: PRODUCT_NAME,
-        },
-      },
-    ];
-    this.appendRunningTasks(blocks);
-    this.appendScheduledJobs(blocks, dmChannelId);
-    blocks.push(
-      { type: "divider" },
-      {
-        type: "context",
-        elements: [
-          { type: "mrkdwn", text: "💡 @mention in a channel or send a DM to start a new task" },
-        ],
-      },
-    );
-    return { type: "home", blocks: blocks as KnownBlock[] };
-  }
-
   private createCommandAdapters(input: CommandAdapterInput): ConversationContext {
     const { conversationId, userId, userName, text, ts, ...options } = input;
     const message = createConversationMessage({
@@ -1779,23 +1638,8 @@ export class SlackMessagingBot implements MessagingBot {
   private handleAppHomeOpened({ event, ack }: SlackSocketEventArgs): void {
     const e = event as { user: string; tab: string; channel?: string; context?: AgentContext };
     ack();
-
-    if (e.tab === "messages") {
-      if (e.channel) {
-        void handleAgentDmOpened(this.assistantOps(), this.assistantThreads, e.channel, e.context);
-      }
-      return;
-    }
-    if (e.tab !== "home") return;
-
-    this.webClient.views
-      .publish({
-        user_id: e.user,
-        view: this.buildHomeView(e.channel),
-      })
-      .catch((err) => {
-        log.logWarning(`Failed to publish App Home view`, String(err));
-      });
+    if (e.tab !== "messages" || !e.channel) return;
+    void handleAgentDmOpened(this.assistantOps(), this.assistantThreads, e.channel, e.context);
   }
 
   private async handleBlockAction({
@@ -1811,39 +1655,8 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    if (!action.action_id?.startsWith("force_stop_")) {
-      ack();
-      await this.handleSlackInteraction(body, action);
-      return;
-    }
-
     ack();
-    const sessionKey = action.value;
-    if (!sessionKey) {
-      log.logWarning("[Force Stop] Ignored a button without a session key", action.action_id);
-      return;
-    }
-    const userId = body.user?.id;
-    const channelId = body.container?.channel_id || conversationIdOf(sessionKey);
-
-    log.logInfo(`[Force Stop] User ${userId} requested force stop for ${sessionKey}`);
-
-    this.handler.forceStop(createOfficeAddress("slack", channelId), sessionKey);
-
-    await this.postMessage(channelId, formatForceStopped("slack", userId ?? "unknown"));
-
-    if (userId) {
-      this.openDirectConversation(userId)
-        .then((dmChannelId) =>
-          this.webClient.views.publish({
-            user_id: userId,
-            view: this.buildHomeView(dmChannelId),
-          }),
-        )
-        .catch((err) => {
-          log.logWarning(`Failed to refresh App Home view`, String(err));
-        });
-    }
+    await this.handleSlackInteraction(body, action);
   }
 
   private async handleSlackInteraction(
