@@ -77,6 +77,10 @@ describe("the built-in Slack app manifest", () => {
     expect(commands).toEqual(declared);
   });
 
+  test("has no Home tab", () => {
+    expect(slackAppManifest().features?.app_home?.home_tab_enabled).toBe(false);
+  });
+
   test("is the example operators copy by hand", () => {
     const example = JSON.parse(
       readFileSync(

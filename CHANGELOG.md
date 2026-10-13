@@ -11,6 +11,13 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Removed
+
+- The Slack App Home tab, which listed running tasks and scheduled jobs with force-stop buttons.
+  mikan's Slack manifest turns the tab off; an app synced from a configuration token loses it on
+  the next start, and an app configured by hand keeps showing an empty tab until it is turned off in
+  Slack's App Home settings. Use the stop command or the Admin portal to stop work.
+
 ## [1.5.0-beta.0]
 
 ### Added

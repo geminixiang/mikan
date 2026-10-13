@@ -9,7 +9,6 @@ export interface SlackWebApi {
   conversations: Pick<WebClient["conversations"], "open" | "history" | "replies" | "list">;
   users: Pick<WebClient["users"], "list">;
   reactions: Pick<WebClient["reactions"], "add">;
-  views: Pick<WebClient["views"], "publish">;
   files: Pick<WebClient["files"], "uploadV2">;
   assistant: {
     threads: Pick<WebClient["assistant"]["threads"], "setSuggestedPrompts" | "setTitle">;

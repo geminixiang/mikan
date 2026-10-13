@@ -92,7 +92,6 @@ function createFakeWebApi(): SlackWebApi {
     },
     users: { list: vi.fn(async () => ({ ok: true, members: [] })) },
     reactions: { add: vi.fn(async () => ({ ok: true })) },
-    views: { publish: vi.fn(async () => ({ ok: true })) },
     files: { uploadV2: vi.fn(async () => ({ ok: true, files: [] })) },
     assistant: {
       threads: {
@@ -723,6 +722,21 @@ describe("SlackMessagingBot queues follow-up messages", () => {
       text: "deployment failed",
     });
     expect(readFileSync(join(workingDir, C123_OFFICE, "auto-reply"), "utf-8")).toBe("");
+  });
+
+  test("opening the app's Home tab publishes nothing, because mikan has no Home tab", async () => {
+    const handler = makeHandler();
+    const { socket, web } = await startSlackHarness({ handler, workspace });
+    const ack = makeAck();
+
+    await socket.deliver("app_home_opened", {
+      event: { user: "U123", tab: "home", channel: "D123" },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(web.apiCall).not.toHaveBeenCalledWith("views.publish", expect.anything());
+    expect("views" in web).toBe(false);
   });
 
   test("stops setting suggested prompts once Slack says the app is not an agent app", async () => {
@@ -1875,64 +1889,6 @@ describe("SlackMessagingBot attachments", () => {
     expect(existsSync(join(workingDir, C123_OFFICE, "attachments", "1001000_huge.mov"))).toBe(
       false,
     );
-  });
-});
-
-describe("SlackMessagingBot force-stop block action", () => {
-  let workingDir: string;
-  let workspace: Workspace;
-
-  beforeEach(() => {
-    workingDir = mkdtempSync(join(tmpdir(), "mikan-slack-forcestop-"));
-    createGlobalSettingsFile(workingDir);
-    workspace = createWorkspace({ root: workingDir, stateDir: workingDir });
-  });
-
-  afterEach(() => {
-    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
-  });
-
-  test("session keys with underscored conversation ids survive via the button value", async () => {
-    const handler = makeHandler();
-    const { socket } = await startSlackHarness({ handler, workspace });
-    const sessionKey = "GH_owner_repo_42:1000.0001";
-
-    await socket.deliver("block_actions", {
-      body: {
-        actions: [
-          {
-            action_id: `force_stop_${sessionKey.replace(/:/g, "_")}`,
-            value: sessionKey,
-          },
-        ],
-        user: { id: "U123" },
-        container: {},
-      },
-      ack: makeAck(),
-    });
-
-    expect(handler.forceStop).toHaveBeenCalledWith(
-      createOfficeAddress("slack", "GH_owner_repo_42"),
-      sessionKey,
-    );
-  });
-
-  test("a button without a session key stops nothing", async () => {
-    const handler = makeHandler();
-    const { socket } = await startSlackHarness({ handler, workspace });
-    const ack = makeAck();
-
-    await socket.deliver("block_actions", {
-      body: {
-        actions: [{ action_id: "force_stop_GH_owner_repo_42" }],
-        user: { id: "U123" },
-        container: { channel_id: "C123" },
-      },
-      ack,
-    });
-
-    expect(ack).toHaveBeenCalled();
-    expect(handler.forceStop).not.toHaveBeenCalled();
   });
 });
 

@@ -56,11 +56,9 @@ Token 以 `xapp-` 开头。
 
 Token 以 `xoxb-` 开头。
 
-## 4. 启用 App Home 和 Agent 模式
+## 4. 启用 Agent 模式
 
-1. 前往 **Features → App Home**。
-2. 启用 **Home Tab**。
-3. 在 **Agents & AI Apps** 下启用 **Agent or Assistant**。
+1. 在 **Agents & AI Apps** 下启用 **Agent or Assistant**。
 
 这会启用 Slack 的 assistant UI。mikan 通过 `assistant:write` 写入 assistant 工作状态；订阅的 assistant context 事件仅用于 Slack 兼容性，不会单独触发代理。
 
