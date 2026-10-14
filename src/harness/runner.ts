@@ -55,6 +55,7 @@ import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import type { DesktopAccess, PlatformToolPack } from "./tools/types.js";
 import { isTaskRunId, START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { isContinuedRunId } from "./continued-run.js";
 import { loadMikanSkills } from "./skills.js";
 import {
   buildPromptPayload,
@@ -449,6 +450,24 @@ interface PreparedTurnParams {
   sessionView: CreateRunnerOptions["sessionView"];
 }
 
+async function driveSession(
+  session: MikanAgentSession,
+  message: ConversationMessage,
+  prepared: PreparedRunContext,
+  responder: ConversationResponder,
+): Promise<void> {
+  if (isContinuedRunId(message.id)) {
+    await session.continueInterrupted();
+    return;
+  }
+  await session.prompt(prepared.userMessage, {
+    allowTaskHandoff: responder.startTask !== undefined,
+    allowTaskStatus: responder.getTaskStatus !== undefined && !isTaskRunId(message.id),
+    images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
+    budget: message.id.startsWith("event:") ? DEFAULT_EVENT_BUDGET : undefined,
+  });
+}
+
 async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   stopReason: string;
   errorMessage?: string;
@@ -493,14 +512,8 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
     image_attachment_count: prepared.imageAttachments.length,
   });
 
-  const isEventRun = message.id.startsWith("event:");
   await session.sessionStore.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: message.id });
-  await session.prompt(prepared.userMessage, {
-    allowTaskHandoff: responder.startTask !== undefined,
-    allowTaskStatus: responder.getTaskStatus !== undefined && !isTaskRunId(message.id),
-    images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
-    budget: isEventRun ? DEFAULT_EVENT_BUDGET : undefined,
-  });
+  await driveSession(session, message, prepared, responder);
   await presentation.wait();
   if (session.getLastRunStats().status === "aborted") runState.stopReason = "aborted";
 

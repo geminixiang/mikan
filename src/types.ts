@@ -131,6 +131,7 @@ export interface MessagingInfo {
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
   trustModel?: PlatformTrustModel;
+  continuesInterruptedRuns?: boolean;
   diagnostics?: {
     showUsageSummary?: boolean;
   };

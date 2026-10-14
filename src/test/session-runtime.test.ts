@@ -26,6 +26,7 @@ import type { RunnerFactory } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
+import { continuedRunId } from "../harness/continued-run.js";
 
 const testAddress = createOfficeAddress("slack", "C123");
 
@@ -581,6 +582,46 @@ describe("ConversationRuntime lifecycle", () => {
       expect.stringContaining("Restarting for an update"),
     );
     expect(runtime.isRunning(testAddress, "C123")).toBe(false);
+  });
+
+  test("shutdown leaves a run running when its platform continues interrupted runs", async () => {
+    const { models, faux } = createFauxModels();
+    const runtime = makeRuntime({ models });
+    let started = false;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    faux.setResponses([
+      async () => {
+        started = true;
+        await gate;
+        return fauxAssistantMessage("late");
+      },
+    ]);
+    const { event, context } = makeEventAndContext("1000.5");
+    context.platform = { ...testPlatform, continuesInterruptedRuns: true };
+    const run = runtime.handleEvent(event, bot, context);
+    await vi.waitFor(() => expect(started).toBe(true));
+
+    await runtime.shutdown(0);
+
+    expect(started).toBe(true);
+    expect(bot.postMessage).not.toHaveBeenCalledWith(
+      "C123",
+      expect.stringContaining("Restarting for an update"),
+    );
+    release();
+    await run;
+  });
+
+  test("a continued run does not sync chat history into the interrupted turn", async () => {
+    const runner = fakeRunner();
+    const runtime = makeRuntime({ runnerFactory: fakeRunnerFactory(runner) });
+    const { event, context } = makeEventAndContext(continuedRunId("C123"));
+
+    await runtime.handleEvent(event, bot, context);
+
+    expect(runner.run).toHaveBeenCalledOnce();
+    expect(runner.syncChatHistory).not.toHaveBeenCalled();
   });
 
   test("new creates a clean session immediately without changing memory", async () => {

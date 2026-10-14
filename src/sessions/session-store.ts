@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
@@ -42,7 +42,6 @@ import type {
   ChatHistoryMessageIdentity,
   ImportedSession,
   ImportedSessionEntry,
-  ResumeClaim,
   SessionHarnessBinding,
   SessionContext,
   SessionEntry,
@@ -88,7 +87,6 @@ const TaskAnchors = defineExtension({ name: "mikan.task-anchors", tasks: [TaskAn
 type SessionDocState = Partial<{
   name: string;
   run: Partial<SessionRunRecord>;
-  resumes: number;
   importedUsage: true;
 }>;
 
@@ -242,11 +240,28 @@ function protectStorageFiles(path: string): void {
 
 const REQUEST_METHODS = new Set<PropertyKey>(["streamSimple", "completeSimple"]);
 
+const CONTINUATION_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CONTINUATION_BIND_TIMEOUT_MS = 60_000;
+
+interface PlannedContinuation {
+  unbound: Set<ConversationId>;
+  started: Promise<void>;
+  start: () => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+function lastWriteMs(path: string): number {
+  return Math.max(
+    ...[path, `${path}-wal`].map((file) => (existsSync(file) ? statSync(file).mtimeMs : 0)),
+  );
+}
+
 class OfficeStorage {
   private static readonly pool = new Map<string, Promise<OfficeStorage>>();
   readonly registry: Registry = createRegistry();
   private opened: Harness | undefined;
   private refs = 0;
+  private continuation: PlannedContinuation | undefined;
   private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
   private readonly writers = new Set<ConversationId>();
 
@@ -259,10 +274,10 @@ class OfficeStorage {
     return this.opened;
   }
 
-  static async acquire(path: string): Promise<OfficeStorage> {
+  static async acquire(path: string, keepUnfinished = false): Promise<OfficeStorage> {
     let pending = OfficeStorage.pool.get(path);
     if (!pending) {
-      pending = OfficeStorage.openShared(path);
+      pending = OfficeStorage.openShared(path, keepUnfinished);
       OfficeStorage.pool.set(path, pending);
       pending.catch(() => OfficeStorage.pool.delete(path));
     }
@@ -277,12 +292,58 @@ class OfficeStorage {
     return storage;
   }
 
-  private static async openShared(path: string): Promise<OfficeStorage> {
+  private static async openShared(path: string, keepUnfinished: boolean): Promise<OfficeStorage> {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const storage = await OfficeStorage.open(path, await openNodeSqliteStorage(path));
     protectStorageFiles(path);
-    await storage.abortUnfinishedWork();
+    if (!keepUnfinished) await storage.abortUnfinishedWork(() => true);
     return storage;
+  }
+
+  async planContinuation(continues: (id: ConversationId) => boolean): Promise<ConversationId[]> {
+    const unfinished = await this.unfinishedWork();
+    const kept = new Set(unfinished.map((task) => task.conversationId).filter(continues));
+    await this.abortUnfinishedWork((id) => !kept.has(id));
+    if (kept.size === 0) return [];
+    this.refs += 1;
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    const timer = setTimeout(() => void this.startContinuation(), CONTINUATION_BIND_TIMEOUT_MS);
+    this.continuation = { unbound: new Set(kept), started, start, timer };
+    return [...kept];
+  }
+
+  async continueConversation(id: ConversationId): Promise<void> {
+    const planned = this.continuation;
+    if (!planned) {
+      this.harness.resume();
+      return;
+    }
+    planned.unbound.delete(id);
+    if (planned.unbound.size === 0) await this.startContinuation();
+    await planned.started;
+  }
+
+  whenContinued(): Promise<void> {
+    return this.continuation?.started ?? Promise.resolve();
+  }
+
+  private async startContinuation(): Promise<void> {
+    const planned = this.continuation;
+    if (!planned) return;
+    this.continuation = undefined;
+    clearTimeout(planned.timer);
+    if (planned.unbound.size > 0) {
+      log.logWarning(
+        `Aborting ${planned.unbound.size} interrupted runs that were not continued in time`,
+      );
+      await this.abortUnfinishedWork((id) => planned.unbound.has(id));
+    }
+    this.harness.resume();
+    planned.start();
+    await this.release();
   }
 
   private static async open(path: string | null, backend: Storage): Promise<OfficeStorage> {
@@ -349,14 +410,22 @@ class OfficeStorage {
     };
   }
 
-  private async abortUnfinishedWork(): Promise<void> {
+  private async unfinishedWork(): Promise<Array<{ id: TaskId; conversationId: ConversationId }>> {
     const { tasks } = await this.harness.inspect(context);
-    const unowned = tasks.filter((task) => !task.record.owner && !task.record.background);
-    if (unowned.length === 0) return;
+    return tasks
+      .filter(
+        (task) => !task.record.owner && !task.record.background && !task.record.abortRequested,
+      )
+      .map((task) => ({ id: task.record.id, conversationId: task.record.conversationId }));
+  }
+
+  private async abortUnfinishedWork(aborts: (id: ConversationId) => boolean): Promise<void> {
+    const unfinished = (await this.unfinishedWork()).filter((task) => aborts(task.conversationId));
+    if (unfinished.length === 0) return;
     log.logWarning(
-      `Aborting ${unowned.length} durable tasks left unfinished by a previous process`,
+      `Aborting ${unfinished.length} durable tasks left unfinished by a previous process`,
     );
-    for (const task of unowned) await this.harness.abortTask(task.record.id, context);
+    for (const task of unfinished) await this.harness.abortTask(task.id, context);
   }
 
   async index(): Promise<Readonly<Record<string, SessionIndexRecord>>> {
@@ -938,6 +1007,7 @@ export class SessionStore implements SessionInspection {
         content: `[background task ${key} finished] ${answer}`,
         timestamp: Date.now(),
       };
+      await storage.whenContinued();
       await requester.submit(
         {
           type: "write",
@@ -949,43 +1019,22 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  static async claimResume(office: Office, key: string, max: number): Promise<ResumeClaim> {
-    return withOfficeStorage(office, async (storage) => {
-      const session = await lookupSession(storage, key);
-      if (!session) return "exhausted";
-      return session.conversation.commit(async (tx) => {
-        const doc = await tx.doc(SessionDoc, session.conversation.id);
-        const resumes = doc.resumes ?? 0;
-        if (resumes < max) {
-          doc.resumes = resumes + 1;
-          return "resume";
-        }
-        doc.run = { ...doc.run, endedAt: Date.now(), status: "aborted" };
-        doc.resumes = undefined;
-        return "exhausted";
-      }, context);
-    });
-  }
-
-  static async interruptedSince(
-    office: Office,
-    keys: readonly string[],
-    sinceMs: number,
-  ): Promise<string[]> {
-    if (keys.length === 0 || !existsSync(office.sessionsPath)) return [];
-    return withOfficeStorage(office, async (storage) => {
-      const interrupted: string[] = [];
-      for (const key of keys) {
-        const session = await lookupSession(storage, key);
-        if (!session) continue;
-        const run = (await storage.harness.snapshot(SessionDoc, session.conversation.id, context))
-          ?.run;
-        if (run?.startedAt !== undefined && run.startedAt >= sinceMs && run.endedAt === undefined) {
-          interrupted.push(key);
-        }
-      }
-      return interrupted;
-    });
+  static async continueInterrupted(office: Office): Promise<string[]> {
+    const path = office.sessionsPath;
+    if (!existsSync(path) || Date.now() - lastWriteMs(path) > CONTINUATION_WINDOW_MS) return [];
+    const storage = await OfficeStorage.acquire(path, true);
+    try {
+      const keyOf = new Map(
+        Object.entries(await storage.index()).map(([key, record]) => [
+          record.conversationId as ConversationId,
+          key,
+        ]),
+      );
+      const continued = await storage.planContinuation((id) => keyOf.has(id));
+      return continued.flatMap((id) => keyOf.get(id) ?? []);
+    } finally {
+      await storage.release();
+    }
   }
 
   static async listTasks(office: Office, requesterKey: string): Promise<TaskSessionState[]> {
@@ -1120,6 +1169,18 @@ export class SessionStore implements SessionInspection {
     return this.mcp?.servers ?? [];
   }
 
+  async continueInterruptedRun(): Promise<boolean> {
+    const live = await this.storage.harness.snapshot(LiveDoc, this.conversation.id, context);
+    await this.storage.continueConversation(this.conversation.id);
+    if (live?.run === undefined) return false;
+    await this.conversation.waitForIdle(context);
+    return true;
+  }
+
+  whenContinued(): Promise<void> {
+    return this.storage.whenContinued();
+  }
+
   async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {
     return this.mutate(async () => {
       await this.storage.bind(this.conversation.id, binding);
@@ -1218,7 +1279,6 @@ export class SessionStore implements SessionInspection {
   async recordRun(run: SessionRunRecord): Promise<void> {
     await this.updateSessionDoc((doc) => {
       doc.run = { ...run };
-      if (run.endedAt !== undefined) doc.resumes = undefined;
     });
   }
 

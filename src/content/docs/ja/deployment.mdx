@@ -90,10 +90,11 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 
 <Aside type="note" title="Graceful reload">
   同梱の PM2 設定は停止シグナル後、SIGKILL まで最大 6 分待機します。mikan は新しいメッセージの
-  受付を即座に止め、実行中の runs を最大 5 分完了させ、残りを中止してその会話に再起動の通知を
-  投稿し、observability exporters の flush と shutdown を最大 5 秒待ちます。fork モードの `pm2
-  reload` は旧プロセス終了後に 新プロセスを起動するため、drain
-  中はどのプロセスもプラットフォームに接続していません。 オフピークにデプロイしてください。
+  受付を即座に止めます。Slack の実行中の runs はそのまま残り、再起動後に会話へ通知を投稿して
+  続きから再開します。他のプラットフォームの runs は最大 5 分完了させ、残りを中止して再起動の
+  通知を投稿します。その後 observability exporters の flush と shutdown を最大 5 秒待ちます。 fork
+  モードの `pm2 reload` は旧プロセス終了後に新プロセスを起動するため、停止中はどの
+  プロセスもプラットフォームに接続していません。
 </Aside>
 
 ### State マイグレーション

@@ -4,6 +4,8 @@ status: accepted
 
 # Tasks run as background child conversations
 
+Decisions 5 to 7 are superseded by [ADR 0027](0027-interrupted-runs-continue-after-restart.md): an interrupted task continues its own turn in pi-durable instead of being aborted and restarted with a resume prompt.
+
 A task becomes a child conversation in the office Harness, owned by a background task of the conversation that started it. pi-durable then keeps the task's work across a restart, and the requesting conversation receives its result. Today mikan builds tasks by hand in the Slack adapter, and a restart drops the work.
 
 ## Context

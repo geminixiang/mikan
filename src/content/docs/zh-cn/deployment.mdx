@@ -84,9 +84,10 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 ```
 
 <Aside type="note" title="优雅重新加载">
-  随附的 PM2 配置会在 SIGTERM 后等待最多 60 秒，再发送 SIGKILL。mikan 会先排空对话运行，停止 events
-  watcher，并给 observability exporters
-  最多五秒钟完成刷新和关闭。超过进程管理器超时时间的运行仍可能被终止。
+  随附的 PM2 配置会在停止信号后等待最多六分钟，再发送 SIGKILL。mikan 会立即停止接收新消息。 Slack
+  上进行中的运行保持原样，重启后会在对话里发布通知并接着运行；其他平台的运行最多再跑五分钟，
+  之后中止剩余的运行并发布重启通知。最后给 observability exporters 最多五秒完成刷新和关闭。fork
+  模式下的 `pm2 reload` 是先停旧、再起新，停止期间没有任何进程连着平台。
 </Aside>
 
 ### State 迁移

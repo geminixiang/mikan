@@ -61,6 +61,7 @@ import { errorMessage } from "../unknown-values.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { stripTriggerSignature } from "../sessions/history-line.js";
 import { isTaskRunId } from "../harness/tools/task.js";
+import { isContinuedRunId } from "../harness/continued-run.js";
 
 type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
 
@@ -275,7 +276,8 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const lease = await this.acquireRunLease(options, sessionKey);
     const { state } = lease;
-    state.detachOnShutdown = isTaskRunId(event.ts);
+    state.detachOnShutdown =
+      isTaskRunId(event.ts) || options.context.platform.continuesInterruptedRuns === true;
     log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
     const runPromise = this.sessions.settle(state, () =>
       this.executeRun(options, sessionKey, state),
@@ -307,7 +309,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         trustModel: context.platform.trustModel ?? "membership",
         platformWorkspaceId: context.platform.workspaceId,
       });
-      await lease.state.runner.syncChatHistory(event.ts);
+      if (!isContinuedRunId(event.ts)) await lease.state.runner.syncChatHistory(event.ts);
       return lease;
     } catch (err) {
       lease?.release();
@@ -352,7 +354,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       if (result?.stopReason === "aborted") {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
-      } else if (result && state.detachOnShutdown) {
+      } else if (result) {
         await this.reportTaskOutcome(event.address, sessionKey, result.finalText ?? "");
       }
       if (result) {
