@@ -11,6 +11,8 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-14
+
 ### Changed
 
 - A Slack reply or task that a restart interrupts now continues after the restart instead of
