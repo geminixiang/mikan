@@ -64,9 +64,12 @@ lifecycle.
 prompt section, and hooks as the `mikan` extension, configures the conversation's
 model and offered tools, then submits the input and waits for it to settle. Pi
 alone executes the run, retries, compacts, and persists results. A run that a
-previous process left unfinished is aborted before a new prompt, never resumed
-implicitly; `resume()` continues it explicitly. Interrupted tool calls are not
-rerun unless the tool is `replay: "safe"`.
+previous process left unfinished is aborted before a new prompt unless the
+platform continues it (ADR 0027): `continueInterrupted()` binds the session like
+`prompt()` and lets pi-durable continue the pending turn instead of submitting
+input. Interrupted tool calls are not rerun unless the tool is
+`replay: "safe"`; the model gets an "interrupted" result, and the system prompt
+tells it to check and rerun the step.
 
 `HarnessEvent` is a thin, one-to-one projection of pi-durable's agent events,
 which are derived from commits: assistant `message_end` arrives after
@@ -147,7 +150,6 @@ Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
 adapts them, forwarding progress `details` and awaiting the last update before
 the result.
 
-`resume({ budget, tools })` lets Pi continue a run left unfinished in the store.
 Compaction belongs to Pi; `SessionStore` writes compaction entries only when
 `mikan migrate` imports older sessions.
 

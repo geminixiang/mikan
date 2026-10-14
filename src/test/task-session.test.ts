@@ -59,7 +59,7 @@ function setup() {
   return { faux, office, started, wrap };
 }
 
-test("a task interrupted by a restart resumes with a new input after another conversation ran first", async () => {
+test("a task interrupted by a restart continues its own turn and reports to its requester", async () => {
   const { faux, office, started, wrap } = setup();
   const requester = await SessionStore.open(office, "D123");
   faux.setResponses([fauxAssistantMessage("hello")]);
@@ -75,33 +75,25 @@ test("a task interrupted by a restart resumes with a new input after another con
   await task.close();
   await requester.close();
   await interrupted;
-  expect(await SessionStore.interruptedSince(office, ["D123:1.000001", "D123"], 0)).toEqual([
-    "D123:1.000001",
-  ]);
 
-  const reopened = await SessionStore.open(office, "D123");
-  faux.setResponses([fauxAssistantMessage("requester answer")]);
-  await wrap(reopened).prompt("a message while the task is pending");
-  const resumedTask = await SessionStore.openTask(office, "D123:1.000001", "D123", {
+  expect(await SessionStore.continueInterrupted(office)).toEqual(["D123:1.000001"]);
+  const continued = await SessionStore.openTask(office, "D123:1.000001", "D123", {
     acknowledgement: "On it.",
   });
-  let resumedWith = "";
+  let continuedWith = "";
   faux.setResponses([
     (context) => {
-      resumedWith = JSON.stringify(context.messages);
+      continuedWith = JSON.stringify(context.messages);
       return fauxAssistantMessage("task finished");
     },
   ]);
-  await wrap(resumedTask).prompt("continue the task");
-  await resumedTask.close();
-  await reopened.close();
+  await wrap(continued).continueInterrupted();
+  await continued.close();
 
-  expect(resumedWith).toContain("Tool slow was aborted");
-  expect(resumedWith).toContain("continue the task");
+  expect(continuedWith).toContain("Tool slow was interrupted");
   expect((await SessionStore.inspectExecution(office, "D123:1.000001")).result?.status).toBe(
     "completed",
   );
-  expect(await SessionStore.interruptedSince(office, ["D123:1.000001"], 0)).toEqual([]);
 });
 
 test("a finished task's answer is written to its requester without a model turn", async () => {
@@ -121,40 +113,4 @@ test("a finished task's answer is written to its requester without a model turn"
   );
   expect(transcript).toContain("[background task D123:1.000001 finished] the answer");
   expect(faux.state.callCount).toBe(1);
-});
-
-async function startedTask(office: Office, key: string): Promise<void> {
-  await (await SessionStore.open(office, "D123")).close();
-  const task = await SessionStore.openTask(office, key, "D123", { acknowledgement: "On it." });
-  await task.recordRun({ startedAt: Date.now() });
-  await task.close();
-}
-
-test("an interrupted task resumes twice, then its run is closed as aborted", async () => {
-  const { office } = setup();
-  const key = "D123:1.000001";
-  await startedTask(office, key);
-
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("exhausted");
-
-  expect(await SessionStore.interruptedSince(office, [key], 0)).toEqual([]);
-  expect((await SessionStore.inspectExecution(office, key)).result?.status).toBe("aborted");
-});
-
-test("a run that ends resets the automatic resume count", async () => {
-  const { office } = setup();
-  const key = "D123:1.000001";
-  await startedTask(office, key);
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
-
-  const task = await SessionStore.openTask(office, key, "D123", { acknowledgement: "On it." });
-  await task.recordRun({ startedAt: Date.now() });
-  await task.recordRun({ endedAt: Date.now(), status: "completed" });
-  await task.recordRun({ startedAt: Date.now() });
-  await task.close();
-
-  expect(await SessionStore.claimResume(office, key, 2)).toBe("resume");
 });

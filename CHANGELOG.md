@@ -13,6 +13,11 @@ change in a minor release.
 
 ### Changed
 
+- A Slack reply or task that a restart interrupts now continues after the restart instead of
+  stopping with its progress message stuck: mikan posts "Restarted for an update; continuing." and
+  pi-durable continues the same turn, telling the model which step was interrupted. A deploy no
+  longer waits up to five minutes for Slack runs to finish. Tasks continue the same way, without the
+  earlier limit of two automatic resumes. Other platforms keep the five-minute drain.
 - A codemode script has no deadline unless it sets `timeout_ms`, as in Pi. Before, mikan stopped
   every script after 60 seconds, which cut off scripts that call slow tools such as
   `jev_browser`'s goal loop. A stuck script now runs until the conversation is stopped, or until

@@ -90,10 +90,11 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 
 <Aside type="note" title="Graceful reload">
   The included PM2 configuration waits up to six minutes after the stop signal before SIGKILL. mikan
-  stops accepting new messages immediately, lets in-flight runs finish for up to five minutes, then
-  aborts the rest and posts a restart notice in those conversations, then gives observability
-  exporters up to five seconds to flush and shut down. `pm2 reload` in fork mode is sequential, so
-  the drain is also a window with no process connected to the platforms; deploy off-peak.
+  stops accepting new messages immediately. Slack runs are left as they are and continue after the
+  restart, with a notice in their conversation; runs on other platforms get up to five minutes to
+  finish, then the rest are aborted with a restart notice. Observability exporters then get up to
+  five seconds to flush and shut down. `pm2 reload` in fork mode is sequential, so the stop is also
+  a window with no process connected to the platforms.
 </Aside>
 
 ### State migrations

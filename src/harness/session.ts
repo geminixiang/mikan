@@ -80,6 +80,7 @@ interface RunOptions {
   tools?: MikanToolInput[];
   allowTaskHandoff?: boolean;
   allowTaskStatus?: boolean;
+  continueInterrupted?: boolean;
 }
 
 interface Deferred {
@@ -195,9 +196,14 @@ export class MikanAgentSession {
     await this.run(text, options);
   }
 
+  async continueInterrupted(options?: Omit<RunOptions, "continueInterrupted">): Promise<void> {
+    await this.run("", { ...options, continueInterrupted: true });
+  }
+
   async compact(instructions?: string): Promise<CompactOutcome> {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
     const { harness, conversation } = await this.attach();
+    await this.sessionStore.whenContinued();
     const tokensBefore = await contextTokens(conversation);
     const taskId = await conversation.compact(instructions, context);
     const { outcome } = (await harness.waitForTask(taskId, context)).state;
@@ -272,7 +278,9 @@ export class MikanAgentSession {
       stream = await watchEvents(attached.harness, attached.conversation.id, context);
       this.observedUsage = sumUsageState(stream.snapshot.usage);
       stream.start((events) => this.handleDurableEvents(events));
-      status = await this.drive(attached, text, options?.images);
+      status = options?.continueInterrupted
+        ? await this.continueRun()
+        : await this.drive(attached, text, options?.images);
     } catch (error) {
       runFailure = { error };
       status = "failed";
@@ -283,11 +291,18 @@ export class MikanAgentSession {
     }
   }
 
+  private async continueRun(): Promise<SessionRunStatus> {
+    this.runStarted = await this.sessionStore.continueInterruptedRun();
+    if (this.runStarted) await this.runEnded.promise;
+    return this.runAborted ? "aborted" : "completed";
+  }
+
   private async drive(
     { harness, conversation }: AttachedSessionHarness,
     text: string,
     images?: ImageContent[],
   ): Promise<SessionRunStatus> {
+    await this.sessionStore.whenContinued();
     const interrupted = (await harness.snapshot(LiveDoc, conversation.id, context))?.run;
     if (interrupted) {
       log.logWarning("Aborting a run interrupted before this process started");

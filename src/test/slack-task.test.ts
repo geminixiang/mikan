@@ -27,6 +27,7 @@ import * as observability from "../observability/index.js";
 import { querySlackTasks, isTaskStatusQuestion } from "../adapters/slack/task-status.js";
 import { SlackMessagingBot } from "../adapters/slack/bot.js";
 import { SessionStore } from "../sessions/session-store.js";
+import { MikanAgentSession } from "../harness/session.js";
 import * as log from "../log.js";
 import type {
   SlackSocketConnection,
@@ -783,40 +784,48 @@ test("task admission failure is reported without tool payload content", async ()
 });
 
 const dmOffice = () => workspace.office(createOfficeAddress("slack", "D123"));
-const DAY_SECONDS = 24 * 60 * 60;
-
-async function interruptedTask(
-  options: { ageSeconds?: number; ended?: boolean; legacy?: boolean } = {},
-) {
+async function interruptRun(sessionKey: string, task: boolean): Promise<void> {
   const office = dmOffice();
   office.ensure();
-  const now = Date.now();
-  const root = `${Math.floor(now / 1000) - (options.ageSeconds ?? 60)}.000001`;
-  const line = (entry: object) => appendFileSync(office.logPath, `${JSON.stringify(entry)}\n`);
-  line({
-    date: new Date(now).toISOString(),
-    ts: "1.000001",
-    user: "U1",
-    userName: "u1",
-    text: "investigate",
-    isMessagingBot: false,
-  });
-  line({
-    date: new Date(now).toISOString(),
-    ts: root,
-    user: "bot",
-    text: "On it.",
-    isMessagingBot: true,
-    taskRoot: true,
-  });
-  await (await SessionStore.open(office, "D123")).close();
-  const task = await SessionStore.openTask(office, `D123:${root}`, "D123", {
-    acknowledgement: "On it.",
-  });
-  if (!options.legacy) await task.recordRun({ startedAt: now - (options.ageSeconds ?? 60) * 1000 });
-  if (options.ended) await task.recordRun({ endedAt: now, status: "completed" });
-  await task.close();
-  return root;
+  appendFileSync(
+    office.logPath,
+    `${JSON.stringify({ date: new Date().toISOString(), ts: "1.000001", user: "U1", userName: "u1", text: "investigate", isMessagingBot: false, sessionKey: "D123" })}\n`,
+  );
+  const requester = await SessionStore.open(office, "D123");
+  const store = task
+    ? await SessionStore.openTask(office, sessionKey, "D123", { acknowledgement: "On it." })
+    : requester;
+  let toolStarted!: () => void;
+  const toolRunning = new Promise<void>((resolve) => (toolStarted = resolve));
+  const slow: AgentTool = {
+    name: "slow",
+    label: "slow",
+    description: "Runs until the store closes",
+    parameters: Type.Object({}),
+    execute: async (_id, _params, signal) => {
+      toolStarted();
+      await new Promise((_resolve, reject) =>
+        signal?.addEventListener("abort", () => reject(new Error("aborted"))),
+      );
+      return { content: [{ type: "text", text: "never" }], details: undefined };
+    },
+  };
+  faux.setResponses([fauxAssistantMessage(fauxToolCall("slow", {}), { stopReason: "toolUse" })]);
+  const run = new MikanAgentSession({
+    model: faux.getModel(),
+    models,
+    sessionStore: store,
+    tools: [slow],
+    thinkingLevel: "off",
+    systemPrompt: "prompt",
+    settings: { compaction: { enabled: false } },
+  })
+    .prompt("long work")
+    .catch(() => undefined);
+  await toolRunning;
+  await store.close();
+  if (store !== requester) await requester.close();
+  await run;
 }
 
 async function restartSlack(): Promise<SlackMessagingBot> {
@@ -845,22 +854,38 @@ async function restartSlack(): Promise<SlackMessagingBot> {
   return restarted;
 }
 
-test("a task interrupted by a restart resumes in its thread and finishes", async () => {
-  const root = await interruptedTask();
-  let resumedWith = "";
+test("a task interrupted by a restart continues in its thread and finishes", async () => {
+  await interruptRun("D123:1700000000.000001", true);
+  let continuedWith = "";
   faux.setResponses([
     (context) => {
-      resumedWith = JSON.stringify(context.messages);
-      return fauxAssistantMessage("resumed result");
+      continuedWith = JSON.stringify(context.messages);
+      return fauxAssistantMessage("continued result");
     },
   ]);
   const restarted = await restartSlack();
   try {
     await vi.waitFor(() =>
-      expect(trace.some((line) => line.includes("resumed result"))).toBe(true),
+      expect(trace.some((line) => line.includes("continued result"))).toBe(true),
     );
-    expect(resumedWith).toMatch(/restarted/i);
-    expect(trace.some((line) => line.startsWith(`post:${root}:`) && /restart/i.test(line))).toBe(
+    expect(continuedWith).toContain("Tool slow was interrupted");
+    expect(
+      trace.some((line) => line.startsWith("post:1700000000.000001:") && /restart/i.test(line)),
+    ).toBe(true);
+  } finally {
+    await restarted.stop();
+  }
+});
+
+test("a direct-message reply interrupted by a restart continues in the conversation", async () => {
+  await interruptRun("D123", false);
+  faux.setResponses([fauxAssistantMessage("continued reply")]);
+  const restarted = await restartSlack();
+  try {
+    await vi.waitFor(() =>
+      expect(trace.some((line) => line.includes("continued reply"))).toBe(true),
+    );
+    expect(trace.some((line) => line.startsWith("post:channel:") && /restart/i.test(line))).toBe(
       true,
     );
   } finally {
@@ -868,51 +893,13 @@ test("a task interrupted by a restart resumes in its thread and finishes", async
   }
 });
 
-test("a task interrupted again after two automatic resumes stops and says so once", async () => {
+test("a restart with nothing interrupted continues nothing", async () => {
   const info = vi.spyOn(log, "logInfo");
-  const root = await interruptedTask();
-  const key = `D123:${root}`;
-  await SessionStore.claimResume(dmOffice(), key, 2);
-  await SessionStore.claimResume(dmOffice(), key, 2);
-
+  await (await SessionStore.open(dmOffice(), "D123")).close();
   const restarted = await restartSlack();
   try {
-    await vi.waitFor(() =>
-      expect(
-        trace.some((line) => line.startsWith(`post:${root}:`) && /not continuing/i.test(line)),
-      ).toBe(true),
-    );
-    expect(faux.state.callCount).toBe(0);
-  } finally {
-    await restarted.stop();
-  }
-
-  trace.length = 0;
-  info.mockClear();
-  const again = await restartSlack();
-  try {
-    await vi.waitFor(() =>
-      expect(
-        info.mock.calls.some((c) => String(c[0]).includes("Resumed 0 interrupted tasks")),
-      ).toBe(true),
-    );
-    expect(trace.some((line) => line.startsWith(`post:${root}:`))).toBe(false);
-  } finally {
-    await again.stop();
-  }
-});
-
-test("restart resumes only recent, unfinished tasks that recorded their start", async () => {
-  const info = vi.spyOn(log, "logInfo");
-  await interruptedTask({ ended: true });
-  await interruptedTask({ legacy: true });
-  await interruptedTask({ ageSeconds: 2 * DAY_SECONDS });
-  const restarted = await restartSlack();
-  try {
-    await vi.waitFor(() =>
-      expect(
-        info.mock.calls.some((c) => String(c[0]).includes("Resumed 0 interrupted tasks")),
-      ).toBe(true),
+    expect(info.mock.calls.some((c) => String(c[0]).includes("Continued 0 interrupted runs"))).toBe(
+      true,
     );
     expect(faux.state.callCount).toBe(0);
   } finally {

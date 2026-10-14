@@ -71,8 +71,6 @@ export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCom
 
 export type SessionRunStatus = "completed" | "aborted" | "failed";
 
-export type ResumeClaim = "resume" | "exhausted";
-
 export interface SessionRunRecord {
   startedAt?: number;
   endedAt?: number;

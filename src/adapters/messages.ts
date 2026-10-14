@@ -41,18 +41,8 @@ export function formatRestarting(source: PlatformSource): string {
   );
 }
 
-export function formatResumingTask(source: PlatformSource): string {
-  return formatItalic(
-    resolvePlatformName(source),
-    "Restarted for an update; continuing this task.",
-  );
-}
-
-export function formatTaskResumesExhausted(source: PlatformSource): string {
-  return formatItalic(
-    resolvePlatformName(source),
-    "Interrupted again after two automatic restarts; not continuing this task. Ask me to continue when you are ready.",
-  );
+export function formatContinuingRun(source: PlatformSource): string {
+  return formatItalic(resolvePlatformName(source), "Restarted for an update; continuing.");
 }
 
 export function formatAlreadyWorking(

@@ -356,6 +356,7 @@ grep '"userName":"mario"' log.jsonl | tail -20 | jq -c '{date: .date[0:19], text
 \`\`\`
 
 ## Tools
+A tool result saying the tool was interrupted means the service restarted during it: check what it already did, rerun it if that is safe, and finish the request.
 - bash: Run shell commands (primary tool). Install packages as needed.
 - read: Read files
 - write: Create/overwrite files

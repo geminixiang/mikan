@@ -61,17 +61,16 @@ and `isTask`), not from the office log, so they survive a restart or a lost log.
 Task threads started before 1.1.0 were ordinary thread sessions and are not
 recognized.
 
-A task run outlives a restart. Shutdown closes task queues without waiting for
-them, and at startup the bot resumes, before backfill, every DM task whose run
-recorded a start in the last 24 hours and never recorded an end: it posts a
-notice in the thread and queues `RESUMED_TASK_PROMPT` on the task session. The
-window keeps tasks interrupted before this behavior existed, which never recorded
-a start time, from resuming. A stopped task recorded an end, so it does not
-resume. A task resumes at most twice in a row: `SessionStore.claimResume` counts
-resumes in the task's session document and resets the count whenever a run ends.
-Past the cap it closes the run as aborted and posts one notice, so a task whose
-step crashes the daemon cannot crash it again on every restart. Resume runs before backfill because backfill can take minutes on a large
-workspace; listing a DM's tasks reads only pi-durable's ownership index.
+Every Slack run outlives a restart (ADR 0027). The Slack platform reports
+`continuesInterruptedRuns`, so shutdown neither waits for its runs nor aborts
+them, and `stop()` closes the queues without waiting. At startup, before the
+socket connects and before backfill, the bot asks `SessionStore.continueInterrupted`
+for each channel, posts "Restarted for an update; continuing." where each
+interrupted session replies, and queues a run with `continuedRunId(sessionKey)`,
+which continues the pending turn instead of submitting input. It runs before the
+socket connects because the first message to an office would otherwise open it
+and abort its interrupted runs. A message queued behind a run but not yet started
+when the process stops is lost, as before.
 
 Task response finalization posts one fresh in-thread message mentioning the current
 requester after a normal textual completion. Aborted, error and silent turns do
