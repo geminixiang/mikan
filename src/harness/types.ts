@@ -229,7 +229,6 @@ export interface SubagentConversationHooks {
   beforeRequest(): void;
   afterResponse(message: AssistantMessage): void;
   beforeTool(call: SubagentToolCallView): { block: string } | undefined;
-  afterTool(callId: string): string | undefined;
 }
 
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
@@ -331,12 +330,6 @@ export interface HarnessSettings {
   retry: RetrySettings;
   budget: BudgetSettings;
 }
-
-export type ToolLoopVerdict =
-  | { kind: "allow" }
-  | { kind: "notice"; text: string }
-  | { kind: "block"; reason: string }
-  | { kind: "stop"; reason: string };
 
 export interface SubagentProfileDiagnostic {
   type: "warning";

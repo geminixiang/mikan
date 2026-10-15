@@ -357,23 +357,6 @@ test("cancelling discovery before execution does not load tools", async () => {
   expect(JSON.stringify(await contextMessages(session))).toContain("still deferred");
 });
 
-test("repeated identical searches cannot bypass the tool loop guard", async () => {
-  const { faux, file, wrap } = setup();
-  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await openSessionAt(file), [github.tool]);
-  faux.setResponses(
-    Array.from({ length: 10 }, () =>
-      fauxAssistantMessage(
-        fauxToolCall("tool_search", { label: "Search again", query: "zzunmatched" }),
-        { stopReason: "toolUse" },
-      ),
-    ),
-  );
-  await session.prompt("search repeatedly");
-  expect(session.getLastRunStats().budgetExceededReason).toContain("tool loop");
-  expect(github.execute).not.toHaveBeenCalled();
-});
-
 test("describeNamespace returns a server's instructions and tools to scripts", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");

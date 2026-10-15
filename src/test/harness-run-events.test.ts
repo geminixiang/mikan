@@ -127,13 +127,18 @@ describe("toRunEvent", () => {
     expect(
       toRunEvent({
         type: "budget_exceeded",
-        reason: "tool loop: bash",
+        reason: "3 LLM calls >= 3 limit",
         tokens: 1,
         costUsd: 0,
         llmCalls: 1,
         durationMs: 1,
       }),
-    ).toEqual({ type: "budget_exceeded", reason: "tool loop: bash", llmCalls: 1, durationMs: 1 });
+    ).toEqual({
+      type: "budget_exceeded",
+      reason: "3 LLM calls >= 3 limit",
+      llmCalls: 1,
+      durationMs: 1,
+    });
   });
 });
 

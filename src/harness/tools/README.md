@@ -92,8 +92,8 @@ listing callable tools as declarations, `searchTools()` / `describeTool()` /
 `describeNamespace()`, result layout and truncation (spilled through the
 run's `ExecutionEnv`), `store()` / `load()` (Pi's `pi.codemode.store`
 document, which `/new` clears), and replay after a restart. Each nested call
-is its own `pi.tool` task, so mikan's `ToolTask` hooks (loop guard, notices,
-subagent budgets) and its tool events apply to it as to a model call. A
+is its own `pi.tool` task, so mikan's `ToolTask` hooks (the `start_task` batch
+rule, subagent budgets) and its tool events apply to it as to a model call. A
 schema-less tool resolves to its text, images left out; a tool with
 `structuredOutputSchema` resolves to its `structuredOutput`, also on an error
 result, so `tools.bash` gives `{ output, exitCode, ... }`.

@@ -56,7 +56,6 @@ import type {
 } from "./types.js";
 
 import * as log from "../log.js";
-import { ToolLoopGuard } from "./loop-guard.js";
 import { adaptAgentTool, isHarnessTool, withRequiredLabel } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { renderMcpServersSection } from "./mcp.js";
@@ -125,8 +124,6 @@ export class MikanAgentSession {
   private runMessages: AgentMessage[] = [];
   private streamingContent: AssistantMessage["content"] = [];
   private readonly toolArgs = new Map<string, unknown>();
-  private loopGuard = new ToolLoopGuard();
-  private readonly loopNotices = new Map<string, string>();
   private readonly subagents = new Map<ConversationId, SubagentConversationHooks>();
   private runStarted = false;
   private runEndSeen = false;
@@ -260,8 +257,6 @@ export class MikanAgentSession {
     this.runEnded = deferred();
     this.activeRequest = undefined;
     this.requestRunId = undefined;
-    this.loopGuard = new ToolLoopGuard();
-    this.loopNotices.clear();
     this.runBudget = { ...this.settings.budget, ...options?.budget };
     this.lastSessionRunStatus = undefined;
     this.tally = {
@@ -361,7 +356,6 @@ export class MikanAgentSession {
       cleanupFailure = { error };
     } finally {
       this.toolArgs.clear();
-      this.loopNotices.clear();
       this.cancellation = undefined;
       this.deadlineNotification = undefined;
       this.tally.endedAt = Date.now();
@@ -545,16 +539,8 @@ export class MikanAgentSession {
       hook(ToolTask, {
         beforeTool: async (call, api) =>
           own(api.conversationId)
-            ? this.beforeTool(call, api)
+            ? this.beforeTool(api)
             : this.subagents.get(api.conversationId)?.beforeTool(call),
-        afterTool: (call, result, api) => {
-          const notice = own(api.conversationId)
-            ? this.takeLoopNotice(call.id)
-            : this.subagents.get(api.conversationId)?.afterTool(call.id);
-          return notice === undefined
-            ? undefined
-            : { ...result, output: withNotice(result.output, notice) };
-        },
       }),
     ];
   }
@@ -575,46 +561,15 @@ export class MikanAgentSession {
     return undefined;
   }
 
-  private async beforeTool(
-    call: { id: string; name: string; arguments: Record<string, unknown> },
-    api: {
-      snapshot: ToolExecutionApi["snapshot"];
-      conversationId: ToolExecutionApi["conversationId"];
-    },
-  ): Promise<{ block?: string } | undefined> {
+  private async beforeTool(api: {
+    snapshot: ToolExecutionApi["snapshot"];
+    conversationId: ToolExecutionApi["conversationId"];
+  }): Promise<{ block: string } | undefined> {
     const round = (await api.snapshot(LiveDoc, api.conversationId, context))?.tools ?? [];
     if (round.length > 1 && round.some((slot) => slot.name === START_TASK_TOOL)) {
       return { block: `Call ${START_TASK_TOOL} alone, without other tools in the same batch.` };
     }
-    return this.checkToolLoop(call.id, call.name, call.arguments);
-  }
-
-  private takeLoopNotice(callId: string): string | undefined {
-    const notice = this.loopNotices.get(callId);
-    this.loopNotices.delete(callId);
-    return notice;
-  }
-
-  private async checkToolLoop(
-    toolCallId: string,
-    toolName: string,
-    args: Record<string, unknown>,
-  ): Promise<{ block: string } | undefined> {
-    const verdict = this.loopGuard.observe(toolName, args);
-    switch (verdict.kind) {
-      case "allow":
-        return undefined;
-      case "notice":
-        this.loopNotices.set(toolCallId, verdict.text);
-        return undefined;
-      case "block":
-        return { block: verdict.reason };
-      case "stop":
-        await this.exceedBudget(verdict.reason);
-        return { block: verdict.reason };
-      default:
-        return verdict satisfies never;
-    }
+    return undefined;
   }
 
   private async emit(event: HarnessEvent): Promise<void> {
@@ -997,13 +952,6 @@ function applyMessageChanges(
     }
   }
   return next;
-}
-
-function withNotice(
-  content: readonly (TextContent | ImageContent)[] | undefined,
-  notice: string,
-): (TextContent | ImageContent)[] {
-  return [...(content ?? []), { type: "text", text: notice }];
 }
 
 function toPiTool(tool: MikanHarnessTool): ToolRegistration {

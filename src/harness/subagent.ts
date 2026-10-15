@@ -39,7 +39,6 @@ import {
   createEmptyUsage,
   sumUsageState,
 } from "./session.js";
-import { ToolLoopGuard } from "./loop-guard.js";
 import { SessionStore } from "../sessions/session-store.js";
 
 import * as log from "../log.js";
@@ -751,8 +750,6 @@ class ChildRun implements SubagentConversationHooks {
   budgetExceededReason: string | undefined;
   private overBudget: string | undefined;
   private readonly usage = createEmptyUsage();
-  private readonly loopGuard = new ToolLoopGuard();
-  private readonly notices = new Map<string, string>();
 
   constructor(
     private readonly budget: ReturnType<typeof resolveBudget>,
@@ -788,27 +785,7 @@ class ChildRun implements SubagentConversationHooks {
     this.toolCallCounts[call.name] = (this.toolCallCounts[call.name] ?? 0) + 1;
     const label = typeof call.arguments.label === "string" ? call.arguments.label : "";
     this.report(label ? `${call.name}: ${label}` : call.name);
-    const verdict = this.loopGuard.observe(call.name, call.arguments);
-    switch (verdict.kind) {
-      case "allow":
-        return undefined;
-      case "notice":
-        this.notices.set(call.id, verdict.text);
-        return undefined;
-      case "block":
-        return { block: verdict.reason };
-      case "stop":
-        this.exceed(verdict.reason);
-        return { block: verdict.reason };
-      default:
-        return verdict satisfies never;
-    }
-  }
-
-  afterTool(callId: string): string | undefined {
-    const notice = this.notices.get(callId);
-    this.notices.delete(callId);
-    return notice;
+    return undefined;
   }
 
   stop(signal: TerminalSignal): void {

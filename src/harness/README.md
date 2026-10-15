@@ -114,18 +114,6 @@ including authentication resolvers that do not accept an abort signal. Completed
 run duration is fixed when `prompt()` settles. Pi saves the admitted user request
 before initial compaction; that request remains in history after cancellation.
 
-### Tool loop guard
-
-`loop-guard.ts` watches each run's tool calls through pi-durable's public
-`beforeTool` and `afterTool` hooks. A call's identity is its tool name plus canonical JSON
-arguments without the presentation `label`. The same call made 3–4 times in a
-row gets a notice appended to its result, the 5th through 9th are blocked
-without executing, and the 10th stops the run through the budget circuit breaker
-(`budget_exceeded` with a `tool loop:` reason). A repeating cycle of 2–6
-distinct calls only gets a notice, once at 3 repetitions and again each time
-the count doubles. Subagents get their own guard through the hooks they
-register with the owner session. State resets on every `prompt()` and `resume()`.
-
 ### Compaction
 
 Pi compacts in the background as context approaches its threshold, blocks the

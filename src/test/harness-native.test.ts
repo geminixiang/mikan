@@ -255,11 +255,6 @@ test.each([
   { code: 'await tools.probe({value: "bad"});', error: "Validation failed", executions: 0 },
   { code: "await tools.start_task({});", error: "tools.start_task does not exist", executions: 0 },
   { code: "await tools.codemode({});", error: "tools.codemode does not exist", executions: 0 },
-  {
-    code: "for (let i=0;i<5;i++) await tools.probe({value: 1});",
-    error: "was not executed",
-    executions: 4,
-  },
   { code: '// @options: {"timeout_ms": 20}\nwhile (true) {}', error: "timed out", executions: 0 },
   { code: "throw new Error(typeof process);", error: "undefined", executions: 0 },
   {
