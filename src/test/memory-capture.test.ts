@@ -291,7 +291,7 @@ describe("MemoryCapture", () => {
         expect(prompt).toContain("From now on, reply in Traditional Chinese.");
         expect(prompt).toContain("Never record secrets");
         return fauxAssistantMessage(
-          '{"ops":[{"op":"add","text":"Reply in Traditional Chinese."}]}',
+          '{"ops":[{"op":"add","text":"Reply in Traditional Chinese.","evidence":"reply in Traditional Chinese","scope":"standing"}]}',
         );
       },
     ]);
@@ -301,6 +301,41 @@ describe("MemoryCapture", () => {
     await capture.idle();
 
     expect(readMemory()).toContain(`- Reply in Traditional Chinese. (${STAMP})`);
+  });
+
+  test("writes only standing entries whose evidence the user actually wrote", async () => {
+    const { models: withFaux, faux } = officeModels();
+    writeFileSync(office.memoryPath, "# Memory\n");
+    const ops = [
+      {
+        op: "add",
+        text: "Reply in Traditional Chinese.",
+        evidence: "From now on,  reply in",
+        scope: "standing",
+      },
+      {
+        op: "add",
+        text: "Verify every claim with evidence.",
+        evidence: "verify every claim",
+        scope: "standing",
+      },
+      {
+        op: "add",
+        text: "Use Traditional Chinese for this answer.",
+        evidence: "Traditional Chinese",
+        scope: "this-request",
+      },
+    ];
+    faux.setResponses([fauxAssistantMessage(JSON.stringify({ ops }))]);
+
+    const capture = new MemoryCapture(withFaux, { gate: async () => 0.9, now: () => NOW });
+    capture.capture(run());
+    await capture.idle();
+
+    expect(readMemory()).toContain(`- Reply in Traditional Chinese. (${STAMP})`);
+    expect(readMemory()).not.toContain("Verify every claim");
+    expect(readMemory()).not.toContain("for this answer");
+    expect(readMemory()).not.toContain("evidence");
   });
 
   test("writes nothing when the extraction does not match the output schema", async () => {
