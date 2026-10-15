@@ -1,14 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { AsyncLocalStorage } from "node:async_hooks";
-import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { MikanModels } from "./models.js";
 import type { SessionEntry } from "../sessions/types.js";
 import type {
-  MikanHarnessTool,
-  MikanToolContext,
   SubagentProfile,
   SubagentModelSpec,
   SubagentRunOutput,
@@ -17,8 +14,6 @@ import type {
   SubagentConversationHooks,
   SubagentToolCall,
   SubagentToolCallView,
-  SubagentUsage,
-  SubagentUsageSink,
 } from "./types.js";
 import {
   AgentDoc,
@@ -31,31 +26,19 @@ import {
   type Extension,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
-import {
-  MikanAgentSession,
-  OWNER_ONLY_EXTENSIONS,
-  addUsage,
-  copyUsage,
-  createEmptyUsage,
-  sumUsageState,
-} from "./session.js";
-import { SessionStore } from "../sessions/session-store.js";
+import { OWNER_ONLY_EXTENSIONS, addUsage, createEmptyUsage, sumUsageState } from "./session.js";
 
 import * as log from "../log.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
 
-const subagentRunDepth = new AsyncLocalStorage<number>();
-
 const DEFAULT_SYSTEM_PROMPT =
   "You are a focused subagent. Complete only the assigned task and return the result directly.";
 
-export const DEFAULT_SUBAGENT_BUDGET = {
+const DEFAULT_SUBAGENT_BUDGET = {
   maxTurns: 100,
   maxCostUsd: 10,
   maxDurationMs: 10 * 60 * 1000,
 } as const;
-
-export const SUBAGENT_ABORT_GRACE_MS = 100;
 
 const SCHEMA_STRUCTURAL_KEYS = new Set([
   "type",
@@ -140,68 +123,7 @@ function hydrateSchema(schema: unknown): TSchema {
   }
 }
 
-interface RunSubagentOptions<TOutputSchema extends TSchema | undefined = undefined> {
-  request: SubagentRunRequest<TOutputSchema>;
-  defaultModel: Model<Api>;
-  thinkingLevel: ThinkingLevel;
-  models: MikanModels;
-  availableTools: MikanHarnessTool[];
-  profiles?: ReadonlyMap<string, SubagentProfile>;
-  toolContext?: MikanToolContext;
-  slots?: SubagentSlotPool;
-  parentEntries?: SessionEntry[];
-  onUsage?: SubagentUsageSink;
-  onActivity?: (activity: string) => void;
-}
-
-function reportSubagentActivity(
-  session: MikanAgentSession,
-  onActivity: (activity: string) => void,
-): void {
-  let characters = 0;
-  let reportedAt = 0;
-  const report = (activity: string): void => {
-    try {
-      onActivity(activity);
-    } catch (err) {
-      log.logWarning("Subagent onActivity listener failed", String(err));
-    }
-  };
-
-  session.subscribe((event) => {
-    switch (event.type) {
-      case "tool_execution_start": {
-        const label =
-          isRecord(event.args) && typeof event.args.label === "string" ? event.args.label : "";
-        report(label ? `${event.toolName}: ${label}` : event.toolName);
-        return;
-      }
-      case "tool_execution_end":
-        report("thinking");
-        return;
-      case "message_start":
-        characters = 0;
-        reportedAt = 0;
-        report("thinking");
-        return;
-      case "text_delta":
-        characters += event.delta.length;
-        if (characters - reportedAt < ACTIVITY_CHARS_STEP) return;
-        reportedAt = characters;
-        report(`writing · ${characters} chars`);
-        return;
-      case "auto_retry_start":
-        report("retrying after an error");
-        return;
-      default:
-        return;
-    }
-  });
-}
-
-const ACTIVITY_CHARS_STEP = 250;
-
-function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
+function resolveBudget(budget: SubagentRunRequest["budget"]) {
   const resolved = { ...DEFAULT_SUBAGENT_BUDGET, ...budget };
   const positiveIntegerFields = [
     ["maxTurns", resolved.maxTurns],
@@ -217,24 +139,6 @@ function resolveBudget(budget: RunSubagentOptions["request"]["budget"]) {
     throw new Error("api.subagent.run budget.maxCostUsd must be a non-negative number");
   }
   return resolved;
-}
-
-function selectTools(
-  requested: string[] | undefined,
-  available: MikanHarnessTool[],
-): MikanHarnessTool[] {
-  if (!requested || requested.length === 0) return [];
-  const byName = new Map<string, MikanHarnessTool>();
-  for (const tool of available) {
-    if (!byName.has(tool.name)) byName.set(tool.name, tool);
-  }
-  const selected: MikanHarnessTool[] = [];
-  for (const name of new Set(requested)) {
-    const tool = byName.get(name);
-    if (!tool) throw new Error(`Unknown or unavailable subagent tool: ${name}`);
-    selected.push(tool);
-  }
-  return selected;
 }
 
 function formatTask(task: string, input: unknown, parentContext?: string): string {
@@ -331,21 +235,14 @@ function buildSystemPrompt(
   ].join("\n");
 }
 
-type SubagentRunStats = ReturnType<MikanAgentSession["getLastRunStats"]>;
-
-function baseRunResult(
-  runId: string,
-  model: SubagentModelSpec,
-  startedAt: number,
-  stats?: SubagentRunStats,
-) {
-  const usage = stats?.usage ?? createEmptyUsage();
+function baseRunResult(runId: string, model: SubagentModelSpec, startedAt: number) {
+  const usage = createEmptyUsage();
   return {
     runId,
     model,
-    turns: stats?.llmCalls ?? 0,
-    toolCalls: stats?.toolCalls ?? 0,
-    toolCallCounts: stats?.toolCallCounts ?? {},
+    turns: 0,
+    toolCalls: 0,
+    toolCallCounts: {},
     usage,
     tokens: usage.totalTokens,
     costUsd: usage.cost.total,
@@ -353,97 +250,9 @@ function baseRunResult(
   };
 }
 
-function finalAssistant(messages: readonly AgentMessage[]): AssistantMessage | undefined {
-  return messages.findLast((message): message is AssistantMessage => message.role === "assistant");
-}
-
-export async function runSubagent<TOutputSchema extends TSchema | undefined = undefined>(
-  options: RunSubagentOptions<TOutputSchema>,
-): Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>> {
-  const execution = await executeBoundedSubagentRun(options);
-  if (execution.cleanup) {
-    void execution.cleanup
-      .then(async (result) => {
-        await reportSubagentUsage(options.onUsage, result.usage);
-      })
-      .catch((err) => {
-        log.logWarning("Subagent detached cleanup failed", String(err));
-      });
-    return execution.result;
-  }
-  await reportSubagentUsage(options.onUsage, execution.result.usage);
-  return execution.result;
-}
-
-async function reportSubagentUsage(
-  onUsage: SubagentUsageSink | undefined,
-  usage: SubagentUsage,
-): Promise<void> {
-  try {
-    await onUsage?.(copyUsage(usage));
-  } catch (err) {
-    log.logWarning("Subagent onUsage listener failed", String(err));
-  }
-}
-
-interface BoundedSubagentExecution<TOutput> {
-  result: SubagentRunResult<TOutput>;
-  cleanup?: Promise<SubagentRunResult<TOutput>>;
-}
-
-async function executeBoundedSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
-  options: RunSubagentOptions<TOutputSchema>,
-): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
-  const startedAt = Date.now();
-  let release: (() => void) | undefined;
-  try {
-    release = await (options.slots ?? unboundedSlotPool()).acquire(options.request.signal);
-  } catch (err) {
-    if (err instanceof Error && err.name === "AbortError") {
-      const model = options.request.model ?? {
-        provider: options.defaultModel.provider,
-        id: options.defaultModel.id,
-      };
-      return {
-        result: { ...baseRunResult(randomUUID(), model, startedAt), status: "cancelled" },
-      };
-    }
-    throw err;
-  }
-  if (!release) throw new Error("Subagent slot acquisition returned no release handle");
-
-  try {
-    const execution = await executeSubagentRun(options);
-    if (!execution.cleanup) {
-      release();
-      release = undefined;
-      return execution;
-    }
-
-    const cleanup = execution.cleanup;
-    const heldRelease = release;
-    void cleanup
-      .then(
-        () => heldRelease(),
-        (err) => {
-          log.logWarning("Subagent detached cleanup failed", String(err));
-          heldRelease();
-        },
-      )
-      .catch((err) => {
-        log.logWarning("Subagent detached release failed", String(err));
-        heldRelease();
-      });
-    release = undefined;
-    return execution;
-  } catch (err) {
-    release?.();
-    release = undefined;
-    throw err;
-  }
-}
-
 function noop(): void {}
+
+type TerminalSignal = "cancelled" | "timeout";
 
 function resolveProfile<TOutputSchema extends TSchema | undefined>(
   request: SubagentRunRequest<TOutputSchema>,
@@ -480,80 +289,8 @@ function resolveProfile<TOutputSchema extends TSchema | undefined>(
   };
 }
 
-type TerminalSignal = "cancelled" | "timeout";
-
-interface PreparedSubagentRun<TOutputSchema extends TSchema | undefined> {
-  request: SubagentRunRequest<TOutputSchema>;
-  runId: string;
-  startedAt: number;
-  modelSpec: SubagentModelSpec;
-  session: MikanAgentSession;
-  budget: ReturnType<typeof resolveBudget>;
-  task: string;
-}
-
-async function prepareSubagentRun<TOutputSchema extends TSchema | undefined>(
-  options: RunSubagentOptions<TOutputSchema>,
-  request: SubagentRunRequest<TOutputSchema>,
-  runId: string,
-  startedAt: number,
-): Promise<PreparedSubagentRun<TOutputSchema>> {
-  const model = request.model
-    ? options.models.resolve(request.model.provider, request.model.id)
-    : options.defaultModel;
-  const granted = selectTools(request.tools, options.availableTools);
-  const task = formatTask(
-    request.task,
-    request.input,
-    normalizedParentContext(request, options.parentEntries),
-  );
-  const session = new MikanAgentSession({
-    systemPrompt: buildSystemPrompt(
-      request.systemPrompt,
-      request.outputSchema,
-      granted.map((tool) => tool.name),
-    ),
-    model,
-    thinkingLevel: request.thinkingLevel ?? options.thinkingLevel,
-    tools: granted,
-    toolContext: options.toolContext,
-    models: options.models,
-    sessionStore: await SessionStore.inMemory(),
-    settings: { compaction: { enabled: false } },
-  });
-  if (options.onActivity) reportSubagentActivity(session, options.onActivity);
-  return {
-    request,
-    runId,
-    startedAt,
-    modelSpec: { provider: model.provider, id: model.id },
-    session,
-    budget: resolveBudget(request.budget),
-    task,
-  };
-}
-
-function buildSubagentResult<TOutputSchema extends TSchema | undefined>(
-  run: PreparedSubagentRun<TOutputSchema>,
-  terminalSignal: TerminalSignal | undefined,
-  cleanupPending = false,
-): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
-  const stats = run.session.getLastRunStats();
-  return classifyAnswer({
-    base: {
-      ...baseRunResult(run.runId, run.modelSpec, run.startedAt, stats),
-      cleanupPending: cleanupPending || undefined,
-    },
-    request: run.request,
-    assistant: finalAssistant(run.session.lastRunMessages),
-    terminalSignal,
-    budgetExceededReason: stats.budgetExceededReason,
-    maxDurationMs: run.budget.maxDurationMs,
-  });
-}
-
 interface AnswerClassification<TOutputSchema extends TSchema | undefined> {
-  base: ReturnType<typeof baseRunResult> & { cleanupPending?: boolean };
+  base: ReturnType<typeof baseRunResult>;
   request: SubagentRunRequest<TOutputSchema>;
   assistant: AssistantMessage | undefined;
   terminalSignal: TerminalSignal | undefined;
@@ -611,121 +348,6 @@ function classifyAnswer<TOutputSchema extends TSchema | undefined>(
     status: "completed",
     output: parsed as SubagentRunOutput<TOutputSchema>,
   };
-}
-
-function buildSubagentFailure<TOutputSchema extends TSchema | undefined>(
-  run: PreparedSubagentRun<TOutputSchema>,
-  terminalSignal: TerminalSignal | undefined,
-  err: unknown,
-): SubagentRunResult<SubagentRunOutput<TOutputSchema>> {
-  return {
-    ...baseRunResult(run.runId, run.modelSpec, run.startedAt, run.session.getLastRunStats()),
-    status: terminalSignal ?? "failed",
-    error: errorMessage(err),
-  };
-}
-
-async function executeSubagentPrompt<TOutputSchema extends TSchema | undefined>(
-  run: PreparedSubagentRun<TOutputSchema>,
-  abortRequested: Promise<void>,
-  terminalSignal: () => TerminalSignal | undefined,
-): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>> | undefined> {
-  if (terminalSignal()) return undefined;
-  const promptOutcome = subagentRunDepth
-    .run(1, () =>
-      run.session.prompt(run.task, {
-        budget: {
-          maxLlmCalls: run.budget.maxTurns,
-          maxTokens: run.budget.maxTokens,
-          maxCostUsd: run.budget.maxCostUsd,
-        },
-      }),
-    )
-    .then(
-      () => ({ ok: true as const }),
-      (error: unknown) => ({ ok: false as const, error }),
-    );
-  const winner = await Promise.race([
-    promptOutcome.then((outcome) => ({ type: "settled" as const, outcome })),
-    abortRequested.then(async () => {
-      let graceTimer: NodeJS.Timeout | undefined;
-      const graceExpired = new Promise<"expired">((resolve) => {
-        graceTimer = setTimeout(() => resolve("expired"), SUBAGENT_ABORT_GRACE_MS);
-      });
-      const outcome = await Promise.race([
-        promptOutcome.then((settledOutcome) => ({
-          type: "settled" as const,
-          outcome: settledOutcome,
-        })),
-        graceExpired.then((value) => ({ type: value as "expired" })),
-      ]);
-      if (graceTimer) clearTimeout(graceTimer);
-      return outcome;
-    }),
-  ]);
-  if (winner.type === "expired") {
-    const cleanup = promptOutcome.then((outcome) =>
-      outcome.ok
-        ? buildSubagentResult(run, terminalSignal())
-        : buildSubagentFailure(run, terminalSignal(), outcome.error),
-    );
-    return { result: buildSubagentResult(run, terminalSignal(), true), cleanup };
-  }
-  if (!winner.outcome.ok) throw winner.outcome.error;
-  return undefined;
-}
-
-async function executeSubagentRun<TOutputSchema extends TSchema | undefined = undefined>(
-  options: RunSubagentOptions<TOutputSchema>,
-): Promise<BoundedSubagentExecution<SubagentRunOutput<TOutputSchema>>> {
-  const request = resolveProfile(options.request, options);
-  const runId = randomUUID();
-  const startedAt = Date.now();
-  const initialModelSpec = request.model ?? {
-    provider: options.defaultModel.provider,
-    id: options.defaultModel.id,
-  };
-  let run: PreparedSubagentRun<TOutputSchema> | undefined;
-  let terminalSignal: TerminalSignal | undefined;
-  let timeout: NodeJS.Timeout | undefined;
-  let notifyAbort: () => void = noop;
-  const abortRequested = new Promise<void>((resolve) => {
-    notifyAbort = resolve;
-  });
-  const abort = (reason: TerminalSignal) => {
-    if (terminalSignal) return;
-    terminalSignal = reason;
-    run?.session.abort(reason);
-    notifyAbort();
-  };
-  const onAbort = () => abort("cancelled");
-
-  try {
-    if ((subagentRunDepth.getStore() ?? 0) >= 1) {
-      throw new Error("Nested api.subagent.run calls are not allowed");
-    }
-    run = await prepareSubagentRun(options, request, runId, startedAt);
-    request.signal?.addEventListener("abort", onAbort, { once: true });
-    if (request.signal?.aborted) abort("cancelled");
-    timeout = setTimeout(() => abort("timeout"), run.budget.maxDurationMs);
-    timeout.unref();
-
-    const earlyResult = await executeSubagentPrompt(run, abortRequested, () => terminalSignal);
-    return earlyResult ?? { result: buildSubagentResult(run, terminalSignal) };
-  } catch (err) {
-    return {
-      result: run
-        ? buildSubagentFailure(run, terminalSignal, err)
-        : {
-            ...baseRunResult(runId, initialModelSpec, startedAt),
-            status: terminalSignal ?? "failed",
-            error: errorMessage(err),
-          },
-    };
-  } finally {
-    if (timeout) clearTimeout(timeout);
-    request.signal?.removeEventListener("abort", onAbort);
-  }
 }
 
 interface ChildSubagentOptions<TOutputSchema extends TSchema | undefined> {

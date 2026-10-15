@@ -95,6 +95,7 @@ function setup(profile: Partial<SubagentProfile> = {}) {
           availableTools: new Set(["lookup", "slow"]),
           profiles,
           slots: new SubagentSlotPool(4),
+          parentEntries: await store.getContextEntries(),
           track: (id, conversationHooks) => session!.trackSubagent(id, conversationHooks),
         }),
       profiles,
@@ -222,4 +223,69 @@ test("a subagent's spend counts toward its parent session", async () => {
   );
   expect(session.getLastRunStats().llmCalls).toBe(2);
   expect(spend?.usage.totalTokens).toBeGreaterThan(parentOwn);
+});
+
+test("a subagent sees only the normalized recent parent turns it asks for", async () => {
+  const env = setup();
+  const store = await SessionStore.open(env.office, KEY);
+  let childSaw = "";
+  const session = env.wrap(store);
+  env.faux.setResponses([fauxAssistantMessage("old answer")]);
+  await session.prompt("old turn");
+  env.faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("subagent", {
+        profile: "explorer",
+        task: "use context",
+        parentContext: { mode: "normalized", recentTurns: 1 },
+      }),
+      { stopReason: "toolUse" },
+    ),
+    (context) => {
+      childSaw = JSON.stringify(context.messages.filter((message) => message.role === "user"));
+      return fauxAssistantMessage("child answer");
+    },
+    fauxAssistantMessage("parent done"),
+  ]);
+
+  await session.prompt("recent turn");
+  await store.close();
+
+  expect(childSaw).toContain("<parent_reference_context>");
+  expect(childSaw).toContain("recent turn");
+  expect(childSaw).not.toContain("old turn");
+});
+
+test.each([
+  ['{"ok":true}', "completed", '"ok": true'],
+  ['{"ok":"yes"}', "invalid_output", "does not match the requested schema"],
+  ['```json\n{"ok":true}\n```', "invalid_output", "is not valid JSON"],
+  ["", "invalid_output", "is not valid JSON"],
+])("a subagent's answer %j against a plain JSON Schema is %s", async (answer, status, shown) => {
+  const env = setup();
+  const store = await SessionStore.open(env.office, KEY);
+  let parentSaw = "";
+  env.faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("subagent", {
+        profile: "explorer",
+        task: "answer",
+        outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] },
+      }),
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage(answer),
+    (context) => {
+      parentSaw = JSON.stringify(
+        context.messages.filter((message) => message.role === "toolResult"),
+      );
+      return fauxAssistantMessage("parent done");
+    },
+  ]);
+
+  await env.wrap(store).prompt("delegate");
+  await store.close();
+
+  expect(parentSaw).toContain(shown.replace(/"/g, '\\"'));
+  if (status !== "completed") expect(parentSaw).toContain(`Subagent ${status}:`);
 });

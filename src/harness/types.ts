@@ -206,8 +206,6 @@ interface SubagentParentContext {
 
 export type SubagentUsage = Usage;
 
-export type SubagentUsageSink = (usage: SubagentUsage) => void | Promise<void>;
-
 export interface SubagentToolCall {
   api: ToolExecutionApi;
   context: Context;
@@ -259,7 +257,6 @@ interface SubagentRunMetadata {
   tokens: number;
   costUsd: number;
   durationMs: number;
-  cleanupPending?: boolean;
 }
 
 interface SubagentRunCompletedResult<TOutput> extends SubagentRunMetadata {

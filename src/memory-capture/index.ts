@@ -1,11 +1,15 @@
 import { Type } from "typebox";
-import { atomicWritePrivateFile, readTextFileNoFollowIfExists } from "../file-guards.js";
+import {
+  atomicWritePrivateFile,
+  parseJsonSchemaValue,
+  readTextFileNoFollowIfExists,
+} from "../file-guards.js";
 import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
 import { isEventTriggerAttribution } from "../harness/presenter.js";
 import { resolveTriggerAttribution } from "../harness/prompt.js";
 import { redactSecrets } from "../harness/tools/secret-redaction.js";
 import { isTaskRunId } from "../harness/tools/task.js";
-import { runSubagent } from "../harness/subagent.js";
+import { contentText } from "@earendil-works/pi-ai";
 import type { MikanModels } from "../harness/models.js";
 import { resolveConversationSettings } from "../settings/index.js";
 import * as log from "../log.js";
@@ -22,7 +26,7 @@ const MEMORY_CAPTURE_THRESHOLD = 0.4;
 export const CAPTURED_KNOWLEDGE_HEADING = "## Captured knowledge";
 const PROMPT_MAX_CHARS = 4000;
 const REPLY_MAX_CHARS = 2000;
-const EXTRACTION_BUDGET = { maxTurns: 1, maxDurationMs: 60_000, maxCostUsd: 0.5 };
+const EXTRACTION_TIMEOUT_MS = 60_000;
 
 const DURABLE_KNOWLEDGE = {
   positive: [
@@ -78,6 +82,9 @@ const EXTRACTION_SYSTEM_PROMPT = [
   'Only the user can establish an entry. For each entry, copy into "evidence" the exact words from user_message that establish it; the assistant reply only helps you understand what the user means.',
   'Set "scope" to "standing" only when the user\'s words apply beyond this request (for example: from now on, always, never, in future, every time, or a fact about how something is); a correction or format request for the current answer is "this-request". Honoring a request for this one response needs no memory.',
   "Keep the exact scope of the user's words: do not add conditions, procedures, or details the user did not state.",
+  "",
+  "Return only one JSON value matching this JSON Schema. Do not use Markdown or code fences.",
+  JSON.stringify(EXTRACTION_OUTPUT),
 ].join("\n");
 
 export function isCapturableRun(run: CapturedRun): boolean {
@@ -220,24 +227,34 @@ async function extractWithOfficeModel(
   memory: string,
 ): Promise<MemoryCaptureOp[]> {
   const settings = resolveConversationSettings(run.office);
-  const result = await runSubagent({
-    request: {
-      task: EXTRACTION_TASK,
+  const input = { current_memory: memory || "(empty)", exchange: exchangeState(run) };
+  const reply = await models.models.completeSimple(
+    models.resolve(settings.provider, settings.model),
+    {
       systemPrompt: EXTRACTION_SYSTEM_PROMPT,
-      input: { current_memory: memory || "(empty)", exchange: exchangeState(run) },
-      outputSchema: EXTRACTION_OUTPUT,
-      budget: EXTRACTION_BUDGET,
+      messages: [
+        {
+          role: "user",
+          content: `${EXTRACTION_TASK}\n\nInput:\n${JSON.stringify(input, null, 2)}`,
+          timestamp: Date.now(),
+        },
+      ],
     },
-    defaultModel: models.resolve(settings.provider, settings.model),
-    thinkingLevel: settings.thinkingLevel,
-    models,
-    availableTools: [],
-  });
-  if (result.status !== "completed") {
-    throw new Error(result.error || `Memory capture extraction ${result.status}`);
+    {
+      signal: AbortSignal.timeout(EXTRACTION_TIMEOUT_MS),
+      reasoning: settings.thinkingLevel === "off" ? undefined : settings.thinkingLevel,
+    },
+  );
+  if (reply.stopReason === "error" || reply.stopReason === "aborted") {
+    throw new Error(reply.errorMessage ?? `Memory capture extraction ${reply.stopReason}`);
   }
+  const result = parseJsonSchemaValue(
+    contentText(reply.content, ""),
+    EXTRACTION_OUTPUT,
+    (detail) => `Memory capture extraction is malformed: ${detail}`,
+  );
   const userWords = singleLine(exchangeState(run).user_message);
-  return result.output.ops
+  return result.ops
     .filter((op) => op.scope === "standing" && userWords.includes(singleLine(op.evidence)))
     .map(({ op, text, replaces }) => ({ op, text, replaces }));
 }

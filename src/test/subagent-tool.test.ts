@@ -748,7 +748,6 @@ describe("subagent observability", () => {
       tokens: 500,
       costUsd: 0.5,
       durationMs: 1_234,
-      cleanupPending: undefined,
     });
     expect(JSON.stringify(report)).not.toContain("confidential");
     expect(JSON.stringify(report)).not.toContain("customer list");

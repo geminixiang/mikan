@@ -277,7 +277,6 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
     tokens: report.tokens,
     cost_usd: report.costUsd,
     duration_ms: report.durationMs,
-    cleanup_pending: report.cleanupPending,
   });
   if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
   const errorClass = sanitizeTelemetryString(
@@ -296,7 +295,6 @@ export function recordSubagentOutcome(report: SubagentOutcomeReport): string | u
         subagent_status: report.status,
         subagent_profile: report.profile,
         subagent_mode: report.mode,
-        cleanup_pending: report.cleanupPending,
       },
       context: {
         itemId: report.itemId,

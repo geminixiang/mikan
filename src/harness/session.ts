@@ -51,7 +51,6 @@ import type {
   MikanToolInput,
   SubagentConversationHooks,
   SubagentUsage,
-  SubagentUsageSink,
   RetrySettings,
 } from "./types.js";
 
@@ -182,16 +181,6 @@ export class MikanAgentSession {
         this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
       budgetExceededReason: this.budgetExceededReason || undefined,
       status: this.lastSessionRunStatus,
-    };
-  }
-
-  captureExternalUsageSink(): SubagentUsageSink {
-    const tally = this.tally;
-    return async (usage) => {
-      addUsage(tally.usage, usage);
-      if (this.tally !== tally || !this.runActive || this.budgetExceededReason) return;
-      const reason = this.resourceOverBudgetReason();
-      if (reason) await this.exceedBudget(reason);
     };
   }
 
@@ -916,7 +905,7 @@ function subtractUsage(total: Usage, base: Usage): Usage {
   };
 }
 
-export function copyUsage(usage: Usage): Usage {
+function copyUsage(usage: Usage): Usage {
   return { ...usage, cost: { ...usage.cost } };
 }
 

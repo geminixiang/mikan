@@ -427,7 +427,6 @@ async function runWaves(
         tokens: result.tokens,
         costUsd: result.costUsd,
         durationMs: result.durationMs,
-        cleanupPending: result.cleanupPending,
       });
       progress.update(item.id, result.status, {
         turns: result.turns,
@@ -437,7 +436,6 @@ async function runWaves(
         costUsd: result.costUsd,
         durationMs: result.durationMs,
         reason: result.error || undefined,
-        cleanupPending: result.cleanupPending || undefined,
       });
     });
   }
@@ -631,7 +629,6 @@ function parseNode(value: unknown): SubagentProgressNode | undefined {
     durationMs: typeof item.durationMs === "number" ? item.durationMs : undefined,
     activity: typeof item.activity === "string" ? item.activity : undefined,
     reason: typeof item.reason === "string" ? item.reason : undefined,
-    cleanupPending: item.cleanupPending === true ? true : undefined,
   });
 }
 
@@ -750,7 +747,7 @@ function detailText(node: SubagentProgressNode): string {
     node.costUsd !== undefined ? `$${node.costUsd.toFixed(4)}` : undefined,
     node.durationMs !== undefined ? `${(node.durationMs / 1000).toFixed(1)}s` : undefined,
   ].filter(Boolean);
-  const reason = node.cleanupPending ? "Cleanup pending; usage is provisional" : node.reason;
+  const reason = node.reason;
   const activity = node.status === "running" ? node.activity : undefined;
   return [SUBAGENT_STATUS_LABEL[node.status], node.profile, activity, ...metrics, reason]
     .filter(Boolean)

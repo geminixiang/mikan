@@ -44,7 +44,7 @@ The alternative of running subagents on core `Agent` was examined and fails on t
 4. **Budgets stay per subagent.** The subagent tool registers the child's hooks with the owner session by conversation ID (`MikanAgentSession.trackSubagent`). They count turns before each request, block further tools once a response reaches the turn, token, or cost limit, and abort the child on its duration limit. Until a rerun registers them again after a restart, the child runs without its own budget.
 5. **Spend folds into the parent through Pi's tool usage.** The tool result's `usage` is the children's total from their usage documents, so it lands in the parent's `pi.usage.tools` and session spend. The parent's request tracking counts only requests carrying its own provider session ID, so a child's requests do not consume the parent's call budget.
 6. **Nesting stays forbidden.** The child's tool grant comes from its profile, which cannot name `subagent`. The process-wide `SubagentSlotPool` still bounds concurrent subagents.
-7. **Memory capture** still uses the in-memory `runSubagent` until it calls the model once directly; that path is removed then.
+7. **Memory capture calls the model once directly** (`Models.completeSimple`), so the in-memory `runSubagent` path and its nesting guard are removed.
 
 ## Considered Options
 

@@ -66,7 +66,6 @@ export interface SubagentOutcomeReport {
   tokens?: number;
   costUsd?: number;
   durationMs?: number;
-  cleanupPending?: boolean;
 }
 
 export type JevCaller =

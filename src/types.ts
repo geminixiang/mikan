@@ -71,7 +71,6 @@ export interface SubagentProgressNode {
   durationMs?: number;
   activity?: string;
   reason?: string;
-  cleanupPending?: boolean;
 }
 
 export interface SubagentProgressSnapshot {
