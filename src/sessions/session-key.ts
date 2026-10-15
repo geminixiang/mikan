@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConversationKind, OfficeAddress } from "../types.js";
 import type { ResolveSessionKeyOptions } from "./types.js";
 
@@ -41,6 +42,14 @@ export function assertSessionSuffix(suffix: string): string {
 
 export function makeThreadSessionKey(conversationId: string, suffix: string): string {
   return `${assertSessionConversationId(conversationId)}:${assertSessionSuffix(suffix)}`;
+}
+
+export function withScheduledEventSession<
+  T extends { address: OfficeAddress; ts: string; sessionKey?: string; thread_ts?: string },
+>(event: T): T {
+  if (event.sessionKey || event.thread_ts) return event;
+  const suffix = `${event.ts}:${randomUUID()}`;
+  return { ...event, sessionKey: makeThreadSessionKey(event.address.conversationId, suffix) };
 }
 
 export function assertSessionKeyBelongsToConversation(

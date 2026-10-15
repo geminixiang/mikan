@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { ChannelType, Collection, Events, type Guild } from "discord.js";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { MessagingEventHandler } from "../types.js";
-import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import {
+  createConversationEvent,
+  createOfficeAddress,
+  createWorkspace,
+  officeKey,
+} from "../office/index.js";
 import type { Workspace } from "../office/types.js";
 import { DiscordMessagingBot } from "../adapters/discord/bot.js";
 import type {
@@ -588,4 +593,51 @@ describe("DiscordMessagingBot message routing", () => {
       ephemeral: true,
     });
   });
+});
+
+describe("DiscordMessagingBot scheduled events", () => {
+  let workingDir: string;
+  let workspace: Workspace;
+
+  beforeEach(() => {
+    workingDir = join(tmpdir(), `mikan-discord-events-${Date.now()}`);
+    mkdirSync(workingDir, { recursive: true });
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
+  });
+
+  afterEach(() => {
+    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test.each(["direct", "shared"] as const)(
+    "each fire of a %s channel's event runs in its own new session",
+    async (conversationKind) => {
+      const handler = makeHandler();
+      const { bot } = await startBot(handler, workspace);
+      const fire = () =>
+        bot.enqueueEvent(
+          createConversationEvent({
+            platform: "discord",
+            type: "mention",
+            conversationId: "C1",
+            conversationKind,
+            user: "EVENT",
+            text: "daily task",
+            ts: "event:periodic-1",
+          }),
+        );
+
+      fire();
+      await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+      fire();
+      await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+
+      const keys = vi
+        .mocked(handler.handleEvent)
+        .mock.calls.map(([, , context]) => context.message.sessionKey);
+      expect(keys[0]).not.toBe("C1");
+      expect(keys[0]!.startsWith("C1:")).toBe(true);
+      expect(keys[1]).not.toBe(keys[0]);
+    },
+  );
 });

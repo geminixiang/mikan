@@ -13,7 +13,7 @@ import type {
 } from "../../types.js";
 import type { TelegramClient, TelegramEvent, TelegramMessagingBotOptions } from "./types.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey } from "../../sessions/session-key.js";
+import { resolveChatSessionKey, withScheduledEventSession } from "../../sessions/session-key.js";
 import {
   MessagingEventQueue,
   MessagingIntakeTracker,
@@ -136,8 +136,9 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
-  enqueueEvent(event: ConversationEvent): boolean {
+  enqueueEvent(scheduled: ConversationEvent): boolean {
     if (this.stopped) return false;
+    const event = withScheduledEventSession(scheduled);
     return this.getQueue(event.address.conversationId).offerEvent(event, () => {
       const context = createTelegramAdapters(event as TelegramEvent, this);
       return this.handler.handleEvent(event, this, context);

@@ -84,15 +84,17 @@ Cron 格式：`minute hour day-of-month month day-of-week`
 
 事件檔案不帶有 `sessionKey` 或 thread 目標。事件文字必須自給自足，因為排程/背景事件不是建立它的即時聊天回合的延續。
 
-| 平台/事件來源                    | 可見的送達方式          | Session key                                 | Thread 目標     |
-| -------------------------------- | ----------------------- | ------------------------------------------- | --------------- |
-| Slack event file/tool            | 新的頂層錨點訊息        | `<conversationId>:<anchor message ts>`      | 無              |
-| Slack direct `ConversationEvent` | 提供的 `thread_ts` 優先 | 若有設定則為 `<conversationId>:<thread_ts>` | 可選            |
-| 其他平台事件                     | 平台 adapter 預設       | 平台 adapter 預設事件 session               | 依 adapter 而定 |
+| 平台/事件來源                    | 可見的送達方式          | Session key                                 | Thread 目標 |
+| -------------------------------- | ----------------------- | ------------------------------------------- | ----------- |
+| Slack event file/tool            | 新的頂層錨點訊息        | `<conversationId>:<anchor message ts>`      | 無          |
+| Slack direct `ConversationEvent` | 提供的 `thread_ts` 優先 | 若有設定則為 `<conversationId>:<thread_ts>` | 可選        |
+| Telegram 與 Discord 事件         | 新的頂層訊息            | `<conversationId>:<event id>:<uuid>`        | 無          |
 
 對 Slack 事件檔案來說，事件觸發時會先主動建立一則頂層 Slack 訊息。該訊息時間戳會成為錨點，而該次執行會使用固定的 session key `<conversationId>:<anchor message ts>`。
 
-這會讓事件執行在頻道中可見，並將它們與持久的頂層 session 隔離。頂層頻道歷史仍可在 `log.jsonl` 中供明確查詢，但不會被隱式複製到事件 session。
+Telegram 與 Discord 在執行前沒有可當錨點的訊息，所以每次觸發改用一個專屬的新 session key。在群組或頻道裡回覆事件的回答，會像回覆任何執行的回答一樣，開啟一個從該次執行開始的回覆 session；在私訊中，回覆會進入該私訊自己的 session。
+
+包含定期事件的每一次在內，每次觸發都會開始新的 session。這會讓事件執行在頻道中可見，並將它們與持久的頂層 session 隔離。頂層頻道歷史仍可在 `log.jsonl` 中供明確查詢，但不會被隱式複製到事件 session。
 
 ## Thread 目標
 

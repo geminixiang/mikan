@@ -84,15 +84,17 @@ Common schedules:
 
 Event files do not carry a `sessionKey` or thread target. Event text must be self-contained because scheduled/background events are not a continuation of the live chat turn that created them.
 
-| Platform/event source            | Visible delivery method           | Session key                            | Thread target     |
-| -------------------------------- | --------------------------------- | -------------------------------------- | ----------------- |
-| Slack event file/tool            | New top-level anchor message      | `<conversationId>:<anchor message ts>` | None              |
-| Slack direct `ConversationEvent` | Provided `thread_ts` has priority | `<conversationId>:<thread_ts>` if set  | Optional          |
-| Other platform events            | Platform adapter default          | Platform adapter default event session | Adapter-dependent |
+| Platform/event source            | Visible delivery method           | Session key                            | Thread target |
+| -------------------------------- | --------------------------------- | -------------------------------------- | ------------- |
+| Slack event file/tool            | New top-level anchor message      | `<conversationId>:<anchor message ts>` | None          |
+| Slack direct `ConversationEvent` | Provided `thread_ts` has priority | `<conversationId>:<thread_ts>` if set  | Optional      |
+| Telegram and Discord events      | New top-level message             | `<conversationId>:<event id>:<uuid>`   | None          |
 
 For Slack event files, mikan first creates a top-level Slack message when the event fires. That message timestamp becomes the anchor, and the run uses the fixed session key `<conversationId>:<anchor message ts>`.
 
-This makes event runs visible in the channel and isolates them from the persistent top-level session. Top-level channel history is still available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
+Telegram and Discord have no message to anchor before the run, so each firing gets a new session key of its own instead. In a group or channel, replying to the event's answer opens a reply session that starts from that run, as any reply to a run's answer does; in a direct chat, replies go to the chat's own session.
+
+Every firing, including each firing of a periodic event, therefore starts a new session. This makes event runs visible in the channel and isolates them from the persistent top-level session. Top-level channel history is still available in `log.jsonl` for explicit lookup, but it is not implicitly copied into the event session.
 
 ## Thread target
 

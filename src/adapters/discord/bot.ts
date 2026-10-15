@@ -41,7 +41,7 @@ import {
   createOfficeAddress,
 } from "../../office/index.js";
 import type { Workspace } from "../../office/types.js";
-import { resolveChatSessionKey } from "../../sessions/session-key.js";
+import { resolveChatSessionKey, withScheduledEventSession } from "../../sessions/session-key.js";
 import { formatNothingRunning } from "../messages.js";
 import {
   MessagingEventQueue,
@@ -176,8 +176,9 @@ export class DiscordMessagingBot implements MessagingBot {
     });
   }
 
-  enqueueEvent(event: ConversationEvent): boolean {
+  enqueueEvent(scheduled: ConversationEvent): boolean {
     if (this.stopped) return false;
+    const event = withScheduledEventSession(scheduled);
     return this.getQueue(event.address.conversationId).offerEvent(event, () => {
       const context = createDiscordAdapters(event as DiscordEvent, this);
       return this.handler.handleEvent(event, this, context);

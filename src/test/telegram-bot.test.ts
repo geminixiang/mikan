@@ -4,7 +4,12 @@ import { join } from "node:path";
 import type { Chat, Document, Message, PhotoSize, User, UserFromGetMe } from "grammy/types";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
-import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
+import {
+  createConversationEvent,
+  createOfficeAddress,
+  createWorkspace,
+  officeKey,
+} from "../office/index.js";
 import type { Workspace } from "../office/types.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 
@@ -587,4 +592,51 @@ describe("TelegramMessagingBot attachments", () => {
     expect(existsSync(savedFile)).toBe(true);
     expect(readFileSync(savedFile)).toEqual(Buffer.from([1, 2, 3, 4]));
   });
+});
+
+describe("TelegramMessagingBot scheduled events", () => {
+  let workingDir: string;
+  let workspace: Workspace;
+
+  beforeEach(() => {
+    workingDir = join(tmpdir(), `mikan-telegram-events-${Date.now()}`);
+    mkdirSync(workingDir, { recursive: true });
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
+  });
+
+  afterEach(() => {
+    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  test.each(["direct", "shared"] as const)(
+    "each fire of a %s chat's event runs in its own new session",
+    async (conversationKind) => {
+      const handler = makeHandler();
+      const { bot } = await startBot(handler, workspace);
+      const fire = () =>
+        bot.enqueueEvent(
+          createConversationEvent({
+            platform: "telegram",
+            type: "mention",
+            conversationId: "123",
+            conversationKind,
+            user: "EVENT",
+            text: "daily task",
+            ts: "event:periodic-1",
+          }),
+        );
+
+      fire();
+      await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+      fire();
+      await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+
+      const keys = vi
+        .mocked(handler.handleEvent)
+        .mock.calls.map(([, , context]) => context.message.sessionKey);
+      expect(keys[0]).not.toBe("123");
+      expect(conversationIdOf(keys[0]!)).toBe("123");
+      expect(keys[1]).not.toBe(keys[0]);
+    },
+  );
 });

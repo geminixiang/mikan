@@ -84,15 +84,17 @@ Cron 形式: `minute hour day-of-month month day-of-week`
 
 イベントファイルには `sessionKey` や thread 目標は含まれません。スケジュール/バックグラウンドイベントは、それを作成したリアルタイムチャットターンの続きではないため、イベント本文は自己完結している必要があります。
 
-| プラットフォーム/イベントソース  | 見える配信方法                | Session key                                     | Thread 目標    |
-| -------------------------------- | ----------------------------- | ----------------------------------------------- | -------------- |
-| Slack event file/tool            | 新しいトップレベルのアンカー  | `<conversationId>:<anchor message ts>`          | なし           |
-| Slack direct `ConversationEvent` | 指定された `thread_ts` を優先 | 設定されていれば `<conversationId>:<thread_ts>` | 任意           |
-| その他のプラットフォームイベント | プラットフォーム adapter 既定 | プラットフォーム adapter 既定の event session   | adapter に依存 |
+| プラットフォーム/イベントソース  | 見える配信方法                 | Session key                                     | Thread 目標 |
+| -------------------------------- | ------------------------------ | ----------------------------------------------- | ----------- |
+| Slack event file/tool            | 新しいトップレベルのアンカー   | `<conversationId>:<anchor message ts>`          | なし        |
+| Slack direct `ConversationEvent` | 指定された `thread_ts` を優先  | 設定されていれば `<conversationId>:<thread_ts>` | 任意        |
+| Telegram と Discord のイベント   | 新しいトップレベルのメッセージ | `<conversationId>:<event id>:<uuid>`            | なし        |
 
 Slack イベントファイルでは、イベント起動時にまずトップレベルの Slack メッセージを作成します。そのメッセージのタイムスタンプがアンカーになり、その実行では固定 session key `<conversationId>:<anchor message ts>` を使います。
 
-これにより、イベント実行はチャンネル内で見える状態になり、永続的な top-level session から隔離されます。トップレベルチャンネル履歴は明示的な検索用に `log.jsonl` で引き続き利用できますが、イベント session へ暗黙にコピーされることはありません。
+Telegram と Discord には実行前にアンカーにできるメッセージがないため、起動ごとに専用の新しい session key を使います。グループやチャンネルでイベントの回答に返信すると、ほかの実行の回答への返信と同じく、その実行から始まる返信 session が開きます。ダイレクトチャットでは、返信はそのチャット自身の session に入ります。
+
+定期イベントの各回を含め、起動のたびに新しい session が始まります。これにより、イベント実行はチャンネル内で見える状態になり、永続的な top-level session から隔離されます。トップレベルチャンネル履歴は明示的な検索用に `log.jsonl` で引き続き利用できますが、イベント session へ暗黙にコピーされることはありません。
 
 ## Thread 目標
 
