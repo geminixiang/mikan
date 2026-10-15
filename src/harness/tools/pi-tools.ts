@@ -32,8 +32,9 @@ function toJsonValue(input: unknown): JsonValue | undefined {
 
 function withLabel(tool: ToolRegistration): MikanHarnessTool {
   const schema = tool.parameters as TObject;
+  const { structuredOutputSchema: _unreturned, ...registration } = tool;
   return tagHarnessTool({
-    ...tool,
+    ...registration,
     parameters: {
       ...schema,
       properties: { ...schema.properties, label: LABEL_PARAMETER },

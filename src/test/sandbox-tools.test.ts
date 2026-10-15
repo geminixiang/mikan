@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   createReadTool,
   createWriteTool,
@@ -9,10 +9,23 @@ import {
   createBashTool,
 } from "@earendil-works/pi-durable/tools";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { validateToolArguments, type JsonObject } from "@earendil-works/pi-ai";
+import {
+  fauxAssistantMessage,
+  fauxProvider,
+  fauxToolCall,
+  validateToolArguments,
+  type Api,
+  type JsonObject,
+  type Model,
+  type MutableModels,
+} from "@earendil-works/pi-ai";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
 import { runTestTool } from "./tool-api.js";
+import { MikanAgentSession } from "../harness/session.js";
+import { MikanModels } from "../harness/models.js";
+import { SessionStore } from "../sessions/session-store.js";
+import * as log from "../log.js";
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content
@@ -178,4 +191,40 @@ describe("sandbox tools", () => {
       expect.objectContaining({ code: "exit_code", message: expect.stringContaining("7") }),
     );
   });
+});
+
+test("bash keeps the durable tool contract when a session runs it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mikan-sandbox-contract-"));
+  const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+  try {
+    const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
+    const faux = fauxProvider();
+    (models.models as MutableModels).setProvider(faux.provider);
+    faux.setResponses([
+      fauxAssistantMessage(fauxToolCall("bash", { command: "echo hi", label: "echo" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage("done"),
+    ]);
+    const env = new NodeExecutionEnv({ cwd: dir });
+    const store = await SessionStore.inMemory();
+    const session = new MikanAgentSession({
+      model: faux.getModel() as Model<Api>,
+      models,
+      sessionStore: store,
+      tools: createSandboxTools(),
+      toolContext: { env: () => env },
+      thinkingLevel: "off",
+      systemPrompt: "prompt",
+    });
+
+    await session.prompt("run it");
+    await store.close();
+
+    const reports = warn.mock.calls.filter(([message]) => message === "Durable harness report");
+    expect(reports).toEqual([]);
+  } finally {
+    warn.mockRestore();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
