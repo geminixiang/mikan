@@ -273,7 +273,10 @@ describe("jev_browser tool", () => {
     fetchMock
       .mockResolvedValueOnce(answerType("e1"))
       .mockResolvedValueOnce(answerOperation("DONE"));
-    const generateText = vi.fn(async () => 'Here you go: {"text":"qa@example.com"}');
+    const generateText = vi.fn(async () => ({
+      text: 'Here you go: {"text":"qa@example.com"}',
+      usage: undefined,
+    }));
 
     await createJevBrowserTool(env, generateText).execute(
       "type",
@@ -286,6 +289,41 @@ describe("jev_browser tool", () => {
     expect(
       execMock.mock.calls.some((call) => String(call[0]).includes("'fill' '@e1' 'qa@example.com'")),
     ).toBe(true);
+  });
+
+  test("a goal reports the spend of its Jev and text-generation calls as the tool's usage", async () => {
+    const emailPage = {
+      success: true,
+      data: { snapshot: "Email field", refs: { e1: { role: "textbox", name: "Email" } } },
+    };
+    mockAgentBrowser([emailPage, { success: true, data: {} }, emailPage]);
+    const withUsage = async (response: Response, tokens: number) =>
+      jsonResponse(
+        Object.assign({}, await response.json(), {
+          usage: { input_tokens: tokens, output_tokens: 1 },
+        }),
+      );
+    fetchMock
+      .mockResolvedValueOnce(await withUsage(answerType("e1"), 100))
+      .mockResolvedValueOnce(await withUsage(answerOperation("DONE"), 50));
+    const written = {
+      input: 7,
+      output: 3,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 10,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.25 },
+    };
+    const generateText = vi.fn(async () => ({ text: '{"text":"qa@example.com"}', usage: written }));
+
+    const result = await createJevBrowserTool(env, generateText).execute(
+      "type",
+      { label: "test", goal: "Enter the email qa@example.com", maxSteps: 2 },
+      undefined,
+    );
+
+    expect(result.usage).toMatchObject({ input: 157, output: 5, totalTokens: 162 });
+    expect(result.usage?.cost.total).toBeGreaterThanOrEqual(0.25);
   });
 
   test("a TYPE step without a chat model blocks and says why", async () => {

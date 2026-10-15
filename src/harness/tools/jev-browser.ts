@@ -1,9 +1,11 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { Usage } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
+import { addUsage, createEmptyUsage } from "../session.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 import { isRecord } from "../../unknown-values.js";
 import { DESKTOP_COMMAND, DESKTOP_RUNTIME_DIR, parseDesktopStatus } from "../../sandbox/desktop.js";
@@ -387,14 +389,14 @@ export type FieldTextGenerator = (
   system: string,
   user: string,
   signal?: AbortSignal,
-) => Promise<string>;
+) => Promise<{ text: string; usage: Usage | undefined }>;
 
 async function generateFieldText(
   generateText: FieldTextGenerator,
   params: { goal: string; label: string; role: string; snapshotText: string; forSelect: boolean },
   signal?: AbortSignal,
-): Promise<string> {
-  const content = await generateText(
+): Promise<{ text: string; usage: Usage | undefined }> {
+  const { text: content, usage } = await generateText(
     TEXT_VALUE_INSTRUCTIONS,
     JSON.stringify({
       goal: params.goal,
@@ -418,7 +420,7 @@ async function generateFieldText(
   if (typeof text !== "string" || !text.trim()) {
     throw new Error("Text-generation model returned no usable value");
   }
-  return text;
+  return { text, usage };
 }
 
 function resolveTarget(
@@ -457,6 +459,8 @@ interface BrowserHandOff {
 export type JevBrowserTool = AgentTool<typeof jevBrowserSchema> & {
   setHandOff(handOff: BrowserHandOff | undefined): void;
 };
+
+type SpendingJevBrowserTool = JevBrowserTool & { takeSpend(): Usage | undefined };
 
 interface JevBrowserOptions {
   desktop?: boolean;
@@ -505,8 +509,14 @@ function createUnlockedJevBrowserTool(
   getEnv: () => ExecutionEnv | undefined,
   generateText: FieldTextGenerator | undefined,
   options: JevBrowserOptions,
-): JevBrowserTool {
+): SpendingJevBrowserTool {
   let sessionId = newSessionId();
+  let spent: Usage | undefined;
+  const spend = (usage: Usage | undefined) => {
+    if (!usage) return;
+    spent ??= createEmptyUsage();
+    addUsage(spent, usage);
+  };
   const agentTargets = new Set<string>();
   let handOff: BrowserHandOff | undefined;
   let browserOpen = false;
@@ -570,6 +580,11 @@ function createUnlockedJevBrowserTool(
   return {
     setHandOff: (next) => {
       handOff = next;
+    },
+    takeSpend: () => {
+      const taken = spent;
+      spent = undefined;
+      return taken;
     },
     name: JEV_BROWSER_TOOL,
     label: "jev browser",
@@ -791,6 +806,7 @@ function createUnlockedJevBrowserTool(
             questions,
             { abortSignal: signal, caller: JEV_BROWSER_TOOL },
           );
+          spend(result.spend);
           const operationAnswer = result.answers.operation;
           const operation =
             operationAnswer && "choice" in operationAnswer ? operationAnswer.choice : undefined;
@@ -876,7 +892,7 @@ function createUnlockedJevBrowserTool(
             message = "No chat model is available to write text for this field.";
             break;
           }
-          const text = await generateFieldText(
+          const { text, usage: written } = await generateFieldText(
             generateText,
             {
               goal,
@@ -887,6 +903,7 @@ function createUnlockedJevBrowserTool(
             },
             signal,
           );
+          spend(written);
           const command = operation === "SELECT" ? "select" : "fill";
           const actResult = await runAgentBrowser(
             browser,
@@ -953,7 +970,7 @@ export function createJevBrowserTool(
   generateText?: FieldTextGenerator,
   options: JevBrowserOptions = {},
 ): JevBrowserTool {
-  const tool = createUnlockedJevBrowserTool(getEnv, generateText, options);
+  const { takeSpend, ...tool } = createUnlockedJevBrowserTool(getEnv, generateText, options);
   const execute = tool.execute.bind(tool);
   let executionTail = Promise.resolve();
 
@@ -966,8 +983,10 @@ export function createJevBrowserTool(
         release = resolve;
       });
       await previous;
+      takeSpend();
       try {
-        return await execute(...args);
+        const result = await execute(...args);
+        return { ...result, usage: takeSpend() };
       } finally {
         release?.();
       }

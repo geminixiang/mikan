@@ -121,6 +121,7 @@ export function createJevTool(): AgentTool<typeof jevSchema> {
           },
         ],
         details: undefined,
+        usage: result.spend,
       };
     },
   };

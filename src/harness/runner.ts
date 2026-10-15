@@ -874,7 +874,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       if (reply.stopReason === "error" || reply.stopReason === "aborted") {
         throw new Error(reply.errorMessage ?? `Text generation ${reply.stopReason}`);
       }
-      return contentText(reply.content);
+      return { text: contentText(reply.content), usage: reply.usage };
     },
     desktopAccess(options),
   );

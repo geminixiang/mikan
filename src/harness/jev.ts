@@ -6,6 +6,7 @@ import type {
   ClassifierQuestion,
   JsonObject,
   Models,
+  Usage,
 } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readEnv } from "../env-manifest.js";
@@ -55,6 +56,7 @@ export interface JevResult<QUESTIONS extends JevQuestions> {
     outputTokens: number | undefined;
     cost: number | undefined;
   };
+  readonly spend: Usage | undefined;
   readonly model: string;
 }
 
@@ -210,6 +212,7 @@ export async function evaluateWithJev<const QUESTIONS extends JevQuestions>(
       outputTokens: result.usage?.output,
       cost: result.usage?.cost.total,
     },
+    spend: result.usage,
     model: result.model,
   };
 }

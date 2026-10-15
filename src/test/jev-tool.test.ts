@@ -23,6 +23,7 @@ beforeEach(() => {
   evaluateWithJevMock.mockResolvedValue({
     answers: { q: { type: "boolean", probability: 0.92 } },
     usage: { inputTokens: 10, outputTokens: 1, cost: 0.0001 },
+    spend: undefined,
     model: "typesafe/jev-test",
   });
 });
@@ -46,6 +47,31 @@ describe("jev tool", () => {
       model: "typesafe/jev-test",
       usage: { cost: 0.0001 },
     });
+  });
+
+  it("reports Jev's spend as the tool's usage", async () => {
+    const spend = {
+      input: 10,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 11,
+      cost: { input: 0.00009, output: 0.00001, cacheRead: 0, cacheWrite: 0, total: 0.0001 },
+    };
+    evaluateWithJevMock.mockResolvedValueOnce({
+      answers: { q: { type: "boolean", probability: 0.92 } },
+      usage: { inputTokens: 10, outputTokens: 1, cost: 0.0001 },
+      spend,
+      model: "typesafe/jev-test",
+    });
+
+    const result = await createJevTool().execute("c", {
+      label: "spam",
+      state: "BUY NOW",
+      questions: booleanQ,
+    });
+
+    expect(result).toMatchObject({ usage: spend });
   });
 
   it("passes structured state, instructions, and criteria through untouched", async () => {
@@ -102,6 +128,7 @@ describe("jev tool", () => {
         },
       },
       usage: { inputTokens: 1, outputTokens: 1, cost: 0 },
+      spend: undefined,
       model: "typesafe/jev-test",
     });
 
