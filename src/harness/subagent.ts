@@ -21,16 +21,19 @@ import type {
   SubagentUsageSink,
 } from "./types.js";
 import {
+  AgentDoc,
   AssistantEntry,
   UsageDoc,
   configure,
   type AgentChange,
   type ConversationId,
   type EntryId,
+  type Extension,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import {
   MikanAgentSession,
+  OWNER_ONLY_EXTENSIONS,
   addUsage,
   copyUsage,
   createEmptyUsage,
@@ -851,6 +854,17 @@ function grantedTools(
   });
 }
 
+async function childExtensions({ api, context }: SubagentToolCall): Promise<Extension[]> {
+  const owner = (await api.snapshot(AgentDoc, api.conversationId, context))?.extensions;
+  const selected = Array.isArray(owner) ? owner : [];
+  return selected.flatMap((name) => {
+    const extension = OWNER_ONLY_EXTENSIONS.includes(name)
+      ? undefined
+      : api.registry.extension(name);
+    return extension ? [extension] : [];
+  });
+}
+
 async function childConversation(
   { api, context }: SubagentToolCall,
   key: string,
@@ -892,6 +906,7 @@ async function createChild<TOutputSchema extends TSchema | undefined>(
     ? options.models.resolve(request.model.provider, request.model.id)
     : options.defaultModel;
   const child = await childConversation(options.call, options.key, {
+    extensions: await childExtensions(options.call),
     model: { provider: model.provider, modelId: model.id },
     thinkingLevel: request.thinkingLevel,
     tools,

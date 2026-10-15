@@ -17,7 +17,7 @@ import {
 import type { MikanHarnessTool } from "./types.js";
 import { guardMcpToolResult } from "./mcp-result.js";
 import { tagHarnessTool } from "./tools/pi-tools.js";
-import { TOOL_SEARCH_TOOL } from "./tools/tool-search.js";
+import { TOOL_SEARCH_TOOL_NAME as TOOL_SEARCH_TOOL } from "@earendil-works/pi-durable/tool-search";
 import { LABEL_PARAMETER } from "./tools/host-fn-tool.js";
 import { Type, type TSchema } from "typebox";
 
@@ -237,11 +237,11 @@ async function connectServer(
       const ownsLabel = Object.hasOwn(schemaProperties(mcpTool.inputSchema), "label");
       return tagHarnessTool({
         name: `mcp__${name}__${mcpTool.name}`,
-        exposure,
-        namespace: name,
+        callers: exposure === "codemode" ? ["tools"] : undefined,
+        deferred: exposure === "deferred" ? true : undefined,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
         parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),
-        outputSchema: mcpResultSchema(mcpTool.outputSchema),
+        structuredOutputSchema: mcpResultSchema(mcpTool.outputSchema),
         execute: async (params, api, context) => {
           const result = await client.callTool(
             mcpTool.name,

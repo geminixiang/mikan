@@ -23,7 +23,7 @@ import type {
   ToolRegistration,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import type { JsonValue as ModelJsonValue, TextContent } from "@earendil-works/pi-ai";
+import type { TextContent } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
 import type { Static, TSchema } from "typebox";
@@ -423,39 +423,14 @@ export interface MikanToolResult {
   details?: JsonValue;
   isError?: boolean;
   diagnostics?: readonly ToolDiagnostic[];
-  structuredContent?: ModelJsonValue;
+  structuredOutput?: JsonValue;
   usage?: Usage;
   control?: ToolControl;
 }
 
 export type MikanHarnessTool = Omit<ToolRegistration, "execute"> & {
-  outputSchema?: TSchema;
-  exposure?: McpExposure;
-  namespace?: string;
   execute(args: unknown, api: ToolExecutionApi, context: Context): Promise<MikanToolResult>;
 };
-
-export interface ToolSearchOptions {
-  tools: readonly MikanHarnessTool[];
-  query: string;
-  limit?: number;
-  namespace?: string;
-}
-
-export interface ToolSearchToolOptions {
-  tools: readonly MikanHarnessTool[];
-  loaded: ReadonlySet<string>;
-  load: (names: string[], context: Context) => Promise<void>;
-}
-
-export interface CodemodeToolOptions {
-  tools: readonly MikanHarnessTool[];
-  servers?: readonly McpServerSummary[];
-  executeNested: (
-    tool: MikanHarnessTool,
-    args: Parameters<MikanHarnessTool["execute"]>,
-  ) => Promise<MikanToolResult>;
-}
 
 export type MikanToolInput = AgentTool | MikanHarnessTool;
 

@@ -14,13 +14,10 @@ import {
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { createCodemodeTool } from "../harness/tools/codemode.js";
-import { searchTools } from "../harness/tools/tool-search.js";
 import { adaptAgentTool } from "../harness/tools/pi-tools.js";
-import type { MikanToolInput } from "../harness/types.js";
+import type { MikanHarnessTool, MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { contextMessages, openSessionAt } from "./session-context.js";
-import { runTestTool } from "./tool-api.js";
 
 let dir: string;
 const stores: SessionStore[] = [];
@@ -57,15 +54,15 @@ function deferredTool(name: string, description: string) {
     content: [{ type: "text" as const, text: "result-sentinel" }],
     details: {},
   }));
-  const tool: AgentTool = Object.assign(
-    {
+  const tool: MikanHarnessTool = Object.assign(
+    adaptAgentTool({
       name,
       label: name,
       description,
       parameters: { type: "object", properties: {} },
       execute,
-    },
-    { exposure: "deferred" as const, namespace: name.split("__")[1] },
+    }),
+    { deferred: true },
   );
   return { tool, execute };
 }
@@ -76,19 +73,21 @@ test("tool_search declares only matching MCP tools on the next model call", asyn
     content: [{ type: "text" as const, text: "issue data" }],
     details: {},
   }));
-  const issue: AgentTool = Object.assign(
-    {
-      name: "mcp__github__list_issues",
-      label: "Issues",
-      description: "List GitHub issues",
-      parameters: { type: "object", properties: {} },
-      execute,
-    },
-    { exposure: "deferred" as const, namespace: "github" },
-  );
-  const calendar: AgentTool = Object.assign(
-    { ...issue, name: "mcp__calendar__list_events", description: "List calendar events" },
-    { namespace: "calendar" },
+  const issueTool: AgentTool = {
+    name: "mcp__github__list_issues",
+    label: "Issues",
+    description: "List GitHub issues",
+    parameters: { type: "object", properties: {} },
+    execute,
+  };
+  const issue = Object.assign(adaptAgentTool(issueTool), { deferred: true });
+  const calendar = Object.assign(
+    adaptAgentTool({
+      ...issueTool,
+      name: "mcp__calendar__list_events",
+      description: "List calendar events",
+    }),
+    { deferred: true },
   );
   const session = wrap(await openSessionAt(file), [issue, calendar]);
   faux.setResponses([
@@ -159,7 +158,7 @@ test("loaded MCP schemas survive another prompt and close/reopen", async () => {
   expect(JSON.stringify(await reopened.getEntries())).toContain("restored");
 });
 
-test("revoked grants cannot be searched, called, or restored from prior discovery", async () => {
+test("revoked grants cannot be searched or called, and a returned grant keeps its discovery", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
   const calendar = deferredTool("mcp__calendar__list_events", "List calendar events");
@@ -183,158 +182,27 @@ test("revoked grants cannot be searched, called, or restored from prior discover
     ),
     fauxAssistantMessage("revoked"),
     (context) => {
-      expect(getCurrentTools(context.messages).map((item) => item.name)).not.toContain(
+      expect(getCurrentTools(context.messages).map((item) => item.name)).toContain(
         github.tool.name,
       );
-      return fauxAssistantMessage("grant returned but still deferred");
+      return fauxAssistantMessage("grant returned with its discovery");
     },
   ]);
   await session.prompt("discover");
   await session.prompt("try revoked", { tools: [calendar.tool] });
   expect(github.execute).not.toHaveBeenCalled();
-  expect(JSON.stringify(await contextMessages(session))).toContain("No matching unloaded tools");
+  expect(JSON.stringify(await contextMessages(session))).toContain("No matching tools found");
   expect(JSON.stringify(await contextMessages(session))).toContain("does not exist");
   await session.prompt("default grants again");
   expect(JSON.stringify(await contextMessages(session))).toContain(
-    "grant returned but still deferred",
+    "grant returned with its discovery",
   );
-});
-
-test("codemode exposes async global declarations before discovering deferred tools", async () => {
-  const { faux, file, wrap } = setup();
-  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await openSessionAt(file), [github.tool]);
-  faux.setResponses([
-    (context) => {
-      const tools = getCurrentTools(context.messages);
-      const description = tools.find((tool) => tool.name === "codemode")?.description ?? "";
-      expect(description).toContain("declare function searchTools(");
-      expect(description).toContain("Promise<Array<{ name: string; description: string }>>");
-      expect(description).toContain(
-        "declare function describeTool(name: string): Promise<string | undefined>",
-      );
-      expect(description).toContain("await searchTools(");
-      expect(description).not.toContain(github.tool.name);
-      return fauxAssistantMessage(
-        fauxToolCall("codemode", {
-          label: "Discover from declared globals",
-          code: 'const matches = await searchTools("issues", { namespace: "github" }); text(await describeTool(matches[0].name)); text(await tools[matches[0].name]({}));',
-        }),
-        { stopReason: "toolUse" },
-      );
-    },
-    (context) => {
-      expect(getCurrentTools(context.messages).map((tool) => tool.name)).not.toContain(
-        github.tool.name,
-      );
-      return fauxAssistantMessage("done");
-    },
-  ]);
-  await session.prompt("discover from the supplied API declarations");
-  expect(JSON.stringify(await contextMessages(session))).toContain("declare const tools");
-  expect(JSON.stringify(await contextMessages(session))).toContain("result-sentinel");
-});
-
-test("codemode discovery supplies Pi tool samples with resolved text return types", async () => {
-  const { faux, file, wrap } = setup();
-  const textTool = deferredTool("mcp__qa__read_text", "Read JSON text");
-  const session = wrap(await openSessionAt(file), [textTool.tool]);
-  faux.setResponses([
-    fauxAssistantMessage(
-      fauxToolCall("codemode", {
-        label: "Inspect return types",
-        code: 'const matches = await searchTools("read_text", { namespace: "qa" }); text(matches[0].description); text(await describeTool(matches[0].name));',
-      }),
-      { stopReason: "toolUse" },
-    ),
-    fauxAssistantMessage("done"),
-  ]);
-  await session.prompt("inspect the tool return type before writing a script");
-  const result = (await contextMessages(session)).find(
-    (message) => message.role === "toolResult" && message.toolName === "codemode",
-  );
-  expect(result).toMatchObject({
-    role: "toolResult",
-    content: [
-      { type: "text", text: expect.stringContaining("Promise<string>") },
-      { type: "text", text: expect.stringContaining("Promise<string>") },
-    ],
-  });
-});
-
-test("codemode preserves declared structured return types and values", async () => {
-  const { faux, file, wrap } = setup();
-  const count = deferredTool("mcp__qa__read_count", "Read a count");
-  const tool: AgentTool = {
-    ...count.tool,
-    outputSchema: { type: "number" },
-    execute: async () => ({ content: [], structuredContent: 7, details: {} }),
-  };
-  const session = wrap(await openSessionAt(file), [tool]);
-  faux.setResponses([
-    fauxAssistantMessage(
-      fauxToolCall("codemode", {
-        label: "Read the declared count",
-        code: 'const matches = await searchTools("read_count", { namespace: "qa" }); text(matches[0].description); text(await tools[matches[0].name]({}));',
-      }),
-      { stopReason: "toolUse" },
-    ),
-    fauxAssistantMessage("done"),
-  ]);
-  await session.prompt("inspect and use the declared structured result");
-  const result = (await contextMessages(session)).find(
-    (message) => message.role === "toolResult" && message.toolName === "codemode",
-  );
-  expect(result).toMatchObject({
-    role: "toolResult",
-    content: [
-      { type: "text", text: expect.stringContaining("Promise<number>") },
-      { type: "text", text: "7" },
-    ],
-  });
-});
-
-test("codemode does not repeat declared tools; each declared tool says how scripts call it", async () => {
-  const { faux, file, wrap } = setup();
-  const verbose: AgentTool = {
-    name: "verbose",
-    label: "Verbose",
-    description: "catalog filler ".repeat(1000),
-    parameters: { type: "object", properties: {} },
-    execute: async () => ({ content: [], details: {} }),
-  };
-  const session = wrap(await openSessionAt(file), [verbose]);
-  faux.setResponses([
-    (context) => {
-      const tools = getCurrentTools(context.messages);
-      const description = tools.find((tool) => tool.name === "codemode")?.description ?? "";
-      expect(description).toContain("declare function searchTools(");
-      expect(description).toContain("Promise<Array<{ name: string; description: string }>>");
-      expect(description).toContain(
-        "declare function describeTool(name: string): Promise<string | undefined>",
-      );
-      expect(description).not.toContain("catalog filler");
-      expect(tools.find((tool) => tool.name === "verbose")?.description).toMatch(
-        /catalog filler\n\nCodemode: `tools\.verbose\(args\)` resolves to a string\.$/,
-      );
-      return fauxAssistantMessage(
-        fauxToolCall("codemode", {
-          label: "Inspect an omitted declaration",
-          code: 'const declaration = await describeTool("verbose"); text(declaration.includes("declare const tools"));',
-        }),
-        { stopReason: "toolUse" },
-      );
-    },
-    fauxAssistantMessage("done"),
-  ]);
-  await session.prompt("inspect the full API despite a large tool catalog");
-  expect(JSON.stringify(await contextMessages(session))).toContain('"text":"true"');
 });
 
 test("MCP tools with codemode exposure are reachable only from scripts", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const scripted: AgentTool = Object.assign({ ...github.tool }, { exposure: "codemode" as const });
+  const scripted = Object.assign(github.tool, { deferred: undefined, callers: ["tools" as const] });
   const session = wrap(await openSessionAt(file), [scripted]);
   faux.setResponses([
     (context) => {
@@ -356,17 +224,22 @@ test("MCP tools with codemode exposure are reachable only from scripts", async (
 
 test("a script receives a structured error result instead of a rejection", async () => {
   const { faux, file, wrap } = setup();
-  const failing = deferredTool("mcp__qa__fail", "Fail with a structured result");
-  const tool: AgentTool = {
-    ...failing.tool,
-    outputSchema: { type: "object", properties: { isError: { type: "boolean" } } },
-    execute: async () => ({
-      content: [{ type: "text", text: "quota exceeded" }],
-      isError: true,
-      structuredContent: { isError: true, content: [{ type: "text", text: "quota exceeded" }] },
-      details: {},
+  const tool = Object.assign(
+    adaptAgentTool({
+      name: "mcp__qa__fail",
+      label: "fail",
+      description: "Fail with a structured result",
+      parameters: { type: "object", properties: {} },
+      outputSchema: { type: "object", properties: { isError: { type: "boolean" } } },
+      execute: async () => ({
+        content: [{ type: "text", text: "quota exceeded" }],
+        isError: true,
+        structuredContent: { isError: true, content: [{ type: "text", text: "quota exceeded" }] },
+        details: {},
+      }),
     }),
-  };
+    { deferred: true },
+  );
   const session = wrap(await openSessionAt(file), [tool]);
   faux.setResponses([
     fauxAssistantMessage(
@@ -382,9 +255,10 @@ test("a script receives a structured error result instead of a rejection", async
   const result = (await contextMessages(session)).find(
     (message) => message.role === "toolResult" && message.toolName === "codemode",
   );
-  expect(result).toMatchObject({
-    isError: false,
-    content: [{ type: "text", text: "isError=true" }],
+  expect(result).toMatchObject({ isError: false });
+  expect(result?.role === "toolResult" ? result.content : []).toContainEqual({
+    type: "text",
+    text: "isError=true",
   });
 });
 
@@ -397,7 +271,7 @@ test("codemode discovers and calls deferred MCP tools without declaring their sc
     fauxAssistantMessage(
       fauxToolCall("codemode", {
         label: "Discover and call",
-        code: 'const matches = await searchTools("issues", {namespace: "github", limit: 1}); text(await tools[matches[0].name]({}));',
+        code: 'const matches = await searchTools("issues", { limit: 1 }); text(await tools[matches[0].name]({}));',
       }),
       { stopReason: "toolUse" },
     ),
@@ -438,12 +312,8 @@ test("multiple searches in one model batch retain the union of loaded tools", as
   faux.setResponses([
     fauxAssistantMessage(
       [
-        fauxToolCall("tool_search", { label: "Find issues", query: "issues", namespace: "github" }),
-        fauxToolCall("tool_search", {
-          label: "Find events",
-          query: "events",
-          namespace: "calendar",
-        }),
+        fauxToolCall("tool_search", { label: "Find issues", query: "issues" }),
+        fauxToolCall("tool_search", { label: "Find events", query: "events" }),
       ],
       { stopReason: "toolUse" },
     ),
@@ -504,86 +374,32 @@ test("repeated identical searches cannot bypass the tool loop guard", async () =
   expect(github.execute).not.toHaveBeenCalled();
 });
 
-test.each([
-  { query: "    ", limit: 1 },
-  { query: "issues", limit: 0 },
-  { query: "issues", limit: 21 },
-  { query: "issues", limit: 1.5 },
-])("invalid search arguments never load tools: $query / $limit", async ({ query, limit }) => {
+test("describeNamespace returns a server's instructions and tools to scripts", async () => {
   const { faux, file, wrap } = setup();
   const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const session = wrap(await openSessionAt(file), [github.tool]);
-  faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("tool_search", { label: "Invalid search", query, limit }), {
-      stopReason: "toolUse",
-    }),
-    (context) => {
-      expect(getCurrentTools(context.messages).map((item) => item.name)).not.toContain(
-        github.tool.name,
-      );
-      return fauxAssistantMessage("not loaded");
+  const scripted = Object.assign(github.tool, { deferred: undefined, callers: ["tools" as const] });
+  const store = await openSessionAt(file);
+  vi.spyOn(store, "mcpServers").mockReturnValue([
+    {
+      name: "github",
+      exposure: "codemode",
+      description: "GitHub",
+      instructions: "Page with cursors.",
     },
   ]);
-  await session.prompt("invalid search");
-  expect(await contextMessages(session)).toContainEqual(
-    expect.objectContaining({ role: "toolResult", toolName: "tool_search", isError: true }),
-  );
-  expect(JSON.stringify(await contextMessages(session))).toContain("not loaded");
-});
-
-test("describeNamespace returns a server's instructions and tools to scripts", async () => {
-  const github = deferredTool("mcp__github__list_issues", "List GitHub issues");
-  const scripted = adaptAgentTool(
-    Object.assign({ ...github.tool }, { exposure: "codemode" as const }),
-  );
-  const codemode = createCodemodeTool({
-    tools: [scripted],
-    servers: [
-      {
-        name: "github",
-        exposure: "codemode",
-        description: "GitHub",
-        instructions: "Page with cursors.",
-      },
-    ],
-    executeNested: async (tool, call) => tool.execute(...call),
-  });
-  const result = await runTestTool(codemode, {
-    label: "Read the namespace",
-    code: 'for (const name of ["mcp__github", "github", "unknown"]) text(JSON.stringify(await describeNamespace(name)));',
-  });
-  const expected = {
-    name: "mcp__github",
-    description: "GitHub",
-    instructions: "Page with cursors.",
-    tools: ["mcp__github__list_issues"],
-  };
-  expect(result.content).toEqual([
-    { type: "text", text: JSON.stringify(expected) },
-    { type: "text", text: JSON.stringify(expected) },
-    { type: "text", text: "undefined" },
+  const session = wrap(store, [scripted]);
+  faux.setResponses([
+    fauxAssistantMessage(
+      fauxToolCall("codemode", {
+        label: "Read the namespace",
+        code: 'text(JSON.stringify(await describeNamespace("mcp__github")));',
+      }),
+      { stopReason: "toolUse" },
+    ),
+    fauxAssistantMessage("done"),
   ]);
-  expect(codemode.description).toContain("declare function describeNamespace(");
-});
-
-test("searchTools matches a server name written as one word, as Pi's tokenizer does", () => {
-  const subagent = adaptAgentTool({
-    name: "subagent",
-    label: "Subagent",
-    description: "Run subagents to search, read, and summarize anything",
-    parameters: { type: "object", properties: {} },
-    execute: async () => ({ content: [], details: {} }),
-  });
-  const search = adaptAgentTool(
-    Object.assign(
-      { ...deferredTool("mcp__open-connector__search_actions", "Find catalog actions").tool },
-      { namespace: "open-connector" },
-    ),
-  );
-  expect(
-    searchTools({ tools: [subagent, search], query: "OpenConnector search arXiv papers" }).map(
-      (tool) => tool.name,
-    ),
-  ).toEqual(["mcp__open-connector__search_actions", "subagent"]);
-  expect(searchTools({ tools: [subagent, search], query: "OpenConnector" })).toEqual([search]);
+  await session.prompt("read the namespace");
+  const result = JSON.stringify(await contextMessages(session));
+  expect(result).toContain("Page with cursors.");
+  expect(result).toContain("mcp__github__list_issues");
 });

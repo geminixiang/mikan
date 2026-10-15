@@ -30,11 +30,26 @@ function toJsonValue(input: unknown): JsonValue | undefined {
   return copy;
 }
 
+export function withRequiredLabel(tool: ToolRegistration): ToolRegistration {
+  const schema = tool.parameters as TObject;
+  return {
+    ...tool,
+    parameters: {
+      ...schema,
+      properties: { label: LABEL_PARAMETER, ...schema.properties },
+      required: ["label", ...(schema.required ?? [])],
+    },
+    execute: async (args, api, context) => {
+      const { label: _label, ...rest } = args as Record<string, unknown>;
+      return tool.execute(rest, api, context);
+    },
+  };
+}
+
 function withLabel(tool: ToolRegistration): MikanHarnessTool {
   const schema = tool.parameters as TObject;
-  const { structuredOutputSchema: _unreturned, ...registration } = tool;
   return tagHarnessTool({
-    ...registration,
+    ...tool,
     parameters: {
       ...schema,
       properties: { ...schema.properties, label: LABEL_PARAMETER },
@@ -44,12 +59,12 @@ function withLabel(tool: ToolRegistration): MikanHarnessTool {
         throw new Error(`Tool ${tool.name} requires an execution env; supply an authorized one.`);
       }
       const { label: _label, ...rest } = args as Record<string, unknown>;
-      const {
-        output,
-        structuredOutput: _structured,
-        ...result
-      } = await tool.execute(rest, api, context);
-      return { ...result, content: output ? [...output] : undefined };
+      const { output, structuredOutput, ...result } = await tool.execute(rest, api, context);
+      return {
+        ...result,
+        content: output ? [...output] : undefined,
+        structuredOutput: toJsonValue(structuredOutput),
+      };
     },
   });
 }
@@ -69,21 +84,13 @@ export function createSandboxTools(): MikanHarnessTool[] {
 }
 
 export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
-  const exposure =
-    "exposure" in tool && (tool.exposure === "deferred" || tool.exposure === "codemode")
-      ? tool.exposure
-      : undefined;
-  const namespace =
-    "namespace" in tool && typeof tool.namespace === "string" ? tool.namespace : undefined;
   return tagHarnessTool({
     name: tool.name,
     description: tool.description,
     parameters: tool.parameters,
-    outputSchema: tool.outputSchema,
+    structuredOutputSchema: tool.outputSchema,
     prepareArguments: tool.prepareArguments,
     executionMode: tool.executionMode,
-    exposure,
-    namespace,
     replay: tool.replay === "safe" ? "safe" : "unsafe",
     execute: async (args, api, context) => {
       let updates = Promise.resolve();
@@ -97,7 +104,7 @@ export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
         content: result.content,
         details: toJsonValue(result.details),
         isError: result.isError,
-        structuredContent: result.structuredContent,
+        structuredOutput: toJsonValue(result.structuredContent),
         usage: result.usage,
         control: result.terminate ? { terminate: true } : undefined,
       };

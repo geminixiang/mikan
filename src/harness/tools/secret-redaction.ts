@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/chord";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { ENV_MANIFEST, readEnv } from "../../env-manifest.js";
 import type { ToolExecutionApi } from "@earendil-works/pi-durable";
@@ -45,9 +46,18 @@ function redactingApi(
   const keep = Math.max(...secrets.map((secret) => secret.value.length)) - 1;
   const decoder = new TextDecoder();
   let pending = "";
+  const flush = () => {
+    const rest = redactSecrets(pending + decoder.decode(), secrets);
+    pending = "";
+    if (rest) api.output(rest);
+  };
   return {
     api: {
       ...api,
+      retainedOutput: () => {
+        flush();
+        return api.retainedOutput();
+      },
       output: (chunk) => {
         pending = redactSecrets(
           pending + (typeof chunk === "string" ? chunk : decoder.decode(chunk, { stream: true })),
@@ -62,11 +72,7 @@ function redactingApi(
         api.diagnostic({ ...diagnostic, message: redactSecrets(diagnostic.message, secrets) });
       },
     },
-    flush: () => {
-      const rest = redactSecrets(pending + decoder.decode(), secrets);
-      pending = "";
-      if (rest) api.output(rest);
-    },
+    flush,
   };
 }
 
@@ -88,15 +94,27 @@ export function withSecretRedaction(tool: MikanHarnessTool): MikanHarnessTool {
     } finally {
       redacting.flush();
     }
-    if (result.content === undefined) return result;
     return {
       ...result,
-      content: result.content.map((part): TextContent | ImageContent =>
+      content: result.content?.map((part): TextContent | ImageContent =>
         part.type === "text"
           ? Object.assign({}, part, { text: redactSecrets(part.text, secrets) })
           : part,
       ),
+      structuredOutput:
+        result.structuredOutput === undefined
+          ? undefined
+          : redactValue(result.structuredOutput, secrets),
     };
   };
   return tool;
+}
+
+function redactValue(value: JsonValue, secrets: SecretEntry[]): JsonValue {
+  if (typeof value === "string") return redactSecrets(value, secrets);
+  if (Array.isArray(value)) return value.map((item) => redactValue(item, secrets));
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [key, redactValue(item, secrets)]),
+  );
 }

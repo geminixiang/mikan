@@ -198,7 +198,7 @@ describe("loadMcpTools", () => {
       expect(result.errors).toEqual([]);
       const names = result.tools.map((tool) => tool.name);
       expect(
-        result.tools.every((tool) => tool.exposure === "codemode" && tool.namespace === "test"),
+        result.tools.every((tool) => tool.callers?.join() === "tools" && tool.deferred !== true),
       ).toBe(true);
       expect(names).toContain("mcp__test__echo");
       expect(names).toContain("mcp__test__boom");
@@ -217,7 +217,7 @@ describe("loadMcpTools", () => {
       expect(failed).toMatchObject({
         isError: true,
         content: [{ type: "text", text: "kaboom" }],
-        structuredContent: { isError: true, content: [{ type: "text", text: "kaboom" }] },
+        structuredOutput: { isError: true, content: [{ type: "text", text: "kaboom" }] },
       });
     } finally {
       await result.dispose();
@@ -340,7 +340,9 @@ describe("loadMcpTools", () => {
       },
     });
     try {
-      expect(result.tools.every((tool) => tool.exposure === "deferred")).toBe(true);
+      expect(
+        result.tools.every((tool) => tool.deferred === true && tool.callers === undefined),
+      ).toBe(true);
       expect(result.servers).toEqual([
         { name: "test", exposure: "deferred", description: "Test fixtures" },
       ]);
@@ -354,13 +356,13 @@ describe("loadMcpTools", () => {
     const cwd = mkdtempSync(join(tmpdir(), "mikan-mcp-script-"));
     try {
       const big = result.tools.find((tool) => tool.name === "mcp__test__big")!;
-      expect(big.outputSchema).toMatchObject({
+      expect(big.structuredOutputSchema).toMatchObject({
         type: "object",
         properties: { content: { type: "array" }, isError: { type: "boolean" } },
         required: ["content"],
       });
       const output = await callTool(big, {}, cwd);
-      expect(output.structuredContent).toMatchObject({
+      expect(output.structuredOutput).toMatchObject({
         content: [{ type: "text", text: expect.stringContaining('"number": 100,') }],
       });
       expect(output.content[0]?.type === "text" && output.content[0].text).toContain(

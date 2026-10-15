@@ -35,6 +35,7 @@ import {
   type TaskId,
   type Tx,
 } from "@earendil-works/pi-durable";
+import { CodemodeStoreDoc } from "@earendil-works/pi-durable/codemode";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import type { Office } from "../office/types.js";
 import type {
@@ -97,15 +98,6 @@ const SessionDoc = defineDoc<SessionDocState>({
   history: "latest",
   fork: "initial",
   initial: () => ({}),
-});
-
-export const ScriptStoreDoc = defineDoc<{ values: Record<string, JsonValue> }>({
-  kind: "mikan.script-store",
-  version: 1,
-  scope: "conversation",
-  history: "rewindable",
-  fork: "asOf",
-  initial: () => ({ values: {} }),
 });
 
 type SessionIndexRecord = Required<{
@@ -1324,7 +1316,7 @@ export class SessionStore implements SessionInspection {
     await this.mutate(async () => {
       await this.conversation.reset(undefined, context);
       await this.conversation.commit(async (tx) => {
-        (await tx.doc(ScriptStoreDoc, this.conversation.id)).values = {};
+        (await tx.doc(CodemodeStoreDoc, this.conversation.id)).values = {};
       }, context);
     });
   }

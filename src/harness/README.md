@@ -74,7 +74,8 @@ tells it to check and rerun the step.
 `HarnessEvent` is a thin, one-to-one projection of pi-durable's agent events,
 which are derived from commits: assistant `message_end` arrives after
 persistence, and tool progress carries the latest `details`. It adds only what
-Pi has no event for: budget stops, nested codemode tool calls, and retry bounds.
+Pi has no event for: budget stops and retry bounds. Nested codemode calls are
+Pi tool events like any other call.
 `text_delta` is the one derived event: Pi batches every change within a commit,
 so an answer's first text arrives inside `message_start` or a block start, and
 its last text may arrive only with `message_end`. The session tracks the
@@ -171,8 +172,8 @@ MCP tools are harness-native tools, so each call receives the turn's execution
 env. They connect at construction as before and are never declared by default
 (`codemode` exposure): codemode discovers and calls any currently granted MCP
 tool. A server with `exposure: "deferred"` also gets `tool_search`, which
-declares matches for the next model call. Loaded names follow the session branch and are intersected with current
-grants on every run; direct platform/execution tools remain declared. See
+declares matches for the next model call. Loaded names follow the session branch, and a run offers only the
+ones its grants enable; direct platform/execution tools remain declared. See
 [tools/README.md](tools/README.md#mcp-exposure-and-deferred-discovery) for discovery and recovery
 contracts. `mcp-result.ts` converts a result's content blocks (`structuredContent`
 only when `content` is empty; binary resources and audio become one-line

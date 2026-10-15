@@ -141,6 +141,7 @@ test("a subagent runs in a child conversation with only its profile's prompt and
   expect(offered(childContext).prompt).toContain("You are the explorer profile.");
   expect(offered(childContext).prompt).not.toContain("parent system prompt");
   expect(offered(childContext).tools).toEqual(["lookup", "slow"]);
+  expect(offered(childContext).prompt).not.toContain("codemode");
   expect(parentSaw).toContain("child answer");
 });
 

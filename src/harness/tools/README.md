@@ -42,7 +42,7 @@ tools depend on the connected server's `listTools()` response.
 | `edit`                  |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Original/replacement text in arguments; diff/patch in result.                                             |
 | `bash`                  |     ✓     |        ✓        |        —        |          ◇           |                              ✓                              | Command in arguments; stdout/stderr and exit information.                                                 |
 | `codemode`              |     ✓     |        ◇        |        ◇        |          —           |                              ✓                              | Script in arguments; only emitted output and return value enter model history, not nested tool results.   |
-| `tool_search`           |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Query/namespace/limit; loaded names in the result and branch discovery state.                             |
+| `tool_search`           |     ✓     |        ✓        |        —        |          ✓           |                              —                              | Query/limit; loaded names in the result and branch discovery state.                                       |
 | `event`                 |     ✓     |        ✓        |        —        |          —           |                              —                              | Event payload in arguments; list/read data or write/delete confirmation.                                  |
 | `sandbox`               |     ✓     |        ✓        |        —        |          —           |                              —                              | CPU/memory limits and status (supported on managed image sandboxes).                                      |
 | `attach`                |     ✓     |        ✓        |        —        |          —           |                              —                              | Path/title and attached filename; not the file bytes as a result.                                         |
@@ -69,98 +69,62 @@ aggregate limit on raw command results; native file/command output, subagent
 outcomes and GitHub check logs can also be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
-only scrubs final text `content` for tools assembled by `createMikanTools` and
-for MCP tools; it does not scrub arguments, `details`, images or progress, and
+only scrubs final text `content` and the `structuredOutput` scripts read for tools
+assembled by `createMikanTools` and for MCP tools; it does not scrub arguments,
+`details`, images or progress, and
 the runner adds `subagent` separately. Do not treat this as a universal secret
 filter.
 
 ## Codemode
 
-`codemode.ts` uses the official `pi-codemode` QuickJS/WASM worker, not host
-`eval` or a second executor. `MikanAgentSession` adds it after resolving each
-run's grants, including subagent grants; a tool-less session remains tool-less.
-Scripts cannot call `codemode` or `start_task`. Existing direct tools remain
-available. `ALL_TOOLS` lists only granted tools, `searchTools(query, options)`
-searches that same authorized catalog, and `describeTool(name)` supplies full
-declarations. Discovery helpers are asynchronous globals, not methods on
-`tools`. Their definitions supply both the sandbox and Pi's public
-`renderDeclarations({ globals })`, so the model-facing API cannot drift from
-the injected functions. Discovery returns Pi-generated `renderToolSample()`
-text, including argument and result declarations. Declared output schemas are
-preserved; tools without one use Pi's text-result default rather than `unknown`.
-Models inspect unknown declarations in one script before writing a later call
-script, instead of guessing arguments or treating JSON text as an object. The guide follows Pi's global-helper and nested-tool
-layout without importing private CLI modules or advertising unsupported APIs.
-The description lists no tool declarations, as in Pi's `on` mode: each declared
-tool's own description ends with what `tools.<name>(args)` resolves to
-(`withScriptCallNote`), and MCP tools are found with the discovery helpers,
-including `describeNamespace()`. Script discovery does not activate schemas in
-the model's direct tool set.
+`codemode` and `tool_search` are pi-durable's own
+(`@earendil-works/pi-durable/codemode` and `/tool-search`). `installRunTools`
+selects them next to the session's extension: `codemode` whenever the run has
+tools, `tool_search` only when a granted tool is `deferred`. A subagent child
+copies its owner's extensions without these two, so it gets neither the tool
+nor the `codemode` prompt section. One `CodemodeSandbox` (64-MiB heap) serves
+every script in the process; Pi gives scripts no deadline unless they set
+`timeout_ms`. `models.*` globals are off (`models: false`); images come from
+`generate_image`.
 
-pi-durable has no nested-tool dispatch API. The small local exception is
-`session.ts`'s `executeNestedTool`: it uses the same loop guard, cancellation,
-progress translation and tool-call accounting as direct calls, while
-`codemode.ts` uses Pi's public argument validator. Each nested call gets the
-codemode call's tool API with its own call ID and captured output. Replace this
-bridge when Pi exposes nested dispatch; it does not run other extensions'
-`beforeTool`/`afterTool` hooks or make nested calls independent durable tasks.
+Pi owns the script contract: the tool description, the `codemode` section
+listing callable tools as declarations, `searchTools()` / `describeTool()` /
+`describeNamespace()`, result layout and truncation (spilled through the
+run's `ExecutionEnv`), `store()` / `load()` (Pi's `pi.codemode.store`
+document, which `/new` clears), and replay after a restart. Each nested call
+is its own `pi.tool` task, so mikan's `ToolTask` hooks (loop guard, notices,
+subagent budgets) and its tool events apply to it as to a model call. A
+schema-less tool resolves to its text, images left out; a tool with
+`structuredOutputSchema` resolves to its `structuredOutput`, also on an error
+result, so `tools.bash` gives `{ output, exitCode, ... }`.
 
-Nested calls/results are not appended to the model transcript; only script
-output is. Tool-only text becomes a string, structured results retain their
-shape, and image results return `{ content }` so scripts can forward blocks
-with `image(result.content[0])`. Calls still appear in live progress and run
-counts. A script failure does not roll back completed tool side effects.
-Cancellation closes the worker and waits for nested tools to settle, so tools
-must cooperate with their signal. Defaults are a 60-second script deadline,
-a 64-MiB VM heap, and up to 40,000 text characters of emitted output; the
-options header can request another deadline or a smaller output budget.
-
-`store`/`load` values live in the conversation's `mikan.script-store` pi-durable
-document (`ScriptStoreDoc` in `src/sessions/session-store.ts`). A successful
-script's writes are committed after it ends, as Pi appends them to the branch; a
-failed script writes nothing. The document is rewindable and forks as of the fork
-point, so a thread started from a run sees the values that run left, and `/new`
-(`SessionStore.reset`) clears it. Classifier helpers are not implemented.
-Codemode does not reconnect MCP clients or expand grants.
+mikan supplies only the tool fields Pi reads: `start_task` has
+`callers: ["model"]`, so scripts cannot start tasks; Pi's `codemode` and
+`tool_search` take no `label`, so the session's extension wraps them with a
+required one (`withRequiredLabel`).
 
 ## MCP exposure and deferred discovery
 
-MCP tools carry their server's `exposure` and `namespace` from `mcp.ts`, as in
-Pi ([research](../../../docs/research/pi-codemode-mcp-design-2026-10.md)):
-`codemode` (default) tools are never declared and are reached only from
-scripts; `deferred` tools are declared after `tool_search` loads them. Ordinary
-platform and execution tools remain direct. Connections and `listTools()` still
-happen during runner construction; exposure changes declaration, not network
-connection or authorization.
+MCP tools carry their server's `exposure` as Pi fields, from `mcp.ts`
+([research](../../../docs/research/pi-codemode-mcp-design-2026-10.md)):
+`codemode` (default) tools have `callers: ["tools"]`, so they are never declared
+and are reached only from scripts; `deferred` tools are `deferred: true` and are
+declared once `tool_search` loads them. Each server becomes a codemode
+namespace (`mcp__<server>`, prefix `mcp__<server>__`) carrying its description
+and instructions. Ordinary platform and execution tools remain direct.
+Connections and `listTools()` still happen during runner construction; exposure
+changes declaration, not network connection or authorization.
 
-Every MCP tool declares a `CallToolResult` output schema. A script receives the
-complete result (`content`, `structuredContent`, `isError`) as the tool's
-`structuredContent`, which pi-durable never stores; the model-facing content of
-a direct call stays bounded and spilled as below.
+Every MCP tool declares a `CallToolResult` `structuredOutputSchema`. A script
+receives the complete result (`content`, `structuredContent`, `isError`) as the
+tool's `structuredOutput`, which Pi keeps only until the script settles; the
+model-facing content of a direct call stays bounded and spilled.
 
-`tool-search.ts` owns keyword ranking and `tool_search`, which loads matches
-through pi-durable's `control.addTools` result for the next model call; Pi
-stores the offered names in the conversation's `pi.agent` document. The
-shared search ranks names, descriptions, argument schemas and the namespace with
-BM25, prioritizes exact names, and supports a namespace filter and a 1–20 match
-limit (default 8). The tokenizer splits camelCase and stems plurals like Pi CLI's
-private ranker, so `OpenConnector` finds `mcp__open-connector__*`; it is a small
-local copy because Pi exposes no public ranker. No private Pi imports or
-additional dependency are used. Search result summaries are bounded to 300 characters per tool.
-
-`tool_search` exists only when the current grants include `deferred` tools. It
-searches only not-yet-loaded tools; codemode's `searchTools()` searches all of
-its granted callable tools without loading anything. Neither can discover
-another office's tools or escape a subagent's profile grants. `tool_search` is
-model-only and not callable from codemode.
-
-Every search in one tool batch adds its matches, so the batch loads their
-union. The loaded names live in Pi's `pi.agent` document, out of the model's
-text, and survive compaction and close/reopen. Each run offers only the stored
-names that current grants still include, so an earlier discovery cannot
-restore revoked access. A known MCP tool can still be called from codemode without loading its
-schema. Direct calls must wait until a later model request after discovery;
-loading is not a second permission grant.
+Pi stores loaded names in the conversation's `pi.agent` `modelTools`, out of the
+model's text, so they survive compaction and close/reopen. A run offers only
+tools its grants enable, so a revoked grant is neither searched, offered, nor
+callable from scripts; when the grant returns, its earlier discovery still
+applies. Loading is not a second permission grant.
 
 ## Browser reliability
 

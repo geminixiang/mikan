@@ -16,7 +16,6 @@ import type {
 import { contentText, createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import {
-  AgentDoc,
   DEFAULT_COMPACTION_POLICY,
   CompactionTask,
   GenerationTask,
@@ -26,10 +25,12 @@ import {
   hook,
   section,
   watchEvents,
+  wrapTool,
   type AgentEvent as DurableEvent,
   type AgentEventStream,
   type Conversation,
   type ConversationId,
+  type Extension,
   type HookRegistration,
   type MessageChange,
   type ToolExecutionApi,
@@ -48,7 +49,6 @@ import type {
   MikanAgentSessionOptions,
   MikanHarnessTool,
   MikanToolInput,
-  MikanToolResult,
   SubagentConversationHooks,
   SubagentUsage,
   SubagentUsageSink,
@@ -57,16 +57,23 @@ import type {
 
 import * as log from "../log.js";
 import { ToolLoopGuard } from "./loop-guard.js";
-import { adaptAgentTool, isHarnessTool } from "./tools/pi-tools.js";
+import { adaptAgentTool, isHarnessTool, withRequiredLabel } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
-import { createCodemodeTool, isCodemodeCallable, withScriptCallNote } from "./tools/codemode.js";
 import { renderMcpServersSection } from "./mcp.js";
-import { createToolSearchTool } from "./tools/tool-search.js";
-import { withSecretRedaction } from "./tools/secret-redaction.js";
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
+import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search";
 import { errorMessage } from "../unknown-values.js";
 
 const context: Context = BACKGROUND_CONTEXT;
 const COMPACTION_REQUEST = Symbol("compaction-request");
+const CODEMODE_SANDBOX = new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024 });
+const TOOL_SEARCH_EXTENSION = createToolSearchExtension();
+const CODEMODE_EXTENSION_NAME = "codemode";
+export const OWNER_ONLY_EXTENSIONS: readonly string[] = [
+  CODEMODE_EXTENSION_NAME,
+  TOOL_SEARCH_EXTENSION.name,
+];
 
 interface RunTally {
   usage: SubagentUsage;
@@ -465,47 +472,30 @@ export class MikanAgentSession {
     attached: AttachedSessionHarness,
     selected: MikanHarnessTool[],
   ): Promise<void> {
-    const tools = [...selected];
-    const deferredTools = tools.filter((tool) => tool.exposure === "deferred");
     const servers = this.sessionStore.mcpServers();
-    const authorized = new Set(deferredTools.map((tool) => tool.name));
-    const { harness, conversation, registry, extensionName } = attached;
-    const stored = (await harness.snapshot(AgentDoc, conversation.id, context))?.tools;
-    const loaded = new Set(
-      Array.isArray(stored) ? stored.filter((name) => authorized.has(name)) : [],
-    );
-    if (tools.length > 0)
-      tools.push(
-        withSecretRedaction(
-          createCodemodeTool({
-            tools,
-            servers,
-            executeNested: (tool, call) => this.executeNestedTool(tool, call),
-          }),
-        ),
-      );
-    if (deferredTools.length > 0) {
-      tools.push(
-        withSecretRedaction(
-          createToolSearchTool({
-            tools: deferredTools,
-            loaded,
-            load: async (names) => {
-              for (const name of names) if (authorized.has(name)) loaded.add(name);
-            },
-          }),
-        ),
-      );
-    }
-    const hasCodemode = tools.some((tool) => tool.name === "codemode");
-    const registered = tools.map((tool) =>
-      toPiTool(
-        hasCodemode && tool.exposure === undefined && isCodemodeCallable(tool)
-          ? withScriptCallNote(tool)
-          : tool,
-      ),
+    const { conversation, registry, extensionName } = attached;
+    const registered = selected.map((tool) =>
+      toPiTool(tool.name === START_TASK_TOOL ? { ...tool, callers: ["model"] } : tool),
     );
     const own = (id: ConversationId) => id === conversation.id;
+    const added: Extension[] = [];
+    if (registered.length > 0) {
+      added.push(
+        createCodemodeExtension({
+          sandbox: CODEMODE_SANDBOX,
+          namespaces: servers.map((server) => ({
+            name: `mcp__${server.name}`,
+            description: server.description,
+            instructions: server.instructions,
+            prefix: `mcp__${server.name}__`,
+          })),
+          models: false,
+        }),
+      );
+    }
+    if (registered.some((tool) => tool.deferred === true)) added.push(TOOL_SEARCH_EXTENSION);
+    const addedTools = added.flatMap((extension) => extension.tools ?? []);
+    for (const extension of added) registry.install(extension);
     registry.install(
       defineExtension({
         name: extensionName,
@@ -519,17 +509,15 @@ export class MikanAgentSession {
           ),
         ],
         hooks: this.extensionHooks(own),
+        wraps: addedTools.map((tool) => wrapTool(tool, withRequiredLabel)),
       }),
     );
     await conversation.configure(
       {
         model: { provider: this.model.provider, modelId: this.model.id },
         thinkingLevel: this.options.thinkingLevel,
-        extensions: [registry.snapshot().extension(extensionName)!],
-        tools: registered.filter((_, index) => {
-          const tool = tools[index]!;
-          return tool.exposure === undefined || loaded.has(tool.name);
-        }),
+        extensions: [registry.snapshot().extension(extensionName)!, ...added],
+        tools: [...registered, ...addedTools],
       },
       context,
     );
@@ -605,36 +593,6 @@ export class MikanAgentSession {
     const notice = this.loopNotices.get(callId);
     this.loopNotices.delete(callId);
     return notice;
-  }
-
-  private async executeNestedTool(
-    tool: MikanHarnessTool,
-    call: Parameters<MikanHarnessTool["execute"]>,
-  ): Promise<MikanToolResult> {
-    const [args, api, toolContext] = call;
-    const id = api.callId;
-    if (this.runAborted || toolContext.abortSignal?.aborted) throw new Error("Operation aborted");
-    await this.emitToolStart(id, tool.name, args);
-    let result: MikanToolResult;
-    try {
-      const verdict = await this.checkToolLoop(id, tool.name, args as Record<string, unknown>);
-      if (verdict?.block) throw new Error(verdict.block);
-      toolContext.abortSignal?.throwIfAborted();
-      result = await tool.execute(args, api, toolContext);
-      const notice = this.takeLoopNotice(id);
-      if (notice !== undefined) result = { ...result, content: withNotice(result.content, notice) };
-    } catch (error) {
-      result = { content: [{ type: "text", text: errorMessage(error) }], isError: true };
-    } finally {
-      this.loopNotices.delete(id);
-    }
-    await this.emitToolEnd(
-      id,
-      tool.name,
-      { content: result.content ?? [], details: result.details },
-      result.isError === true,
-    );
-    return result;
   }
 
   private async checkToolLoop(
@@ -715,11 +673,12 @@ export class MikanAgentSession {
       case "tool_execution_end": {
         const message = event.entry?.model?.[0];
         const toolResult = message?.role === "toolResult" ? message : undefined;
+        const nested = event.result;
         await this.emitToolEnd(
           event.toolCallId,
           event.toolName,
-          { content: toolResult?.content ?? [], details: toolResult?.details },
-          toolResult?.isError ?? true,
+          { content: toolResult?.content ?? [], details: toolResult?.details ?? nested?.details },
+          toolResult?.isError ?? nested?.isError ?? true,
         );
         return;
       }
@@ -1048,15 +1007,11 @@ function withNotice(
 }
 
 function toPiTool(tool: MikanHarnessTool): ToolRegistration {
-  const { outputSchema: _outputSchema, execute, ...registration } = tool;
+  const { execute, ...registration } = tool;
   return {
     ...registration,
     execute: async (args, api, toolContext) => {
-      const {
-        content,
-        structuredContent: _structured,
-        ...result
-      } = await execute(args, api, toolContext);
+      const { content, ...result } = await execute(args, api, toolContext);
       return { ...result, output: content };
     },
   };

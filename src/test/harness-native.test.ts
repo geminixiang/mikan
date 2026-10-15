@@ -296,21 +296,22 @@ test.each([
   expect(JSON.stringify(await contextMessages(session))).toContain(error);
 });
 
-test("codemode forwards nested images only when the script emits them", async () => {
+test("codemode forwards an MCP tool's images only when the script emits them", async () => {
   const { faux, file, wrap } = setup();
+  const block = {
+    type: "image" as const,
+    mimeType: "image/png",
+    data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+  };
   const tool: AgentTool = {
-    name: "picture",
+    name: "mcp__qa__picture",
     label: "picture",
     description: "Return an image",
     parameters: { type: "object", properties: {} },
+    outputSchema: { type: "object", properties: { content: { type: "array" } } },
     execute: async () => ({
-      content: [
-        {
-          type: "image",
-          mimeType: "image/png",
-          data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-        },
-      ],
+      content: [block],
+      structuredContent: { content: [block] },
       details: {},
     }),
   };
@@ -319,7 +320,7 @@ test("codemode forwards nested images only when the script emits them", async ()
     fauxAssistantMessage(
       fauxToolCall("codemode", {
         label: "Show image",
-        code: "const result = await tools.picture({}); image(result.content[0]);",
+        code: "const result = await tools.mcp__qa__picture({}); image(result.content[0]);",
       }),
       { stopReason: "toolUse" },
     ),
@@ -329,11 +330,7 @@ test("codemode forwards nested images only when the script emits them", async ()
   const result = (await contextMessages(session)).find(
     (message) => message.role === "toolResult" && message.toolName === "codemode",
   );
-  expect(result?.role === "toolResult" ? result.content : []).toContainEqual({
-    type: "image",
-    mimeType: "image/png",
-    data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
-  });
+  expect(result?.role === "toolResult" ? result.content : []).toContainEqual(block);
 });
 
 test("cancelling codemode aborts nested work and waits for its cleanup", async () => {
