@@ -27,6 +27,7 @@ import type { SubagentUsage } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
+import { callableTool } from "./tool-api.js";
 import * as log from "../log.js";
 
 let dir: string;
@@ -951,17 +952,19 @@ describe("runSubagent", () => {
   test("a task failing validation cannot orphan batch siblings", async () => {
     const { models, faux, model } = createFauxSetup();
     faux.setResponses([fauxAssistantMessage("sibling done")]);
-    const tool = createSubagentTool(
-      (request) =>
-        runSubagent({
-          request,
-          defaultModel: model,
-          thinkingLevel: "off",
-          models,
-          availableTools: [],
-          profiles: THINKER_PROFILES,
-        }),
-      THINKER_MENU,
+    const tool = callableTool(
+      createSubagentTool(
+        (request) =>
+          runSubagent({
+            request,
+            defaultModel: model,
+            thinkingLevel: "off",
+            models,
+            availableTools: [],
+            profiles: THINKER_PROFILES,
+          }),
+        THINKER_MENU,
+      ),
     );
 
     const result = await tool.execute("batch", {

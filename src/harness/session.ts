@@ -29,6 +29,8 @@ import {
   type AgentEvent as DurableEvent,
   type AgentEventStream,
   type Conversation,
+  type ConversationId,
+  type HookRegistration,
   type MessageChange,
   type ToolExecutionApi,
   type ToolRegistration,
@@ -47,6 +49,7 @@ import type {
   MikanHarnessTool,
   MikanToolInput,
   MikanToolResult,
+  SubagentConversationHooks,
   SubagentUsage,
   SubagentUsageSink,
   RetrySettings,
@@ -117,6 +120,7 @@ export class MikanAgentSession {
   private readonly toolArgs = new Map<string, unknown>();
   private loopGuard = new ToolLoopGuard();
   private readonly loopNotices = new Map<string, string>();
+  private readonly subagents = new Map<ConversationId, SubagentConversationHooks>();
   private runStarted = false;
   private runEndSeen = false;
   private observedUsage: Usage = createEmptyUsage();
@@ -184,6 +188,13 @@ export class MikanAgentSession {
       if (this.tally !== tally || !this.runActive || this.budgetExceededReason) return;
       const reason = this.resourceOverBudgetReason();
       if (reason) await this.exceedBudget(reason);
+    };
+  }
+
+  trackSubagent(conversationId: ConversationId, hooks: SubagentConversationHooks): () => void {
+    this.subagents.set(conversationId, hooks);
+    return () => {
+      if (this.subagents.get(conversationId) === hooks) this.subagents.delete(conversationId);
     };
   }
 
@@ -431,6 +442,9 @@ export class MikanAgentSession {
       get: (target, property) => {
         if (property === "streamSimple") {
           return (...[model, request, options]: Parameters<Models["streamSimple"]>) => {
+            if (options?.sessionId !== this.attached?.providerSessionId) {
+              return target.streamSimple(model, request, options);
+            }
             const over = this.runActive ? this.callOverBudgetReason() : undefined;
             if (over || this.runAborted) return abortedStream(model, over ?? "Operation aborted");
             if (this.runActive) this.tally.llmCalls += 1;
@@ -491,31 +505,20 @@ export class MikanAgentSession {
           : tool,
       ),
     );
+    const own = (id: ConversationId) => id === conversation.id;
     registry.install(
       defineExtension({
         name: extensionName,
         tools: registered,
         sections: [
-          section("mikan", () => this.systemPrompt, { tag: false }),
-          section("mcp_servers", () => renderMcpServersSection(servers) || undefined),
+          section("mikan", (input) => (own(input.conversationId) ? this.systemPrompt : undefined), {
+            tag: false,
+          }),
+          section("mcp_servers", (input) =>
+            own(input.conversationId) ? renderMcpServersSection(servers) || undefined : undefined,
+          ),
         ],
-        hooks: [
-          hook(GenerationTask, {
-            beforeRequest: (_request, api) => this.beforeRequest(String(api.taskId)),
-          }),
-          hook(CompactionTask, {
-            beforeCompact: (_compaction, api) => this.beforeCompact(String(api.taskId)),
-          }),
-          hook(ToolTask, {
-            beforeTool: async (call, api) => this.beforeTool(call, api),
-            afterTool: (call, result) => {
-              const notice = this.takeLoopNotice(call.id);
-              return notice === undefined
-                ? undefined
-                : { ...result, output: withNotice(result.output, notice) };
-            },
-          }),
-        ],
+        hooks: this.extensionHooks(own),
       }),
     );
     await conversation.configure(
@@ -530,6 +533,42 @@ export class MikanAgentSession {
       },
       context,
     );
+  }
+
+  private extensionHooks(own: (id: ConversationId) => boolean): HookRegistration[] {
+    return [
+      hook(GenerationTask, {
+        beforeRequest: async (_request, api) => {
+          if (own(api.conversationId)) return this.beforeRequest(String(api.taskId));
+          this.subagents.get(api.conversationId)?.beforeRequest();
+          return undefined;
+        },
+        afterResponse: (message, api) => {
+          if (!own(api.conversationId))
+            this.subagents.get(api.conversationId)?.afterResponse(message);
+        },
+      }),
+      hook(CompactionTask, {
+        beforeCompact: (_compaction, api) =>
+          own(api.conversationId)
+            ? this.beforeCompact(String(api.taskId))
+            : { decline: true as const },
+      }),
+      hook(ToolTask, {
+        beforeTool: async (call, api) =>
+          own(api.conversationId)
+            ? this.beforeTool(call, api)
+            : this.subagents.get(api.conversationId)?.beforeTool(call),
+        afterTool: (call, result, api) => {
+          const notice = own(api.conversationId)
+            ? this.takeLoopNotice(call.id)
+            : this.subagents.get(api.conversationId)?.afterTool(call.id);
+          return notice === undefined
+            ? undefined
+            : { ...result, output: withNotice(result.output, notice) };
+        },
+      }),
+    ];
   }
 
   private beforeCompact(taskId: string): { decline: true } | undefined {

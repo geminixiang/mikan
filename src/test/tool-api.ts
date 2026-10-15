@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createModels } from "@earendil-works/pi-ai";
+import type { TObject } from "typebox";
 import type { MikanHarnessTool, MikanToolResult } from "../harness/types.js";
 
 export const TEST_CONTEXT = BACKGROUND_CONTEXT;
@@ -74,4 +75,31 @@ export async function runTestTool(
   const content =
     "output" in result ? result.output : "content" in result ? result.content : undefined;
   return { ...result, content: content ? [...content] : [{ type: "text", text: output() }] };
+}
+
+export function callableTool(tool: MikanHarnessTool) {
+  return {
+    ...tool,
+    parameters: tool.parameters as TObject,
+    execute: async (
+      callId: string,
+      args: unknown,
+      signal?: AbortSignal,
+      onUpdate?: (update: { content: []; details: JsonValue }) => void,
+    ) => {
+      const { api } = createTestToolApi({ callId });
+      const context = signal ? withAbortSignal(signal, TEST_CONTEXT) : TEST_CONTEXT;
+      const result = await tool.execute(
+        args,
+        {
+          ...api,
+          details: async (value) => {
+            onUpdate?.({ content: [], details: value });
+          },
+        },
+        context,
+      );
+      return { ...result, content: result.content ?? [] };
+    },
+  };
 }

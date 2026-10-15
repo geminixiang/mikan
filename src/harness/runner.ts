@@ -9,7 +9,7 @@ import {
   type ThreadRootMessage,
 } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
-import { runSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
+import { runChildSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
 import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools } from "./tools/index.js";
 import { readRuntimeFile } from "./tools/attach.js";
@@ -111,32 +111,36 @@ async function createConfiguredAgentSession(params: {
       profile.tools.every((tool) => availableToolNames.has(tool)),
     ),
   );
-  let session: MikanAgentSession | undefined;
-  const subagentTool = createSubagentTool(
-    async (request, hooks) =>
-      runSubagent({
-        request,
-        onActivity: hooks?.onActivity,
-        defaultModel: model,
-        thinkingLevel,
-        models,
-        availableTools: tools.filter(
-          (tool) => ![START_TASK_TOOL, TASK_STATUS_TOOL].includes(tool.name),
-        ),
-        profiles: runnableProfiles,
-        slots: globalSubagentSlots,
-        toolContext,
-        parentEntries: await session!.sessionStore.getContextEntries(),
-        onUsage: session!.captureExternalUsageSink(),
-      }),
-    runnableProfiles,
+  const delegable = new Set(
+    [...availableToolNames].filter((name) => name !== START_TASK_TOOL && name !== TASK_STATUS_TOOL),
   );
+  let session: MikanAgentSession | undefined;
+  const subagentTool = createSubagentTool(async (request, hooks) => {
+    if (!hooks?.call || hooks.key === undefined) {
+      throw new Error("Subagents run only inside a tool call");
+    }
+    const parent = session!;
+    return runChildSubagent({
+      request,
+      key: hooks.key,
+      call: hooks.call,
+      onActivity: hooks.onActivity,
+      defaultModel: model,
+      models,
+      availableTools: delegable,
+      profiles: runnableProfiles,
+      slots: globalSubagentSlots,
+      parentEntries: await parent.sessionStore.getContextEntries(),
+      track: (conversationId, conversationHooks) =>
+        parent.trackSubagent(conversationId, conversationHooks),
+    });
+  }, runnableProfiles);
 
   session = new MikanAgentSession({
     systemPrompt,
     model,
     thinkingLevel,
-    tools: [...tools, adaptAgentTool(subagentTool)],
+    tools: [...tools, subagentTool],
     toolContext,
     models,
     sessionStore,

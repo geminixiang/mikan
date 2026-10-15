@@ -35,6 +35,7 @@ export interface AttachedSessionHarness {
   conversation: Conversation;
   registry: Registry;
   extensionName: string;
+  providerSessionId: string;
 }
 
 export interface SessionContext {

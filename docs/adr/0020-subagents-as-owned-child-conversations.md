@@ -1,12 +1,12 @@
 ---
-status: rejected
+status: accepted
 ---
 
 # Subagents run as task-owned child conversations of the office Harness
 
-Rejected: today's subagents work, and the change would not alter what users see. The background-task pattern recorded here as an option is pursued for DM tasks in [ADR 0021](0021-tasks-as-background-child-conversations.md).
+First rejected because today's subagents worked and users would see no change. Accepted once [ADR 0027](0027-interrupted-runs-continue-after-restart.md) let interrupted runs continue after a restart: a subagent in a separate in-memory Harness is lost on every restart, while an owned child conversation continues with its parent. The decision below replaces the first draft's nesting and per-child extension.
 
-A subagent becomes a child conversation that its `subagent` tool call owns, in the same pi-durable Harness and office storage as its parent. Pi then owns what mikan builds by hand today: the child's loop, retry, abort propagation, and idleness. A subagent may delegate to its own subagents down to a fixed depth, so the agent can hand work to a fresh copy of itself.
+A subagent becomes a child conversation that its `subagent` tool call owns, in the same pi-durable Harness and office storage as its parent. Pi then owns what mikan builds by hand today: the child's loop, retry, abort propagation, idleness, and continuation after a restart.
 
 ## Context
 
@@ -38,33 +38,28 @@ The alternative of running subagents on core `Agent` was examined and fails on t
 
 ## Decision
 
-1. **A subagent is a child conversation owned by its tool call's task**, created in the parent's office Harness with `tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } })` and driven with `api.conversation(id).submit(...).wait(...)`. `runSubagent` no longer opens its own Harness.
-2. **The `subagent` tool is `replay: "safe"`.** It looks up an existing child by `scanConversations({ ownerTaskId })` before creating one, and submits with `requestId` set to `subagent:<taskId>`.
-3. **Delegation may nest up to depth 3.** The depth is stored with the child when it is created, not held in process memory. A child created at the limit gets its agent configured without the subagent extension, so the model is not offered a tool it cannot use. The `AsyncLocalStorage` guard is removed.
-4. **Each child gets its own mikan extension**, configured at creation with the profile's system prompt, tool grant, model, and thinking level. A child never runs with the parent's extension, whose hooks are bound to the parent's session and budget tally.
-5. **Budgets stay per subagent, and spend still folds into the parent.** A child's budget hooks belong to its own extension. The parent's tally adds the child's spend from the child conversation's usage document when the call settles.
-6. **The process-wide `SubagentSlotPool` stays, but a subagent releases its slot while it waits for its own children.** Ownership bounds lifetimes, not concurrency, so a busy office could otherwise multiply the per-run limit. Holding a slot across a wait deadlocks nesting: when every slot belongs to a parent waiting for a child, no child can start.
-7. **Memory capture extraction calls the model once directly** through `pi-ai` and validates the result against its schema, because it needs no loop, tools, or transcript.
+1. **A subagent is a child conversation owned by its tool call's task**, created in the parent's office Harness with `tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } })` and driven with `api.conversation(id).submit(...).wait(...)`. Its transcript stays in the office storage.
+2. **The `subagent` tool is `replay: "safe"`.** Each task or DAG node records its child under `api.memo("subagent:<callId>:<node>")`, and submits with that string as its `requestId`, so a rerun after a restart finds the same child and the same submission.
+3. **The child keeps the extension it copies from its owner**, as pi-durable's foreground subagent example does. Its configuration at creation narrows it to the profile: `tools` and `modelTools` list the granted tools, `instructions` carries the profile prompt, and the profile's model and thinking level apply. The owner session's `mikan` and `mcp_servers` sections and its hooks act only on the owner's own conversation ID, so the child sees only its instructions. Because a continuing parent reinstalls its extension before the Harness resumes, the child resumes with its tools after a restart.
+4. **Budgets stay per subagent.** The subagent tool registers the child's hooks with the owner session by conversation ID (`MikanAgentSession.trackSubagent`). They count turns before each request, block further tools once a response reaches the turn, token, or cost limit, apply the tool-loop guard, and abort the child on its duration limit. Until a rerun registers them again after a restart, the child runs without its own budget.
+5. **Spend folds into the parent through Pi's tool usage.** The tool result's `usage` is the children's total from their usage documents, so it lands in the parent's `pi.usage.tools` and session spend. The parent's request tracking counts only requests carrying its own provider session ID, so a child's requests do not consume the parent's call budget.
+6. **Nesting stays forbidden.** The child's tool grant comes from its profile, which cannot name `subagent`. The process-wide `SubagentSlotPool` still bounds concurrent subagents.
+7. **Memory capture** still uses the in-memory `runSubagent` until it calls the model once directly; that path is removed then.
 
 ## Considered Options
 
-- **Owned child conversations in the office Harness (chosen):** hands loop, retry, abort, and idleness to pi-durable through its documented API, makes subagent work inspectable, and allows nesting without a process-wide guard. It costs storage and needs the extension separation in decision 4.
+- **Owned child conversations in the office Harness (chosen):** hands loop, retry, abort, idleness, and continuation after a restart to pi-durable through its documented API, and makes subagent work inspectable. It costs storage.
+- **A separate extension per child (the first draft):** keeps the parent's hooks off the child by construction, but the child's extension exists only after its tool call reruns, so a child resumed after a restart runs with no tools. A trial showed exactly that: the resumed child's request removed every tool.
+- **One fixed mikan extension per office, dispatching by conversation ID:** also survives a restart, but needs a dispatch layer and a merged tool list across sessions; decision 3 gets the same result from Pi's default copy.
 - **Keep the per-run in-memory Harness and allow nesting:** the smallest change, but keeps the hand-built abort state machine, the invisible transcripts, and the per-run heap growth, and still runs a second Harness per subagent.
 - **Run subagents on core `Agent`:** the lightest runtime, but every mikan tool is a durable registration, so it needs a reverse adapter that emulates `ToolExecutionApi`. That copies Pi internals, which the design rules forbid, and gives up pi-durable's retry.
 - **Persistent, addressable subagents** (pi-durable's background pattern, where a child outlives the call and can be messaged later): a larger product change that this decision does not need. Owned children keep that path open.
 
 ## Consequences
 
-- Subagent transcripts are stored in the office's `sessions.db` and kept as long as the storage keeps everything else ([ADR 0018](0018-one-durable-storage-per-office.md)). At about 6.5 KB per child before tool output, growth must be measured against production subagent volume before acceptance.
-- Session View can show a subagent's work under the call that started it, through the child's conversation ID in the call's details. Session listing and the `history` tool read only the session index, so child conversations do not appear there as sessions.
-- After a restart, the unfinished ownerless tasks that mikan aborts on open take their owned children with them, so recovery behavior does not change.
-- The terminal-signal state machine, the abort grace period, the detached cleanup path, and the depth guard in `src/harness/subagent.ts` are removed. `hydrateSchema` stays, because `outputSchema` still arrives as plain JSON in tool arguments.
-- A model can now delegate recursively. Depth 3 with at most 4 concurrent children per call allows at most 84 live subagents per top-level call before the global slot pool applies.
-
-## Open questions before acceptance
-
-- Does a child created by `createConversation` inherit its owner's extensions in a way that runs the parent's `mikan.<conversationId>` hooks before decision 4 replaces them in the same commit?
-- Can a child's budget hooks stop it as precisely as `MikanAgentSession` stops a run today, including on time?
-- How many subagent runs and how many bytes of tool output does production generate per office per month? `recordSubagentOutcome` already counts runs.
-- Does the `subagent` tool's DAG mode keep its current semantics when each node is an owned child?
-- Where does the slot release in decision 6 hook in: around the nested `subagent` call's wait, or by counting only subagents that are generating or running tools?
+- Subagent transcripts are stored in the office's `sessions.db` and kept as long as the storage keeps everything else ([ADR 0018](0018-one-durable-storage-per-office.md)), at about 6.5 KB per child before tool output.
+- Session View can show a subagent's work under the call that started it, through the child's conversation ID (`runId` in the call's details). Session listing, task listing, and the `history` tool read only the session index, so child conversations do not appear there.
+- A restart no longer loses a running subagent: `planContinuation` keeps unfinished conversations whose owner chain reaches a continuing session, and a child's model and sandbox calls resolve to that session's binding.
+- Session spend now includes subagent spend; before, it reached only the run's in-memory tally.
+- Progress activity comes from the child's hooks: `thinking` before each request and the tool name and label before each call. The previous `writing · N chars` activity is gone.
+- Granted tools keep the owner's registrations, so their descriptions still mention `codemode` although a child has no `codemode` tool.

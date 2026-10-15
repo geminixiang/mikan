@@ -1,6 +1,16 @@
-import type { AgentTool, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
+import type { AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
+import type { JsonValue } from "@earendil-works/chord";
 import { Type, type Static, type TSchema } from "typebox";
-import type { SubagentRunOutput, SubagentRunRequest, SubagentRunResult } from "../types.js";
+import type {
+  MikanHarnessTool,
+  SubagentRunHooks,
+  SubagentRunOutput,
+  SubagentRunRequest,
+  SubagentRunResult,
+  SubagentToolCall,
+} from "../types.js";
+import { addUsage, createEmptyUsage } from "../session.js";
+import { tagHarnessTool } from "./pi-tools.js";
 import type {
   SubagentProgressNode,
   SubagentProgressSnapshot,
@@ -108,7 +118,7 @@ type DagNode = NonNullable<SubagentParams["dag"]>["nodes"][number];
 type SharedParams = Pick<SubagentParams, "parentContext" | "outputSchema" | "budget">;
 type RunSubagent = <TOutputSchema extends TSchema | undefined = undefined>(
   request: SubagentRunRequest<TOutputSchema>,
-  hooks?: { onActivity?: (activity: string) => void },
+  hooks?: SubagentRunHooks,
 ) => Promise<SubagentRunResult<SubagentRunOutput<TOutputSchema>>>;
 
 type PlanMode = "single" | "parallel" | "dag";
@@ -362,8 +372,9 @@ async function runWaves(
   shared: SharedParams,
   runSubagent: RunSubagent,
   progress: SubagentProgressTracker,
-  signal?: AbortSignal,
+  call: SubagentToolCall,
 ): Promise<PlanOutcome[]> {
+  const signal = call.context.abortSignal;
   const outcomes = new Map<string, PlanOutcome>();
   for (const wave of plan.waves) {
     await forEachConcurrent(wave, plan.concurrency, async (item) => {
@@ -393,6 +404,8 @@ async function runWaves(
       try {
         result = await runSubagent(planRequest(item, shared, outcomes, signal), {
           onActivity: (activity: string) => progress.activity(item.id, activity),
+          key: item.id,
+          call,
         });
       } catch (error) {
         reportSubagentLaunchError(error, {
@@ -454,10 +467,50 @@ function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>
   }
 }
 
+function jsonValue(input: unknown): JsonValue {
+  const copy: JsonValue = JSON.parse(JSON.stringify(input));
+  return copy;
+}
+
+function totalUsage(outcomes: readonly PlanOutcome[]) {
+  const usage = createEmptyUsage();
+  for (const outcome of outcomes) if ("usage" in outcome) addUsage(usage, outcome.usage);
+  return usage;
+}
+
+function toolResult(plan: Plan, ordered: PlanOutcome[]): { text: string; details: unknown } {
+  switch (plan.mode) {
+    case "dag":
+      return {
+        text: ordered.map((outcome) => `[${outcome.id}] ${formatOutcome(outcome)}`).join("\n\n"),
+        details: {
+          mode: "dag",
+          waves: plan.waves.map((wave) => wave.map((item) => item.id)),
+          results: ordered,
+        },
+      };
+    case "parallel": {
+      const results = ordered.map(({ id: _id, ...result }) => result);
+      return {
+        text: results
+          .map((result, index) => `[${index + 1}] ${formatOutcome(result)}`)
+          .join("\n\n"),
+        details: { mode: "parallel", results },
+      };
+    }
+    case "single": {
+      const single = ordered[0];
+      if (single === undefined) throw new Error("Subagent plan produced no outcome");
+      const { id: _id, ...result } = single;
+      return { text: formatOutcome(result), details: result };
+    }
+  }
+}
+
 export function createSubagentTool(
   runSubagent: RunSubagent,
   profiles: ReadonlyMap<string, SubagentProfileMenuEntry>,
-): AgentTool<typeof subagentSchema> {
+): MikanHarnessTool {
   if (profiles.size === 0) {
     throw new Error("createSubagentTool requires at least one subagent profile");
   }
@@ -466,75 +519,39 @@ export function createSubagentTool(
       ([name, profile]) => `${name} [${formatToolGrant(profile.tools)}] — ${profile.description}`,
     )
     .join("; ");
-  return {
+  return tagHarnessTool({
     name: "subagent",
-    label: "Subagent",
+    replay: "safe",
     description:
       `Run fresh isolated subagents. Use task for one subagent, tasks for independent concurrent work, or dag.nodes for a bounded dependency graph. At most ${MAX_CONCURRENT_SUBAGENTS} subagents run concurrently. DAG limits: ${MAX_DAG_NODES} nodes, ${MAX_DAG_EDGES} edges, depth ${MAX_DAG_DEPTH}; failed dependencies skip descendants, and dependency outputs larger than ${MAX_DEPENDENCY_OUTPUT_CHARS} characters reach downstream nodes as a truncated string. ` +
       "Subagents are fresh by default; parentContext.mode=normalized can include a sanitized reference snapshot of the active parent run. Nested subagents are not allowed. " +
       `Every task and DAG node must set profile; the profile supplies the prompt, tools, model and budget. Available profiles: ${profileDescription}.`,
     parameters: buildSubagentSchema([...profiles.keys()]),
-    execute: async (
-      _toolCallId: string,
-      params: SubagentParams,
-      signal?: AbortSignal,
-      onUpdate?: AgentToolUpdateCallback,
-    ) => {
+    execute: async (args, api, context) => {
+      const params = args as SubagentParams;
       const plan = buildPlan(params);
       validatePlanProfiles(plan, new Set(profiles.keys()));
+      let updates = Promise.resolve();
+      const onUpdate: AgentToolUpdateCallback = (partial) => {
+        const details = jsonValue(partial.details);
+        updates = updates.then(() => api.details(details, context)).catch(() => undefined);
+      };
       const progress = new SubagentProgressTracker(
         plan.mode,
         plan.items.map(({ id, label, task }) => ({ id, label, profile: task.profile })),
         onUpdate,
       );
       progress.emit();
-      const ordered = await runWaves(plan, params, runSubagent, progress, signal);
-
-      switch (plan.mode) {
-        case "dag":
-          return {
-            content: [
-              {
-                type: "text",
-                text: ordered
-                  .map((outcome) => `[${outcome.id}] ${formatOutcome(outcome)}`)
-                  .join("\n\n"),
-              },
-            ],
-            details: {
-              mode: "dag",
-              waves: plan.waves.map((wave) => wave.map((item) => item.id)),
-              results: ordered,
-            },
-          };
-        case "parallel": {
-          const results = ordered.map(({ id: _id, ...result }) => result);
-          return {
-            content: [
-              {
-                type: "text",
-                text: results
-                  .map((result, index) => `[${index + 1}] ${formatOutcome(result)}`)
-                  .join("\n\n"),
-              },
-            ],
-            details: { mode: "parallel", results },
-          };
-        }
-        case "single": {
-          const single = ordered[0];
-          if (single === undefined) {
-            throw new Error("Subagent plan produced no outcome");
-          }
-          const { id: _id, ...result } = single;
-          return {
-            content: [{ type: "text", text: formatOutcome(result) }],
-            details: result,
-          };
-        }
-      }
+      const ordered = await runWaves(plan, params, runSubagent, progress, { api, context });
+      await updates;
+      const { text, details } = toolResult(plan, ordered);
+      return {
+        content: [{ type: "text", text }],
+        details: jsonValue(details),
+        usage: totalUsage(ordered),
+      };
     },
-  };
+  });
 }
 
 export const MAX_SUBAGENT_LABEL_CHARS = 100;

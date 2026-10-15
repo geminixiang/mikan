@@ -4,10 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
-import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model, MutableModels } from "@earendil-works/pi-ai";
+import { AssistantEntry } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
+import { tagHarnessTool } from "../harness/tools/pi-tools.js";
+import type { MikanHarnessTool } from "../harness/types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -44,12 +47,40 @@ function setup() {
       return { content: [{ type: "text", text: "never" }], details: undefined };
     },
   };
+  const delegate: MikanHarnessTool = tagHarnessTool({
+    name: "delegate",
+    description: "Runs a task in a child conversation owned by this call",
+    parameters: Type.Object({}),
+    replay: "safe",
+    execute: async (_args, api, callContext) => {
+      const child = await api.commit(async (tx) => {
+        const existing = (await tx.scanConversations({ ownerTaskId: api.taskId }, 1)).items[0];
+        if (existing) return existing.id;
+        return (await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } }))
+          .id;
+      }, callContext);
+      const handle = await api.conversation(child, callContext);
+      const request = {
+        type: "input",
+        content: "child work",
+        requestId: `delegate:${api.taskId}`,
+      } as const;
+      const settled = await (await handle!.submit(request, callContext)).wait(callContext);
+      if (settled.status !== "done" || settled.type !== "input") {
+        return { content: [{ type: "text", text: `child ${settled.status}` }] };
+      }
+      const entry = await api.commit((tx) => tx.entry(AssistantEntry, settled.answer), callContext);
+      const message = entry?.model?.[0] as AssistantMessage | undefined;
+      const text = message?.content.map((part) => (part.type === "text" ? part.text : "")).join("");
+      return { content: [{ type: "text", text: `child said ${text}` }] };
+    },
+  });
   const wrap = (store: SessionStore) =>
     new MikanAgentSession({
       model,
       models,
       sessionStore: store,
-      tools: [slow],
+      tools: [slow, delegate],
       thinkingLevel: "off",
       systemPrompt: "prompt",
       settings: { compaction: { enabled: false } },
@@ -175,6 +206,38 @@ test("a prompt waits for the office's interrupted runs before it starts the mode
   await store.close();
 
   expect(env.faux.state.callCount).toBe(callsBefore + 1);
+});
+
+test("a child conversation that an interrupted run owns continues with it", async () => {
+  const env = setup();
+  const store = await SessionStore.open(env.office, "C123:1.000001");
+  env.faux.setResponses([
+    fauxAssistantMessage(fauxToolCall("delegate", {}), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("slow", {}), { stopReason: "toolUse" }),
+  ]);
+  const running = env.toolStarted();
+  const run = env
+    .wrap(store)
+    .prompt("delegate the work")
+    .catch(() => undefined);
+  await running;
+  await store.close();
+  await run;
+
+  expect(await SessionStore.continueInterrupted(env.office)).toEqual(["C123:1.000001"]);
+  const reopened = await SessionStore.open(env.office, "C123:1.000001");
+  let parentSaw = "";
+  env.faux.setResponses([
+    fauxAssistantMessage("child finished"),
+    (context) => {
+      parentSaw = JSON.stringify(context.messages);
+      return fauxAssistantMessage("parent finished");
+    },
+  ]);
+  await env.wrap(reopened).continueInterrupted();
+  await reopened.close();
+
+  expect(parentSaw).toContain("child said child finished");
 });
 
 test("an office that was not planned for continuation aborts its interrupted work when opened", async () => {

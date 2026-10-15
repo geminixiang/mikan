@@ -2,6 +2,7 @@ import { describe, expect, test, vi, type Mock } from "vitest";
 import type { SubagentRunRequest, SubagentUsage } from "../harness/types.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
+import { callableTool } from "./tool-api.js";
 import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/index.js";
 
 vi.mock("../observability/index.js", () => ({
@@ -37,7 +38,7 @@ function makeTool(
   runSubagent: RunSubagent | Mock<RunSubagent>,
   profiles: ReadonlyMap<string, { description: string }> = TEST_PROFILES,
 ) {
-  return createSubagentTool(runSubagent as RunSubagent, profiles);
+  return callableTool(createSubagentTool(runSubagent as RunSubagent, profiles));
 }
 
 function completedRun(output: unknown): RunSubagent {
@@ -183,7 +184,7 @@ describe("subagent tool", () => {
     expect(Object.keys(properties)).not.toContain("tools");
     expect(Object.keys(properties)).not.toContain("model");
     expect(properties.profile).toMatchObject({ enum: ["explorer"] });
-    expect(properties.budget.properties).toEqual({
+    expect((properties.budget as { properties?: unknown } | undefined)?.properties).toEqual({
       maxTokens: expect.objectContaining({ minimum: 1 }),
     });
   });

@@ -122,8 +122,8 @@ row gets a notice appended to its result, the 5th through 9th are blocked
 without executing, and the 10th stops the run through the budget circuit breaker
 (`budget_exceeded` with a `tool loop:` reason). A repeating cycle of 2–6
 distinct calls only gets a notice, once at 3 repetitions and again each time
-the count doubles. Subagents get the same guard because they run on
-`MikanAgentSession`. State resets on every `prompt()` and `resume()`.
+the count doubles. Subagents get their own guard through the hooks they
+register with the owner session. State resets on every `prompt()` and `resume()`.
 
 ### Compaction
 
@@ -225,15 +225,18 @@ through explicit platform, runtime, tool, or Sandbox interfaces.
 
 ## Subagents
 
-The built-in `subagent` tool delegates to `subagent.ts`, using fresh in-memory sessions,
-explicit tool grants, bounded execution, and a non-recursion guard. A request
-may contain one task, parallel tasks, or a bounded DAG. Per-run concurrency is
-further limited by the process-wide slot pool so busy conversations cannot
-multiply the global limit.
+The built-in `subagent` tool runs each task as a child conversation owned by
+its call ([ADR 0020](../../docs/adr/0020-subagents-as-owned-child-conversations.md)).
+A request may contain one task, parallel tasks, or a bounded DAG. Per-run
+concurrency is further limited by the process-wide slot pool so busy
+conversations cannot multiply the global limit.
 
-Subagent usage is folded into the parent run's usage tally. Validation and run
-failures resolve as structured failed results so one bad task cannot orphan its
-siblings.
+The child keeps its owner session's extension, so it resumes with its tools
+after a restart; that extension's sections and hooks therefore check the
+conversation ID and leave children to their `instructions` and to the hooks
+registered with `trackSubagent`. Subagent spend reaches the parent as the tool
+result's `usage`. Validation and run failures resolve as structured failed
+results so one bad task cannot orphan its siblings.
 
 ## Jev
 

@@ -1,6 +1,13 @@
 import type { OfficeAddress, PlatformTrustModel } from "../types.js";
 import type { MikanAgentSession } from "./session.js";
-import type { Api, ImageContent, Model, RetryPolicy, Usage } from "@earendil-works/pi-ai";
+import type {
+  Api,
+  AssistantMessage,
+  ImageContent,
+  Model,
+  RetryPolicy,
+  Usage,
+} from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
 import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
@@ -200,6 +207,30 @@ interface SubagentParentContext {
 export type SubagentUsage = Usage;
 
 export type SubagentUsageSink = (usage: SubagentUsage) => void | Promise<void>;
+
+export interface SubagentToolCall {
+  api: ToolExecutionApi;
+  context: Context;
+}
+
+export interface SubagentRunHooks {
+  onActivity?: (activity: string) => void;
+  key?: string;
+  call?: SubagentToolCall;
+}
+
+export interface SubagentToolCallView {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface SubagentConversationHooks {
+  beforeRequest(): void;
+  afterResponse(message: AssistantMessage): void;
+  beforeTool(call: SubagentToolCallView): { block: string } | undefined;
+  afterTool(callId: string): string | undefined;
+}
 
 export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
   task: string;

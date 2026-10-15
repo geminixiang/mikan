@@ -263,6 +263,8 @@ class OfficeStorage {
   private refs = 0;
   private continuation: PlannedContinuation | undefined;
   private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
+  private readonly ownerOf = new Map<ConversationId, ConversationId>();
+  private readonly conversationOfProviderSession = new Map<string, ConversationId>();
   private readonly writers = new Set<ConversationId>();
 
   private constructor(private readonly path: string | null) {
@@ -302,17 +304,47 @@ class OfficeStorage {
 
   async planContinuation(continues: (id: ConversationId) => boolean): Promise<ConversationId[]> {
     const unfinished = await this.unfinishedWork();
-    const kept = new Set(unfinished.map((task) => task.conversationId).filter(continues));
+    const kept = new Set<ConversationId>();
+    for (const { conversationId } of unfinished) {
+      if (await this.ownedByContinuing(conversationId, continues)) kept.add(conversationId);
+    }
     await this.abortUnfinishedWork((id) => !kept.has(id));
-    if (kept.size === 0) return [];
+    const sessions = [...kept].filter(continues);
+    if (sessions.length === 0) return [];
     this.refs += 1;
     let start!: () => void;
     const started = new Promise<void>((resolve) => {
       start = resolve;
     });
     const timer = setTimeout(() => void this.startContinuation(), CONTINUATION_BIND_TIMEOUT_MS);
-    this.continuation = { unbound: new Set(kept), started, start, timer };
-    return [...kept];
+    this.continuation = { unbound: new Set(sessions), started, start, timer };
+    return sessions;
+  }
+
+  private async ownedByContinuing(
+    id: ConversationId,
+    continues: (id: ConversationId) => boolean,
+  ): Promise<boolean> {
+    const seen = new Set<ConversationId>();
+    let current: ConversationId | undefined = id;
+    while (current !== undefined && !seen.has(current)) {
+      if (continues(current)) return true;
+      seen.add(current);
+      const conversation = await this.harness.conversation(current, context);
+      if (!conversation) return false;
+      const view = await conversation.viewState(context);
+      const owner = view.value.conversation.owner?.conversationId;
+      view.dispose();
+      if (owner !== undefined) await this.recordOwner(current, owner);
+      current = owner;
+    }
+    return false;
+  }
+
+  private async recordOwner(id: ConversationId, owner: ConversationId): Promise<void> {
+    this.ownerOf.set(id, owner);
+    const sessionId = (await this.harness.snapshot(ProviderDoc, id, context))?.sessionId;
+    if (sessionId !== undefined) this.conversationOfProviderSession.set(sessionId, id);
   }
 
   async continueConversation(id: ConversationId): Promise<void> {
@@ -365,9 +397,9 @@ class OfficeStorage {
         if (!REQUEST_METHODS.has(property)) return bindModels(fallback(), property);
         return (...args: unknown[]) => {
           const sessionId = requestSessionId(args[2]);
-          const binding = [...this.bindings.values()].find(
-            (bound) => bound.providerSessionId === sessionId,
-          )?.binding;
+          const binding =
+            [...this.bindings.values()].find((bound) => bound.providerSessionId === sessionId)
+              ?.binding ?? this.bindingOfProviderSession(sessionId);
           if (!binding) throw new Error("Provider request has no active session binding");
           const target = binding.requestModels ?? binding.models;
           const method = Reflect.get(target, property, target) as (...input: unknown[]) => unknown;
@@ -400,14 +432,39 @@ class OfficeStorage {
           return settings()?.followUpMode;
         },
       },
-      env: (target, envContext) =>
-        this.bindings.get(target.conversationId)?.binding.env?.(target, envContext),
+      env: (target, envContext) => this.bindingOf(target.conversationId)?.env?.(target, envContext),
+      conversationCreated: async (tx, conversation) => {
+        if (!conversation.owner) return;
+        this.ownerOf.set(conversation.id, conversation.owner.conversationId);
+        const { sessionId } = await tx.doc(ProviderDoc, conversation.id);
+        this.conversationOfProviderSession.set(sessionId, conversation.id);
+      },
       onReport: (error) => {
         const report = latest()?.onReport;
         if (report) report(error);
         else log.logWarning("Durable harness report", errorMessage(error));
       },
     };
+  }
+
+  private bindingOf(conversationId: ConversationId): SessionHarnessBinding | undefined {
+    const seen = new Set<ConversationId>();
+    let current: ConversationId | undefined = conversationId;
+    while (current !== undefined && !seen.has(current)) {
+      const bound = this.bindings.get(current);
+      if (bound) return bound.binding;
+      seen.add(current);
+      current = this.ownerOf.get(current);
+    }
+    return undefined;
+  }
+
+  private bindingOfProviderSession(
+    sessionId: string | undefined,
+  ): SessionHarnessBinding | undefined {
+    const conversationId =
+      sessionId === undefined ? undefined : this.conversationOfProviderSession.get(sessionId);
+    return conversationId === undefined ? undefined : this.bindingOf(conversationId);
   }
 
   private async unfinishedWork(): Promise<Array<{ id: TaskId; conversationId: ConversationId }>> {
@@ -443,7 +500,7 @@ class OfficeStorage {
     this.writers.delete(conversationId);
   }
 
-  async bind(conversationId: ConversationId, binding: SessionHarnessBinding): Promise<void> {
+  async bind(conversationId: ConversationId, binding: SessionHarnessBinding): Promise<string> {
     if (this.bindings.has(conversationId)) {
       throw new Error("Session already has an attached harness");
     }
@@ -454,6 +511,7 @@ class OfficeStorage {
         context,
       ));
     this.bindings.set(conversationId, { binding, providerSessionId });
+    return providerSessionId;
   }
 
   unbind(conversationId: ConversationId): void {
@@ -1183,7 +1241,7 @@ export class SessionStore implements SessionInspection {
 
   async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {
     return this.mutate(async () => {
-      await this.storage.bind(this.conversation.id, binding);
+      const providerSessionId = await this.storage.bind(this.conversation.id, binding);
       this.bound = true;
       const conversationId = this.conversation.id;
       return {
@@ -1191,6 +1249,7 @@ export class SessionStore implements SessionInspection {
         conversation: this.conversation,
         registry: this.storage.registry,
         extensionName: `mikan.${conversationId}`,
+        providerSessionId,
       };
     });
   }
