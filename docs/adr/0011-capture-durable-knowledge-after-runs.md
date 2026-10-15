@@ -21,7 +21,7 @@ A proof of concept measured Jev as the gate against labels from a stronger model
 
 ## Decision
 
-- Trigger on settlement of runs with stop reason `stop`, skipping scheduled-event runs. The capture runs in the background and never delays or blocks conversation work.
+- Trigger on settlement of runs with stop reason `stop`, skipping scheduled-event runs and DM task runs. A task run's message is the brief the model wrote when it started the task, not the user's words; a review of three weeks of production captures found that 69 of the 72 entries captured from task runs recorded rules the user never stated, against 19 of 76 from direct messages. The capture runs in the background and never delays or blocks conversation work.
 - Gate with Jev on the user message and the final assistant reply only; tool results are excluded because they multiply input size without adding user-established knowledge.
 - Extract with the office's configured model, giving it the current `MEMORY.md` so it can skip duplicates and target updates. Secrets, transient state, one-off parameters, and assistant-only claims are excluded.
 - Write only the conversation `MEMORY.md`, never workspace memory. Entries go under a `Captured knowledge` section as single lines stamped with the capture date and source message. Updates replace the line they supersede; nothing else in the file is rewritten.

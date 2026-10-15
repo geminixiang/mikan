@@ -4,6 +4,7 @@ import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
 import { isEventTriggerAttribution } from "../harness/presenter.js";
 import { resolveTriggerAttribution } from "../harness/prompt.js";
 import { redactSecrets } from "../harness/tools/secret-redaction.js";
+import { isTaskRunId } from "../harness/tools/task.js";
 import { runSubagent } from "../harness/subagent.js";
 import type { MikanModels } from "../harness/models.js";
 import { resolveConversationSettings } from "../settings/index.js";
@@ -74,6 +75,7 @@ const EXTRACTION_SYSTEM_PROMPT = [
 export function isCapturableRun(run: CapturedRun): boolean {
   if (run.stopReason !== "stop") return false;
   if (!run.message.text.trim() || !run.reply.trim()) return false;
+  if (isTaskRunId(run.message.id)) return false;
   return !isEventTriggerAttribution(resolveTriggerAttribution(run.message));
 }
 

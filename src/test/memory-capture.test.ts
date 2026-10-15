@@ -74,6 +74,7 @@ describe("isCapturableRun", () => {
     ["an unfinished run", { stopReason: "aborted" }],
     ["an empty reply", { reply: "  " }],
     ["an event id", { id: "event:daily-check:1" }],
+    ["a task run, whose message is the model-written task brief", { id: "task:1.0002" }],
   ])("skips %s", (_label, overrides) => {
     expect(isCapturableRun(run(overrides))).toBe(false);
   });
