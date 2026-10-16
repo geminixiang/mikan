@@ -2,6 +2,12 @@
 
 Multi-platform AI coding agent for Slack, Telegram, Discord, and GitHub (`@geminixiang/mikan`). Each conversation has an isolated Conversation office: a workspace directory and sandbox runtime. The harness in `src/harness/` is built on `pi-durable` / `pi-ai`.
 
+## Core idea
+
+mikan is a thin layer over three foundations: pi-durable is the agent runtime, OpenConnector provides tools with credentials, and an OCI container is the sandbox. mikan connects them to chat platforms.
+
+A model completes a task when it has the best information about it and the tools, with credentials, the task needs. mikan's job is to deliver both and leave the judgement to the model: what is relevant, what to read next, when it has enough. Code that makes that judgement for the model, such as relevance filters, traversal limits, or ranking rules, is complexity a design must justify with a measured failure that better information or a tool the model drives cannot fix. Review every design against this first.
+
 ## Where to look
 
 - Domain terms: `CONTEXT.md`. Module map, invariants, and decisions: `ARCHITECTURE.md`, `docs/adr/`.
@@ -70,7 +76,8 @@ A suspected bug is reproduced on the real platform before it is reported. Its is
 
 The best design meets these, and when they conflict, the earlier one wins:
 
-- **Built on Pi and existing dependencies**: hand each responsibility to pi-durable or another dependency through its public API; own code only where none offers it, with the reason recorded.
+- **Serves the core idea**: delivers information and authenticated tools, and leaves judgement to the model.
+- **Built on the foundations**: hand each responsibility to pi-durable, OpenConnector, the OCI sandbox, or another existing dependency through its public interface; own code only where none offers it, with the reason recorded.
 - **Maintainable**: the least new code, state, and special cases; understandable from its README and ADR; unchanged by a Pi upgrade.
 - **Acceptable in its trade-offs**: every cost measured in steps 3 and 4 and recorded in the report or ADR.
 
