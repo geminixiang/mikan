@@ -67,12 +67,12 @@ function setup() {
       } as const;
       const settled = await (await handle!.submit(request, callContext)).wait(callContext);
       if (settled.status !== "done" || settled.type !== "input") {
-        return { content: [{ type: "text", text: `child ${settled.status}` }] };
+        return { output: [{ type: "text", text: `child ${settled.status}` }] };
       }
       const entry = await api.commit((tx) => tx.entry(AssistantEntry, settled.answer), callContext);
       const message = entry?.model?.[0] as AssistantMessage | undefined;
       const text = message?.content.map((part) => (part.type === "text" ? part.text : "")).join("");
-      return { content: [{ type: "text", text: `child said ${text}` }] };
+      return { output: [{ type: "text", text: `child said ${text}` }] };
     },
   });
   const wrap = (store: SessionStore) =>

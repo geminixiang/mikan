@@ -544,7 +544,7 @@ export function createSubagentTool(
       await updates;
       const { text, details } = toolResult(plan, ordered);
       return {
-        content: [{ type: "text", text }],
+        output: [{ type: "text", text }],
         details: jsonValue(details),
         usage: totalUsage(ordered),
       };

@@ -69,7 +69,7 @@ aggregate limit on raw command results; native file/command output, subagent
 outcomes and GitHub check logs can also be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
-only scrubs final text `content` and the `structuredOutput` scripts read for tools
+only scrubs final text `output` and the `structuredOutput` scripts read for tools
 assembled by `createMikanTools` and for MCP tools; it does not scrub arguments,
 `details`, images or progress, and
 the runner adds `subagent` separately. Do not treat this as a universal secret

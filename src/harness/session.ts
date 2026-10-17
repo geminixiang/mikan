@@ -34,7 +34,6 @@ import {
   type HookRegistration,
   type MessageChange,
   type ToolExecutionApi,
-  type ToolRegistration,
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { SessionStore } from "../sessions/session-store.js";
@@ -458,7 +457,7 @@ export class MikanAgentSession {
     const servers = this.sessionStore.mcpServers();
     const { conversation, registry, extensionName } = attached;
     const registered = selected.map((tool) =>
-      toPiTool(tool.name === START_TASK_TOOL ? { ...tool, callers: ["model"] } : tool),
+      tool.name === START_TASK_TOOL ? { ...tool, callers: ["model"] as const } : tool,
     );
     const own = (id: ConversationId) => id === conversation.id;
     const added: Extension[] = [];
@@ -941,15 +940,4 @@ function applyMessageChanges(
     }
   }
   return next;
-}
-
-function toPiTool(tool: MikanHarnessTool): ToolRegistration {
-  const { execute, ...registration } = tool;
-  return {
-    ...registration,
-    execute: async (args, api, toolContext) => {
-      const { content, ...result } = await execute(args, api, toolContext);
-      return { ...result, output: content };
-    },
-  };
 }
