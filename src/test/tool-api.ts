@@ -39,7 +39,14 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
     registry: createRegistry().snapshot(),
     models: createModels(),
     outputWindow: undefined,
-    agent: async () => unsupported("agent"),
+    agent: async () => ({
+      thinkingLevel: "off",
+      extensions: [],
+      tools: [],
+      callable: [],
+      deferred: [],
+      sections: [],
+    }),
     output: (chunk) => {
       chunks.push(typeof chunk === "string" ? chunk : decoder.decode(chunk));
     },

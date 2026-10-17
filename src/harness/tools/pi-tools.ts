@@ -1,9 +1,11 @@
 import type { ToolRegistration } from "@earendil-works/pi-durable";
+import { createNodePhotonImages } from "@earendil-works/pi-durable/images/node";
 import {
   createBashTool,
   createEditTool,
   createReadTool,
   createWriteTool,
+  type ImageProcessor,
 } from "@earendil-works/pi-durable/tools";
 import type { TObject } from "typebox";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
@@ -42,6 +44,18 @@ function withLabel(tool: ToolRegistration): ToolRegistration {
   };
 }
 
+let photonImages: Promise<ImageProcessor> | undefined;
+
+const READ_IMAGES: ImageProcessor = {
+  prepare: async (bytes, mimeType, limits) => {
+    photonImages ??= createNodePhotonImages().catch((error: unknown) => {
+      photonImages = undefined;
+      throw error;
+    });
+    return (await photonImages).prepare(bytes, mimeType, limits);
+  },
+};
+
 export function createSandboxTools(): ToolRegistration[] {
   const bash = createBashTool({
     prepare: (execution, api) => {
@@ -49,7 +63,7 @@ export function createSandboxTools(): ToolRegistration[] {
     },
   });
   return [
-    withLabel(createReadTool() as ToolRegistration),
+    withLabel(createReadTool({ images: READ_IMAGES }) as ToolRegistration),
     withLabel(createWriteTool() as ToolRegistration),
     withLabel(createEditTool() as ToolRegistration),
     withLabel(bash as ToolRegistration),

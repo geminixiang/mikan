@@ -20,3 +20,17 @@ All `@earendil-works/*` packages are at 1.3.0, the latest published version, and
 - `generate_image`: `Models.generateImages()` exists, but pi-ai ships only the `openrouter-images` image API.
 - The model catalog wrapper for abort logging: pi-durable does not expose provider transport admission.
 - The `models.json` reader: Pi packages expose no public loader.
+
+## Images that `read` returns
+
+Without an image processor, Pi's `read` rejects images over 2000x2000 pixels or 4.5 MB of base64, and formats such as BMP that need converting. `@earendil-works/pi-durable/images/node` provides a Photon processor; Photon is already a dependency of pi-durable. Measured outside `src/` through `createReadTool` on this machine:
+
+| Image                  | Without a processor  | With Photon                        |
+| ---------------------- | -------------------- | ---------------------------------- |
+| 1200x800 JPEG, 91 KB   | passed through, 2 ms | passed through, 65 ms (first load) |
+| 1200x800 BMP, 2.8 MB   | `unsupported_image`  | PNG, 36 ms                         |
+| 3600x2400 JPEG, 1 MB   | `unsupported_image`  | 2000x1333 JPEG, 0.7 s              |
+| 6000x4000 JPEG, 3.8 MB | `unsupported_image`  | 2000x1333 JPEG, 1.0 s              |
+| 6000x4000 PNG, 23 MB   | `unsupported_image`  | 2000x1333 JPEG, 1.0 s              |
+
+The processor runs in a worker thread: during the 23 MB PNG the event loop ran 149 of about 160 expected 10 ms ticks. Resident memory went from 51 MB to 520 MB during that image and back to 55 MB after the worker's 30 s idle exit. Several large images at once could hold that peak together, which matters on a small host.

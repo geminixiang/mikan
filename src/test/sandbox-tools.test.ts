@@ -35,6 +35,24 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
     .join("\n");
 }
 
+function solidBmp(width: number, height: number): Buffer {
+  const rowBytes = Math.ceil((width * 3) / 4) * 4;
+  const pixelBytes = rowBytes * height;
+  const file = Buffer.alloc(54 + pixelBytes);
+  file.fill(0x80, 54);
+  file.write("BM", 0, "ascii");
+  file.writeUInt32LE(file.length, 2);
+  file.writeUInt32LE(54, 10);
+  file.writeUInt32LE(40, 14);
+  file.writeInt32LE(width, 18);
+  file.writeInt32LE(height, 22);
+  file.writeUInt16LE(1, 26);
+  file.writeUInt16LE(24, 28);
+  file.writeUInt32LE(0, 30);
+  file.writeUInt32LE(pixelBytes, 34);
+  return file;
+}
+
 describe("sandbox tools", () => {
   let dir: string;
   let env: ExecutionEnv;
@@ -102,6 +120,23 @@ describe("sandbox tools", () => {
     await expect(runTestTool(tool("read"), { path: "README.md" })).rejects.toThrow(
       "requires an execution env",
     );
+  });
+
+  test("read shrinks and converts an image the model could not take as it is", async () => {
+    const path = join(dir, "wide.bmp");
+    writeFileSync(path, solidBmp(2400, 10));
+
+    const read = await run("read", { path, label: "look at the image" });
+
+    expect(JSON.stringify(read.diagnostics)).not.toContain("unsupported_image");
+    expect(read.isError).toBeFalsy();
+    expect(read.content).toEqual([
+      expect.objectContaining({
+        type: "image",
+        mimeType: expect.stringMatching(/^image\/(png|jpeg)$/),
+      }),
+    ]);
+    expect(JSON.stringify(read.diagnostics)).toContain("Resized from 2400x10");
   });
 
   test("write then read round-trips content", async () => {
