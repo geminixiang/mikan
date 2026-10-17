@@ -6,12 +6,13 @@ import {
   type TaskId,
   type ToolDiagnostic,
   type ToolExecutionApi,
+  type ToolExecutionResult,
   type ToolRegistration,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createModels } from "@earendil-works/pi-ai";
 import type { TObject } from "typebox";
-import type { MikanHarnessTool, MikanToolResult } from "../harness/types.js";
+import type { MikanHarnessTool } from "../harness/types.js";
 
 export const TEST_CONTEXT = BACKGROUND_CONTEXT;
 
@@ -68,13 +69,11 @@ export async function runTestTool(
   tool: Pick<MikanHarnessTool, "execute"> | ToolRegistration,
   args: unknown,
   options: { env?: ExecutionEnv; callId?: string; signal?: AbortSignal } = {},
-): Promise<MikanToolResult & { content: NonNullable<MikanToolResult["content"]> }> {
+): Promise<ToolExecutionResult & { content: NonNullable<ToolExecutionResult["output"]> }> {
   const { api, output } = createTestToolApi(options);
   const context = options.signal ? withAbortSignal(options.signal, TEST_CONTEXT) : TEST_CONTEXT;
   const result = await tool.execute(args, api, context);
-  const content =
-    "output" in result ? result.output : "content" in result ? result.content : undefined;
-  return { ...result, content: content ? [...content] : [{ type: "text", text: output() }] };
+  return { ...result, content: result.output ?? [{ type: "text", text: output() }] };
 }
 
 export function callableTool(tool: MikanHarnessTool) {
@@ -99,7 +98,7 @@ export function callableTool(tool: MikanHarnessTool) {
         },
         context,
       );
-      return { ...result, content: result.content ?? [] };
+      return { ...result, content: result.output ?? [] };
     },
   };
 }

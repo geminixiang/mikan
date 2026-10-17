@@ -59,12 +59,7 @@ function withLabel(tool: ToolRegistration): MikanHarnessTool {
         throw new Error(`Tool ${tool.name} requires an execution env; supply an authorized one.`);
       }
       const { label: _label, ...rest } = args as Record<string, unknown>;
-      const { output, structuredOutput, ...result } = await tool.execute(rest, api, context);
-      return {
-        ...result,
-        content: output ? [...output] : undefined,
-        structuredOutput: toJsonValue(structuredOutput),
-      };
+      return tool.execute(rest, api, context);
     },
   });
 }
@@ -101,7 +96,7 @@ export function adaptAgentTool(tool: AgentTool): MikanHarnessTool {
       });
       await updates;
       return {
-        content: result.content,
+        output: result.content,
         details: toJsonValue(result.details),
         isError: result.isError,
         structuredOutput: toJsonValue(result.structuredContent),

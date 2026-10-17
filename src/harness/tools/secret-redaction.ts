@@ -96,7 +96,7 @@ export function withSecretRedaction(tool: MikanHarnessTool): MikanHarnessTool {
     }
     return {
       ...result,
-      content: result.content?.map((part): TextContent | ImageContent =>
+      output: result.output?.map((part): TextContent | ImageContent =>
         part.type === "text"
           ? Object.assign({}, part, { text: redactSecrets(part.text, secrets) })
           : part,

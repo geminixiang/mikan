@@ -17,8 +17,6 @@ import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-
 import type { Context, JsonValue } from "@earendil-works/chord";
 import type {
   CompactionPolicy,
-  ToolControl,
-  ToolDiagnostic,
   ToolExecutionApi,
   ToolRegistration,
 } from "@earendil-works/pi-durable";
@@ -409,19 +407,7 @@ export interface MikanToolContext {
   env(): ExecutionEnv | undefined;
 }
 
-export interface MikanToolResult {
-  content?: (TextContent | ImageContent)[];
-  details?: JsonValue;
-  isError?: boolean;
-  diagnostics?: readonly ToolDiagnostic[];
-  structuredOutput?: JsonValue;
-  usage?: Usage;
-  control?: ToolControl;
-}
-
-export type MikanHarnessTool = Omit<ToolRegistration, "execute"> & {
-  execute(args: unknown, api: ToolExecutionApi, context: Context): Promise<MikanToolResult>;
-};
+export type MikanHarnessTool = ToolRegistration;
 
 export type MikanToolInput = AgentTool | MikanHarnessTool;
 

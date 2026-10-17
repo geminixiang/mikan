@@ -4,7 +4,7 @@ import { boundOutput, utf8ByteLength } from "@earendil-works/chord/output";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { toLlmContent, type CallToolResult } from "@earendil-works/pi-mcp";
-import type { MikanToolResult } from "./types.js";
+import type { ToolExecutionResult } from "@earendil-works/pi-durable";
 import { redactSecrets } from "./tools/secret-redaction.js";
 import { isRecord } from "../unknown-values.js";
 
@@ -165,7 +165,7 @@ export async function guardMcpToolResult(
   result: CallToolResult,
   env: ExecutionEnv | undefined,
   context: Context,
-): Promise<MikanToolResult> {
+): Promise<ToolExecutionResult> {
   const structuredOutput = scriptResult(result);
   const blocks = mcpResultContent(result).map((block) =>
     block.type === "text" ? Object.assign(block, { text: compactMcpText(block.text) }) : block,
@@ -175,15 +175,15 @@ export async function guardMcpToolResult(
   const combined = texts.map((block) => block.text).join("\n");
   if (result.isError) {
     const text = boundMcpText(combined, RESULT_LIMITS).text || "MCP tool call failed";
-    return { content: [{ type: "text", text }], isError: true, structuredOutput };
+    return { output: [{ type: "text", text }], isError: true, structuredOutput };
   }
   if (fits(combined, RESULT_LIMITS))
-    return { content: blocks, details: undefined, structuredOutput };
+    return { output: blocks, details: undefined, structuredOutput };
   const bounded = boundMcpText(combined, RESULT_LIMITS);
   const spillPath = await spillFullResult(env, combined, context);
   const notice = truncationNotice(bounded, utf8ByteLength(combined), spillPath);
   return {
-    content: [{ type: "text", text: `${bounded.text}\n\n${notice}` }, ...images],
+    output: [{ type: "text", text: `${bounded.text}\n\n${notice}` }, ...images],
     details: undefined,
     structuredOutput,
   };
