@@ -652,6 +652,49 @@ describe("presenter event routing", () => {
     );
   });
 
+  test("a budget stop reports Pi's execution time of a finished step", async () => {
+    vi.useFakeTimers({ toFake: ["Date"], now: 0 });
+    const { emit, responder, runQueue } = attachPresenter();
+    try {
+      await emit({
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: "bash",
+        args: { label: "Query six weeks" },
+      });
+      vi.setSystemTime(140_000);
+      await emit({
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        toolName: "bash",
+        result: { content: [] },
+        isError: false,
+        durationMs: 128_000,
+      });
+      await emit({
+        type: "budget_exceeded",
+        reason: "call limit",
+        tokens: 100,
+        costUsd: 0.1,
+        llmCalls: 2,
+        durationMs: 140_000,
+      });
+      await runQueue.wait();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(responder.respondDiagnostic).toHaveBeenCalledWith(
+      [
+        "Stopped: run budget exceeded (call limit)",
+        "Ran 2m 20s: 2 model calls, 1 tool calls that took 2m 8s in total.",
+        "Slowest steps:",
+        "• Query six weeks (bash): 2m 8s",
+      ].join("\n"),
+      { style: "error" },
+    );
+  });
+
   test("reactivation clears completed tool progress, subagent dashboard, and attribution", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
     try {
