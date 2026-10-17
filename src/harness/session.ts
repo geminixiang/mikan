@@ -623,6 +623,7 @@ export class MikanAgentSession {
           event.toolName,
           { content: toolResult?.content ?? [], details: toolResult?.details ?? nested?.details },
           toolResult?.isError ?? nested?.isError ?? true,
+          toolResult?.durationMs ?? nested?.durationMs,
         );
         return;
       }
@@ -728,9 +729,17 @@ export class MikanAgentSession {
     toolName: string,
     result: Extract<HarnessEvent, { type: "tool_execution_end" }>["result"],
     isError: boolean,
+    durationMs: number | undefined,
   ): Promise<void> {
     this.toolArgs.delete(toolCallId);
-    await this.emit({ type: "tool_execution_end", toolCallId, toolName, result, isError });
+    await this.emit({
+      type: "tool_execution_end",
+      toolCallId,
+      toolName,
+      result,
+      isError,
+      durationMs,
+    });
   }
 
   private async exceedBudget(reason: string): Promise<void> {

@@ -640,7 +640,7 @@ function observeToolEnd(event: ToolEndEvent, context: RunObserverContext): void 
       });
     return;
   }
-  const durationMs = pending ? Date.now() - pending.startTime : 0;
+  const durationMs = event.durationMs ?? (pending ? Date.now() - pending.startTime : 0);
   runState.completedTools.push({
     label: toolLabel(pending?.args, event.toolName),
     toolName: event.toolName,

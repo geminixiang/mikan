@@ -434,6 +434,9 @@ test("tool progress reports details and each committed message is presented once
       )
       .map((event) => event.type),
   ).toEqual(["tool_execution_start", "tool_execution_update", "tool_execution_end"]);
+  expect(events).toContainEqual(
+    expect.objectContaining({ type: "tool_execution_end", durationMs: expect.any(Number) }),
+  );
   expect(session.getLastRunStats()).toMatchObject({
     toolCalls: 1,
     toolCallCounts: { progress: 1 },

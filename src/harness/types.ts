@@ -353,6 +353,7 @@ export type HarnessEvent =
       toolName: string;
       result: { content: (TextContent | ImageContent)[]; details?: unknown };
       isError: boolean;
+      durationMs?: number;
     }
   | { type: "compaction_start"; reason: CompactionReason }
   | {
