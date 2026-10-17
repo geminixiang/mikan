@@ -11,8 +11,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createModels } from "@earendil-works/pi-ai";
-import type { TObject } from "typebox";
-import type { MikanHarnessTool } from "../harness/types.js";
+import type { Static, TSchema } from "typebox";
 
 export const TEST_CONTEXT = BACKGROUND_CONTEXT;
 
@@ -66,7 +65,7 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
 }
 
 export async function runTestTool(
-  tool: Pick<MikanHarnessTool, "execute"> | ToolRegistration,
+  tool: Pick<ToolRegistration, "execute">,
   args: unknown,
   options: { env?: ExecutionEnv; callId?: string; signal?: AbortSignal } = {},
 ): Promise<ToolExecutionResult & { content: NonNullable<ToolExecutionResult["output"]> }> {
@@ -76,10 +75,9 @@ export async function runTestTool(
   return { ...result, content: result.output ?? [{ type: "text", text: output() }] };
 }
 
-export function callableTool(tool: MikanHarnessTool) {
+export function callableTool<TParameters extends TSchema>(tool: ToolRegistration<TParameters>) {
   return {
     ...tool,
-    parameters: tool.parameters as TObject,
     execute: async (
       callId: string,
       args: unknown,
@@ -89,7 +87,7 @@ export function callableTool(tool: MikanHarnessTool) {
       const { api } = createTestToolApi({ callId });
       const context = signal ? withAbortSignal(signal, TEST_CONTEXT) : TEST_CONTEXT;
       const result = await tool.execute(
-        args,
+        args as Static<TParameters>,
         {
           ...api,
           details: async (value) => {
@@ -98,7 +96,11 @@ export function callableTool(tool: MikanHarnessTool) {
         },
         context,
       );
-      return { ...result, content: result.output ?? [] };
+      return {
+        ...result,
+        content: result.output ?? [],
+        terminate: result.control?.terminate,
+      };
     },
   };
 }

@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { runTestTool } from "./tool-api.js";
 import { validateToolArguments } from "@earendil-works/pi-ai";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { adaptAgentTool, createSandboxTools, isHarnessTool } from "../harness/tools/pi-tools.js";
+import { defineTool } from "@earendil-works/pi-durable";
+import { Type } from "typebox";
+import { createSandboxTools } from "../harness/tools/pi-tools.js";
 import {
   redactSecrets,
   withSecretRedaction,
@@ -66,33 +68,21 @@ describe("redactSecrets", () => {
 });
 
 describe("withSecretRedaction identity preservation", () => {
-  test("keeps the isHarnessTool marker intact after wrapping", () => {
-    const bash = createSandboxBashTool();
-    expect(isHarnessTool(bash)).toBe(true);
-    expect(bash).not.toHaveProperty("label");
-    const wrapped = withSecretRedaction(bash);
-    expect(isHarnessTool(wrapped)).toBe(true);
-  });
-
   test("a pack's own array reference sees the wrapped, redacting execute", async () => {
     const SENTINEL = "pack-secret-0123456789abcdef";
     const envBefore = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = SENTINEL;
-    const agentTool = {
+    const packTool = defineTool({
       name: "hold",
-      label: "hold",
       description: "test tool",
-      parameters: { type: "object", properties: {} } as never,
+      parameters: Type.Object({}),
       execute: async () => ({
-        content: [{ type: "text" as const, text: SENTINEL }],
+        output: [{ type: "text" as const, text: SENTINEL }],
         details: {},
       }),
-    };
-    const harnessTool = adaptAgentTool(agentTool);
-    expect(harnessTool).not.toHaveProperty("label");
-    const packTools = [harnessTool];
-    const modelTools = [harnessTool].map(withSecretRedaction);
-    expect(isHarnessTool(packTools[0])).toBe(true);
+    });
+    const packTools = [packTool];
+    const modelTools = [packTool].map(withSecretRedaction);
     const result = await runTestTool(modelTools[0]!, {}, {});
     const text = (result.content[0] as { text?: string }).text;
     expect(text).not.toContain(SENTINEL);

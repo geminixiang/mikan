@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubReadTool } from "../adapters/github/tools/read.js";
 import type { GithubReadResult } from "../adapters/github/types.js";
+import { callableTool } from "./tool-api.js";
 
 function makeTool(result: GithubReadResult) {
   const { tool, setGithubReadFunction } = createGithubReadTool();
@@ -10,14 +11,14 @@ function makeTool(result: GithubReadResult) {
 }
 
 async function textOf(tool: ReturnType<typeof makeTool>["tool"], args: object): Promise<string> {
-  const result = await tool.execute("t1", args as never);
+  const result = await callableTool(tool).execute("t1", args as never);
   return (result.content[0] as { text: string }).text;
 }
 
 describe("github_read tool", () => {
   test("reports itself unavailable outside GitHub conversations", async () => {
     const { tool } = createGithubReadTool();
-    await expect(tool.execute("t1", { action: "pr" })).rejects.toThrow(
+    await expect(callableTool(tool).execute("t1", { action: "pr" })).rejects.toThrow(
       /only available in GitHub conversations/,
     );
   });
@@ -293,6 +294,8 @@ describe("github_read tool", () => {
     const { tool, setGithubReadFunction } = createGithubReadTool();
     setGithubReadFunction(vi.fn());
     setGithubReadFunction(null);
-    await expect(tool.execute("t1", { action: "pr" })).rejects.toThrow(/only available/);
+    await expect(callableTool(tool).execute("t1", { action: "pr" })).rejects.toThrow(
+      /only available/,
+    );
   });
 });

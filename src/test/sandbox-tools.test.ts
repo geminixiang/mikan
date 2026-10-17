@@ -20,7 +20,8 @@ import {
   type MutableModels,
 } from "@earendil-works/pi-ai";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { createSandboxTools, type MikanHarnessTool } from "../harness/tools/pi-tools.js";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
+import { createSandboxTools } from "../harness/tools/pi-tools.js";
 import { runTestTool } from "./tool-api.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
@@ -37,9 +38,9 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 describe("sandbox tools", () => {
   let dir: string;
   let env: ExecutionEnv;
-  let tools: MikanHarnessTool[];
+  let tools: ToolRegistration[];
 
-  const tool = (name: string): MikanHarnessTool => {
+  const tool = (name: string): ToolRegistration => {
     const found = tools.find((candidate) => candidate.name === name);
     if (!found) throw new Error(`missing tool ${name}`);
     return found;

@@ -35,7 +35,7 @@ A source-file refactor that preserves ownership and seams normally changes only 
 
 ## System model
 
-mikan is a multi-platform AI coding agent. Slack, Discord, Telegram, and GitHub adapters translate native events into a common conversation model. A conversation runtime serializes work and owns runner lifecycle. An agent runner constructs the authorized prompt, tools, credentials, and execution environment, then invokes mikan's harness over `pi-agent-core` and `pi-ai`.
+mikan is a multi-platform AI coding agent. Slack, Discord, Telegram, and GitHub adapters translate native events into a common conversation model. A conversation runtime serializes work and owns runner lifecycle. An agent runner constructs the authorized prompt, tools, credentials, and execution environment, then invokes mikan's harness over `pi-durable` and `pi-ai`.
 
 The central unit is the **Conversation office**: one platform conversation's persistent workspace, identity, host state, credentials, sessions, and Sandbox-runtime ownership. The office gives every major subsystem a common scope without exposing raw platform IDs as storage authority.
 

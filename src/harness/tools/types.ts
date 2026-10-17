@@ -1,5 +1,5 @@
 import type { BlockList } from "node:net";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { TSchema } from "typebox";
 import type { ConversationMessage, ConversationResponder } from "../../types.js";
 
@@ -10,7 +10,7 @@ interface PlatformToolRunContext {
 }
 
 export interface PlatformToolPack {
-  tools: AgentTool<TSchema>[];
+  tools: ToolRegistration<TSchema>[];
   finalResponseTools?: readonly string[];
   bindRun(ctx: PlatformToolRunContext): void;
 }

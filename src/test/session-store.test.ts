@@ -2,8 +2,7 @@ import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -22,7 +21,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function user(text: string, timestamp = 1): AgentMessage {
+function user(text: string, timestamp = 1): Message {
   return { role: "user", content: [{ type: "text", text }], timestamp };
 }
 

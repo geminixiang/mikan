@@ -1,5 +1,5 @@
 import type { Office, Workspace } from "../office/types.js";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -15,7 +15,6 @@ import { createMikanTools } from "./tools/index.js";
 import { readRuntimeFile } from "./tools/attach.js";
 import { createSubagentTool } from "./tools/subagent.js";
 import { createHistoryTool } from "./tools/history.js";
-import { adaptAgentTool } from "./tools/pi-tools.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -84,7 +83,7 @@ async function createConfiguredAgentSession(params: {
   workspaceDir: string;
   systemPrompt: string;
   model: Model<Api>;
-  thinkingLevel: ThinkingLevel;
+  thinkingLevel: ModelThinkingLevel;
   tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
   toolContext: MikanToolContext;
   sessionStore: SessionStore;
@@ -773,7 +772,7 @@ async function finishRunnerCreation(params: {
       agentConfig,
       tools: [
         ...toolBindings.tools,
-        withSecretRedaction(adaptAgentTool(createHistoryTool({ office, sessionKey }))),
+        withSecretRedaction(createHistoryTool({ office, sessionKey })),
       ],
       toolContext,
       sessionManager,

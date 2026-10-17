@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { contentText, type Api, type AssistantMessage, type Model } from "@earendil-works/pi-ai";
+import {
+  contentText,
+  type Api,
+  type AssistantMessage,
+  type Message,
+  type Model,
+} from "@earendil-works/pi-ai";
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { MikanModels } from "./models.js";
@@ -161,7 +166,7 @@ function formatTask(task: string, input: unknown, parentContext?: string): strin
   return parentContext ? `${parentContext}\n\n${formatted}` : formatted;
 }
 
-function messageText(message: AgentMessage): string {
+function messageText(message: Message): string {
   if (!("content" in message)) return "";
   return contentText(message.content, "");
 }

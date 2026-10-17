@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 
@@ -16,7 +16,7 @@ const githubReviewReplySchema = Type.Object({
 import type { GithubReviewReplyFn } from "../types.js";
 
 export function createGithubReviewReplyTool(): {
-  tool: AgentTool<typeof githubReviewReplySchema>;
+  tool: ToolRegistration<typeof githubReviewReplySchema>;
   setGithubReviewReplyFunction: (fn: GithubReviewReplyFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubReviewReplyFn, typeof githubReviewReplySchema>({
@@ -30,7 +30,7 @@ export function createGithubReviewReplyTool(): {
     run: async (replyFn, args) => {
       const result = await replyFn(args.comment_id, args.body);
       return {
-        content: [
+        output: [
           {
             type: "text" as const,
             text: `Replied in review thread rc-${args.comment_id}: ${result.url}`,

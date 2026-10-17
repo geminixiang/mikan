@@ -2,15 +2,12 @@ import { mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, AssistantMessage, Model, MutableModels } from "@earendil-works/pi-ai";
-import { AssistantEntry } from "@earendil-works/pi-durable";
+import { AssistantEntry, defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { tagHarnessTool } from "../harness/tools/pi-tools.js";
-import type { MikanHarnessTool } from "../harness/types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -34,20 +31,19 @@ function setup() {
   }).office(createOfficeAddress("slack", "C123"));
   const started: Array<() => void> = [];
   const toolStarted = () => new Promise<void>((resolve) => started.push(resolve));
-  const slow: AgentTool = {
+  const slow: ToolRegistration = {
     name: "slow",
-    label: "slow",
     description: "Runs until aborted",
     parameters: Type.Object({}),
-    execute: async (_id, _params, signal) => {
+    execute: async (_params, _api, { abortSignal: signal }) => {
       started.shift()?.();
       await new Promise((_resolve, reject) =>
         signal?.addEventListener("abort", () => reject(new Error("aborted"))),
       );
-      return { content: [{ type: "text", text: "never" }], details: undefined };
+      return { output: [{ type: "text", text: "never" }], details: undefined };
     },
   };
-  const delegate: MikanHarnessTool = tagHarnessTool({
+  const delegate = defineTool({
     name: "delegate",
     description: "Runs a task in a child conversation owned by this call",
     parameters: Type.Object({}),

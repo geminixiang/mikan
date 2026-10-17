@@ -1,12 +1,12 @@
 import { basename, dirname, join } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import type { MikanAgentSession } from "../harness/session.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { SessionInspection } from "../sessions/types.js";
 
-export async function contextMessages(session: MikanAgentSession): Promise<AgentMessage[]> {
+export async function contextMessages(session: MikanAgentSession): Promise<Message[]> {
   return (await session.sessionStore.buildSessionContext()).messages;
 }
 

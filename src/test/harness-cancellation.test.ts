@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { getFinalAssistantText } from "../harness/presenter.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
@@ -32,7 +32,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-async function setup(options: { tools?: AgentTool[]; compact?: boolean } = {}) {
+async function setup(options: { tools?: ToolRegistration[]; compact?: boolean } = {}) {
   const models = MikanModels.create({ modelsJsonPath: join(dir, "models.json") });
   const faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
@@ -299,16 +299,15 @@ describe("harness run cancellation", () => {
     const ready = deferred();
     const gate = deferred();
     let signal: AbortSignal | undefined;
-    const tool: AgentTool = {
+    const tool: ToolRegistration = {
       name: "hold",
-      label: "hold",
       description: "Wait for cleanup",
       parameters: { type: "object", properties: {} },
-      execute: async (_id, _args, toolSignal) => {
+      execute: async (_args, _api, { abortSignal: toolSignal }) => {
         signal = toolSignal;
         ready.resolve();
         await gate.promise;
-        return { content: [{ type: "text", text: "cleaned up" }], details: {} };
+        return { output: [{ type: "text", text: "cleaned up" }], details: {} };
       },
     };
     const { session, faux } = await setup({ tools: [tool] });

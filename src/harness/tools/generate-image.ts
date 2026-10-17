@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
@@ -37,7 +37,7 @@ export function createGenerateImageTool(options: {
   getApiKey: () => Promise<string | undefined>;
   outputDir: string;
 }): {
-  tool: AgentTool<typeof schema>;
+  tool: ToolRegistration<typeof schema>;
   setUploadFunction: (fn: (hostPath: string, title?: string) => Promise<void>) => void;
 } {
   let uploadFn: ((hostPath: string, title?: string) => Promise<void>) | null = null;
@@ -45,11 +45,10 @@ export function createGenerateImageTool(options: {
   return {
     tool: {
       name: GENERATE_IMAGE_TOOL,
-      label: "generate image",
       description:
         "Generate an image with the configured model provider and attach it to the response.",
       parameters: schema,
-      execute: async (_toolCallId, params, signal) => {
+      execute: async (params, _api, { abortSignal: signal }) => {
         if (!uploadFn) throw new Error("Upload function not configured");
         if (!options.model.baseUrl)
           throw new Error("Image generation requires a configured model baseUrl");
@@ -91,7 +90,7 @@ export function createGenerateImageTool(options: {
         await uploadFn(filePath, fileName);
 
         return {
-          content: [{ type: "text" as const, text: `Generated and attached image: ${fileName}` }],
+          output: [{ type: "text" as const, text: `Generated and attached image: ${fileName}` }],
           details: { fileName },
         };
       },

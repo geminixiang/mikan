@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubCheckSummary, GithubChecksFns } from "../types.js";
@@ -44,7 +44,7 @@ function formatCheckLine(run: GithubCheckSummary): string {
 }
 
 export function createGithubChecksTool(): {
-  tool: AgentTool<typeof githubChecksSchema>;
+  tool: ToolRegistration<typeof githubChecksSchema>;
   setGithubChecksFunction: (fns: GithubChecksFns | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubChecksFns, typeof githubChecksSchema>({
@@ -62,7 +62,7 @@ export function createGithubChecksTool(): {
       if (args.job_id !== undefined) {
         const logText = await checksFns.getJobLog(args.job_id);
         return {
-          content: [{ type: "text" as const, text: logText || "(empty log)" }],
+          output: [{ type: "text" as const, text: logText || "(empty log)" }],
           details: undefined,
         };
       }
@@ -70,7 +70,7 @@ export function createGithubChecksTool(): {
       const runs = await checksFns.getChecks(args.branch);
       if (runs.length === 0) {
         return {
-          content: [
+          output: [
             {
               type: "text" as const,
               text: "No CI jobs or commit statuses found — CI may not have started yet; try again shortly.",
@@ -85,7 +85,7 @@ export function createGithubChecksTool(): {
       );
       const summary = `${runs.length} check(s): ${completed.length} completed, ${runs.length - completed.length} running, ${failing.length} failing`;
       return {
-        content: [
+        output: [
           {
             type: "text" as const,
             text: [summary, ...runs.map(formatCheckLine)].join("\n"),

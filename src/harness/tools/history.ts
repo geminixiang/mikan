@@ -1,5 +1,5 @@
-import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { contentText, type ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
+import { contentText, type Message, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import type { Office } from "../../office/types.js";
 import { readConversationLog } from "../../sessions/chat-history-sync.js";
@@ -89,7 +89,7 @@ function toolResultText(message: ToolResultMessage): string {
 }
 
 function messageText(
-  message: AgentMessage,
+  message: Message,
   results: ReadonlyMap<string, ToolResultMessage>,
 ): string | undefined {
   switch (message.role) {
@@ -343,17 +343,16 @@ export async function runHistory(scope: HistoryScope, args: HistoryArgs): Promis
   }
 }
 
-export function createHistoryTool(scope: HistoryScope): AgentTool<typeof historySchema> {
+export function createHistoryTool(scope: HistoryScope): ToolRegistration<typeof historySchema> {
   return {
     name: HISTORY_TOOL,
-    label: HISTORY_TOOL,
     description:
       "Look back through this conversation's history beyond your context: its sessions (the channel or DM session, earlier ones replaced by /new, and its threads), their messages, your tool calls and their output, and the chat log. Read an earlier result here instead of rerunning its command. Other conversations are not reachable.",
     parameters: historySchema,
-    execute: async (_toolCallId, { label: _label, ...args }, signal) => {
+    execute: async ({ label: _label, ...args }, _api, { abortSignal: signal }) => {
       signal?.throwIfAborted();
       return {
-        content: [{ type: "text", text: await runHistory(scope, args) }],
+        output: [{ type: "text", text: await runHistory(scope, args) }],
         details: undefined,
       };
     },

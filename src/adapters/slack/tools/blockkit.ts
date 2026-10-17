@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static } from "typebox";
 import type { SlackBlockKitOps } from "../types.js";
 import { LABEL_PARAMETER } from "../../../harness/tools/host-fn-tool.js";
@@ -61,20 +61,18 @@ function formatSlackApiError(err: unknown): Error {
 }
 
 export function createSlackBlockKitTool(): {
-  tool: AgentTool<typeof blockkitSchema>;
+  tool: ToolRegistration<typeof blockkitSchema>;
   setSlackBlockKitOps: (ops: SlackBlockKitOps | null) => void;
 } {
   let boundOps: SlackBlockKitOps | null = null;
 
-  const tool: AgentTool<typeof blockkitSchema> = {
+  const tool: ToolRegistration<typeof blockkitSchema> = {
     name: SLACK_BLOCKKIT_TOOL,
-    label: SLACK_BLOCKKIT_TOOL,
     description:
       "Post an interactive Slack Block Kit message (buttons, select menus, custom layouts) to the current conversation, or update one previously posted with this tool. Normal replies already render Markdown — use this only when you need interactive elements or a layout Markdown cannot express. When a user clicks a button or picks an option, you receive a new message '[Slack action] <action_id>: <value>' — choose descriptive action_ids and values so the interaction tells you what to do. Returns the message ts; pass it back as update_ts to edit the message later (e.g. refreshing vote tallies). After handling an interaction, update the message via update_ts to replace the buttons with the outcome (e.g. '✅ approved') — buttons stay clickable otherwise and repeated clicks re-trigger the action. If Slack rejects the blocks, the error includes its validation messages — fix the JSON and retry.",
     parameters: blockkitSchema,
     prepareArguments: guardBlockKitArguments as (args: unknown) => Static<typeof blockkitSchema>,
     execute: async (
-      _toolCallId: string,
       {
         blocks,
         text,
@@ -87,7 +85,8 @@ export function createSlackBlockKitTool(): {
         update_ts?: string;
         label?: string;
       },
-      signal?: AbortSignal,
+      _api,
+      { abortSignal: signal },
     ) => {
       const ops = boundOps;
       if (!ops) {
@@ -101,7 +100,7 @@ export function createSlackBlockKitTool(): {
         if (update_ts) {
           await ops.updateBlocks({ ts: update_ts, text, blocks: blocks as object[] });
           return {
-            content: [
+            output: [
               { type: "text" as const, text: `Updated Block Kit message (ts: ${update_ts}).` },
             ],
             details: undefined,
@@ -113,7 +112,7 @@ export function createSlackBlockKitTool(): {
           threadTs: thread_ts,
         });
         return {
-          content: [
+          output: [
             {
               type: "text" as const,
               text: `Posted Block Kit message (ts: ${ts}). Interactive elements will arrive as "[Slack action] <action_id>: <value>" messages; pass ts back as update_ts to edit this message.`,

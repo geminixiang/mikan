@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, expectTypeOf, test, vi } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -22,7 +22,7 @@ import {
   openSessionAt,
 } from "./session-context.js";
 
-test("plain AgentTool integrations do not require an execution context", () => {
+test("plain ToolRegistration integrations do not require an execution context", () => {
   expectTypeOf<
     Omit<MikanAgentSessionOptions, "toolContext">
   >().toExtend<MikanAgentSessionOptions>();
@@ -44,7 +44,7 @@ function setup(fauxOptions?: Parameters<typeof fauxProvider>[0]) {
   (models.models as MutableModels).setProvider(faux.provider);
   const model = faux.getModel() as Model<Api>;
   const file = join(dir, "session.jsonl");
-  const wrap = (store: SessionStore, tools: AgentTool[] = []) => {
+  const wrap = (store: SessionStore, tools: ToolRegistration[] = []) => {
     stores.push(store);
     return new MikanAgentSession({
       model,
@@ -131,12 +131,11 @@ test("the next prompt aborts a run that a closed store left unfinished", async (
 test("per-prompt tools and system prompt update through Pi without leaking to later turns", async () => {
   const { faux, file, wrap } = setup();
   const invoke = vi.fn(async () => ({
-    content: [{ type: "text" as const, text: "used temporary tool" }],
+    output: [{ type: "text" as const, text: "used temporary tool" }],
     details: {},
   }));
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "temporary",
-    label: "temporary",
     description: "Temporary grant",
     parameters: { type: "object", properties: {} },
     execute: invoke,
@@ -168,12 +167,11 @@ test("per-prompt tools and system prompt update through Pi without leaking to la
 test("codemode filters nested results and obeys per-prompt grants", async () => {
   const { faux, file, wrap } = setup();
   const invoke = vi.fn(async () => ({
-    content: [{ type: "text" as const, text: "large-result-sentinel" }],
+    output: [{ type: "text" as const, text: "large-result-sentinel" }],
     details: {},
   }));
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "temporary",
-    label: "temporary",
     description: "Temporary grant",
     parameters: { type: "object", properties: {} },
     execute: invoke,
@@ -221,12 +219,11 @@ test("codemode store values last across calls and a restart, and /new clears the
     loaded.push(JSON.stringify(result?.content));
     return fauxAssistantMessage("done");
   };
-  const noop: AgentTool = {
+  const noop: ToolRegistration = {
     name: "noop",
-    label: "noop",
     description: "No-op",
     parameters: { type: "object", properties: {} },
-    execute: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: {} }),
+    execute: async () => ({ output: [{ type: "text" as const, text: "ok" }], details: {} }),
   };
   const store = await openSessionAt(file);
   faux.setResponses([
@@ -265,17 +262,16 @@ test.each([
 ])("codemode protects nested calls: $code", async ({ code, error, executions }) => {
   const { faux, file, wrap } = setup();
   const invoke = vi.fn(async () => ({
-    content: [{ type: "text" as const, text: "ok" }],
+    output: [{ type: "text" as const, text: "ok" }],
     details: {},
   }));
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "probe",
-    label: "probe",
     description: "Probe",
     parameters: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
     execute: invoke,
   };
-  const handoff: AgentTool = { ...tool, name: "start_task" };
+  const handoff: ToolRegistration = { ...tool, name: "start_task" };
   const session = wrap(await openSessionAt(file), [tool, handoff]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code }), {
@@ -298,15 +294,14 @@ test("codemode forwards an MCP tool's images only when the script emits them", a
     mimeType: "image/png",
     data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   };
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "mcp__qa__picture",
-    label: "picture",
     description: "Return an image",
     parameters: { type: "object", properties: {} },
-    outputSchema: { type: "object", properties: { content: { type: "array" } } },
+    structuredOutputSchema: { type: "object", properties: { content: { type: "array" } } },
     execute: async () => ({
-      content: [block],
-      structuredContent: { content: [block] },
+      output: [block],
+      structuredOutput: { content: [block] },
       details: {},
     }),
   };
@@ -336,19 +331,18 @@ test("cancelling codemode aborts nested work and waits for its cleanup", async (
   const gate = new Promise<void>((resolve) => {
     gateControl.release = resolve;
   });
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "wait",
-    label: "wait",
     description: "Wait",
     parameters: { type: "object", properties: {} },
-    execute: async (_id, _args, signal) => {
+    execute: async (_args, _api, { abortSignal: signal }) => {
       started = true;
       await new Promise<void>((resolve) =>
         signal?.addEventListener("abort", () => resolve(), { once: true }),
       );
       await gate;
       cleaned = true;
-      return { content: [{ type: "text", text: "cleaned" }], details: {} };
+      return { output: [{ type: "text", text: "cleaned" }], details: {} };
     },
   };
   const session = wrap(await openSessionAt(file), [tool]);
@@ -393,19 +387,17 @@ test.each([
 
 test("tool progress reports details and each committed message is presented once", async () => {
   const { faux, file, wrap } = setup();
-  const tool: AgentTool = {
+  const tool: ToolRegistration = {
     name: "progress",
-    label: "progress",
     description: "Report progress",
     parameters: { type: "object", properties: { text: { type: "string" } } },
-    execute: async (id, args, signal, onUpdate) => {
-      expect(id).toEqual(expect.any(String));
+    execute: async (args, api, context) => {
+      expect(api.callId).toEqual(expect.any(String));
       expect(args).toEqual({ text: "original args" });
-      expect(signal).toBeInstanceOf(AbortSignal);
-      expect(signal?.aborted).toBe(false);
-      expect(onUpdate).toEqual(expect.any(Function));
-      onUpdate?.({ content: [{ type: "text", text: "working" }], details: {} });
-      return { content: [{ type: "text", text: "finished" }], details: {} };
+      expect(context.abortSignal).toBeInstanceOf(AbortSignal);
+      expect(context.abortSignal?.aborted).toBe(false);
+      await api.details({}, context);
+      return { output: [{ type: "text", text: "finished" }], details: {} };
     },
   };
   const store = await openSessionAt(file);
@@ -443,74 +435,6 @@ test("tool progress reports details and each committed message is presented once
   });
   const persisted = (await store.getEntries()).filter((entry) => entry.type === "message");
   expect(persisted).toHaveLength(4);
-});
-
-test("large tool progress snapshots stay out of persisted messages and later provider context", async () => {
-  const { faux, file, wrap } = setup();
-  const sentinel = "progress-only-dom-sentinel-7f4b2e";
-  const finalResult = "final compact tool result";
-  const snapshots = Array.from(
-    { length: 3 },
-    (_, index) =>
-      `<main data-snapshot="${index}" data-marker="${sentinel}">${"<section>DOM node</section>".repeat(2000)}</main>`,
-  );
-  const tool: AgentTool = {
-    name: "snapshot",
-    label: "snapshot",
-    description: "Report DOM snapshots while working",
-    parameters: { type: "object", properties: {} },
-    execute: async (_id, _args, _signal, onUpdate) => {
-      for (const snapshot of snapshots) {
-        onUpdate?.({ content: [{ type: "text", text: snapshot }], details: {} });
-      }
-      return { content: [{ type: "text", text: finalResult }], details: {} };
-    },
-  };
-  const store = await openSessionAt(file);
-  const session = wrap(store, [tool]);
-  const updates: string[] = [];
-  session.subscribe((event) => {
-    if (event.type === "tool_execution_update") updates.push(JSON.stringify(event.details));
-  });
-  faux.setResponses([
-    fauxAssistantMessage(fauxToolCall("snapshot", {}), { stopReason: "toolUse" }),
-    (context) => {
-      const messages = JSON.stringify(context.messages);
-      expect(messages).not.toContain(sentinel);
-      expect(messages).toContain(finalResult);
-      return fauxAssistantMessage("first answer");
-    },
-    (context) => {
-      const messages = JSON.stringify(context.messages);
-      expect(messages).not.toContain(sentinel);
-      expect(messages).toContain(finalResult);
-      expect(messages).toContain("first answer");
-      return fauxAssistantMessage("second answer");
-    },
-  ]);
-  await session.prompt("capture page");
-  expect(updates.length).toBeGreaterThan(0);
-  expect(updates.join("")).not.toContain(sentinel);
-  const persisted = (await store.getEntries()).filter((entry) => entry.type === "message");
-  expect(persisted).toHaveLength(4);
-  expect(JSON.stringify(persisted)).not.toContain(sentinel);
-  expect(JSON.stringify(persisted)).toContain(finalResult);
-  expect(JSON.stringify(await contextMessages(session))).not.toContain(sentinel);
-
-  await store.close();
-  const reopened = await openSessionAt(file);
-  const reopenedMessages = (await reopened.getEntries()).filter(
-    (entry) => entry.type === "message",
-  );
-  expect(reopenedMessages).toHaveLength(4);
-  expect(JSON.stringify(reopenedMessages)).not.toContain(sentinel);
-  expect(JSON.stringify(reopenedMessages)).toContain(finalResult);
-  await wrap(reopened, [tool]).prompt("use the captured result");
-  expect(faux.state.callCount).toBe(3);
-  const finalMessages = (await reopened.getEntries()).filter((entry) => entry.type === "message");
-  expect(finalMessages).toHaveLength(6);
-  expect(JSON.stringify(finalMessages)).not.toContain(sentinel);
-  expect(JSON.stringify(finalMessages)).toContain(finalResult);
 });
 
 test("persisted provider thinking level survives close/reopen", async () => {

@@ -42,7 +42,6 @@ function setup() {
       tool,
       {
         name: "effect",
-        label: "effect",
         description: "effect",
         parameters: { type: "object", properties: {} },
         execute: effect,

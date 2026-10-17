@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubChecksTool } from "../adapters/github/tools/checks.js";
 import type { GithubChecksFns } from "../adapters/github/types.js";
+import { callableTool } from "./tool-api.js";
 
 function makeFns(overrides: Partial<GithubChecksFns> = {}): GithubChecksFns {
   return {
@@ -13,7 +14,7 @@ function makeFns(overrides: Partial<GithubChecksFns> = {}): GithubChecksFns {
 describe("github_checks tool", () => {
   test("reports itself unavailable outside GitHub conversations", async () => {
     const { tool } = createGithubChecksTool();
-    await expect(tool.execute("t1", {})).rejects.toThrow(/only available in GitHub/);
+    await expect(callableTool(tool).execute("t1", {})).rejects.toThrow(/only available in GitHub/);
   });
 
   test("summarizes Actions jobs and commit statuses; skipped is not counted as failing", async () => {
@@ -70,7 +71,7 @@ describe("github_checks tool", () => {
       }),
     );
 
-    const result = await tool.execute("t1", { branch: "pi/fix-5" });
+    const result = await callableTool(tool).execute("t1", { branch: "pi/fix-5" });
     const text = (result.content[0] as { text: string }).text;
     expect(text).toContain("5 check(s): 4 completed, 1 running, 2 failing");
     expect(text).toContain("✓ test: success [job 1] (https://ci/1)");
@@ -88,7 +89,7 @@ describe("github_checks tool", () => {
     const getChecks = vi.fn().mockResolvedValue([]);
     setGithubChecksFunction(makeFns({ getChecks }));
 
-    const result = await tool.execute("t1", { branch: "pi/x" });
+    const result = await callableTool(tool).execute("t1", { branch: "pi/x" });
     expect(getChecks).toHaveBeenCalledWith("pi/x");
     expect((result.content[0] as { text: string }).text).toContain(
       "No CI jobs or commit statuses found",
@@ -100,7 +101,7 @@ describe("github_checks tool", () => {
     const getJobLog = vi.fn().mockResolvedValue("FAILED tests/test_x.py::test_y - boom");
     setGithubChecksFunction(makeFns({ getJobLog }));
 
-    const result = await tool.execute("t1", { job_id: 86659933598 });
+    const result = await callableTool(tool).execute("t1", { job_id: 86659933598 });
     expect(getJobLog).toHaveBeenCalledWith(86659933598);
     expect((result.content[0] as { text: string }).text).toContain("FAILED tests/test_x.py");
   });

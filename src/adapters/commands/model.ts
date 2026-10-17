@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import {
   isThinkingLevel,
   resolveConversationSettings,
@@ -51,7 +51,7 @@ function parseModelThinkingLevel(modelSpec: string): {
   model?: string;
   modelCandidate?: string;
   thinkingLevelCandidate?: string;
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: ModelThinkingLevel;
   error?: "invalid_spec";
 } {
   const colon = modelSpec.lastIndexOf(":");
@@ -71,13 +71,17 @@ function parseModelThinkingLevel(modelSpec: string): {
   };
 }
 
-function formatModelSpec(provider: string, model: string, thinkingLevel?: ThinkingLevel): string {
+function formatModelSpec(
+  provider: string,
+  model: string,
+  thinkingLevel?: ModelThinkingLevel,
+): string {
   return `${provider}/${model}${thinkingLevel ? `:${thinkingLevel}` : ""}`;
 }
 
 const USAGE_EXAMPLE = "Example: `/pi-model anthropic/claude-sonnet-4-6:off`";
 
-type ModelSelection = { modelId: string; thinkingLevel?: ThinkingLevel } | { lines: string[] };
+type ModelSelection = { modelId: string; thinkingLevel?: ModelThinkingLevel } | { lines: string[] };
 
 export class ModelCommandHandler implements CommandHandler {
   constructor(private readonly modelRegistry: ModelRegistry) {}

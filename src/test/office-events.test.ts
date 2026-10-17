@@ -8,6 +8,7 @@ import { EventScheduler } from "../events/scheduler.js";
 import { createEventTool } from "../harness/tools/event.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import { callableTool } from "./tool-api.js";
 
 vi.mock("../observability/index.js", () => ({ reportUserFacingError: vi.fn() }));
 
@@ -243,19 +244,23 @@ describe("event tool over OfficeEventStore", () => {
       userId: "U1",
     });
 
-    await tool.execute("c", { type: "immediate", text: "mine", filenamePrefix: "mine" });
-    const [listContent] = (await tool.execute("l", { action: "list" })).content;
+    await callableTool(tool).execute("c", {
+      type: "immediate",
+      text: "mine",
+      filenamePrefix: "mine",
+    });
+    const [listContent] = (await callableTool(tool).execute("l", { action: "list" })).content;
     if (listContent?.type !== "text") throw new Error("event list returned no text content");
     const listed = JSON.parse(listContent.text);
     expect(listed.events.map((event: { filename: string }) => event.filename)).toEqual([
       "mine-1700000000000.json",
     ]);
-    await expect(tool.execute("r", { action: "read", filename: "theirs.json" })).rejects.toThrow(
-      /not found/,
-    );
-    await expect(tool.execute("d", { action: "delete", filename: "theirs.json" })).rejects.toThrow(
-      /not found/,
-    );
+    await expect(
+      callableTool(tool).execute("r", { action: "read", filename: "theirs.json" }),
+    ).rejects.toThrow(/not found/);
+    await expect(
+      callableTool(tool).execute("d", { action: "delete", filename: "theirs.json" }),
+    ).rejects.toThrow(/not found/);
     expect(existsSync(join(other.stateDir, "events", "theirs.json"))).toBe(true);
   });
 });

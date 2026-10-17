@@ -1,8 +1,11 @@
 import type { JsonValue } from "@earendil-works/chord";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { ENV_MANIFEST, readEnv } from "../../env-manifest.js";
-import type { ToolExecutionApi } from "@earendil-works/pi-durable";
-import type { MikanHarnessTool } from "../types.js";
+import type {
+  ToolExecutionApi,
+  ToolExecutionResult,
+  ToolRegistration,
+} from "@earendil-works/pi-durable";
 
 const MIN_SECRET_LENGTH = 8;
 
@@ -76,13 +79,13 @@ function redactingApi(
   };
 }
 
-export function withSecretRedaction(tool: MikanHarnessTool): MikanHarnessTool {
+export function withSecretRedaction(tool: ToolRegistration): ToolRegistration {
   const original = tool.execute.bind(tool);
   tool.execute = async (args, api, context) => {
     const secrets = collectSecretEntries();
     if (secrets.length === 0) return original(args, api, context);
     const redacting = redactingApi(api, secrets);
-    let result: Awaited<ReturnType<MikanHarnessTool["execute"]>>;
+    let result: ToolExecutionResult;
     try {
       result = await original(args, redacting.api, context);
     } catch (error) {

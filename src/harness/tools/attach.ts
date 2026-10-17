@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -13,21 +13,20 @@ const attachSchema = Type.Object({
 });
 
 export function createAttachTool(): {
-  tool: AgentTool<typeof attachSchema>;
+  tool: ToolRegistration<typeof attachSchema>;
   setUploadFunction: (fn: (filePath: string, title?: string) => Promise<void>) => void;
 } {
   let uploadFn: ((filePath: string, title?: string) => Promise<void>) | null = null;
 
-  const tool: AgentTool<typeof attachSchema> = {
+  const tool: ToolRegistration<typeof attachSchema> = {
     name: "attach",
-    label: "attach",
     description:
       "Attach a file to your response. Use this to share files, images, or documents with the user. Only files from /workspace/ can be attached.",
     parameters: attachSchema,
     execute: async (
-      _toolCallId: string,
       { path, title }: { label: string; path: string; title?: string },
-      signal?: AbortSignal,
+      _api,
+      { abortSignal: signal },
     ) => {
       if (!uploadFn) {
         throw new Error("Upload function not configured");
@@ -44,7 +43,7 @@ export function createAttachTool(): {
       await uploadFn(path, fileName);
 
       return {
-        content: [{ type: "text" as const, text: `Attached file: ${fileName}` }],
+        output: [{ type: "text" as const, text: `Attached file: ${fileName}` }],
         details: undefined,
       };
     },

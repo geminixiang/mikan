@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createGenerateImageTool } from "../harness/tools/generate-image.js";
+import { callableTool } from "./tool-api.js";
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -38,7 +39,7 @@ describe("generate_image tool", () => {
     });
     setUploadFunction(upload);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call-1",
       { label: "draw robot", prompt: "a waving robot", size: "1024x1024", quality: "low" },
       undefined,
@@ -91,7 +92,7 @@ describe("generate_image tool", () => {
     setUploadFunction(async () => {});
 
     await expect(
-      tool.execute(
+      callableTool(tool).execute(
         "call-1",
         { label: "draw robot", prompt: "a waving robot" },
         undefined,
@@ -119,7 +120,7 @@ describe("generate_image tool", () => {
     setUploadFunction(async () => {});
 
     await expect(
-      tool.execute(
+      callableTool(tool).execute(
         "call-1",
         { label: "draw robot", prompt: "a waving robot" },
         undefined,

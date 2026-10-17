@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { SandboxConfig } from "../../sandbox/types.js";
 import type { OfficeAddress, ResourceLimits, SandboxResourceController } from "../../types.js";
@@ -40,19 +40,18 @@ interface SandboxToolController {
 }
 
 export function createSandboxTool(controller: SandboxToolController): {
-  tool: AgentTool<typeof sandboxSchema>;
+  tool: ToolRegistration<typeof sandboxSchema>;
   setSandboxContext: (context: SandboxToolContext) => void;
 } {
   let sandboxContext: SandboxToolContext | null = null;
 
-  const tool: AgentTool<typeof sandboxSchema> = {
+  const tool: ToolRegistration<typeof sandboxSchema> = {
     name: "sandbox",
-    label: "sandbox",
     executionMode: "sequential",
     description:
       "Inspect or temporarily set CPU/memory limits for the current managed sandbox. Limits apply to this conversation's runtime and are cleared when it stops.",
     parameters: sandboxSchema,
-    execute: async (_toolCallId: string, params: SandboxToolParams, signal?: AbortSignal) => {
+    execute: async (params: SandboxToolParams, _api, { abortSignal: signal }) => {
       if (signal?.aborted) {
         throw new Error("Operation aborted");
       }
@@ -115,8 +114,8 @@ function formatLimits(limits: ResourceLimits | undefined): string {
 }
 
 function textResult(text: string): {
-  content: Array<{ type: "text"; text: string }>;
+  output: Array<{ type: "text"; text: string }>;
   details: undefined;
 } {
-  return { content: [{ type: "text", text }], details: undefined };
+  return { output: [{ type: "text", text }], details: undefined };
 }

@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { RunEventPublisher, SubagentRunStatus } from "./harness/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
@@ -250,7 +250,7 @@ export interface SandboxSettings {
 export interface AgentConfig {
   provider: string;
   model: string;
-  thinkingLevel: ThinkingLevel;
+  thinkingLevel: ModelThinkingLevel;
   sandbox?: SandboxSettings;
   slack?: {
     replyMode?: "top-level" | "thread";

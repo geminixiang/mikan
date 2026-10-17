@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubPrRequest, GithubPrResult } from "../types.js";
@@ -22,7 +22,7 @@ const githubPrSchema = Type.Object({
 type GithubPrArgs = GithubPrRequest;
 
 export function createGithubPrTool(): {
-  tool: AgentTool<typeof githubPrSchema>;
+  tool: ToolRegistration<typeof githubPrSchema>;
   setGithubPrFunction: (fn: ((request: GithubPrRequest) => Promise<GithubPrResult>) | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<
@@ -40,7 +40,7 @@ export function createGithubPrTool(): {
     run: async (prFn, args: GithubPrArgs) => {
       const result = await prFn(args);
       return {
-        content: [
+        output: [
           {
             type: "text" as const,
             text: result.updatedExisting

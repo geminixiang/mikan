@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type {
   LoadSubagentProfilesResult,
   SubagentModelSpec,
@@ -186,7 +186,7 @@ function parseModel(value: string): SubagentModelSpec {
   return { provider: value.slice(0, separator), id: value.slice(separator + 1) };
 }
 
-function parseThinking(value: string): ThinkingLevel {
+function parseThinking(value: string): ModelThinkingLevel {
   if (!isThinkingLevel(value)) {
     throw new Error(`unknown thinking level: ${value}`);
   }

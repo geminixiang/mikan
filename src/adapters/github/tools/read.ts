@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type {
@@ -149,7 +149,7 @@ function formatResult(result: GithubReadResult): string {
 }
 
 export function createGithubReadTool(): {
-  tool: AgentTool<typeof githubReadSchema>;
+  tool: ToolRegistration<typeof githubReadSchema>;
   setGithubReadFunction: (fn: GithubReadFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubReadFn, typeof githubReadSchema>({
@@ -164,7 +164,7 @@ export function createGithubReadTool(): {
     run: async (readFn, args) => {
       const result = await readFn(args as GithubReadRequest);
       return {
-        content: [{ type: "text" as const, text: formatResult(result) }],
+        output: [{ type: "text" as const, text: formatResult(result) }],
         details: undefined,
       };
     },

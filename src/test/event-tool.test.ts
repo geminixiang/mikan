@@ -1,13 +1,14 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { OfficeEventStore, officeEventsDir } from "../events/index.js";
 import type { EventPayload, EventStore } from "../events/index.js";
 import { createEventTool } from "../harness/tools/event.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import { callableTool } from "./tool-api.js";
 
 let dir: string;
 
@@ -37,7 +38,7 @@ const context = {
   userId: "U123",
 };
 
-function firstText(result: AgentToolResult<unknown>): string {
+function firstText(result: { content: readonly (TextContent | ImageContent)[] }): string {
   const first = result.content[0];
   if (first?.type !== "text") throw new Error("expected the first tool result content to be text");
   return first.text;
@@ -74,7 +75,7 @@ describe("createEventTool", () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000000);
     const { tool, own } = officeTool();
 
-    const result = await tool.execute("call-1", {
+    const result = await callableTool(tool).execute("call-1", {
       label: "deploy",
       type: "immediate",
       text: "Check deployment status",
@@ -108,7 +109,11 @@ describe("createEventTool", () => {
     );
     setEventContext(context);
 
-    await tool.execute("call-1", { type: "immediate", text: "Check", filenamePrefix: "deploy" });
+    await callableTool(tool).execute("call-1", {
+      type: "immediate",
+      text: "Check",
+      filenamePrefix: "deploy",
+    });
 
     expect(writes).toEqual([
       {
@@ -134,18 +139,18 @@ describe("createEventTool", () => {
       }),
     );
     setEventContext(context);
-    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
-      "control plane unavailable",
-    );
+    await expect(
+      callableTool(tool).execute("call-1", { type: "immediate", text: "x" }),
+    ).rejects.toThrow("control plane unavailable");
   });
 
   test("refuses a context that does not match the store's office", async () => {
     const { tool, setEventContext } = createEventTool(new OfficeEventStore(office()));
     setEventContext({ ...context, conversationId: "C999" });
-    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
-      "Event context does not match the current office",
-    );
-    await expect(tool.execute("call-2", { action: "list" })).resolves.toBeTruthy();
+    await expect(
+      callableTool(tool).execute("call-1", { type: "immediate", text: "x" }),
+    ).rejects.toThrow("Event context does not match the current office");
+    await expect(callableTool(tool).execute("call-2", { action: "list" })).resolves.toBeTruthy();
   });
 
   test("offers no list scope, and an injected one still lists only this office", async () => {
@@ -158,7 +163,10 @@ describe("createEventTool", () => {
     const { tool } = officeTool(office("slack", "C123"));
 
     expect(Object.keys(tool.parameters.properties)).not.toContain("scope");
-    const result = await tool.execute("call-1", JSON.parse('{"action":"list","scope":"all"}'));
+    const result = await callableTool(tool).execute(
+      "call-1",
+      JSON.parse('{"action":"list","scope":"all"}'),
+    );
     const listing = JSON.parse(firstText(result));
     expect(listing).toEqual({ conversationId: "C123", events: [] });
   });
@@ -175,7 +183,7 @@ describe("createEventTool", () => {
 
     for (const action of ["read", "update", "delete"] as const) {
       await expect(
-        tool.execute("foreign", {
+        callableTool(tool).execute("foreign", {
           action,
           filename: "foreign.json",
           type: "immediate",
@@ -186,29 +194,29 @@ describe("createEventTool", () => {
     expect((await new OfficeEventStore(other).read("foreign.json")).payload.text).toBe(
       "PRIVATE_FIXTURE",
     );
-    const listed = await tool.execute("list", { action: "list" });
+    const listed = await callableTool(tool).execute("list", { action: "list" });
     expect(firstText(listed)).not.toContain("foreign.json");
   });
 
   test("supports list, read, update, and delete", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000003);
     const { tool, own } = officeTool();
-    await tool.execute("call-1", {
+    await callableTool(tool).execute("call-1", {
       type: "immediate",
       text: "Check deployment status",
       filenamePrefix: "deploy",
     });
 
-    const listResult = await tool.execute("call-2", { action: "list" });
+    const listResult = await callableTool(tool).execute("call-2", { action: "list" });
     expect(firstText(listResult)).toContain("deploy-1700000000003.json");
 
-    const readResult = await tool.execute("call-3", {
+    const readResult = await callableTool(tool).execute("call-3", {
       action: "read",
       filename: "deploy-1700000000003.json",
     });
     expect(firstText(readResult)).toContain("Check deployment status");
 
-    await tool.execute("call-4", {
+    await callableTool(tool).execute("call-4", {
       action: "update",
       filename: "deploy-1700000000003.json",
       type: "periodic",
@@ -224,7 +232,10 @@ describe("createEventTool", () => {
       timezone: "Asia/Taipei",
     });
 
-    await tool.execute("call-5", { action: "delete", filename: "deploy-1700000000003.json" });
+    await callableTool(tool).execute("call-5", {
+      action: "delete",
+      filename: "deploy-1700000000003.json",
+    });
     expect(existsSync(path)).toBe(false);
   });
 
@@ -233,7 +244,7 @@ describe("createEventTool", () => {
     vi.useFakeTimers({ now: Date.parse("2026-09-29T06:00:00Z"), toFake: ["Date"] });
     try {
       const { tool } = officeTool();
-      const result = await tool.execute("call-1", {
+      const result = await callableTool(tool).execute("call-1", {
         type: "periodic",
         text: "weekly review",
         schedule: "30 9 * * 1",
@@ -251,7 +262,7 @@ describe("createEventTool", () => {
   test("rejects an invalid periodic schedule before writing the event", async () => {
     const { tool, own } = officeTool();
     await expect(
-      tool.execute("call-1", {
+      callableTool(tool).execute("call-1", {
         type: "periodic",
         text: "x",
         schedule: "30 9 * * Monday-ish",
@@ -263,15 +274,15 @@ describe("createEventTool", () => {
 
   test("requires event context before execution", async () => {
     const { tool } = createEventTool(new OfficeEventStore(office()));
-    await expect(tool.execute("call-1", { type: "immediate", text: "x" })).rejects.toThrow(
-      "Event context not configured",
-    );
+    await expect(
+      callableTool(tool).execute("call-1", { type: "immediate", text: "x" }),
+    ).rejects.toThrow("Event context not configured");
   });
 
   test("one-shot event carries no thread state", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000200);
     const { tool, own } = officeTool();
-    await tool.execute("call-1", {
+    await callableTool(tool).execute("call-1", {
       type: "one-shot",
       text: "Follow up",
       at: "2099-01-01T09:00:00+08:00",
@@ -299,7 +310,7 @@ describe("createEventTool", () => {
       const { tool } = officeTool();
       for (const action of ["read", "update", "delete"] as const) {
         await expect(
-          tool.execute("call", { action, filename, type: "immediate", text: "x" }),
+          callableTool(tool).execute("call", { action, filename, type: "immediate", text: "x" }),
         ).rejects.toThrow(/Invalid event filename|`filename` is required/);
       }
     },
@@ -308,7 +319,7 @@ describe("createEventTool", () => {
   test("update refuses to create a new event file", async () => {
     const { tool, own } = officeTool();
     await expect(
-      tool.execute("call-1", {
+      callableTool(tool).execute("call-1", {
         action: "update",
         filename: "missing.json",
         type: "immediate",
@@ -320,39 +331,47 @@ describe("createEventTool", () => {
 
   test("one-shot events require at", async () => {
     const { tool } = officeTool();
-    await expect(tool.execute("call-1", { type: "one-shot", text: "x" })).rejects.toThrow(
-      "`at` is required for one-shot events",
-    );
+    await expect(
+      callableTool(tool).execute("call-1", { type: "one-shot", text: "x" }),
+    ).rejects.toThrow("`at` is required for one-shot events");
   });
 
   test("one-shot events reject invalid timestamps", async () => {
     const { tool } = officeTool();
     await expect(
-      tool.execute("call-1", { type: "one-shot", text: "x", at: "2099-13-01T00:00:00Z" }),
+      callableTool(tool).execute("call-1", {
+        type: "one-shot",
+        text: "x",
+        at: "2099-13-01T00:00:00Z",
+      }),
     ).rejects.toThrow("`at` must be a valid ISO 8601 timestamp with UTC offset");
   });
 
   test("one-shot events reject past timestamps", async () => {
     const { tool } = officeTool();
     await expect(
-      tool.execute("call-1", { type: "one-shot", text: "x", at: "2000-01-01T00:00:00Z" }),
+      callableTool(tool).execute("call-1", {
+        type: "one-shot",
+        text: "x",
+        at: "2000-01-01T00:00:00Z",
+      }),
     ).rejects.toThrow("`at` must be in the future");
   });
 
   test("periodic events require schedule and timezone", async () => {
     const { tool } = officeTool();
-    await expect(tool.execute("call-1", { type: "periodic", text: "x" })).rejects.toThrow(
-      "`schedule` is required for periodic events",
-    );
     await expect(
-      tool.execute("call-2", { type: "periodic", text: "x", schedule: "0 9 * * *" }),
+      callableTool(tool).execute("call-1", { type: "periodic", text: "x" }),
+    ).rejects.toThrow("`schedule` is required for periodic events");
+    await expect(
+      callableTool(tool).execute("call-2", { type: "periodic", text: "x", schedule: "0 9 * * *" }),
     ).rejects.toThrow("`timezone` is required for periodic events");
   });
 
   test("writes periodic event payload with context", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1700000000300);
     const { tool, own } = officeTool();
-    await tool.execute("call-1", {
+    await callableTool(tool).execute("call-1", {
       type: "periodic",
       text: "Daily standup",
       schedule: "0 9 * * 1-5",

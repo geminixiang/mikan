@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, afterEach, test, expect, vi } from "vitest";
 import { Type, type TSchema } from "typebox";
-import { type AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import {
   fauxProvider,
   fauxAssistantMessage,
@@ -147,12 +147,11 @@ beforeEach(async () => {
   aborted = false;
   trace = [];
   id = 0;
-  const tool: AgentTool<TSchema> = {
+  const tool: ToolRegistration<TSchema> = {
     name: "hold",
-    label: "hold",
     description: "Controlled long-running operation",
     parameters: Type.Object({}),
-    execute: async (_id, _args, signal) => {
+    execute: async (_args, _api, { abortSignal: signal }) => {
       trace.push("tool:start");
       started.resolve();
       const cancel = () => {
@@ -167,7 +166,7 @@ beforeEach(async () => {
         signal?.removeEventListener("abort", cancel);
       }
       trace.push("tool:end");
-      return { content: [{ type: "text", text: "operation finished" }], details: {} };
+      return { output: [{ type: "text", text: "operation finished" }], details: {} };
     },
   };
   runtime = createConversationRuntime({
@@ -797,17 +796,16 @@ async function interruptRun(sessionKey: string, task: boolean): Promise<void> {
     : requester;
   let toolStarted!: () => void;
   const toolRunning = new Promise<void>((resolve) => (toolStarted = resolve));
-  const slow: AgentTool = {
+  const slow: ToolRegistration = {
     name: "slow",
-    label: "slow",
     description: "Runs until the store closes",
     parameters: Type.Object({}),
-    execute: async (_id, _params, signal) => {
+    execute: async (_params, _api, { abortSignal: signal }) => {
       toolStarted();
       await new Promise((_resolve, reject) =>
         signal?.addEventListener("abort", () => reject(new Error("aborted"))),
       );
-      return { content: [{ type: "text", text: "never" }], details: undefined };
+      return { output: [{ type: "text", text: "never" }], details: undefined };
     },
   };
   faux.setResponses([fauxAssistantMessage(fauxToolCall("slow", {}), { stopReason: "toolUse" })]);

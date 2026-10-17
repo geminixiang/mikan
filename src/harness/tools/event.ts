@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { type Static, Type } from "typebox";
 import type { ConversationKind } from "../../types.js";
 import {
@@ -71,10 +71,10 @@ interface EventToolContext {
 
 type EventToolParams = Static<typeof eventSchema>;
 
-type EventToolResult = Awaited<ReturnType<AgentTool<typeof eventSchema>["execute"]>>;
+type EventToolResult = Awaited<ReturnType<ToolRegistration<typeof eventSchema>["execute"]>>;
 
 function textResult(text: string): EventToolResult {
-  return { content: [{ type: "text", text }], details: undefined };
+  return { output: [{ type: "text", text }], details: undefined };
 }
 
 const WRITE_VERBS = {
@@ -83,18 +83,17 @@ const WRITE_VERBS = {
 } as const;
 
 export function createEventTool(eventStore: EventStore): {
-  tool: AgentTool<typeof eventSchema>;
+  tool: ToolRegistration<typeof eventSchema>;
   setEventContext: (context: EventToolContext) => void;
 } {
   let eventContext: EventToolContext | null = null;
 
-  const tool: AgentTool<typeof eventSchema> = {
+  const tool: ToolRegistration<typeof eventSchema> = {
     name: "event",
-    label: "event",
     description:
       "CRUD tool for scheduled events owned by the current office. Other offices' events cannot be listed, read, changed, or deleted. Event text must be self-contained because events do not inherit normal conversation history.",
     parameters: eventSchema,
-    execute: async (_toolCallId: string, params: EventToolParams, signal?: AbortSignal) => {
+    execute: async (params: EventToolParams, _api, { abortSignal: signal }) => {
       if (signal?.aborted) {
         throw new Error("Operation aborted");
       }
