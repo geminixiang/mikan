@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import type { JsonValue } from "@earendil-works/chord";
+import { copyJson, type Context, type JsonValue } from "@earendil-works/chord";
+import { boundOutput, utf8ByteLength } from "@earendil-works/chord/output";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
-import type { Context } from "@earendil-works/chord";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { toLlmContent, type CallToolResult } from "@earendil-works/pi-mcp";
 import type { MikanToolResult } from "./types.js";
@@ -80,29 +80,11 @@ function digest(value: unknown, level: DigestLevel, depth = 0): unknown {
 }
 
 function fits(text: string, limits: McpTextLimits): boolean {
-  return (
-    Buffer.byteLength(text, "utf8") <= limits.maxBytes && text.split("\n").length <= limits.maxLines
-  );
-}
-
-function sliceToBytes(text: string, maxBytes: number): string {
-  const buffer = Buffer.from(text, "utf8");
-  if (buffer.length <= maxBytes) return text;
-  let end = Math.max(0, maxBytes);
-  while (end > 0 && (buffer[end]! & 0xc0) === 0x80) end--;
-  return buffer.subarray(0, end).toString("utf8");
+  return utf8ByteLength(text) <= limits.maxBytes && text.split("\n").length <= limits.maxLines;
 }
 
 function headTruncate(text: string, limits: McpTextLimits): string {
-  const kept: string[] = [];
-  let bytes = 0;
-  for (const line of text.split("\n").slice(0, limits.maxLines)) {
-    const lineBytes = Buffer.byteLength(line, "utf8") + (kept.length > 0 ? 1 : 0);
-    if (bytes + lineBytes > limits.maxBytes) break;
-    kept.push(line);
-    bytes += lineBytes;
-  }
-  return kept.length === 0 ? sliceToBytes(text, limits.maxBytes) : kept.join("\n");
+  return boundOutput(text, { ...limits, retain: "head" }).text.replace(/\n$/, "");
 }
 
 function formatSize(bytes: number): string {
@@ -123,7 +105,7 @@ export function boundMcpText(text: string, limits: McpTextLimits): BoundedMcpTex
     if (fits(digested, limits)) return { text: digested, digest: true };
   }
   const smallest = JSON.stringify(digest(parsed.value, DIGEST_LEVELS.at(-1)!));
-  return { text: sliceToBytes(smallest, limits.maxBytes), digest: true };
+  return { text: headTruncate(smallest, limits), digest: true };
 }
 
 function compactMcpText(text: string): string {
@@ -169,14 +151,14 @@ function truncationNotice(
 }
 
 function scriptResult(result: CallToolResult): JsonValue {
-  const copy: JsonValue = JSON.parse(
-    JSON.stringify({
+  return copyJson(
+    {
       content: Array.isArray(result.content) ? result.content : [],
       structuredContent: result.structuredContent ?? undefined,
       isError: result.isError === true ? true : undefined,
-    }),
+    },
+    { omitUndefinedProperties: true },
   );
-  return copy;
 }
 
 export async function guardMcpToolResult(
@@ -199,7 +181,7 @@ export async function guardMcpToolResult(
     return { content: blocks, details: undefined, structuredOutput };
   const bounded = boundMcpText(combined, RESULT_LIMITS);
   const spillPath = await spillFullResult(env, combined, context);
-  const notice = truncationNotice(bounded, Buffer.byteLength(combined, "utf8"), spillPath);
+  const notice = truncationNotice(bounded, utf8ByteLength(combined), spillPath);
   return {
     content: [{ type: "text", text: `${bounded.text}\n\n${notice}` }, ...images],
     details: undefined,
