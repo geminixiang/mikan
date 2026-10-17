@@ -76,6 +76,16 @@ describe("boundMcpText", () => {
     expect(bounded.text.split("\n").length).toBeLessThanOrEqual(limits.maxLines);
   });
 
+  it("keeps whole lines without a trailing newline before the notice", () => {
+    const bounded = boundMcpText("a\nbb\nccc\ndddd", { maxBytes: 9, maxLines: 10 });
+    expect(bounded).toEqual({ text: "a\nbb\nccc" });
+  });
+
+  it("cuts a single oversized line on a character boundary", () => {
+    const bounded = boundMcpText("é".repeat(10), { maxBytes: 5, maxLines: 10 });
+    expect(bounded).toEqual({ text: "éé" });
+  });
+
   it("fits a single huge string within the byte limit", () => {
     const bounded = boundMcpText(JSON.stringify({ html: "<p>".repeat(100_000) }), limits);
     expect(bounded.digest).toBe(true);
