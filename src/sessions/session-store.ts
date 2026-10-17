@@ -62,7 +62,7 @@ import type { McpServerConfig, McpServerSummary, McpToolsResult } from "../harne
 import * as log from "../log.js";
 import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
 import { isThreadSessionKey } from "./session-key.js";
-import { errorMessage, isRecord } from "../unknown-values.js";
+import { errorMessage, isRecord, toJsonValue } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
@@ -125,12 +125,6 @@ const CustomSessionEntry = defineEntry<{
 interface BoundSessionHarness {
   binding: SessionHarnessBinding;
   providerSessionId: string;
-}
-
-function toJson(input: unknown): JsonValue {
-  if (input === undefined) return null;
-  const copy: JsonValue = JSON.parse(JSON.stringify(input));
-  return copy;
 }
 
 function durableMessage(message: Message): Message {
@@ -722,7 +716,7 @@ async function appendSessionEntry(
       await tx.appendEntry(CustomSessionEntry, conversationId, {
         data: {
           customType: entry.customType,
-          data: toJson(entry.data),
+          data: toJsonValue(entry.data),
           timestamp: entry.timestamp,
         },
       });
@@ -1286,7 +1280,7 @@ export class SessionStore implements SessionInspection {
       const entry = await conversation.commit(
         (tx) =>
           tx.appendEntry(CustomSessionEntry, conversation.id, {
-            data: { customType, data: toJson(data), timestamp },
+            data: { customType, data: toJsonValue(data), timestamp },
           }),
         context,
       );

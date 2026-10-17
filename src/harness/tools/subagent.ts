@@ -1,4 +1,3 @@
-import type { JsonValue } from "@earendil-works/chord";
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static, type TSchema } from "typebox";
 import type {
@@ -15,6 +14,7 @@ import type {
   SubagentProgressStatus,
 } from "../../types.js";
 import { recordSubagentOutcome, reportSubagentLaunchError } from "../../observability/index.js";
+import { toJsonValue } from "../../unknown-values.js";
 
 const MAX_DAG_NODES = 8;
 const MAX_DAG_EDGES = 16;
@@ -460,11 +460,6 @@ function validatePlanProfiles(plan: Plan, availableProfiles: ReadonlySet<string>
   }
 }
 
-function jsonValue(input: unknown): JsonValue {
-  const copy: JsonValue = JSON.parse(JSON.stringify(input));
-  return copy;
-}
-
 function totalUsage(outcomes: readonly PlanOutcome[]) {
   const usage = createEmptyUsage();
   for (const outcome of outcomes) if ("usage" in outcome) addUsage(usage, outcome.usage);
@@ -526,7 +521,7 @@ export function createSubagentTool(
       validatePlanProfiles(plan, new Set(profiles.keys()));
       let updates = Promise.resolve();
       const onUpdate = (progress: unknown) => {
-        const details = jsonValue(progress);
+        const details = toJsonValue(progress);
         updates = updates.then(() => api.details(details, context)).catch(() => undefined);
       };
       const progress = new SubagentProgressTracker(
@@ -540,7 +535,7 @@ export function createSubagentTool(
       const { text, details } = toolResult(plan, ordered);
       return {
         output: [{ type: "text", text }],
-        details: jsonValue(details),
+        details: toJsonValue(details),
         usage: totalUsage(ordered),
       };
     },

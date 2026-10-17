@@ -4,10 +4,10 @@ import { Type, type Static } from "typebox";
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import { evaluateWithJev, type JevEntry, type JevQuestions } from "../jev.js";
+import { evaluateWithJev, type JevQuestions } from "../jev.js";
 import { addUsage, createEmptyUsage } from "../session.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
-import { isRecord } from "../../unknown-values.js";
+import { isRecord, toJsonValue } from "../../unknown-values.js";
 import { DESKTOP_COMMAND, DESKTOP_RUNTIME_DIR, parseDesktopStatus } from "../../sandbox/desktop.js";
 import type { DesktopStatus } from "../../sandbox/types.js";
 
@@ -800,7 +800,7 @@ function createUnlockedJevBrowserTool(
               url: finalUrl ?? "",
               page: truncate(snap.data.snapshot, MAX_SNAPSHOT_CHARS),
               pageTruncated: snap.data.snapshot.length > MAX_SNAPSHOT_CHARS,
-              history: JSON.parse(JSON.stringify(history.slice(-5))) as JevEntry,
+              history: toJsonValue(history.slice(-5)),
             },
             questions,
             { abortSignal: signal, caller: JEV_BROWSER_TOOL },
