@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Context, Model, MutableModels } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -47,27 +47,25 @@ function setup(profile: Partial<SubagentProfile> = {}) {
   const started: Array<() => void> = [];
   const toolStarted = () => new Promise<void>((resolve) => started.push(resolve));
   let lookups = 0;
-  const lookup: AgentTool = {
+  const lookup: ToolRegistration = {
     name: "lookup",
-    label: "lookup",
     description: "Looks something up",
     parameters: Type.Object({}),
     execute: async () => {
       lookups += 1;
-      return { content: [{ type: "text", text: "looked up" }], details: undefined };
+      return { output: [{ type: "text", text: "looked up" }], details: undefined };
     },
   };
-  const slow: AgentTool = {
+  const slow: ToolRegistration = {
     name: "slow",
-    label: "slow",
     description: "Runs until aborted",
     parameters: Type.Object({}),
-    execute: async (_id, _params, signal) => {
+    execute: async (_params, _api, { abortSignal: signal }) => {
       started.shift()?.();
       await new Promise((_resolve, reject) =>
         signal?.addEventListener("abort", () => reject(new Error("aborted"))),
       );
-      return { content: [{ type: "text", text: "never" }], details: undefined };
+      return { output: [{ type: "text", text: "never" }], details: undefined };
     },
   };
   const profiles = new Map<string, SubagentProfile>([

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JevNotConfiguredError, JevRequestError } from "../harness/jev.js";
 import { createJevTool } from "../harness/tools/jev.js";
+import { callableTool } from "./tool-api.js";
 
 vi.mock("../harness/jev.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../harness/jev.js")>();
@@ -31,7 +32,7 @@ beforeEach(() => {
 describe("jev tool", () => {
   it("sends text state and returns answers, model, and usage", async () => {
     const tool = createJevTool();
-    const result = await tool.execute("c", {
+    const result = await callableTool(tool).execute("c", {
       label: "spam",
       state: "BUY NOW",
       questions: { q: { type: "boolean", instructions: "Is this spam?" } },
@@ -65,7 +66,7 @@ describe("jev tool", () => {
       model: "typesafe/jev-test",
     });
 
-    const result = await createJevTool().execute("c", {
+    const result = await callableTool(createJevTool()).execute("c", {
       label: "spam",
       state: "BUY NOW",
       questions: booleanQ,
@@ -77,7 +78,7 @@ describe("jev tool", () => {
   it("passes structured state, instructions, and criteria through untouched", async () => {
     const tool = createJevTool();
     const state = { message: "charged twice", order: { id: "A-1" } };
-    await tool.execute("c", {
+    await callableTool(tool).execute("c", {
       label: "l",
       state,
       questions: {
@@ -132,7 +133,7 @@ describe("jev tool", () => {
       model: "typesafe/jev-test",
     });
 
-    const result = await tool.execute("c", {
+    const result = await callableTool(tool).execute("c", {
       label: "l",
       state: "x",
       questions: {
@@ -150,21 +151,21 @@ describe("jev tool", () => {
   it("rejects malformed criteria before calling jev", async () => {
     const tool = createJevTool();
     await expect(
-      tool.execute("c", {
+      callableTool(tool).execute("c", {
         label: "l",
         state: "x",
         questions: { q: { type: "choice", instructions: "?" } },
       }),
     ).rejects.toThrow("at least two options");
     await expect(
-      tool.execute("c", {
+      callableTool(tool).execute("c", {
         label: "l",
         state: "x",
         questions: { q: { type: "score", instructions: "?", criteria: ["only"] } },
       }),
     ).rejects.toThrow("at least two levels");
     await expect(
-      tool.execute("c", {
+      callableTool(tool).execute("c", {
         label: "l",
         state: "x",
         questions: { q: { type: "boolean", instructions: "?", criteria: ["nope"] } },
@@ -177,7 +178,7 @@ describe("jev tool", () => {
     const tool = createJevTool();
     evaluateWithJevMock.mockRejectedValue(new JevNotConfiguredError());
     await expect(
-      tool.execute("c", { label: "l", state: "x", questions: booleanQ }),
+      callableTool(tool).execute("c", { label: "l", state: "x", questions: booleanQ }),
     ).rejects.toThrow("Judge the input yourself");
   });
 
@@ -185,7 +186,7 @@ describe("jev tool", () => {
     const tool = createJevTool();
     evaluateWithJevMock.mockRejectedValue(new JevRequestError("rate limited"));
     await expect(
-      tool.execute("c", { label: "l", state: "x", questions: booleanQ }),
+      callableTool(tool).execute("c", { label: "l", state: "x", questions: booleanQ }),
     ).rejects.toThrow("rate limited");
   });
 });

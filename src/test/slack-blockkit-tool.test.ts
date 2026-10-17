@@ -4,6 +4,7 @@ import { createSlackBlockKitTool } from "../adapters/slack/tools/blockkit.js";
 import type { PlatformSlackOps, SlackBlockKitOps } from "../adapters/slack/types.js";
 import type { PlatformToolPack } from "../harness/tools/types.js";
 import { errorMessage } from "../unknown-values.js";
+import { callableTool } from "./tool-api.js";
 
 const BLOCKS = [
   { type: "markdown", text: "Vote:" },
@@ -36,7 +37,9 @@ describe("slack_blockkit tool", () => {
     };
     setSlackBlockKitOps(ops);
 
-    const result = await tool.execute(...executeArgs({ blocks: BLOCKS, text: "Vote:" }));
+    const result = await callableTool(tool).execute(
+      ...executeArgs({ blocks: BLOCKS, text: "Vote:" }),
+    );
 
     expect(ops.postBlocks).toHaveBeenCalledWith({
       text: "Vote:",
@@ -85,7 +88,9 @@ describe("slack_blockkit tool", () => {
     };
     setSlackBlockKitOps(ops);
 
-    await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", thread_ts: "1.0" }));
+    await callableTool(tool).execute(
+      ...executeArgs({ blocks: BLOCKS, text: "t", thread_ts: "1.0" }),
+    );
 
     expect(ops.postBlocks).toHaveBeenCalledWith({ text: "t", blocks: BLOCKS, threadTs: "1.0" });
   });
@@ -98,7 +103,9 @@ describe("slack_blockkit tool", () => {
     };
     setSlackBlockKitOps(ops);
 
-    await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "5.5" }));
+    await callableTool(tool).execute(
+      ...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "5.5" }),
+    );
 
     expect(ops.updateBlocks).toHaveBeenCalledWith({ ts: "5.5", text: "t", blocks: BLOCKS });
     expect(ops.postBlocks).not.toHaveBeenCalled();
@@ -106,9 +113,9 @@ describe("slack_blockkit tool", () => {
 
   test("fails with a helpful error when not bound to Slack", async () => {
     const { tool } = createSlackBlockKitTool();
-    await expect(tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }))).rejects.toThrow(
-      "only available in Slack conversations",
-    );
+    await expect(
+      callableTool(tool).execute(...executeArgs({ blocks: BLOCKS, text: "t" })),
+    ).rejects.toThrow("only available in Slack conversations");
   });
 
   test("surfaces Slack validation detail on invalid_blocks", async () => {
@@ -128,9 +135,9 @@ describe("slack_blockkit tool", () => {
       updateBlocks: vi.fn(async () => {}),
     });
 
-    await expect(tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }))).rejects.toThrow(
-      /invalid_blocks[\s\S]*json-pointer\/?:\/blocks\/1/,
-    );
+    await expect(
+      callableTool(tool).execute(...executeArgs({ blocks: BLOCKS, text: "t" })),
+    ).rejects.toThrow(/invalid_blocks[\s\S]*json-pointer\/?:\/blocks\/1/);
   });
 });
 
@@ -157,7 +164,7 @@ describe("slack tool pack", () => {
     const tool = onlyTool(pack);
 
     pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
-    await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
+    await callableTool(tool).execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
     expect(postBlocks).toHaveBeenCalledWith("C123", {
       text: "t",
       blocks: BLOCKS,
@@ -165,9 +172,9 @@ describe("slack tool pack", () => {
     });
 
     pack.bindRun({ conversationId: "D999", platformName: "discord" });
-    await expect(tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }))).rejects.toThrow(
-      "only available in Slack conversations",
-    );
+    await expect(
+      callableTool(tool).execute(...executeArgs({ blocks: BLOCKS, text: "t" })),
+    ).rejects.toThrow("only available in Slack conversations");
   });
 
   test("rejects posts outside the active thread", async () => {
@@ -181,7 +188,9 @@ describe("slack tool pack", () => {
     pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "10.0" });
 
     await expect(
-      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", thread_ts: "different-thread" })),
+      callableTool(tool).execute(
+        ...executeArgs({ blocks: BLOCKS, text: "t", thread_ts: "different-thread" }),
+      ),
     ).rejects.toThrow("cannot post outside the active conversation thread");
     expect(ops.postBlocks).not.toHaveBeenCalled();
   });
@@ -198,11 +207,13 @@ describe("slack tool pack", () => {
     pack.bindRun({ conversationId: "C123", platformName: "slack" });
 
     await expect(
-      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "foreign-message" })),
+      callableTool(tool).execute(
+        ...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "foreign-message" }),
+      ),
     ).rejects.toThrow("can only update messages posted by this tool");
 
-    await tool.execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
-    await tool.execute(
+    await callableTool(tool).execute(...executeArgs({ blocks: BLOCKS, text: "t" }));
+    await callableTool(tool).execute(
       ...executeArgs({ blocks: BLOCKS, text: "updated", update_ts: "owned-message" }),
     );
     expect(updateBlocks).toHaveBeenCalledWith("C123", {
@@ -213,7 +224,9 @@ describe("slack tool pack", () => {
 
     pack.bindRun({ conversationId: "C123", platformName: "slack", threadTs: "new-thread" });
     await expect(
-      tool.execute(...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "owned-message" })),
+      callableTool(tool).execute(
+        ...executeArgs({ blocks: BLOCKS, text: "t", update_ts: "owned-message" }),
+      ),
     ).rejects.toThrow("can only update messages posted by this tool");
 
     const restoredUpdateBlocks = vi.fn(async () => {});
@@ -229,7 +242,7 @@ describe("slack tool pack", () => {
       platformName: "slack",
       threadTs: "original-thread",
     });
-    await onlyTool(restoredPack).execute(
+    await callableTool(onlyTool(restoredPack)).execute(
       ...executeArgs({ blocks: BLOCKS, text: "restored", update_ts: "owned-message" }),
     );
     expect(restoredUpdateBlocks).toHaveBeenCalledWith("C123", {

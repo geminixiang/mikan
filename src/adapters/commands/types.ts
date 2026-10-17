@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Api, Model } from "@earendil-works/pi-ai";
 
 import type { Workspace } from "../../office/types.js";
@@ -111,7 +111,7 @@ export interface ParsedModelCommand {
   model?: string;
   modelCandidate?: string;
   thinkingLevelCandidate?: string;
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: ModelThinkingLevel;
   error?: "invalid_spec";
 }
 

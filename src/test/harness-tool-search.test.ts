@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import {
   fauxAssistantMessage,
   fauxProvider,
@@ -14,8 +14,6 @@ import {
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { adaptAgentTool } from "../harness/tools/pi-tools.js";
-import type { MikanHarnessTool, MikanToolInput } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { contextMessages, openSessionAt } from "./session-context.js";
 
@@ -34,7 +32,7 @@ function setup() {
   const faux = fauxProvider();
   (models.models as MutableModels).setProvider(faux.provider);
   const file = join(dir, "session.jsonl");
-  const wrap = (store: SessionStore, tools: MikanToolInput[] = []) => {
+  const wrap = (store: SessionStore, tools: ToolRegistration[] = []) => {
     stores.push(store);
     return new MikanAgentSession({
       model: faux.getModel() as Model<Api>,
@@ -51,13 +49,12 @@ function setup() {
 
 function deferredTool(name: string, description: string) {
   const execute = vi.fn(async () => ({
-    content: [{ type: "text" as const, text: "result-sentinel" }],
+    output: [{ type: "text" as const, text: "result-sentinel" }],
     details: {},
   }));
-  const tool: MikanHarnessTool = Object.assign(
-    adaptAgentTool({
+  const tool: ToolRegistration = Object.assign(
+    defineTool({
       name,
-      label: name,
       description,
       parameters: { type: "object", properties: {} },
       execute,
@@ -70,19 +67,18 @@ function deferredTool(name: string, description: string) {
 test("tool_search declares only matching MCP tools on the next model call", async () => {
   const { faux, file, wrap } = setup();
   const execute = vi.fn(async () => ({
-    content: [{ type: "text" as const, text: "issue data" }],
+    output: [{ type: "text" as const, text: "issue data" }],
     details: {},
   }));
-  const issueTool: AgentTool = {
+  const issueTool: ToolRegistration = {
     name: "mcp__github__list_issues",
-    label: "Issues",
     description: "List GitHub issues",
     parameters: { type: "object", properties: {} },
     execute,
   };
-  const issue = Object.assign(adaptAgentTool(issueTool), { deferred: true });
+  const issue = Object.assign(defineTool(issueTool), { deferred: true });
   const calendar = Object.assign(
-    adaptAgentTool({
+    defineTool({
       ...issueTool,
       name: "mcp__calendar__list_events",
       description: "List calendar events",
@@ -225,16 +221,15 @@ test("MCP tools with codemode exposure are reachable only from scripts", async (
 test("a script receives a structured error result instead of a rejection", async () => {
   const { faux, file, wrap } = setup();
   const tool = Object.assign(
-    adaptAgentTool({
+    defineTool({
       name: "mcp__qa__fail",
-      label: "fail",
       description: "Fail with a structured result",
       parameters: { type: "object", properties: {} },
-      outputSchema: { type: "object", properties: { isError: { type: "boolean" } } },
+      structuredOutputSchema: { type: "object", properties: { isError: { type: "boolean" } } },
       execute: async () => ({
-        content: [{ type: "text", text: "quota exceeded" }],
+        output: [{ type: "text", text: "quota exceeded" }],
         isError: true,
-        structuredContent: { isError: true, content: [{ type: "text", text: "quota exceeded" }] },
+        structuredOutput: { isError: true, content: [{ type: "text", text: "quota exceeded" }] },
         details: {},
       }),
     }),

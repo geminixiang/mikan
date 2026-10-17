@@ -6,7 +6,8 @@ import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
-import { adaptAgentTool, createSandboxTools, type MikanHarnessTool } from "./pi-tools.js";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
+import { createSandboxTools } from "./pi-tools.js";
 import { withSecretRedaction } from "./secret-redaction.js";
 import { createTaskTools } from "./task.js";
 import { createJevTool } from "./jev.js";
@@ -32,7 +33,7 @@ export function createMikanTools(
   generateFieldText?: FieldTextGenerator,
   desktopAccess?: DesktopAccess,
 ): {
-  tools: MikanHarnessTool[];
+  tools: ToolRegistration[];
   bindRun: (ctx: MikanToolRunContext) => void;
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
@@ -49,16 +50,16 @@ export function createMikanTools(
   return {
     tools: [
       ...createSandboxTools(),
-      adaptAgentTool(eventTool),
-      adaptAgentTool(sandboxTool),
-      adaptAgentTool(attachTool),
-      ...(imageTool ? [adaptAgentTool(imageTool.tool)] : []),
-      adaptAgentTool(reactTool),
-      adaptAgentTool(jevTool),
-      adaptAgentTool(jevBrowserTool),
+      eventTool,
+      sandboxTool,
+      attachTool,
+      ...(imageTool ? [imageTool.tool] : []),
+      reactTool,
+      jevTool,
+      jevBrowserTool,
       createWebFetchTool(),
-      ...taskTools.map(adaptAgentTool),
-      ...packTools.map(adaptAgentTool),
+      ...taskTools,
+      ...packTools,
     ].map(withSecretRedaction),
     bindRun: ({ message, responder, platformName, runtimeWorkspaceRoot }) => {
       const { address, userId } = message;

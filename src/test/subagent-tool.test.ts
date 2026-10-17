@@ -2,6 +2,7 @@ import { describe, expect, test, vi, type Mock } from "vitest";
 import type { SubagentRunRequest, SubagentUsage } from "../harness/types.js";
 import { createSubagentTool } from "../harness/tools/subagent.js";
 import { SubagentSlotPool } from "../harness/subagent.js";
+import type { TObject } from "typebox";
 import { callableTool } from "./tool-api.js";
 import { recordSubagentOutcome, reportSubagentLaunchError } from "../observability/index.js";
 
@@ -62,7 +63,7 @@ describe("subagent tool", () => {
   test("exposes an object-rooted function schema for OpenAI", () => {
     const tool = makeTool(completedRun("ok"));
 
-    expect(tool.parameters.type).toBe("object");
+    expect((tool.parameters as TObject).type).toBe("object");
   });
 
   test("rejects a subagent invocation without a mode", async () => {
@@ -178,7 +179,7 @@ describe("subagent tool", () => {
   });
 
   test("offers no systemPrompt, tools, or model escape hatch", () => {
-    const properties = makeTool(completedRun("ok")).parameters.properties;
+    const properties = (makeTool(completedRun("ok")).parameters as TObject).properties;
 
     expect(Object.keys(properties)).not.toContain("systemPrompt");
     expect(Object.keys(properties)).not.toContain("tools");

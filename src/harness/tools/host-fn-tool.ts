@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolExecutionResult, ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static, type TObject } from "typebox";
 
 export const LABEL_PARAMETER = Type.String({
@@ -10,12 +10,8 @@ export function defineHostFnTool<TFn, TParams extends TObject>(definition: {
   description: string;
   parameters: TParams;
   unavailable: string;
-  run: (
-    fn: TFn,
-    args: Static<TParams>,
-    signal?: AbortSignal,
-  ) => ReturnType<AgentTool<TParams>["execute"]>;
-}): { tool: AgentTool<TParams>; setFn: (fn: TFn | null) => void } {
+  run: (fn: TFn, args: Static<TParams>, signal?: AbortSignal) => Promise<ToolExecutionResult>;
+}): { tool: ToolRegistration<TParams>; setFn: (fn: TFn | null) => void } {
   let bound: TFn | null = null;
   const schema = definition.parameters;
   const parameters = {
@@ -27,20 +23,19 @@ export function defineHostFnTool<TFn, TParams extends TObject>(definition: {
     required: ["label", ...(schema.required ?? [])],
   } as TParams;
 
-  const tool: AgentTool<TParams> = {
+  const tool: ToolRegistration<TParams> = {
     name: definition.name,
-    label: definition.name,
     description: definition.description,
     parameters,
-    execute: async (_toolCallId, args, signal) => {
+    execute: async (args, _api, context) => {
       if (!bound) {
         throw new Error(definition.unavailable);
       }
-      if (signal?.aborted) {
+      if (context.abortSignal?.aborted) {
         throw new Error("Operation aborted");
       }
       const { label: _label, ...rest } = args as Record<string, unknown>;
-      return definition.run(bound, rest as Static<TParams>, signal);
+      return definition.run(bound, rest as Static<TParams>, context.abortSignal);
     },
   };
 

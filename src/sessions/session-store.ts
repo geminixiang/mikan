@@ -1,7 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AssistantMessage, Message, Models, Usage } from "@earendil-works/pi-ai";
@@ -209,7 +208,7 @@ async function readRecords(conversation: Conversation): Promise<EntryRecord[]> {
 
 async function readContext(conversation: Conversation): Promise<SessionContext> {
   const view = await conversation.context(context);
-  const messages: AgentMessage[] = view.messages
+  const messages: Message[] = view.messages
     .filter((message) => message.role !== "system")
     .map(durableMessage);
   return { messages };
@@ -820,7 +819,7 @@ async function importedUsage(
   return byModel;
 }
 
-function recordsUsage(message: AgentMessage | undefined): message is AssistantMessage {
+function recordsUsage(message: Message | undefined): message is AssistantMessage {
   return message?.role === "assistant" && isRecord(message.usage);
 }
 
@@ -844,7 +843,7 @@ async function recordImportedUsage(
   }, context);
 }
 
-export async function readImportedContexts(path: string): Promise<Map<string, AgentMessage[]>> {
+export async function readImportedContexts(path: string): Promise<Map<string, Message[]>> {
   const harness = await Harness.open(
     await openNodeSqliteStorage(path),
     { models: {} as Models, registry: createRegistry(), settings: { extensions: [] } },
@@ -852,7 +851,7 @@ export async function readImportedContexts(path: string): Promise<Map<string, Ag
   );
   try {
     const index = (await harness.snapshot(SessionIndexDoc, context))?.sessions ?? {};
-    const contexts = new Map<string, AgentMessage[]>();
+    const contexts = new Map<string, Message[]>();
     for (const [key, record] of Object.entries(index)) {
       const conversation = await harness.conversation(
         record.conversationId as ConversationId,
@@ -1254,7 +1253,7 @@ export class SessionStore implements SessionInspection {
     );
   }
 
-  async appendMessage(message: AgentMessage): Promise<string> {
+  async appendMessage(message: Message): Promise<string> {
     return this.mutate(async () => {
       const conversation = this.conversation;
       const model = [durableMessage(message)];

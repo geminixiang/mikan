@@ -1,4 +1,3 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
@@ -34,6 +33,7 @@ import {
   type HookRegistration,
   type MessageChange,
   type ToolExecutionApi,
+  type ToolRegistration,
   type UsageState,
 } from "@earendil-works/pi-durable";
 import type { SessionStore } from "../sessions/session-store.js";
@@ -46,15 +46,13 @@ import type {
   HarnessEventListener,
   HarnessSettings,
   MikanAgentSessionOptions,
-  MikanHarnessTool,
-  MikanToolInput,
   SubagentConversationHooks,
   SubagentUsage,
   RetrySettings,
 } from "./types.js";
 
 import * as log from "../log.js";
-import { adaptAgentTool, isHarnessTool, withRequiredLabel } from "./tools/pi-tools.js";
+import { withRequiredLabel } from "./tools/pi-tools.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { renderMcpServersSection } from "./mcp.js";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
@@ -84,7 +82,7 @@ interface RunTally {
 interface RunOptions {
   images?: ImageContent[];
   budget?: BudgetSettings;
-  tools?: MikanToolInput[];
+  tools?: ToolRegistration[];
   allowTaskHandoff?: boolean;
   allowTaskStatus?: boolean;
   continueInterrupted?: boolean;
@@ -119,7 +117,7 @@ export class MikanAgentSession {
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
   private retryAttempt = 0;
-  private runMessages: AgentMessage[] = [];
+  private runMessages: Message[] = [];
   private streamingContent: AssistantMessage["content"] = [];
   private readonly toolArgs = new Map<string, unknown>();
   private readonly subagents = new Map<ConversationId, SubagentConversationHooks>();
@@ -145,7 +143,7 @@ export class MikanAgentSession {
     this.settings = resolveHarnessSettings(options.settings);
   }
 
-  get lastRunMessages(): readonly AgentMessage[] {
+  get lastRunMessages(): readonly Message[] {
     return this.runMessages;
   }
 
@@ -268,7 +266,7 @@ export class MikanAgentSession {
         );
       const attached = await this.attach();
       if (this.runAborted) return;
-      const tools = this.toHarnessTools(options?.tools ?? this.options.tools).filter(
+      const tools = (options?.tools ?? this.options.tools).filter(
         (tool) =>
           (tool.name !== START_TASK_TOOL || options?.allowTaskHandoff === true) &&
           (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
@@ -446,13 +444,9 @@ export class MikanAgentSession {
     });
   }
 
-  private toHarnessTools(tools: MikanToolInput[]): MikanHarnessTool[] {
-    return tools.map((tool) => (isHarnessTool(tool) ? tool : adaptAgentTool(tool)));
-  }
-
   private async installRunTools(
     attached: AttachedSessionHarness,
-    selected: MikanHarnessTool[],
+    selected: ToolRegistration[],
   ): Promise<void> {
     const servers = this.sessionStore.mcpServers();
     const { conversation, registry, extensionName } = attached;

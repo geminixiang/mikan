@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 
 const COMPACTION_SUMMARY_PREFIX =
   "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
@@ -8,7 +8,7 @@ export function wrapCompactionSummary(summary: string): string {
   return COMPACTION_SUMMARY_PREFIX + summary + COMPACTION_SUMMARY_SUFFIX;
 }
 
-export function compactionSummaryOf(message: AgentMessage): string | undefined {
+export function compactionSummaryOf(message: Message): string | undefined {
   if (message.role !== "user") return undefined;
   const text =
     typeof message.content === "string"

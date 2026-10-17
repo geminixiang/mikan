@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -33,17 +33,16 @@ function setup() {
   const started = new Promise<void>((resolve) => {
     toolStarted = resolve;
   });
-  const slow: AgentTool = {
+  const slow: ToolRegistration = {
     name: "slow",
-    label: "slow",
     description: "Runs until aborted",
     parameters: Type.Object({}),
-    execute: async (_id, _params, signal) => {
+    execute: async (_params, _api, { abortSignal: signal }) => {
       toolStarted();
       await new Promise((_resolve, reject) =>
         signal?.addEventListener("abort", () => reject(new Error("aborted"))),
       );
-      return { content: [{ type: "text", text: "never" }], details: undefined };
+      return { output: [{ type: "text", text: "never" }], details: undefined };
     },
   };
   const wrap = (store: SessionStore) =>

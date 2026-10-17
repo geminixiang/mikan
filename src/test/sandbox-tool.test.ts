@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createOfficeAddress, officeKey } from "../office/index.js";
 import { createSandboxTool } from "../harness/tools/sandbox.js";
+import { callableTool } from "./tool-api.js";
 
 describe("createSandboxTool", () => {
   test("serializes state-changing limit operations", () => {
@@ -25,7 +26,7 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    const result = await tool.execute("tool-call", {
+    const result = await callableTool(tool).execute("tool-call", {
       label: "test",
       action: "set",
       cpus: "2",
@@ -56,7 +57,10 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    const result = await tool.execute("tool-call", { label: "test", action: "status" });
+    const result = await callableTool(tool).execute("tool-call", {
+      label: "test",
+      action: "status",
+    });
 
     expect(getLimitStatus).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(result.content[0]).toMatchObject({
@@ -79,7 +83,12 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await tool.execute("tool-call", { label: "test", action: "set", cpus: "2", memory: "4g" });
+    await callableTool(tool).execute("tool-call", {
+      label: "test",
+      action: "set",
+      cpus: "2",
+      memory: "4g",
+    });
 
     expect(setLimits).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")), {
       cpus: "2",
@@ -97,9 +106,9 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await expect(tool.execute("tool-call", { label: "test", action: "status" })).rejects.toThrow(
-      /only supports oci:\*/,
-    );
+    await expect(
+      callableTool(tool).execute("tool-call", { label: "test", action: "status" }),
+    ).rejects.toThrow(/only supports oci:\*/);
   });
 
   test("requires sandbox context before execution", async () => {
@@ -111,9 +120,9 @@ describe("createSandboxTool", () => {
       },
     });
 
-    await expect(tool.execute("tool-call", { label: "test", action: "status" })).rejects.toThrow(
-      "Sandbox context not configured",
-    );
+    await expect(
+      callableTool(tool).execute("tool-call", { label: "test", action: "status" }),
+    ).rejects.toThrow("Sandbox context not configured");
   });
 
   test("rejects limit values containing shell metacharacters", async () => {
@@ -128,7 +137,11 @@ describe("createSandboxTool", () => {
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
     await expect(
-      tool.execute("tool-call", { label: "test", action: "set", memory: "1g; rm -rf /" }),
+      callableTool(tool).execute("tool-call", {
+        label: "test",
+        action: "set",
+        memory: "1g; rm -rf /",
+      }),
     ).rejects.toThrow(/must not contain whitespace or shell metacharacters/);
     expect(setLimits).not.toHaveBeenCalled();
   });
@@ -143,8 +156,8 @@ describe("createSandboxTool", () => {
     });
 
     setSandboxContext({ address: createOfficeAddress("slack", "C123"), userId: "U123" });
-    await expect(tool.execute("tool-call", { label: "test", action: "set" })).rejects.toThrow(
-      "action=set requires cpus and/or memory",
-    );
+    await expect(
+      callableTool(tool).execute("tool-call", { label: "test", action: "set" }),
+    ).rejects.toThrow("action=set requires cpus and/or memory");
   });
 });

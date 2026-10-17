@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
@@ -38,13 +38,12 @@ function createFauxSetup(): {
 
 const echoParameters = Type.Object({ text: Type.Optional(Type.String()) });
 
-const echoTool: AgentTool<typeof echoParameters> = {
+const echoTool: ToolRegistration<typeof echoParameters> = {
   name: "echo",
-  label: "echo",
   description: "Echo the input",
   parameters: echoParameters,
-  execute: async (_toolCallId, args) => ({
-    content: [{ type: "text", text: `echo: ${args.text ?? ""}` }],
+  execute: async (args) => ({
+    output: [{ type: "text", text: `echo: ${args.text ?? ""}` }],
     details: { source: "echo" },
     usage: {
       input: 1,

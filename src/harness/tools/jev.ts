@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static } from "typebox";
 import {
   evaluateWithJev,
@@ -74,10 +74,9 @@ function toJevQuestion(id: string, question: QuestionArg): JevQuestion {
   return { type: "score", instructions, criteria: question.criteria as JevEntry[] };
 }
 
-export function createJevTool(): AgentTool<typeof jevSchema> {
+export function createJevTool(): ToolRegistration<typeof jevSchema> {
   return {
     name: JEV_TOOL,
-    label: JEV_TOOL,
     description: [
       "Ask Jev, a fast calibrated decision model, typed questions about a state. Jev never generates text; it returns probabilities.",
       "state: the material to judge — text, or a JSON object/array (prefer labelled keys). questions: any number of boolean / choice / score questions, all evaluated against that state in one request.",
@@ -86,7 +85,7 @@ export function createJevTool(): AgentTool<typeof jevSchema> {
       "choice and score answers carry a confidence; below 0.5 Jev is unsure between options, so say so instead of presenting the top option as settled.",
     ].join(" "),
     parameters: jevSchema,
-    execute: async (_toolCallId, args, signal) => {
+    execute: async (args, _api, { abortSignal: signal }) => {
       if (signal?.aborted) throw new Error("Operation aborted");
       const questions: JevQuestions = {};
       for (const [id, question] of Object.entries(args.questions)) {
@@ -110,7 +109,7 @@ export function createJevTool(): AgentTool<typeof jevSchema> {
       }
 
       return {
-        content: [
+        output: [
           {
             type: "text" as const,
             text: JSON.stringify(

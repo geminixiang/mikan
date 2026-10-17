@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { createAttachTool } from "../harness/tools/attach.js";
+import { callableTool } from "./tool-api.js";
 
 describe("attach tool", () => {
   test("passes relative paths through for runtime workspace resolution", async () => {
@@ -7,7 +8,7 @@ describe("attach tool", () => {
     const upload = vi.fn(async () => {});
     setUploadFunction(upload);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call-1",
       { label: "share report", path: "gpt-5-mini.md" },
       undefined,
@@ -22,7 +23,7 @@ describe("attach tool", () => {
     const upload = vi.fn(async () => {});
     setUploadFunction(upload);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call-1",
       { label: "share", path: "reports/summary.pdf", title: "Q3 Report" },
       undefined,
@@ -37,7 +38,7 @@ describe("attach tool", () => {
     const upload = vi.fn(async () => {});
     setUploadFunction(upload);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call-1",
       { label: "share", path: "summary.pdf", title: "Q3.pdf" },
       undefined,
@@ -51,7 +52,12 @@ describe("attach tool", () => {
     const { tool } = createAttachTool();
 
     await expect(
-      tool.execute("call-1", { label: "share", path: "file.txt" }, undefined, undefined),
+      callableTool(tool).execute(
+        "call-1",
+        { label: "share", path: "file.txt" },
+        undefined,
+        undefined,
+      ),
     ).rejects.toThrow("Upload function not configured");
   });
 });

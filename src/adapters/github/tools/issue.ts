@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "../../../harness/tools/host-fn-tool.js";
 import type { GithubIssueFn, GithubIssueRequest } from "../types.js";
@@ -39,7 +39,7 @@ const githubIssueSchema = Type.Object({
 });
 
 export function createGithubIssueTool(): {
-  tool: AgentTool<typeof githubIssueSchema>;
+  tool: ToolRegistration<typeof githubIssueSchema>;
   setGithubIssueFunction: (fn: GithubIssueFn | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<GithubIssueFn, typeof githubIssueSchema>({
@@ -54,7 +54,7 @@ export function createGithubIssueTool(): {
     run: async (issueFn, args) => {
       const report = await issueFn(args as GithubIssueRequest);
       return {
-        content: [{ type: "text" as const, text: report }],
+        output: [{ type: "text" as const, text: report }],
         details: undefined,
       };
     },

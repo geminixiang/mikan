@@ -8,7 +8,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { runTestTool } from "./tool-api.js";
 import { afterAll, describe, expect, it } from "vitest";
 import { loadMcpTools, renderMcpServersSection } from "../harness/mcp.js";
-import type { MikanHarnessTool } from "../harness/types.js";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 
 const SERVER_SCRIPT = `
 import { createInterface } from "node:readline";
@@ -181,7 +181,7 @@ function startHttpMcpServer(): Promise<{
   });
 }
 
-function callTool(tool: MikanHarnessTool, params: Record<string, unknown>, cwd = dir) {
+function callTool(tool: ToolRegistration, params: Record<string, unknown>, cwd = dir) {
   return runTestTool(tool, params, { env: new NodeExecutionEnv({ cwd }) });
 }
 

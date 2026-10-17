@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
 import type { GithubCapability, PlatformGithubOps } from "../adapters/github/types.js";
+import { callableTool } from "./tool-api.js";
 
 function mockOps(): PlatformGithubOps {
   return {
@@ -45,19 +46,19 @@ describe("createGithubToolPack", () => {
     const reviewReply = pack.tools.find((t) => t.name === "github_review_reply")!;
 
     pack.bindRun({ conversationId: "GH_o_r_1", platformName: "slack" });
-    await expect(pr.execute("id", { branch: "pi/x", title: "t" })).rejects.toThrow(
+    await expect(callableTool(pr).execute("id", { branch: "pi/x", title: "t" })).rejects.toThrow(
       /only available in GitHub/,
     );
-    await expect(reviewReply.execute("id", { comment_id: 1, body: "x" })).rejects.toThrow(
-      /only available in GitHub/,
-    );
+    await expect(
+      callableTool(reviewReply).execute("id", { comment_id: 1, body: "x" }),
+    ).rejects.toThrow(/only available in GitHub/);
 
     pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
-    await reviewReply.execute("id", { comment_id: 8001, body: "done" });
+    await callableTool(reviewReply).execute("id", { comment_id: 8001, body: "done" });
     expect(ops.replyToReviewThread).toHaveBeenCalledWith("GH_o_r_1", 8001, "done");
 
     pack.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
-    const result = await pr.execute("id", { branch: "pi/x", title: "t" });
+    const result = await callableTool(pr).execute("id", { branch: "pi/x", title: "t" });
     expect(ops.createPullRequest).toHaveBeenCalledWith("GH_o_r_1", {
       branch: "pi/x",
       title: "t",
@@ -75,19 +76,19 @@ describe("createGithubToolPack", () => {
     packA.bindRun({ conversationId: "GH_o_r_1", platformName: "github" });
     packB.bindRun({ conversationId: "GH_o_r_2", platformName: "github" });
 
-    await prA.execute("id", { branch: "pi/a", title: "a" });
+    await callableTool(prA).execute("id", { branch: "pi/a", title: "a" });
     expect(ops.createPullRequest).toHaveBeenLastCalledWith("GH_o_r_1", {
       branch: "pi/a",
       title: "a",
     });
 
     packB.bindRun({ conversationId: "D123", platformName: "slack" });
-    await prA.execute("id", { branch: "pi/a2", title: "a2" });
+    await callableTool(prA).execute("id", { branch: "pi/a2", title: "a2" });
     expect(ops.createPullRequest).toHaveBeenLastCalledWith("GH_o_r_1", {
       branch: "pi/a2",
       title: "a2",
     });
-    await expect(prB.execute("id", { branch: "pi/b", title: "b" })).rejects.toThrow(
+    await expect(callableTool(prB).execute("id", { branch: "pi/b", title: "b" })).rejects.toThrow(
       /only available in GitHub/,
     );
   });

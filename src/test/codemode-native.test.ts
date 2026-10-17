@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Context, Model, MutableModels } from "@earendil-works/pi-ai";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
@@ -11,7 +11,6 @@ import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
 import { createSandboxTools } from "../harness/tools/pi-tools.js";
 import { withSecretRedaction } from "../harness/tools/secret-redaction.js";
-import type { MikanToolInput } from "../harness/types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -42,7 +41,7 @@ function setup() {
     stateDir: join(dir, "state"),
   }).office(createOfficeAddress("slack", "C123"));
   const env = new NodeExecutionEnv({ cwd: dir });
-  const wrap = (store: SessionStore, tools: MikanToolInput[]) =>
+  const wrap = (store: SessionStore, tools: ToolRegistration[]) =>
     new MikanAgentSession({
       model,
       models,
@@ -72,29 +71,27 @@ test("a script interrupted by a restart continues without rerunning its finished
     release = resolve;
   });
   let restarted = false;
-  const lookup: AgentTool = {
+  const lookup: ToolRegistration = {
     name: "lookup",
-    label: "lookup",
     description: "Looks something up",
     parameters: Type.Object({}),
     execute: async () => {
       lookups += 1;
-      return { content: [{ type: "text", text: `looked up ${lookups}` }], details: undefined };
+      return { output: [{ type: "text", text: `looked up ${lookups}` }], details: undefined };
     },
   };
-  const wait = {
+  const wait: ToolRegistration = {
     name: "wait",
-    label: "wait",
     description: "Waits for an external job",
     parameters: Type.Object({}),
-    replay: "safe" as const,
-    execute: async (_id: string, _params: unknown, signal?: AbortSignal) => {
-      if (restarted) return { content: [{ type: "text" as const, text: "job done" }], details: {} };
+    replay: "safe",
+    execute: async (_params, _api, { abortSignal: signal }) => {
+      if (restarted) return { output: [{ type: "text" as const, text: "job done" }], details: {} };
       release?.();
       await new Promise((_resolve, reject) =>
         signal?.addEventListener("abort", () => reject(new Error("aborted"))),
       );
-      return { content: [{ type: "text" as const, text: "never" }], details: {} };
+      return { output: [{ type: "text" as const, text: "never" }], details: {} };
     },
   };
   const store = await SessionStore.open(env.office, KEY);
@@ -147,12 +144,11 @@ test("a script reads bash's exit code and output, with secrets redacted", async 
 
 test("a script's successful nested call reports success to the run's progress", async () => {
   const env = setup();
-  const lookup: AgentTool = {
+  const lookup: ToolRegistration = {
     name: "lookup",
-    label: "lookup",
     description: "Looks something up",
     parameters: Type.Object({}),
-    execute: async () => ({ content: [{ type: "text", text: "found" }], details: undefined }),
+    execute: async () => ({ output: [{ type: "text", text: "found" }], details: undefined }),
   };
   const store = await SessionStore.open(env.office, KEY);
   env.faux.setResponses([script("text(await tools.lookup({}));"), fauxAssistantMessage("done")]);

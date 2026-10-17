@@ -4,7 +4,9 @@ import type {
   Api,
   AssistantMessage,
   ImageContent,
+  Message,
   Model,
+  ModelThinkingLevel,
   RetryPolicy,
   Usage,
 } from "@earendil-works/pi-ai";
@@ -13,7 +15,6 @@ import type { resolveConversationSettings } from "../settings/index.js";
 import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
-import type { AgentMessage, AgentTool, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import type {
   CompactionPolicy,
@@ -175,7 +176,7 @@ export interface SubagentProfile {
   systemPrompt: string;
   tools: string[];
   model?: SubagentModelSpec;
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: ModelThinkingLevel;
   maxTurns?: number;
   maxTokens?: number;
   maxCostUsd?: number;
@@ -235,7 +236,7 @@ export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = 
   input?: unknown;
   model?: SubagentModelSpec;
   tools?: string[];
-  thinkingLevel?: ThinkingLevel;
+  thinkingLevel?: ModelThinkingLevel;
   outputSchema?: TOutputSchema;
   budget?: SubagentRunBudget;
   signal?: AbortSignal;
@@ -340,9 +341,9 @@ export interface LoadSubagentProfilesResult {
 type CompactionReason = "threshold" | "overflow" | "manual";
 
 export type HarnessEvent =
-  | { type: "message_start"; message: AgentMessage }
+  | { type: "message_start"; message: Message }
   | { type: "text_delta"; delta: string }
-  | { type: "message_end"; message: AgentMessage }
+  | { type: "message_end"; message: Message }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: unknown }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; details: JsonValue }
   | {
@@ -407,15 +408,11 @@ export interface MikanToolContext {
   env(): ExecutionEnv | undefined;
 }
 
-export type MikanHarnessTool = ToolRegistration;
-
-export type MikanToolInput = AgentTool | MikanHarnessTool;
-
 export interface MikanAgentSessionOptions {
   systemPrompt: string;
   model: Model<Api>;
-  thinkingLevel: ThinkingLevel;
-  tools: MikanToolInput[];
+  thinkingLevel: ModelThinkingLevel;
+  tools: ToolRegistration[];
   toolContext?: MikanToolContext;
   models: MikanModels;
   sessionStore: SessionStore;
@@ -476,7 +473,7 @@ export interface McpLoadError {
 }
 
 export interface McpToolsResult {
-  tools: MikanHarnessTool[];
+  tools: ToolRegistration[];
   errors: McpLoadError[];
   servers: McpServerSummary[];
   dispose: () => Promise<void>;

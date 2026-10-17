@@ -1,4 +1,4 @@
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { Value } from "typebox/value";
 import { existsSync, lstatSync, rmSync } from "node:fs";
@@ -43,7 +43,7 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
   },
 };
 
-const THINKING_LEVEL_KEYS: Record<ThinkingLevel, true> = {
+const THINKING_LEVEL_KEYS: Record<ModelThinkingLevel, true> = {
   off: true,
   minimal: true,
   low: true,
@@ -53,9 +53,9 @@ const THINKING_LEVEL_KEYS: Record<ThinkingLevel, true> = {
   max: true,
 };
 
-export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as ThinkingLevel[];
+export const THINKING_LEVELS = Object.keys(THINKING_LEVEL_KEYS) as ModelThinkingLevel[];
 
-export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+export function isThinkingLevel(value: unknown): value is ModelThinkingLevel {
   return typeof value === "string" && Object.hasOwn(THINKING_LEVEL_KEYS, value);
 }
 
@@ -223,7 +223,10 @@ function requireString(value: string | undefined, path: string): string {
 function toAgentConfig(fromFile: Partial<AgentConfig>): AgentConfig {
   const provider = requireString(fromFile.provider, "llm.provider");
   const model = requireString(fromFile.model, "llm.model");
-  const thinkingLevel = requireString(fromFile.thinkingLevel, "llm.thinkingLevel") as ThinkingLevel;
+  const thinkingLevel = requireString(
+    fromFile.thinkingLevel,
+    "llm.thinkingLevel",
+  ) as ModelThinkingLevel;
   const sandbox = fromFile.sandbox;
   const slack = fromFile.slack;
   const mcpServers = fromFile.mcpServers;

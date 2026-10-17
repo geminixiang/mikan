@@ -1,8 +1,7 @@
-import type { AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import type { JsonValue } from "@earendil-works/chord";
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type, type Static, type TSchema } from "typebox";
 import type {
-  MikanHarnessTool,
   SubagentRunHooks,
   SubagentRunOutput,
   SubagentRunRequest,
@@ -10,7 +9,6 @@ import type {
   SubagentToolCall,
 } from "../types.js";
 import { addUsage, createEmptyUsage } from "../session.js";
-import { tagHarnessTool } from "./pi-tools.js";
 import type {
   SubagentProgressNode,
   SubagentProgressSnapshot,
@@ -153,7 +151,7 @@ class SubagentProgressTracker {
   constructor(
     private readonly mode: PlanMode,
     private readonly items: Array<{ id: string; label: string; profile?: string }>,
-    private readonly onUpdate?: AgentToolUpdateCallback,
+    private readonly onUpdate?: (details: unknown) => void,
   ) {
     for (const item of items) this.states.set(item.id, "pending");
   }
@@ -182,10 +180,7 @@ class SubagentProgressTracker {
         ...this.metrics.get(item.id),
       }),
     );
-    this.onUpdate({
-      content: [],
-      details: { progress: { mode: this.mode, nodes } },
-    });
+    this.onUpdate({ progress: { mode: this.mode, nodes } });
   }
 }
 
@@ -508,7 +503,7 @@ function toolResult(plan: Plan, ordered: PlanOutcome[]): { text: string; details
 export function createSubagentTool(
   runSubagent: RunSubagent,
   profiles: ReadonlyMap<string, SubagentProfileMenuEntry>,
-): MikanHarnessTool {
+): ToolRegistration {
   if (profiles.size === 0) {
     throw new Error("createSubagentTool requires at least one subagent profile");
   }
@@ -517,7 +512,7 @@ export function createSubagentTool(
       ([name, profile]) => `${name} [${formatToolGrant(profile.tools)}] — ${profile.description}`,
     )
     .join("; ");
-  return tagHarnessTool({
+  return defineTool({
     name: "subagent",
     replay: "safe",
     description:
@@ -530,8 +525,8 @@ export function createSubagentTool(
       const plan = buildPlan(params);
       validatePlanProfiles(plan, new Set(profiles.keys()));
       let updates = Promise.resolve();
-      const onUpdate: AgentToolUpdateCallback = (partial) => {
-        const details = jsonValue(partial.details);
+      const onUpdate = (progress: unknown) => {
+        const details = jsonValue(progress);
         updates = updates.then(() => api.details(details, context)).catch(() => undefined);
       };
       const progress = new SubagentProgressTracker(

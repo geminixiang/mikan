@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import { Type } from "typebox";
 import { Value } from "typebox/value";
 import { defineHostFnTool } from "../harness/tools/host-fn-tool.js";
+import { callableTool } from "./tool-api.js";
 
 describe("defineHostFnTool", () => {
   test("injects a required label parameter into any caller's schema", () => {
@@ -35,7 +36,7 @@ describe("defineHostFnTool", () => {
     });
     setFn(() => {});
 
-    await tool.execute("call-1", { label: "Doing the thing", foo: "bar" });
+    await callableTool(tool).execute("call-1", { label: "Doing the thing", foo: "bar" });
     expect(seenArgs).toEqual({ foo: "bar" });
   });
 
@@ -48,6 +49,8 @@ describe("defineHostFnTool", () => {
       run: async () => ({ content: [{ type: "text" as const, text: "ok" }], details: undefined }),
     });
 
-    await expect(tool.execute("call-1", { label: "test" })).rejects.toThrow("not bound yet");
+    await expect(callableTool(tool).execute("call-1", { label: "test" })).rejects.toThrow(
+      "not bound yet",
+    );
   });
 });

@@ -3,11 +3,11 @@ import { BlockList, isIP, type LookupFunction } from "node:net";
 import { htmlToMarkdown } from "@mdream/js";
 import { withMinimalPreset } from "@mdream/js/preset/minimal";
 import { Agent, buildConnector, fetch } from "undici";
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { guardMcpToolResult } from "../mcp-result.js";
 import { errorMessage, isRecord } from "../../unknown-values.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
-import { tagHarnessTool, type MikanHarnessTool } from "./pi-tools.js";
 import type { WebFetchToolOptions } from "./types.js";
 
 export const WEB_FETCH_TOOL = "web_fetch";
@@ -95,9 +95,9 @@ function requestedUrl(args: unknown): URL {
   return url;
 }
 
-export function createWebFetchTool(options: WebFetchToolOptions = {}): MikanHarnessTool {
+export function createWebFetchTool(options: WebFetchToolOptions = {}): ToolRegistration {
   let dispatcher: Agent | undefined;
-  return tagHarnessTool({
+  return defineTool({
     name: WEB_FETCH_TOOL,
     description: [
       "Read a public web page or API URL from the mikan host. HTML is returned as Markdown with navigation and other page chrome removed; JSON and plain text are returned as they are.",

@@ -1,12 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
 import { createGithubReviewReplyTool } from "../adapters/github/tools/review-reply.js";
+import { callableTool } from "./tool-api.js";
 
 describe("github_review_reply tool", () => {
   test("reports itself unavailable outside GitHub conversations", async () => {
     const { tool } = createGithubReviewReplyTool();
-    await expect(tool.execute("t1", { comment_id: 8001, body: "hi" })).rejects.toThrow(
-      /only available in GitHub conversations/,
-    );
+    await expect(
+      callableTool(tool).execute("t1", { comment_id: 8001, body: "hi" }),
+    ).rejects.toThrow(/only available in GitHub conversations/);
   });
 
   test("delegates to the wired reply function and reports the thread url", async () => {
@@ -16,7 +17,10 @@ describe("github_review_reply tool", () => {
       .mockResolvedValue({ url: "https://github.com/octo/widgets/pull/5#discussion_r9002" });
     setGithubReviewReplyFunction(reply);
 
-    const result = await tool.execute("t1", { comment_id: 8001, body: "renamed as asked" });
+    const result = await callableTool(tool).execute("t1", {
+      comment_id: 8001,
+      body: "renamed as asked",
+    });
 
     expect(reply).toHaveBeenCalledWith(8001, "renamed as asked");
     expect(result.content[0]).toEqual({
@@ -29,7 +33,7 @@ describe("github_review_reply tool", () => {
     const { tool, setGithubReviewReplyFunction } = createGithubReviewReplyTool();
     setGithubReviewReplyFunction(vi.fn().mockResolvedValue({ url: "u" }));
     setGithubReviewReplyFunction(null);
-    await expect(tool.execute("t1", { comment_id: 1, body: "x" })).rejects.toThrow(
+    await expect(callableTool(tool).execute("t1", { comment_id: 1, body: "x" })).rejects.toThrow(
       /only available/,
     );
   });

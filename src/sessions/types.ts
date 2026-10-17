@@ -1,6 +1,5 @@
 import type { Office } from "../office/types.js";
 import type { ConversationKind } from "../types.js";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { Message, Models, Usage } from "@earendil-works/pi-ai";
 import type {
   Conversation,
@@ -39,7 +38,7 @@ export interface AttachedSessionHarness {
 }
 
 export interface SessionContext {
-  messages: AgentMessage[];
+  messages: Message[];
 }
 
 interface SessionEntryBase {
@@ -53,7 +52,7 @@ export interface ChatHistoryMessageIdentity {
 
 export interface SessionMessageEntry extends SessionEntryBase {
   type: "message";
-  message: AgentMessage;
+  message: Message;
   history?: ChatHistoryMessageIdentity;
 }
 

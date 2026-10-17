@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { tmpdir } from "node:os";
 import { ExecutionError, err, ok } from "@earendil-works/pi-durable/env";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
+import { callableTool } from "./tool-api.js";
 
 type ExecCall = (
   command: string,
@@ -278,7 +279,7 @@ describe("jev_browser tool", () => {
       usage: undefined,
     }));
 
-    await createJevBrowserTool(env, generateText).execute(
+    await callableTool(createJevBrowserTool(env, generateText)).execute(
       "type",
       { label: "test", goal: "Enter the email qa@example.com", maxSteps: 2 },
       undefined,
@@ -316,7 +317,7 @@ describe("jev_browser tool", () => {
     };
     const generateText = vi.fn(async () => ({ text: '{"text":"qa@example.com"}', usage: written }));
 
-    const result = await createJevBrowserTool(env, generateText).execute(
+    const result = await callableTool(createJevBrowserTool(env, generateText)).execute(
       "type",
       { label: "test", goal: "Enter the email qa@example.com", maxSteps: 2 },
       undefined,
@@ -335,7 +336,7 @@ describe("jev_browser tool", () => {
     ]);
     fetchMock.mockResolvedValueOnce(answerType("e1"));
 
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "type",
       { label: "test", goal: "Enter an email" },
       undefined,
@@ -357,7 +358,7 @@ describe("jev_browser tool", () => {
     ),
   ])("rejects invalid argv $command before any browser side effect", async ({ command, error }) => {
     await expect(
-      createJevBrowserTool(env).execute(
+      callableTool(createJevBrowserTool(env)).execute(
         "invalid",
         {
           label: "test",
@@ -379,7 +380,7 @@ describe("jev_browser tool", () => {
     ["key", "Enter"],
   ])("forwards valid %s %s argv", async (operation, key) => {
     mockAgentBrowser([{ success: true, data: null, error: null }]);
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "key",
       {
         label: "test",
@@ -400,7 +401,7 @@ describe("jev_browser tool", () => {
   ])("returns native plain-text help for $command", async ({ command }) => {
     const help = "Usage: agent-browser\n  press <key>\n";
     execMock.mockResolvedValue({ stdout: help, stderr: "", code: 0 });
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "help",
       {
         label: "Help",
@@ -422,7 +423,7 @@ describe("jev_browser tool", () => {
       { success: false, data: null, error: "No matching element" },
       { success: true, data: null },
     ]);
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "batch",
       {
         label: "test",
@@ -458,7 +459,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { snapshot, origin: "https://example.com/active", refs: {} } },
     ]);
     fetchMock.mockResolvedValueOnce(answerOperation("DONE"));
-    await createJevBrowserTool(env).execute(
+    await callableTool(createJevBrowserTool(env)).execute(
       "page",
       {
         label: "test",
@@ -498,7 +499,7 @@ describe("jev_browser tool", () => {
     fetchMock
       .mockResolvedValueOnce(answerOperation("CLICK"))
       .mockResolvedValueOnce(answerOperation("DONE"));
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "filtered",
       {
         label: "test",
@@ -550,7 +551,7 @@ describe("jev_browser tool", () => {
       ]);
       for (const choice of ["WAIT", "WAIT", "WAIT", lastChoice])
         fetchMock.mockResolvedValueOnce(answerOperation(choice));
-      const result = await createJevBrowserTool(env).execute(
+      const result = await callableTool(createJevBrowserTool(env)).execute(
         "progress",
         {
           label: "test",
@@ -586,7 +587,7 @@ describe("jev_browser tool", () => {
       }),
     );
     fetchMock.mockImplementation(async () => answerOperation("CLICK"));
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "cycle",
       { label: "test", goal: "Complete an item", maxSteps: 10 },
       undefined,
@@ -615,7 +616,7 @@ describe("jev_browser tool", () => {
       ),
     );
     fetchMock.mockImplementation(async () => answerOperation("WAIT"));
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "reset",
       {
         label: "test",
@@ -641,7 +642,7 @@ describe("jev_browser tool", () => {
         { success: false, error: "Browser disconnected" },
       ]);
       fetchMock.mockResolvedValueOnce(answerOperation(operation));
-      const result = await createJevBrowserTool(env).execute(
+      const result = await callableTool(createJevBrowserTool(env)).execute(
         "failed-action",
         {
           label: "test",
@@ -713,7 +714,7 @@ describe("jev_browser tool", () => {
           },
         }),
       );
-      const result = await createJevBrowserTool(env).execute(
+      const result = await callableTool(createJevBrowserTool(env)).execute(
         "invalid-decision",
         {
           label: "test",
@@ -760,7 +761,7 @@ describe("jev_browser tool", () => {
     );
 
     const tool = createJevBrowserTool(env);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "Find the page's main heading text." },
       undefined,
@@ -813,7 +814,7 @@ describe("jev_browser tool", () => {
       }),
     );
     const signal = new AbortController().signal;
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "frame",
       {
         label: "Complete form",
@@ -848,7 +849,7 @@ describe("jev_browser tool", () => {
 
   test("frame main returns an existing session to the parent before raw commands without reopening", async () => {
     mockAgentBrowser([{ success: true, data: null }]);
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "main",
       {
         label: "Return to parent",
@@ -878,7 +879,7 @@ describe("jev_browser tool", () => {
       ]);
       const signal = new AbortController().signal;
       await expect(
-        createJevBrowserTool(env).execute(
+        callableTool(createJevBrowserTool(env)).execute(
           "missing-frame",
           {
             label: "Submit inside frame",
@@ -948,7 +949,7 @@ describe("jev_browser tool", () => {
         }),
       );
       const signal = new AbortController().signal;
-      const execution = createJevBrowserTool(env).execute(
+      const execution = callableTool(createJevBrowserTool(env)).execute(
         "last-action",
         {
           label: "Submit",
@@ -987,7 +988,7 @@ describe("jev_browser tool", () => {
     ]);
 
     const tool = createJevBrowserTool(env);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       { label: "test", url: "https://example.com", goal: "anything" },
       undefined,
@@ -1031,7 +1032,7 @@ describe("jev_browser tool", () => {
     );
 
     const tool = createJevBrowserTool(env);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       {
         label: "test",
@@ -1068,7 +1069,7 @@ describe("jev_browser tool", () => {
     ]);
 
     const tool = createJevBrowserTool(env);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       { label: "test", url: "https://example.com", commands: [["screenshot", "/tmp/shot.png"]] },
       undefined,
@@ -1098,7 +1099,7 @@ describe("jev_browser tool", () => {
     ]);
 
     const tool = createJevBrowserTool(env);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       {
         label: "test",
@@ -1117,7 +1118,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/demo.webm", frames: 12 } },
       { success: true, data: { closed: true } },
     ]);
-    const result2 = await tool.execute(
+    const result2 = await callableTool(tool).execute(
       "call-2",
       { label: "test", commands: [["record", "stop"]], close: true },
       undefined,
@@ -1136,11 +1137,11 @@ describe("jev_browser tool", () => {
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
     const tool = createJevBrowserTool(env);
 
-    await tool.execute("close", { label: "test", close: true }, undefined);
+    await callableTool(tool).execute("close", { label: "test", close: true }, undefined);
     execMock.mockClear();
 
     await expect(
-      tool.execute("reuse", { label: "test", commands: [["snapshot"]] }, undefined),
+      callableTool(tool).execute("reuse", { label: "test", commands: [["snapshot"]] }, undefined),
     ).rejects.toThrow(/explicitly closed.*Provide url/i);
     expect(execMock).not.toHaveBeenCalled();
   });
@@ -1148,14 +1149,14 @@ describe("jev_browser tool", () => {
   test("url can explicitly restart a named session after close", async () => {
     const tool = createJevBrowserTool(env);
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
-    await tool.execute("close", { label: "test", close: true }, undefined);
+    await callableTool(tool).execute("close", { label: "test", close: true }, undefined);
 
     execMock.mockReset();
     mockAgentBrowser([
       { success: true, data: { targetId: "new" } },
       { success: true, data: { snapshot: "Restarted", refs: {} } },
     ]);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "restart",
       {
         label: "test",
@@ -1172,12 +1173,12 @@ describe("jev_browser tool", () => {
   test("a failed explicit restart keeps the closed-session guard", async () => {
     const tool = createJevBrowserTool(env);
     mockAgentBrowser([{ success: true, data: { closed: true } }]);
-    await tool.execute("close", { label: "test", close: true }, undefined);
+    await callableTool(tool).execute("close", { label: "test", close: true }, undefined);
 
     execMock.mockReset();
     mockAgentBrowser([{ success: false, error: "navigation failed" }]);
     await expect(
-      tool.execute(
+      callableTool(tool).execute(
         "restart",
         {
           label: "test",
@@ -1190,7 +1191,7 @@ describe("jev_browser tool", () => {
 
     execMock.mockClear();
     await expect(
-      tool.execute("reuse", { label: "test", commands: [["snapshot"]] }, undefined),
+      callableTool(tool).execute("reuse", { label: "test", commands: [["snapshot"]] }, undefined),
     ).rejects.toThrow(/explicitly closed.*Provide url/i);
     expect(execMock).not.toHaveBeenCalled();
   });
@@ -1202,7 +1203,7 @@ describe("jev_browser tool", () => {
       { success: false, error: "close failed" },
     ]);
     const tool = createJevBrowserTool(env);
-    await tool.execute(
+    await callableTool(tool).execute(
       "first",
       {
         label: "test",
@@ -1216,7 +1217,11 @@ describe("jev_browser tool", () => {
     execMock.mockReset();
     mockAgentBrowser([{ success: true, data: { title: "Still open" } }]);
     await expect(
-      tool.execute("reuse", { label: "test", commands: [["get", "title"]] }, undefined),
+      callableTool(tool).execute(
+        "reuse",
+        { label: "test", commands: [["get", "title"]] },
+        undefined,
+      ),
     ).resolves.toBeDefined();
   });
 
@@ -1234,13 +1239,13 @@ describe("jev_browser tool", () => {
       });
     });
     const tool = createJevBrowserTool(env);
-    const first = tool.execute(
+    const first = callableTool(tool).execute(
       "first-call",
       { label: "test", commands: [["get", "title"]] },
       undefined,
     );
     await firstStarted;
-    const second = tool.execute(
+    const second = callableTool(tool).execute(
       "second-call",
       { label: "test", commands: [["get", "title"]] },
       undefined,
@@ -1265,7 +1270,7 @@ describe("jev_browser tool", () => {
     ]);
 
     const tool = createJevBrowserTool(env);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call-1",
       {
         label: "test",
@@ -1286,7 +1291,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
     ]);
-    await tool.execute(
+    await callableTool(tool).execute(
       "open",
       { label: "test", url: "https://example.com", commands: [["get", "title"]] },
       undefined,
@@ -1296,7 +1301,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { started: true, lifecycle: { reused: false, launched: true } } },
     ]);
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-2",
       { label: "test", commands: [["record", "start", "/tmp/demo.webm"]] },
       undefined,
@@ -1313,7 +1318,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
     ]);
-    await tool.execute(
+    await callableTool(tool).execute(
       "open",
       { label: "test", url: "https://example.com", commands: [["record", "start", "/tmp/a.webm"]] },
       undefined,
@@ -1323,7 +1328,7 @@ describe("jev_browser tool", () => {
       { success: true, data: { path: "/tmp/demo.webm", lifecycle: { reused: true } } },
     ]);
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-2",
       { label: "test", commands: [["record", "stop"]] },
       undefined,
@@ -1337,7 +1342,7 @@ describe("jev_browser tool", () => {
   test("quotes URL and eval argv literally, including shell substitutions", async () => {
     mockAgentBrowser([{ success: true, data: null, error: null }]);
     const signal = new AbortController().signal;
-    await createJevBrowserTool(env).execute(
+    await callableTool(createJevBrowserTool(env)).execute(
       "quoting",
       {
         label: "test",
@@ -1385,7 +1390,7 @@ describe("jev_browser tool", () => {
       );
     }
     const signal = new AbortController().signal;
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "goal",
       { label: "test", goal: "Wait until ready", close: true },
       signal,
@@ -1413,7 +1418,7 @@ describe("jev_browser tool", () => {
       .mockResolvedValueOnce({ stdout: '{"success":true}', stderr: "", code: 0 });
 
     await expect(
-      createJevBrowserTool(env).execute(
+      callableTool(createJevBrowserTool(env)).execute(
         "abort",
         { label: "test", commands: [["eval", "1"]], close: true },
         controller.signal,
@@ -1431,7 +1436,7 @@ describe("jev_browser tool", () => {
 
   test("does not execute or clean up when the signal is already aborted", async () => {
     await expect(
-      createJevBrowserTool(env).execute(
+      callableTool(createJevBrowserTool(env)).execute(
         "aborted",
         { label: "test", commands: [["snapshot"]], close: true },
         AbortSignal.abort(),
@@ -1452,7 +1457,7 @@ describe("jev_browser tool", () => {
         stderr: "",
         code: 0,
       });
-    const result = await createJevBrowserTool(env).execute(
+    const result = await callableTool(createJevBrowserTool(env)).execute(
       "nonzero",
       {
         label: "test",
@@ -1479,7 +1484,7 @@ describe("jev_browser tool", () => {
       stderr: "sh: agent-browser: command not found",
       code: 127,
     });
-    const execution = createJevBrowserTool(env).execute(
+    const execution = callableTool(createJevBrowserTool(env)).execute(
       "missing",
       { label: "test", commands: [["snapshot"]] },
       undefined,
@@ -1508,7 +1513,7 @@ describe("jev_browser tool", () => {
       [second, "second"],
       [first, "first"],
     ] as const) {
-      const result = await tool.execute(owner, args, undefined);
+      const result = await callableTool(tool).execute(owner, args, undefined);
       expect(JSON.parse((result.content[0] as { text: string }).text).commandResults).toEqual([
         { command: ["get", "title"], success: true, data: { owner }, error: null },
       ]);
@@ -1533,7 +1538,7 @@ describe("jev_browser tool", () => {
       mockAgentBrowser([{ success: true, data: { closed: true } }]);
       const signal = new AbortController().signal;
       const tool = createJevBrowserTool(env);
-      const result = await tool.execute(
+      const result = await callableTool(tool).execute(
         "close-only",
         { label: "Close", close: true, commands },
         signal,
@@ -1551,7 +1556,11 @@ describe("jev_browser tool", () => {
   test("close-only surfaces CLI failure without reporting closed or retrying cleanup", async () => {
     mockAgentBrowser([{ success: false, error: "close failed" }]);
     await expect(
-      createJevBrowserTool(env).execute("close", { label: "Close", close: true }, undefined),
+      callableTool(createJevBrowserTool(env)).execute(
+        "close",
+        { label: "Close", close: true },
+        undefined,
+      ),
     ).rejects.toThrow("Failed to close the browser: close failed");
     expect(execMock).toHaveBeenCalledTimes(1);
   });
@@ -1562,14 +1571,14 @@ describe("jev_browser tool", () => {
       { success: true, data: { targetId: "t1" } },
       { success: true, data: {} },
     ]);
-    await tool.execute(
+    await callableTool(tool).execute(
       "open",
       { label: "test", url: "https://example.com", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockReset();
     mockAgentBrowser([{ success: true, data: { title: "Page" } }]);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "read",
       { label: "Title", commands: [["get", "title"]] },
       undefined,
@@ -1597,7 +1606,7 @@ describe("jev_browser tool", () => {
     });
     const tool = createJevBrowserTool(env);
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call-1",
       { label: "test", url: "https://example.com" },
       undefined,
@@ -1615,9 +1624,9 @@ describe("jev_browser tool", () => {
 
   test("rejects a call with no url, goal, or commands", async () => {
     const tool = createJevBrowserTool(env);
-    await expect(tool.execute("call-1", { label: "test" }, undefined)).rejects.toThrow(
-      /Provide url, goal, or commands/,
-    );
+    await expect(
+      callableTool(tool).execute("call-1", { label: "test" }, undefined),
+    ).rejects.toThrow(/Provide url, goal, or commands/);
     expect(execMock).not.toHaveBeenCalled();
   });
 });
@@ -1641,14 +1650,14 @@ describe("jev_browser tabs", () => {
   async function openTwice(tabsAtSecondOpen: ReturnType<typeof tab>[]) {
     const tool = createJevBrowserTool(env);
     answerBrowser([tab("t1", true)]);
-    await tool.execute(
+    await callableTool(tool).execute(
       "first",
       { label: "test", url: "https://one.test/", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockReset();
     answerBrowser(tabsAtSecondOpen);
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "second",
       { label: "test", url: "https://next.test/", commands: [["get", "title"]] },
       undefined,
@@ -1706,7 +1715,11 @@ describe("jev_browser tabs", () => {
     }));
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     const open = (url: string) =>
-      tool.execute("call", { label: "test", url, commands: [["get", "title"]] }, undefined);
+      callableTool(tool).execute(
+        "call",
+        { label: "test", url, commands: [["get", "title"]] },
+        undefined,
+      );
 
     await open("https://one.test/");
     tabs.push({ tabId: `t${next}`, targetId: "person", active: false, url: "https://mine.test/" });
@@ -1818,7 +1831,7 @@ describe("jev_browser on the office desktop", () => {
     answerBrowser();
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
@@ -1835,7 +1848,7 @@ describe("jev_browser on the office desktop", () => {
     answerBrowser();
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
@@ -1849,7 +1862,7 @@ describe("jev_browser on the office desktop", () => {
     answerBrowser();
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
@@ -1868,14 +1881,14 @@ describe("jev_browser on the office desktop", () => {
     const hook = handOffHook();
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockClear();
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call",
       { label: "t", handOff: "Please sign in to example.com" },
       undefined,
@@ -1917,14 +1930,14 @@ describe("jev_browser on the office desktop", () => {
     });
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://login.test/form", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockClear();
 
-    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+    await callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined);
 
     const calls = sentCommands().map((call) => (call as [string])[0]);
     expect(calls).toEqual([
@@ -1952,14 +1965,14 @@ describe("jev_browser on the office desktop", () => {
     });
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", commands: [["open", "https://login.test/"]] },
       undefined,
     );
     execMock.mockClear();
 
-    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+    await callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined);
 
     const calls = sentCommands().map((call) => (call as [string])[0]);
     expect(calls.at(-1)).toBe(
@@ -1985,21 +1998,21 @@ describe("jev_browser on the office desktop", () => {
     });
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://one.test/", commands: [["get", "title"]] },
       undefined,
     );
     display = "";
     launches.next = true;
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://two.test/", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockClear();
 
-    await tool.execute("call", { label: "t", handOff: "Sign in" }, undefined);
+    await callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined);
 
     const calls = sentCommands().map((call) => (call as [string])[0]);
     expect(calls.at(-1)).toBe(
@@ -2015,7 +2028,7 @@ describe("jev_browser on the office desktop", () => {
     tool.setHandOff(hook);
 
     await expect(
-      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+      callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined),
     ).rejects.toThrow(/url/);
 
     expect(hook.announce).not.toHaveBeenCalled();
@@ -2031,7 +2044,7 @@ describe("jev_browser on the office desktop", () => {
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       {
         label: "t",
@@ -2057,13 +2070,13 @@ describe("jev_browser on the office desktop", () => {
     const hook = handOffHook();
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
     );
 
-    const result = await tool.execute(
+    const result = await callableTool(tool).execute(
       "call",
       {
         label: "t",
@@ -2088,14 +2101,14 @@ describe("jev_browser on the office desktop", () => {
     hook.announce.mockRejectedValue(new Error("slack down"));
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
     tool.setHandOff(hook);
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
     );
 
     await expect(
-      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+      callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined),
     ).rejects.toThrow(/slack down/);
 
     expect(desktopMock.mock.calls.map(([command]) => command).at(-1)).toBe(
@@ -2108,7 +2121,11 @@ describe("jev_browser on the office desktop", () => {
     tool.setHandOff(handOffHook());
 
     await expect(
-      tool.execute("call", { label: "t", handOff: "Sign in", url: "https://a.test/" }, undefined),
+      callableTool(tool).execute(
+        "call",
+        { label: "t", handOff: "Sign in", url: "https://a.test/" },
+        undefined,
+      ),
     ).rejects.toThrow(/alone/);
   });
 
@@ -2117,7 +2134,7 @@ describe("jev_browser on the office desktop", () => {
     tool.setHandOff(handOffHook({ openDesktop: async () => false }));
 
     await expect(
-      tool.execute("call", { label: "t", handOff: "Sign in" }, undefined),
+      callableTool(tool).execute("call", { label: "t", handOff: "Sign in" }, undefined),
     ).rejects.toThrow(/desktop/);
   });
 
@@ -2135,14 +2152,14 @@ describe("jev_browser on the office desktop", () => {
       return { stdout: JSON.stringify({ success: true, data, error: null }), stderr: "", code: 0 };
     });
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
-    await tool.execute(
+    await callableTool(tool).execute(
       "first",
       { label: "t", url: "https://one.test/", commands: [["get", "title"]] },
       undefined,
     );
     execMock.mockClear();
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "second",
       { label: "t", url: "https://two.test/", commands: [["get", "title"]] },
       undefined,
@@ -2158,7 +2175,7 @@ describe("jev_browser on the office desktop", () => {
     answerBrowser();
     const tool = createJevBrowserTool(env);
 
-    await tool.execute(
+    await callableTool(tool).execute(
       "call",
       { label: "t", url: "https://a.test/", commands: [["get", "title"]] },
       undefined,
@@ -2171,7 +2188,7 @@ describe("jev_browser on the office desktop", () => {
     const tool = createJevBrowserTool(env, undefined, { desktop: true });
 
     await expect(
-      tool.execute("call", { label: "t", handOff: "Please sign in" }, undefined),
+      callableTool(tool).execute("call", { label: "t", handOff: "Please sign in" }, undefined),
     ).rejects.toThrow(/desktop/);
   });
 });

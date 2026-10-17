@@ -135,9 +135,9 @@ Execution tools fail without one; there is no implicit host fallback.
 Host mode uses Pi's `NodeExecutionEnv`; container sandboxes use
 pi-env's `RemoteExecutionEnv` through `src/sandbox/container.ts`. Both pass
 Pi's `registerEnvConformance` suite.
-Integrations using only plain `AgentTool`s may omit `toolContext`; `pi-tools.ts`
-adapts them, forwarding progress `details` and awaiting the last update before
-the result.
+Every mikan tool is a pi-durable `ToolRegistration`: it reports progress with
+`api.details`, reads cancellation from `context.abortSignal`, and returns Pi's
+`ToolExecutionResult`. Integrations without sandbox tools may omit `toolContext`.
 
 Compaction belongs to Pi; `SessionStore` writes compaction entries only when
 `mikan migrate` imports older sessions.

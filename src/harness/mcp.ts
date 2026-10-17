@@ -14,9 +14,8 @@ import {
   type McpTransport,
   type Tool as McpTool,
 } from "@earendil-works/pi-mcp";
-import type { MikanHarnessTool } from "./types.js";
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { guardMcpToolResult } from "./mcp-result.js";
-import { tagHarnessTool } from "./tools/pi-tools.js";
 import { TOOL_SEARCH_TOOL_NAME as TOOL_SEARCH_TOOL } from "@earendil-works/pi-durable/tool-search";
 import { LABEL_PARAMETER } from "./tools/host-fn-tool.js";
 import { Type, type TSchema } from "typebox";
@@ -223,7 +222,7 @@ async function connectServer(
   name: string,
   config: McpServerConfig,
   signal?: AbortSignal,
-): Promise<{ client: McpClient; tools: MikanHarnessTool[]; instructions?: string }> {
+): Promise<{ client: McpClient; tools: ToolRegistration[]; instructions?: string }> {
   const exposure: McpExposure = config.exposure ?? "codemode";
   const client = new McpClient({
     name: "mikan",
@@ -233,9 +232,9 @@ async function connectServer(
   try {
     await untilAborted(client.connect(buildTransport(name, config)), signal);
     const listed = await client.listTools({ timeoutMs: CONNECT_TIMEOUT_MS, signal });
-    const tools: MikanHarnessTool[] = listed.map((mcpTool) => {
+    const tools: ToolRegistration[] = listed.map((mcpTool) => {
       const ownsLabel = Object.hasOwn(schemaProperties(mcpTool.inputSchema), "label");
-      return tagHarnessTool({
+      return defineTool({
         name: `mcp__${name}__${mcpTool.name}`,
         callers: exposure === "codemode" ? ["tools"] : undefined,
         deferred: exposure === "deferred" ? true : undefined,
@@ -351,7 +350,7 @@ export async function loadMcpTools(
   signal?: AbortSignal,
 ): Promise<McpToolsResult> {
   const clients: McpClient[] = [];
-  const tools: MikanHarnessTool[] = [];
+  const tools: ToolRegistration[] = [];
   const errors: McpLoadError[] = [];
   const summaries: McpServerSummary[] = [];
 

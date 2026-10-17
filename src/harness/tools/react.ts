@@ -1,4 +1,4 @@
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { defineHostFnTool } from "./host-fn-tool.js";
 
@@ -12,7 +12,7 @@ const reactSchema = Type.Object({
 });
 
 export function createReactTool(): {
-  tool: AgentTool<typeof reactSchema>;
+  tool: ToolRegistration<typeof reactSchema>;
   setReactFunction: (fn: ((emoji: string) => Promise<void>) | null) => void;
 } {
   const { tool, setFn } = defineHostFnTool<(emoji: string) => Promise<void>, typeof reactSchema>({
@@ -24,7 +24,7 @@ export function createReactTool(): {
     run: async (reactFn, { emoji }) => {
       await reactFn(emoji);
       return {
-        content: [{ type: "text" as const, text: `Reacted with :${emoji.replace(/^:|:$/g, "")}:` }],
+        output: [{ type: "text" as const, text: `Reacted with :${emoji.replace(/^:|:$/g, "")}:` }],
         details: undefined,
       };
     },

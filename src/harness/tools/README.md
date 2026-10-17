@@ -22,7 +22,7 @@ therefore does **not** mean the call's input was omitted. The result's `content`
 (text or image) and, when present, `details` can be persisted. After a run,
 `src/sessions/session-store.ts` rebuilds model context from message entries;
 compaction can replace older entries with a summary and retained tail. A
-`tool_update`/`onUpdate` is forwarded as a live progress event, not an
+`tool_execution_update` (`api.details`) is forwarded as a live progress event, not an
 independent persisted message. If progress data is also returned in the final
 result, that copy does enter the session.
 
@@ -158,7 +158,7 @@ most one evidence-based correction rather than retrying an unchanged goal.
 ## Contracts
 
 - `generate_image` writes host-side into the office directory, the only host location the guest can also reach, and uploads from that host path, because the file may not be mounted in the sandbox the way `attach` assumes.
-- `withSecretRedaction` scrubs every configured secret env value from each assembled tool's text output; in host sandbox mode it is the only defense against a command or file read returning a secret. It mutates `execute` in place so the `isHarnessTool` marker and a platform pack's `bindRun` binding survive wrapping.
+- `withSecretRedaction` scrubs every configured secret env value from each assembled tool's text output; in host sandbox mode it is the only defense against a command or file read returning a secret. It mutates `execute` in place so a platform pack's `bindRun` binding survives wrapping.
 - `jev` reports a Jev with no provider key as a tool error, never a silent fallback.
 - `jev` and `jev_browser` return the spend of their Jev and text-generation calls as the tool result's `usage`, so session spend and budgets count it; a call that throws reports none.
 - `jev_browser` asks Jev which step to take, but Jev only chooses and scores, so the text it types or the option it selects is written by the conversation's own chat model (the office's resolved `settings.json` model), through pi-ai, which the runner injects. A field that needs text without that injection blocks with a reason instead of guessing.
