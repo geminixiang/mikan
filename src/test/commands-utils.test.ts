@@ -65,6 +65,7 @@ function makeContext(overrides: ContextOverrides = {}): CommandContext {
     sessionKey: "C123",
     commandText: "",
     privateConversation: overrides.privateConversation ?? false,
+    directConversation: false,
     messagingInfo: { name: "slack", formattingGuide: "", channels: [], users: [] },
     services: {
       workspace: createWorkspace({

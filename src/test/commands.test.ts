@@ -158,6 +158,7 @@ function testWorkspace(root: string) {
 interface BuildContextArgs {
   commandText: string;
   privateConversation?: boolean;
+  directConversation?: boolean;
   conversationId?: string;
   vaultConversationId?: string;
   bot?: MessagingBot;
@@ -196,6 +197,7 @@ function buildContext(args: BuildContextArgs): CommandContext & {
     sessionKey: args.conversationId ?? "C123",
     commandText: args.commandText,
     privateConversation: args.privateConversation ?? false,
+    directConversation: args.directConversation ?? args.privateConversation ?? false,
     messagingInfo: {
       name: args.platform ?? "slack",
       formattingGuide: "",
@@ -421,6 +423,20 @@ describe("LoginCommandHandler", () => {
     const ctx = buildContext({
       commandText: "/login",
       privateConversation: false,
+      services: { linkTokenStore },
+    });
+
+    expect(await handler.tryHandle(ctx)).toBe(true);
+    expect(linkTokenStore.created).toHaveLength(0);
+    expect(ctx.responder.responses[0]).toContain("私訊");
+  });
+
+  test("refuses a slash command in a channel, whose reply is private but whose vault is the channel's", async () => {
+    const linkTokenStore = fakeLinkTokenStore();
+    const ctx = buildContext({
+      commandText: "/pi-login",
+      privateConversation: true,
+      directConversation: false,
       services: { linkTokenStore },
     });
 

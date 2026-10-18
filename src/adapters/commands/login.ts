@@ -72,7 +72,7 @@ export class LoginCommandHandler implements CommandHandler {
     const parsed = parseLoginCommand(context.commandText);
     if (!parsed) return false;
 
-    if (!context.privateConversation) {
+    if (!context.directConversation) {
       await replySummary(context, "Vault", [
         "為了保護你的憑證，`/login` 只能在與機器人的私訊中使用。",
         "請先私訊機器人，再重新執行 `/login`。",
