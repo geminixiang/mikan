@@ -188,7 +188,6 @@ export function createWorkspace(options: { root: string; stateDir: string }): Wo
     stateDir,
     memoryPath: join(root, "MEMORY.md"),
     skillsDir: join(root, "skills"),
-    agentsDir: join(root, "agents"),
     reservedNames: RESERVED_WORKSPACE_NAMES,
     office(address: OfficeAddress): Office {
       const normalized = validateOfficeAddress(address);

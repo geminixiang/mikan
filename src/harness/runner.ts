@@ -1,5 +1,4 @@
 import type { Office, Workspace } from "../office/types.js";
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -9,11 +8,8 @@ import {
   type ThreadRootMessage,
 } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
-import { runChildSubagent, DEFAULT_GLOBAL_SUBAGENT_SLOTS, SubagentSlotPool } from "./subagent.js";
-import { loadSubagentProfiles } from "./subagent-profiles.js";
 import { createMikanTools } from "./tools/index.js";
 import { readRuntimeFile } from "./tools/attach.js";
-import { createSubagentTool } from "./tools/subagent.js";
 import { createHistoryTool } from "./tools/history.js";
 import { withSecretRedaction } from "./tools/secret-redaction.js";
 import { mkdir } from "node:fs/promises";
@@ -53,7 +49,7 @@ import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import type { DesktopAccess, PlatformToolPack } from "./tools/types.js";
-import { isTaskRunId, START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { isTaskRunId } from "./tools/task.js";
 import { isContinuedRunId } from "./continued-run.js";
 import { loadMikanSkills } from "./skills.js";
 import {
@@ -76,76 +72,6 @@ import {
 
 import * as log from "../log.js";
 import { errorMessage } from "../unknown-values.js";
-
-const globalSubagentSlots = new SubagentSlotPool(DEFAULT_GLOBAL_SUBAGENT_SLOTS);
-
-async function createConfiguredAgentSession(params: {
-  workspaceDir: string;
-  systemPrompt: string;
-  model: Model<Api>;
-  thinkingLevel: ModelThinkingLevel;
-  tools: Awaited<ReturnType<typeof createMikanTools>>["tools"];
-  toolContext: MikanToolContext;
-  sessionStore: SessionStore;
-  models: MikanModels;
-}): Promise<MikanAgentSession> {
-  const {
-    workspaceDir,
-    systemPrompt,
-    model,
-    thinkingLevel,
-    tools,
-    toolContext,
-    sessionStore,
-    models,
-  } = params;
-  const loadedProfiles = loadSubagentProfiles(workspaceDir);
-  for (const diagnostic of loadedProfiles.diagnostics) {
-    log.logWarning(`Subagent profile ignored: ${diagnostic.path}`, diagnostic.message);
-  }
-
-  const availableToolNames = new Set(tools.map((tool) => tool.name));
-  const runnableProfiles = new Map(
-    [...loadedProfiles.profiles].filter(([, profile]) =>
-      profile.tools.every((tool) => availableToolNames.has(tool)),
-    ),
-  );
-  const delegable = new Set(
-    [...availableToolNames].filter((name) => name !== START_TASK_TOOL && name !== TASK_STATUS_TOOL),
-  );
-  let session: MikanAgentSession | undefined;
-  const subagentTool = createSubagentTool(async (request, hooks) => {
-    if (!hooks?.call || hooks.key === undefined) {
-      throw new Error("Subagents run only inside a tool call");
-    }
-    const parent = session!;
-    return runChildSubagent({
-      request,
-      key: hooks.key,
-      call: hooks.call,
-      onActivity: hooks.onActivity,
-      defaultModel: model,
-      models,
-      availableTools: delegable,
-      profiles: runnableProfiles,
-      slots: globalSubagentSlots,
-      parentEntries: await parent.sessionStore.getContextEntries(),
-      track: (conversationId, conversationHooks) =>
-        parent.trackSubagent(conversationId, conversationHooks),
-    });
-  }, runnableProfiles);
-
-  session = new MikanAgentSession({
-    systemPrompt,
-    model,
-    thinkingLevel,
-    tools: [...tools, subagentTool],
-    toolContext,
-    models,
-    sessionStore,
-  });
-  return session;
-}
 
 function desktopAccess(
   options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office" | "trustModel">,
@@ -402,7 +328,6 @@ async function openRunnerSessionManager(params: {
 }
 
 async function createRunnerAgentSession(params: {
-  workspaceDir: string;
   systemPrompt: string;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
@@ -414,7 +339,6 @@ async function createRunnerAgentSession(params: {
   signal?: AbortSignal;
 }) {
   const {
-    workspaceDir,
     systemPrompt,
     model,
     agentConfig,
@@ -425,15 +349,14 @@ async function createRunnerAgentSession(params: {
     signal,
   } = params;
   const mcpTools = await sessionManager.connectMcp(agentConfig.mcpServers ?? {}, signal);
-  return createConfiguredAgentSession({
-    workspaceDir,
+  return new MikanAgentSession({
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools: [...tools, ...mcpTools.map(withSecretRedaction)],
     toolContext,
-    sessionStore: sessionManager,
     models: modelRegistry,
+    sessionStore: sessionManager,
   });
 }
 
@@ -737,7 +660,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
 async function finishRunnerCreation(params: {
   options: CreateRunnerOptions;
   conversationId: string;
-  workspaceDir: string;
   execution: RunnerExecutionContext;
   model: Model<Api>;
   modelRegistry: MikanModels;
@@ -751,7 +673,6 @@ async function finishRunnerCreation(params: {
   const {
     options,
     conversationId,
-    workspaceDir,
     execution,
     model,
     modelRegistry,
@@ -766,7 +687,6 @@ async function finishRunnerCreation(params: {
   try {
     const sessionUuid = sessionManager.getSessionId();
     const session = await createRunnerAgentSession({
-      workspaceDir,
       systemPrompt,
       model,
       agentConfig,
@@ -894,7 +814,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   return finishRunnerCreation({
     options,
     conversationId,
-    workspaceDir,
     execution,
     model,
     modelRegistry,

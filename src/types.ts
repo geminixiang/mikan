@@ -1,5 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import type { RunEventPublisher, SubagentRunStatus } from "./harness/types.js";
+import type { RunEventPublisher } from "./harness/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
@@ -56,28 +56,6 @@ export interface ChatToolResult {
   durationMs: number;
 }
 
-export type SubagentProgressStatus = SubagentRunStatus | "pending" | "running" | "skipped";
-
-export interface SubagentProgressNode {
-  id: string;
-  label: string;
-  status: SubagentProgressStatus;
-  profile?: string;
-  turns?: number;
-  toolCalls?: number;
-  toolCallCounts?: Record<string, number>;
-  tokens?: number;
-  costUsd?: number;
-  durationMs?: number;
-  activity?: string;
-  reason?: string;
-}
-
-export interface SubagentProgressSnapshot {
-  mode: "single" | "parallel" | "dag";
-  nodes: SubagentProgressNode[];
-}
-
 export interface TaskStatus {
   sessionKey: string;
   threadTs: string;
@@ -108,12 +86,6 @@ export interface ConversationResponder {
   readonly showsPartialAnswer?: boolean;
   respond(text: string): Promise<void>;
   replaceResponse(text: string, options?: ReplaceResponseOptions): Promise<void>;
-  replaceSubagentProgress?(
-    progress: SubagentProgressSnapshot,
-    finalText?: string,
-    options?: ReplaceResponseOptions,
-  ): Promise<void>;
-  respondAsRole?(profile: string, text: string): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
   respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;

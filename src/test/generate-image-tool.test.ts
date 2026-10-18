@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createGenerateImageTool } from "../harness/tools/generate-image.js";
+import { createGenerateImageTool, GENERATE_IMAGE_TOOL } from "../harness/tools/generate-image.js";
 import { callableTool } from "./tool-api.js";
 
 const dirs: string[] = [];
@@ -38,6 +38,7 @@ describe("generate_image tool", () => {
       outputDir,
     });
     setUploadFunction(upload);
+    expect(tool.name).toBe(GENERATE_IMAGE_TOOL);
 
     await callableTool(tool).execute(
       "call-1",

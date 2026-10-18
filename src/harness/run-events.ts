@@ -1,4 +1,3 @@
-import { parseSubagentProgressSnapshot } from "./tools/subagent.js";
 import { JEV_TOOL } from "./tools/jev.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
 import type { OfficeAddress } from "../types.js";
@@ -15,11 +14,6 @@ function toolDisplayLabel(toolName: string, args: unknown): string {
     return `${toolName} · ${text}`;
   }
   return text;
-}
-
-function subagentProgressOf(details: unknown) {
-  if (!details || typeof details !== "object") return undefined;
-  return parseSubagentProgressSnapshot((details as { progress?: unknown }).progress);
 }
 
 function toolResultContentText(result: unknown): string | undefined {
@@ -64,12 +58,6 @@ export function toRunEvent(event: HarnessEvent): RunEvent | undefined {
         toolName: event.toolName,
         label: toolDisplayLabel(event.toolName, event.args),
       };
-    case "tool_execution_update": {
-      const snapshot = subagentProgressOf(event.details);
-      return snapshot
-        ? { type: "subagent_progress", toolCallId: event.toolCallId, snapshot }
-        : undefined;
-    }
     case "tool_execution_end":
       return {
         type: "tool_ended",

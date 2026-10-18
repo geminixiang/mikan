@@ -56,7 +56,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 - `PiAgentWrapper` を作成する
 - モデル、skills、memory、session context を読み込む
-- ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-durable` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets and bounded subagents を実行する
+- ユーザーメッセージを mikan 自前の agent harness（`src/harness/`、`pi-durable` / `pi-ai` の上に構築）に渡し、ターンループ・auto-compaction・auto-retry・budgets を実行する
 - tool calls をローカルの `read/bash/edit/write/event/attach` に接続する
 - tool の結果を session に書き戻し、adapter 経由でプラットフォームへ返す
 - `ActorExecutionResolver` により user/conversation/vault から実際の実行環境を決定する
@@ -83,7 +83,7 @@ description: mikan のプラットフォーム接続、conversation office、セ
 
 責務:
 
-- `createWorkspace({ root, stateDir })` がプロセスごとの `Workspace` を構築する: workspace root、そのグローバルな `MEMORY.md` / `skills/` / `agents/`、そして office factory
+- `createWorkspace({ root, stateDir })` がプロセスごとの `Workspace` を構築する: workspace root、そのグローバルな `MEMORY.md` / `skills/`、そして office factory
 - `workspace.office(address)` は、すべての path を事前計算した frozen な `Office` を返す — `dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath`、host 専用の `stateDir` — さらに唯一の materialization seam である `ensure()` を持つ
 - host 上、sandbox runtime 内、vault のいずれでも office を指す `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`）を導出する
 - office key は逆変換できないため、生 id ↔ office の対応を保持する host 専用の office registry（`office-registry.json`）を管理する
@@ -160,7 +160,6 @@ sequenceDiagram
 ├── MEMORY.md                  # workspace レベルの記憶
 ├── skills/                    # workspace レベルの skills
 ├── events/                    # workspace のスケジューリングバス
-├── agents/                    # インストールごとの subagent profile patch
 └── <officeKey>/               # 1 つの conversation office
     ├── MEMORY.md              # office レベルの記憶
     ├── log.jsonl              # grep 可能な人間可読メッセージ履歴

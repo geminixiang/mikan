@@ -8,7 +8,6 @@ import type {
   LoggedAttachment,
   MessagingEventHandler,
   OfficeAddress,
-  SubagentProgressSnapshot,
 } from "../types.js";
 
 export type ChatResponseErrorOperation =
@@ -85,7 +84,6 @@ export interface ProgressiveRendererPlatform {
   showsPartialAnswer?: boolean;
   stream?: ProgressiveStreamTransport;
   needsCanonicalRender?: (text: string) => boolean;
-  formatSubagentProgress?: (progress: SubagentProgressSnapshot) => string;
   typing?: {
     send: () => Promise<unknown>;
     intervalMs: number;

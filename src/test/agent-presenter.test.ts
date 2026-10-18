@@ -100,25 +100,10 @@ afterEach(() => {
 });
 
 describe("presenter event routing", () => {
-  test("disposal cancels scheduled progress and ignores events until reactivation", async () => {
-    vi.useFakeTimers();
+  test("disposal ignores events until reactivation", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
-    await emit({
-      type: "tool_execution_update",
-      toolCallId: "subagent-1",
-      toolName: "subagent",
-      details: {
-        progress: {
-          mode: "single",
-          nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-        },
-      },
-    });
-    expect(vi.getTimerCount()).toBe(1);
     runQueue.dispose();
-    expect(vi.getTimerCount()).toBe(0);
     await emit({ type: "text_delta", delta: "ignored" });
-    await vi.runAllTimersAsync();
     await runQueue.wait();
     expect(responder.replaceResponse).not.toHaveBeenCalled();
 
@@ -524,45 +509,6 @@ describe("presenter event routing", () => {
     }
   });
 
-  test("routes subagent updates and suppresses assistant deltas while progress is live", async () => {
-    const { emit, responder, runQueue, runState } = attachPresenter();
-
-    await emit({
-      type: "tool_execution_start",
-      toolCallId: "subagent-1",
-      toolName: "subagent",
-      args: { label: "Delegate work" },
-    });
-    await emit({
-      type: "tool_execution_update",
-      toolCallId: "subagent-1",
-      toolName: "subagent",
-      details: {
-        progress: {
-          mode: "single",
-          nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-        },
-      },
-    });
-    await vi.waitFor(() => expect(responder.replaceResponse).toHaveBeenCalled());
-    await runQueue.wait();
-
-    expect(runState.subagentProgress.get("subagent-1")).toEqual({
-      mode: "single",
-      nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-    });
-    expect(runState.subagentToolCalls.has("subagent-1")).toBe(true);
-    expect(runState.suppressResponseDeltas).toBe(true);
-    expect(responder.replaceResponse).toHaveBeenCalledWith(
-      expect.stringContaining("Inspect code"),
-      undefined,
-    );
-
-    await emit({ type: "text_delta", delta: "hidden" });
-    await runQueue.wait();
-    expect(JSON.stringify(responder.replaceResponse.mock.calls)).not.toContain("hidden");
-  });
-
   test("routes compaction, retry, and budget lifecycle diagnostics", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
 
@@ -695,7 +641,7 @@ describe("presenter event routing", () => {
     );
   });
 
-  test("reactivation clears completed tool progress, subagent dashboard, and attribution", async () => {
+  test("reactivation clears completed tool progress and attribution", async () => {
     const { emit, responder, runQueue, runState } = attachPresenter();
     try {
       await emit({
@@ -717,35 +663,22 @@ describe("presenter event routing", () => {
 
       await emit({
         type: "tool_execution_start",
-        toolCallId: "subagent-1",
-        toolName: "subagent",
-        args: { label: "Delegate work" },
-      });
-      await emit({
-        type: "tool_execution_update",
-        toolCallId: "subagent-1",
-        toolName: "subagent",
-        details: {
-          progress: {
-            mode: "single",
-            nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-          },
-        },
+        toolCallId: "tool-2",
+        toolName: "read",
+        args: { label: "Inspect code" },
       });
       await emit({
         type: "tool_execution_end",
-        toolCallId: "subagent-1",
-        toolName: "subagent",
+        toolCallId: "tool-2",
+        toolName: "read",
         result: { content: [{ type: "text", text: "done" }] },
         isError: false,
       });
       await runQueue.wait();
       expect(responder.replaceResponse).toHaveBeenLastCalledWith(
         expect.stringContaining("Inspect code"),
-        undefined,
       );
       expect(runState.toolProgress.size).toBe(2);
-      expect(runState.completedSubagentProgress).toHaveLength(1);
     } finally {
       runQueue.dispose();
     }

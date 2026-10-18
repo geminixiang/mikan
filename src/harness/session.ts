@@ -46,8 +46,6 @@ import type {
   HarnessEventListener,
   HarnessSettings,
   MikanAgentSessionOptions,
-  SubagentConversationHooks,
-  SubagentUsage,
   RetrySettings,
 } from "./types.js";
 
@@ -64,14 +62,9 @@ const context: Context = BACKGROUND_CONTEXT;
 const COMPACTION_REQUEST = Symbol("compaction-request");
 const CODEMODE_SANDBOX = new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024 });
 const TOOL_SEARCH_EXTENSION = createToolSearchExtension();
-const CODEMODE_EXTENSION_NAME = "codemode";
-export const OWNER_ONLY_EXTENSIONS: readonly string[] = [
-  CODEMODE_EXTENSION_NAME,
-  TOOL_SEARCH_EXTENSION.name,
-];
 
 interface RunTally {
-  usage: SubagentUsage;
+  usage: Usage;
   llmCalls: number;
   toolCalls: number;
   toolCallCounts: Record<string, number>;
@@ -120,7 +113,6 @@ export class MikanAgentSession {
   private runMessages: Message[] = [];
   private streamingContent: AssistantMessage["content"] = [];
   private readonly toolArgs = new Map<string, unknown>();
-  private readonly subagents = new Map<ConversationId, SubagentConversationHooks>();
   private runStarted = false;
   private runEndSeen = false;
   private observedUsage: Usage = createEmptyUsage();
@@ -157,7 +149,7 @@ export class MikanAgentSession {
   }
 
   getLastRunStats(): Readonly<{
-    usage: SubagentUsage;
+    usage: Usage;
     tokens: number;
     costUsd: number;
     llmCalls: number;
@@ -178,13 +170,6 @@ export class MikanAgentSession {
         this.tally.startedAt > 0 ? (this.tally.endedAt ?? Date.now()) - this.tally.startedAt : 0,
       budgetExceededReason: this.budgetExceededReason || undefined,
       status: this.lastSessionRunStatus,
-    };
-  }
-
-  trackSubagent(conversationId: ConversationId, hooks: SubagentConversationHooks): () => void {
-    this.subagents.set(conversationId, hooks);
-    return () => {
-      if (this.subagents.get(conversationId) === hooks) this.subagents.delete(conversationId);
     };
   }
 
@@ -502,15 +487,8 @@ export class MikanAgentSession {
   private extensionHooks(own: (id: ConversationId) => boolean): HookRegistration[] {
     return [
       hook(GenerationTask, {
-        beforeRequest: async (_request, api) => {
-          if (own(api.conversationId)) return this.beforeRequest(String(api.taskId));
-          this.subagents.get(api.conversationId)?.beforeRequest();
-          return undefined;
-        },
-        afterResponse: (message, api) => {
-          if (!own(api.conversationId))
-            this.subagents.get(api.conversationId)?.afterResponse(message);
-        },
+        beforeRequest: async (_request, api) =>
+          own(api.conversationId) ? this.beforeRequest(String(api.taskId)) : undefined,
       }),
       hook(CompactionTask, {
         beforeCompact: (_compaction, api) =>
@@ -519,10 +497,8 @@ export class MikanAgentSession {
             : { decline: true as const },
       }),
       hook(ToolTask, {
-        beforeTool: async (call, api) =>
-          own(api.conversationId)
-            ? this.beforeTool(api)
-            : this.subagents.get(api.conversationId)?.beforeTool(call),
+        beforeTool: async (_call, api) =>
+          own(api.conversationId) ? this.beforeTool(api) : undefined,
       }),
     ];
   }

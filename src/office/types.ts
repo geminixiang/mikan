@@ -11,7 +11,6 @@ export interface Workspace {
   readonly stateDir: string;
   readonly memoryPath: string;
   readonly skillsDir: string;
-  readonly agentsDir: string;
   readonly reservedNames: ReadonlySet<string>;
   office(address: OfficeAddress): Office;
 }

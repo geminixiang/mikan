@@ -56,7 +56,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 - 建立 `PiAgentWrapper`
 - 載入模型、skills、memory、session context
-- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-durable` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets and bounded subagents
+- 將使用者訊息送入 mikan 自有的 agent harness（`src/harness/`，建構於 `pi-durable` / `pi-ai` 之上），由它執行回合迴圈、auto-compaction、auto-retry 與 budgets
 - 把 tool calls 接到本地 `read/bash/edit/write/event/attach`
 - 把 tool 結果回寫 session，並透過 adapter 回傳給平台
 - 透過 `ActorExecutionResolver` 依 user/conversation/vault 決定實際執行環境
@@ -83,7 +83,7 @@ description: 了解 mikan 的平台接入、conversation office、工作階段�
 
 職責：
 
-- `createWorkspace({ root, stateDir })` 建立每個 process 的 `Workspace` 值：workspace root、它的全域 `MEMORY.md` / `skills/` / `agents/`，以及 office factory
+- `createWorkspace({ root, stateDir })` 建立每個 process 的 `Workspace` 值：workspace root、它的全域 `MEMORY.md` / `skills/`，以及 office factory
 - `workspace.office(address)` 回傳一個所有路徑都已預先算好的凍結 `Office` 值——`dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath`，以及僅限 host 的 `stateDir`——再加上 `ensure()`，也就是唯一的實體化接縫
 - 推導出 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 prefix>`），用來在 host 上、sandbox runtime 內以及 vault 中命名該 office
 - 維護僅限 host 的 office registry（`office-registry.json`），作為 raw id ↔ office 的持久對照，因為 office key 無法反推
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
     ├── log.jsonl              # grep-friendly platform message history

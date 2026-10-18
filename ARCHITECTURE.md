@@ -69,7 +69,7 @@ platform event
   → platform response
 ```
 
-The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. Sessions owns the append-only session tree and its single writer; the harness owns the model/tool loop, retry, compaction, budgets, skills, and bounded subagents.
+The runtime owns queueing and lifecycle. The runner owns one agent run's environment and response. Sessions owns the append-only session tree and its single writer; the harness owns the model/tool loop, retry, compaction, budgets, and skills.
 
 ### Authority axis
 
@@ -189,7 +189,6 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
 <workspace-root>/                         agent data world
 ├── MEMORY.md                             shared workspace memory
 ├── skills/                               shared workspace skills
-├── agents/                               shared subagent profiles
 └── <office-key>/                         one Conversation office
     ├── MEMORY.md
     ├── skills/
@@ -242,7 +241,7 @@ Vault selection is independent from runtime resource naming. Open-trigger conver
 
 OpenConnector is an ordinary MCP server with a deployment default. Provider OAuth connections remain shared in the sibling service. When `OPENCONNECTOR_ENDPOINT` is set and neither global nor conversation settings declare `open-connector`, mikan uses its host-only admin authority once to mint a runtime token for the Slack or GitHub Conversation office, named `mikan:slack:<workspace-id>:<channel-id>` or `mikan:github:<conversation-id>`, and saves `{ url, headers }` as a normal entry in that office's host-only conversation settings. The admin token is sent only to the default endpoint's origin and never enters settings, the Vault, or a sandbox; the runtime token lives in settings like every other MCP credential and is not projected into managed sandboxes. A conversation may declare its own self-hosted server or disable the entry, in which case no provisioning happens. Provisioning failure is logged and leaves settings untouched.
 
-The runner applies the same fixed platform trust gate to every settings-declared MCP server: `open-trigger` conversations receive no MCP tools or server instructions, and no configured stdio process is launched. This creation-time gate precedes default provisioning and MCP loading, so the capability cannot enter either the parent or subagent tool sets. `membership` conversations retain MCP loading and default provisioning.
+The runner applies the same fixed platform trust gate to every settings-declared MCP server: `open-trigger` conversations receive no MCP tools or server instructions, and no configured stdio process is launched. This creation-time gate precedes default provisioning and MCP loading, so the capability cannot enter the tool set. `membership` conversations retain MCP loading and default provisioning.
 
 ## Cross-module invariants
 
@@ -356,7 +355,7 @@ Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/v
 
 <a id="inv-mcp-conversation-authority"></a>
 
-**`mcp-conversation-authority`** — A default-provisioned OpenConnector runtime token identifies one Slack or GitHub Conversation office and is named from its stable conversation ID, qualified by the workspace ID on Slack; it is minted only when neither settings scope declares `open-connector`. Shared provider OAuth credentials remain in OpenConnector. `OPENCONNECTOR_ENDPOINT` is the deployment default, and its origin is the only destination that may receive the host-only admin token; settings may declare a different server or disable the entry but cannot redirect the admin token. The runtime token is stored as an ordinary conversation `mcpServers` entry in host-only settings and is never projected into a managed Sandbox or the Vault. Failure to provision leaves settings untouched and that runner without OpenConnector. The fixed platform trust gate runs before provisioning and loading: `open-trigger` unconditionally gives the runner an empty MCP map, so configured servers are not launched and MCP tools/instructions cannot enter parent or subagent tool sets. Trust is static for an `OfficeAddress`, is not a runner cache key, and changing it requires runner replacement rather than another cache entry.
+**`mcp-conversation-authority`** — A default-provisioned OpenConnector runtime token identifies one Slack or GitHub Conversation office and is named from its stable conversation ID, qualified by the workspace ID on Slack; it is minted only when neither settings scope declares `open-connector`. Shared provider OAuth credentials remain in OpenConnector. `OPENCONNECTOR_ENDPOINT` is the deployment default, and its origin is the only destination that may receive the host-only admin token; settings may declare a different server or disable the entry but cannot redirect the admin token. The runtime token is stored as an ordinary conversation `mcpServers` entry in host-only settings and is never projected into a managed Sandbox or the Vault. Failure to provision leaves settings untouched and that runner without OpenConnector. The fixed platform trust gate runs before provisioning and loading: `open-trigger` unconditionally gives the runner an empty MCP map, so configured servers are not launched and MCP tools/instructions cannot enter the tool set. Trust is static for an `OfficeAddress`, is not a runner cache key, and changing it requires runner replacement rather than another cache entry.
 
 Evidence: `src/runtime/conversation-runtime.ts`, `src/harness/runner.ts`, `src/harness/open-connector.ts`, `src/adapters/slack/bot.ts`.
 

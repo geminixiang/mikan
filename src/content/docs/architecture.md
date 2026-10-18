@@ -56,7 +56,7 @@ Responsibilities:
 
 - create `PiAgentWrapper`
 - load model, skills, memory, and session context
-- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-durable` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets and bounded subagents
+- send user messages into mikan's own agent harness (`src/harness/`, built on `pi-durable` / `pi-ai`), which runs the turn loop with auto-compaction, auto-retry, and budgets
 - connect tool calls to local `read/bash/edit/write/event/attach`
 - write tool results back to the session and return responses through the adapter
 - use `ActorExecutionResolver` to decide the actual execution environment by user/conversation/vault
@@ -83,7 +83,7 @@ Every conversation is an **office**: its own persistent working area and data bo
 
 Responsibilities:
 
-- `createWorkspace({ root, stateDir })` builds the per-process `Workspace` value: the workspace root, its global `MEMORY.md` / `skills/` / `agents/`, and the office factory
+- `createWorkspace({ root, stateDir })` builds the per-process `Workspace` value: the workspace root, its global `MEMORY.md` / `skills/`, and the office factory
 - `workspace.office(address)` returns a frozen `Office` value with every path precomputed — `dir`, `memoryPath`, `skillsDir`, `sessionsPath`, `attachmentsDir`, `logPath`, and the host-only `stateDir` — plus `ensure()`, the single materialization seam
 - derive the `OfficeKey` (`v1-<platform>-<readable-id>-<sha256 prefix>`) that names the office on the host, inside sandbox runtimes, and in the vault
 - keep the host-only office registry (`office-registry.json`) as the durable raw-id ↔ office mapping, because office keys are not reversible
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
     ├── log.jsonl              # grep-friendly platform message history

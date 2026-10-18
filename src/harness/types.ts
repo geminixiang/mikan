@@ -2,30 +2,23 @@ import type { OfficeAddress, PlatformTrustModel } from "../types.js";
 import type { MikanAgentSession } from "./session.js";
 import type {
   Api,
-  AssistantMessage,
   ImageContent,
   Message,
   Model,
   ModelThinkingLevel,
   RetryPolicy,
-  Usage,
 } from "@earendil-works/pi-ai";
-import type { ConversationResponder, MessagingInfo, SubagentProgressSnapshot } from "../types.js";
+import type { ConversationResponder, MessagingInfo } from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
 import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
-import type { Context, JsonValue } from "@earendil-works/chord";
-import type {
-  CompactionPolicy,
-  ToolExecutionApi,
-  ToolRegistration,
-} from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord";
+import type { CompactionPolicy, ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { TextContent } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import type { SessionStore } from "../sessions/session-store.js";
-import type { Static, TSchema } from "typebox";
 
 export interface EnsureDefaultOpenConnectorOptions {
   office: Office;
@@ -66,18 +59,11 @@ export interface RunnerSessionState {
   pendingTools: Map<string, { toolName: string; args: unknown; startTime: number }>;
   completedTools: ToolTiming[];
   toolProgress: Map<string, { label: string; status: "running" | "done" | "error" }>;
-  subagentProgress: Map<string, SubagentProgressSnapshot>;
-  completedSubagentProgress: SubagentProgressSnapshot[];
-  subagentToolCalls: Set<string>;
-  subagentProgressShown: boolean;
-  suppressResponseDeltas: boolean;
   answerStreamStarted: boolean;
   answerText: string;
   notice: string;
   workAcknowledged: boolean;
   publishRunEvent: RunEventListener | undefined;
-  lastSubagentProgressAt: number;
-  toolProgressTimer: ReturnType<typeof setTimeout> | undefined;
   llmCallCount: number;
   toolCallCount: number;
   toolErrorCount: number;
@@ -165,115 +151,6 @@ export interface PreparedRunContext {
   triggerAttribution?: string;
 }
 
-export interface SubagentModelSpec {
-  provider: string;
-  id: string;
-}
-
-export interface SubagentProfile {
-  name: string;
-  description: string;
-  systemPrompt: string;
-  tools: string[];
-  model?: SubagentModelSpec;
-  thinkingLevel?: ModelThinkingLevel;
-  maxTurns?: number;
-  maxTokens?: number;
-  maxCostUsd?: number;
-  maxDurationMs?: number;
-}
-
-interface SubagentRunBudget {
-  maxTurns?: number;
-  maxTokens?: number;
-  maxCostUsd?: number;
-  maxDurationMs?: number;
-}
-
-export type SubagentRunStatus =
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "timeout"
-  | "budget_exceeded"
-  | "invalid_output";
-
-interface SubagentParentContext {
-  mode: "normalized";
-  recentTurns?: number;
-}
-
-export type SubagentUsage = Usage;
-
-export interface SubagentToolCall {
-  api: ToolExecutionApi;
-  context: Context;
-}
-
-export interface SubagentRunHooks {
-  onActivity?: (activity: string) => void;
-  key?: string;
-  call?: SubagentToolCall;
-}
-
-export interface SubagentToolCallView {
-  id: string;
-  name: string;
-  arguments: Record<string, unknown>;
-}
-
-export interface SubagentConversationHooks {
-  beforeRequest(): void;
-  afterResponse(message: AssistantMessage): void;
-  beforeTool(call: SubagentToolCallView): { block: string } | undefined;
-}
-
-export interface SubagentRunRequest<TOutputSchema extends TSchema | undefined = undefined> {
-  task: string;
-  profile?: string;
-  parentContext?: SubagentParentContext;
-  systemPrompt?: string;
-  input?: unknown;
-  model?: SubagentModelSpec;
-  tools?: string[];
-  thinkingLevel?: ModelThinkingLevel;
-  outputSchema?: TOutputSchema;
-  budget?: SubagentRunBudget;
-  signal?: AbortSignal;
-}
-
-export type SubagentRunOutput<TSchemaOrUndefined extends TSchema | undefined> =
-  TSchemaOrUndefined extends TSchema ? Static<TSchemaOrUndefined> : string;
-
-interface SubagentRunMetadata {
-  runId: string;
-  text?: string;
-  model: SubagentModelSpec;
-  turns: number;
-  toolCalls: number;
-  toolCallCounts: Record<string, number>;
-  usage: SubagentUsage;
-  tokens: number;
-  costUsd: number;
-  durationMs: number;
-}
-
-interface SubagentRunCompletedResult<TOutput> extends SubagentRunMetadata {
-  status: "completed";
-  output: TOutput;
-  error?: never;
-}
-
-interface SubagentRunIncompleteResult extends SubagentRunMetadata {
-  status: Exclude<SubagentRunStatus, "completed">;
-  output?: never;
-  error?: string;
-}
-
-export type SubagentRunResult<TOutput = string> =
-  | SubagentRunCompletedResult<TOutput>
-  | SubagentRunIncompleteResult;
-
 export interface CreateMikanModelsOptions {
   modelsJsonPath: string;
 }
@@ -327,17 +204,6 @@ export interface HarnessSettings {
   budget: BudgetSettings;
 }
 
-export interface SubagentProfileDiagnostic {
-  type: "warning";
-  message: string;
-  path: string;
-}
-
-export interface LoadSubagentProfilesResult {
-  profiles: Map<string, SubagentProfile>;
-  diagnostics: SubagentProfileDiagnostic[];
-}
-
 type CompactionReason = "threshold" | "overflow" | "manual";
 
 export type HarnessEvent =
@@ -382,7 +248,6 @@ export type HarnessEventListener = (event: HarnessEvent) => void | Promise<void>
 
 export type RunEvent =
   | { type: "tool_started"; toolCallId: string; toolName: string; label: string }
-  | { type: "subagent_progress"; toolCallId: string; snapshot: SubagentProgressSnapshot }
   | {
       type: "tool_ended";
       toolCallId: string;

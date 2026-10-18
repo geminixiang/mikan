@@ -60,19 +60,17 @@ tools depend on the connected server's `listTools()` response.
 | `github_review_reply`   |     ✓     |        ✓        |        —        |          —           |          Reply body in arguments; thread and URL.           |
 | `github_read`           |     ✓     |        ✓        |        —        |          —           |          Query and formatted PR/issue/review data.          |
 | `github_issue`          |     ✓     |        ✓        |        —        |          —           |             Issue request and operation report.             |
-| `subagent`              |     ✓     |        ✓        |        —        |          ✓           |                              ✓                              | Task/tool grants; final outcomes in text **and** `details`.                                               |
 | `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images.                        |
 
 This is a **data-flow inventory**, not a guarantee that every result is small
 or safe. `jev_browser` bounds the goal-loop snapshot but does not impose one
-aggregate limit on raw command results; native file/command output, subagent
-outcomes and GitHub check logs can also be large; MCP text is bounded like `bash`. Image bytes
+aggregate limit on raw command results; native file/command output and GitHub
+check logs can also be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
 only scrubs final text `output` and the `structuredOutput` scripts read for tools
 assembled by `createMikanTools` and for MCP tools; it does not scrub arguments,
-`details`, images or progress, and
-the runner adds `subagent` separately. Do not treat this as a universal secret
+`details`, images or progress. Do not treat this as a universal secret
 filter.
 
 ## Codemode
@@ -80,9 +78,7 @@ filter.
 `codemode` and `tool_search` are pi-durable's own
 (`@earendil-works/pi-durable/codemode` and `/tool-search`). `installRunTools`
 selects them next to the session's extension: `codemode` whenever the run has
-tools, `tool_search` only when a granted tool is `deferred`. A subagent child
-copies its owner's extensions without these two, so it gets neither the tool
-nor the `codemode` prompt section. One `CodemodeSandbox` (64-MiB heap) serves
+tools, `tool_search` only when a granted tool is `deferred`. One `CodemodeSandbox` (64-MiB heap) serves
 every script in the process; Pi gives scripts no deadline unless they set
 `timeout_ms`. `models.*` globals are off (`models: false`); images come from
 `generate_image`.
@@ -93,7 +89,7 @@ listing callable tools as declarations, `searchTools()` / `describeTool()` /
 run's `ExecutionEnv`), `store()` / `load()` (Pi's `pi.codemode.store`
 document, which `/new` clears), and replay after a restart. Each nested call
 is its own `pi.tool` task, so mikan's `ToolTask` hooks (the `start_task` batch
-rule, subagent budgets) and its tool events apply to it as to a model call. A
+rule, run budgets) and its tool events apply to it as to a model call. A
 schema-less tool resolves to its text, images left out; a tool with
 `structuredOutputSchema` resolves to its `structuredOutput`, also on an error
 result, so `tools.bash` gives `{ output, exitCode, ... }`.
@@ -165,4 +161,3 @@ most one evidence-based correction rather than retrying an unchanged goal.
 - In `oci` mode, before each call `jev_browser` runs the sandbox image's `mikan-desktop status` (ADR 0025); other modes have no desktop and skip it. While the office desktop runs, the browser launches headed on its Wayland display, named by absolute path rather than through `XDG_RUNTIME_DIR`, because agent-browser keeps its session sockets under `XDG_RUNTIME_DIR` when it is set and a later call or the agent's own `agent-browser` without it would not find the session, and the tab limit counts only tabs the tool opened; while a person controls the browser it returns `person-has-control` without touching it, and the goal loop stops at the next step. A failed status call, as in an older image, means no desktop. `handOff` is used alone and only in direct messages, where its link can be sent privately; elsewhere it fails without touching control. It starts the desktop through the runner's `DesktopAccess`, and if agent-browser's lifecycle shows the browser was last launched headless, it reads the current page, closes the headless browser, and reopens that page on the desktop under a new session name (other tabs and the headless cookies are lost). The new name is needed because agent-browser's per-session daemon keeps the environment it started with, so a daemon started headless cannot launch Chromium on Wayland; the old daemon exits on agent-browser's own idle timeout. with no page open it fails and asks the model to open one with `url`, which now opens on the desktop. It then writes `control user`, posts the step with a private desktop link through the run's responder, and ends the turn with `terminate`; the presenter treats that result as the final response. If the post fails, control goes back to the agent.
 - Each runner's `jev_browser` owns one browser, named by the tool rather than the model, that stays open until `close: true`; a later `url` opens a new tab, and opening past three tabs it opened first closes the oldest inactive ones of those, identified by target ID, so a tab a person opened on the office desktop is never closed. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out. Every command, including cleanup, runs as an argv through the actor-resolved sandbox `ExecutionEnv`, and a missing `agent-browser` (`spawn_error`) is a provisioning error, never an automatic install or a host fallback.
 - `web_fetch` runs on the host, so it refuses private, loopback, and link-local targets (ADR 0024). Its own undici `Agent` checks the remote address of every connection, which covers IP literals, DNS answers, redirects, and a name that resolves differently between requests. That `Agent` bypasses the daemon's global `EnvHttpProxyAgent`, because a proxy would make the connection and hide the target address, so a deployment that reaches the web only through a proxy cannot use `web_fetch`. Its result goes through `guardMcpToolResult`, the same bound and workspace spill as MCP results.
-- `subagent.ts` owns the progress protocol that the presenter renders: snapshot bounds, parsing, merging, settling, and the Markdown dashboard.

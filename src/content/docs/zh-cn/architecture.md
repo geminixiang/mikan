@@ -56,7 +56,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 - 创建 `PiAgentWrapper`
 - 加载模型、技能、记忆和会话上下文
-- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-durable` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试、预算和有界 subagent
+- 将用户消息发送到 mikan 自有的代理框架（`src/harness/`，构建于 `pi-durable` / `pi-ai` 之上），由它运行轮次循环及自动压缩、自动重试和预算
 - 将工具调用连接到本地 `read/bash/edit/write/event/attach`
 - 将工具结果写回会话，并通过适配器返回回复
 - 使用 `ActorExecutionResolver` 按用户/对话/vault 确定实际执行环境
@@ -83,7 +83,7 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 
 职责：
 
-- `createWorkspace({ root, stateDir })` 构建每进程的 `Workspace` 值：工作区根目录、其全局 `MEMORY.md` / `skills/` / `agents/`，以及办公室工厂
+- `createWorkspace({ root, stateDir })` 构建每进程的 `Workspace` 值：工作区根目录、其全局 `MEMORY.md` / `skills/`，以及办公室工厂
 - `workspace.office(address)` 返回一个冻结的 `Office` 值，其中所有路径均已预先计算——`dir`、`memoryPath`、`skillsDir`、`sessionsPath`、`attachmentsDir`、`logPath` 以及仅主机的 `stateDir`——外加 `ensure()`，即唯一的物化缝隙
 - 派生 `OfficeKey`（`v1-<platform>-<readable-id>-<sha256 前缀>`），它在主机上、沙箱运行时内部以及 vault 中都用于命名该办公室
 - 维护仅主机的办公室注册表（`office-registry.json`），作为原始 id ↔ 办公室的持久映射，因为 office key 不可逆
@@ -159,7 +159,6 @@ sequenceDiagram
 <workspace>/
 ├── MEMORY.md                  # workspace-level memory
 ├── skills/                    # workspace-level skills
-├── agents/                    # per-install subagent profile patches
 └── <officeKey>/               # one conversation office
     ├── MEMORY.md              # office-level memory
     ├── log.jsonl              # grep-friendly platform message history
