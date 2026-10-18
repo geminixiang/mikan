@@ -77,6 +77,15 @@ A new conversation costs the same whatever the parent's length; fork costs what 
 - The DM write-back carries the task's actual result (read from `sessions.db`); the "請查看上方結果" line is the Slack thread notice. Asked afterwards, the DM main answered 5/5 correctly with 0–600 extra tokens.
 - Subagent briefs kept the request's constraints in every inspected case.
 
+### 7. Context isolation, the remaining reason for subagents
+
+The tool was introduced to keep the parent's context small, to finish faster and more completely in parallel, and to run in the background. Experiments 1–3 cover the second; the third never applied, because the parent waits inside the tool call. For the first:
+
+- Production subagent results, 28 days (read-only; children ran in memory, so only the tool result's `details` survive): 187 calls, children read a median ~56k tokens and returned ~190; 44% ended without an answer (40 on a profile token cap, 37 on the 10-minute timeout).
+- Production runs without a subagent, same window: the parent's context grew a median 0 tokens per run (p90 18.8k, p99 67k; 2.7% grew past 40k). A parent doing the work itself reads far less than a child that starts without context, so an estimate that assumes equal work overstates the saving.
+- Lab, branch with a single-task subagent (no profiles, batches, budget, or timeout): six 24 KB incident reports in a channel, then three follow-ups, 2 reps. Done directly, the parent grepped the facts: $0.029–0.049 in total, follow-up prompts 38–42k. Told to use a subagent: $0.063–0.068, follow-up prompts 40–43k (no smaller), one follow-up wrong.
+- The same single-task branch on the earlier cases: the model delegated the three-repository task in 3 of 3 runs (all correct, $0.067–0.100, against $0.03–0.05 direct) and once called three subagents one per turn on the 90-second waits (300 s).
+
 ## Findings
 
 | #   | Claim                                                                                                                                                                              | Evidence         |
@@ -87,11 +96,11 @@ A new conversation costs the same whatever the parent's length; fork costs what 
 | 4   | "New conversation plus a brief" is the cheapest mechanism once the parent exceeds ~11k tokens, which real DMs do. Fork wins only on first-request latency and on carrying context. | Experiment 5     |
 | 5   | Fork on production's API needs the parent's session ID to hit the cache at all.                                                                                                    | Experiment 4     |
 | 6   | Prompt facts about parallelism and sandbox size did not change the model's choices.                                                                                                | Experiment 3     |
+| 7   | Context isolation does not pay in mikan: a parent working directly reads little, and a subagent cost about twice as much without shrinking later prompts.                          | Experiment 7     |
 
 Earlier claims withdrawn: "DM is 1.8× slower than channel" compared two offices; "fork is cheaper" looked at fresh tokens only; "briefs lose constraints" and "the write-back content is wrong" were not reproduced.
 
 ## Open questions
 
 - What the DM `start_task` default buys: the only measured benefit is that the top level stays free to chat. Whether that is worth +50% per multi-step request is a product decision.
-- Whether subagents should exist at all once `start_task` is everywhere: production use is real (1,030 calls) but this study found no task where they beat direct work.
 - Whether the sandbox should offer more CPU to parallel work (boost exists as a command, not as a policy).
