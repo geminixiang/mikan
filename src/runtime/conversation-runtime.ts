@@ -418,6 +418,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey,
       commandText: event.text,
       privateConversation: isPrivateConversation(event),
+      directConversation: event.conversationKind === "direct",
       messagingInfo: context.platform,
       services: this.commandServices,
     });

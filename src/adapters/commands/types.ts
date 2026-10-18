@@ -94,6 +94,7 @@ export interface CommandContext {
   sessionKey: string;
   commandText: string;
   privateConversation: boolean;
+  directConversation: boolean;
   messagingInfo: MessagingInfo;
   services: CommandServices;
 }
