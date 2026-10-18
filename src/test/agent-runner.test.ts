@@ -16,7 +16,6 @@ import type { MutableModels } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import type { ConversationMessage, ConversationResponder, MessagingInfo } from "../types.js";
 import type { McpServerConfig, RunEvent } from "../harness/types.js";
-import { SUBAGENT_TOOL } from "../harness/tools/subagent.js";
 import { RunEventHub } from "../harness/run-events.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { loadScopeMcpServers } from "../settings/index.js";
@@ -337,83 +336,22 @@ describe("PiAgentWrapper.run", () => {
     ]);
   });
 
-  test("a subagent's work stays in its own conversation and only its answer returns", async () => {
+  test("the model is offered no subagent tool", async () => {
     const { runner, faux } = await createTestRunner();
-    let parentSaw: unknown[] = [];
-    let childSaw: unknown[] = [];
+    let delegated: unknown;
     faux.setResponses([
-      fauxAssistantMessage(fauxToolCall(SUBAGENT_TOOL, { label: "Look", task: "find the token" }), {
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "inspect", label: "Delegate" }), {
         stopReason: "toolUse",
       }),
-      fauxAssistantMessage(
-        fauxToolCall("bash", { label: "Grep", command: "echo TRAIL_$((40 + 2))" }),
-        {
-          stopReason: "toolUse",
-        },
-      ),
       (context) => {
-        childSaw = context.messages;
-        return fauxAssistantMessage("token is 42");
-      },
-      (context) => {
-        parentSaw = context.messages;
-        return fauxAssistantMessage("done");
+        delegated = context.messages.at(-1);
+        return fauxAssistantMessage("done myself");
       },
     ]);
 
     await runner.run(makeMessage({ text: "delegate" }), makeResponder(), platform);
 
-    expect(JSON.stringify(childSaw)).toContain("TRAIL_42");
-    const seen = JSON.stringify(parentSaw);
-    expect(seen).toContain("token is 42");
-    expect(seen).not.toContain("TRAIL_");
-  });
-
-  test("a subagent cannot start another subagent or a task", async () => {
-    const { runner, faux } = await createTestRunner();
-    let childSaw: unknown;
-    faux.setResponses([
-      fauxAssistantMessage(fauxToolCall(SUBAGENT_TOOL, { label: "Look", task: "nest" }), {
-        stopReason: "toolUse",
-      }),
-      fauxAssistantMessage(fauxToolCall(SUBAGENT_TOOL, { label: "Nest", task: "again" }), {
-        stopReason: "toolUse",
-      }),
-      (context) => {
-        childSaw = context.messages.at(-1);
-        return fauxAssistantMessage("could not nest");
-      },
-      fauxAssistantMessage("done"),
-    ]);
-
-    await runner.run(makeMessage({ text: "delegate" }), makeResponder(), platform);
-
-    expect(JSON.stringify(childSaw)).toContain(`Tool ${SUBAGENT_TOOL} is not available`);
-  });
-
-  test("the usage summary includes the spend of the subagent", async () => {
-    const { runner, faux } = await createTestRunner();
-    faux.setResponses([
-      fauxAssistantMessage(fauxToolCall(SUBAGENT_TOOL, { label: "Write", task: "write a lot" }), {
-        stopReason: "toolUse",
-      }),
-      fauxAssistantMessage("x".repeat(8_000)),
-      fauxAssistantMessage("done"),
-    ]);
-    const responder = makeResponder();
-
-    await runner.run(makeMessage({ text: "delegate" }), responder, {
-      ...platform,
-      diagnostics: { showUsageSummary: true },
-    });
-
-    const summary = String(
-      responder.respondDiagnostic.mock.calls.find((call) =>
-        String(call[0]).includes("Usage Summary"),
-      )?.[0],
-    );
-    const outputTokens = Number(/Output: ([\d,]+) tokens/.exec(summary)?.[1]?.replaceAll(",", ""));
-    expect(outputTokens).toBeGreaterThanOrEqual(2_000);
+    expect(JSON.stringify(delegated)).toContain("Tool subagent is not available");
   });
 
   test("replaces the placeholder with the final assistant text", async () => {

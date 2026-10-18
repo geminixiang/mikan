@@ -1,5 +1,5 @@
 ---
-status: superseded by [ADR 0028](0028-keep-only-a-single-task-subagent.md)
+status: superseded by [ADR 0028](0028-retire-the-subagent-tool.md)
 ---
 
 # Subagents run as task-owned child conversations of the office Harness
