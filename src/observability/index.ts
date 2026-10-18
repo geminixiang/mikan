@@ -7,7 +7,6 @@ import {
   recordSentryCounter,
   recordSentryDistribution,
   recordSentryGauge,
-  sanitizeTelemetryString,
   sanitizeValue,
   withSentryRunScope,
 } from "./sentry.js";
@@ -17,8 +16,6 @@ import type {
   ObservabilityAttributes,
   ReportUserFacingErrorOptions,
   RunScopeContext,
-  SubagentOutcomeReport,
-  SubagentOutcomeStatus,
 } from "./types.js";
 
 export interface ObservabilitySpan {
@@ -30,11 +27,6 @@ const meter = metrics.getMeter("@geminixiang/mikan");
 const counters = new Map<string, ReturnType<typeof meter.createCounter>>();
 const histograms = new Map<string, ReturnType<typeof meter.createHistogram>>();
 const gauges = new Map<string, ReturnType<typeof meter.createGauge>>();
-const MAX_FINGERPRINT_CLASS_LENGTH = 80;
-const UNEXPECTED_SUBAGENT_STATUSES: ReadonlySet<SubagentOutcomeStatus> = new Set([
-  "failed",
-  "invalid_output",
-]);
 
 export function metricAttributes(
   attributes: Record<string, string | number | boolean | undefined>,
@@ -252,76 +244,6 @@ function safeErrorType(error: unknown): string {
   if (error instanceof Error && /^[A-Za-z][A-Za-z0-9_.-]{0,79}$/.test(error.name))
     return error.name;
   return "Error";
-}
-
-export function recordSubagentOutcome(report: SubagentOutcomeReport): string | undefined {
-  const attributes = metricAttributes({
-    status: report.status,
-    profile: report.profile,
-    mode: report.mode,
-  });
-  recordCounter("agent.subagent.runs", 1, attributes);
-  if (report.durationMs !== undefined) {
-    recordDistribution("agent.subagent.duration", report.durationMs, {
-      unit: "millisecond",
-      attributes,
-    });
-  }
-  addLifecycleEvent("agent.subagent.completed", {
-    item_id: report.itemId,
-    status: report.status,
-    profile: report.profile,
-    mode: report.mode,
-    turns: report.turns,
-    tool_calls: report.toolCalls,
-    tokens: report.tokens,
-    cost_usd: report.costUsd,
-    duration_ms: report.durationMs,
-  });
-  if (!UNEXPECTED_SUBAGENT_STATUSES.has(report.status)) return undefined;
-  const errorClass = sanitizeTelemetryString(
-    (report.error ?? report.status).split(":")[0]!.trim(),
-  ).slice(0, MAX_FINGERPRINT_CLASS_LENGTH);
-  return reportUserFacingError(
-    new Error(`Subagent ${report.status}: ${report.error ?? "no error detail"}`),
-    {
-      domain: "subagent",
-      surface: "subagent_tool",
-      operation: "run",
-      severity: "error",
-      toolName: "subagent",
-      fingerprint: ["subagent", report.status, errorClass],
-      tags: {
-        subagent_status: report.status,
-        subagent_profile: report.profile,
-        subagent_mode: report.mode,
-      },
-      context: {
-        itemId: report.itemId,
-        error: report.error,
-        turns: report.turns,
-        toolCalls: report.toolCalls,
-        tokens: report.tokens,
-        costUsd: report.costUsd,
-        durationMs: report.durationMs,
-      },
-    },
-  );
-}
-
-export function reportSubagentLaunchError(
-  error: unknown,
-  report: Pick<SubagentOutcomeReport, "itemId" | "mode" | "profile">,
-): string | undefined {
-  return reportUserFacingError(error, {
-    domain: "subagent",
-    surface: "subagent_tool",
-    operation: "launch",
-    severity: "error",
-    toolName: "subagent",
-    tags: { subagent_profile: report.profile, subagent_mode: report.mode },
-    context: { itemId: report.itemId },
-  });
 }
 
 export function recordJevOutcome(report: JevOutcomeReport): void {

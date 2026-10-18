@@ -24,7 +24,7 @@ front projection renders through the responder. The front projection reads only
 `RunEvent`s, so another view of the same run (such as Session View) can consume
 the same stream without re-deriving state from chat-shaped responder calls.
 The front projection keeps one view of the run's main message: the tool
-checklist (or subagent dashboard), then the current answer text or a notice
+checklist, then the current answer text or a notice
 such as compaction, and hands the whole view to `replaceResponse` on every
 change. Text written before a tool call stays under the checklist until the
 next answer text replaces it. Thinking goes only to diagnostics. The final
@@ -199,9 +199,7 @@ the server's own concern.
 
 The agent's creation-time trust gate still precedes provisioning and loading:
 `open-trigger` gets no MCP servers, tools or guidance; `membership` keeps the
-configured capabilities. Subagents receive only the parent-authorized tool
-set, including MCP tools granted by their profiles, and do not own or reconnect
-parent MCP clients. MCP connection setup/cleanup is not performed per turn.
+configured capabilities. MCP connection setup/cleanup is not performed per turn.
 
 ## Skills
 
@@ -211,21 +209,6 @@ scripts and templates beside `SKILL.md` remain available to the agent.
 
 mikan deliberately does not load executable plugins from state directories. New host behavior is implemented in the repository and exposed
 through explicit platform, runtime, tool, or Sandbox interfaces.
-
-## Subagents
-
-The built-in `subagent` tool runs each task as a child conversation owned by
-its call ([ADR 0020](../../docs/adr/0020-subagents-as-owned-child-conversations.md)).
-A request may contain one task, parallel tasks, or a bounded DAG. Per-run
-concurrency is further limited by the process-wide slot pool so busy
-conversations cannot multiply the global limit.
-
-The child keeps its owner session's extension, so it resumes with its tools
-after a restart; that extension's sections and hooks therefore check the
-conversation ID and leave children to their `instructions` and to the hooks
-registered with `trackSubagent`. Subagent spend reaches the parent as the tool
-result's `usage`. Validation and run failures resolve as structured failed
-results so one bad task cannot orphan its siblings.
 
 ## Jev
 
@@ -292,12 +275,11 @@ runtimes must use distinct names where separate browsers are desired.
 
 ## DM task handoff
 
-`start_task` is offered only when the active responder supports task admission.
-It is excluded from subagent grants and unsupported turns. The native
+`start_task` is offered only when the active responder supports task admission. The native
 `before_tool` hook blocks every call in a mixed handoff/effect batch; a successful
 single handoff terminates the parent turn. Slack owns anchor creation and scoped
 queue admission; the task uses the existing independent session runner, not a
-nested subagent or a new execution loop.
+new execution loop.
 
 `PiAgentWrapper.steer` accepts text controls from the current actor only. It
 records a `mikan.control_input` custom entry before its checks and before
@@ -318,8 +300,7 @@ The marker deliberately precedes the checks; do not move it after them:
 - The current-actor check is defensive. Only Slack one-to-one DMs (`im`) reach
   steering, so a different person cannot steer someone else's task there.
 
-`task_status` is a responder-bound read-only query, advertised only when supported
-and excluded from subagent grants. It exposes no cross-office task lookup.
+`task_status` is a responder-bound read-only query, advertised only when supported. It exposes no cross-office task lookup.
 `SessionStore.inspectExecution` reads the live run and mikan's run record from a
 copy of the storage; it does not create a runner or acquire the original writer.
 

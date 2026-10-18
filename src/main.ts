@@ -302,7 +302,6 @@ void provisioner?.prepareImage();
 
 if (sandbox.type === "oci") {
   ensureDirExists(workspace.skillsDir);
-  ensureDirExists(workspace.agentsDir);
   try {
     writeFileSync(workspace.memoryPath, "", { flag: "wx" });
   } catch (err) {

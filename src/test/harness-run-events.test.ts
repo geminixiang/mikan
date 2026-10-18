@@ -5,11 +5,6 @@ import type { RunEvent } from "../harness/types.js";
 import { createOfficeAddress } from "../office/index.js";
 import { JEV_TOOL } from "../harness/tools/jev.js";
 
-const subagentSnapshot = {
-  mode: "single",
-  nodes: [{ id: "node-1", label: "Inspect code", status: "running" }],
-};
-
 describe("toRunEvent", () => {
   test("names a started tool by its trimmed label, falling back to the tool name", () => {
     expect(
@@ -41,19 +36,7 @@ describe("toRunEvent", () => {
     ).toMatchObject({ label: `${JEV_TOOL} · Check memory` });
   });
 
-  test("reports subagent progress and ignores other partial results", () => {
-    expect(
-      toRunEvent({
-        type: "tool_execution_update",
-        toolCallId: "s1",
-        toolName: "subagent",
-        details: { progress: subagentSnapshot },
-      }),
-    ).toMatchObject({
-      type: "subagent_progress",
-      toolCallId: "s1",
-      snapshot: { mode: "single", nodes: [{ id: "node-1", status: "running" }] },
-    });
+  test("ignores partial tool results", () => {
     expect(
       toRunEvent({
         type: "tool_execution_update",

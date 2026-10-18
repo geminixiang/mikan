@@ -44,14 +44,6 @@ function makeEvent(overrides: Partial<DiscordEvent> = {}): DiscordEvent {
   };
 }
 
-describe("subagent dashboard", () => {
-  test("does not override the harness's response-source dashboard", () => {
-    const bot = makeDiscordMessagingBot();
-    const { responder } = createDiscordAdapters(makeEvent(), bot);
-    expect(responder.replaceSubagentProgress).toBeUndefined();
-  });
-});
-
 describe("react", () => {
   test("targets the triggering message", async () => {
     const bot = makeDiscordMessagingBot();

@@ -25,8 +25,7 @@ type UserFacingErrorDomain =
   | "sandbox"
   | "login"
   | "events"
-  | "session_view"
-  | "subagent";
+  | "session_view";
 
 type UserFacingErrorSeverity = "warning" | "error" | "fatal";
 
@@ -44,28 +43,6 @@ export interface ReportUserFacingErrorOptions {
   fingerprint?: string[];
   tags?: Record<string, SentryPrimitive | undefined>;
   context?: Record<string, unknown>;
-}
-
-export type SubagentOutcomeStatus =
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "timeout"
-  | "budget_exceeded"
-  | "invalid_output"
-  | "skipped";
-
-export interface SubagentOutcomeReport {
-  itemId: string;
-  mode: "single" | "parallel" | "dag";
-  status: SubagentOutcomeStatus;
-  profile?: string;
-  error?: string;
-  turns?: number;
-  toolCalls?: number;
-  tokens?: number;
-  costUsd?: number;
-  durationMs?: number;
 }
 
 export type JevCaller =

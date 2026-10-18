@@ -40,14 +40,6 @@ function makeEvent(overrides: Partial<TelegramEvent> = {}): TelegramEvent {
   };
 }
 
-describe("replaceSubagentProgress()", () => {
-  test("uses the harness dashboard rather than a Telegram-specific one", () => {
-    const bot = makeTelegramMessagingBot();
-    const { responder } = createTelegramAdapters(makeEvent(), bot);
-    expect(responder.replaceSubagentProgress).toBeUndefined();
-  });
-});
-
 describe("react", () => {
   test("targets the triggering message", async () => {
     const bot = makeTelegramMessagingBot();

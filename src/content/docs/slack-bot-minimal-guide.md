@@ -99,9 +99,8 @@ Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 - `channels:history`
 - `channels:read`
 - `chat:write`
-- `chat:write.customize` (subagent persona: without it Slack silently drops
-  the custom username/icon on a subagent's final answer and posts it under
-  the bot's own identity instead — no error, no warning, just the wrong name)
+- `chat:write.customize` (unused since subagents were retired; still in
+  mikan's manifest so an installed app needs no scope change)
 - `commands` (required only when using the optional slash commands below)
 - `files:read`
 - `files:write`

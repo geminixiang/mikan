@@ -8,7 +8,6 @@ import { buildMrkdwnContextBlock, italicizeLines } from "./bot.js";
 import type { SlackEvent, SlackAdapterSessionPlan, SlackResponderBot } from "./types.js";
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
-import { slackPersonaForProfile } from "./persona.js";
 import { errorMessage } from "../../unknown-values.js";
 
 const MAX_MAIN_LENGTH = 35000;
@@ -333,19 +332,6 @@ export function createSlackResponseContext({
     deleteResponse: async () => {
       lifecycle.endStatus();
       await responder.deleteResponse();
-    },
-    respondAsRole: async (profile, text) => {
-      const identity = slackPersonaForProfile(profile);
-      if (!identity) {
-        await (replyInThread && rootTs
-          ? slack.postInThread(event.channel, rootTs, text)
-          : slack.postMessage(event.channel, text));
-        return;
-      }
-      const ts = await (replyInThread && rootTs
-        ? slack.postInThread(event.channel, rootTs, text, identity)
-        : slack.postMessage(event.channel, text, undefined, identity));
-      slack.logBotResponse(event.channel, text, ts, replyInThread ? rootTs : undefined);
     },
   };
 }

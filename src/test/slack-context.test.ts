@@ -47,14 +47,6 @@ function makeEvent(overrides: Partial<SlackEvent> = {}): SlackEvent {
   };
 }
 
-describe("subagent dashboard", () => {
-  test("does not override the harness's response-source dashboard", () => {
-    const bot = makeSlackMessagingBot();
-    const { responder } = createSlackAdapters(makeEvent(), bot);
-    expect(responder.replaceSubagentProgress).toBeUndefined();
-  });
-});
-
 describe("session key derivation", () => {
   test("top-level mention uses persistent channel session", () => {
     const event = makeEvent({ ts: "1000.0001", thread_ts: undefined });

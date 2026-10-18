@@ -44,7 +44,7 @@ runtime 是協調者。平台不得知道 harness 的持久化細節，harness �
 | **Platform entry**     | `src/adapters/`、`src/types.ts`                                          | SDK 正規化、intake 順序、平台回應傳輸，以及包含 `trustModel` 的 `MessagingInfo`                                            | 平台中立的 `ConversationEvent`、`ConversationContext` 與 capability port                         |
 | **Office identity**    | `src/office/`                                                            | `OfficeAddress`/`OfficeKey` 推導、`Workspace`/`Office` 版面值、office 實體化與 workspace projection，以及 registry journal | 預先算好路徑的凍結 `Office` 值，以及依目前 policy 解析的 projection；持久的 raw-id ↔ office 對照 |
 | **Runtime/session**    | `src/runtime/`、`src/sessions/`                                          | Session-key 文法、per-session 序列化、chat/session 同步、runner lifecycle、stop/reset 與 shutdown                          | 交給 runner 的已驗證 event；交給 execution resolution 的 office 與 actor 輸入                    |
-| **Harness/tools**      | `src/harness/`、`src/harness/tools/`                                     | Model turn、execution resolution、預算、tool schema、skill、subagent 與 host capability 呼叫                               | `ConversationResponder` 輸出與 `ExecutionEnv` 操作；不接收平台 SDK 物件                          |
+| **Harness/tools**      | `src/harness/`、`src/harness/tools/`                                     | Model turn、execution resolution、預算、tool schema、skill 與 host capability 呼叫                                         | `ConversationResponder` 輸出與 `ExecutionEnv` 操作；不接收平台 SDK 物件                          |
 | **Scheduled events**   | `src/events/`                                                            | Event wire protocol、parser/builder、限定在單一 office 的 host store、檔名驗證與 scheduler lifecycle                       | 交給 harness/Web 的 `EventStore`；交給平台 messaging 的正規化 event                              |
 | **Sandbox/workspace**  | `src/sandbox/`                                                           | 執行環境實作、mount 拓撲、runtime/host 路徑 context、受管 container lifecycle 與檔案傳輸                                   | 宣告了路徑與憑證能力的 Pi `ExecutionEnv`                                                         |
 | **Vault/web/security** | `src/vault/`、`src/adapters/web/`、`src/sandbox/identity.ts`             | 憑證 identity 與注入 policy、僅限 host 的 portal/token 介面、mount 衝突檢查，以及安全敏感的授權決策                        | 交給 vault policy 的 actor/trust 輸入；憑證只交給選定的環境                                      |
@@ -192,7 +192,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### `MikanAgentSession`
 
-擁有 model turn loop、訊息持久化、重試、compaction、預算 circuit breaker、skill、有界 subagent 與 abort 行為。其對外有意義的操作是 prompt/run、subscribe、abort、model/thinking 選擇與 disposal。
+擁有 model turn loop、訊息持久化、重試、compaction、預算 circuit breaker、skill 與 abort 行為。其對外有意義的操作是 prompt/run、subscribe、abort、model/thinking 選擇與 disposal。
 
 ### `SessionStore`
 
@@ -201,10 +201,6 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 ### `MikanModels`
 
 `MikanModels` 會解析內建的 `pi-ai` model 與 `~/.mikan/models.json` 裡的自訂 provider；provider 憑證來自該檔案或環境變數。Vault 憑證屬於不同邊界：它們被注入到工具執行中，並非用來驗證 host 端的 model client。
-
-### Subagent profile
-
-Subagent 一律以具名的 profile 啟動——不支援自由格式的 per-run 設定。`loadSubagentProfiles` 負責解析：`src/harness/subagent-profiles.ts` 中的內建 profile 就是定義本身（`worker`、`software-engineer`、`devops-engineer`、`data-scientist`、`account-manager`、`business-development`、`creative-producer`、`ad-operations-specialist`、`summarizer`），而 `<workspace>/agents/<name>.md` 檔案是**修補**同名的內建 profile，而不是取代它，因此操作者可以只覆寫 `model:`，不必重寫 tools 與 prompt。名稱與任何內建都不相符的檔案則定義一個新的 profile，並且必須自行提供 `tools`。格式錯誤的檔案會變成一則診斷訊息並被略過，絕不會拋出例外。
 
 ### Harness event 與預算
 
@@ -334,7 +330,6 @@ type EventFilePayload =
 | `~/.mikan/vaults/**`                               | vault/login           | 僅限 host 的 secret 與 mount file            |
 | `<workspace>/MEMORY.md`                            | agent/user            | Sandbox 可見的持久記憶                       |
 | `<workspace>/skills/**/SKILL.md`                   | skills                | Sandbox 可見的 prompt 指示                   |
-| `<workspace>/agents/*.md`                          | subagent profile      | 疊在內建之上、每個安裝各自的 model 修補      |
 | `<workspace>/<officeKey>/log.jsonl`                | platform adapter      | Append-only 的平台歷史                       |
 | `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | 僅限 host 的 agent 歷史（pi-durable SQLite） |
 | `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | 僅限 host 的排程 event                       |
@@ -375,7 +370,7 @@ Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設�
 | Office identity 與版面                        | `src/test/office-address.test.ts`、`src/test/office-layout.test.ts`、`src/test/office-registry.test.ts`、`src/test/workspace-projection.test.ts`                                                                      | Key 推導與驗證、凍結的版面值、先記錄再 mkdir 的順序，以及 projection 的 mount 組合                                                 |
 | State migration                               | `src/test/migrations.test.ts`、`src/test/migrate-sessions-sqlite.test.ts`、`src/test/cli-commands.test.ts`                                                                                                            | 0.5.3 的完整升級、冪等、dry run、擁有權，以及已套用 migration 的紀錄                                                               |
 | Session identity 與 runtime 順序              | `src/test/session-key.test.ts`、`src/test/session-lifecycle.test.ts`、`src/test/session-runtime.test.ts`、`src/test/chat-history-sync.test.ts`、`src/test/session-store.test.ts`                                      | Session 擁有權/路徑驗證、runner lease 與 settlement、per-key 序列化、parent thread bootstrap、chat/session 分離，以及 session 儲存 |
-| Harness、tools、skills 與 subagents           | `src/test/harness-runner.test.ts`、`src/test/harness-skills.test.ts`、`src/test/subagent-native.test.ts`、`src/test/subagent-tool.test.ts`、`src/test/agent-runner.test.ts`                                           | 執行 lifecycle、持久化、skill 探索、有界的委派執行，以及 runner 到 tool 的 seam                                                    |
+| Harness、tools 與 skills                      | `src/test/harness-runner.test.ts`、`src/test/harness-skills.test.ts`、`src/test/agent-runner.test.ts`                                                                                                                 | 執行 lifecycle、持久化、skill 探索，以及 runner 到 tool 的 seam                                                                    |
 | Runtime、workspace projection 與 sandbox 傳輸 | `src/test/execution-resolver.test.ts`、`src/test/sandbox-path-context.test.ts`、`src/test/container-execution-env.test.ts`、`src/test/agent-prompt.test.ts`、`src/test/agent-attachments.test.ts`                     | Host/runtime 路徑對應、mount 組合與衝突失敗、憑證能力錯誤，以及對 shell 不友善的檔案來回傳輸                                       |
 | Trust、vault 與 portal 安全                   | `src/test/vault-policy.test.ts`、`src/test/vault.test.ts`、`src/test/login.test.ts`、`src/test/oauth-link-server.test.ts`、`src/test/token-store.test.ts`                                                             | `trustModel` policy、identity key 查詢、明確的憑證佈建、login/OAuth token 邊界，以及停用時的 portal 行為                           |
 | 設定與 live runner 快取                       | `src/test/settings-apply.test.ts`、`src/test/settings.test.ts`、`src/test/model-command.test.ts`、`src/test/sandbox-command.test.ts`、`src/test/admin-portal.test.ts`                                                 | 寫入 seam 的順序、葉層級的設定合併、busy/stale 結果，以及指令/admin 與磁碟、快取 runner 的一致                                     |

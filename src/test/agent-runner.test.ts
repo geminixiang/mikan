@@ -118,14 +118,12 @@ async function createTestRunner(
 function makeResponder(): ConversationResponder & {
   respond: ReturnType<typeof vi.fn>;
   replaceResponse: ReturnType<typeof vi.fn>;
-  replaceSubagentProgress: ReturnType<typeof vi.fn>;
   respondDiagnostic: ReturnType<typeof vi.fn>;
   deleteResponse: ReturnType<typeof vi.fn>;
 } {
   return {
     respond: vi.fn().mockResolvedValue(undefined),
     replaceResponse: vi.fn().mockResolvedValue(undefined),
-    replaceSubagentProgress: vi.fn().mockResolvedValue(undefined),
     respondDiagnostic: vi.fn().mockResolvedValue(undefined),
     respondToolResult: vi.fn().mockResolvedValue(undefined),
     setTyping: vi.fn().mockResolvedValue(undefined),
@@ -338,84 +336,22 @@ describe("PiAgentWrapper.run", () => {
     ]);
   });
 
-  test("surfaces subagent batch progress through the platform-neutral responder", async () => {
+  test("the model is offered no subagent tool", async () => {
     const { runner, faux } = await createTestRunner();
+    let delegated: unknown;
     faux.setResponses([
-      fauxAssistantMessage(
-        fauxToolCall("subagent", {
-          tasks: [
-            { label: "first", task: "first task", profile: "summarizer" },
-            { label: "second", task: "second task", profile: "summarizer" },
-          ],
-        }),
-        { stopReason: "toolUse" },
-      ),
-      fauxAssistantMessage("first result"),
-      fauxAssistantMessage("second result"),
-      fauxAssistantMessage("parent complete"),
-    ]);
-    const responder = makeResponder();
-
-    await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
-
-    expect(responder.replaceSubagentProgress).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: "parallel",
-        nodes: [
-          expect.objectContaining({ id: "0", label: "first", status: "completed" }),
-          expect.objectContaining({ id: "1", label: "second", status: "completed" }),
-        ],
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "inspect", label: "Delegate" }), {
+        stopReason: "toolUse",
       }),
-      expect.stringContaining("parent complete"),
-      expect.objectContaining({ final: true }),
-    );
-    const replacements = responder.replaceResponse.mock.calls.map((call) => String(call[0]));
-    expect(replacements).not.toContainEqual(expect.stringContaining("Subagent parallel"));
-    expect(responder.replaceSubagentProgress).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        nodes: expect.arrayContaining([
-          expect.objectContaining({ turns: 1, toolCalls: 0, tokens: expect.any(Number) }),
-        ]),
-      }),
-      expect.stringContaining("parent complete"),
-      expect.objectContaining({ final: true }),
-    );
-    expect(responder.replaceSubagentProgress.mock.calls.length).toBeLessThanOrEqual(3);
-  });
-
-  test("composes the Markdown dashboard through replaceResponse without an override", async () => {
-    const { runner, faux } = await createTestRunner();
-    faux.setResponses([
-      fauxAssistantMessage(
-        fauxToolCall("subagent", {
-          tasks: [
-            { label: "first", task: "first task", profile: "summarizer" },
-            { label: "second", task: "second task", profile: "summarizer" },
-          ],
-        }),
-        { stopReason: "toolUse" },
-      ),
-      fauxAssistantMessage("first result"),
-      fauxAssistantMessage("second result"),
-      fauxAssistantMessage("parent complete"),
+      (context) => {
+        delegated = context.messages.at(-1);
+        return fauxAssistantMessage("done myself");
+      },
     ]);
-    const responder = makeResponder() as ConversationResponder & {
-      respond: ReturnType<typeof vi.fn>;
-      replaceResponse: ReturnType<typeof vi.fn>;
-    };
-    delete responder.replaceSubagentProgress;
 
-    await runner.run(makeMessage({ text: "delegate twice" }), responder, platform);
+    await runner.run(makeMessage({ text: "delegate" }), makeResponder(), platform);
 
-    const finalReplacement = String(responder.replaceResponse.mock.calls.at(-1)?.[0]);
-    expect(finalReplacement).toContain("**Subagents · 2/2 · Parallel");
-    expect(finalReplacement).toContain("✓ first");
-    expect(finalReplacement).toContain("\n\nparent complete");
-    expect(finalReplacement.indexOf("**Subagents")).toBeLessThan(
-      finalReplacement.indexOf("parent complete"),
-    );
-    const bareResponds = responder.respond.mock.calls.map((call) => String(call[0]));
-    expect(bareResponds).not.toContain("parent complete");
+    expect(JSON.stringify(delegated)).toContain("Tool subagent is not available");
   });
 
   test("replaces the placeholder with the final assistant text", async () => {
@@ -529,35 +465,6 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.deleteResponse).not.toHaveBeenCalled();
     expect(String(responder.replaceResponse.mock.calls.at(-1)?.[0])).toContain("[SILENT]");
     expect(responder.respondDiagnostic).toHaveBeenCalled();
-  });
-
-  test("the usage summary includes the spend of subagents the run delegated to", async () => {
-    const { runner, faux } = await createTestRunner();
-    const longSubagentAnswer = "x".repeat(8_000);
-    faux.setResponses([
-      fauxAssistantMessage(
-        fauxToolCall("subagent", {
-          tasks: [{ label: "big", task: "write a lot", profile: "summarizer" }],
-        }),
-        { stopReason: "toolUse" },
-      ),
-      fauxAssistantMessage(longSubagentAnswer),
-      fauxAssistantMessage("done"),
-    ]);
-    const responder = makeResponder();
-
-    await runner.run(makeMessage({ text: "delegate" }), responder, {
-      ...platform,
-      diagnostics: { showUsageSummary: true },
-    });
-
-    const summary = String(
-      responder.respondDiagnostic.mock.calls.find((call) =>
-        String(call[0]).includes("Usage Summary"),
-      )?.[0],
-    );
-    const outputTokens = Number(/Output: ([\d,]+) tokens/.exec(summary)?.[1]?.replaceAll(",", ""));
-    expect(outputTokens).toBeGreaterThanOrEqual(2_000);
   });
 
   test("published responses still post the usage summary", async () => {

@@ -1,9 +1,4 @@
-import type {
-  ChatToolResult,
-  ConversationResponder,
-  ReplaceResponseOptions,
-  SubagentProgressSnapshot,
-} from "../types.js";
+import type { ChatToolResult, ConversationResponder, ReplaceResponseOptions } from "../types.js";
 import * as log from "../log.js";
 import { createChatResponseErrorReporter, splitText } from "./shared.js";
 import type { ChatResponseErrorOperation, ProgressiveRendererPlatform } from "./types.js";
@@ -77,10 +72,6 @@ class ProgressiveRenderer {
       respond: (text) => this.respond(text),
       showsPartialAnswer: Boolean(this.platform.showsPartialAnswer || this.platform.stream),
       replaceResponse: (text, options) => this.replaceResponse(text, options),
-      replaceSubagentProgress: this.platform.formatSubagentProgress
-        ? (progress, finalText, options) =>
-            this.replaceSubagentProgress(progress, finalText, options)
-        : undefined,
       respondDiagnostic: (text, options) => this.respondDiagnostic(text, options),
       respondToolResult: (result) => this.respondToolResult(result),
       setTyping: (isTyping) => this.setTyping(isTyping),
@@ -351,18 +342,6 @@ class ProgressiveRenderer {
       if (this.state.streamActive) await this.stopNativeStream().catch(() => undefined);
       await this.renderRaw(display, "render", options, prepared);
     }
-  }
-
-  private async replaceSubagentProgress(
-    progress: SubagentProgressSnapshot,
-    finalText?: string,
-    options?: ReplaceResponseOptions,
-  ): Promise<void> {
-    const dashboard = this.platform.formatSubagentProgress!(progress);
-    await this.responder.replaceResponse(
-      finalText ? `${dashboard}\n\n${finalText}` : dashboard,
-      options,
-    );
   }
 
   private async respondDiagnostic(
