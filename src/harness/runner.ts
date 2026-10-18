@@ -49,7 +49,8 @@ import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import type { DesktopAccess, PlatformToolPack } from "./tools/types.js";
-import { isTaskRunId } from "./tools/task.js";
+import { isTaskRunId, START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
+import { createSubagentTool } from "./tools/subagent.js";
 import { isContinuedRunId } from "./continued-run.js";
 import { loadMikanSkills } from "./skills.js";
 import {
@@ -327,6 +328,8 @@ async function openRunnerSessionManager(params: {
   }
 }
 
+const TASK_TOOLS: ReadonlySet<string> = new Set([START_TASK_TOOL, TASK_STATUS_TOOL]);
+
 async function createRunnerAgentSession(params: {
   systemPrompt: string;
   model: Model<Api>;
@@ -349,11 +352,15 @@ async function createRunnerAgentSession(params: {
     signal,
   } = params;
   const mcpTools = await sessionManager.connectMcp(agentConfig.mcpServers ?? {}, signal);
+  const granted = [...tools, ...mcpTools.map(withSecretRedaction)];
+  const delegable = new Set(
+    granted.map((tool) => tool.name).filter((name) => !TASK_TOOLS.has(name)),
+  );
   return new MikanAgentSession({
     systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
-    tools: [...tools, ...mcpTools.map(withSecretRedaction)],
+    tools: [...granted, createSubagentTool(model, delegable)],
     toolContext,
     models: modelRegistry,
     sessionStore: sessionManager,

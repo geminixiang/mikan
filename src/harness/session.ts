@@ -62,6 +62,11 @@ const context: Context = BACKGROUND_CONTEXT;
 const COMPACTION_REQUEST = Symbol("compaction-request");
 const CODEMODE_SANDBOX = new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024 });
 const TOOL_SEARCH_EXTENSION = createToolSearchExtension();
+const CODEMODE_EXTENSION_NAME = "codemode";
+export const OWNER_ONLY_EXTENSIONS: readonly string[] = [
+  CODEMODE_EXTENSION_NAME,
+  TOOL_SEARCH_EXTENSION.name,
+];
 
 interface RunTally {
   usage: Usage;

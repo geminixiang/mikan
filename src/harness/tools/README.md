@@ -60,17 +60,19 @@ tools depend on the connected server's `listTools()` response.
 | `github_review_reply`   |     ✓     |        ✓        |        —        |          —           |          Reply body in arguments; thread and URL.           |
 | `github_read`           |     ✓     |        ✓        |        —        |          —           |          Query and formatted PR/issue/review data.          |
 | `github_issue`          |     ✓     |        ✓        |        —        |          —           |             Issue request and operation report.             |
+| `subagent`              |     ✓     |        ✓        |        —        |          —           |                              —                              | Task in arguments; the child's final answer, with its spend as usage.                                     |
 | `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images.                        |
 
 This is a **data-flow inventory**, not a guarantee that every result is small
 or safe. `jev_browser` bounds the goal-loop snapshot but does not impose one
-aggregate limit on raw command results; native file/command output and GitHub
-check logs can also be large; MCP text is bounded like `bash`. Image bytes
+aggregate limit on raw command results; native file/command output, subagent
+answers and GitHub check logs can also be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
 only scrubs final text `output` and the `structuredOutput` scripts read for tools
 assembled by `createMikanTools` and for MCP tools; it does not scrub arguments,
-`details`, images or progress. Do not treat this as a universal secret
+`details`, images or progress, and
+the runner adds `subagent` separately. Do not treat this as a universal secret
 filter.
 
 ## Codemode
@@ -78,7 +80,9 @@ filter.
 `codemode` and `tool_search` are pi-durable's own
 (`@earendil-works/pi-durable/codemode` and `/tool-search`). `installRunTools`
 selects them next to the session's extension: `codemode` whenever the run has
-tools, `tool_search` only when a granted tool is `deferred`. One `CodemodeSandbox` (64-MiB heap) serves
+tools, `tool_search` only when a granted tool is `deferred`. A subagent child
+copies its owner's extensions without these two, so it gets neither the tool
+nor the `codemode` prompt section. One `CodemodeSandbox` (64-MiB heap) serves
 every script in the process; Pi gives scripts no deadline unless they set
 `timeout_ms`. `models.*` globals are off (`models: false`); images come from
 `generate_image`.

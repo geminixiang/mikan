@@ -210,6 +210,17 @@ scripts and templates beside `SKILL.md` remain available to the agent.
 mikan deliberately does not load executable plugins from state directories. New host behavior is implemented in the repository and exposed
 through explicit platform, runtime, tool, or Sandbox interfaces.
 
+## Subagents
+
+`subagent` runs one task in a child conversation that its call owns
+([ADR 0028](../../docs/adr/0028-keep-only-a-single-task-subagent.md)). The child
+gets the parent's model and tools except `subagent` and the task tools, and
+copies the owner's extensions without `codemode` and `tool_search`; those
+extensions' sections and hooks check the conversation ID, so the child runs on
+its own `instructions` and outside the parent's budget. The call memoizes the
+child's ID, so a restarted call continues the same child. Only the child's final
+answer returns; its spend is the tool result's `usage`.
+
 ## Jev
 
 `jev.ts` asks Jev, a typed-decision model that scores a shared `state` against
