@@ -12,7 +12,7 @@ Sources: `src/harness/subagent.ts`, `src/harness/tools/task.ts`, `src/sessions/s
 | `start_task` | top-level Slack DM | new conversation owned by an anchor task, full system prompt, one brief; the thread is its Slack home | free; the result is written back to the DM main as a `write` (no model turn) and the thread gets an @mention |
 | Pi `fork`    | not used           | copies the parent's transcript up to an entry; fresh provider session identity                        | —                                                                                                            |
 
-The DM prompt tells the model to use `start_task` for every multi-step request. Production (read-only): 1,030 subagent calls in three months, 40% from channels, median run 126 s; `start_task` is not deployed.
+The DM prompt tells the model to use `start_task` for every multi-step request.
 
 ## Experiments
 
@@ -46,13 +46,13 @@ Pi runs one turn's tool calls in parallel (`toolExecution` defaults to `"paralle
 
 ### 4. Provider cache: fork vs new conversation (real provider, 3 trials each, 12k-token parent)
 
-| API                            | First request of the job                                         | Fresh   | Cached |
-| ------------------------------ | ---------------------------------------------------------------- | ------- | ------ |
-| completions (local)            | fork                                                             | ~245    | 11.9k  |
-| completions                    | new conversation + brief                                         | ~2,520  | 0      |
-| responses (production gateway) | fork, Pi default                                                 | ~12,150 | 0      |
-| responses                      | fork with the parent's `pi.provider` sessionId written in `init` | ~245    | 11.9k  |
-| responses                      | new conversation + brief                                         | ~2,520  | 0      |
+| API                 | First request of the job                                         | Fresh   | Cached |
+| ------------------- | ---------------------------------------------------------------- | ------- | ------ |
+| completions (local) | fork                                                             | ~245    | 11.9k  |
+| completions         | new conversation + brief                                         | ~2,520  | 0      |
+| responses (gateway) | fork, Pi default                                                 | ~12,150 | 0      |
+| responses           | fork with the parent's `pi.provider` sessionId written in `init` | ~245    | 11.9k  |
+| responses           | new conversation + brief                                         | ~2,520  | 0      |
 
 openai-responses keys the cache by the conversation's session ID; Pi gives a fork a fresh one (`ProviderDoc.fork: "initial"`), so a plain fork misses the whole prefix there. Sharing the ID is possible through public API but reverses Pi's documented default; its effect on two concurrent conversations is unverified.
 
@@ -81,22 +81,21 @@ A new conversation costs the same whatever the parent's length; fork costs what 
 
 The tool was introduced to keep the parent's context small, to finish faster and more completely in parallel, and to run in the background. Experiments 1–3 cover the second; the third never applied, because the parent waits inside the tool call. For the first:
 
-- Production subagent results, 28 days (read-only; children ran in memory, so only the tool result's `details` survive): 187 calls, children read a median ~56k tokens and returned ~190; 44% ended without an answer (40 on a profile token cap, 37 on the 10-minute timeout).
-- Production runs without a subagent, same window: the parent's context grew a median 0 tokens per run (p90 18.8k, p99 67k; 2.7% grew past 40k). A parent doing the work itself reads far less than a child that starts without context, so an estimate that assumes equal work overstates the saving.
+- A parent doing the work itself searches for the facts it needs, while a child starts without context and reads what it is pointed at, so an estimate that assumes equal work overstates the saving.
 - Lab, branch with a single-task subagent (no profiles, batches, budget, or timeout): six 24 KB incident reports in a channel, then three follow-ups, 2 reps. Done directly, the parent grepped the facts: $0.029–0.049 in total, follow-up prompts 38–42k. Told to use a subagent: $0.063–0.068, follow-up prompts 40–43k (no smaller), one follow-up wrong.
 - The same single-task branch on the earlier cases: the model delegated the three-repository task in 3 of 3 runs (all correct, $0.067–0.100, against $0.03–0.05 direct) and once called three subagents one per turn on the 90-second waits (300 s).
 
 ## Findings
 
-| #   | Claim                                                                                                                                                                              | Evidence         |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
-| 1   | Delegation does not make a complex task faster; the sandbox has one CPU and Pi already runs a turn's tool calls in parallel.                                                       | Experiments 1–3  |
-| 2   | Parallel subagents on CPU-bound work are worse on all three goals and can OOM.                                                                                                     | Experiments 1–2  |
-| 3   | Delegation costs one extra system-prompt miss (~2.5k tokens) plus whatever the parent spends dispatching; in the DM that is paid by default for every multi-step request.          | Experiments 1, 4 |
-| 4   | "New conversation plus a brief" is the cheapest mechanism once the parent exceeds ~11k tokens, which real DMs do. Fork wins only on first-request latency and on carrying context. | Experiment 5     |
-| 5   | Fork on production's API needs the parent's session ID to hit the cache at all.                                                                                                    | Experiment 4     |
-| 6   | Prompt facts about parallelism and sandbox size did not change the model's choices.                                                                                                | Experiment 3     |
-| 7   | Context isolation does not pay in mikan: a parent working directly reads little, and a subagent cost about twice as much without shrinking later prompts.                          | Experiment 7     |
+| #   | Claim                                                                                                                                                                                              | Evidence         |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 1   | Delegation does not make a complex task faster; the measured sandbox had one CPU and Pi already runs a turn's tool calls in parallel.                                                              | Experiments 1–3  |
+| 2   | Parallel subagents on CPU-bound work are worse on all three goals and can OOM.                                                                                                                     | Experiments 1–2  |
+| 3   | Delegation costs one extra system-prompt miss (~2.5k tokens) plus whatever the parent spends dispatching; in the DM that is paid by default for every multi-step request.                          | Experiments 1, 4 |
+| 4   | "New conversation plus a brief" is the cheapest mechanism once the parent exceeds ~11k tokens, which a long DM conversation does. Fork wins only on first-request latency and on carrying context. | Experiment 5     |
+| 5   | Fork on the responses API needs the parent's session ID to hit the cache at all.                                                                                                                   | Experiment 4     |
+| 6   | Prompt facts about parallelism and sandbox size did not change the model's choices.                                                                                                                | Experiment 3     |
+| 7   | Context isolation does not pay in mikan: a parent working directly reads little, and a subagent cost about twice as much without shrinking later prompts.                                          | Experiment 7     |
 
 Earlier claims withdrawn: "DM is 1.8× slower than channel" compared two offices; "fork is cheaper" looked at fresh tokens only; "briefs lose constraints" and "the write-back content is wrong" were not reproduced.
 
