@@ -33,7 +33,7 @@ export function createTaskTool() {
     name: START_TASK_TOOL,
     parameters,
     description:
-      "Hand off multi-step or time-consuming work to an independent task thread so the user can keep chatting. Call ALONE, before doing that work. Ends this turn on success. Only available in top-level Slack DMs.",
+      "Hand off multi-step or time-consuming work to an independent task thread so the user can keep chatting. Call ALONE, before doing that work. Ends this turn on success. Only available for top-level Slack messages.",
     execute: async (args, _api, { abortSignal: signal }) => {
       signal?.throwIfAborted();
       if (!start)
