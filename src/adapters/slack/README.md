@@ -35,11 +35,11 @@ This directory implements the Slack platform adapter and Slack-specific session/
 - Rotation revokes the previous access token, so the new pair is saved before any other call, and two installs sharing one token revoke each other's.
 - Slack sets some fields itself and ignores what is sent for them: `features.app_home.agent_tasks_enabled` is on for apps created after Slack added it and absent on older ones. The comparison skips these fields; otherwise every start would update the app.
 
-## DM tasks
+## Tasks
 
-Top-level DM responders expose `startTask(message, task)`. Admission posts a
+Top-level responders, in DMs and channels, expose `startTask(message, task)`. Admission posts a
 persistent acknowledgement, creates the task's session as a child conversation
-owned by a background task of the DM session whose input holds the
+owned by a background task of the requesting session whose input holds the
 acknowledgement (`SessionStore.openTask`, ADR 0021), and queues a self-contained task plus
 the original attachments under that root. Task output uses the thread responder; it does not
 replace the acknowledgement. Ordinary event scheduling is unchanged.
@@ -54,8 +54,12 @@ stop first; top-level attachments are a normal turn.
 Without Jev the regex status shortcut decides `status`, thread text is tried as
 steering, and top-level text is a normal turn — the pre-Jev behavior. Idle
 threads use normal prompt execution (including explicit continuation after
-stop). Stop keeps its magic-word path. Shared channels and non-task threads
-retain their existing trigger/queue policy. Which threads are tasks, their
+stop). Stop keeps its magic-word path. In a channel, only a mention in a task
+thread takes this path, because other people talk there too: unmentioned thread
+replies and top-level mentions keep the channel's trigger/queue policy, and a
+top-level question about a task is a normal turn that can call `task_status`.
+Steering accepts only the task's requester (`steerRun`); anyone in the channel can
+ask for status. Non-task threads retain their existing trigger/queue policy. Which threads are tasks, their
 acknowledgements, and their run state come from pi-durable (`SessionStore.listTasks`
 and `isTask`), not from the office log, so they survive a restart or a lost log.
 Task threads started before 1.1.0 were ordinary thread sessions and are not

@@ -223,6 +223,9 @@ async function startTask() {
     .find((s) => s.sessionKey.startsWith("D123:"))!.sessionKey;
   return key.slice(5);
 }
+async function mention(user: string, text: string, thread_ts?: string) {
+  await socket.deliver("app_mention", { text, channel: "C123", user, ts: eventTs(), thread_ts });
+}
 const handoff = () =>
   fauxAssistantMessage(
     fauxToolCall("start_task", { message: "On it, continuing here.", task: "LONG TASK CONTEXT" }),
@@ -253,6 +256,43 @@ test("DM handoff preserves acknowledgement, answers other chat, and steers activ
   await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
   expect(vi.mocked(bot.updateMessage).mock.calls.some((c) => c[1] === root)).toBe(false);
   expect(vi.mocked(bot.postMessage).mock.calls.some((c) => c[2] === root)).toBe(true);
+});
+
+test("channel handoff keeps the channel answering and lets its requester steer the task thread", async () => {
+  faux.setResponses([
+    handoff(),
+    callHold(),
+    fauxAssistantMessage("quick answer"),
+    (context) => {
+      expect(JSON.stringify(context.messages)).toContain("CHANNEL_UPDATE");
+      return fauxAssistantMessage("task adjusted");
+    },
+  ]);
+  await mention("U1", "investigate this");
+  await vi.waitFor(() => expect(trace).toContain("tool:start"));
+  const key = runtime
+    .getRunningSessions()
+    .find((s) => s.sessionKey.startsWith("C123:"))!.sessionKey;
+  const root = key.slice(5);
+  await mention("U2", "independent quick question");
+  await vi.waitFor(() =>
+    expect(vi.mocked(bot.updateMessage).mock.calls.some((c) => c[2].includes("quick answer"))).toBe(
+      true,
+    ),
+  );
+  expect(trace).not.toContain("tool:end");
+  await mention("U2", "OTHER_PERSON_UPDATE", root);
+  await vi.waitFor(() =>
+    expect(trace.some((t) => t.includes("Only the task's current actor"))).toBe(true),
+  );
+  await mention("U1", "CHANNEL_UPDATE", root);
+  expect(faux.state.callCount).toBe(3);
+  hold.resolve();
+  await vi.waitFor(() => expect(runtime.getRunningSessions()).toHaveLength(0));
+  expect(faux.state.callCount).toBe(4);
+  expect(vi.mocked(bot.postMessage).mock.calls.some((c) => c[0] === "C123" && c[2] === root)).toBe(
+    true,
+  );
 });
 
 test("stop discards pending steering and history sync cannot resurrect it on continuation", async () => {

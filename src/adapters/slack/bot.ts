@@ -300,20 +300,18 @@ export class SlackMessagingBot implements MessagingBot {
     const context = createSlackAdapters(event, this, {
       replyMode: this.resolveReplyMode(event.address),
     });
-    if (event.conversationKind === "direct") {
-      context.responder.getTaskStatus = (key) =>
-        querySlackTasks(
-          this.office(event.channel),
-          event.channel,
-          this.handler
-            .getRunningSessions()
-            .filter(
-              (s) => s.address.platform === "slack" && s.address.conversationId === event.channel,
-            ),
-          key,
-        );
-    }
-    if (event.conversationKind === "direct" && event.thread_ts) {
+    context.responder.getTaskStatus = (key) =>
+      querySlackTasks(
+        this.office(event.channel),
+        event.channel,
+        this.handler
+          .getRunningSessions()
+          .filter(
+            (s) => s.address.platform === "slack" && s.address.conversationId === event.channel,
+          ),
+        key,
+      );
+    if (event.thread_ts) {
       const threadTs = event.thread_ts;
       let notified = false;
       context.responder.notifyCompletion = async () => {
@@ -324,7 +322,7 @@ export class SlackMessagingBot implements MessagingBot {
         this.logBotResponse(event.channel, text, ts, threadTs);
       };
     }
-    if (event.conversationKind === "direct" && !event.thread_ts) {
+    if (!event.thread_ts) {
       context.responder.startTask = async (message, task) => {
         if (this.stopped) throw new Error("Slack is shutting down; task was not started.");
         await context.responder.deleteResponse();
@@ -1341,6 +1339,11 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
+    const taskControl = !!e.thread_ts && (await this.isTaskThread(e.channel, e.thread_ts));
+    if (taskControl) {
+      ack();
+      if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
+    }
     const intake = this.processSlackMessageIntake({
       event: slackEvent,
       attachmentsPromise,
@@ -1348,7 +1351,7 @@ export class SlackMessagingBot implements MessagingBot {
       addressed: true,
     });
 
-    ack();
+    if (!taskControl) ack();
     await intake;
   }
 

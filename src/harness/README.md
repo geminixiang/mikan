@@ -273,7 +273,7 @@ runtimes must use distinct names where separate browsers are desired.
 - Session file naming, chat synchronization, and thread lineage stay
   in `src/sessions/`.
 
-## DM task handoff
+## Task handoff
 
 `start_task` is offered only when the active responder supports task admission. The native
 `before_tool` hook blocks every call in a mixed handoff/effect batch; a successful
@@ -297,8 +297,9 @@ The marker deliberately precedes the checks; do not move it after them:
 - A rejected steer is not lost silently. Every rejection is posted back telling
   the user to send again or stop first, so syncing the original as well would
   show the model the same instruction twice.
-- The current-actor check is defensive. Only Slack one-to-one DMs (`im`) reach
-  steering, so a different person cannot steer someone else's task there.
+- The current-actor check keeps a channel task to its requester: anyone in the
+  channel can mention the bot in the task thread, and only the requester's text
+  steers it. Others get the rejection notice.
 
 `task_status` is a responder-bound read-only query, advertised only when supported. It exposes no cross-office task lookup.
 `SessionStore.inspectExecution` reads the live run and mikan's run record from a

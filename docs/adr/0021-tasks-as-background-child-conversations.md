@@ -55,7 +55,7 @@ The restart rows ran against a local daemon on a test Slack workspace with a rea
 8. **Status and stop come from pi-durable state.** Task membership, acknowledgements, and run state are read from pi-durable since the change after 1.2.2; the current step still comes from the runtime while this process runs the task. `task_status` reads each child's live run instead of the office log. Stop aborts the child. Steering stays as it is: Jev classifies a reply, and a steer is a `whenBusy: "steer"` submission to the child.
 9. **Tasks open in three steps**, each after the previous one is stable:
    - Top-level Slack DMs, as today.
-   - Top-level Slack channel messages, which start a task thread as in DMs.
+   - Top-level Slack channel messages, which start a task thread as in DMs. Opened after 1.5.1: a mention in the task thread is routed like a DM task thread reply, and only the requester steers the task.
    - Threads, where the task runs in the same thread with its own child conversation and queue, so the thread keeps answering while the task works. Replies are routed by Jev as in DMs, and task messages carry a label so they stand apart from the thread's conversation.
 
 ## Considered Options
