@@ -22,7 +22,7 @@ describe.skipIf(!ctx || !ctx.env.mikanBotUserId)("Slack busy queue", () => {
     const busyRootTs = await postMessage(
       client,
       env.channel,
-      `<@${botUserId}> busy-queue e2e：請使用 bash 執行 sleep 10，完成後回覆這個 token：${busyToken}`,
+      `<@${botUserId}> busy-queue e2e：請在這個對話中直接使用 bash 執行 sleep 10（不要開背景任務），完成後回覆這個 token：${busyToken}`,
     );
     await sleep(2_000);
     const queuedRootTs = await postMessage(
