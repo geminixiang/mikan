@@ -136,6 +136,38 @@ describe("OAuth link server flows", () => {
     }
   });
 
+  test("credential pages and endpoints are served uncached with a UTF-8 charset", async () => {
+    const stateDir = createStateDir(dirs);
+    configureGitHubOAuth();
+    const { url, token } = await createFlow(servers, stateDir, "U090");
+
+    const page = await originalFetch(`${url}/link?token=${token}`);
+    const start = await originalFetch(`${url}/api/oauth/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: url },
+      body: JSON.stringify({ token, serviceId: "github" }),
+    });
+    const rejected = await originalFetch(`${url}/api/link/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "{}",
+    });
+    const callback = await originalFetch(`${url}/oauth/callback?state=unknown&code=x`);
+
+    expect([page.status, start.status, rejected.status, callback.status]).toEqual([
+      200, 200, 415, 400,
+    ]);
+    for (const [response, type] of [
+      [page, "text/html"],
+      [start, "application/json"],
+      [rejected, "application/json"],
+      [callback, "text/html"],
+    ] as const) {
+      expect(response.headers.get("content-type")).toBe(`${type}; charset=utf-8`);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
   test("rejects cross-origin OAuth start requests when MIKAN_LINK_URL is configured", async () => {
     const stateDir = createStateDir(dirs);
     process.env.MIKAN_LINK_URL = "https://mikan.example.com";

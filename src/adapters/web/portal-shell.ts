@@ -51,6 +51,14 @@ export function jsonResponse(res: ServerResponse, status: number, body: unknown)
   res.end(JSON.stringify(body));
 }
 
+export function htmlResponse(res: ServerResponse, status: number, html: string): void {
+  res.writeHead(status, {
+    "Content-Type": "text/html; charset=utf-8",
+    "Cache-Control": "no-store",
+  });
+  res.end(html);
+}
+
 export function readRawBody(
   req: IncomingMessage,
   res: ServerResponse,
