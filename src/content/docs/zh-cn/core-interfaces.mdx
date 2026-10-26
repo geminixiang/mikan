@@ -196,7 +196,7 @@ interface ConversationContext {
 
 ### `SessionStore`
 
-负责一间办公室的所有会话：一个 pi-durable SQLite 存储，即办公室 State dir 中的 `sessions.db`（ADR 0018）。顶层会话是存储的 root conversation，其他每个会话都是按会话密钥找到的 conversation；会话名称和最近一次 run 记录放在 durable 文档里。`SessionHeader`（id、createdAt、parentSessionId）标识一个会话及其 fork 自哪个父会话。一个 live 存储只能由一个进程拥有。`mikan migrate` 会导入 0.5.3 的会话文件。条目是一条线性的记录，包含 message、custom 和 compaction；请用 `buildSessionContext()` 读取模型看到的内容，用 `getContextEntries()` 读取仍在 context 中的条目，不要直接读存储。
+负责一间办公室的所有会话：一个 pi-durable SQLite 存储，即办公室 State dir 中的 `sessions.db`（ADR 0018）。顶层会话是存储的 root conversation，其他每个会话都是按会话密钥找到的 conversation；会话名称和最近一次 run 记录放在 durable 文档里。`SessionHeader`（id、createdAt、parentSessionId）标识一个会话及其 fork 自哪个父会话。一个 live 存储只能由一个进程拥有。`mikan migrate` 会导入 0.5.3 的会话文件。条目是一条线性的记录，包含 message、custom 和 compaction；请用 `buildSessionContext()` 读取模型看到的内容，不要直接读存储。
 
 ### `MikanModels`
 

@@ -29,11 +29,7 @@ import {
   reportUserFacingError,
   withRunSpan,
 } from "../observability/index.js";
-import {
-  ChatHistorySync,
-  hasMaterializedChatSession,
-  waitForThreadSessionBootstrap,
-} from "../sessions/chat-history-sync.js";
+import { ChatHistorySync, waitForThreadSessionBootstrap } from "../sessions/chat-history-sync.js";
 import {
   assertSessionKeyBelongsToConversation,
   deriveSessionKey,
@@ -392,7 +388,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const waited = await waitForThreadSessionBootstrap({
       parentSessionKey: conversationId,
       sessionKey,
-      hasThreadSession: () => hasMaterializedChatSession({ office, sessionKey }),
+      hasThreadSession: () => SessionStore.exists(office, sessionKey),
       isParentRunning: () => this.sessions.get(address, conversationId)?.running === true,
     });
     if (waited) {
@@ -436,7 +432,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const { conversationId, sessionKey, startedAt } = meta;
     const { message, platform } = context;
 
-    const attribution = createRunAttributionAttributes({
+    const run = {
       conversationId,
       sessionKey,
       messageId: message.id,
@@ -444,71 +440,61 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       conversationKind: message.conversationKind,
       userId: message.userId,
       threadTs: message.threadTs,
-    });
+    };
+    const attribution = createRunAttributionAttributes(run);
 
     recordCounter("agent.run.started", 1, attribution);
 
-    return withRunSpan(
-      {
-        conversationId,
-        sessionKey,
-        messageId: message.id,
+    return withRunSpan(run, async () => {
+      addLifecycleEvent("agent.run.started", {
+        channel_id: attribution.channel_id,
         platform: platform.name,
-        conversationKind: message.conversationKind,
-        userId: message.userId,
-        threadTs: message.threadTs,
-      },
-      async () => {
-        addLifecycleEvent("agent.run.started", {
+        conversation_kind: message.conversationKind,
+        has_attachments: (message.attachments?.length ?? 0) > 0,
+      });
+
+      try {
+        const result = await body();
+        const durationMs = Date.now() - startedAt;
+        const completionAttrs = {
+          ...attribution,
+          stop_reason: result.stopReason,
+        };
+        recordDistribution("agent.run.duration", durationMs, {
+          unit: "millisecond",
+          attributes: completionAttrs,
+        });
+        recordCounter("agent.run.completed", 1, completionAttrs);
+        addLifecycleEvent("agent.run.completed", {
           channel_id: attribution.channel_id,
           platform: platform.name,
-          conversation_kind: message.conversationKind,
-          has_attachments: (message.attachments?.length ?? 0) > 0,
+          stop_reason: result.stopReason,
+          duration_ms: durationMs,
         });
-
-        try {
-          const result = await body();
-          const durationMs = Date.now() - startedAt;
-          const completionAttrs = {
-            ...attribution,
-            stop_reason: result.stopReason,
-          };
-          recordDistribution("agent.run.duration", durationMs, {
-            unit: "millisecond",
-            attributes: completionAttrs,
-          });
-          recordCounter("agent.run.completed", 1, completionAttrs);
-          addLifecycleEvent("agent.run.completed", {
-            channel_id: attribution.channel_id,
-            platform: platform.name,
-            stop_reason: result.stopReason,
-            duration_ms: durationMs,
-          });
-          return result;
-        } catch (err) {
-          reportUserFacingError(err, {
-            domain: "mikan",
-            surface: "agent_run",
-            operation: "run",
-            severity: "error",
-            platform: platform.name,
-            context: {
-              conversationId,
-              sessionKey,
-              messageId: message.id,
-              threadTs: message.threadTs,
-              attachmentCount: message.attachments?.length ?? 0,
-            },
-          });
-          recordCounter("agent.run.errors", 1, attribution);
-          log.logWarning(`[${conversationId}] Run error`, errorMessage(err));
-          await context.responder
-            .replaceResponse("Could not complete the request. Please reply to retry or revise it.")
-            .catch(() => {});
-          return undefined;
-        }
-      },
-    );
+        return result;
+      } catch (err) {
+        reportUserFacingError(err, {
+          domain: "mikan",
+          surface: "agent_run",
+          operation: "run",
+          severity: "error",
+          platform: platform.name,
+          context: {
+            conversationId,
+            sessionKey,
+            messageId: message.id,
+            threadTs: message.threadTs,
+            attachmentCount: message.attachments?.length ?? 0,
+          },
+        });
+        recordCounter("agent.run.errors", 1, attribution);
+        log.logWarning(`[${conversationId}] Run error`, errorMessage(err));
+        await context.responder
+          .replaceResponse("Could not complete the request. Please reply to retry or revise it.")
+          .catch(() => {});
+        return undefined;
+      }
+    });
   }
 
   refreshConversation(address: OfficeAddress): boolean {

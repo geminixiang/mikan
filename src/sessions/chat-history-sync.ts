@@ -21,7 +21,6 @@ const CHAT_SYNC_CUSTOM_TYPE = "mikan.chat_sync";
 
 import type {
   ChatHistorySyncOptions,
-  HasMaterializedSessionOptions,
   RegisterThreadSessionOptions,
   ResetChatSessionOptions,
   ResolveChatSessionScopeOptions,
@@ -32,12 +31,6 @@ import type {
   ThreadRootMessage,
 } from "./types.js";
 import { isRecord } from "../unknown-values.js";
-
-export async function hasMaterializedChatSession(
-  options: HasMaterializedSessionOptions,
-): Promise<boolean> {
-  return SessionStore.exists(options.office, options.sessionKey);
-}
 
 export async function registerThreadSession(options: RegisterThreadSessionOptions): Promise<void> {
   if (!isThreadSessionKey(options.sessionKey)) return;
@@ -304,17 +297,7 @@ function dedupeAndSortRecords(records: LogRecord[]): LogRecord[] {
 }
 
 function sortTime(record: LogRecord): number {
-  if (record.message.date) {
-    const dateMs = new Date(record.message.date).getTime();
-    if (Number.isFinite(dateMs)) return dateMs;
-  }
-
-  if (record.message.ts) {
-    const tsMs = Number(record.message.ts) * 1000;
-    if (Number.isFinite(tsMs)) return tsMs;
-  }
-
-  return record.index;
+  return parseMessageTimestamp(record.message) ?? record.index;
 }
 
 async function bootstrapSessionFromLog(

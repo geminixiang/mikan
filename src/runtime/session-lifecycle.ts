@@ -111,19 +111,13 @@ export class SessionLifecycle {
     this.applyDeferredClear(address);
   }
 
-  settle(
-    state: ConversationRuntimeState,
-    work: () => Promise<void>,
-    options: { markRunning?: boolean } = {},
-  ): Promise<void> {
+  settle(state: ConversationRuntimeState, work: () => Promise<void>): Promise<void> {
     const id = runtimeSessionId(state.address, state.sessionKey);
     this.leases.set(id, (this.leases.get(id) ?? 0) + 1);
-    if (options.markRunning !== false) {
-      state.running = true;
-      state.stopRequested = false;
-      state.startedAt = this.now();
-      state.lastActivityAt = this.now();
-    }
+    state.running = true;
+    state.stopRequested = false;
+    state.startedAt = this.now();
+    state.lastActivityAt = this.now();
 
     let settlement!: Promise<void>;
     settlement = Promise.resolve()

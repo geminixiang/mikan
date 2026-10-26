@@ -196,7 +196,7 @@ runtime/harness 的輸出 port。必要操作涵蓋最終文字、取代、診�
 
 ### `SessionStore`
 
-擁有一個 office 的所有 session：一個 pi-durable SQLite 儲存，也就是 office State dir 裡的 `sessions.db`（ADR 0018）。top-level session 是儲存的 root conversation，其他每個 session 都是依 session key 找到的 conversation；session 名稱與最近一次 run 紀錄放在 durable 文件裡。`SessionHeader`（id、createdAt、parentSessionId）標識一個 session 與它 fork 自哪個 parent。一個 live 儲存只能由一個行程擁有。`mikan migrate` 會匯入 0.5.3 的 session 檔。項目是一條線性的逐字稿，包含 message、custom 與 compaction；請用 `buildSessionContext()` 讀模型看到的內容，用 `getContextEntries()` 讀仍在 context 內的項目，不要直接讀儲存。
+擁有一個 office 的所有 session：一個 pi-durable SQLite 儲存，也就是 office State dir 裡的 `sessions.db`（ADR 0018）。top-level session 是儲存的 root conversation，其他每個 session 都是依 session key 找到的 conversation；session 名稱與最近一次 run 紀錄放在 durable 文件裡。`SessionHeader`（id、createdAt、parentSessionId）標識一個 session 與它 fork 自哪個 parent。一個 live 儲存只能由一個行程擁有。`mikan migrate` 會匯入 0.5.3 的 session 檔。項目是一條線性的逐字稿，包含 message、custom 與 compaction；請用 `buildSessionContext()` 讀模型看到的內容，不要直接讀儲存。
 
 ### `MikanModels`
 

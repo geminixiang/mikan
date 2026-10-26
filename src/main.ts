@@ -297,7 +297,6 @@ const provisioner =
         boostLimits: sandboxBoostLimits,
       })
     : undefined;
-const resourceController = sandbox.type === "oci" ? provisioner : undefined;
 void provisioner?.prepareImage();
 
 if (sandbox.type === "oci") {
@@ -319,10 +318,8 @@ const openDesktop =
     : undefined;
 const runEvents = new RunEventHub();
 const adminTokenStore = new InMemoryAdminTokenStore();
-setInterval(() => linkTokenStore.purge(), 5 * 60 * 1000).unref();
-setInterval(() => sessionViewTokenStore.purge(), 5 * 60 * 1000).unref();
-setInterval(() => desktopTokenStore.purge(), 5 * 60 * 1000).unref();
-setInterval(() => adminTokenStore.purge(), 5 * 60 * 1000).unref();
+const tokenStores = [linkTokenStore, sessionViewTokenStore, desktopTokenStore, adminTokenStore];
+setInterval(() => tokenStores.forEach((store) => store.purge()), 5 * 60 * 1000).unref();
 
 function portalBaseUrl(): string | undefined {
   if (LINK_BASE_URL) return LINK_BASE_URL;
@@ -415,7 +412,7 @@ const handler = createConversationRuntime({
   sandbox,
   vaultManager,
   provisioner,
-  resourceController,
+  resourceController: provisioner,
   linkTokenStore,
   sessionViewTokenStore,
   desktopTokenStore,

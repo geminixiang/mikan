@@ -23,6 +23,7 @@ interface Scheduled {
   address: OfficeAddress;
   filename: string;
   event: MikanEvent;
+  bot: MessagingBot;
   timer?: NodeJS.Timeout;
   cron?: Cron;
 }
@@ -91,15 +92,16 @@ export class EventScheduler implements EventScheduleSink {
   scheduleRecord(address: OfficeAddress, record: EventRecord): void {
     const key = this.key(address, record.filename);
     this.cancelKey(key);
-    let event: MikanEvent;
+    let resolved: { event: MikanEvent; bot: MessagingBot };
     try {
-      event = this.resolve(record, address);
+      resolved = this.resolve(record, address);
     } catch (error) {
       log.logWarning(`Rejecting event ${record.filename}`, errorMessage(error));
       this.removeFile(address, record.filename);
       return;
     }
-    const entry: Scheduled = { address, filename: record.filename, event };
+    const { event, bot } = resolved;
+    const entry: Scheduled = { address, filename: record.filename, event, bot };
     switch (event.type) {
       case "immediate":
         this.execute(entry);
@@ -153,28 +155,24 @@ export class EventScheduler implements EventScheduleSink {
     this.scheduled.delete(key);
   }
 
-  private resolve(record: EventRecord, address: OfficeAddress): MikanEvent {
+  private resolve(
+    record: EventRecord,
+    address: OfficeAddress,
+  ): { event: MikanEvent; bot: MessagingBot } {
     const { payload } = record;
     const platform = (payload.platform ?? address.platform).toLowerCase();
     if (platform !== address.platform || payload.conversationId !== address.conversationId) {
       throw new Error("event payload does not address its owning office");
     }
-    if (!this.botsByPlatform[platform]) {
-      throw new Error(`no bot configured for platform '${platform}'`);
-    }
+    const bot = this.botsByPlatform[platform];
+    if (!bot) throw new Error(`no bot configured for platform '${platform}'`);
     const conversationKind: ConversationKind =
       payload.conversationKind ?? inferConversationKind(platform, payload.conversationId);
-    return { ...payload, platform, conversationKind };
+    return { event: { ...payload, platform, conversationKind }, bot };
   }
 
   private execute(entry: Scheduled, deleteAfter = true): void {
-    const { event, filename, address } = entry;
-    const bot = this.botsByPlatform[event.platform];
-    if (!bot) {
-      this.reportFailure(entry, deleteAfter, "missing_bot");
-      if (deleteAfter) this.removeFile(address, filename);
-      return;
-    }
+    const { event, filename, address, bot } = entry;
     const enqueued = bot.enqueueEvent(
       createConversationEvent({
         platform: event.platform as PlatformName,
@@ -188,25 +186,20 @@ export class EventScheduler implements EventScheduleSink {
     );
     if (!enqueued) {
       log.logWarning(`Event queue full, discarded: ${filename}`);
-      this.reportFailure(entry, deleteAfter, "queue_full");
+      this.reportQueueFull(entry, deleteAfter);
     }
     if (deleteAfter) this.removeFile(address, filename);
   }
 
-  private reportFailure(
-    entry: Scheduled,
-    deleteAfter: boolean,
-    failure: "missing_bot" | "queue_full",
-  ): void {
-    const reason = failure === "missing_bot" ? "missing bot" : "queue full";
-    reportUserFacingError(new Error(`Scheduled event delivery failed: ${reason}`), {
+  private reportQueueFull(entry: Scheduled, deleteAfter: boolean): void {
+    reportUserFacingError(new Error("Scheduled event delivery failed: queue full"), {
       domain: "events",
       surface: "event_delivery",
       operation: "event_execute",
       severity: "error",
       platform: entry.event.platform,
       context: {
-        failure,
+        failure: "queue_full",
         filename: entry.filename,
         eventType: entry.event.type,
         conversationId: entry.event.conversationId,

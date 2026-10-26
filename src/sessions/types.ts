@@ -186,11 +186,6 @@ export interface RegisterThreadSessionOptions {
   sessionKey: string;
 }
 
-export interface HasMaterializedSessionOptions {
-  office: Office;
-  sessionKey: string;
-}
-
 export interface ThreadBootstrapWaitOptions {
   parentSessionKey: string;
   sessionKey: string;

@@ -72,10 +72,7 @@ import {
   titleAssistantThread,
 } from "./assistant.js";
 import { createSlackAdapters } from "./context.js";
-import {
-  hasMaterializedChatSession,
-  registerThreadSession,
-} from "../../sessions/chat-history-sync.js";
+import { registerThreadSession } from "../../sessions/chat-history-sync.js";
 import {
   isSlackThreadSessionKey,
   parseSlackSessionKey,
@@ -999,10 +996,7 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): Promise<boolean> {
-    return hasMaterializedChatSession({
-      office: this.office(conversationId),
-      sessionKey,
-    });
+    return SessionStore.exists(this.office(conversationId), sessionKey);
   }
 
   private channelKindFor(channelId: string): PlatformChannelKind | undefined {
