@@ -29,12 +29,6 @@ This directory implements the Slack platform adapter and Slack-specific session/
 - Rotation revokes the previous access token, while the previous refresh token keeps working for a while, so the newest pair is saved before any other call. Two installs sharing one token revoke each other's access tokens.
 - Slack sets some fields itself and ignores what is sent for them: `features.app_home.agent_tasks_enabled` is on for apps created after Slack added it and absent on older ones. The comparison skips these fields; otherwise every start would update the app.
 
-## App configuration
-
-- `app-config.ts` owns the Slack app manifest; `deploy/examples/slack-app-manifest.json` must equal `slackAppManifest()`, and slash commands come from the command manifest. With `slack-config-token.json` in the state directory, startup rotates the token, exports the live app, and replaces it when it differs, so the live app equals the manifest plus `slack.json`'s display fields (ADR 0026). Sync failures are logged and never stop startup.
-- Rotation revokes the previous access token, so the new pair is saved before any other call, and two installs sharing one token revoke each other's.
-- Slack sets some fields itself and ignores what is sent for them: `features.app_home.agent_tasks_enabled` is on for apps created after Slack added it and absent on older ones. The comparison skips these fields; otherwise every start would update the app.
-
 ## Tasks
 
 Top-level responders, in DMs and channels, expose `startTask(message, task)`. Admission posts a
