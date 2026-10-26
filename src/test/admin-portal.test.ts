@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { OfficeEventStore, officeEventsDir } from "../events/index.js";
-import { listOfficeEvents, resolveConversationScope } from "../adapters/web/admin/portal.js";
+import { listOfficeEvents, officeFromBody, officeFromQuery } from "../adapters/web/admin/portal.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { AdminToken } from "../adapters/web/admin/types.js";
 
@@ -98,6 +100,10 @@ describe("admin portal events listing", () => {
   });
 });
 
+function queryUrl(params: Record<string, string>): URL {
+  return new URL(`http://localhost/admin/api/x?${new URLSearchParams(params)}`);
+}
+
 describe("admin conversation scope", () => {
   const token = {
     token: "t",
@@ -107,23 +113,49 @@ describe("admin conversation scope", () => {
     expiresAt: Date.now() + 60_000,
   } as AdminToken;
 
+  function scopeHarness() {
+    const root = makeWorkspace();
+    const workspace = createWorkspace({ root, stateDir: join(root, "state") });
+    const res = new ServerResponse(new IncomingMessage(new Socket()));
+    const end = vi.spyOn(res, "end");
+    return { workspace, res, end };
+  }
+
   test("defaults to the token's office", () => {
-    expect(resolveConversationScope("", "", token).address).toEqual(
+    const { workspace, res } = scopeHarness();
+    expect(officeFromQuery(res, workspace, queryUrl({}), token)?.address).toEqual(
+      createOfficeAddress("slack", "C123"),
+    );
+    expect(officeFromBody(res, workspace, {}, token)?.address).toEqual(
       createOfficeAddress("slack", "C123"),
     );
   });
 
   test("a requested id stays on the token's platform unless one is named", () => {
-    expect(resolveConversationScope("900100", "", token).address).toEqual(
-      createOfficeAddress("slack", "900100"),
-    );
-    expect(resolveConversationScope("900100", "discord", token).address).toEqual(
-      createOfficeAddress("discord", "900100"),
-    );
+    const { workspace, res } = scopeHarness();
+    expect(
+      officeFromQuery(res, workspace, queryUrl({ conversationId: " 900100 " }), token)?.address,
+    ).toEqual(createOfficeAddress("slack", "900100"));
+    expect(
+      officeFromBody(res, workspace, { conversationId: "900100", platform: "discord" }, token)
+        ?.address,
+    ).toEqual(createOfficeAddress("discord", "900100"));
   });
 
-  test("rejects invalid ids and platforms without leaking a scope", () => {
-    expect(resolveConversationScope("../escape", "", token).error).toBeTruthy();
-    expect(resolveConversationScope("C1", "matrix", token).error).toBeTruthy();
+  test("rejects invalid ids and platforms with 403 and no office", () => {
+    const denials = [
+      (h: ReturnType<typeof scopeHarness>) =>
+        officeFromQuery(h.res, h.workspace, queryUrl({ conversationId: "../escape" }), token),
+      (h: ReturnType<typeof scopeHarness>) =>
+        officeFromBody(h.res, h.workspace, { conversationId: "C1", platform: "matrix" }, token),
+    ];
+    for (const deny of denials) {
+      const harness = scopeHarness();
+      expect(deny(harness)).toBeUndefined();
+      expect(harness.res.statusCode).toBe(403);
+      expect(harness.end).toHaveBeenCalledWith(
+        JSON.stringify({ error: "Invalid conversation scope." }),
+      );
+    }
   });
 });

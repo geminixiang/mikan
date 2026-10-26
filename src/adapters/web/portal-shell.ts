@@ -81,6 +81,7 @@ export function readRawBody(
 }
 
 import type { PortalShellOptions } from "../../types.js";
+import type { StatusPageOptions } from "./types.js";
 
 type PortalView = "admin" | "session" | "vault";
 
@@ -191,6 +192,20 @@ export function renderPortalShell(options: PortalShellOptions): string {
   ${inlineScript}
 </body>
 </html>`;
+}
+
+export function renderStatusPage(options: StatusPageOptions): string {
+  const { eyebrow, title, message, tone, closeNote, ...shell } = options;
+  const note = closeNote ? '<p class="close-note">You can close this tab.</p>' : "";
+  return renderPortalShell({
+    ...shell,
+    body: `<section class="card"><div class="stack">
+      <p class="eyebrow">${escapeHtml(eyebrow)}</p>
+      <h1 class="page-title">${escapeHtml(title)}</h1>
+      <div class="status ${tone}">${escapeHtml(message)}</div>
+      ${note}
+    </div></section>`,
+  });
 }
 
 const portalShellStyles = `
@@ -406,6 +421,12 @@ const portalShellStyles = `
   }
   .primary-action-btn:hover:not(:disabled) { opacity: 0.85; }
   .primary-action-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .stack > * + * { margin-top: 14px; }
+  .status { padding: 12px 16px; border-radius: 10px; font-size: 0.9rem; }
+  .status.ok { background: var(--ok-bg); color: var(--ok-text); }
+  .status.err { background: var(--err-bg); color: var(--err-text); }
+  .close-note { margin-top: 14px; font-size: 0.92rem; }
 
   .loading-msg { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
   .err-msg {

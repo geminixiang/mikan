@@ -31,7 +31,9 @@ import {
   jsonResponse as json,
   readJsonBody,
   renderPortalShell,
+  renderStatusPage,
 } from "../portal-shell.js";
+import { PRODUCT_NAME } from "../../messages.js";
 import { reportUserFacingError } from "../../../observability/index.js";
 import { inferConversationKind } from "../../../sessions/session-key.js";
 import { isThreadSessionKey, threadSuffixOf } from "../../../sessions/session-key.js";
@@ -142,7 +144,7 @@ export async function handleSessionViewRequest(
   );
   if (!target.ok) {
     res.writeHead(target.status, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderStatusPage("Session unavailable", target.message));
+    res.end(renderSessionStatusPage("Session unavailable", target.message));
     return true;
   }
   const { activeSessionKey, entry } = target;
@@ -186,7 +188,9 @@ export async function handleSessionViewRequest(
       },
     });
     res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderStatusPage("Session unavailable", "The session could not be loaded right now."));
+    res.end(
+      renderSessionStatusPage("Session unavailable", "The session could not be loaded right now."),
+    );
   }
 
   return true;
@@ -746,16 +750,16 @@ function createLiveRunProjection(
   };
 }
 
-function renderStatusPage(title: string, message: string): string {
-  return renderHtmlDocument(
+function renderSessionStatusPage(title: string, message: string): string {
+  return renderStatusPage({
+    activeView: "session",
+    pageTitle: "Session",
+    extraStyles: sessionViewStyles,
+    eyebrow: PRODUCT_NAME,
     title,
-    `<section class="card stack">
-      <p class="eyebrow">mikan</p>
-      <h1 class="page-title">${esc(title)}</h1>
-      <div class="status err">${esc(message)}</div>
-    </section>`,
-    false,
-  );
+    message,
+    tone: "err",
+  });
 }
 
 function renderHtmlDocument(title: string, shellContent: string, isRunning: boolean): string {
@@ -1619,21 +1623,9 @@ const sessionViewStyles = `
 
 
 
-  .stack > * + * { margin-top: 14px; }
-
   p { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
 
-  .status {
-    padding: 12px 16px;
-    border-radius: 10px;
-    font-size: 0.9rem;
-  }
-
-  .status.err {
-    background: var(--err-bg);
-    color: var(--err-text);
-    border: 1px solid rgba(185, 28, 28, 0.12);
-  }
+  .status.err { border: 1px solid rgba(185, 28, 28, 0.12); }
 
 
 

@@ -1,6 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
+import {
+  escapeHtml,
+  readJsonBody,
+  renderPortalShell,
+  renderStatusPage,
+  requestBaseUrl,
+} from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../../env-manifest.js";
 import { readEnv } from "../../../env-manifest.js";
 import type { PlatformName } from "../../../types.js";
@@ -398,8 +404,6 @@ const loginViewStyles = `
 
   p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
 
-  .stack > * + * { margin-top: 14px; }
-
   label {
     display: block;
     margin-bottom: 6px;
@@ -671,11 +675,6 @@ const loginViewStyles = `
     margin-top: 6px;
   }
 
-  .close-note {
-    margin-top: 14px;
-    font-size: 0.92rem;
-  }
-
   @media (max-width: 640px) {
     .mode label { flex: 1; justify-content: center; }
     input, select { padding: 12px; }
@@ -692,24 +691,6 @@ function renderHtmlDocument(title: string, shellContent: string): string {
     body: shellContent,
     extraStyles: loginViewStyles,
   });
-}
-
-function renderStatusPage(
-  title: string,
-  message: string,
-  tone: "ok" | "err",
-  options?: { closeNote?: boolean },
-): string {
-  const closeNote = options?.closeNote ? '<p class="close-note">You can close this tab.</p>' : "";
-  return renderHtmlDocument(
-    title,
-    `<section class="card"><div class="stack">
-      <p class="eyebrow">${PRODUCT_NAME}</p>
-      <h1 class="page-title">${esc(title)}</h1>
-      <div class="status ${tone}">${esc(message)}</div>
-      ${closeNote}
-    </div></section>`,
-  );
 }
 
 interface ExistingSecretsSummary {
@@ -1100,12 +1081,30 @@ ${renderCredentialPageScript(token)}`,
   );
 }
 
+function renderLoginStatusPage(
+  title: string,
+  message: string,
+  tone: "ok" | "err",
+  closeNote = false,
+): string {
+  return renderStatusPage({
+    activeView: "vault",
+    pageTitle: "Vault",
+    extraStyles: loginViewStyles,
+    eyebrow: PRODUCT_NAME,
+    title,
+    message,
+    tone,
+    closeNote,
+  });
+}
+
 function renderErrorPage(message: string): string {
-  return renderStatusPage("Login Error", message, "err");
+  return renderLoginStatusPage("Login Error", message, "err");
 }
 
 function renderSuccessPage(message: string): string {
-  return renderStatusPage("Connected", message, "ok", { closeNote: true });
+  return renderLoginStatusPage("Connected", message, "ok", true);
 }
 
 function isValidEnvKey(value: string): boolean {
