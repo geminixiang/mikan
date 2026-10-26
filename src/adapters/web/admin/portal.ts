@@ -236,17 +236,17 @@ function scopedOffice(
   requestedPlatform: string,
   token: AdminToken,
 ): Office | undefined {
+  let address: OfficeAddress;
   try {
-    return workspace.office(
-      createOfficeAddress(
-        requestedPlatform ? assertPlatformName(requestedPlatform) : token.platform,
-        requestedId || token.conversationId,
-      ),
+    address = createOfficeAddress(
+      requestedPlatform ? assertPlatformName(requestedPlatform) : token.platform,
+      requestedId || token.conversationId,
     );
   } catch {
     jsonRes(res, 403, { error: "Invalid conversation scope." });
     return undefined;
   }
+  return workspace.office(address);
 }
 
 export function officeFromQuery(
