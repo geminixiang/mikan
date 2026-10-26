@@ -7,7 +7,6 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 ## Contracts
 
 - `resolveVaultInjection` fails closed when a sandbox backend cannot mount vault files.
-- `migrateConversationVaultKeys` reports a key collision for manual merge and never overwrites.
 - `disabledVaultManager` serves embedders that construct the runtime without a vault: reads report empty or disabled, and writes throw.
 
 ## Vault keys

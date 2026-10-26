@@ -302,8 +302,8 @@ The marker deliberately precedes the checks; do not move it after them:
   steers it. Others get the rejection notice.
 
 `task_status` is a responder-bound read-only query, advertised only when supported. It exposes no cross-office task lookup.
-`SessionStore.inspectExecution` reads the live run and mikan's run record from a
-copy of the storage; it does not create a runner or acquire the original writer.
+`SessionStore.inspectExecution` reads the live run and mikan's run record through
+the office's shared storage (`OfficeStorage.acquire`); it does not create a runner.
 
 Runner cancellation is remembered across prompt preparation. Stop before Pi starts
 prevents a later prompt; preparation/settlement controls are rejected with a retry
