@@ -196,7 +196,7 @@ model turn loop、message 永続化、retries、compaction、budget circuit brea
 
 ### `SessionStore`
 
-1 つの office のすべての session を所有します。office の State dir にある 1 つの pi-durable SQLite storage、`sessions.db` です（ADR 0018）。top-level session は storage の root conversation で、それ以外の各 session は session key で見つかる conversation です。session 名と直近の run 記録は durable document に保存されます。`SessionHeader`（id、createdAt、parentSessionId）は session と、それがどの親から fork したかを示します。live な storage を所有できるのは 1 つのプロセスだけです。`mikan migrate` は 0.5.3 の session file を取り込みます。entries は message、custom、compaction からなる一本の線形トランスクリプトです。モデルが見る内容は `buildSessionContext()`、context に残っている entries は `getContextEntries()` で読み、storage を直接読まないでください。
+1 つの office のすべての session を所有します。office の State dir にある 1 つの pi-durable SQLite storage、`sessions.db` です（ADR 0018）。top-level session は storage の root conversation で、それ以外の各 session は session key で見つかる conversation です。session 名と直近の run 記録は durable document に保存されます。`SessionHeader`（id、createdAt、parentSessionId）は session と、それがどの親から fork したかを示します。live な storage を所有できるのは 1 つのプロセスだけです。`mikan migrate` は 0.5.3 の session file を取り込みます。entries は message、custom、compaction からなる一本の線形トランスクリプトです。モデルが見る内容は `buildSessionContext()` で読み、storage を直接読まないでください。
 
 ### `MikanModels`
 

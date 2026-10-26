@@ -248,8 +248,6 @@ class OfficeStorage {
   private refs = 0;
   private continuation: PlannedContinuation | undefined;
   private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
-  private readonly ownerOf = new Map<ConversationId, ConversationId>();
-  private readonly conversationOfProviderSession = new Map<string, ConversationId>();
   private readonly writers = new Set<ConversationId>();
 
   private constructor(private readonly path: string | null) {
@@ -289,47 +287,17 @@ class OfficeStorage {
 
   async planContinuation(continues: (id: ConversationId) => boolean): Promise<ConversationId[]> {
     const unfinished = await this.unfinishedWork();
-    const kept = new Set<ConversationId>();
-    for (const { conversationId } of unfinished) {
-      if (await this.ownedByContinuing(conversationId, continues)) kept.add(conversationId);
-    }
+    const kept = new Set(unfinished.map((task) => task.conversationId).filter(continues));
     await this.abortUnfinishedWork((id) => !kept.has(id));
-    const sessions = [...kept].filter(continues);
-    if (sessions.length === 0) return [];
+    if (kept.size === 0) return [];
     this.refs += 1;
     let start!: () => void;
     const started = new Promise<void>((resolve) => {
       start = resolve;
     });
     const timer = setTimeout(() => void this.startContinuation(), CONTINUATION_BIND_TIMEOUT_MS);
-    this.continuation = { unbound: new Set(sessions), started, start, timer };
-    return sessions;
-  }
-
-  private async ownedByContinuing(
-    id: ConversationId,
-    continues: (id: ConversationId) => boolean,
-  ): Promise<boolean> {
-    const seen = new Set<ConversationId>();
-    let current: ConversationId | undefined = id;
-    while (current !== undefined && !seen.has(current)) {
-      if (continues(current)) return true;
-      seen.add(current);
-      const conversation = await this.harness.conversation(current, context);
-      if (!conversation) return false;
-      const view = await conversation.viewState(context);
-      const owner = view.value.conversation.owner?.conversationId;
-      view.dispose();
-      if (owner !== undefined) await this.recordOwner(current, owner);
-      current = owner;
-    }
-    return false;
-  }
-
-  private async recordOwner(id: ConversationId, owner: ConversationId): Promise<void> {
-    this.ownerOf.set(id, owner);
-    const sessionId = (await this.harness.snapshot(ProviderDoc, id, context))?.sessionId;
-    if (sessionId !== undefined) this.conversationOfProviderSession.set(sessionId, id);
+    this.continuation = { unbound: new Set(kept), started, start, timer };
+    return [...kept];
   }
 
   async continueConversation(id: ConversationId): Promise<void> {
@@ -382,9 +350,9 @@ class OfficeStorage {
         if (!REQUEST_METHODS.has(property)) return bindModels(fallback(), property);
         return (...args: unknown[]) => {
           const sessionId = requestSessionId(args[2]);
-          const binding =
-            [...this.bindings.values()].find((bound) => bound.providerSessionId === sessionId)
-              ?.binding ?? this.bindingOfProviderSession(sessionId);
+          const binding = [...this.bindings.values()].find(
+            (bound) => bound.providerSessionId === sessionId,
+          )?.binding;
           if (!binding) throw new Error("Provider request has no active session binding");
           const target = binding.requestModels ?? binding.models;
           const method = Reflect.get(target, property, target) as (...input: unknown[]) => unknown;
@@ -417,39 +385,14 @@ class OfficeStorage {
           return settings()?.followUpMode;
         },
       },
-      env: (target, envContext) => this.bindingOf(target.conversationId)?.env?.(target, envContext),
-      conversationCreated: async (tx, conversation) => {
-        if (!conversation.owner) return;
-        this.ownerOf.set(conversation.id, conversation.owner.conversationId);
-        const { sessionId } = await tx.doc(ProviderDoc, conversation.id);
-        this.conversationOfProviderSession.set(sessionId, conversation.id);
-      },
+      env: (target, envContext) =>
+        this.bindings.get(target.conversationId)?.binding.env?.(target, envContext),
       onReport: (error) => {
         const report = latest()?.onReport;
         if (report) report(error);
         else log.logWarning("Durable harness report", errorMessage(error));
       },
     };
-  }
-
-  private bindingOf(conversationId: ConversationId): SessionHarnessBinding | undefined {
-    const seen = new Set<ConversationId>();
-    let current: ConversationId | undefined = conversationId;
-    while (current !== undefined && !seen.has(current)) {
-      const bound = this.bindings.get(current);
-      if (bound) return bound.binding;
-      seen.add(current);
-      current = this.ownerOf.get(current);
-    }
-    return undefined;
-  }
-
-  private bindingOfProviderSession(
-    sessionId: string | undefined,
-  ): SessionHarnessBinding | undefined {
-    const conversationId =
-      sessionId === undefined ? undefined : this.conversationOfProviderSession.get(sessionId);
-    return conversationId === undefined ? undefined : this.bindingOf(conversationId);
   }
 
   private async unfinishedWork(): Promise<Array<{ id: TaskId; conversationId: ConversationId }>> {
@@ -678,29 +621,32 @@ async function appendSessionEntry(
   tx: Tx,
   conversationId: ConversationId,
   entry: ImportedSessionEntry,
-): Promise<void> {
+): Promise<EntryRecord> {
   switch (entry.type) {
     case "message": {
-      if (entry.history !== undefined && entry.message.role !== "user") {
-        throw new Error("Chat history must enter as an attributed user message");
-      }
       const model = [durableMessage(entry.message)];
       if (entry.history !== undefined) {
-        await tx.appendEntry(ChatHistoryEntry, conversationId, { model, data: entry.history });
-      } else if (entry.message.role === "user") {
-        await tx.appendEntry(UserEntry, conversationId, { model });
-      } else if (entry.message.role === "assistant") {
-        await tx.appendEntry(AssistantEntry, conversationId, { model });
-      } else {
-        await tx.appendEntry(ToolResultEntry, conversationId, {
-          model,
-          data: { diagnostics: [] },
-        });
+        if (entry.message.role !== "user") {
+          throw new Error("Chat history must enter as an attributed user message");
+        }
+        return tx.appendEntry(ChatHistoryEntry, conversationId, { model, data: entry.history });
       }
-      return;
+      switch (entry.message.role) {
+        case "user":
+          return tx.appendEntry(UserEntry, conversationId, { model });
+        case "assistant":
+          return tx.appendEntry(AssistantEntry, conversationId, { model });
+        case "toolResult":
+          return tx.appendEntry(ToolResultEntry, conversationId, {
+            model,
+            data: { diagnostics: [] },
+          });
+        default:
+          throw new Error("Only user, assistant, and tool result messages enter a session");
+      }
     }
     case "compaction":
-      await tx.appendEntry(CompactionEntry, conversationId, {
+      return tx.appendEntry(CompactionEntry, conversationId, {
         model: [
           {
             role: "user",
@@ -711,18 +657,14 @@ async function appendSessionEntry(
         data: { reason: "manual" },
         head: "self",
       });
-      return;
     case "custom":
-      await tx.appendEntry(CustomSessionEntry, conversationId, {
+      return tx.appendEntry(CustomSessionEntry, conversationId, {
         data: {
           customType: entry.customType,
           data: toJsonValue(entry.data),
           timestamp: entry.timestamp,
         },
       });
-      return;
-    default:
-      entry satisfies never;
   }
 }
 
@@ -1166,12 +1108,6 @@ export class SessionStore implements SessionInspection {
     return toSessionEntries(await readRecords(this.conversation), this.header.id);
   }
 
-  async getContextEntries(): Promise<SessionEntry[]> {
-    this.assertOpen();
-    const view = await this.conversation.context(context);
-    return toSessionEntries(view.entries, this.header.id);
-  }
-
   async getContextTokens(): Promise<number | undefined> {
     this.assertOpen();
     const view = await this.conversation.context(context);
@@ -1248,26 +1184,7 @@ export class SessionStore implements SessionInspection {
   }
 
   async appendMessage(message: Message): Promise<string> {
-    return this.mutate(async () => {
-      const conversation = this.conversation;
-      const model = [durableMessage(message)];
-      const entry = await conversation.commit((tx): Promise<EntryRecord> => {
-        switch (message.role) {
-          case "user":
-            return tx.appendEntry(UserEntry, conversation.id, { model });
-          case "assistant":
-            return tx.appendEntry(AssistantEntry, conversation.id, { model });
-          case "toolResult":
-            return tx.appendEntry(ToolResultEntry, conversation.id, {
-              model,
-              data: { diagnostics: [] },
-            });
-          default:
-            throw new Error("Only user, assistant, and tool result messages enter a session");
-        }
-      }, context);
-      return `${this.header.id}:${entry.id}`;
-    });
+    return this.appendEntry({ type: "message", message });
   }
 
   async appendCustomEntry(
@@ -1275,33 +1192,21 @@ export class SessionStore implements SessionInspection {
     data?: unknown,
     timestamp = Date.now(),
   ): Promise<string> {
-    return this.mutate(async () => {
-      const conversation = this.conversation;
-      const entry = await conversation.commit(
-        (tx) =>
-          tx.appendEntry(CustomSessionEntry, conversation.id, {
-            data: { customType, data: toJsonValue(data), timestamp },
-          }),
-        context,
-      );
-      return `${this.header.id}:${entry.id}`;
-    });
+    return this.appendEntry({ type: "custom", customType, data, timestamp });
   }
 
   async appendCompactionSummary(summary: string, timestamp: number): Promise<string> {
-    const text = wrapCompactionSummary(summary);
+    return this.appendEntry({ type: "compaction", summary, timestamp });
+  }
+
+  private async appendEntry(entry: ImportedSessionEntry): Promise<string> {
     return this.mutate(async () => {
-      const conversation = this.conversation;
-      const entry = await conversation.commit(
-        (tx) =>
-          tx.appendEntry(CompactionEntry, conversation.id, {
-            model: [{ role: "user", content: [{ type: "text", text }], timestamp }],
-            data: { reason: "manual" },
-            head: "self",
-          }),
+      const conversationId = this.conversation.id;
+      const record = await this.conversation.commit(
+        (tx) => appendSessionEntry(tx, conversationId, entry),
         context,
       );
-      return `${this.header.id}:${entry.id}`;
+      return `${this.header.id}:${record.id}`;
     });
   }
 

@@ -196,7 +196,7 @@ Owns the model turn loop, message persistence, retries, compaction, budget circu
 
 ### `SessionStore`
 
-Owns an office's sessions: one pi-durable SQLite storage, `sessions.db` in the office's State dir (ADR 0018). The top-level session is the storage's root conversation, every other session is a conversation found by its session key, and a session's name and last run record live in a durable document. `SessionHeader` (id, createdAt, parentSessionId) identifies a session and its fork parent. One process owns a live storage. `mikan migrate` imports 0.5.3 session files. Entries form one linear transcript of message, custom, and compaction entries; read the model's view with `buildSessionContext()` and the entries still in context with `getContextEntries()` instead of reading the storage.
+Owns an office's sessions: one pi-durable SQLite storage, `sessions.db` in the office's State dir (ADR 0018). The top-level session is the storage's root conversation, every other session is a conversation found by its session key, and a session's name and last run record live in a durable document. `SessionHeader` (id, createdAt, parentSessionId) identifies a session and its fork parent. One process owns a live storage. `mikan migrate` imports 0.5.3 session files. Entries form one linear transcript of message, custom, and compaction entries; read the model's view with `buildSessionContext()` instead of reading the storage.
 
 ### `MikanModels`
 
