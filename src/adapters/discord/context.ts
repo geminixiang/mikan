@@ -1,7 +1,7 @@
 import type { ConversationContext } from "../../types.js";
 import { createConversationMessage } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
+import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordEvent, DiscordResponseBot } from "./types.js";
@@ -66,7 +66,6 @@ export function createDiscordAdapters(
       stopOnSend: true,
     },
     prepareSource: (text) => formatDiscordMarkdown(text),
-    formatToolResult: formatMarkdownToolResult,
     responseErrorContext: (responseId) => ({
       platform: "discord",
       conversationId,

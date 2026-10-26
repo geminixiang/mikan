@@ -9,7 +9,6 @@ export {
 } from "./office/index.js";
 export type { Office, Workspace } from "./office/types.js";
 export type {
-  ChatToolResult,
   ConversationContext,
   ConversationEvent,
   ConversationKind,

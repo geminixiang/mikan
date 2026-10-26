@@ -39,7 +39,6 @@ export function createEmbedder(options) {
     respond: async (text) => write(text),
     replaceResponse: async (text) => write(text),
     respondDiagnostic: async (text) => write(`[diagnostic] ${text}`),
-    respondToolResult: async (result) => write(`[tool] ${result.toolName}`),
     setTyping: async () => {},
     setWorking: async () => {},
     uploadFile: async (filePath) => write(`[file] ${filePath}`),

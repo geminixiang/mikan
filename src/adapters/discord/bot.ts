@@ -20,7 +20,6 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationResponder,
-  ChatToolResult,
   MessagingBot,
   MessagingInfo,
 } from "../../types.js";
@@ -428,11 +427,6 @@ export class DiscordMessagingBot implements MessagingBot {
       },
       respondDiagnostic: async (text: string) => {
         await respondPrivately(text);
-      },
-      respondToolResult: async (result: ChatToolResult) => {
-        const duration = (result.durationMs / 1000).toFixed(1);
-        const formatted = `${result.isError ? "Error" : "Done"} ${result.toolName} (${duration}s)\n${result.result}`;
-        await respondPrivately(formatted);
       },
       setTyping: async () => {},
       setWorking: async (working: boolean) => {

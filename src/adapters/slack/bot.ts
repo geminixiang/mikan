@@ -14,7 +14,6 @@ import type {
   ConversationEvent,
   MessagingEventHandler,
   ConversationResponder,
-  ChatToolResult,
   ConversationKind,
   MessagingInfo,
   OfficeAddress,
@@ -1134,12 +1133,6 @@ export class SlackMessagingBot implements MessagingBot {
         }
         await respond(
           responseOptions?.style === "error" ? italicizeLines(responseText) : responseText,
-        );
-      },
-      respondToolResult: async (result: ChatToolResult) => {
-        const duration = (result.durationMs / 1000).toFixed(1);
-        await respond(
-          `${result.isError ? "Error" : "Done"} ${result.toolName} (${duration}s)\n${result.result}`,
         );
       },
       setTyping: async () => {},

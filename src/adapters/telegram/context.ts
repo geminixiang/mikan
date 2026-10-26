@@ -1,18 +1,10 @@
 import { createConversationMessage } from "../../office/index.js";
-import type { ChatToolResult, ConversationContext } from "../../types.js";
+import type { ConversationContext } from "../../types.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
-import { formatToolArgs } from "../../harness/tool-args.js";
 import type { TelegramEvent, TelegramResponseBot } from "./types.js";
 
 const MAX_LENGTH = 30000;
-
-function formatToolResult(result: ChatToolResult): string {
-  const argsFormatted = formatToolArgs(result.args);
-  const duration = (result.durationMs / 1000).toFixed(1);
-  const title = `${result.isError ? "Error" : "Done"} ${result.toolName}${result.label ? `: ${result.label}` : ""} (${duration}s)`;
-  return [title, argsFormatted, result.result].filter(Boolean).join("\n\n");
-}
 
 export function createTelegramAdapters(
   event: TelegramEvent,
@@ -48,7 +40,6 @@ export function createTelegramAdapters(
       send: () => bot.sendTyping(chatId),
       intervalMs: 4000,
     },
-    formatToolResult,
     responseErrorContext: (responseId) => ({
       platform: "telegram",
       conversationId,

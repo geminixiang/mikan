@@ -1,7 +1,7 @@
 import type { ConversationContext } from "../../types.js";
 import { createConversationMessage, parseGithubConversationId } from "../../office/index.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
+import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { formatGithubContinuation } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import type {
@@ -98,7 +98,6 @@ export function createGithubAdapters(
     maxLength: GITHUB_MAX_COMMENT_LENGTH,
     formatContinuation: formatGithubContinuation,
     errorPrefix: "**Error:** ",
-    formatToolResult: formatMarkdownToolResult,
     logIntermediateResponses: true,
     responseErrorContext: (responseId) => ({
       platform: "github",

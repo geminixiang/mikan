@@ -328,25 +328,6 @@ describe("respondDiagnostic()", () => {
     );
   });
 
-  test("respondToolResult formats tool diagnostics; quiet-tool filtering is runner-level", async () => {
-    const bot = makeSlackMessagingBot();
-    const event = makeEvent({ thread_ts: undefined });
-    const { responder } = createSlackAdapters(event, bot);
-    await responder.respondToolResult({
-      toolName: "custom-tool",
-      label: "list files",
-      args: { label: "list files", command: "ls" },
-      result: "ok",
-      isError: false,
-      durationMs: 1200,
-    });
-    expect(bot.postInThread).toHaveBeenCalledWith(
-      "C001",
-      "1000.0001",
-      expect.stringContaining("custom-tool"),
-    );
-  });
-
   test("event-file-shaped ts diagnostics anchor to the bot message after respond", async () => {
     const postInThread = vi.fn().mockResolvedValue("THREAD_MSG");
     const bot = makeSlackMessagingBot({

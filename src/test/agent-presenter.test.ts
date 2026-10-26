@@ -35,7 +35,6 @@ function makeResponder(): ConversationResponder & {
     replaceResponse: vi.fn().mockResolvedValue(undefined),
     respond: vi.fn().mockResolvedValue(undefined),
     respondDiagnostic: vi.fn().mockResolvedValue(undefined),
-    respondToolResult: vi.fn().mockResolvedValue(undefined),
     setTyping: vi.fn().mockResolvedValue(undefined),
     setWorking: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),

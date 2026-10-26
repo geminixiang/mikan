@@ -1,6 +1,5 @@
 import type {
   Attachment,
-  ChatToolResult,
   MessagingBot,
   ConversationContext,
   ConversationEvent,
@@ -89,7 +88,6 @@ export interface ProgressiveRendererPlatform {
     intervalMs: number;
     stopOnSend?: boolean;
   };
-  formatToolResult: (result: ChatToolResult) => string;
   responseErrorContext?: (
     responseId: string | null,
   ) => Omit<ChatResponseErrorContext, "operation" | "extra">;

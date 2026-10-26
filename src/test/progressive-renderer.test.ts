@@ -40,7 +40,6 @@ function makeRenderer(
     formatContinuation: (partNum) => `(continued ${partNum})`,
     errorPrefix: "Error: ",
     workingIndicator: kind === "buffered" ? " ..." : undefined,
-    formatToolResult: () => "",
     responseErrorContext,
     post: async (text) => {
       const id = `message-${nextId++}`;
