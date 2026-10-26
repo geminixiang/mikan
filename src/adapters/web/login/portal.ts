@@ -1,10 +1,19 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { escapeHtml, readJsonBody, renderPortalShell, requestBaseUrl } from "../portal-shell.js";
+import {
+  escapeHtml,
+  htmlResponse,
+  jsonResponse,
+  readJsonBody,
+  renderPortalShell,
+  renderStatusPage,
+  requestBaseUrl,
+} from "../portal-shell.js";
 import { resolveLinkBaseUrl } from "../../../env-manifest.js";
 import { readEnv } from "../../../env-manifest.js";
 import type { PlatformName } from "../../../types.js";
 import { InMemoryTokenStore } from "../token-store.js";
+import type { TokenRecord } from "../types.js";
 import type { LinkToken, LoginCredentialKind, OAuthService, NotifyFn } from "./types.js";
 import { getOAuthServices, resolveOAuthService } from "./oauth.js";
 import * as log from "../../../log.js";
@@ -50,11 +59,18 @@ interface OAuthStartBody {
   serviceId: string;
 }
 
-interface PendingOAuthState {
+interface PendingOAuthState extends TokenRecord {
   linkToken: string;
   serviceId: string;
   codeVerifier: string;
-  expiresAt: number;
+}
+
+class InMemoryOAuthStateStore extends InMemoryTokenStore<PendingOAuthState> {
+  create(data: Omit<PendingOAuthState, keyof TokenRecord>): PendingOAuthState {
+    const record = this.createRecord(OAUTH_STATE_TTL_MS, data);
+    this.purge();
+    return record;
+  }
 }
 
 interface SecretPresetField {
@@ -242,7 +258,7 @@ export function createLoginRequestHandler(
   vaultManager: VaultManager,
   notify: NotifyFn,
 ): (req: IncomingMessage, res: ServerResponse, url: URL) => boolean {
-  const oauthStates = new Map<string, PendingOAuthState>();
+  const oauthStates = new InMemoryOAuthStateStore();
 
   return (req, res, url) => {
     if (req.method === "GET" && url.pathname === "/link") {
@@ -250,8 +266,9 @@ export function createLoginRequestHandler(
       const linkToken = linkTokenStore.peek(rawToken);
 
       if (!linkToken) {
-        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(
+        htmlResponse(
+          res,
+          400,
           renderErrorPage(
             "This link is invalid or has expired. Ask the bot for a new /login link.",
           ),
@@ -266,8 +283,9 @@ export function createLoginRequestHandler(
       const defaultMode: LoginCredentialKind = oauthServiceHint ? "oauth" : "api_key";
       const existingSecrets = describeVaultSecrets(vaultManager, linkToken.vaultId);
 
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(
+      htmlResponse(
+        res,
+        200,
         renderCredentialPage({
           token: rawToken,
           title: oauthServiceHint ? `${oauthServiceHint.label} OAuth` : "Store Secret",
@@ -334,8 +352,7 @@ export function createLoginRequestHandler(
           severity: "error",
           context: { route: "/oauth/callback" },
         });
-        res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderErrorPage("OAuth callback failed. Please retry /login."));
+        htmlResponse(res, 500, renderErrorPage("OAuth callback failed. Please retry /login."));
       });
       return true;
     }
@@ -350,8 +367,7 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
     ?.trim()
     .toLowerCase();
   if (contentType !== "application/json") {
-    res.writeHead(415, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Content-Type must be application/json" }));
+    jsonResponse(res, 415, { error: "Content-Type must be application/json" });
     return false;
   }
 
@@ -364,14 +380,12 @@ function enforceCsrf(req: IncomingMessage, res: ServerResponse): boolean {
   try {
     configuredOrigin = new URL(configured).origin;
   } catch {
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Server misconfiguration" }));
+    jsonResponse(res, 500, { error: "Server misconfiguration" });
     return false;
   }
 
   if (requestOrigin(req) !== configuredOrigin) {
-    res.writeHead(403, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Cross-origin request rejected" }));
+    jsonResponse(res, 403, { error: "Cross-origin request rejected" });
     return false;
   }
 
@@ -397,8 +411,6 @@ const loginViewStyles = `
 
 
   p { margin: 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
-
-  .stack > * + * { margin-top: 14px; }
 
   label {
     display: block;
@@ -671,11 +683,6 @@ const loginViewStyles = `
     margin-top: 6px;
   }
 
-  .close-note {
-    margin-top: 14px;
-    font-size: 0.92rem;
-  }
-
   @media (max-width: 640px) {
     .mode label { flex: 1; justify-content: center; }
     input, select { padding: 12px; }
@@ -692,24 +699,6 @@ function renderHtmlDocument(title: string, shellContent: string): string {
     body: shellContent,
     extraStyles: loginViewStyles,
   });
-}
-
-function renderStatusPage(
-  title: string,
-  message: string,
-  tone: "ok" | "err",
-  options?: { closeNote?: boolean },
-): string {
-  const closeNote = options?.closeNote ? '<p class="close-note">You can close this tab.</p>' : "";
-  return renderHtmlDocument(
-    title,
-    `<section class="card"><div class="stack">
-      <p class="eyebrow">${PRODUCT_NAME}</p>
-      <h1 class="page-title">${esc(title)}</h1>
-      <div class="status ${tone}">${esc(message)}</div>
-      ${closeNote}
-    </div></section>`,
-  );
 }
 
 interface ExistingSecretsSummary {
@@ -1100,12 +1089,30 @@ ${renderCredentialPageScript(token)}`,
   );
 }
 
+function renderLoginStatusPage(
+  title: string,
+  message: string,
+  tone: "ok" | "err",
+  closeNote = false,
+): string {
+  return renderStatusPage({
+    activeView: "vault",
+    pageTitle: "Vault",
+    extraStyles: loginViewStyles,
+    eyebrow: PRODUCT_NAME,
+    title,
+    message,
+    tone,
+    closeNote,
+  });
+}
+
 function renderErrorPage(message: string): string {
-  return renderStatusPage("Login Error", message, "err");
+  return renderLoginStatusPage("Login Error", message, "err");
 }
 
 function renderSuccessPage(message: string): string {
-  return renderStatusPage("Connected", message, "ok", { closeNote: true });
+  return renderLoginStatusPage("Connected", message, "ok", true);
 }
 
 function isValidEnvKey(value: string): boolean {
@@ -1172,15 +1179,13 @@ async function handleLinkComplete(
   res: ServerResponse,
 ): Promise<void> {
   if (!data.token) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Missing required field: token" }));
+    jsonResponse(res, 400, { error: "Missing required field: token" });
     return;
   }
 
   const { updates, error } = extractEnvUpdates(data);
   if (!updates || error) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: error ?? "Invalid env payload" }));
+    jsonResponse(res, 400, { error: error ?? "Invalid env payload" });
     return;
   }
 
@@ -1188,8 +1193,7 @@ async function handleLinkComplete(
 
   const linkToken = linkTokenStore.consume(data.token);
   if (!linkToken) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid or expired token" }));
+    jsonResponse(res, 400, { error: "Invalid or expired token" });
     return;
   }
 
@@ -1222,13 +1226,10 @@ async function handleLinkComplete(
         fileTargetCount: fileTargets.length,
       },
     });
-    res.writeHead(500, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        error:
-          "Failed to store credential on server. Please fix the server issue and run /login again.",
-      }),
-    );
+    jsonResponse(res, 500, {
+      error:
+        "Failed to store credential on server. Please fix the server issue and run /login again.",
+    });
     return;
   }
 
@@ -1237,8 +1238,7 @@ async function handleLinkComplete(
   );
 
   const message = renderStoredEnvMessage(envKeys, fileTargets);
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true, message }));
+  jsonResponse(res, 200, { ok: true, message });
 
   notify(
     linkToken.platform,
@@ -1267,55 +1267,43 @@ async function handleOAuthStart(
   data: Partial<OAuthStartBody>,
   req: IncomingMessage,
   linkTokenStore: InMemoryLinkTokenStore,
-  oauthStates: Map<string, PendingOAuthState>,
+  oauthStates: InMemoryOAuthStateStore,
   res: ServerResponse,
 ): Promise<void> {
   if (!data.token || !data.serviceId) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Missing required fields: token/serviceId" }));
+    jsonResponse(res, 400, { error: "Missing required fields: token/serviceId" });
     return;
   }
 
   const linkToken = linkTokenStore.peek(data.token);
   if (!linkToken) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Invalid or expired token" }));
+    jsonResponse(res, 400, { error: "Invalid or expired token" });
     return;
   }
 
   const service = resolveOAuthService(data.serviceId);
   if (!service) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: `Unsupported OAuth service: ${data.serviceId}` }));
+    jsonResponse(res, 400, { error: `Unsupported OAuth service: ${data.serviceId}` });
     return;
   }
 
   const clientId = readEnv(service.clientIdEnvKey);
   const clientSecret = readEnv(service.clientSecretEnvKey);
   if (!clientId || !clientSecret) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(
-      JSON.stringify({
-        error:
-          `OAuth service ${service.label} is not configured. ` +
-          `Missing ${service.clientIdEnvKey}/${service.clientSecretEnvKey}.`,
-      }),
-    );
+    jsonResponse(res, 400, {
+      error:
+        `OAuth service ${service.label} is not configured. ` +
+        `Missing ${service.clientIdEnvKey}/${service.clientSecretEnvKey}.`,
+    });
     return;
   }
 
-  const state = randomBytes(16).toString("hex");
   const codeVerifier = randomBytes(32).toString("base64url");
-  oauthStates.set(state, {
+  const { token: state } = oauthStates.create({
     linkToken: data.token,
     serviceId: service.id,
     codeVerifier,
-    expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
   });
-
-  for (const [k, v] of oauthStates) {
-    if (Date.now() > v.expiresAt) oauthStates.delete(k);
-  }
 
   const redirectUri = `${requestBaseUrl(req)}/oauth/callback`;
   const authorizeUrl = new URL(service.authorizationUrl);
@@ -1334,8 +1322,7 @@ async function handleOAuthStart(
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
 
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true, redirectUrl: authorizeUrl.toString() }));
+  jsonResponse(res, 200, { ok: true, redirectUrl: authorizeUrl.toString() });
 }
 
 interface OAuthCallbackOptions {
@@ -1344,7 +1331,7 @@ interface OAuthCallbackOptions {
   linkTokenStore: InMemoryLinkTokenStore;
   vaultManager: VaultManager;
   notify: NotifyFn;
-  oauthStates: Map<string, PendingOAuthState>;
+  oauthStates: InMemoryOAuthStateStore;
   res: ServerResponse;
 }
 
@@ -1363,43 +1350,44 @@ function resolveOAuthCallback(options: OAuthCallbackOptions): ResolvedOAuthCallb
   const code = url.searchParams.get("code") ?? "";
   const oauthError = url.searchParams.get("error");
 
-  const pending = oauthStates.get(state);
-  if (pending) oauthStates.delete(state);
+  const pending = oauthStates.consume(state);
 
   if (oauthError) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage(`OAuth authorization failed: ${oauthError}`));
+    htmlResponse(res, 400, renderErrorPage(`OAuth authorization failed: ${oauthError}`));
     return undefined;
   }
-  if (!pending || Date.now() > pending.expiresAt) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("OAuth state is invalid or expired. Please run /login again."));
+  if (!pending) {
+    htmlResponse(
+      res,
+      400,
+      renderErrorPage("OAuth state is invalid or expired. Please run /login again."),
+    );
     return undefined;
   }
   if (!code) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("Missing OAuth authorization code."));
+    htmlResponse(res, 400, renderErrorPage("Missing OAuth authorization code."));
     return undefined;
   }
 
   const service = resolveOAuthService(pending.serviceId);
   if (!service) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("Unsupported OAuth service."));
+    htmlResponse(res, 400, renderErrorPage("Unsupported OAuth service."));
     return undefined;
   }
   const clientId = readEnv(service.clientIdEnvKey);
   const clientSecret = readEnv(service.clientSecretEnvKey);
   if (!clientId || !clientSecret) {
-    res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("OAuth service is not configured on server."));
+    htmlResponse(res, 500, renderErrorPage("OAuth service is not configured on server."));
     return undefined;
   }
 
   const linkToken = linkTokenStore.consume(pending.linkToken);
   if (!linkToken) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("Login link is invalid or expired. Please run /login again."));
+    htmlResponse(
+      res,
+      400,
+      renderErrorPage("Login link is invalid or expired. Please run /login again."),
+    );
     return undefined;
   }
   return { code, codeVerifier: pending.codeVerifier, service, clientId, clientSecret, linkToken };
@@ -1420,8 +1408,7 @@ function storeOAuthCredentials(options: StoreOAuthCredentialsOptions): string[] 
   const accessToken = tokenResponse.access_token?.trim();
   const refreshToken = tokenResponse.refresh_token?.trim();
   if (!accessToken) {
-    res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(renderErrorPage("OAuth token exchange did not return an access_token."));
+    htmlResponse(res, 400, renderErrorPage("OAuth token exchange did not return an access_token."));
     return undefined;
   }
 
@@ -1434,8 +1421,9 @@ function storeOAuthCredentials(options: StoreOAuthCredentialsOptions): string[] 
   let mountedPath: string | undefined;
   if (fileOutput?.type === "authorized_user") {
     if (!refreshToken) {
-      res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-      res.end(
+      htmlResponse(
+        res,
+        400,
         renderErrorPage(
           "OAuth token exchange did not return a refresh_token. " +
             "Retry after revoking prior consent or ensure prompt=consent is applied.",
@@ -1482,8 +1470,9 @@ function storeOAuthCredentials(options: StoreOAuthCredentialsOptions): string[] 
         storedTargetCount: storedTargets.length,
       },
     });
-    res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(
+    htmlResponse(
+      res,
+      500,
       renderErrorPage(
         "OAuth tokens were received but could not be stored on the server. Fix the server issue and run /login again.",
       ),
@@ -1544,8 +1533,11 @@ async function handleOAuthCallback(options: OAuthCallbackOptions): Promise<void>
       });
     });
 
-  options.res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-  options.res.end(renderSuccessPage(`${service.label} OAuth connected successfully.`));
+  htmlResponse(
+    options.res,
+    200,
+    renderSuccessPage(`${service.label} OAuth connected successfully.`),
+  );
 }
 
 interface ExchangeOAuthCodeOptions {
