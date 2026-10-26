@@ -15,7 +15,6 @@ type DriftReason = "binds" | "mount-content" | "network" | "image";
 interface ContainerState {
   status: ContainerStatus;
   lastUsed: number;
-  containerName: string;
 }
 
 import type {
@@ -103,8 +102,7 @@ export class DockerContainerManager {
   }
 
   private async provisionInner(containerKey: string, options: ProvisionOptions): Promise<string> {
-    const containerName =
-      options.containerName ?? DockerContainerManager.containerName(containerKey);
+    const containerName = DockerContainerManager.containerName(containerKey);
     const mounts = options.mounts ?? [];
     const status = await this.inspectStatus(containerName);
 
@@ -131,8 +129,8 @@ export class DockerContainerManager {
       throw err;
     }
 
-    this.setState(containerKey, "running", containerName);
-    await this.applyResourceLimits(containerKey, containerName);
+    this.setState(containerKey, "running");
+    await this.applyResourceLimits(containerKey);
     return containerName;
   }
 
@@ -145,7 +143,7 @@ export class DockerContainerManager {
     this.boostedKeys.add(containerKey);
     const state = this.state.get(containerKey);
     if (state?.status === "running") {
-      await this.applyResourceLimits(containerKey, state.containerName);
+      await this.applyResourceLimits(containerKey);
     }
     return this.getLimitStatus(containerKey);
   }
@@ -155,7 +153,7 @@ export class DockerContainerManager {
     this.overrideLimits.set(containerKey, { ...this.limits, ...limits });
     const state = this.state.get(containerKey);
     if (state?.status === "running") {
-      await this.applyResourceLimits(containerKey, state.containerName);
+      await this.applyResourceLimits(containerKey);
     }
     return this.getLimitStatus(containerKey);
   }
@@ -200,10 +198,10 @@ export class DockerContainerManager {
   }
 
   private async stopInner(containerKey: string): Promise<void> {
-    const containerName = this.getContainerName(containerKey);
+    const containerName = DockerContainerManager.containerName(containerKey);
     try {
       await this.run(["stop", containerName]);
-      this.setState(containerKey, "stopped", containerName);
+      this.setState(containerKey, "stopped");
       this.boostedKeys.delete(containerKey);
       this.overrideLimits.delete(containerKey);
       log.logInfo(`Container ${containerName} stopped (idle)`);
@@ -217,7 +215,7 @@ export class DockerContainerManager {
   }
 
   private async removeInner(containerKey: string): Promise<void> {
-    const containerName = this.getContainerName(containerKey);
+    const containerName = DockerContainerManager.containerName(containerKey);
     const networkName = DockerContainerManager.networkName(containerKey);
 
     const removed = await this.forceRemoveContainer(
@@ -273,7 +271,7 @@ export class DockerContainerManager {
       }
       const status: ContainerStatus = details.running ? "running" : "stopped";
       const lastUsed = details.startedAtMs ?? Date.now();
-      this.state.set(containerKey, { status, lastUsed, containerName });
+      this.state.set(containerKey, { status, lastUsed });
     }
 
     const running = Array.from(this.state.values()).filter((s) => s.status === "running").length;
@@ -283,15 +281,8 @@ export class DockerContainerManager {
     );
   }
 
-  private setState(containerKey: string, status: ContainerStatus, containerName: string): void {
-    this.state.set(containerKey, { status, lastUsed: Date.now(), containerName });
-  }
-
-  private getContainerName(containerKey: string): string {
-    return (
-      this.state.get(containerKey)?.containerName ??
-      DockerContainerManager.containerName(containerKey)
-    );
+  private setState(containerKey: string, status: ContainerStatus): void {
+    this.state.set(containerKey, { status, lastUsed: Date.now() });
   }
 
   private mountArgs(mounts: ContainerMount[]): string[] {
@@ -376,9 +367,10 @@ export class DockerContainerManager {
     return args;
   }
 
-  private async applyResourceLimits(containerKey: string, containerName: string): Promise<void> {
+  private async applyResourceLimits(containerKey: string): Promise<void> {
     const limitArgs = this.resourceLimitArgs(this.effectiveLimits(containerKey));
     if (limitArgs.length === 0) return;
+    const containerName = DockerContainerManager.containerName(containerKey);
     const args = ["update", ...limitArgs, containerName];
     try {
       await this.run(args);

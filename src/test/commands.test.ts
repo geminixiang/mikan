@@ -80,7 +80,6 @@ function fakeVaultManager(): VaultManager & { entries: Set<string> } {
     entries,
     hasEntry: (key) => entries.has(key),
     resolve: () => undefined,
-    list: () => [],
     isEnabled: () => true,
     upsertEnv: (key) => {
       entries.add(key);

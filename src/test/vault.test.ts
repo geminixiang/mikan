@@ -71,17 +71,6 @@ describe("FileVaultManager", () => {
     expect(new FileVaultManager(tmpDir).isEnabled()).toBe(false);
   });
 
-  test("list() skips reserved namespaces (shared profiles, extension secrets)", () => {
-    mkdirSync(join(vaultsDir, "U123"), { recursive: true });
-    writeFileSync(join(vaultsDir, "U123", "env"), "TOKEN=x\n");
-    mkdirSync(join(vaultsDir, "shared", "team-login"), { recursive: true });
-    mkdirSync(join(vaultsDir, "extensions", "agent-pm"), { recursive: true });
-    writeFileSync(join(vaultsDir, "extensions", "agent-pm", "env"), "LINEAR_TOKEN=y\n");
-
-    const vaults = new FileVaultManager(tmpDir).list();
-    expect(vaults).toEqual([{ env: { TOKEN: "x" }, mounts: [] }]);
-  });
-
   test("resolves a vault from directory contents", () => {
     const userDir = join(vaultsDir, "U123");
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
@@ -566,7 +555,6 @@ describe("ActorExecutionResolver image mode", () => {
     expect(ran.ok ? "ran" : ran.error.message).toContain("provisioning stops the call");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
-      containerName: `mikan-sandbox-${D123_OFFICE}`,
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
@@ -605,7 +593,6 @@ describe("ActorExecutionResolver image mode", () => {
     expect(ran.ok ? "ran" : ran.error.message).toContain("provisioning stops the call");
 
     expect(provision).toHaveBeenCalledWith(D123_OFFICE, {
-      containerName: `mikan-sandbox-${D123_OFFICE}`,
       conversationId: "D123",
       mounts: [
         { source: join(tmpDir, D123_OFFICE), target: `/workspace/${D123_OFFICE}` },
