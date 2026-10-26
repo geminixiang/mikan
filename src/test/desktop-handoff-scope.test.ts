@@ -44,7 +44,6 @@ function handOffIn(conversationKind: ConversationKind) {
     respond,
     replaceResponse: async () => {},
     respondDiagnostic: async () => {},
-    respondToolResult: async () => {},
     setTyping: async () => {},
     setWorking: async () => {},
     uploadFile: async () => {},

@@ -47,15 +47,6 @@ export interface ConversationMessage {
   threadTs?: string;
 }
 
-export interface ChatToolResult {
-  toolName: string;
-  label?: string;
-  args?: Record<string, unknown>;
-  result: string;
-  isError: boolean;
-  durationMs: number;
-}
-
 export interface TaskStatus {
   sessionKey: string;
   threadTs: string;
@@ -87,7 +78,6 @@ export interface ConversationResponder {
   respond(text: string): Promise<void>;
   replaceResponse(text: string, options?: ReplaceResponseOptions): Promise<void>;
   respondDiagnostic(text: string, options?: { style?: "muted" | "error" }): Promise<void>;
-  respondToolResult(result: ChatToolResult): Promise<void>;
   setTyping(isTyping: boolean): Promise<void>;
   setWorking(working: boolean): Promise<void>;
   uploadFile(filePath: string, title?: string): Promise<void>;

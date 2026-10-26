@@ -75,7 +75,6 @@ function makeResponder(onFinalResponse?: () => void): ConversationResponder {
     respond: vi.fn().mockResolvedValue(undefined),
     replaceResponse: vi.fn().mockImplementation(async () => onFinalResponse?.()),
     respondDiagnostic: vi.fn().mockResolvedValue(undefined),
-    respondToolResult: vi.fn().mockResolvedValue(undefined),
     setTyping: vi.fn().mockResolvedValue(undefined),
     setWorking: vi.fn().mockResolvedValue(undefined),
     uploadFile: vi.fn().mockResolvedValue(undefined),

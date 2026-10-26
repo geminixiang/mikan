@@ -3,8 +3,14 @@ import { mkdir, rm } from "node:fs/promises";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as WebReadableStream } from "node:stream/web";
-import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
-import { sameOffice } from "../office/index.js";
+import type {
+  ConversationEvent,
+  ConversationMessage,
+  MessagingEventHandler,
+  OfficeAddress,
+} from "../types.js";
+import { createConversationMessage, sameOffice } from "../office/index.js";
+import { resolveChatSessionKey } from "../sessions/session-key.js";
 import type { Office } from "../office/types.js";
 import { pinDirectoryNoFollow } from "../file-guards.js";
 import type { PinnedDirectory } from "../file-guards.js";
@@ -13,6 +19,7 @@ import { reportUserFacingError } from "../observability/index.js";
 import type {
   ChatResponseErrorContext,
   ChatResponseErrorReporter,
+  EventMessageInput,
   IncomingAttachment,
   RetryOptions,
   ResolveStopTargetInput,
@@ -51,6 +58,36 @@ function reportChatResponseError(err: unknown, context: ChatResponseErrorContext
       ...context.extra,
     },
   });
+}
+
+export function createEventMessage(input: EventMessageInput): ConversationMessage {
+  const { platform, event, sessionKey } = input;
+  return createConversationMessage({
+    platform,
+    conversationId: event.address.conversationId,
+    address: event.address,
+    id: event.ts,
+    sessionKey,
+    conversationKind: event.conversationKind,
+    userId: event.user,
+    userName: event.userName,
+    text: event.text,
+    attachments: event.attachments,
+    threadTs: event.thread_ts,
+  });
+}
+
+export function persistentTopLevelSessionKey(event: ConversationEvent): string {
+  return (
+    event.sessionKey ??
+    resolveChatSessionKey({
+      conversationId: event.address.conversationId,
+      conversationKind: event.conversationKind,
+      messageId: event.ts,
+      persistentTopLevel: true,
+      threadTs: event.thread_ts,
+    })
+  );
 }
 
 export class MessagingIntakeTracker {
@@ -138,6 +175,29 @@ export class MessagingEventQueue {
       return;
     }
     for (const resolve of this.drainWaiters.splice(0)) resolve();
+  }
+}
+
+export class MessagingQueueMap {
+  private readonly queues = new Map<string, MessagingEventQueue>();
+
+  constructor(
+    private readonly name: string,
+    private readonly closesNewQueues: () => boolean = () => false,
+  ) {}
+
+  get(key: string): MessagingEventQueue {
+    let queue = this.queues.get(key);
+    if (!queue) {
+      queue = new MessagingEventQueue(this.name);
+      if (this.closesNewQueues()) void queue.close();
+      this.queues.set(key, queue);
+    }
+    return queue;
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([...this.queues.values()].map((queue) => queue.close()));
   }
 }
 

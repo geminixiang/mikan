@@ -1,8 +1,7 @@
-import type { ConversationMessage, ConversationResponder, ChatToolResult } from "../../types.js";
+import type { ConversationMessage, ConversationResponder } from "../../types.js";
 import * as log from "../../log.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { splitText } from "../shared.js";
-import { formatToolArgs } from "../../harness/tool-args.js";
 import type { HandleTooLongInput } from "../types.js";
 import { buildMrkdwnContextBlock, italicizeLines } from "./bot.js";
 import type { SlackEvent, SlackAdapterSessionPlan, SlackResponderBot } from "./types.js";
@@ -60,17 +59,6 @@ async function postSlackTextWithFallback(
       prefixLength = Math.max(0, Math.floor(prefixLength / 2));
     }
   }
-}
-
-function formatSlackToolResult(result: ChatToolResult): string {
-  const argsFormatted = formatToolArgs(result.args);
-  const duration = (result.durationMs / 1000).toFixed(1);
-  let text = `*${result.isError ? "✗" : "✓"} ${result.toolName}*`;
-  if (result.label) text += `: ${result.label}`;
-  text += ` (${duration}s)\n`;
-  if (argsFormatted) text += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
-  text += `*Result:*\n\`\`\`\n${result.result}\n\`\`\``;
-  return text;
 }
 
 function closeOpenFences(text: string): string {
@@ -293,7 +281,6 @@ export function createSlackResponseContext({
           }
         : undefined,
     needsCanonicalRender,
-    formatToolResult: formatSlackToolResult,
     responseErrorContext: (responseId) => ({
       platform: "slack",
       conversationId: event.address.conversationId,

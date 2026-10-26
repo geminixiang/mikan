@@ -214,25 +214,6 @@ describe("respondDiagnostic()", () => {
     expect(bot.postInThread).not.toHaveBeenCalled();
   });
 
-  test("respondToolResult formats and posts diagnostics", async () => {
-    const bot = makeDiscordMessagingBot();
-    const event = makeEvent({ thread_ts: undefined });
-    const { responder } = createDiscordAdapters(event, bot);
-    await responder.respondToolResult({
-      toolName: "bash",
-      label: "list files",
-      args: { label: "list files", command: "ls" },
-      result: "ok",
-      isError: false,
-      durationMs: 1200,
-    });
-    expect(bot.postReply).toHaveBeenCalledWith(
-      "CH001",
-      "MSG001",
-      expect.stringContaining("**Done bash**: list files"),
-    );
-  });
-
   test("synthetic event: diagnostics after main response reply to bot message", async () => {
     const bot = makeDiscordMessagingBot({ postMessage: vi.fn().mockResolvedValue("BOT_MSG") });
     const event = makeEvent({

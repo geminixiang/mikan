@@ -1,7 +1,7 @@
 import type { ConversationContext } from "../../types.js";
-import { createConversationMessage, parseGithubConversationId } from "../../office/index.js";
-import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import { createProgressiveRenderer, formatMarkdownToolResult } from "../progressive-renderer.js";
+import { parseGithubConversationId } from "../../office/index.js";
+import { createProgressiveRenderer } from "../progressive-renderer.js";
+import { createEventMessage, persistentTopLevelSessionKey } from "../shared.js";
 import { formatGithubContinuation } from "./bot.js";
 import { GITHUB_MAX_COMMENT_LENGTH } from "./client.js";
 import type {
@@ -54,26 +54,10 @@ export function createGithubAdapters(
   const conversationId = event.address.conversationId;
   const ref = parseGithubConversationId(conversationId);
 
-  const message = createConversationMessage({
+  const message = createEventMessage({
     platform: "github",
-    conversationId,
-    address: event.address,
-    id: event.ts,
-    sessionKey:
-      event.sessionKey ??
-      resolveChatSessionKey({
-        conversationId,
-        conversationKind: event.conversationKind,
-        messageId: event.ts,
-        persistentTopLevel: true,
-        threadTs: event.thread_ts,
-      }),
-    conversationKind: event.conversationKind,
-    userId: event.user,
-    userName: event.userName,
-    text: event.text,
-    attachments: event.attachments,
-    threadTs: event.thread_ts,
+    event,
+    sessionKey: persistentTopLevelSessionKey(event),
   });
   const baseInfo = bot.getMessagingInfo();
   const platform = {
@@ -98,7 +82,6 @@ export function createGithubAdapters(
     maxLength: GITHUB_MAX_COMMENT_LENGTH,
     formatContinuation: formatGithubContinuation,
     errorPrefix: "**Error:** ",
-    formatToolResult: formatMarkdownToolResult,
     logIntermediateResponses: true,
     responseErrorContext: (responseId) => ({
       platform: "github",

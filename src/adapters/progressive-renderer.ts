@@ -1,20 +1,8 @@
-import type { ChatToolResult, ConversationResponder, ReplaceResponseOptions } from "../types.js";
+import type { ConversationResponder, ReplaceResponseOptions } from "../types.js";
 import * as log from "../log.js";
 import { createChatResponseErrorReporter, splitText } from "./shared.js";
 import type { ChatResponseErrorOperation, ProgressiveRendererPlatform } from "./types.js";
-import { formatToolArgs } from "../harness/tool-args.js";
 import { errorMessage } from "../unknown-values.js";
-
-export function formatMarkdownToolResult(result: ChatToolResult): string {
-  const argsFormatted = formatToolArgs(result.args);
-  const duration = (result.durationMs / 1000).toFixed(1);
-  let text = `**${result.isError ? "Error" : "Done"} ${result.toolName}**`;
-  if (result.label) text += `: ${result.label}`;
-  text += ` (${duration}s)\n`;
-  if (argsFormatted) text += `\`\`\`\n${argsFormatted}\n\`\`\`\n`;
-  text += `**Result:**\n\`\`\`\n${result.result}\n\`\`\``;
-  return text;
-}
 
 interface RendererState {
   responseId: string | null;
@@ -73,7 +61,6 @@ class ProgressiveRenderer {
       showsPartialAnswer: Boolean(this.platform.showsPartialAnswer || this.platform.stream),
       replaceResponse: (text, options) => this.replaceResponse(text, options),
       respondDiagnostic: (text, options) => this.respondDiagnostic(text, options),
-      respondToolResult: (result) => this.respondToolResult(result),
       setTyping: (isTyping) => this.setTyping(isTyping),
       setWorking: (working) => this.setWorking(working),
       uploadFile: (filePath, title) => this.uploadFile(filePath, title),
@@ -359,10 +346,6 @@ class ProgressiveRenderer {
       },
       () => ({ textLength: text.length, style: options.style }),
     );
-  }
-
-  private async respondToolResult(result: ChatToolResult): Promise<void> {
-    await this.responder.respondDiagnostic(this.platform.formatToolResult(result));
   }
 
   private async setTyping(isTyping: boolean): Promise<void> {

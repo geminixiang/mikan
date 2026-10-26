@@ -236,24 +236,6 @@ describe("respondDiagnostic()", () => {
     expect(bot.postMessageRaw).toHaveBeenCalledWith(123456, "detail");
     expect(bot.postReply).not.toHaveBeenCalled();
   });
-
-  test("respondToolResult formats and posts diagnostics", async () => {
-    const bot = makeTelegramMessagingBot();
-    const event = makeEvent({ thread_ts: undefined });
-    const { responder } = createTelegramAdapters(event, bot);
-    await responder.respondToolResult({
-      toolName: "bash",
-      label: "list files",
-      args: { label: "list files", command: "ls" },
-      result: "ok",
-      isError: false,
-      durationMs: 1200,
-    });
-    expect(bot.postMessageRaw).toHaveBeenCalledWith(
-      123456,
-      expect.stringContaining("Done bash: list files"),
-    );
-  });
 });
 
 describe("setTyping()", () => {

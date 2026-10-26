@@ -19,7 +19,6 @@ function fakeResponder(): ConversationResponder {
     respond: vi.fn(async () => {}),
     replaceResponse: vi.fn(async () => {}),
     respondDiagnostic: vi.fn(async () => {}),
-    respondToolResult: vi.fn(async () => {}),
     setTyping: vi.fn(async () => {}),
     setWorking: vi.fn(async () => {}),
     uploadFile: vi.fn(async () => {}),

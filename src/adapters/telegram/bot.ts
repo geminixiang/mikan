@@ -15,7 +15,7 @@ import type { TelegramClient, TelegramEvent, TelegramMessagingBotOptions } from 
 import * as log from "../../log.js";
 import { resolveChatSessionKey, withScheduledEventSession } from "../../sessions/session-key.js";
 import {
-  MessagingEventQueue,
+  MessagingQueueMap,
   MessagingIntakeTracker,
   downloadUrlToFile,
   withRetry,
@@ -62,7 +62,7 @@ export class TelegramMessagingBot implements MessagingBot {
   private botUserId: string | null = null;
   private botUsername: string | null = null;
   private stopped = false;
-  private queues = new Map<string, MessagingEventQueue>();
+  private readonly queues = new MessagingQueueMap("Telegram");
   private intake = new MessagingIntakeTracker("Telegram");
   private startupTime: number = 0;
   private readonly onPollingFailure: (error: Error) => void;
@@ -107,7 +107,7 @@ export class TelegramMessagingBot implements MessagingBot {
       await this.client.stop();
     } finally {
       await this.intake.close();
-      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+      await this.queues.close();
     }
   }
 
@@ -139,7 +139,7 @@ export class TelegramMessagingBot implements MessagingBot {
   enqueueEvent(scheduled: ConversationEvent): boolean {
     if (this.stopped) return false;
     const event = withScheduledEventSession(scheduled);
-    return this.getQueue(event.address.conversationId).offerEvent(event, () => {
+    return this.queues.get(event.address.conversationId).offerEvent(event, () => {
       const context = createTelegramAdapters(event as TelegramEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
@@ -250,15 +250,6 @@ export class TelegramMessagingBot implements MessagingBot {
         );
       },
     };
-  }
-
-  private getQueue(channelId: string): MessagingEventQueue {
-    let queue = this.queues.get(channelId);
-    if (!queue) {
-      queue = new MessagingEventQueue("Telegram");
-      this.queues.set(channelId, queue);
-    }
-    return queue;
   }
 
   private extractMessageContext(msg: Message): MessageContext | null {
@@ -388,7 +379,7 @@ export class TelegramMessagingBot implements MessagingBot {
           log: (entry) => this.logToFile(mc.chatId, entry),
           processAttachments: () => this.processAttachments(mc.chatId, mc.msg),
           queueKey: mc.sessionKey,
-          enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
+          enqueue: (queueKey, work) => this.queues.get(queueKey).admit(work),
           handler: this.handler,
           bot: this,
           createContext: (event) => createTelegramAdapters(event, this),

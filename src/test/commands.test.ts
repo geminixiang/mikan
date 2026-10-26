@@ -50,7 +50,6 @@ function fakeResponseCtx(): RecordingResponseCtx {
     respondDiagnostic: vi.fn(async (text: string) => {
       responses.push(text);
     }),
-    respondToolResult: vi.fn(async () => {}),
     setTyping: vi.fn(async () => {}),
     setWorking: vi.fn(async () => {}),
     uploadFile: vi.fn(async () => {}),

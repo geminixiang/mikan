@@ -70,6 +70,15 @@ export interface SlackEvent {
   sessionKey?: string;
 }
 
+export interface SlackIncomingDispatch {
+  event: SlackEvent & { sessionKey: string };
+  ack: () => void;
+  preStartupLogPrefix: string;
+  isTaskControl: () => Promise<boolean>;
+  isAddressed: () => Promise<boolean>;
+  magicWordAddressed?: boolean;
+}
+
 export interface SlackUser {
   id: string;
   userName: string;

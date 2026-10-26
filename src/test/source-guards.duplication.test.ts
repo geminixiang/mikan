@@ -15,9 +15,7 @@ const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
 const duplicationScript = "duplication";
 const scannedRoot = "src";
 
-const productionCloneBudget: Record<string, number> = {
-  "src/adapters/discord/context.ts <-> src/adapters/github/context.ts": 1,
-};
+const productionCloneBudget: Record<string, number> = {};
 
 function detectProductionClones(): JscpdClone[] {
   const outputDirectory = mkdtempSync(join(tmpdir(), "mikan-jscpd-"));

@@ -5,7 +5,7 @@ exports[`public package interface > snapshots the TypeScript declaration surface
 export type { ConversationRuntime, ConversationRuntimeOptions } from "./runtime/types.js";
 export { createConversationEvent, createConversationMessage, createOfficeAddress, createWorkspace, officeKey, } from "./office/index.js";
 export type { Office, Workspace } from "./office/types.js";
-export type { ChatToolResult, ConversationContext, ConversationEvent, ConversationKind, ConversationMessage, ConversationResponder, HandleNewCommandOptions, MessagingBot, MessagingEventHandler, MessagingInfo, OfficeAddress, OfficeKey, PlatformName, RunningSession, } from "./types.js";
+export type { ConversationContext, ConversationEvent, ConversationKind, ConversationMessage, ConversationResponder, HandleNewCommandOptions, MessagingBot, MessagingEventHandler, MessagingInfo, OfficeAddress, OfficeKey, PlatformName, RunningSession, } from "./types.js";
 export { defaultCommandHandlers } from "./adapters/commands/registry.js";
 export type { CommandContext, CommandHandler, CommandServices } from "./adapters/commands/types.js";
 export { MikanModels } from "./harness/models.js";

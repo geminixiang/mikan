@@ -683,7 +683,6 @@ function createSilentResponder(): ConversationResponder {
     respond: ignore,
     replaceResponse: ignore,
     respondDiagnostic: ignore,
-    respondToolResult: ignore,
     setTyping: ignore,
     setWorking: ignore,
     uploadFile: ignore,
