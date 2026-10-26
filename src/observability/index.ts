@@ -12,6 +12,7 @@ import {
 } from "./sentry.js";
 import { isOpenTelemetryMetricsEnabled, shutdownOpenTelemetry } from "./otel.js";
 import type {
+  DiagnosticBreadcrumb,
   JevOutcomeReport,
   ObservabilityAttributes,
   ReportUserFacingErrorOptions,
@@ -168,7 +169,11 @@ export function addLifecycleEvent(
   addSentryBreadcrumb(name, safeAttributes);
 }
 
-export function recordDiagnosticEvent(name: string, data: Record<string, unknown>): void {
+export function recordDiagnosticEvent(
+  name: string,
+  data: Record<string, unknown>,
+  breadcrumb: DiagnosticBreadcrumb,
+): void {
   const spanAttributes = metricAttributes(
     Object.fromEntries(
       Object.entries(data).filter((entry): entry is [string, string | number | boolean] => {
@@ -178,20 +183,7 @@ export function recordDiagnosticEvent(name: string, data: Record<string, unknown
     ),
   );
   trace.getActiveSpan()?.addEvent(name, spanAttributes as Attributes);
-  const recovered = name === "slack.update.recovered";
-  addSentryBreadcrumb(
-    recovered
-      ? "Slack update recovered"
-      : name === "slack.update.rejected"
-        ? "Slack update rejected"
-        : name,
-    data,
-    {
-      category: name.startsWith("slack.update.") ? "slack.update" : "diagnostic",
-      level: name.endsWith(".rejected") ? "warning" : "info",
-      log: recovered,
-    },
-  );
+  addSentryBreadcrumb(breadcrumb.message, data, breadcrumb);
 }
 
 export function reportUserFacingError(

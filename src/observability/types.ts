@@ -12,6 +12,13 @@ export interface RunScopeContext {
   model?: string;
 }
 
+export interface DiagnosticBreadcrumb {
+  message: string;
+  category: string;
+  level: "info" | "warning";
+  log: boolean;
+}
+
 export type ObservabilityAttributes = Record<string, SentryPrimitive>;
 
 export type SentryAttributionAttributes = ObservabilityAttributes;
