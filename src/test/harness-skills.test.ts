@@ -45,14 +45,13 @@ describe("loadSkillsFromDir", () => {
       "---\ndescription: Send emails\n---\nUse the script in {baseDir}.\n",
     );
 
-    const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "workspace" });
+    const { skills, diagnostics } = loadSkillsFromDir({ dir });
     expect(diagnostics).toHaveLength(0);
     expect(skills).toHaveLength(1);
     expect(skills[0]).toMatchObject({
       name: "email",
       description: "Send emails",
       baseDir: skillDir,
-      source: "workspace",
     });
   });
 
@@ -61,19 +60,19 @@ describe("loadSkillsFromDir", () => {
     mkdirSync(skillDir, { recursive: true });
     writeFileSync(join(skillDir, "SKILL.md"), "---\nname: broken\n---\nNo description.\n");
 
-    const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "workspace" });
+    const { skills, diagnostics } = loadSkillsFromDir({ dir });
     expect(skills).toHaveLength(0);
     expect(diagnostics[0]?.message).toContain("description is required");
   });
 
   test("loads root-level markdown files as skills", () => {
     writeFileSync(join(dir, "notes.md"), "---\nname: notes\ndescription: Take notes\n---\nBody\n");
-    const { skills } = loadSkillsFromDir({ dir, source: "channel" });
+    const { skills } = loadSkillsFromDir({ dir });
     expect(skills.map((skill) => skill.name)).toEqual(["notes"]);
   });
 
   test("missing directory yields no skills", () => {
-    const { skills } = loadSkillsFromDir({ dir: join(dir, "nope"), source: "workspace" });
+    const { skills } = loadSkillsFromDir({ dir: join(dir, "nope") });
     expect(skills).toHaveLength(0);
   });
 });
@@ -97,7 +96,6 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
 
     const { skills, diagnostics } = loadSkillsFromDir({
       dir,
-      source: "channel",
       rejectSymlinks: true,
     });
 
@@ -112,7 +110,6 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
 
     const { skills, diagnostics } = loadSkillsFromDir({
       dir,
-      source: "channel",
       rejectSymlinks: true,
     });
 
@@ -133,7 +130,6 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
 
     const { skills, diagnostics } = loadSkillsFromDir({
       dir,
-      source: "channel",
       rejectSymlinks: true,
     });
 
@@ -150,7 +146,6 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
 
     const { skills, diagnostics } = loadSkillsFromDir({
       dir: linkRoot,
-      source: "channel",
       rejectSymlinks: true,
     });
 
@@ -163,7 +158,7 @@ describe("loadSkillsFromDir with rejectSymlinks", () => {
     const elsewhere = writeSkill(join(dir, ".agents"), "linked-skill");
     symlinkSync(elsewhere, join(dir, "linked-skill"));
 
-    const { skills } = loadSkillsFromDir({ dir, source: "workspace" });
+    const { skills } = loadSkillsFromDir({ dir });
 
     expect(skills.map((skill) => skill.name)).toEqual(["linked-skill"]);
   });
@@ -219,22 +214,6 @@ describe("formatSkillsForPrompt", () => {
       },
     ]);
     expect(prompt).toContain("- deploy (/workspace/skills/deploy-tools/SKILL.md): Ship it");
-  });
-
-  test("inline skills embed instructions instead of a file location", () => {
-    const prompt = formatSkillsForPrompt([
-      {
-        name: "triage",
-        description: "Triage follow-ups",
-        content: "Always triage <first>.",
-        filePath: "/workspace/skills/triage/SKILL.md",
-        baseDir: "/workspace/skills/triage",
-        source: "workspace",
-        inline: true,
-      },
-    ]);
-    expect(prompt).toContain("<instructions>Always triage &lt;first&gt;.</instructions>");
-    expect(prompt).not.toContain("<location>");
   });
 
   test("returns empty string when no skills are visible", () => {

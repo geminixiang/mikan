@@ -164,6 +164,21 @@ function isValidIsoTimestampWithOffset(value: string): boolean {
   );
 }
 
+const EVENT_RUN_ID_PREFIX = "event:";
+
+export function eventRunId(filename: string): string {
+  return `${EVENT_RUN_ID_PREFIX}${filename.replace(/\.json$/i, "")}`;
+}
+
+export function isEventRunId(id: string): boolean {
+  return id.startsWith(EVENT_RUN_ID_PREFIX);
+}
+
+export function eventRunName(id: string): string | undefined {
+  if (!isEventRunId(id)) return undefined;
+  return id.slice(EVENT_RUN_ID_PREFIX.length).split(":")[0] || undefined;
+}
+
 export function parseEventPayload(content: string, filename: string): EventFilePayload {
   const data: EventFileData = parseJsonSchemaValue(content, EventFileSchema, (detail, kind) =>
     kind === "shape"

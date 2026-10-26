@@ -9,6 +9,7 @@ import { reportUserFacingError } from "../observability/index.js";
 import { inferConversationKind } from "../sessions/session-key.js";
 import type { OfficeAddress } from "../types.js";
 import {
+  eventRunId,
   officeEventsDir,
   parseEventPayload,
   type EventRecord,
@@ -182,7 +183,7 @@ export class EventScheduler implements EventScheduleSink {
         conversationKind: event.conversationKind,
         user: event.userId ?? "EVENT",
         text: buildEventPrompt(event),
-        ts: `event:${filename.replace(/\.json$/i, "")}`,
+        ts: eventRunId(filename),
       }),
     );
     if (!enqueued) {

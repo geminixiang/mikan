@@ -2,14 +2,16 @@ import { JEV_TOOL } from "./tools/jev.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
 import type { OfficeAddress } from "../types.js";
 import * as log from "../log.js";
-import { errorMessage } from "../unknown-values.js";
+import { errorMessage, isRecord } from "../unknown-values.js";
 import type { HarnessEvent, RunEvent, RunEventListener } from "./types.js";
 
-const TOOL_CALL_PART_TYPES = new Set(["tool_use", "toolCall", "tool-call"]);
+export function toolLabel(args: unknown, toolName: string): string {
+  const label = isRecord(args) && typeof args.label === "string" ? args.label.trim() : "";
+  return label || toolName;
+}
 
 function toolDisplayLabel(toolName: string, args: unknown): string {
-  const label = (args as { label?: unknown } | undefined)?.label;
-  const text = typeof label === "string" ? label.trim() || toolName : toolName;
+  const text = toolLabel(args, toolName);
   if ((toolName === JEV_TOOL || toolName === JEV_BROWSER_TOOL) && text !== toolName) {
     return `${toolName} · ${text}`;
   }
@@ -44,7 +46,7 @@ function assistantMessageParts(message: Extract<AssistantMessageEvent, { role: "
   for (const part of message.content) {
     if (part.type === "thinking") thinking.push(part.thinking);
     else if (part.type === "text") text.push(part.text);
-    if (TOOL_CALL_PART_TYPES.has((part as { type?: string }).type ?? "")) callsTools = true;
+    else if (part.type === "toolCall") callsTools = true;
   }
   return { thinking, text: text.join("\n"), callsTools };
 }

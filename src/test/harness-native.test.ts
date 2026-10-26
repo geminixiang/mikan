@@ -13,6 +13,7 @@ import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
+import { createTaskTool } from "../harness/tools/task.js";
 import type { HarnessEvent, MikanAgentSessionOptions } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import {
@@ -271,7 +272,7 @@ test.each([
     parameters: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
     execute: invoke,
   };
-  const handoff: ToolRegistration = { ...tool, name: "start_task" };
+  const handoff = createTaskTool().tool as ToolRegistration;
   const session = wrap(await openSessionAt(file), [tool, handoff]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code }), {

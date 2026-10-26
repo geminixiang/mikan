@@ -163,7 +163,6 @@ export interface MikanSkill {
   disableModelInvocation?: boolean;
   baseDir: string;
   source: string;
-  inline?: boolean;
   directory?: string;
   enabled?: boolean;
 }
@@ -183,7 +182,7 @@ export interface SkillDiagnostic {
 }
 
 export interface LoadSkillsResult {
-  skills: MikanSkill[];
+  skills: Omit<MikanSkill, "source">[];
   diagnostics: SkillDiagnostic[];
 }
 
@@ -274,7 +273,7 @@ export interface MikanToolContext {
 }
 
 export interface MikanAgentSessionOptions {
-  systemPrompt: string;
+  systemPrompt?: string;
   model: Model<Api>;
   thinkingLevel: ModelThinkingLevel;
   tools: ToolRegistration[];

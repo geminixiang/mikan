@@ -17,7 +17,7 @@ import {
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable";
 import { guardMcpToolResult } from "./mcp-result.js";
 import { TOOL_SEARCH_TOOL_NAME as TOOL_SEARCH_TOOL } from "@earendil-works/pi-durable/tool-search";
-import { LABEL_PARAMETER } from "./tools/host-fn-tool.js";
+import { withLabelParameter, withoutLabel } from "./tools/host-fn-tool.js";
 import { Type, type TSchema } from "typebox";
 
 import { readStandardEnv } from "../env-manifest.js";
@@ -239,7 +239,12 @@ async function connectServer(
         callers: exposure === "codemode" ? ["tools"] : undefined,
         deferred: exposure === "deferred" ? true : undefined,
         description: mcpTool.description ?? `${mcpTool.name} (MCP server "${name}")`,
-        parameters: ownsLabel ? mcpTool.inputSchema : withLabelParameter(mcpTool.inputSchema),
+        parameters: ownsLabel
+          ? mcpTool.inputSchema
+          : withLabelParameter<McpInputSchema>(
+              { ...mcpTool.inputSchema, type: "object" },
+              "required",
+            ),
         structuredOutputSchema: mcpResultSchema(mcpTool.outputSchema),
         execute: async (params, api, context) => {
           const result = await client.callTool(
@@ -267,22 +272,6 @@ type McpInputSchema = McpTool["inputSchema"];
 
 function schemaProperties(schema: McpInputSchema): Record<string, unknown> {
   return isRecord(schema.properties) ? schema.properties : {};
-}
-
-function withLabelParameter(schema: McpInputSchema): McpInputSchema {
-  const required = Array.isArray(schema.required) ? schema.required : [];
-  return {
-    ...schema,
-    type: "object",
-    properties: { label: LABEL_PARAMETER, ...schemaProperties(schema) },
-    required: ["label", ...required],
-  };
-}
-
-function withoutLabel(params: unknown): Record<string, unknown> {
-  if (!isRecord(params)) return {};
-  const { label: _label, ...rest } = params;
-  return rest;
 }
 
 function mcpResultSchema(structuredContent: Record<string, unknown> | undefined): TSchema {

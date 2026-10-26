@@ -66,7 +66,7 @@ export function resolveSkillEnabled(
 function scopedSkills(
   root: string,
   scope: SkillScope,
-  loaded: MikanSkill[],
+  loaded: LoadSkillsResult["skills"],
   patterns: SkillPatterns,
 ) {
   return loaded
@@ -89,7 +89,7 @@ export function loadOfficeSkills(options: {
 }): { skills: MikanSkill[]; skippedSkillLinks: string[] } {
   const byName = new Map<string, MikanSkill>();
   if (options.globalSkillsDir) {
-    const loaded = loadSkillsFromDir({ dir: options.globalSkillsDir, source: "global" });
+    const loaded = loadSkillsFromDir({ dir: options.globalSkillsDir });
     for (const skill of scopedSkills(
       options.globalSkillsDir,
       "global",
@@ -100,7 +100,6 @@ export function loadOfficeSkills(options: {
   }
   const conversation = loadSkillsFromDir({
     dir: options.conversationSkillsDir,
-    source: "conversation",
     rejectSymlinks: true,
   });
   for (const skill of scopedSkills(
@@ -192,7 +191,7 @@ export function validateSkill(name: string, description: string): string[] {
   return errors;
 }
 
-function loadSkillFromFile(filePath: string, source: string): LoadSkillsResult {
+function loadSkillFromFile(filePath: string): LoadSkillsResult {
   const diagnostics: SkillDiagnostic[] = [];
   try {
     const raw = readFileSync(filePath, "utf-8");
@@ -217,7 +216,6 @@ function loadSkillFromFile(filePath: string, source: string): LoadSkillsResult {
           content: body.trim(),
           filePath,
           baseDir: skillDir,
-          source,
           disableModelInvocation: values["disable-model-invocation"] === "true",
         },
       ],
@@ -235,7 +233,6 @@ function loadSkillFromFile(filePath: string, source: string): LoadSkillsResult {
 
 export function loadSkillsFromDir(options: {
   dir: string;
-  source: string;
   rejectSymlinks?: boolean;
 }): LoadSkillsResult {
   const rejectSymlinks = options.rejectSymlinks === true;
@@ -252,7 +249,7 @@ export function loadSkillsFromDir(options: {
       ],
     };
   }
-  return loadSkillsFromDirInternal(options.dir, options.source, true, rejectSymlinks);
+  return loadSkillsFromDirInternal(options.dir, true, rejectSymlinks);
 }
 
 function isSymlink(path: string): boolean {
@@ -274,11 +271,10 @@ function symlinkDiagnostic(path: string): SkillDiagnostic {
 
 function loadSkillsFromDirInternal(
   dir: string,
-  source: string,
   includeRootFiles: boolean,
   rejectSymlinks: boolean,
 ): LoadSkillsResult {
-  const skills: MikanSkill[] = [];
+  const skills: LoadSkillsResult["skills"] = [];
   const diagnostics: SkillDiagnostic[] = [];
   if (!existsSync(dir)) return { skills, diagnostics };
 
@@ -295,7 +291,7 @@ function loadSkillsFromDirInternal(
       diagnostics.push(symlinkDiagnostic(join(dir, skillFile.name)));
       return { skills, diagnostics };
     }
-    return loadSkillFromFile(join(dir, skillFile.name), source);
+    return loadSkillFromFile(join(dir, skillFile.name));
   }
 
   for (const entry of entries) {
@@ -310,8 +306,8 @@ function loadSkillsFromDirInternal(
       continue;
     }
     const result = directory
-      ? loadSkillsFromDirInternal(fullPath, source, false, rejectSymlinks)
-      : loadSkillFromFile(fullPath, source);
+      ? loadSkillsFromDirInternal(fullPath, false, rejectSymlinks)
+      : loadSkillFromFile(fullPath);
     skills.push(...result.skills);
     diagnostics.push(...result.diagnostics);
   }
@@ -372,17 +368,14 @@ export function formatSkillsForPrompt(skills: MikanSkill[]): string {
   ];
   for (const [dir, group] of groups) {
     lines.push("", `<available_skills dir="${escapeXml(dir)}">`);
-    for (const skill of group) lines.push(...formatSkillLines(skill, dir));
+    for (const skill of group) lines.push(formatSkillLine(skill, dir));
     lines.push("</available_skills>");
   }
   return lines.join("\n");
 }
 
-function formatSkillLines(skill: MikanSkill, dir: string): string[] {
+function formatSkillLine(skill: MikanSkill, dir: string): string {
   const conventionalFile = `${dir}/${skill.name}/SKILL.md`;
-  const fileNote =
-    skill.inline || skill.filePath === conventionalFile ? "" : ` (${escapeXml(skill.filePath)})`;
-  const line = `- ${escapeXml(skill.name)}${fileNote}: ${escapeXml(skill.description)}`;
-  if (!skill.inline) return [line];
-  return [line, `  <instructions>${escapeXml(skill.content)}</instructions>`];
+  const fileNote = skill.filePath === conventionalFile ? "" : ` (${escapeXml(skill.filePath)})`;
+  return `- ${escapeXml(skill.name)}${fileNote}: ${escapeXml(skill.description)}`;
 }

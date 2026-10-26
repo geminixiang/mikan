@@ -31,6 +31,7 @@ export function createTaskTool() {
   });
   const tool: ToolRegistration<typeof parameters> = {
     name: START_TASK_TOOL,
+    callers: ["model"],
     parameters,
     description:
       "Hand off multi-step or time-consuming work to an independent task thread so the user can keep chatting. Call ALONE, before doing that work. Ends this turn on success. Only available for top-level Slack messages.",

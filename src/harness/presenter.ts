@@ -28,7 +28,7 @@ import {
 import { appendTriggerAttribution } from "./prompt.js";
 import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
-import { toRunEvent, toolResultText } from "./run-events.js";
+import { toRunEvent, toolLabel, toolResultText } from "./run-events.js";
 import { REACT_TOOL } from "./tools/react.js";
 
 import * as log from "../log.js";
@@ -72,7 +72,7 @@ function endOutstandingOperationSpans(runState: RunnerSessionState): void {
   operationSpans.delete(runState);
 }
 
-function createRunStateDefaults(): RunnerSessionState {
+export function createRunState(): RunnerSessionState {
   return {
     responder: null,
     logCtx: null,
@@ -105,16 +105,12 @@ function createRunStateDefaults(): RunnerSessionState {
   };
 }
 
-export function createRunState(): RunnerSessionState {
-  return createRunStateDefaults();
-}
-
 export function activateRunPresentation(
   runState: RunnerSessionState,
   context: RunPresentationContext,
 ): RunPresentation {
   endOutstandingOperationSpans(runState);
-  Object.assign(runState, createRunStateDefaults(), {
+  Object.assign(runState, createRunState(), {
     responder: context.responder,
     logCtx: {
       conversationId: context.sessionConversation,
@@ -159,10 +155,6 @@ export function activateRunPresentation(
 export function getFinalAssistantText(session: MikanAgentSession): string {
   const lastAssistant = session.lastRunMessages.findLast((message) => message.role === "assistant");
   return contentText(lastAssistant?.content ?? []);
-}
-
-export function isEventTriggerAttribution(triggerAttribution: string | undefined): boolean {
-  return triggerAttribution?.startsWith("[event:") === true;
 }
 
 function formatToolProgress(runState: RunnerSessionState): string {
@@ -431,11 +423,6 @@ type LifecycleEvent = Extract<
   HarnessEvent,
   { type: "compaction_start" | "compaction_end" | "auto_retry_start" | "budget_exceeded" }
 >;
-
-function toolLabel(args: unknown, toolName: string): string {
-  const label = isRecord(args) && typeof args.label === "string" ? args.label.trim() : "";
-  return label || toolName;
-}
 
 function runningTools(runState: RunnerSessionState): ToolTiming[] {
   const now = Date.now();
@@ -795,17 +782,21 @@ function presentThinking(thinking: string, context: FrontProjectionContext): voi
   );
 }
 
-function presentFinalText(text: string, context: FrontProjectionContext): void {
-  log.logResponse(context.logCtx, text);
-}
-
 function presentAssistantMessage(
   event: RunEventOf<"assistant_message">,
   context: FrontProjectionContext,
 ): void {
   for (const thinking of event.thinking) presentThinking(thinking, context);
   if (!event.text.trim() || event.callsTools || context.runState.finalResponseHandledByTool) return;
-  presentFinalText(event.text, context);
+  log.logResponse(context.logCtx, event.text);
+}
+
+function presentNotice(notice: string, errorContext: string, context: FrontProjectionContext) {
+  context.runState.notice = notice;
+  context.queue.enqueue(
+    () => replaceResponseWithToolProgress(context.responder, context.runState),
+    errorContext,
+  );
 }
 
 function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void {
@@ -823,20 +814,11 @@ function presentRunEvent(event: RunEvent, context: FrontProjectionContext): void
       presentAssistantMessage(event, context);
       return;
     case "compaction_started":
-      context.runState.notice = "_Compacting context..._";
-      context.queue.enqueue(
-        () => replaceResponseWithToolProgress(context.responder, context.runState),
-        "compaction start",
-      );
+      presentNotice("_Compacting context..._", "compaction start", context);
       return;
-    case "retry_started": {
-      context.runState.notice = `_Retrying (${event.attempt}/${event.maxAttempts})..._`;
-      context.queue.enqueue(
-        () => replaceResponseWithToolProgress(context.responder, context.runState),
-        "retry",
-      );
+    case "retry_started":
+      presentNotice(`_Retrying (${event.attempt}/${event.maxAttempts})..._`, "retry", context);
       return;
-    }
     case "budget_exceeded": {
       const text = formatBudgetStop({
         reason: event.reason,
