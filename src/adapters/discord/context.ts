@@ -1,7 +1,6 @@
 import type { ConversationContext } from "../../types.js";
-import { createConversationMessage } from "../../office/index.js";
-import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
+import { createEventMessage, persistentTopLevelSessionKey } from "../shared.js";
 import { DISCORD_V2_TEXT_LIMIT } from "./components.js";
 import { formatDiscordMarkdown } from "./format.js";
 import type { DiscordEvent, DiscordResponseBot } from "./types.js";
@@ -23,26 +22,10 @@ export function createDiscordAdapters(
   const threadTargetId = isDiscordMessageReference(event.thread_ts) ? event.thread_ts : undefined;
   const replyTargetId = isDiscordMessageReference(event.ts) ? event.ts : undefined;
 
-  const message = createConversationMessage({
+  const message = createEventMessage({
     platform: "discord",
-    conversationId,
-    address: event.address,
-    id: event.ts,
-    sessionKey:
-      event.sessionKey ??
-      resolveChatSessionKey({
-        conversationId,
-        conversationKind: event.conversationKind,
-        messageId: event.ts,
-        persistentTopLevel: true,
-        threadTs: event.thread_ts,
-      }),
-    conversationKind: event.conversationKind,
-    userId: event.user,
-    userName: event.userName,
-    text: event.text,
-    attachments: event.attachments,
-    threadTs: event.thread_ts,
+    event,
+    sessionKey: persistentTopLevelSessionKey(event),
   });
 
   const platform = bot.getMessagingInfo();

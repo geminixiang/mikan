@@ -43,7 +43,7 @@ import type { Workspace } from "../../office/types.js";
 import { resolveChatSessionKey, withScheduledEventSession } from "../../sessions/session-key.js";
 import { formatNothingRunning } from "../messages.js";
 import {
-  MessagingEventQueue,
+  MessagingQueueMap,
   MessagingIntakeTracker,
   downloadUrlToFile,
   resolveOnlyScopedStopTarget,
@@ -75,7 +75,7 @@ export class DiscordMessagingBot implements MessagingBot {
   private workspace: Workspace;
   private botUserId: string | null = null;
   private stopped = false;
-  private queues = new Map<string, MessagingEventQueue>();
+  private readonly queues = new MessagingQueueMap("Discord");
   private intake = new MessagingIntakeTracker("Discord");
   private startupTime: number = 0;
   private channels = new Map<string, { id: string; name: string }>();
@@ -151,7 +151,7 @@ export class DiscordMessagingBot implements MessagingBot {
       this.client.destroy();
     } finally {
       await this.intake.close();
-      await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+      await this.queues.close();
     }
   }
 
@@ -178,7 +178,7 @@ export class DiscordMessagingBot implements MessagingBot {
   enqueueEvent(scheduled: ConversationEvent): boolean {
     if (this.stopped) return false;
     const event = withScheduledEventSession(scheduled);
-    return this.getQueue(event.address.conversationId).offerEvent(event, () => {
+    return this.queues.get(event.address.conversationId).offerEvent(event, () => {
       const context = createDiscordAdapters(event as DiscordEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
@@ -313,15 +313,6 @@ export class DiscordMessagingBot implements MessagingBot {
       log.logWarning(`Failed to download Discord attachment`, `${failure.name}: ${failure.error}`);
     }
     return saved.map((item) => ({ name: item.original, localPath: item.localPath }));
-  }
-
-  private getQueue(channelId: string): MessagingEventQueue {
-    let queue = this.queues.get(channelId);
-    if (!queue) {
-      queue = new MessagingEventQueue("Discord");
-      this.queues.set(channelId, queue);
-    }
-    return queue;
   }
 
   private resolveStopTarget(channelId: string, sessionKey: string): string | null {
@@ -616,7 +607,7 @@ export class DiscordMessagingBot implements MessagingBot {
       log: (entry) => this.logToFile(conversationId, entry),
       processAttachments: () => this.processAttachments(conversationId, msg.attachments),
       queueKey: sessionKey,
-      enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
+      enqueue: (queueKey, work) => this.queues.get(queueKey).admit(work),
       react: async (emoji) => {
         await msg.react(shortNameToUnicodeEmoji(emoji));
       },

@@ -17,6 +17,7 @@ import {
   saveIncomingAttachments,
   writeResponseToFile,
   MessagingEventQueue,
+  MessagingQueueMap,
   resolveOnlyScopedStopTarget,
   resolveStopTarget,
   shortNameToUnicodeEmoji,
@@ -242,6 +243,44 @@ describe("MessagingEventQueue", () => {
 
     release();
     await vi.waitFor(() => expect(events).toEqual(["first start", "first end", "second"]));
+  });
+});
+
+describe("MessagingQueueMap", () => {
+  test("returns one queue per key", () => {
+    const queues = new MessagingQueueMap("test");
+    expect(queues.get("a")).toBe(queues.get("a"));
+    expect(queues.get("a")).not.toBe(queues.get("b"));
+  });
+
+  test("close waits for every queue to drain", async () => {
+    const queues = new MessagingQueueMap("test");
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    queues.get("a").admit(() => gate);
+    let closed = false;
+    const closing = queues.close().then(() => (closed = true));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    expect(queues.get("a").admit(async () => {})).toBe("closed");
+    release();
+    await closing;
+    expect(closed).toBe(true);
+  });
+
+  test("closes a queue created while closesNewQueues holds", () => {
+    let stopped = false;
+    const queues = new MessagingQueueMap("test", () => stopped);
+    expect(queues.get("before").admit(async () => {})).toBe("started");
+    stopped = true;
+    expect(queues.get("after").admit(async () => {})).toBe("closed");
+    expect(queues.get("before").admit(async () => {})).not.toBe("closed");
+  });
+
+  test("leaves a queue created after close open by default", async () => {
+    const queues = new MessagingQueueMap("test");
+    await queues.close();
+    expect(queues.get("after").admit(async () => {})).toBe("started");
   });
 });
 

@@ -1,7 +1,7 @@
-import { createConversationMessage } from "../../office/index.js";
 import type { ConversationContext } from "../../types.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
+import { createEventMessage } from "../shared.js";
 import type { TelegramEvent, TelegramResponseBot } from "./types.js";
 
 const MAX_LENGTH = 30000;
@@ -14,18 +14,10 @@ export function createTelegramAdapters(
   const chatId = parseInt(conversationId);
   const replyToId = event.thread_ts ? parseInt(event.thread_ts) : null;
 
-  const message = createConversationMessage({
+  const message = createEventMessage({
     platform: "telegram",
-    conversationId,
-    address: event.address,
-    id: event.ts,
+    event,
     sessionKey: deriveSessionKey(event),
-    conversationKind: event.conversationKind,
-    userId: event.user,
-    userName: event.userName,
-    text: event.text,
-    attachments: event.attachments,
-    threadTs: event.thread_ts,
   });
 
   const platform = bot.getMessagingInfo();

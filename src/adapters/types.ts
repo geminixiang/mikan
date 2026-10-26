@@ -7,6 +7,7 @@ import type {
   LoggedAttachment,
   MessagingEventHandler,
   OfficeAddress,
+  PlatformName,
 } from "../types.js";
 
 export type ChatResponseErrorOperation =
@@ -37,6 +38,12 @@ export type ChatResponseErrorReporter = (
   operation: ChatResponseErrorOperation,
   extra?: Record<string, unknown>,
 ) => void;
+
+export interface EventMessageInput {
+  platform: PlatformName;
+  event: ConversationEvent & { userName?: string };
+  sessionKey: string;
+}
 
 export interface RetryOptions {
   isRateLimited: (err: Error) => boolean;

@@ -41,6 +41,7 @@ import type {
   SlackBlockActionBody,
   SlackChannel,
   SlackEvent,
+  SlackIncomingDispatch,
   SlackMessagingBotOptions,
   SlackSocketConnection,
   SlackSocketEventArgs,
@@ -54,7 +55,7 @@ import type {
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { formatContinuingRun } from "../messages.js";
 import {
-  MessagingEventQueue,
+  MessagingQueueMap,
   MessagingIntakeTracker,
   AttachmentRejectedError,
   saveIncomingAttachments,
@@ -275,7 +276,7 @@ export class SlackMessagingBot implements MessagingBot {
   private assistantThreads = new AssistantThreadRegistry();
   private streamStarts = new StreamStartLimiter();
   private stopped = false;
-  private queues = new Map<string, MessagingEventQueue>();
+  private readonly queues = new MessagingQueueMap("Slack", () => this.stopped);
   private intake = new MessagingIntakeTracker("Slack");
   private readonly recentMessageKeys = new Set<string>();
   private agentSurfaceUnavailable = false;
@@ -423,7 +424,7 @@ export class SlackMessagingBot implements MessagingBot {
       await this.socketClient.disconnect();
     } finally {
       await this.intake.close();
-      for (const queue of this.queues.values()) void queue.close();
+      void this.queues.close();
     }
   }
 
@@ -816,7 +817,7 @@ export class SlackMessagingBot implements MessagingBot {
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
     const conversationId = event.address.conversationId;
-    return this.getQueue(conversationId).offerEvent(event, async () => {
+    return this.queues.get(conversationId).offerEvent(event, async () => {
       let anchorTs: string | undefined;
       if (!event.thread_ts) {
         try {
@@ -875,22 +876,12 @@ export class SlackMessagingBot implements MessagingBot {
         });
         return this.handler.handleEvent(eventForRun, this, context);
       };
-      const runQueue = this.getQueue(runQueueKey);
+      const runQueue = this.queues.get(runQueueKey);
       if (!runQueue.enqueue(run)) {
         await runQueue.close();
         await run();
       }
     });
-  }
-
-  private getQueue(channelId: string): MessagingEventQueue {
-    let queue = this.queues.get(channelId);
-    if (!queue) {
-      queue = new MessagingEventQueue("Slack");
-      if (this.stopped) void queue.close();
-      this.queues.set(channelId, queue);
-    }
-    return queue;
   }
 
   private async resolveQueueKey(conversationId: string, sessionKey: string): Promise<string> {
@@ -905,7 +896,7 @@ export class SlackMessagingBot implements MessagingBot {
 
   private enqueueTaskRun(child: SlackEvent & { thread_ts: string; sessionKey: string }): void {
     const { channel, thread_ts: root, sessionKey } = child;
-    const enqueued = this.getQueue(sessionKey).enqueue(async () => {
+    const enqueued = this.queues.get(sessionKey).enqueue(async () => {
       try {
         await this.handler.handleEvent(
           {
@@ -981,13 +972,15 @@ export class SlackMessagingBot implements MessagingBot {
     ).catch((error) =>
       log.logWarning("Could not post the continuation notice", errorMessage(error)),
     );
-    this.getQueue(event.sessionKey).enqueue(() =>
-      this.handler.handleEvent(
-        { ...event, attachments: undefined },
-        this,
-        this.createContext(event),
-      ),
-    );
+    this.queues
+      .get(event.sessionKey)
+      .enqueue(() =>
+        this.handler.handleEvent(
+          { ...event, attachments: undefined },
+          this,
+          this.createContext(event),
+        ),
+      );
   }
 
   private isTaskThread(channel: string, root: string): Promise<boolean> {
@@ -1072,7 +1065,7 @@ export class SlackMessagingBot implements MessagingBot {
       logEntryBase: {},
       processAttachments: () => options.attachmentsPromise,
       queueKey: options.queueKey,
-      enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
+      enqueue: (queueKey, work) => this.queues.get(queueKey).admit(work),
       react: (emoji) => this.addReaction(options.event.channel, options.event.ts, emoji),
       handler: this.handler,
       bot: this,
@@ -1317,13 +1310,24 @@ export class SlackMessagingBot implements MessagingBot {
       sessionKey,
       channel: e.channel,
       files: e.files,
-    }) as SlackEvent;
+    }) as SlackIncomingDispatch["event"];
 
-    const attachmentsPromise = this.logUserMessage(slackEvent);
+    await this.dispatchIncoming({
+      event: slackEvent,
+      ack,
+      preStartupLogPrefix: "Logged old message (pre-startup), not triggering",
+      isTaskControl: async () => !!e.thread_ts && (await this.isTaskThread(e.channel, e.thread_ts)),
+      isAddressed: async () => true,
+    });
+  }
 
-    if (this.startupTs && e.ts < this.startupTs) {
+  private async dispatchIncoming(dispatch: SlackIncomingDispatch): Promise<void> {
+    const { event, ack } = dispatch;
+    const attachmentsPromise = this.logUserMessage(event);
+
+    if (this.startupTs && event.ts < this.startupTs) {
       log.logInfo(
-        `[${e.channel}] Logged old message (pre-startup), not triggering: ${slackEvent.text.substring(0, 30)}`,
+        `[${event.channel}] ${dispatch.preStartupLogPrefix}: ${event.text.substring(0, 30)}`,
       );
       void attachmentsPromise.catch((err) => {
         log.logWarning("Failed to log Slack message", String(err));
@@ -1332,16 +1336,18 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const taskControl = !!e.thread_ts && (await this.isTaskThread(e.channel, e.thread_ts));
+    const taskControl = await dispatch.isTaskControl();
     if (taskControl) {
       ack();
-      if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
+      if (await this.deliverTaskUpdate(event, attachmentsPromise)) return;
     }
+    const addressed = await dispatch.isAddressed();
     const intake = this.processSlackMessageIntake({
-      event: slackEvent,
+      event,
       attachmentsPromise,
-      queueKey: await this.resolveQueueKey(e.channel, sessionKey),
-      addressed: true,
+      queueKey: await this.resolveQueueKey(event.channel, event.sessionKey),
+      addressed,
+      magicWordAddressed: dispatch.magicWordAddressed,
     });
 
     if (!taskControl) ack();
@@ -1504,8 +1510,6 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const sessionKey = isDM ? resolveSlackSessionKey(e.channel, e.thread_ts) : undefined;
-
     if (isDM && e.thread_ts && e.text) {
       void titleAssistantThread(
         this.assistantOps(),
@@ -1525,55 +1529,30 @@ export class SlackMessagingBot implements MessagingBot {
       thread_ts: e.thread_ts,
       user: e.user,
       text: this.stripOwnMention(e.text),
-      sessionKey,
+      sessionKey: resolveSlackSessionKey(e.channel, e.thread_ts),
       channel: e.channel,
       files: e.files,
-    }) as SlackEvent;
+    }) as SlackIncomingDispatch["event"];
 
-    const attachmentsPromise = this.logUserMessage(slackEvent);
-
-    if (this.startupTs && e.ts < this.startupTs) {
-      log.logInfo(
-        `[${e.channel}] Skipping old message (pre-startup): ${slackEvent.text.substring(0, 30)}`,
-      );
-      void attachmentsPromise.catch((err) => {
-        log.logWarning("Failed to log Slack message", String(err));
-      });
-      ack();
-      return;
-    }
-
-    const activeSessionKey =
-      slackEvent.sessionKey ?? resolveSlackSessionKey(e.channel, e.thread_ts);
-    slackEvent.sessionKey = activeSessionKey;
-    const taskControl =
-      isDM &&
-      (e.thread_ts
-        ? await this.isTaskThread(e.channel, e.thread_ts)
-        : (await this.hasRunningTaskThread(e.channel)) || isTaskStatusQuestion(slackEvent.text));
-    if (taskControl) {
-      ack();
-      if (await this.deliverTaskUpdate(slackEvent, attachmentsPromise)) return;
-    }
-    const autoReplyMode = isDM
-      ? "off"
-      : slackConversationAutoReplyMode(this.workspace.office(slackEvent.address));
-    const autoReply =
-      autoReplyMode === "on"
-        ? true
-        : autoReplyMode === "jev"
-          ? await this.evaluateJevAddressed(slackEvent)
-          : false;
-    const intake = this.processSlackMessageIntake({
+    await this.dispatchIncoming({
       event: slackEvent,
-      attachmentsPromise,
-      queueKey: await this.resolveQueueKey(e.channel, activeSessionKey),
-      addressed: isDM || autoReply,
+      ack,
+      preStartupLogPrefix: "Skipping old message (pre-startup)",
+      isTaskControl: async () =>
+        isDM &&
+        (e.thread_ts
+          ? await this.isTaskThread(e.channel, e.thread_ts)
+          : (await this.hasRunningTaskThread(e.channel)) || isTaskStatusQuestion(slackEvent.text)),
+      isAddressed: async () => {
+        if (isDM) return true;
+        const autoReplyMode = slackConversationAutoReplyMode(
+          this.workspace.office(slackEvent.address),
+        );
+        if (autoReplyMode === "on") return true;
+        return autoReplyMode === "jev" ? this.evaluateJevAddressed(slackEvent) : false;
+      },
       magicWordAddressed: isDM,
     });
-
-    if (!taskControl) ack();
-    await intake;
   }
 
   private async handleSlashCommand({ body, ack }: SlackSocketEventArgs): Promise<void> {
@@ -1699,7 +1678,7 @@ export class SlackMessagingBot implements MessagingBot {
       sessionKey,
     });
 
-    this.getQueue(await this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
+    this.queues.get(await this.resolveQueueKey(channelId, sessionKey)).enqueue(async () => {
       const slackEvent: SlackEvent = {
         ...createConversationEvent({
           platform: "slack",

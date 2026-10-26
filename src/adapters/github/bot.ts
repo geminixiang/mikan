@@ -9,7 +9,7 @@ import type {
 } from "../../types.js";
 import * as log from "../../log.js";
 import { resolveChatSessionKey } from "../../sessions/session-key.js";
-import { MessagingEventQueue, splitText } from "../shared.js";
+import { MessagingQueueMap, splitText } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
 import { readGithubActivity } from "./activity.js";
 import { GithubClient, GITHUB_MAX_COMMENT_LENGTH, githubRetry } from "./client.js";
@@ -96,7 +96,7 @@ export class GithubMessagingBot implements MessagingBot {
   private readonly config: GithubBotConfig;
   readonly ops: GithubOps;
   private identity: GithubAgentIdentity | null = null;
-  private queues = new Map<string, MessagingEventQueue>();
+  private readonly queues = new MessagingQueueMap("GitHub");
   private permissionCache = new Map<string, { allowed: boolean; expiresAt: number }>();
   private bodyTriggers = new Map<string, number>();
   private stopped = true;
@@ -131,7 +131,7 @@ export class GithubMessagingBot implements MessagingBot {
 
   async stop(): Promise<void> {
     this.stopped = true;
-    await Promise.all([...this.queues.values()].map((queue) => queue.close()));
+    await this.queues.close();
   }
 
   async postMessage(channel: string, text: string): Promise<string> {
@@ -176,7 +176,7 @@ export class GithubMessagingBot implements MessagingBot {
 
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
-    return this.getQueue(event.address.conversationId).offerEvent(event, () => {
+    return this.queues.get(event.address.conversationId).offerEvent(event, () => {
       const context = createGithubAdapters(event as GithubEvent, this);
       return this.handler.handleEvent(event, this, context);
     });
@@ -218,15 +218,6 @@ export class GithubMessagingBot implements MessagingBot {
     { answer }: { answer?: RunAnswer } = {},
   ): void {
     appendBotResponseLog(this.office(conversationId), { text, ts, threadTs, answer });
-  }
-
-  private getQueue(conversationId: string): MessagingEventQueue {
-    let queue = this.queues.get(conversationId);
-    if (!queue) {
-      queue = new MessagingEventQueue("GitHub");
-      this.queues.set(conversationId, queue);
-    }
-    return queue;
   }
 
   async receive(delivery: GithubWebhookDelivery): Promise<void> {
@@ -405,7 +396,7 @@ export class GithubMessagingBot implements MessagingBot {
         return [];
       },
       queueKey: conversationId,
-      enqueue: (queueKey, work) => this.getQueue(queueKey).admit(work),
+      enqueue: (queueKey, work) => this.queues.get(queueKey).admit(work),
       handler: this.handler,
       bot: this,
       createContext: (event) => createGithubAdapters(event, this),
