@@ -161,17 +161,22 @@ class FakeEngine {
         Propagation: "rprivate",
       })),
     );
-    if (template === "{{.State.Running}}") return String(container.running);
-    if (template.startsWith("{{.Config.Image}}\t")) {
-      return `${container.image ?? ""}\t${container.labels["mikan.image-id"] ?? "<no value>"}`;
-    }
-    if (template === "{{json .Mounts}}") return mounts;
-    if (template.startsWith("{{.State.Running}}\t")) {
-      return `${container.running}\t${container.startedAt}\t${mounts}`;
-    }
-    const label = /index \.Config\.Labels "([^"]+)"/.exec(template)?.[1];
-    if (label) return container.labels[label] ?? "<no value>";
-    throw new Error(`unexpected inspect template ${template}`);
+    const fields: Record<string, string> = {
+      "{{.State.Running}}": String(container.running),
+      "{{.State.StartedAt}}": container.startedAt,
+      "{{.Config.Image}}": container.image ?? "",
+      "{{json .Mounts}}": mounts,
+    };
+    return template
+      .split("\t")
+      .map((field) => {
+        const label = /^\{\{index \.Config\.Labels "([^"]+)"\}\}$/.exec(field)?.[1];
+        if (label) return container.labels[label] ?? "<no value>";
+        const value = fields[field];
+        if (value === undefined) throw new Error(`unexpected inspect field ${field}`);
+        return value;
+      })
+      .join("\t");
   }
 
   private network(args: string[]): string {

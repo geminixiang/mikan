@@ -9,12 +9,21 @@ import { reportUserFacingError } from "../observability/index.js";
 
 const execFileAsync = promisify(execFile);
 
-type ContainerStatus = "running" | "stopped" | "missing";
+type ContainerStatus = "running" | "stopped";
 type DriftReason = "binds" | "mount-content" | "network" | "image";
 
 interface ContainerState {
   status: ContainerStatus;
   lastUsed: number;
+}
+
+interface ContainerSnapshot {
+  running: boolean;
+  image: string;
+  mountSignature?: string;
+  network?: string;
+  imageId?: string;
+  mountsJson: string;
 }
 
 import type {
@@ -104,23 +113,20 @@ export class DockerContainerManager {
   private async provisionInner(containerKey: string, options: ProvisionOptions): Promise<string> {
     const containerName = DockerContainerManager.containerName(containerKey);
     const mounts = options.mounts ?? [];
-    const status = await this.inspectStatus(containerName);
+    const snapshot = await this.inspectContainer(containerName);
 
     try {
-      const drift =
-        status === "missing"
-          ? undefined
-          : await this.runtimeDrift(containerKey, containerName, mounts, status);
-      if (drift) {
+      const drift = snapshot ? await this.runtimeDrift(containerKey, snapshot, mounts) : undefined;
+      if (snapshot && drift) {
         log.logInfo(`Container ${containerName} is out of date (${drift}); replacing container`);
-        const leftBehind = await this.imageLeftBehind(containerName);
+        const leftBehind = await this.imageLeftBehind(snapshot);
         await this.replaceContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} replaced from image ${this.image}`);
         if (leftBehind) await this.removeImageIfUnused(leftBehind);
-      } else if (status === "stopped") {
+      } else if (snapshot && !snapshot.running) {
         await this.run(["start", containerName]);
         log.logInfo(`Container ${containerName} started`);
-      } else if (status === "missing") {
+      } else if (!snapshot) {
         await this.runContainer(containerKey, containerName, mounts, options);
         log.logInfo(`Container ${containerName} created`);
       }
@@ -397,19 +403,28 @@ export class DockerContainerManager {
 
   private async runtimeDrift(
     containerKey: string,
-    containerName: string,
+    snapshot: ContainerSnapshot,
     mounts: ContainerMount[],
-    status: ContainerStatus,
   ): Promise<DriftReason | undefined> {
-    if (this.hasBindMountDrift(await this.inspectBindMounts(containerName), mounts)) return "binds";
-    if (await this.hasMountSignatureDrift(containerName, mounts)) return "mount-content";
-    if (await this.hasNetworkModeDrift(containerKey, containerName)) return "network";
-    if (status === "stopped" && (await this.hasImageDrift(containerName))) return "image";
+    if (this.hasBindMountDrift(containerKey, snapshot, mounts)) return "binds";
+    if (mounts.length > 0 && snapshot.mountSignature !== this.mountSignature(mounts)) {
+      return "mount-content";
+    }
+    if (snapshot.network !== DockerContainerManager.networkName(containerKey)) return "network";
+    if (!snapshot.running && (await this.hasImageDrift(snapshot))) return "image";
     return undefined;
   }
 
-  private hasBindMountDrift(binds: readonly string[], mounts: ContainerMount[]): boolean {
-    return !this.sameBinds(this.expectedBinds(mounts), [...binds]);
+  private hasBindMountDrift(
+    containerKey: string,
+    snapshot: ContainerSnapshot,
+    mounts: ContainerMount[],
+  ): boolean {
+    const containerName = DockerContainerManager.containerName(containerKey);
+    const binds = parseBindMounts(snapshot.mountsJson, containerName)
+      .map((mount) => this.toBindSpec(mount))
+      .toSorted();
+    return !this.sameBinds(this.expectedBinds(mounts), binds);
   }
 
   private expectedBinds(mounts: ContainerMount[]): string[] {
@@ -425,18 +440,6 @@ export class DockerContainerManager {
     }
 
     return expected.every((bind, index) => bind === actual[index]);
-  }
-
-  private async hasMountSignatureDrift(
-    containerName: string,
-    mounts: ContainerMount[],
-  ): Promise<boolean> {
-    if (mounts.length === 0) return false;
-    const expected = this.mountSignature(mounts);
-    return (
-      (await this.label(containerName, DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY)) !==
-      expected
-    );
   }
 
   private mountSignature(mounts: ContainerMount[]): string {
@@ -464,27 +467,10 @@ export class DockerContainerManager {
     }
   }
 
-  private async label(containerName: string, key: string): Promise<string | undefined> {
-    const { stdout } = await this.run([
-      "inspect",
-      "-f",
-      `{{index .Config.Labels "${key}"}}`,
-      containerName,
-    ]);
-    return this.normalizeDockerValue(stdout.trim());
-  }
-
-  private async inspectBindMounts(containerName: string): Promise<string[]> {
-    const { stdout } = await this.run(["inspect", "-f", "{{json .Mounts}}", containerName]);
-    return parseBindMounts(stdout, containerName)
-      .map((mount) => `${mount.source}:${mount.target}${mount.readOnly ? ":ro" : ""}`)
-      .toSorted();
-  }
-
-  private async hasImageDrift(containerName: string): Promise<boolean> {
+  private async hasImageDrift(snapshot: ContainerSnapshot): Promise<boolean> {
     const desired = await this.localImageId();
     if (!desired) return false;
-    return (await this.label(containerName, DockerContainerManager.IMAGE_ID_LABEL_KEY)) !== desired;
+    return snapshot.imageId !== desired;
   }
 
   private async localImageId(): Promise<string | undefined> {
@@ -513,15 +499,8 @@ export class DockerContainerManager {
     }
   }
 
-  private async imageLeftBehind(containerName: string): Promise<string | undefined> {
-    const { stdout } = await this.run([
-      "inspect",
-      "-f",
-      `{{.Config.Image}}\t{{index .Config.Labels "${DockerContainerManager.IMAGE_ID_LABEL_KEY}"}}`,
-      containerName,
-    ]);
-    const [reference = "", label] = stdout.trim().split("\t");
-    const imageId = this.normalizeDockerValue(label);
+  private async imageLeftBehind(snapshot: ContainerSnapshot): Promise<string | undefined> {
+    const { image: reference, imageId } = snapshot;
     if (imageId && imageId === (await this.localImageId())) return undefined;
     if (reference !== this.image && isPublishedSandboxImage(reference)) return reference;
     if (imageId && (await this.isUnnamedImage(imageId))) return imageId;
@@ -571,11 +550,6 @@ export class DockerContainerManager {
     await this.runContainer(containerKey, containerName, mounts, options);
   }
 
-  private async hasNetworkModeDrift(containerKey: string, containerName: string): Promise<boolean> {
-    const expected = DockerContainerManager.networkName(containerKey);
-    return (await this.label(containerName, DockerContainerManager.NETWORK_LABEL_KEY)) !== expected;
-  }
-
   private async ensureNetwork(containerKey: string): Promise<string> {
     const networkName = DockerContainerManager.networkName(containerKey);
     const { stdout } = await this.run([
@@ -615,10 +589,32 @@ export class DockerContainerManager {
     return this.parseNameLines(stdout).includes(containerName);
   }
 
-  private async inspectStatus(containerName: string): Promise<ContainerStatus> {
-    if (!(await this.containerExists(containerName))) return "missing";
-    const { stdout } = await this.run(["inspect", "-f", "{{.State.Running}}", containerName]);
-    return stdout.trim() === "true" ? "running" : "stopped";
+  private async inspectContainer(containerName: string): Promise<ContainerSnapshot | undefined> {
+    if (!(await this.containerExists(containerName))) return undefined;
+    const { stdout } = await this.run([
+      "inspect",
+      "-f",
+      [
+        "{{.State.Running}}",
+        "{{.Config.Image}}",
+        labelField(DockerContainerManager.MOUNT_SIGNATURE_LABEL_KEY),
+        labelField(DockerContainerManager.NETWORK_LABEL_KEY),
+        labelField(DockerContainerManager.IMAGE_ID_LABEL_KEY),
+        "{{json .Mounts}}",
+      ].join("\t"),
+      containerName,
+    ]);
+    const [running, image = "", mountSignature, network, imageId, ...mounts] = stdout
+      .trim()
+      .split("\t");
+    return {
+      running: running === "true",
+      image,
+      mountSignature: this.normalizeDockerValue(mountSignature),
+      network: this.normalizeDockerValue(network),
+      imageId: this.normalizeDockerValue(imageId),
+      mountsJson: mounts.join("\t"),
+    };
   }
 
   private async listContainerNamesByLabel(): Promise<string[]> {
@@ -703,6 +699,10 @@ export class DockerContainerManager {
       return false;
     }
   }
+}
+
+function labelField(key: string): string {
+  return `{{index .Config.Labels "${key}"}}`;
 }
 
 const CPU_PERIOD_MICROSECONDS = 100_000;
