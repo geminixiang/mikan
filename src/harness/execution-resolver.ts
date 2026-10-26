@@ -112,11 +112,8 @@ export class ActorExecutionResolver {
     }
 
     return async () => {
-      const expected = plan.sandboxConfig.type === "container" ? plan.sandboxConfig.container : "";
-      let actual: string | undefined;
       try {
-        actual = await this.provisioner?.provision(plan.resourceKey, {
-          containerName: expected,
+        await this.provisioner?.provision(plan.resourceKey, {
           mounts: plan.mounts,
           conversationId,
         });
@@ -131,16 +128,11 @@ export class ActorExecutionResolver {
             conversationId,
             credentialKey: plan.credentialKey,
             resourceKey: plan.resourceKey,
-            expectedContainer: expected,
+            expectedContainer: DockerContainerManager.containerName(plan.resourceKey),
             hasVault: Boolean(plan.env || plan.mounts.length > 0),
           },
         });
         throw err;
-      }
-      if (actual && actual !== expected) {
-        throw new Error(
-          `Provisioner returned container "${actual}" for resource key "${plan.resourceKey}", expected "${expected}"`,
-        );
       }
     };
   }

@@ -127,13 +127,23 @@ export function recordSlackUpdate(
     } else {
       failures?.delete(key);
     }
-    recordDiagnosticEvent("error" in outcome ? "slack.update.rejected" : "slack.update.recovered", {
-      operation: "chat.update",
-      channelId: channel,
-      responseMessageId: ts,
-      failedAttempts: attempts,
-      ...shape(source, payload),
-      ...("error" in outcome ? validation(outcome.error) : {}),
-    });
+    const rejected = "error" in outcome;
+    recordDiagnosticEvent(
+      rejected ? "slack.update.rejected" : "slack.update.recovered",
+      {
+        operation: "chat.update",
+        channelId: channel,
+        responseMessageId: ts,
+        failedAttempts: attempts,
+        ...shape(source, payload),
+        ...(rejected ? validation(outcome.error) : {}),
+      },
+      {
+        message: rejected ? "Slack update rejected" : "Slack update recovered",
+        category: "slack.update",
+        level: rejected ? "warning" : "info",
+        log: !rejected,
+      },
+    );
   } catch {}
 }

@@ -21,16 +21,6 @@ export function execSimple(cmd: string, args: string[]): Promise<string> {
   });
 }
 
-export function linkAbortSignal(signal: AbortSignal | undefined, onAbort: () => void): () => void {
-  if (!signal) return () => {};
-  if (signal.aborted) {
-    onAbort();
-    return () => {};
-  }
-  signal.addEventListener("abort", onAbort, { once: true });
-  return () => signal.removeEventListener("abort", onAbort);
-}
-
 export function createMountedRuntimePathContext(
   hostWorkspaceRoot: string,
   runtimeWorkspaceRoot: string,

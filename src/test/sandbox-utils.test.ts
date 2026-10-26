@@ -1,49 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { SandboxError, execSimple, linkAbortSignal } from "../sandbox/utils.js";
-
-describe("linkAbortSignal", () => {
-  test("is inert without a signal", () => {
-    let fired = 0;
-    const unlink = linkAbortSignal(undefined, () => fired++);
-    expect(fired).toBe(0);
-    expect(() => unlink()).not.toThrow();
-    expect(fired).toBe(0);
-  });
-
-  test("fires immediately for an already-aborted signal", () => {
-    const controller = new AbortController();
-    controller.abort();
-    let fired = 0;
-
-    const unlink = linkAbortSignal(controller.signal, () => fired++);
-
-    expect(fired).toBe(1);
-    expect(() => unlink()).not.toThrow();
-    expect(fired).toBe(1);
-  });
-
-  test("forwards an abort that arrives later", () => {
-    const controller = new AbortController();
-    let fired = 0;
-
-    linkAbortSignal(controller.signal, () => fired++);
-    expect(fired).toBe(0);
-
-    controller.abort();
-    expect(fired).toBe(1);
-  });
-
-  test("unlinking drops the listener, so a later abort is ignored", () => {
-    const controller = new AbortController();
-    let fired = 0;
-
-    const unlink = linkAbortSignal(controller.signal, () => fired++);
-    unlink();
-    controller.abort();
-
-    expect(fired).toBe(0);
-  });
-});
+import { SandboxError, execSimple } from "../sandbox/utils.js";
 
 describe("SandboxError", () => {
   test("formats the message alone when there are no details", () => {

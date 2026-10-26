@@ -16,7 +16,6 @@ export interface VaultInjection {
 export interface VaultManager {
   hasEntry(key: string): boolean;
   resolve(userId: string): ResolvedVault | undefined;
-  list(): ResolvedVault[];
   isEnabled(): boolean;
   upsertEnv(key: string, env: Record<string, string>): void;
   deleteEnvKey(key: string, envKey: string): boolean;

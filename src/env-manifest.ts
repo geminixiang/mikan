@@ -253,17 +253,14 @@ function platformRecipe(group: EnvGroup): string {
   return `${group.title}: ${required.join(" + ")}`;
 }
 
-export function noPlatformsMessage(): string {
-  const recipes = ENV_MANIFEST.filter((group) => group.kind === "platform")
-    .map((group) => `  ${platformRecipe(group)}`)
-    .join("\n");
-  return `No platform tokens found. Set one of:\n${recipes}`;
-}
-
 export function envSummaryLines(): string[] {
   return ENV_MANIFEST.filter((group) => group.kind === "platform").map(
     (group) => `  ${platformRecipe(group)}`,
   );
+}
+
+export function noPlatformsMessage(): string {
+  return `No platform tokens found. Set one of:\n${envSummaryLines().join("\n")}`;
 }
 
 export function envReport(env: EnvLookup = readEnv): string {

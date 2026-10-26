@@ -11,7 +11,6 @@ import type { PlatformTrustModel } from "../types.js";
 const PRIVATE_DIR_MODE = 0o700;
 const SHARED_VAULT_DIR = "shared";
 const MOUNT_TARGETS_DIR = "vault-mount-targets";
-const RESERVED_VAULT_DIRS = new Set([SHARED_VAULT_DIR, "extensions"]);
 
 export function normalizeSharedVaultName(name: string): string | undefined {
   const trimmed = name.trim();
@@ -118,21 +117,6 @@ export class FileVaultManager implements VaultManager {
     const dir = join(this.vaultsDir, userId);
     if (!existsSync(dir)) return undefined;
     return this.buildResolved(userId);
-  }
-
-  list(): ResolvedVault[] {
-    if (!existsSync(this.vaultsDir)) return [];
-    const keys = new Set<string>();
-    for (const entry of readdirSync(this.vaultsDir, { withFileTypes: true })) {
-      if (
-        entry.isDirectory() &&
-        !RESERVED_VAULT_DIRS.has(entry.name) &&
-        isSafeVaultKey(entry.name)
-      ) {
-        keys.add(entry.name);
-      }
-    }
-    return Array.from(keys, (key) => this.buildResolved(key));
   }
 
   upsertEnv(key: string, env: Record<string, string>): void {
@@ -500,7 +484,6 @@ export const disabledVaultManager: VaultManager = {
   isEnabled: () => false,
   hasEntry: () => false,
   resolve: () => undefined,
-  list: () => [],
   listSharedVaults: () => [],
   deleteSharedVault: () => false,
   copySharedVaultTo: () => ({ filesCopied: 0, envKeysCopied: 0 }),

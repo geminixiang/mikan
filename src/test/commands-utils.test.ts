@@ -42,7 +42,6 @@ function fakeVaultManager(): VaultManager {
   return {
     hasEntry: () => false,
     resolve: () => undefined,
-    list: () => [],
     isEnabled: () => false,
     upsertEnv: () => {},
     deleteEnvKey: () => false,

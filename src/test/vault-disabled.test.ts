@@ -6,7 +6,6 @@ describe("disabledVaultManager", () => {
     expect(disabledVaultManager.isEnabled()).toBe(false);
     expect(disabledVaultManager.hasEntry("anyone")).toBe(false);
     expect(disabledVaultManager.resolve("anyone")).toBeUndefined();
-    expect(disabledVaultManager.list()).toEqual([]);
     expect(disabledVaultManager.listSharedVaults()).toEqual([]);
     expect(disabledVaultManager.deleteSharedVault("shared")).toBe(false);
     expect(disabledVaultManager.copySharedVaultTo("shared", "user")).toEqual({

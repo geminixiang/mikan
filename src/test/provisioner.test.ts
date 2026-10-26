@@ -161,17 +161,22 @@ class FakeEngine {
         Propagation: "rprivate",
       })),
     );
-    if (template === "{{.State.Running}}") return String(container.running);
-    if (template.startsWith("{{.Config.Image}}\t")) {
-      return `${container.image ?? ""}\t${container.labels["mikan.image-id"] ?? "<no value>"}`;
-    }
-    if (template === "{{json .Mounts}}") return mounts;
-    if (template.startsWith("{{.State.Running}}\t")) {
-      return `${container.running}\t${container.startedAt}\t${mounts}`;
-    }
-    const label = /index \.Config\.Labels "([^"]+)"/.exec(template)?.[1];
-    if (label) return container.labels[label] ?? "<no value>";
-    throw new Error(`unexpected inspect template ${template}`);
+    const fields: Record<string, string> = {
+      "{{.State.Running}}": String(container.running),
+      "{{.State.StartedAt}}": container.startedAt,
+      "{{.Config.Image}}": container.image ?? "",
+      "{{json .Mounts}}": mounts,
+    };
+    return template
+      .split("\t")
+      .map((field) => {
+        const label = /^\{\{index \.Config\.Labels "([^"]+)"\}\}$/.exec(field)?.[1];
+        if (label) return container.labels[label] ?? "<no value>";
+        const value = fields[field];
+        if (value === undefined) throw new Error(`unexpected inspect field ${field}`);
+        return value;
+      })
+      .join("\t");
   }
 
   private network(args: string[]): string {
@@ -300,12 +305,11 @@ describe("DockerContainerManager", () => {
     ]);
   });
 
-  test("provisions custom container names with extra vault mounts", async () => {
+  test("provisions a container with extra vault mounts", async () => {
     const engine = new FakeEngine();
     const sandbox = manager(engine);
 
     await sandbox.provision("alice", {
-      containerName: "alice-box",
       mounts: [{ source: "/tmp/vaults/alice/.ssh", target: "/root/.ssh" }],
       conversationId: "D123",
     });
@@ -328,7 +332,7 @@ describe("DockerContainerManager", () => {
       "run",
       "-d",
       "--name",
-      "alice-box",
+      "mikan-sandbox-alice",
       "--network",
       "mikan-sandbox-net-alice",
       "--cap-drop",
@@ -359,7 +363,7 @@ describe("DockerContainerManager", () => {
       "sleep",
       "infinity",
     ]);
-    expect(engine.callsOf("stop")).toEqual([["stop", "alice-box"]]);
+    expect(engine.callsOf("stop")).toEqual([["stop", "mikan-sandbox-alice"]]);
   });
 
   test("checks for the per-office network by name and creates it only when absent", async () => {
@@ -470,17 +474,16 @@ describe("DockerContainerManager", () => {
 
   test("replaces an existing container from the image when vault mounts change", async () => {
     const engine = new FakeEngine();
-    engine.seed("alice-box", "alice", {
+    engine.seed("mikan-sandbox-alice", "alice", {
       mounts: [{ source: "/tmp/vaults/alice/.ssh", target: "/root/.ssh" }],
     });
 
     await manager(engine).provision("alice", {
-      containerName: "alice-box",
       mounts: [{ source: "/tmp/vaults/alice/.kube", target: "/root/.kube" }],
       conversationId: "D123",
     });
 
-    expect(engine.callsOf("rm")).toEqual([["rm", "-f", "alice-box"]]);
+    expect(engine.callsOf("rm")).toEqual([["rm", "-f", "mikan-sandbox-alice"]]);
     const runArgs = engine.callsOf("run")[0];
     expect(runArgs).toContain("/tmp/vaults/alice/.kube:/root/.kube");
     expect(runArgs).not.toContain("/tmp/vaults/alice/.ssh:/root/.ssh");

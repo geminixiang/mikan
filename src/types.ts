@@ -306,7 +306,6 @@ export interface SandboxResourceController {
 }
 
 export interface ProvisionOptions {
-  containerName?: string;
   mounts?: ContainerMount[];
   conversationId?: string;
 }
