@@ -359,7 +359,7 @@ function patchSettingsConfig(
   existing: SettingsFileConfig,
   config: Partial<AgentConfig>,
 ): SettingsFileConfig {
-  const patched: SettingsFileConfig = {
+  return {
     ...existing,
     llm: {
       ...existing.llm,
@@ -375,7 +375,6 @@ function patchSettingsConfig(
     office: existing.office,
     ...(config.mcpServers !== undefined ? { mcpServers: config.mcpServers } : {}),
   };
-  return compactSettingsConfig(patched);
 }
 
 function loadSettingsFileForUpdate(
@@ -394,25 +393,29 @@ function loadSettingsFileForUpdate(
   }
 }
 
-function updateSettingsFile(
+function rewriteSettingsFile(
   settingsPath: string,
-  patch: Partial<AgentConfig>,
   defaultSettings: SettingsFileConfig,
+  change: (existing: SettingsFileConfig) => SettingsFileConfig,
 ): void {
   const existing = loadSettingsFileForUpdate(settingsPath, defaultSettings);
   ensurePrivateDirExists(dirname(settingsPath));
   atomicWritePrivateFile(
     settingsPath,
-    JSON.stringify(patchSettingsConfig(existing, patch), null, 2),
+    JSON.stringify(compactSettingsConfig(change(existing)), null, 2),
   );
 }
 
 export function updateGlobalSettings(stateDir: string, patch: Partial<AgentConfig>): void {
-  updateSettingsFile(globalSettingsPath(stateDir), patch, ONBOARD_SETTINGS);
+  rewriteSettingsFile(globalSettingsPath(stateDir), ONBOARD_SETTINGS, (existing) =>
+    patchSettingsConfig(existing, patch),
+  );
 }
 
 export function updateConversationSettings(office: Office, patch: Partial<AgentConfig>): void {
-  updateSettingsFile(conversationSettingsPath(office), patch, {});
+  rewriteSettingsFile(conversationSettingsPath(office), {}, (existing) =>
+    patchSettingsConfig(existing, patch),
+  );
 }
 
 export function loadSkillPatterns(office: Office): SkillPatterns {
@@ -431,18 +434,13 @@ export function updateSkillPatterns(
     scope === "conversation"
       ? conversationSettingsPath(office)
       : globalSettingsPath(office.workspace.stateDir);
-  const existing = loadSettingsFileForUpdate(
+  rewriteSettingsFile(
     settingsPath,
     scope === "conversation" ? {} : ONBOARD_SETTINGS,
-  );
-  ensurePrivateDirExists(dirname(settingsPath));
-  atomicWritePrivateFile(
-    settingsPath,
-    JSON.stringify(
-      compactSettingsConfig({ ...existing, skills: skills.length > 0 ? [...skills] : undefined }),
-      null,
-      2,
-    ),
+    (existing) => ({
+      ...existing,
+      skills: skills.length > 0 ? [...skills] : undefined,
+    }),
   );
 }
 
@@ -461,16 +459,8 @@ export function loadOfficeVisibilityOverride(office: Office): "private" | null {
 }
 
 export function setOfficeVisibilityOverride(office: Office, visibility: "private" | null): void {
-  const settingsPath = conversationSettingsPath(office);
-  const existing = loadSettingsFileForUpdate(settingsPath, {});
-  const { office: _previous, ...rest } = existing;
-  ensurePrivateDirExists(dirname(settingsPath));
-  atomicWritePrivateFile(
-    settingsPath,
-    JSON.stringify(
-      compactSettingsConfig({ ...rest, office: visibility ? { visibility } : undefined }),
-      null,
-      2,
-    ),
-  );
+  rewriteSettingsFile(conversationSettingsPath(office), {}, (existing) => ({
+    ...existing,
+    office: visibility ? { visibility } : undefined,
+  }));
 }
