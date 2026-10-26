@@ -420,8 +420,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 
   await finalizeRunResponse(responder, session, runState, {
     initialTask: message.id.startsWith("task:"),
-    triggerSessionLink:
-      eventRunName(message.id) !== undefined ? createSessionViewLink?.() : undefined,
+    triggerSessionLink: isEventRunId(message.id) ? createSessionViewLink?.() : undefined,
     createOverflowLink: createSessionViewLink,
     platform: platform.name,
     model,

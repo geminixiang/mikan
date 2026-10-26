@@ -37,7 +37,9 @@ export function createTaskTool() {
       "Hand off multi-step or time-consuming work to an independent task thread so the user can keep chatting. Call ALONE, before doing that work. Ends this turn on success. Only available for top-level Slack messages.",
     execute: async (args, _api, { abortSignal: signal }) => {
       signal?.throwIfAborted();
-      const target = await start!(args.message, args.task);
+      if (!start)
+        throw new Error("Task handoff is unavailable here; continue in this conversation.");
+      const target = await start(args.message, args.task);
       return {
         output: [{ type: "text", text: `Task admitted: ${target}` }],
         details: { target },
@@ -69,8 +71,9 @@ function createTaskStatusTool() {
       "Read actual background task execution status. ALWAYS use this before answering task progress questions; do not infer progress or ETA from elapsed time or your previous promises. Completed means execution ended, not verified domain success. Read-only; does not steer or restart work.",
     execute: async (args, _api, { abortSignal: signal }) => {
       signal?.throwIfAborted();
+      if (!query) throw new Error("Task status is unavailable in this conversation.");
       return {
-        output: [{ type: "text", text: JSON.stringify(await query!(args.sessionKey)) }],
+        output: [{ type: "text", text: JSON.stringify(await query(args.sessionKey)) }],
         details: undefined,
       };
     },
