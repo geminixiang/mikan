@@ -328,7 +328,7 @@ describe("PiAgentWrapper.run", () => {
     mkdirSync(skillsDir, { recursive: true });
     symlinkSync(outside, join(skillsDir, "escaped.md"));
 
-    const result = loadSkillsFromDir({ dir: skillsDir, source: "channel", rejectSymlinks: true });
+    const result = loadSkillsFromDir({ dir: skillsDir, rejectSymlinks: true });
 
     expect(result.skills).toEqual([]);
     expect(result.diagnostics).toEqual([

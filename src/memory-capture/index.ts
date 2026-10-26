@@ -5,8 +5,7 @@ import {
   readTextFileNoFollowIfExists,
 } from "../file-guards.js";
 import { evaluateWithJev, JevNotConfiguredError } from "../harness/jev.js";
-import { isEventTriggerAttribution } from "../harness/presenter.js";
-import { resolveTriggerAttribution } from "../harness/prompt.js";
+import { eventRunName } from "../events/index.js";
 import { redactSecrets } from "../harness/tools/secret-redaction.js";
 import { isTaskRunId } from "../harness/tools/task.js";
 import { contentText } from "@earendil-works/pi-ai";
@@ -91,7 +90,7 @@ export function isCapturableRun(run: CapturedRun): boolean {
   if (run.stopReason !== "stop") return false;
   if (!run.message.text.trim() || !run.reply.trim()) return false;
   if (isTaskRunId(run.message.id)) return false;
-  return !isEventTriggerAttribution(resolveTriggerAttribution(run.message));
+  return eventRunName(run.message.id) === undefined;
 }
 
 function singleLine(value: string): string {

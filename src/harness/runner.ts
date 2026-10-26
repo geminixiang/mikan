@@ -44,7 +44,7 @@ import type { CreateRunnerOptions, PiAgentWrapper } from "../types.js";
 import { createHash } from "node:crypto";
 import { loadSkillPatterns, resolveConversationSettings } from "../settings/index.js";
 import { ensureDefaultOpenConnector } from "./open-connector.js";
-import { OfficeEventStore } from "../events/index.js";
+import { OfficeEventStore, eventRunName, isEventRunId } from "../events/index.js";
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
@@ -66,7 +66,6 @@ import {
   createRunState,
   finalizeRunResponse,
   getFinalAssistantText,
-  isEventTriggerAttribution,
   reportUsageSummary,
 } from "./presenter.js";
 
@@ -253,7 +252,7 @@ async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunC
     async (runtimePath) =>
       Buffer.from(await readRuntimeFile(execution.env(), runtimePath)).toString("base64"),
   );
-  const turnInstructions = buildTurnInstructions(message.id.match(/^event:([^:]+)/)?.[1]);
+  const turnInstructions = buildTurnInstructions(eventRunName(message.id));
   const finalUserMessage = turnInstructions ? `${turnInstructions}\n\n${userMessage}` : userMessage;
   return {
     sessionConversation,
@@ -261,39 +260,6 @@ async function prepareRunContext(params: PrepareRunParams): Promise<PreparedRunC
     imageAttachments,
     triggerAttribution,
   };
-}
-
-async function buildInitialSystemPrompt(params: {
-  office: Office;
-  pathContext: RuntimePathContext;
-  projection: ReturnType<typeof resolveWorkspaceProjection>;
-  sandboxConfig: CreateRunnerOptions["sandboxConfig"];
-}): Promise<string> {
-  const { office, pathContext, projection, sandboxConfig } = params;
-  const memory = getMemory(projection);
-  const { skills, skippedSkillLinks } = loadMikanSkills(
-    office,
-    pathContext.runtimeWorkspaceRoot,
-    projection,
-    loadSkillPatterns(office),
-  );
-  return buildSystemPrompt({
-    workspacePath: pathContext.runtimeWorkspaceRoot,
-    office,
-    memory,
-    sandboxConfig,
-    platform: {
-      name: "chat",
-      formattingGuide: "",
-      channels: [],
-      users: [],
-      trustModel: "membership",
-    },
-    skills,
-    projection,
-    skippedSkillLinks,
-    scratch: listScratchFolders(office),
-  });
 }
 
 async function rollbackRunnerResource(label: string, cleanup: () => Promise<void>): Promise<void> {
@@ -328,29 +294,17 @@ async function openRunnerSessionManager(params: {
 }
 
 async function createRunnerAgentSession(params: {
-  systemPrompt: string;
   model: Model<Api>;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
   tools: ReturnType<typeof createMikanTools>["tools"];
   toolContext: MikanToolContext;
   sessionManager: SessionStore;
   modelRegistry: MikanModels;
-  conversationId: string;
   signal?: AbortSignal;
 }) {
-  const {
-    systemPrompt,
-    model,
-    agentConfig,
-    tools,
-    toolContext,
-    sessionManager,
-    modelRegistry,
-    signal,
-  } = params;
+  const { model, agentConfig, tools, toolContext, sessionManager, modelRegistry, signal } = params;
   const mcpTools = await sessionManager.connectMcp(agentConfig.mcpServers ?? {}, signal);
   return new MikanAgentSession({
-    systemPrompt,
     model,
     thinkingLevel: agentConfig.thinkingLevel,
     tools: [...tools, ...mcpTools.map(withSecretRedaction)],
@@ -390,7 +344,7 @@ async function driveSession(
     allowTaskHandoff: responder.startTask !== undefined,
     allowTaskStatus: responder.getTaskStatus !== undefined && !isTaskRunId(message.id),
     images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
-    budget: message.id.startsWith("event:") ? DEFAULT_EVENT_BUDGET : undefined,
+    budget: isEventRunId(message.id) ? DEFAULT_EVENT_BUDGET : undefined,
   });
 }
 
@@ -466,9 +420,8 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
 
   await finalizeRunResponse(responder, session, runState, {
     initialTask: message.id.startsWith("task:"),
-    triggerSessionLink: isEventTriggerAttribution(prepared.triggerAttribution)
-      ? createSessionViewLink?.()
-      : undefined,
+    triggerSessionLink:
+      eventRunName(message.id) !== undefined ? createSessionViewLink?.() : undefined,
     createOverflowLink: createSessionViewLink,
     platform: platform.name,
     model,
@@ -549,24 +502,6 @@ async function publishRunLifecycle<T>(
   }
 }
 
-function prepareRunnerTurn(
-  params: RunnerInterfaceParams,
-  message: ConversationMessage,
-  responder: ConversationResponder,
-  platform: MessagingInfo,
-): ReturnType<typeof prepareRunContext> {
-  const { office, execution, session, toolBindings } = params;
-  return prepareRunContext({
-    message,
-    responder,
-    platform,
-    office,
-    execution,
-    session,
-    bindTools: toolBindings.bindRun,
-  });
-}
-
 function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   const {
     conversationId,
@@ -576,11 +511,13 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     sessionView,
     runEvents,
     runState,
+    execution,
     session,
     model,
     agentConfig,
     sessionManager,
     chatSessionManager,
+    toolBindings,
   } = params;
   const publishRunEvent: RunEventListener | undefined = runEvents
     ? (event) => runEvents.publish(office.address, sessionKey, event)
@@ -605,7 +542,15 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
       let presentation: RunPresentation | undefined;
       return publishRunLifecycle(publishRunEvent, message, async () => {
         try {
-          const prepared = await prepareRunnerTurn(params, message, responder, platform);
+          const prepared = await prepareRunContext({
+            message,
+            responder,
+            platform,
+            office,
+            execution,
+            session,
+            bindTools: toolBindings.bindRun,
+          });
           if (stopped) return { stopReason: "aborted" };
           presentation = activateRunPresentation(runState, {
             responder,
@@ -664,7 +609,6 @@ async function finishRunnerCreation(params: {
   model: Model<Api>;
   modelRegistry: MikanModels;
   agentConfig: ReturnType<typeof resolveConversationSettings>;
-  systemPrompt: string;
   sessionManager: SessionStore;
   toolBindings: MikanToolBindings;
   platformToolRoles: PlatformToolRoles;
@@ -677,7 +621,6 @@ async function finishRunnerCreation(params: {
     model,
     modelRegistry,
     agentConfig,
-    systemPrompt,
     sessionManager,
     toolBindings,
     platformToolRoles,
@@ -687,7 +630,6 @@ async function finishRunnerCreation(params: {
   try {
     const sessionUuid = sessionManager.getSessionId();
     const session = await createRunnerAgentSession({
-      systemPrompt,
       model,
       agentConfig,
       tools: [
@@ -697,7 +639,6 @@ async function finishRunnerCreation(params: {
       toolContext,
       sessionManager,
       modelRegistry,
-      conversationId,
       signal: options.signal,
     });
     options.signal?.throwIfAborted();
@@ -741,7 +682,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     platformToolPackFactories,
   } = options;
   const conversationId = office.address.conversationId;
-  const workspaceDir = office.workspace.root;
   await ensureDefaultMcpServers({
     office,
     trustModel,
@@ -764,7 +704,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     provisioner,
     office.workspace,
   );
-  const pathContext = getSandboxPathContext(sandboxConfig, workspaceDir);
   const toolContext: MikanToolContext = { env: execution.env };
 
   const modelRegistry = options.models;
@@ -798,13 +737,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     desktopAccess(options),
   );
 
-  const systemPrompt = await buildInitialSystemPrompt({
-    office,
-    pathContext,
-    projection,
-    sandboxConfig,
-  });
-  options.signal?.throwIfAborted();
   const { threadRootMessage } = sessionScope;
   const sessionManager = await openRunnerSessionManager({
     office,
@@ -818,7 +750,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     model,
     modelRegistry,
     agentConfig,
-    systemPrompt,
     sessionManager,
     toolBindings,
     platformToolRoles: collectPlatformToolRoles(platformToolPacks),

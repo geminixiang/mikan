@@ -112,7 +112,6 @@ export class MikanAgentSession {
   private retryAttempt = 0;
   private runMessages: Message[] = [];
   private streamingContent: AssistantMessage["content"] = [];
-  private readonly toolArgs = new Map<string, unknown>();
   private runStarted = false;
   private runEndSeen = false;
   private observedUsage: Usage = createEmptyUsage();
@@ -131,7 +130,7 @@ export class MikanAgentSession {
   constructor(private readonly options: MikanAgentSessionOptions) {
     this.sessionStore = options.sessionStore;
     this.model = options.model;
-    this.systemPrompt = options.systemPrompt;
+    this.systemPrompt = options.systemPrompt ?? "";
     this.settings = resolveHarnessSettings(options.settings);
   }
 
@@ -326,7 +325,6 @@ export class MikanAgentSession {
     } catch (error) {
       cleanupFailure = { error };
     } finally {
-      this.toolArgs.clear();
       this.cancellation = undefined;
       this.deadlineNotification = undefined;
       this.tally.endedAt = Date.now();
@@ -431,13 +429,10 @@ export class MikanAgentSession {
 
   private async installRunTools(
     attached: AttachedSessionHarness,
-    selected: ToolRegistration[],
+    registered: ToolRegistration[],
   ): Promise<void> {
     const servers = this.sessionStore.mcpServers();
     const { conversation, registry, extensionName } = attached;
-    const registered = selected.map((tool) =>
-      tool.name === START_TASK_TOOL ? { ...tool, callers: ["model"] as const } : tool,
-    );
     const own = (id: ConversationId) => id === conversation.id;
     const added: Extension[] = [];
     if (registered.length > 0) {
@@ -587,13 +582,17 @@ export class MikanAgentSession {
         const message = event.entry?.model?.[0];
         const toolResult = message?.role === "toolResult" ? message : undefined;
         const nested = event.result;
-        await this.emitToolEnd(
-          event.toolCallId,
-          event.toolName,
-          { content: toolResult?.content ?? [], details: toolResult?.details ?? nested?.details },
-          toolResult?.isError ?? nested?.isError ?? true,
-          toolResult?.durationMs ?? nested?.durationMs,
-        );
+        await this.emit({
+          type: "tool_execution_end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          result: {
+            content: toolResult?.content ?? [],
+            details: toolResult?.details ?? nested?.details,
+          },
+          isError: toolResult?.isError ?? nested?.isError ?? true,
+          durationMs: toolResult?.durationMs ?? nested?.durationMs,
+        });
         return;
       }
       case "auto_retry_start":
@@ -687,28 +686,9 @@ export class MikanAgentSession {
   }
 
   private async emitToolStart(toolCallId: string, toolName: string, args: unknown): Promise<void> {
-    this.toolArgs.set(toolCallId, args);
     this.tally.toolCalls += 1;
     this.tally.toolCallCounts[toolName] = (this.tally.toolCallCounts[toolName] ?? 0) + 1;
     await this.emit({ type: "tool_execution_start", toolCallId, toolName, args });
-  }
-
-  private async emitToolEnd(
-    toolCallId: string,
-    toolName: string,
-    result: Extract<HarnessEvent, { type: "tool_execution_end" }>["result"],
-    isError: boolean,
-    durationMs: number | undefined,
-  ): Promise<void> {
-    this.toolArgs.delete(toolCallId);
-    await this.emit({
-      type: "tool_execution_end",
-      toolCallId,
-      toolName,
-      result,
-      isError,
-      durationMs,
-    });
   }
 
   private async exceedBudget(reason: string): Promise<void> {

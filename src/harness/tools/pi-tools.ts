@@ -8,38 +8,25 @@ import {
   type ImageProcessor,
 } from "@earendil-works/pi-durable/tools";
 import type { TObject } from "typebox";
-import { LABEL_PARAMETER } from "./host-fn-tool.js";
+import { withLabelParameter, withoutLabel } from "./host-fn-tool.js";
 
 export function withRequiredLabel(tool: ToolRegistration): ToolRegistration {
-  const schema = tool.parameters as TObject;
   return {
     ...tool,
-    parameters: {
-      ...schema,
-      properties: { label: LABEL_PARAMETER, ...schema.properties },
-      required: ["label", ...(schema.required ?? [])],
-    },
-    execute: async (args, api, context) => {
-      const { label: _label, ...rest } = args as Record<string, unknown>;
-      return tool.execute(rest, api, context);
-    },
+    parameters: withLabelParameter(tool.parameters as TObject, "required"),
+    execute: async (args, api, context) => tool.execute(withoutLabel(args), api, context),
   };
 }
 
 function withLabel(tool: ToolRegistration): ToolRegistration {
-  const schema = tool.parameters as TObject;
   return {
     ...tool,
-    parameters: {
-      ...schema,
-      properties: { ...schema.properties, label: LABEL_PARAMETER },
-    },
+    parameters: withLabelParameter(tool.parameters as TObject, "optional"),
     execute: async (args, api, context) => {
       if (!api.env) {
         throw new Error(`Tool ${tool.name} requires an execution env; supply an authorized one.`);
       }
-      const { label: _label, ...rest } = args as Record<string, unknown>;
-      return tool.execute(rest, api, context);
+      return tool.execute(withoutLabel(args), api, context);
     },
   };
 }

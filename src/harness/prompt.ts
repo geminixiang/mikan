@@ -11,6 +11,7 @@ import type { BuildSystemPromptOptions, ScratchListing } from "./types.js";
 import { pinDirectoryNoFollow, readTextFileNoFollowIfExists } from "../file-guards.js";
 import type { PinnedDirectory } from "../file-guards.js";
 import * as log from "../log.js";
+import { eventRunName } from "../events/index.js";
 
 const IMAGE_MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -178,8 +179,8 @@ function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: 
 export function resolveTriggerAttribution(
   message: Pick<ConversationMessage, "id" | "text" | "userName">,
 ): string | undefined {
-  const eventIdMatch = message.id.match(/^event:([^:]+)/);
-  if (eventIdMatch) return `[event: ${eventIdMatch[1]}]`;
+  const eventName = eventRunName(message.id);
+  if (eventName !== undefined) return `[event: ${eventName}]`;
   if (message.userName) return `@${message.userName}`;
   return undefined;
 }
