@@ -8,6 +8,17 @@ mikan is a thin layer over three foundations: pi-durable is the agent runtime, O
 
 A model completes a task when it has the best information about it and the tools, with credentials, the task needs. mikan's job is to deliver both and leave the judgement to the model: what is relevant, what to read next, when it has enough. Code that makes that judgement for the model, such as relevance filters, traversal limits, or ranking rules, is complexity a design must justify with a measured failure that better information or a tool the model drives cannot fix. Review every design against this first.
 
+## Maintenance
+
+The agent maintains this repository and decides its design. The owner is consulted only for what reaches outside it (see Boundaries); a decision is recorded in its commit, research doc, or ADR instead of waiting for approval.
+
+Features have been built thick, judged good by the eval that shipped them, and found wanting only after people depended on them. To keep that from repeating:
+
+- Ship the thinnest thing that could work: a prompt line, a skill, or an existing CLI or MCP server before a tool or a module.
+- A new feature's ADR states its removal condition: a usage or success number from production and the date to check it. When the check fails, remove the feature.
+- Decide what stays from production usage, not from the eval that shipped it.
+- People using a feature do not block its removal when another path does the same job; name that path in the ADR.
+
 ## Where to look
 
 - Domain terms: `CONTEXT.md`. Module map, invariants, and decisions: `ARCHITECTURE.md`, `docs/adr/`.
@@ -66,11 +77,11 @@ Take every change except a documentation-only one through these steps in order. 
 
 1. **Research**: read the code, its history, the ADRs, and the Pi docs, type declarations, and examples at the installed version until every unknown is listed with an answer and its source. Record the findings in `docs/research/`.
 2. **Research again**: verify each answer with an experiment outside `src/`, on a copy of real data or through a dependency's public API, and hunt the cases the first pass missed: other platforms, other message paths, concurrency, existing data. Correct in the research doc every earlier claim an experiment overturns. Done when a full pass finds nothing new.
-3. **Decide**: prototype each candidate outside `src/`, compare them with numbers (correctness, cost, latency, storage, code size), and evaluate them against the best-design bar below. Present each open choice with its trade-offs and continue with the one the user picks.
-4. **Acceptance eval**: before implementing, build a black-box eval of every behavior the change touches and run it on `main` as the baseline. Show the user each case with its baseline result and its expected result after the change, accepted regressions included, and implement once the user accepts them. Build it with the `mikan-acceptance-eval` skill.
-5. **Implement and test** on a branch in a worktree, failing test first for a behavior change.
-6. **Verify**: rerun the eval on the branch; every case must match its expected result. Then exercise the change on the real platform with a local daemon.
-7. **Ship**: open a PR whose body carries the eval's before and after table, see CI pass, and merge once the user approves. When the change can alter the path a Slack message takes through a running daemon, also trigger the Slack E2E workflow (`slack-e2e.yml`) on the branch and see it pass. That path covers boot and onboarding, settings and model loading, Slack intake and replies, session storage and routing, the run loop and its tools, scheduled events, and any dependency the daemon loads, such as Pi. Changes outside it, such as `mikan migrate` steps, other platform adapters, the Admin portal, and test-only changes, are done when CI passes. State in the report which case applied.
+3. **Decide**: prototype each candidate outside `src/`, compare them with numbers (correctness, cost, latency, storage, code size), and evaluate them against the best-design bar below. Record each open choice with its trade-offs and the one chosen in the research doc or ADR.
+4. **Acceptance eval**: before implementing, build a black-box eval of every behavior the change touches and run it on `main` as the baseline. Record each case with its baseline result and its expected result after the change, accepted regressions included, before implementing. Build it with the `mikan-acceptance-eval` skill.
+5. **Implement and test** on `main`, failing test first for a behavior change.
+6. **Verify**: rerun the eval; every case must match its expected result. Then exercise the change on the real platform with a local daemon.
+7. **Ship**: commit to `main` with the eval's before and after table in the message, and see CI pass. When the change can alter the path a Slack message takes through a running daemon, also ask the owner to approve a run of the Slack E2E workflow (`slack-e2e.yml`) and see it pass. That path covers boot and onboarding, settings and model loading, Slack intake and replies, session storage and routing, the run loop and its tools, scheduled events, and any dependency the daemon loads, such as Pi. Changes outside it, such as `mikan migrate` steps, other platform adapters, the Admin portal, and test-only changes, are done when CI passes. State in the report which case applied.
 
 A suspected bug is reproduced on the real platform before it is reported. Its issue states the steps, what the user saw with timings, and the cause, and its fix goes through the steps above.
 
@@ -85,8 +96,8 @@ The best design meets these, and when they conflict, the earlier one wins:
 
 - This repository is public. Commits, docs, tests, issues, PRs, and release notes use placeholders such as `C0123456789`, `acme`, and `example.com` in place of real organizations, customers, people, hosts, and Slack workspace, channel, user, or message IDs or links; describe production evidence without identifiers.
 - Other agents may share this checkout. Stage explicit paths for your own changes, and compare against a commit with `git worktree add`. `git add -A`, `git add .`, `git stash`, `git checkout .`, `git reset --hard`, and `git clean` capture or discard work you did not make.
-- When a request turns out to need a design change, such as a new setting, a schema field, or changed behavior, stop and report the options with their trade-offs, and implement only the one the user picks; a published release cannot be taken back. Before retiring a credential or dependency, list every reader, including raw `fetch` calls and direct env reads.
-- Get approval before adding or upgrading a dependency, running install scripts, running real-platform E2E, switching to UI automation, or taking an external or destructive action outside the agreed scope. Use the access path the user requests.
+- When a request turns out to need a design change, such as a new setting, a schema field, or changed behavior, decide it through the steps above and record the options and the choice; a published release cannot be taken back. Before retiring a credential or dependency, list every reader, including raw `fetch` calls and direct env reads.
+- The owner approves what reaches outside the repository: production changes, spending, credentials, real-platform E2E, UI automation, and messages to people. Use the access path the owner requests.
 - Treat review comments from bots and review agents as evidence: fix those that identify a real bug, contract gap, security issue, or violation of these rules, and give a one-line reason for each one you decline.
 
 ## Reporting
