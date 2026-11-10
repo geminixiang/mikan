@@ -49,7 +49,6 @@ tools depend on the connected server's `listTools()` response.
 | `generate_image`        |     ✓     |        ✓        |        —        |          —           |                              —                              | Generation request and attached filename; image stored/uploaded elsewhere.                                |
 | `react`                 |     ✓     |        ✓        |        —        |          ◇           |                              —                              | Emoji and reaction confirmation.                                                                          |
 | `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.                                         |
-| `jev_browser`           |     ✓     |        ✓        |        —        |          —           |                              —                              | URL/commands in arguments; status, history, snapshot and raw command results.                             |
 | `web_fetch`             |     ✓     |        ✓        |        —        |          —           |                              —                              | URL in arguments; page Markdown or API text, bounded like MCP text (full result spilled).                 |
 | `history`               |     ✓     |        ✓        |        —        |          —           |                              —                              | Action/query/session/paging; bounded entries from this office's sessions (incl. tool output) or chat log. |
 | `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                                                   |
@@ -63,9 +62,7 @@ tools depend on the connected server's `listTools()` response.
 | `mcp__<server>__<tool>` |     ✓     |        ✓        |        ◇        |          —           |                              —                              | Dynamic tool arguments; bounded compact server text (full result spilled), images.                        |
 
 This is a **data-flow inventory**, not a guarantee that every result is small
-or safe. `jev_browser` bounds the goal-loop snapshot but does not impose one
-aggregate limit on raw command results; native file/command output and GitHub
-check logs can also be large; MCP text is bounded like `bash`. Image bytes
+or safe. Native file/command output and GitHub check logs can be large; MCP text is bounded like `bash`. Image bytes
 and external artifacts (written files, uploads, Slack messages) should not be
 confused with the short confirmation returned by some tools. `withSecretRedaction`
 only scrubs final text `output` and the `structuredOutput` scripts read for tools
@@ -122,42 +119,19 @@ tools its grants enable, so a revoked grant is neither searched, offered, nor
 callable from scripts; when the grant returns, its earlier discovery still
 applies. Loading is not a second permission grant.
 
-## Browser reliability
+## Browser
 
-`jev_browser` carries a short, tool-specific native CLI guide instead of adding
-browser rules to every agent's system prompt. It can read plain-text native
-`--help` / `skills` output so advice matches the installed CLI. An obvious
-`press @ref Enter` mistake is rejected before side effects; this is not a
-second CLI parser. A raw batch stops at its first reported failure and skips
-the goal loop. Separate essential capture exports if later commands must run
-even when an earlier export fails. Reuse a known named session when continuity
-is useful: with the current native CLI, every additional session owns another
-agent-browser daemon and Chromium process tree inside the same conversation
-sandbox. Create one only for real isolation or parallel work, and close it when
-done. After this tool explicitly closes a session, a later no-URL reuse in the
-same runner is rejected instead of letting the CLI silently create about:blank;
-providing a URL explicitly starts it again. Calls from one runner are serialized,
-so a model response containing several one-off calls cannot create a burst of
-parallel Chromium trees. Different conversation threads have different runners
-and may still work in parallel when their separate sessions are intentional.
-
-Goal decisions receive bounded full-page text and local snapshot context for
-same-label targets. History records commands, not verified effects: current
-state wins. Three unchanged observations after actions, or a third visit to a
-state in a short alternating cycle, hand control back rather than keep clicking.
-These guards are conservative stop conditions, not proof that a goal is
-impossible; slow pages may need an explicit native wait. They do not turn a
-model's DONE into independent verification. The caller should verify the
-intended visible state, consult help before unfamiliar syntax, and allow at
-most one evidence-based correction rather than retrying an unchanged goal.
+There is no browser tool ([ADR 0030](../../../docs/adr/0030-browse-with-the-agent-browser-cli.md)).
+The model runs the sandbox's `agent-browser` CLI through `bash` and learns it
+from the CLI's own skill, which matches the installed version. Every
+agent-browser session owns another daemon and Chrome process tree, and a few
+model-named sessions once exhausted a 1 GB sandbox until every page load timed
+out, so the prompt asks the model to reuse one session per task and close it.
 
 ## Contracts
 
 - `generate_image` writes host-side into the office directory, the only host location the guest can also reach, and uploads from that host path, because the file may not be mounted in the sandbox the way `attach` assumes.
 - `withSecretRedaction` scrubs every configured secret env value from each assembled tool's text output; in host sandbox mode it is the only defense against a command or file read returning a secret. It mutates `execute` in place so a platform pack's `bindRun` binding survives wrapping.
 - `jev` reports a Jev with no provider key as a tool error, never a silent fallback.
-- `jev` and `jev_browser` return the spend of their Jev and text-generation calls as the tool result's `usage`, so session spend and budgets count it; a call that throws reports none.
-- `jev_browser` asks Jev which step to take, but Jev only chooses and scores, so the text it types or the option it selects is written by the conversation's own chat model (the office's resolved `settings.json` model), through pi-ai, which the runner injects. A field that needs text without that injection blocks with a reason instead of guessing.
-- In `oci` mode, before each call `jev_browser` runs the sandbox image's `mikan-desktop status` (ADR 0025); other modes have no desktop and skip it. While the office desktop runs, the browser launches headed on its Wayland display, named by absolute path rather than through `XDG_RUNTIME_DIR`, because agent-browser keeps its session sockets under `XDG_RUNTIME_DIR` when it is set and a later call or the agent's own `agent-browser` without it would not find the session, and the tab limit counts only tabs the tool opened; while a person controls the browser it returns `person-has-control` without touching it, and the goal loop stops at the next step. A failed status call, as in an older image, means no desktop. `handOff` is used alone and only in direct messages, where its link can be sent privately; elsewhere it fails without touching control. It starts the desktop through the runner's `DesktopAccess`, and if agent-browser's lifecycle shows the browser was last launched headless, it reads the current page, closes the headless browser, and reopens that page on the desktop under a new session name (other tabs and the headless cookies are lost). The new name is needed because agent-browser's per-session daemon keeps the environment it started with, so a daemon started headless cannot launch Chromium on Wayland; the old daemon exits on agent-browser's own idle timeout. with no page open it fails and asks the model to open one with `url`, which now opens on the desktop. It then writes `control user`, posts the step with a private desktop link through the run's responder, and ends the turn with `terminate`; the presenter treats that result as the final response. If the post fails, control goes back to the agent.
-- Each runner's `jev_browser` owns one browser, named by the tool rather than the model, that stays open until `close: true`; a later `url` opens a new tab, and opening past three tabs it opened first closes the oldest inactive ones of those, identified by target ID, so a tab a person opened on the office desktop is never closed. Model-named sessions each started another Chrome, and a few of them exhausted a 1 GB sandbox until every page load timed out. Every command, including cleanup, runs as an argv through the actor-resolved sandbox `ExecutionEnv`, and a missing `agent-browser` (`spawn_error`) is a provisioning error, never an automatic install or a host fallback.
+- `jev` returns the spend of its Jev call as the tool result's `usage`, so session spend and budgets count it; a call that throws reports none.
 - `web_fetch` runs on the host, so it refuses private, loopback, and link-local targets (ADR 0024). Its own undici `Agent` checks the remote address of every connection, which covers IP literals, DNS answers, redirects, and a name that resolves differently between requests. That `Agent` bypasses the daemon's global `EnvHttpProxyAgent`, because a proxy would make the connection and hide the target address, so a deployment that reaches the web only through a proxy cannot use `web_fetch`. Its result goes through `guardMcpToolResult`, the same bound and workspace spill as MCP results.

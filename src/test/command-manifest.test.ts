@@ -54,7 +54,7 @@ describe("command manifest", () => {
       { command: "session", description: "Open the current session in the web viewer" },
       {
         command: "desktop",
-        description: "Open this conversation's desktop to watch or use its browser",
+        description: "Open this conversation's desktop to watch or use its sandbox",
       },
       { command: "model", description: "Switch this conversation's LLM model" },
       { command: "sandbox", description: "Show or boost sandbox limits" },

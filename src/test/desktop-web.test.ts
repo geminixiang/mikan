@@ -29,8 +29,6 @@ function fakeDesktop() {
   const proc = Object.assign(new EventEmitter(), { kill: vi.fn() });
   const desktop = {
     start: vi.fn(async () => "ready" as const),
-    status: vi.fn(async () => ({ display: "wayland-1", control: "agent" as const })),
-    setBrowserOwner: vi.fn(async () => {}),
     connect: vi.fn(() => ({ input: upstream, output, process: proc, close: vi.fn() })),
   };
   return { desktop, upstream, output };
@@ -84,24 +82,6 @@ describe("desktop web routes", () => {
     expect(rfb.headers.get("content-type")).toContain("javascript");
     expect((await fetch(`${base}/desktop/novnc/package.json`)).status).toBe(404);
     expect((await fetch(`${base}/desktop/novnc/core/..%2f..%2fpackage.json`)).status).toBe(404);
-  });
-
-  test("control hands the browser to the person and back", async () => {
-    const { desktop } = fakeDesktop();
-    const { base, token, key } = await serve(desktop);
-
-    const taken = await fetch(`${base}/desktop/control?token=${token}`, {
-      method: "POST",
-      body: JSON.stringify({ owner: "user" }),
-    });
-
-    expect(taken.status).toBe(200);
-    expect(desktop.setBrowserOwner).toHaveBeenCalledWith(key, "user");
-    const forged = await fetch(`${base}/desktop/control?token=forged`, {
-      method: "POST",
-      body: JSON.stringify({ owner: "user" }),
-    });
-    expect(forged.status).toBe(404);
   });
 
   test("the WebSocket forwards to the office desktop only with a valid token", async () => {

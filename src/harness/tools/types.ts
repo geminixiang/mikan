@@ -27,8 +27,3 @@ export interface MikanToolRunContext {
 export interface WebFetchToolOptions {
   blocked?: BlockList;
 }
-
-export interface DesktopAccess {
-  link(platformUserId: string): string;
-  open(platformUserId: string): Promise<boolean>;
-}

@@ -24,7 +24,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 
 特性：
 
-- 標準工具 image 內建 Node.js 24、Chromium、中日韓字型、ffmpeg，以及供 `jev_browser` 使用並鎖定版本的 `agent-browser` 0.38.1 runtime
+- 標準工具 image 內建 Node.js 24、Chromium、中日韓字型、ffmpeg，以及 agent 透過 `bash` 使用、鎖定版本的 `agent-browser` 0.38.1 CLI
 - image 內建工具安裝在 `/usr/local` 與 `/opt`，不放在 `/root`；在 sandbox 內執行 `npm i -g`、`uv tool install` 會裝到 `/root/.local`，且該目錄已在 `PATH` 中；Python 套件用 uv 管理（`uv run --with <套件>`），因為系統 pip 會拒絕安裝
 - mikan 會為每個 conversation 建立一個獨立 vault 與 container
 - 每個 container 都有自己的 bridge network，隔離直接的 container-to-container networking；outbound network access 仍保持啟用

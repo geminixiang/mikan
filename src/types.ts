@@ -381,11 +381,6 @@ export interface CreateRunnerOptions {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;
   };
-  desktop?: {
-    tokenStore: DesktopTokenStoreLike;
-    portalBaseUrl?: string;
-    open: OpenDesktop;
-  };
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   models: MikanModels;
   runEvents?: RunEventPublisher;

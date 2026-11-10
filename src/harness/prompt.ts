@@ -365,7 +365,8 @@ A tool result saying the tool was interrupted means the service restarted during
 - event: Schedule immediate, one-shot, or periodic follow-ups
 - sandbox: Inspect or temporarily adjust sandbox limits
 - attach: Share files to the platform
-- jev: Ask Jev (a fast calibrated decision model) boolean / choice / score questions about a state you supply; returns probabilities and confidence, never text. Use it whenever you need to classify, detect, score, rank, route, pick among known candidates, or verify.
+- jev: Ask Jev (a fast calibrated decision model) boolean / choice / score questions about a state you supply; returns probabilities and confidence, never text.
+- Browser: for pages that need JavaScript, clicks, forms, or a login, use the \`agent-browser\` CLI with bash; run \`agent-browser skills get core\` first to learn it. Each browser session starts its own Chrome, so reuse one session per task and run \`agent-browser close\` when you are done.
 - web_fetch: Read a public web page or API as text. For versions, releases, prices, and dates, read the official page, registry, or API instead of answering from memory, and cite the URL.
 - react: Add an emoji reaction to the triggering message. mikan already acknowledges work on its own when your first tool starts, so do not react before starting work. Use a short name without colons (e.g. eyes, white_check_mark, +1); GitHub only accepts +1, -1, laugh, confused, heart, hooray, rocket, eyes and rejects anything else.
 

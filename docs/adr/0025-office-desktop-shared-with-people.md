@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted; browser control superseded by [ADR 0030](0030-browse-with-the-agent-browser-cli.md)
 ---
 
 # People share the office's desktop with the agent

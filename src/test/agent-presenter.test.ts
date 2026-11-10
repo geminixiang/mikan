@@ -349,28 +349,6 @@ describe("presenter event routing", () => {
     expect(JSON.stringify(responder.replaceResponse.mock.calls)).not.toContain("do not post this");
   });
 
-  test("a browser handed to a person claims the final response, a normal browser call does not", async () => {
-    const { emit, runState } = attachPresenter();
-
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "browse-1",
-      toolName: "jev_browser",
-      result: { content: [{ type: "text", text: "{}" }] },
-      isError: false,
-    });
-    expect(runState.finalResponseHandledByTool).toBe(false);
-
-    await emit({
-      type: "tool_execution_end",
-      toolCallId: "browse-2",
-      toolName: "jev_browser",
-      result: { content: [{ type: "text", text: "{}" }], details: { handedOff: true } },
-      isError: false,
-    });
-    expect(runState.finalResponseHandledByTool).toBe(true);
-  });
-
   test("a failed or undeclared tool call does not claim the final response", async () => {
     const { emit, runState } = attachPresenter({
       platformTools: new Set(["post_card"]),
@@ -422,7 +400,7 @@ describe("presenter event routing", () => {
     ]);
   });
 
-  test("prefixes jev and jev_browser progress labels so users can tell which steps came from them", async () => {
+  test("prefixes jev progress labels so users can tell which steps came from it", async () => {
     const { emit, runState } = attachPresenter();
 
     await emit({
@@ -435,30 +413,19 @@ describe("presenter event routing", () => {
       label: "jev · Classify urgency",
       status: "running",
     });
-
-    await emit({
-      type: "tool_execution_start",
-      toolCallId: "tool-jev-browser",
-      toolName: "jev_browser",
-      args: { label: "Detect the video player" },
-    });
-    expect(runState.toolProgress.get("tool-jev-browser")).toEqual({
-      label: "jev_browser · Detect the video player",
-      status: "running",
-    });
   });
 
-  test("does not double the tool name when jev_browser is called without a label", async () => {
+  test("does not double the tool name when jev is called without a label", async () => {
     const { emit, runState } = attachPresenter();
 
     await emit({
       type: "tool_execution_start",
-      toolCallId: "tool-jev-browser-nolabel",
-      toolName: "jev_browser",
+      toolCallId: "tool-jev-nolabel",
+      toolName: "jev",
       args: {},
     });
-    expect(runState.toolProgress.get("tool-jev-browser-nolabel")).toEqual({
-      label: "jev_browser",
+    expect(runState.toolProgress.get("tool-jev-nolabel")).toEqual({
+      label: "jev",
       status: "running",
     });
   });

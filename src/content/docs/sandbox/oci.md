@@ -24,7 +24,7 @@ This mode was called `image:<image>` before; that spelling still works and logs 
 
 Features:
 
-- the standard tool image includes Node.js 24, Chromium, CJK fonts, ffmpeg, and the pinned `agent-browser` 0.38.1 runtime used by `jev_browser`
+- the standard tool image includes Node.js 24, Chromium, CJK fonts, ffmpeg, and the pinned `agent-browser` 0.38.1 CLI, which the agent runs through `bash` to browse
 - the image installs its tools under `/usr/local` and `/opt`, never under `/root`; `npm i -g` and `uv tool install` from inside the sandbox go to `/root/.local`, which is on `PATH`; Python packages go through uv (`uv run --with <package>`), because the system pip refuses installs
 - mikan creates an isolated vault and container for each conversation
 - each container gets its own bridge network, separating direct container-to-container networking; outbound network access remains enabled

@@ -391,7 +391,7 @@ describe("recordJevOutcome", () => {
 
   test("records a counter, cost/duration distributions, and a lifecycle breadcrumb on success", () => {
     recordJevOutcome({
-      caller: "jev_browser",
+      caller: "jev_tool",
       status: "ok",
       inputTokens: 120,
       outputTokens: 8,
@@ -400,12 +400,12 @@ describe("recordJevOutcome", () => {
     });
 
     expect(sentryMock.metrics.count).toHaveBeenCalledWith("agent.jev.calls", 1, {
-      attributes: { caller: "jev_browser", status: "ok" },
+      attributes: { caller: "jev_tool", status: "ok" },
     });
     expect(sentryMock.metrics.distribution).toHaveBeenCalledWith(
       "agent.jev.cost",
       0.0006,
-      expect.objectContaining({ attributes: { caller: "jev_browser", status: "ok" } }),
+      expect.objectContaining({ attributes: { caller: "jev_tool", status: "ok" } }),
     );
     expect(sentryMock.metrics.distribution).toHaveBeenCalledWith(
       "agent.jev.duration",
@@ -417,7 +417,7 @@ describe("recordJevOutcome", () => {
         category: "agent.lifecycle",
         message: "agent.jev.completed",
         data: expect.objectContaining({
-          caller: "jev_browser",
+          caller: "jev_tool",
           status: "ok",
           input_tokens: 120,
           output_tokens: 8,

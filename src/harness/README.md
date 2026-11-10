@@ -16,7 +16,7 @@ readiness to that run's tools and prompt. The resolver rejects overlapping mount
 targets before the environment is created and reports provisioning failures
 without changing cleanup ownership. With a resolver, a runner has no
 environment until its first run resolves one, so a tool called earlier fails
-instead of reaching the host. `desktop.ts` builds the one `OpenDesktop` service, which readies an actor's office container through the same resolver and starts its desktop; the composition root hands it to the `/pi-desktop` command and to runners for `jev_browser`'s `handOff`, so the command builds no resolver of its own. In `oci` mode the resolver's resource key is the office key, which desktop tokens also carry. `prompt.ts` owns prompt construction; `presenter.ts` turns
+instead of reaching the host. `desktop.ts` builds the one `OpenDesktop` service, which readies an actor's office container through the same resolver and starts its desktop; the composition root hands it to the `/pi-desktop` command, so the command builds no resolver of its own. In `oci` mode the resolver's resource key is the office key, which desktop tokens also carry. `prompt.ts` owns prompt construction; `presenter.ts` turns
 session events into responder operations in two passes: a run observer records
 telemetry, run accounting, and daemon logs from the raw Pi event, then
 `run-events.ts` translates the event into a platform-neutral `RunEvent` that the
@@ -233,32 +233,24 @@ as `JevRequestError`. Requests time out after 30 seconds and retry twice on
 408, 409, 429, and 5xx, as the previous SDK did. Cost is the token count at
 pi-ai's catalog price.
 
-Jev is reached four ways — harness-internal decision points (Slack auto-reply
-`addressed`, DM task intent), the `jev` tool (`tools/jev.ts`, a direct
-pass-through the model composes state/questions for itself), and
-`jev_browser`'s (`tools/jev-browser.ts`) per-step decision loop — all through
+Jev is reached three ways — harness-internal decision points (Slack auto-reply
+`addressed`, DM task intent) and the `jev` tool (`tools/jev.ts`, a direct
+pass-through the model composes state/questions for itself) — all through
 this one `evaluateWithJev`. Harness-internal call sites never show the model
 the result and fail closed to the pre-Jev rule when the key is missing; the
-two tools surface a missing key as a tool error the model sees, since it must
+tool surfaces a missing key as a tool error the model sees, since it must
 then judge or act for itself. `evaluateWithJev` requires a `caller` option
-naming which of the four call sites is asking, and reports every call's
+naming which of the three call sites is asking, and reports every call's
 token usage, cost, and duration to `recordJevOutcome`
 (`../observability/index.js`, tagged `agent.jev.*`) regardless of outcome —
 Jev spend is otherwise invisible in Sentry/OTel next to the primary chat
 model's per-run cost, and instrumenting inside this one function covers all
-four call sites instead of each one remembering to report it. The report
+three call sites instead of each one remembering to report it. The report
 never carries the judged state, questions, or answers.
 
-`jev_browser` runs **every** `agent-browser` command (including cleanup) through
-this runner's actor-resolved sandbox `ExecutionEnv`, not a host subprocess. The CLI,
-Chrome, the runner's browser, and output files belong to that sandbox. Jev's decision
-requests still use the host-side adapter above. Tool assembly is not restricted
-to host mode; each backend must provision `agent-browser` and its browser
-runtime on the sandbox PATH. A missing CLI is a provisioning error: the tool
-does not install packages, use a global npm fallback, or launch a browser on
-the mikan host. Explicit host sandbox mode runs it through Pi's `NodeExecutionEnv`.
-Session names inherit the runtime's isolation: explicitly shared host/container
-runtimes must use distinct names where separate browsers are desired.
+There is no browser tool ([ADR 0030](../../docs/adr/0030-browse-with-the-agent-browser-cli.md)):
+the model runs the sandbox's `agent-browser` CLI through `bash`, and the
+prompt points it at the CLI's version-matched skill (`agent-browser skills get core`).
 
 ## Boundaries
 

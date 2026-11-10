@@ -20,7 +20,7 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
   },
   {
     name: "desktop",
-    description: "Open this conversation's desktop to watch or use its browser",
+    description: "Open this conversation's desktop to watch or use its sandbox",
     slackCommand: "/pi-desktop",
     slackRoute: {},
     discord: true,

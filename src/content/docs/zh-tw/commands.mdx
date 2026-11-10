@@ -25,7 +25,7 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `/login` / `/pi-login`                             | 開啟 15 分鐘有效的 login/vault 連結。僅限 DM。                                                                          |
 | `session` / `/session` / `/pi-session`             | 開啟目前的工作階段檢視器。僅限 DM。                                                                                     |
-| `/desktop` / `/pi-desktop`                         | 私下取得這個對話桌面的 24 小時連結：看著或操作 agent 使用的瀏覽器、接手掌控權、開終端機。需要 `oci:*`。                 |
+| `/desktop` / `/pi-desktop`                         | 私下取得這個對話桌面的 24 小時連結：查看或操作 sandbox 的桌面、開終端機。需要 `oci:*`。                                 |
 | `/new` / `/pi-new`                                 | 重設目前工作階段。僅限 DM。                                                                                             |
 | `/compact [instructions]` / `/pi-compact`          | 摘要較早的訊息以騰出上下文；DM 與頻道都能使用。instructions 指定摘要要保留的內容。較早的訊息仍留在工作階段歷史中。      |
 | `/model` / `/pi-model [provider/model[:thinking]]` | 顯示或切換目前對話的模型。Thinking levels：`off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。                  |

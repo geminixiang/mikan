@@ -8,7 +8,6 @@ import type { OfficeDesktop } from "../../../sandbox/desktop.js";
 import type { DesktopTokenCreateOptions } from "../../../types.js";
 import { errorMessage } from "../../../unknown-values.js";
 import { InMemoryTokenStore } from "../token-store.js";
-import { jsonResponse, readJsonBody } from "../portal-shell.js";
 import { renderDesktopPage } from "./page.js";
 import type { DesktopToken } from "./types.js";
 
@@ -18,7 +17,7 @@ const NOVNC_DIRS = ["core", "vendor"];
 
 export interface DesktopWebOptions {
   tokenStore: InMemoryDesktopTokenStore;
-  desktop: Pick<OfficeDesktop, "start" | "status" | "setBrowserOwner" | "connect">;
+  desktop: Pick<OfficeDesktop, "start" | "connect">;
 }
 
 export class InMemoryDesktopTokenStore extends InMemoryTokenStore<DesktopToken> {
@@ -98,26 +97,6 @@ export async function handleDesktopRequest(
       "Referrer-Policy": "no-referrer",
     });
     res.end(renderDesktopPage());
-    return true;
-  }
-
-  if (url.pathname === "/desktop/control" && (req.method === "GET" || req.method === "POST")) {
-    try {
-      if (req.method === "POST") {
-        const body = await readJsonBody(req, res, 1024);
-        if (!body) return true;
-        if (body.owner !== "agent" && body.owner !== "user") {
-          jsonResponse(res, 400, { error: "owner must be agent or user" });
-          return true;
-        }
-        await options.desktop.setBrowserOwner(token.containerKey, body.owner);
-      }
-      const status = await options.desktop.status(token.containerKey);
-      jsonResponse(res, 200, { owner: status.control, running: status.display !== undefined });
-    } catch (error) {
-      log.logWarning("Desktop control failed", errorMessage(error));
-      jsonResponse(res, 409, { error: "The desktop is not running. Ask for a new link." });
-    }
     return true;
   }
 

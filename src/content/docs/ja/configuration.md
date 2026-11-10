@@ -85,7 +85,7 @@ visibility を強制できるのは `oci:*` だけです。`host`、`container:*
 
 ## Jev
 
-Jev は auto-reply の `jev` モード、DM task intent、`jev` と `jev_browser` ツールが使う判断モデルです。mikan は pi-ai に組み込まれた次の Jev model のうち、provider に key がある最初のものを使います：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。どれもなければ、これらの機能は Jev なしの動作に戻ります。
+Jev は auto-reply の `jev` モード、DM task intent、`jev` ツールが使う判断モデルです。mikan は pi-ai に組み込まれた次の Jev model のうち、provider に key がある最初のものを使います：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。どれもなければ、これらの機能は Jev なしの動作に戻ります。
 
 System One protocol を話す proxy 経由で Jev を使うには、Pi の proxy 設定と同じく `models.json` で組み込み provider に `baseUrl` と `apiKey` だけを指定します。組み込み model はそのまま残り、mikan はその key で proxy に送信します：
 

@@ -170,7 +170,7 @@ describe("evaluateWithJev", () => {
           criteria: { true: { means: "shown" }, false: "hidden" },
         },
       },
-      { caller: "jev_browser" },
+      { caller: "jev_tool" },
     );
 
     expect(requestBody(fetchMock, 0)).toMatchObject({

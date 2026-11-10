@@ -27,7 +27,7 @@
       },
       {
         "command": "/pi-desktop",
-        "description": "Open this conversation's desktop to watch or use its browser",
+        "description": "Open this conversation's desktop to watch or use its sandbox",
         "should_escape": false
       },
       {

@@ -1,5 +1,4 @@
 import { JEV_TOOL } from "./tools/jev.js";
-import { JEV_BROWSER_TOOL } from "./tools/jev-browser.js";
 import type { OfficeAddress } from "../types.js";
 import * as log from "../log.js";
 import { errorMessage, isRecord } from "../unknown-values.js";
@@ -12,7 +11,7 @@ export function toolLabel(args: unknown, toolName: string): string {
 
 function toolDisplayLabel(toolName: string, args: unknown): string {
   const text = toolLabel(args, toolName);
-  if ((toolName === JEV_TOOL || toolName === JEV_BROWSER_TOOL) && text !== toolName) {
+  if (toolName === JEV_TOOL && text !== toolName) {
     return `${toolName} · ${text}`;
   }
   return text;

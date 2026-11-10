@@ -85,7 +85,7 @@ Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord�
 
 ## Jev
 
-Jev 是 auto-reply 的 `jev` 模式、DM task intent，以及 `jev` 和 `jev_browser` 工具使用的判斷模型。mikan 會使用下列 pi-ai 內建 Jev model 中，第一個 provider 有 key 的：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。都沒有時，這些功能回到沒有 Jev 時的行為。
+Jev 是 auto-reply 的 `jev` 模式、DM task intent，以及 `jev` 工具使用的判斷模型。mikan 會使用下列 pi-ai 內建 Jev model 中，第一個 provider 有 key 的：`openrouter/~typesafe/jev-latest`（`OPENROUTER_API_KEY`）、`typesafe/jev-latest`（`TYPESAFE_API_KEY`）、`vercel-ai-gateway/typesafe-ai/jev`、`cloudflare-workers-ai/typesafe/jev`、`opencode/jev-1.13`。都沒有時，這些功能回到沒有 Jev 時的行為。
 
 要讓 Jev 經由支援 System One 協定的 proxy，就像 Pi 設定 proxy 一樣，在 `models.json` 只給內建 provider 設定 `baseUrl` 和 `apiKey`。內建 model 會保留，mikan 用該 key 送到 proxy：
 

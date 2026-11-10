@@ -87,7 +87,7 @@ The retired door-policy settings (`sandbox.workspace.doorPolicy`, `layout`, `vis
 
 ## Jev
 
-Jev is the decision model behind auto-reply `jev` mode, DM task intent, and the `jev` and `jev_browser` tools. mikan uses the first of these pi-ai built-in Jev models whose provider has a key: `openrouter/~typesafe/jev-latest` (`OPENROUTER_API_KEY`), `typesafe/jev-latest` (`TYPESAFE_API_KEY`), `vercel-ai-gateway/typesafe-ai/jev`, `cloudflare-workers-ai/typesafe/jev`, and `opencode/jev-1.13`. With none, those features fall back to their behavior without Jev.
+Jev is the decision model behind auto-reply `jev` mode, DM task intent, and the `jev` tool. mikan uses the first of these pi-ai built-in Jev models whose provider has a key: `openrouter/~typesafe/jev-latest` (`OPENROUTER_API_KEY`), `typesafe/jev-latest` (`TYPESAFE_API_KEY`), `vercel-ai-gateway/typesafe-ai/jev`, `cloudflare-workers-ai/typesafe/jev`, and `opencode/jev-1.13`. With none, those features fall back to their behavior without Jev.
 
 To send Jev through a proxy that speaks the System One protocol, give the built-in provider only a `baseUrl` and an `apiKey` in `models.json`, as Pi does for proxies. Its built-in models stay, and mikan sends them to the proxy with that key:
 

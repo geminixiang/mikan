@@ -1,5 +1,5 @@
 import type { Office, Workspace } from "../office/types.js";
-import { contentText, type Api, type Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import {
@@ -48,7 +48,7 @@ import { OfficeEventStore, eventRunName, isEventRunId } from "../events/index.js
 import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability/index.js";
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
-import type { DesktopAccess, PlatformToolPack } from "./tools/types.js";
+import type { PlatformToolPack } from "./tools/types.js";
 import { isTaskRunId } from "./tools/task.js";
 import { isContinuedRunId } from "./continued-run.js";
 import { loadMikanSkills } from "./skills.js";
@@ -71,30 +71,6 @@ import {
 
 import * as log from "../log.js";
 import { errorMessage } from "../unknown-values.js";
-
-function desktopAccess(
-  options: Pick<CreateRunnerOptions, "desktop" | "sandboxConfig" | "office" | "trustModel">,
-): DesktopAccess | undefined {
-  const desktop = options.desktop;
-  if (!desktop?.portalBaseUrl || options.sandboxConfig.type !== "oci") return undefined;
-  const { tokenStore, portalBaseUrl, open } = desktop;
-  return {
-    link: (platformUserId) => {
-      const { token } = tokenStore.create({
-        platform: options.office.address.platform,
-        platformUserId,
-        office: options.office,
-      });
-      return `${portalBaseUrl}/desktop?token=${token}`;
-    },
-    open: async (platformUserId) =>
-      (await open({
-        address: options.office.address,
-        userId: platformUserId,
-        trustModel: options.trustModel,
-      })) === "ready",
-  };
-}
 
 function createRunnerExecutionContext(
   sandboxConfig: SandboxConfig,
@@ -722,18 +698,6 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
       outputDir: office.dir,
     },
-    async (systemPrompt, user, signal) => {
-      const reply = await modelRegistry.models.completeSimple(
-        model,
-        { systemPrompt, messages: [{ role: "user", content: user, timestamp: Date.now() }] },
-        { signal },
-      );
-      if (reply.stopReason === "error" || reply.stopReason === "aborted") {
-        throw new Error(reply.errorMessage ?? `Text generation ${reply.stopReason}`);
-      }
-      return { text: contentText(reply.content), usage: reply.usage };
-    },
-    desktopAccess(options),
   );
 
   const { threadRootMessage } = sessionScope;

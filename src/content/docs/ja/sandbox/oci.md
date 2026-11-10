@@ -24,7 +24,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 
 特徴：
 
-- 標準 tool image には Node.js 24、Chromium、CJK フォント、ffmpeg、および `jev_browser` が使用する固定版 `agent-browser` 0.38.1 runtime が含まれます
+- 標準 tool image には Node.js 24、Chromium、CJK フォント、ffmpeg、および agent が `bash` から使う固定版 `agent-browser` 0.38.1 CLI が含まれます
 - image のツールは `/root` ではなく `/usr/local` と `/opt` にインストールされます。sandbox 内での `npm i -g`、`uv tool install` は `PATH` 上の `/root/.local` に入ります。Python パッケージは uv で管理します（`uv run --with <パッケージ>`）。システムの pip はインストールを拒否します
 - mikan は conversation ごとに独立した vault と container を作成します
 - 各 container は専用の Docker bridge network に接続され、container 間の直接通信が分離されます。outbound network access は引き続き有効です

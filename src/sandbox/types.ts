@@ -61,13 +61,6 @@ export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
   createEnv?(config: TConfig, options: SandboxEnvOptions): ExecutionEnv;
 }
 
-export type BrowserOwner = "agent" | "user";
-
-export interface DesktopStatus {
-  display?: string;
-  control: BrowserOwner;
-}
-
 export type DesktopStart = "ready" | "outdated-image" | "stopped";
 
 export interface DesktopProcess {
