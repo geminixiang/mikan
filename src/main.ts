@@ -71,7 +71,6 @@ import { createOfficeAddress, createWorkspace, listRegisteredOffices } from "./o
 import { createConversationRuntime } from "./runtime/conversation-runtime.js";
 import type { McpServerConfig } from "./harness/types.js";
 import { captureError, shutdownObservability } from "./observability/index.js";
-import { MemoryCapture } from "./memory-capture/index.js";
 import { errorMessage } from "./unknown-values.js";
 
 const SLACK_APP_TOKEN = readEnv("SLACK_APP_TOKEN");
@@ -422,7 +421,6 @@ const handler = createConversationRuntime({
   runEvents,
   portalBaseUrl: portalBaseUrl(),
   platformToolPackFactories: buildPlatformToolPackFactories(),
-  memoryCapture: (models) => new MemoryCapture(models),
 });
 
 const sandboxDesc =

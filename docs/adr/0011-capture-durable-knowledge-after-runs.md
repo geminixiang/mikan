@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by [ADR 0029](0029-remove-memory-capture.md)
 ---
 
 # Capture durable knowledge after each human run

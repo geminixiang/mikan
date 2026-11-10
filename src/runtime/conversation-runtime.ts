@@ -13,7 +13,6 @@ import type {
 import type { Office } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
-import type { RunMemoryCapture } from "../memory-capture/types.js";
 import { defaultModelsJsonPath, MikanModels } from "../harness/models.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
@@ -110,14 +109,12 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
   private readonly resolvedModels: MikanModels;
-  private readonly memoryCapture: RunMemoryCapture | undefined;
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
     this.resolvedModels =
       options.models ??
       MikanModels.create({ modelsJsonPath: defaultModelsJsonPath(options.workspace.stateDir) });
-    this.memoryCapture = options.memoryCapture?.(this.resolvedModels);
     this.commandServices = {
       ...options,
       resourceController: options.resourceController ?? options.provisioner,
@@ -352,14 +349,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
       } else if (result) {
         await this.reportTaskOutcome(event.address, sessionKey, result.finalText ?? "");
-      }
-      if (result) {
-        this.memoryCapture?.capture({
-          office: this.options.workspace.office(event.address),
-          message: context.message,
-          stopReason: result.stopReason,
-          reply: result.finalText ?? "",
-        });
       }
     } finally {
       recordGauge("agent.sessions.active", this.sessions.settlementCount() - 1);

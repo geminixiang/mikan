@@ -18,7 +18,6 @@ import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { ChatHistorySync, registerThreadSession } from "../sessions/chat-history-sync.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
-import type { RunMemoryCapture } from "../memory-capture/types.js";
 import { createSlackAdapters } from "../adapters/slack/context.js";
 import type { SlackEvent, SlackResponderBot } from "../adapters/slack/types.js";
 import { createRunner } from "../harness/runner.js";
@@ -53,7 +52,6 @@ afterEach(() => {
 
 interface MakeRuntimeOptions {
   models?: MikanModels;
-  memoryCapture?: (models: MikanModels) => RunMemoryCapture;
   runnerFactory?: RunnerFactory;
 }
 
@@ -662,33 +660,6 @@ describe("ConversationRuntime lifecycle", () => {
     expect(runner.run).toHaveBeenCalledOnce();
     expect(runner.dispose).not.toHaveBeenCalled();
     expect(await resetCount()).toBe(0);
-  });
-
-  test("hands each settled run and its final reply to memory capture", async () => {
-    const capture = vi.fn();
-    const factory = vi.fn(() => ({ capture }));
-    const { models } = createFauxModels();
-    const runner = fakeRunner();
-    const runtime = makeRuntime({
-      models,
-      memoryCapture: factory,
-      runnerFactory: fakeRunnerFactory(runner),
-    });
-    vi.mocked(runner.run).mockResolvedValue({ stopReason: "stop", finalText: "Noted." });
-
-    const { event, context } = makeEventAndContext("4");
-    await runtime.handleEvent(event, bot, context);
-
-    expect(factory).toHaveBeenCalledWith(models);
-    expect(capture).toHaveBeenCalledOnce();
-    expect(capture).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: context.message,
-        stopReason: "stop",
-        reply: "Noted.",
-        office: expect.objectContaining({ dir: conversationDir }),
-      }),
-    );
   });
 
   test("reset boundary survives recreation without disabling later incremental sync", async () => {

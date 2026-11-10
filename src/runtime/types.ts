@@ -18,7 +18,6 @@ import type {
 } from "../adapters/commands/types.js";
 import type { SessionViewTokenStoreLike } from "../types.js";
 import type { MikanModels } from "../harness/models.js";
-import type { RunMemoryCapture } from "../memory-capture/types.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { VaultManager } from "../vault/types.js";
 
@@ -71,7 +70,6 @@ export interface ConversationRuntimeOptions extends Omit<
   openConnector?: McpServerConfig;
   eventScheduler?: () => EventScheduleSink | undefined;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
-  memoryCapture?: (models: MikanModels) => RunMemoryCapture;
   runnerFactory?: RunnerFactory;
   runEvents?: RunEventPublisher;
 }

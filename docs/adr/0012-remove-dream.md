@@ -4,7 +4,7 @@ status: accepted
 
 # Remove Dream
 
-The scheduled Dream maintenance is removed. Conversation `MEMORY.md` is written only by the agent during runs and by Memory capture after them ([ADR 0011](0011-capture-durable-knowledge-after-runs.md)). No scheduled process reads session history or rewrites the anchor.
+The scheduled Dream maintenance is removed. Conversation `MEMORY.md` is written only by the agent during runs and by Memory capture after them ([ADR 0011](0011-capture-durable-knowledge-after-runs.md)); Memory capture was later removed by [ADR 0029](0029-remove-memory-capture.md). No scheduled process reads session history or rewrites the anchor.
 
 ## Context
 

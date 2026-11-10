@@ -85,13 +85,6 @@ docs = "src/sessions/README.md"
 sources = ["src/sessions/"]
 
 [[modules]]
-id = "memory-capture"
-name = "Post-run memory capture"
-kind = "authority"
-docs = "src/memory-capture/README.md"
-sources = ["src/memory-capture/"]
-
-[[modules]]
 id = "vault"
 name = "Credential vault"
 kind = "authority"
@@ -183,8 +176,8 @@ docs = "src/harness/README.md"
 [[seams]]
 id = "harness-model-calls"
 owner = "harness"
-consumers = ["memory-capture"]
-interface = "runSubagent, evaluateWithJev"
+consumers = ["platform-adapters"]
+interface = "evaluateWithJev"
 docs = "src/harness/README.md"
 
 [[seams]]
@@ -237,14 +230,6 @@ owner = "sessions"
 consumers = ["conversation-runtime", "harness"]
 interface = "session-key policy, managed session store"
 docs = "src/sessions/README.md"
-
-[[seams]]
-id = "memory-capture"
-owner = "memory-capture"
-consumers = ["composition-root", "conversation-runtime"]
-interface = "MemoryCapture, RunMemoryCapture"
-docs = "src/memory-capture/README.md"
-adr = "docs/adr/0011-capture-durable-knowledge-after-runs.md"
 
 [[seams]]
 id = "vault-resolution"
@@ -395,11 +380,6 @@ docs = "ARCHITECTURE.md#execution-resolution"
 id = "scheduled-text-event"
 path = ["events", "platform-adapters", "conversation-runtime", "harness", "platform-adapters"]
 docs = "ARCHITECTURE.md#scheduled-execution"
-
-[[flows]]
-id = "run-memory-capture"
-path = ["conversation-runtime", "memory-capture", "harness"]
-docs = "ARCHITECTURE.md#memory-capture"
 
 [[invariants]]
 id = "identity-office-address"

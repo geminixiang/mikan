@@ -409,8 +409,8 @@ const rules: BoundaryRule[] = [
         violates: true,
       },
       {
-        file: "src/memory-capture/x.ts",
-        code: 'await fs.readFile(run.office.memoryPath, "utf-8");',
+        file: "src/harness/x.ts",
+        code: 'await fs.readFile(office.memoryPath, "utf-8");',
         violates: true,
       },
       {
@@ -424,8 +424,8 @@ const rules: BoundaryRule[] = [
         violates: false,
       },
       {
-        file: "src/memory-capture/x.ts",
-        code: "atomicWritePrivateFile(run.office.memoryPath, content);",
+        file: "src/harness/x.ts",
+        code: "atomicWritePrivateFile(office.memoryPath, content);",
         violates: false,
       },
     ],
