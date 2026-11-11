@@ -90,8 +90,9 @@ A local daemon on Pi 1.5.2 (`npm run test:e2e:slack:local`, host sandbox, an Ant
 
 An earlier run the same day passed 3 of 4 cases while every reply was the bot's error message, because the gateway rejected its key and each run ended with zero tokens. Those cases assert only that a reply arrives, so read the daemon log for usage before trusting a pass.
 
+The Slack E2E workflow (`slack-e2e.yml`) then ran twice on `main`. The first run passed 22 of 23 files: in the multi-file upload case, the two files the test uploaded did not appear in the channel history within its 15 s wait, a step that ends before mikan receives anything. The second run passed all 23.
+
 ## Not verified
 
-- The Slack E2E workflow (`slack-e2e.yml`), which needs the owner's approval. The local run below covers the same cases on the host sandbox only.
 - A production-sized state directory opened by 1.5.2. E7 and the migration tests cover small ones.
 - `auto_retry_start.attempt` now reports `pi.live.generation.attempt`. The retry tests pass, but the numbering against a real provider error was not compared.
