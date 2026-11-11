@@ -21,10 +21,11 @@ change in a minor release.
   and the `assistant_thread_*` and `app_context_changed` events, which mikan now only acknowledges.
 - The `/sandbox` command (`/pi-sandbox` on Slack) and the `sandbox.boost` setting it applied. The
   agent's `sandbox` tool still shows and raises a conversation's limits, and the admin portal still
-  narrows a public channel to a private office, which `/pi-sandbox visibility` also did. A
-  `sandbox.boost` entry left in `settings.json` is ignored. An app synced from a configuration token
-  loses the slash command on the next start; on an app configured by hand, remove `/pi-sandbox`,
-  which now does nothing.
+  narrows a public channel to a private office, which `/pi-sandbox visibility` also did. Every
+  `settings.json` that `mikan onboard` wrote has `sandbox.boost`: mikan ignores it, keeps it in the
+  file, and names it in a warning at each start until you delete it. An app synced from a
+  configuration token loses the slash command on the next start; on an app configured by hand,
+  remove `/pi-sandbox`, which now does nothing.
 - For embedders: `SandboxResourceController.boost`, `getDefaultLimits`, and `getBoostLimits`,
   `SandboxLimitStatus.boosted`, `DockerContainerManagerOptions.boostLimits`,
   `SandboxSettings.boost`, `ConversationRuntimeOptions.resourceController`, and
