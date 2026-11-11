@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { copyJson, type Context, type JsonValue } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
+import { copyJson, type JsonValue } from "@earendil-works/chord/json";
 import { boundOutput, utf8ByteLength } from "@earendil-works/chord/output";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";

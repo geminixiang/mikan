@@ -1,4 +1,4 @@
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { ENV_MANIFEST, readEnv } from "../../env-manifest.js";
 import type {

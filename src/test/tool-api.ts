@@ -1,4 +1,4 @@
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context";
 import {
   ROOT_CONVERSATION_ID,
@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { createModels } from "@earendil-works/pi-ai";
-import type { Static, TSchema } from "typebox";
+import type { TSchema } from "typebox";
 
 export const TEST_CONTEXT = BACKGROUND_CONTEXT;
 
@@ -33,6 +33,7 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
   const decoder = new TextDecoder();
   const api: ToolExecutionApi = {
     taskId: 1 as TaskId,
+    now: () => Date.now(),
     conversationId: ROOT_CONVERSATION_ID,
     callId: options.callId ?? "call-1",
     env: options.env,
@@ -94,7 +95,7 @@ export function callableTool<TParameters extends TSchema>(tool: ToolRegistration
       const { api } = createTestToolApi({ callId });
       const context = signal ? withAbortSignal(signal, TEST_CONTEXT) : TEST_CONTEXT;
       const result = await tool.execute(
-        args as Static<TParameters>,
+        args as Parameters<typeof tool.execute>[0],
         {
           ...api,
           details: async (value) => {

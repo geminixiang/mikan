@@ -13,7 +13,7 @@ import type { resolveConversationSettings } from "../settings/index.js";
 import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { CompactionPolicy, ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { TextContent } from "@earendil-works/pi-ai";

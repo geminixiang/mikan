@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
-import type { ToolRegistration } from "@earendil-works/pi-durable";
+import type { Context } from "@earendil-works/chord/context";
+import type { SubmissionDraft, ToolRegistration } from "@earendil-works/pi-durable";
 import { getFinalAssistantText } from "../harness/presenter.js";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
@@ -94,8 +95,8 @@ describe("harness run cancellation", () => {
         if (cancellation === "reject") throw cleanupError;
       });
       const submit = attached.conversation.submit.bind(attached.conversation);
-      const wrappedSubmit = async (...args: Parameters<typeof submit>) => {
-        const submission = await submit(...args);
+      const wrappedSubmit = async (draft: SubmissionDraft, submitContext: Context) => {
+        const submission = await submit(draft, submitContext);
         return {
           id: submission.id,
           status: submission.status.bind(submission),

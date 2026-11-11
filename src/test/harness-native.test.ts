@@ -438,6 +438,54 @@ test("tool progress reports details and each committed message is presented once
   expect(persisted).toHaveLength(4);
 });
 
+test("a listener slower than the run still gets every message and tool call, in order", async () => {
+  const { faux, file, wrap } = setup();
+  const rounds = 60;
+  let calls = 0;
+  let release!: () => void;
+  const runFinishedItsTools = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tool: ToolRegistration = {
+    name: "step",
+    description: "Take one step",
+    parameters: { type: "object", properties: { n: { type: "number" } } },
+    execute: async (args) => {
+      calls += 1;
+      if (calls === rounds) release();
+      return { output: [{ type: "text", text: `step ${JSON.stringify(args)}` }], details: {} };
+    },
+  };
+  const store = await openSessionAt(file);
+  const session = wrap(store, [tool]);
+  faux.setResponses([
+    ...Array.from({ length: rounds }, (_, n) =>
+      fauxAssistantMessage(fauxToolCall("step", { n }), { stopReason: "toolUse" }),
+    ),
+    fauxAssistantMessage("done"),
+  ]);
+  const events: HarnessEvent[] = [];
+  session.subscribe(async (event) => {
+    if (events.length === 0) await runFinishedItsTools;
+    events.push(event);
+  });
+  await session.prompt("take every step");
+
+  const persisted = (await store.getEntries()).filter((entry) => entry.type === "message");
+  expect(persisted).toHaveLength(2 * rounds + 2);
+  expect(events.filter((event) => event.type === "message_end")).toHaveLength(2 * rounds + 2);
+  const starts = events.filter((event) => event.type === "tool_execution_start");
+  expect(starts.map((event) => event.args)).toEqual(
+    Array.from({ length: rounds }, (_, n) => ({ n })),
+  );
+  expect(events.filter((event) => event.type === "tool_execution_end")).toHaveLength(rounds);
+  expect(events.at(-1)).toMatchObject({
+    type: "message_end",
+    message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+  });
+  expect(session.getLastRunStats()).toMatchObject({ toolCalls: rounds });
+});
+
 test("persisted provider thinking level survives close/reopen", async () => {
   const { faux, file, wrap } = setup();
   const store = await openSessionAt(file);

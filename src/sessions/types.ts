@@ -8,7 +8,7 @@ import type {
   HarnessSettings,
   Registry,
 } from "@earendil-works/pi-durable";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { ConversationLogMessage } from "../types.js";
 import type { SessionStore } from "./session-store.js";
 

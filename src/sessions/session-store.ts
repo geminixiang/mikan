@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { AssistantMessage, Message, Models, Usage } from "@earendil-works/pi-ai";
 import { calculateContextTokens } from "@earendil-works/pi-ai/utils/estimate";
@@ -97,6 +97,7 @@ const SessionDoc = defineDoc<SessionDocState>({
   history: "latest",
   fork: "initial",
   initial: () => ({}),
+  checkpointWhen: () => false,
 });
 
 type SessionIndexRecord = Required<{
@@ -112,6 +113,7 @@ const SessionIndexDoc = defineDoc<SessionIndexState>({
   version: 1,
   scope: "session",
   initial: () => ({ sessions: {} }),
+  checkpointWhen: () => false,
 });
 
 const ChatHistoryEntry = defineEntry<Readonly<ChatHistoryMessageIdentity>>("mikan.chat_history");
@@ -206,6 +208,10 @@ async function readContext(conversation: Conversation): Promise<SessionContext> 
     .filter((message) => message.role !== "system")
     .map(durableMessage);
   return { messages };
+}
+
+function noModels(): Models {
+  throw new Error("This harness was opened to read or import sessions and runs no model");
 }
 
 function bindModels(models: Models, property: PropertyKey): unknown {
@@ -362,7 +368,7 @@ class OfficeStorage {
     });
     const settings = (): HarnessSettings | undefined => latest()?.settings;
     return {
-      models,
+      models: () => models,
       registry: this.registry,
       settings: {
         extensions: [],
@@ -675,7 +681,7 @@ export async function importOfficeSessions(
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   const harness = await Harness.open(
     await openNodeSqliteStorage(path),
-    { models: {} as Models, registry: createRegistry(), settings: { extensions: [] } },
+    { models: noModels, registry: createRegistry(), settings: { extensions: [] } },
     context,
   );
   try {
@@ -701,7 +707,7 @@ export async function importOfficeSessions(
 export async function backfillImportedUsage(path: string, dryRun: boolean): Promise<number> {
   const harness = await Harness.open(
     await openNodeSqliteStorage(path),
-    { models: {} as Models, registry: createRegistry(), settings: { extensions: [] } },
+    { models: noModels, registry: createRegistry(), settings: { extensions: [] } },
     context,
   );
   try {
@@ -782,7 +788,7 @@ async function recordImportedUsage(
 export async function readImportedContexts(path: string): Promise<Map<string, Message[]>> {
   const harness = await Harness.open(
     await openNodeSqliteStorage(path),
-    { models: {} as Models, registry: createRegistry(), settings: { extensions: [] } },
+    { models: noModels, registry: createRegistry(), settings: { extensions: [] } },
     context,
   );
   try {
@@ -981,9 +987,9 @@ export class SessionStore implements SessionInspection {
     await withOfficeStorage(office, async (storage) => {
       const task = await lookupSession(storage, key);
       if (!task) return;
-      const view = await task.conversation.viewState(context);
+      const view = await task.conversation.watch(context);
       const owner = view.value.conversation.owner;
-      view.dispose();
+      await view.stop();
       if (!owner) return;
       const requester = await storage.harness.conversation(owner.conversationId, context);
       if (!requester) return;

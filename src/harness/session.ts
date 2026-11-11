@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type {
   Api,
@@ -23,15 +23,16 @@ import {
   defineExtension,
   hook,
   section,
-  watchEvents,
   wrapTool,
-  type AgentEvent as DurableEvent,
-  type AgentEventStream,
+  type CompactionStatus,
   type Conversation,
   type ConversationId,
+  type ConversationView,
+  type ConversationWatch,
+  type EntryRecord,
   type Extension,
   type HookRegistration,
-  type MessageChange,
+  type LiveState,
   type ToolExecutionApi,
   type ToolRegistration,
   type UsageState,
@@ -81,17 +82,36 @@ interface RunOptions {
   continueInterrupted?: boolean;
 }
 
-interface Deferred {
-  promise: Promise<void>;
-  resolve: () => void;
+const ENTRY_PAGE_SIZE = 200;
+
+interface FollowedView {
+  lastEntryId: number;
+  streaming: boolean;
+  calls: Map<string, { name: string; args: unknown }>;
+  startedTools: Set<string>;
+  endedTools: Set<string>;
+  toolDetails: Map<string, unknown>;
+  retryAt: number | undefined;
+  compactions: Map<number, CompactionStatus>;
+  usage: unknown;
 }
 
-function deferred(): Deferred {
-  let resolve!: () => void;
-  const promise = new Promise<void>((done) => {
-    resolve = done;
-  });
-  return { promise, resolve };
+function followFrom(view: ConversationView): FollowedView {
+  return {
+    lastEntryId: view.entries.at(-1)?.id ?? 0,
+    streaming: false,
+    calls: new Map(),
+    startedTools: new Set(),
+    endedTools: new Set(),
+    toolDetails: new Map(),
+    retryAt: undefined,
+    compactions: new Map(),
+    usage: view.docs["pi.usage"],
+  };
+}
+
+function liveState(view: ConversationView): LiveState {
+  return (view.docs["pi.live"] ?? {}) as LiveState;
 }
 
 export class MikanAgentSession {
@@ -112,12 +132,11 @@ export class MikanAgentSession {
   private retryAttempt = 0;
   private runMessages: Message[] = [];
   private streamingContent: AssistantMessage["content"] = [];
-  private runStarted = false;
-  private runEndSeen = false;
+  private followed: FollowedView | undefined;
+  private viewQueue: Promise<void> = Promise.resolve();
   private observedUsage: Usage = createEmptyUsage();
   private requestRunId: string | undefined;
   private activeRequest: { token: symbol; runId: string } | undefined;
-  private runEnded: Deferred = deferred();
   private lastSessionRunStatus: SessionRunStatus | undefined;
   private tally: RunTally = {
     usage: createEmptyUsage(),
@@ -222,9 +241,8 @@ export class MikanAgentSession {
     this.cancellationError = undefined;
     this.retryAttempt = 0;
     this.runMessages = [];
-    this.runStarted = false;
-    this.runEndSeen = false;
-    this.runEnded = deferred();
+    this.followed = undefined;
+    this.viewQueue = Promise.resolve();
     this.activeRequest = undefined;
     this.requestRunId = undefined;
     this.runBudget = { ...this.settings.budget, ...options?.budget };
@@ -237,7 +255,7 @@ export class MikanAgentSession {
       startedAt: Date.now(),
     };
     let runFailure: { error: unknown } | undefined;
-    let stream: AgentEventStream | undefined;
+    let watch: ConversationWatch | undefined;
     let status: SessionRunStatus = "completed";
     try {
       if (!(await this.checkCallBudget())) return;
@@ -258,9 +276,13 @@ export class MikanAgentSession {
       await this.installRunTools(attached, tools);
       if (!(await this.checkCallBudget())) return;
       await this.sessionStore.recordRun({ startedAt: Date.now() });
-      stream = await watchEvents(attached.harness, attached.conversation.id, context);
-      this.observedUsage = sumUsageState(stream.snapshot.usage);
-      stream.start((events) => this.handleDurableEvents(events));
+      watch = await attached.conversation.watch(context);
+      this.followed = followFrom(watch.value);
+      this.observedUsage = sumUsageState(usageState(watch.value));
+      await this.followView(watch.value);
+      watch.start(async (call) => {
+        if (call.kind === "value") await this.followView(call.value);
+      });
       status = options?.continueInterrupted
         ? await this.continueRun()
         : await this.drive(attached, text, options?.images);
@@ -270,13 +292,13 @@ export class MikanAgentSession {
       throw error;
     } finally {
       if (status !== "failed" && this.runAborted) status = "aborted";
-      await this.cleanupRun(runFailure, stream, status);
+      await this.cleanupRun(runFailure, watch, status);
     }
   }
 
   private async continueRun(): Promise<SessionRunStatus> {
-    this.runStarted = await this.sessionStore.continueInterruptedRun();
-    if (this.runStarted) await this.runEnded.promise;
+    const continued = await this.sessionStore.continueInterruptedRun();
+    if (continued && this.attached) await this.followRunToEnd(this.attached.conversation);
     return this.runAborted ? "aborted" : "completed";
   }
 
@@ -299,7 +321,7 @@ export class MikanAgentSession {
     );
     if (this.runAborted) this.requestCancellation();
     const settled = await submission.wait(context);
-    if (this.runStarted) await this.runEnded.promise;
+    await this.followRunToEnd(conversation);
     if (settled.status === "done") return "completed";
     if (this.runAborted || settled.reason === "aborted") return "aborted";
     if (settled.reason === "model_error") return "failed";
@@ -308,7 +330,7 @@ export class MikanAgentSession {
 
   private async cleanupRun(
     runFailure: { error: unknown } | undefined,
-    stream: AgentEventStream | undefined,
+    watch: ConversationWatch | undefined,
     status: SessionRunStatus,
   ): Promise<void> {
     clearTimeout(this.deadlineTimer);
@@ -317,7 +339,7 @@ export class MikanAgentSession {
     try {
       await this.cancellation;
       await this.deadlineNotification;
-      await stream?.stop();
+      await watch?.stop();
       if (this.attached) {
         await this.sessionStore.recordRun({ endedAt: Date.now(), status });
       }
@@ -535,106 +557,213 @@ export class MikanAgentSession {
     }
   }
 
-  private async handleDurableEvents(events: readonly DurableEvent[]): Promise<void> {
-    for (const event of events) {
+  private followView(view: ConversationView): Promise<void> {
+    this.viewQueue = this.viewQueue.then(async () => {
       try {
-        await this.handleDurableEvent(event);
+        await this.applyView(view);
       } catch (error) {
-        log.logWarning("Durable event handling failed", errorMessage(error));
+        log.logWarning("Conversation view handling failed", errorMessage(error));
       }
-    }
-    if (this.runEndSeen) this.runEnded.resolve();
+    });
+    return this.viewQueue;
   }
 
-  private async handleDurableEvent(event: DurableEvent): Promise<void> {
-    switch (event.type) {
-      case "run_start":
-        this.runStarted = true;
-        return;
-      case "run_end":
-        await this.endRetry(this.runAborted ? "Retry cancelled" : undefined);
-        this.runEndSeen = true;
-        return;
-      case "snapshot":
-        return this.streamContent(event.generation?.message?.content ?? []);
-      case "message_start":
-        if (event.message.role === "system") return;
+  private async followRunToEnd(conversation: Conversation): Promise<void> {
+    for (;;) {
+      const watch = await conversation.watch(context);
+      const view = watch.value;
+      await watch.stop();
+      await this.followView(view);
+      if (liveState(view).run === undefined) break;
+      await conversation.waitForIdle(context);
+    }
+    await this.endRetry(this.runAborted ? "Retry cancelled" : undefined);
+  }
+
+  private async applyView(view: ConversationView): Promise<void> {
+    const followed = this.followed;
+    if (!followed) return;
+    for (const entry of await this.entriesSince(followed, view)) {
+      followed.lastEntryId = entry.id;
+      await this.applyEntry(followed, entry);
+    }
+    const live = liveState(view);
+    await this.applyGeneration(followed, live);
+    await this.applyTools(followed, live);
+    await this.applyCompactions(followed, live);
+    const usage = view.docs["pi.usage"];
+    if (usage !== undefined && usage !== followed.usage) {
+      followed.usage = usage;
+      await this.recordUsage(usageState(view));
+    }
+  }
+
+  private async entriesSince(
+    followed: FollowedView,
+    view: ConversationView,
+  ): Promise<readonly EntryRecord[]> {
+    if (view.before === undefined || view.before <= followed.lastEntryId) {
+      return view.entries.filter((entry) => entry.id > followed.lastEntryId);
+    }
+    const conversation = this.attached?.conversation;
+    if (!conversation) return view.entries;
+    const missed: EntryRecord[] = [];
+    let page = await conversation.entries(
+      { minEntryId: (followed.lastEntryId + 1) as EntryRecord["id"], order: "ascending" },
+      ENTRY_PAGE_SIZE,
+      undefined,
+      context,
+    );
+    missed.push(...page.items);
+    while (page.next) {
+      page = await conversation.entries({}, ENTRY_PAGE_SIZE, page.next, context);
+      missed.push(...page.items);
+    }
+    return missed;
+  }
+
+  private async applyEntry(followed: FollowedView, entry: EntryRecord): Promise<void> {
+    const message = entry.model?.[0];
+    if (!message || message.role === "system") return;
+    if (message.role === "toolResult") {
+      await this.startTool(followed, message.toolCallId, message.toolName);
+      await this.endTool(followed, message.toolCallId, message.toolName, {
+        content: message.content,
+        details: message.details,
+        isError: message.isError,
+        durationMs: message.durationMs,
+      });
+    }
+    if (message.role !== "assistant" || !followed.streaming) {
+      this.streamingContent = [];
+      await this.emit({ type: "message_start", message });
+    }
+    if (message.role === "assistant") {
+      followed.streaming = false;
+      for (const part of message.content) {
+        if (part.type === "toolCall")
+          followed.calls.set(part.id, { name: part.name, args: part.arguments });
+      }
+    }
+    await this.endMessage(message);
+  }
+
+  private async applyGeneration(followed: FollowedView, live: LiveState): Promise<void> {
+    const message = live.generation?.message;
+    if (message) {
+      if (!followed.streaming) {
+        followed.streaming = true;
         this.streamingContent = [];
-        await this.emit({ type: "message_start", message: event.message });
-        if (event.message.role === "assistant") await this.streamContent(event.message.content);
-        return;
-      case "message_update":
-        return this.streamContent(applyMessageChanges(this.streamingContent, event.changes));
-      case "message_end":
-        return this.endMessage(event.entry.model?.[0]);
-      case "tool_execution_start":
-        return this.emitToolStart(event.toolCallId, event.toolName, event.args);
-      case "tool_execution_update":
-        if (event.details === undefined) return;
+        await this.emit({ type: "message_start", message });
+      }
+      await this.streamContent(message.content);
+    }
+    const retry = live.generation?.retry;
+    if (retry && retry.at !== followed.retryAt) {
+      followed.retryAt = retry.at;
+      this.retryAttempt = live.generation?.attempt ?? 1;
+      await this.emit({
+        type: "auto_retry_start",
+        attempt: this.retryAttempt,
+        maxAttempts: this.settings.retry.maxRetries,
+        delayMs: Math.max(0, retry.at - Date.now()),
+        errorMessage: retry.error,
+      });
+    }
+    if (!retry && followed.retryAt !== undefined) {
+      followed.retryAt = undefined;
+      const attempt = this.retryAttempt;
+      this.retryAttempt = 0;
+      await this.emit({
+        type: "auto_retry_end",
+        attempt,
+        success: !this.runAborted,
+        finalError: this.runAborted ? "Retry cancelled" : undefined,
+      });
+    }
+  }
+
+  private async applyTools(followed: FollowedView, live: LiveState): Promise<void> {
+    for (const slot of [...(live.tools ?? []), ...(live.nestedTools ?? [])]) {
+      if (slot.status === "pending") continue;
+      const nested = "arguments" in slot ? slot : undefined;
+      if (nested) followed.calls.set(slot.callId, { name: slot.name, args: nested.arguments });
+      await this.startTool(followed, slot.callId, slot.name);
+      if (slot.details !== undefined && followed.toolDetails.get(slot.callId) !== slot.details) {
+        followed.toolDetails.set(slot.callId, slot.details);
         await this.emit({
           type: "tool_execution_update",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          details: event.details,
+          toolCallId: slot.callId,
+          toolName: slot.name,
+          details: slot.details,
         });
-        return;
-      case "tool_execution_end": {
-        const message = event.entry?.model?.[0];
-        const toolResult = message?.role === "toolResult" ? message : undefined;
-        const nested = event.result;
-        await this.emit({
-          type: "tool_execution_end",
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          result: {
-            content: toolResult?.content ?? [],
-            details: toolResult?.details ?? nested?.details,
-          },
-          isError: toolResult?.isError ?? nested?.isError ?? true,
-          durationMs: toolResult?.durationMs ?? nested?.durationMs,
-        });
-        return;
       }
-      case "auto_retry_start":
-        this.retryAttempt = event.attempt;
-        await this.emit({
-          type: "auto_retry_start",
-          attempt: event.attempt,
-          maxAttempts: this.settings.retry.maxRetries,
-          delayMs: Math.max(0, event.at - Date.now()),
-          errorMessage: event.errorMessage,
+      if (slot.status !== "done") continue;
+      if (nested) {
+        await this.endTool(followed, slot.callId, slot.name, {
+          content: [],
+          details: slot.details,
+          isError: nested.summary?.isError ?? true,
+          durationMs: nested.summary?.durationMs,
         });
-        return;
-      case "auto_retry_end":
-        this.retryAttempt = 0;
-        await this.emit({
-          type: "auto_retry_end",
-          attempt: event.attempt,
-          success: !this.runAborted,
-          finalError: this.runAborted ? "Retry cancelled" : undefined,
+      } else if (!("entry" in slot)) {
+        await this.endTool(followed, slot.callId, slot.name, {
+          content: [],
+          details: slot.details,
+          isError: true,
+          durationMs: undefined,
         });
-        return;
-      case "compaction_start":
-        await this.emit({ type: "compaction_start", reason: event.reason });
-        return;
-      case "compaction_end": {
-        if (this.activeRequest?.token === COMPACTION_REQUEST) this.activeRequest = undefined;
-        const outcome = await this.compactionOutcome(event.taskId);
-        await this.emit({
-          type: "compaction_end",
-          reason: event.reason,
-          aborted: outcome?.status === "aborted",
-          errorMessage: outcome?.status === "failed" ? outcome.error.message : undefined,
-        });
-        return;
       }
-      case "usage_changed":
-        return this.recordUsage(event.usage);
-      case "task_failed":
-        log.logWarning(`Durable task ${event.kind} failed`, event.message);
-        return;
-      default:
-        return;
+    }
+  }
+
+  private async startTool(followed: FollowedView, callId: string, name: string): Promise<void> {
+    if (followed.startedTools.has(callId)) return;
+    followed.startedTools.add(callId);
+    await this.emitToolStart(callId, name, followed.calls.get(callId)?.args ?? {});
+  }
+
+  private async endTool(
+    followed: FollowedView,
+    callId: string,
+    name: string,
+    result: {
+      content: (TextContent | ImageContent)[];
+      details: unknown;
+      isError: boolean;
+      durationMs: number | undefined;
+    },
+  ): Promise<void> {
+    if (followed.endedTools.has(callId)) return;
+    followed.endedTools.add(callId);
+    await this.emit({
+      type: "tool_execution_end",
+      toolCallId: callId,
+      toolName: name,
+      result: { content: result.content, details: result.details },
+      isError: result.isError,
+      durationMs: result.durationMs,
+    });
+  }
+
+  private async applyCompactions(followed: FollowedView, live: LiveState): Promise<void> {
+    const running = new Map((live.compactions ?? []).map((status) => [status.taskId, status]));
+    for (const [taskId, status] of running) {
+      if (followed.compactions.has(taskId)) continue;
+      followed.compactions.set(taskId, status);
+      await this.emit({ type: "compaction_start", reason: status.trigger });
+    }
+    for (const [taskId, status] of followed.compactions) {
+      if (running.has(taskId as CompactionStatus["taskId"])) continue;
+      followed.compactions.delete(taskId);
+      if (this.activeRequest?.token === COMPACTION_REQUEST) this.activeRequest = undefined;
+      const outcome = await this.compactionOutcome(status.taskId);
+      await this.emit({
+        type: "compaction_end",
+        reason: status.trigger,
+        aborted: outcome?.status === "aborted",
+        errorMessage: outcome?.status === "failed" ? outcome.error.message : undefined,
+      });
     }
   }
 
@@ -837,6 +966,10 @@ export function addUsage(total: Usage, usage: Usage): void {
   }
 }
 
+function usageState(view: ConversationView): UsageState {
+  return (view.docs["pi.usage"] ?? { models: {}, tools: {} }) as UsageState;
+}
+
 export function sumUsageState(state: UsageState): Usage {
   const total = createEmptyUsage();
   for (const usage of [...Object.values(state.models), ...Object.values(state.tools)]) {
@@ -865,38 +998,4 @@ function subtractUsage(total: Usage, base: Usage): Usage {
 
 function copyUsage(usage: Usage): Usage {
   return { ...usage, cost: { ...usage.cost } };
-}
-
-function applyMessageChanges(
-  content: AssistantMessage["content"],
-  changes: readonly MessageChange[],
-): AssistantMessage["content"] {
-  const next = [...content];
-  for (const change of changes) {
-    switch (change.type) {
-      case "message":
-        next.splice(0, next.length, ...change.message.content);
-        break;
-      case "text_start":
-      case "thinking_start":
-      case "toolcall_start":
-      case "block":
-        next[change.contentIndex] = change.block;
-        break;
-      case "text_delta": {
-        const block = next[change.contentIndex];
-        next[change.contentIndex] =
-          block?.type === "text"
-            ? { ...block, text: `${block.text}${change.delta}` }
-            : { type: "text", text: change.delta };
-        break;
-      }
-      case "thinking_delta":
-      case "toolcall_delta":
-        break;
-      default:
-        change satisfies never;
-    }
-  }
-  return next;
 }

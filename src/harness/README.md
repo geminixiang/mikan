@@ -71,16 +71,21 @@ input. Interrupted tool calls are not rerun unless the tool is
 `replay: "safe"`; the model gets an "interrupted" result, and the system prompt
 tells it to check and rerun the step.
 
-`HarnessEvent` is a thin, one-to-one projection of pi-durable's agent events,
-which are derived from commits: assistant `message_end` arrives after
-persistence, and tool progress carries the latest `details`. It adds only what
-Pi has no event for: budget stops and retry bounds. Nested codemode calls are
-Pi tool events like any other call.
-`text_delta` is the one derived event: Pi batches every change within a commit,
-so an answer's first text arrives inside `message_start` or a block start, and
-its last text may arrive only with `message_end`. The session tracks the
-in-flight answer's text and emits what each event added, so the deltas of an
-answer add up to its committed text. It does not emit run and turn boundaries; a run ends when `prompt()` settles. Pi writes an aborted assistant entry only when a
+`HarnessEvent` is derived from the conversation view (`Conversation.watch()`),
+because Pi has no event stream: a renderer reads state. Pi folds every commit
+made while a listener runs into one view, so the session never infers what
+happened from a transition it might not see. What is finished comes from the
+transcript, by entry ID: each new entry gives `message_end`, a tool result entry
+gives `tool_execution_end`, and entries that left the view's window before the
+listener saw them are read from `Conversation.entries()`. What is in progress
+comes from `pi.live` and is a preview only: the streamed answer, tool `details`,
+retries, and compactions. A tool starts when its slot runs or, at the latest,
+when its result arrives, with the arguments from the assistant entry. A nested
+codemode call exists only in `pi.live` and its slot goes when its caller
+settles, so a listener slower than the call does not see it. The session adds
+what Pi has no state for: budget stops and retry bounds.
+`text_delta` is the text each view added to the in-flight answer, so the deltas
+of an answer add up to its committed text. It does not emit run and turn boundaries; a run ends when `prompt()` settles. Pi writes an aborted assistant entry only when a
 partial was committed, and the model context omits errored and aborted answers,
 so read a run's answer from `lastRunMessages` and its outcome from
 `getLastRunStats().status`. The session keeps no transcript copy: read the model
