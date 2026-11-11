@@ -11,10 +11,10 @@ change in a minor release.
 
 ## [Unreleased]
 
-## [2.0.0-beta.0] - 2026-11-11
+## [1.6.0-beta.0] - 2026-11-11
 
-Back up the state directory (`~/.mikan`) before upgrading: once this version opens it, an earlier
-version cannot.
+This minor release has breaking changes, listed under Changed and Removed. Back up the state
+directory (`~/.mikan`) before upgrading: once this version opens it, an earlier version cannot.
 
 ### Added
 
