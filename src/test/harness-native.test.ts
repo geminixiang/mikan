@@ -438,6 +438,21 @@ test("tool progress reports details and each committed message is presented once
   expect(persisted).toHaveLength(4);
 });
 
+test("model requests carry no provider attribution, because Pi's default names Pi as the calling app", async () => {
+  const { faux, file, wrap } = setup();
+  const store = await openSessionAt(file);
+  const session = wrap(store);
+  const identities: unknown[] = [];
+  faux.setResponses([
+    (_context, options) => {
+      identities.push(options?.identity);
+      return fauxAssistantMessage("answer");
+    },
+  ]);
+  await session.prompt("hello");
+  expect(identities).toEqual([expect.objectContaining({ attribution: null })]);
+});
+
 test("a listener slower than the run still gets every message and tool call, in order", async () => {
   const { faux, file, wrap } = setup();
   const rounds = 60;

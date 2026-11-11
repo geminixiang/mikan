@@ -369,6 +369,7 @@ class OfficeStorage {
     const settings = (): HarnessSettings | undefined => latest()?.settings;
     return {
       models: () => models,
+      identity: { attribution: null },
       registry: this.registry,
       settings: {
         extensions: [],

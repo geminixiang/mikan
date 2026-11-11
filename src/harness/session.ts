@@ -97,10 +97,18 @@ interface FollowedView {
 }
 
 function followFrom(view: ConversationView): FollowedView {
+  const calls = new Map<string, { name: string; args: unknown }>();
+  for (const entry of view.entries) {
+    const message = entry.model?.[0];
+    if (message?.role !== "assistant") continue;
+    for (const part of message.content) {
+      if (part.type === "toolCall") calls.set(part.id, { name: part.name, args: part.arguments });
+    }
+  }
   return {
     lastEntryId: view.entries.at(-1)?.id ?? 0,
     streaming: false,
-    calls: new Map(),
+    calls,
     startedTools: new Set(),
     endedTools: new Set(),
     toolDetails: new Map(),
