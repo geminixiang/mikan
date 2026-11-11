@@ -11,6 +11,61 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [2.0.0-beta.0] - 2026-11-11
+
+Back up the state directory (`~/.mikan`) before upgrading: once this version opens it, an earlier
+version cannot.
+
+### Added
+
+- In a Slack channel, the model can hand long work to a background task, as it already could in a
+  direct message: mikan acknowledges at the top level and works in that message's thread, and other
+  mentions in the channel are answered meanwhile. A mention in the task thread asks for status or,
+  from the requester, steers the task.
+- `read` resizes and converts images it could not return before: those over 2000x2000 pixels or
+  4.5 MB, and formats such as BMP.
+
+### Changed
+
+- Upgraded Pi to 1.5.2, with all Pi packages pinned to that exact version. Pi migrates the state
+  directory's storage on first start, which is what makes the upgrade one-way. A crash now loses up
+  to one second of streamed text instead of 100 ms, and a task cut off five times in a row ends with
+  a failure instead of staying busy.
+- The model browses with the `agent-browser` CLI through `bash`. The `jev_browser` tool is removed,
+  and with it the desktop page's "Take control" and hand-back; the desktop still shows the sandbox.
+- Each firing of a scheduled event on Telegram and Discord runs in a new session, as on Slack.
+  Before, a periodic event carried every earlier run in its context.
+- Codemode and `tool_search` are Pi's. A script survives a restart without rerunning the calls it
+  finished, and `bash` resolves to `{ output, exitCode }` inside a script.
+- Model spend by the `jev` tool counts toward session usage and budgets.
+
+### Removed
+
+- The `subagent` tool, its profiles in `<workspace>/agents/*.md`, and its progress dashboard
+  (ADR 0028). A conversation does the work itself; Slack keeps background tasks for long work.
+- Memory capture, which rewrote `MEMORY.md` after a run (ADR 0029). The agent updates `MEMORY.md`
+  itself during a run. Lines captured earlier stay as they are.
+- The tool loop guard, which appended a notice after repeated identical tool calls.
+- For embedders: `ConversationRuntimeOptions.memoryCapture`, `CreateRunnerOptions.desktop`,
+  `ConversationResponder.respondToolResult`, and the `ChatToolResult` type. Delete the option or
+  method where you pass it.
+
+### Fixed
+
+- `/pi-login` typed as a slash command in a Slack channel opened a link to the channel's shared
+  vault while calling it "your vault". It now refuses and asks for a direct message, as documented.
+- A run that produced messages faster than the platform could show them lost some of them.
+- After a restart, a tool call that was running is shown again with its arguments.
+- Requests to OpenRouter no longer name Pi as the calling app.
+
+## [1.5.2] - 2026-11-11
+
+### Fixed
+
+- A clean install of 1.5.1 failed to start, because its Pi packages were declared as version ranges
+  and a later Pi minor release removed exports mikan imports. The Pi packages are now pinned to the
+  exact versions 1.5.1 was tested with. Nothing else changes.
+
 ## [1.5.1] - 2026-10-14
 
 ### Changed
