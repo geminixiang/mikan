@@ -60,7 +60,7 @@ Token は `xoxb-` で始まります。
 
 1. **Agents & AI Apps** で **Agent or Assistant** を有効化する。
 
-これにより Slack の assistant UI が有効になります。mikan は `assistant:write` を通じて assistant working status を書き込みます。購読する assistant context events は Slack 互換性のために予約されており、別の agent trigger ではありません。
+これにより Slack の assistant UI が有効になります。mikan は `assistant:write` を通じて assistant working status を書き込みます。agent surface のそれ以外（挨拶、suggested prompts、会話タイトル）は使いません。
 
 ## 5. bot events を購読
 
@@ -68,10 +68,7 @@ Token は `xoxb-` で始まります。
 
 次の bot events を購読します。
 
-- `app_home_opened`
 - `app_mention`
-- `assistant_thread_context_changed`
-- `assistant_thread_started`
 - `message.channels`
 - `message.groups`
 - `message.im`

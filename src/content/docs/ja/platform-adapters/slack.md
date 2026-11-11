@@ -22,7 +22,7 @@ Slack adapter は主に次を処理します。
 - `app_mention`
 - `message`
 - Block Kit actions
-- assistant thread / status 関連 API
+- assistant status API
 
 DM は mikan を直接起動します。共有 channel のメッセージには mention または interaction が必要です。channel thread 内の通常の mention なしの human reply は記録されますが、実行を開始しません。thread session isolation によって trigger policy が回避されることはありません。
 

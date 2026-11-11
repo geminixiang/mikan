@@ -10,9 +10,6 @@ export interface SlackWebApi {
   users: Pick<WebClient["users"], "list">;
   reactions: Pick<WebClient["reactions"], "add">;
   files: Pick<WebClient["files"], "uploadV2">;
-  assistant: {
-    threads: Pick<WebClient["assistant"]["threads"], "setSuggestedPrompts" | "setTitle">;
-  };
   apiCall: WebClient["apiCall"];
 }
 
@@ -144,35 +141,6 @@ export interface PlatformSlackOps {
 export interface SlackBlockKitOps {
   postBlocks(args: { text: string; blocks: object[]; threadTs?: string }): Promise<{ ts: string }>;
   updateBlocks(args: { ts: string; text: string; blocks: object[] }): Promise<void>;
-}
-
-export interface AssistantThreadPayload {
-  user_id?: string;
-  channel_id?: string;
-  thread_ts?: string;
-  context?: AgentContext;
-}
-
-export interface AgentContext {
-  channel_id?: string;
-  team_id?: string;
-  enterprise_id?: string | null;
-}
-
-export interface SuggestedPrompt {
-  title: string;
-  message: string;
-}
-
-export interface AssistantSurfaceOps {
-  postInThread(channel: string, threadTs: string, text: string): Promise<string>;
-  setSuggestedPrompts(
-    channel: string,
-    threadTs: string | undefined,
-    prompts: SuggestedPrompt[],
-  ): Promise<void>;
-  setTitle(channel: string, threadTs: string, title: string): Promise<void>;
-  channelName(channelId: string): string | undefined;
 }
 
 export type SlackAppManifest = AppsManifestUpdateArguments["manifest"];

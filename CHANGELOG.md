@@ -11,6 +11,15 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Removed
+
+- The Slack assistant pane: the greeting, the suggested prompts, and the conversation titles mikan
+  set for an app with Slack's agent surface, and the example manifest
+  `deploy/examples/slack-agent-manifest.json`. Mentions, DMs, threads, and the "mikan is working"
+  status are unchanged. mikan's manifest no longer subscribes to `app_home_opened`; an app synced
+  from a configuration token drops it on the next start, and an app configured by hand can drop it
+  and the `assistant_thread_*` and `app_context_changed` events, which mikan now only acknowledges.
+
 ## [1.6.0-beta.0] - 2026-11-11
 
 This minor release has breaking changes, listed under Changed and Removed. Back up the state

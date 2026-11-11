@@ -27,51 +27,10 @@ mikan rotates the token on every start and keeps the newest one in
 token to one mikan install. When a release adds a scope, mikan DMs the person who created the
 token a reinstall link; the bot keeps running with the scopes it has until then. The token
 belongs to that person: if they leave the workspace, store a token from another collaborator.
-mikan applies the classic manifest below, so do not store a token for an app built from the
-agent manifest.
 
-You can also create the app from an example manifest. There are two, because
-Slack offers two surfaces and mikan serves both:
-
-| Manifest                                    | Surface        | Use when                                                                                                                          |
-| ------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `deploy/examples/slack-app-manifest.json`   | Classic app    | People talk to mikan by @mentioning it in channels and by DM.                                                                     |
-| `deploy/examples/slack-agent-manifest.json` | Agent (AI app) | You also want mikan in the **Agents & AI apps** sidebar, with its own pane, greeting, suggested prompts, and a conversation list. |
-
-The agent manifest is the classic one plus three things: the `agent_view`
-feature, the `assistant:write` scope, and the `assistant_thread_started` /
-`assistant_thread_context_changed` events. Everything else — slash commands,
-Socket Mode, message events — is identical, and the same mikan process serves
-either. Start from the classic one if you are not sure; adding the agent
-surface later is an edit to the same app.
-
-> **The agent surface needs a paid Slack plan.** Slack's own wording is that
-> these features "require a paid plan, despite being visible in the app
-> settings on any plan" — so on a free workspace every toggle turns on, the
-> events save, the app reinstalls, and then nothing is ever delivered. There is
-> no error to find; a listener that never fires is the only symptom. If you are
-> only developing, the Slack Developer Program provisions a fully-featured
-> sandbox for free, which is the cheaper answer than upgrading a real
-> workspace. The classic app surface — mentions, DMs, slash commands, Block Kit
-> — is unaffected and works on any plan.
->
-> Which is to say: mikan's side of the agent surface is written, tested, and
-> waiting — the greeting, the suggested prompts, the per-thread sessions, the
-> conversation titles — and it has never once run against a real paid
-> workspace, because the author's is free. It has been verified the only way a
-> free plan allows: by proving Slack sends nothing at all. If you are on a paid
-> plan and want mikan as your team's agent, open an issue. Getting that surface
-> exercised against a workspace that actually delivers the events would be a
-> good day, and the support will be enthusiastic.
-
-> `agent_view` and `assistant_view` are two surfaces, not two spellings of
-> one. The events and the `assistant.threads.*` methods kept their names, but
-> **which events mean "someone opened a conversation" changed**: `agent_view`
-> uses `app_home_opened` (with `tab: "messages"`) and `app_context_changed`,
-> while `assistant_view` uses `assistant_thread_started` and
-> `assistant_thread_context_changed`. mikan handles both, so either manifest
-> works. New apps can only choose `agent_view`; `assistant_view` still works
-> but Slack has said it will eventually be deprecated.
+You can also create the app from the example manifest, `deploy/examples/slack-app-manifest.json`,
+which equals the manifest mikan applies. People talk to mikan by @mentioning it in channels and by
+DM.
 
 ## 1. Create a Slack app
 
@@ -94,8 +53,8 @@ The token starts with `xapp-`.
 Go to **OAuth & Permissions → Scopes → Bot Token Scopes** and add:
 
 - `app_mentions:read`
-- `assistant:write` (agent surface only — the `assistant.threads.*` methods
-  that set the pane's status, suggested prompts, and conversation title)
+- `assistant:write` (optional: lets mikan show a working status under the message it is
+  answering; see step 4)
 - `channels:history`
 - `channels:read`
 - `chat:write`
@@ -116,20 +75,14 @@ Then install or reinstall the app to your workspace and store the bot token as `
 
 The token starts with `xoxb-`.
 
-## 4. Enable Agent mode
+## 4. Enable Agent mode (optional)
 
 1. Enable **Agent or Assistant** under **Agents & AI Apps**.
 
-This is what puts mikan in the **Agents & AI apps** sidebar with its own pane.
-Skip it for a classic app.
-
-In the pane, mikan greets the person when they open a conversation, offers
-suggested prompts shaped by the channel they are viewing, shows a working
-status while it thinks, and names each conversation from its first message so
-the sidebar list is navigable. Each conversation there is a thread, and mikan
-gives every thread its own session — the sidebar is a list of separate
-conversations, not one transcript, and continuity across them comes from
-memory rather than from a shared session.
+With it and the `assistant:write` scope, Slack shows "mikan is working" while a run is in progress.
+Skip it and mikan works the same without that status. mikan does not use the rest of the agent
+surface: it sends no greeting, suggested prompts, or conversation titles, and it acknowledges the
+surface's events without acting on them.
 
 ## 5. Subscribe to bot events
 
@@ -137,21 +90,10 @@ Go to **Features → Event Subscriptions** and enable events.
 
 Subscribe to these bot events:
 
-- `app_home_opened`
 - `app_mention`
 - `message.channels`
 - `message.groups`
 - `message.im`
-
-Plus, for the agent surface, the events that say someone opened the pane and
-where they are looking. Subscribe the pair that matches your manifest key —
-subscribing all four is harmless and covers either:
-
-- `agent_view`: `app_context_changed` (and `app_home_opened`, already above)
-- `assistant_view`: `assistant_thread_started`, `assistant_thread_context_changed`
-
-Without them the pane has no suggested prompts and its conversations stay
-untitled in the sidebar.
 
 ## 6. Enable interactivity
 

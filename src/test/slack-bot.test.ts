@@ -93,12 +93,6 @@ function createFakeWebApi(): SlackWebApi {
     users: { list: vi.fn(async () => ({ ok: true, members: [] })) },
     reactions: { add: vi.fn(async () => ({ ok: true })) },
     files: { uploadV2: vi.fn(async () => ({ ok: true, files: [] })) },
-    assistant: {
-      threads: {
-        setSuggestedPrompts: vi.fn(async () => ({ ok: true })),
-        setTitle: vi.fn(async () => ({ ok: true })),
-      },
-    },
     apiCall: vi.fn(async () => ({ ok: true })),
   };
 }
@@ -739,30 +733,33 @@ describe("SlackMessagingBot queues follow-up messages", () => {
     expect("views" in web).toBe(false);
   });
 
-  test("stops setting suggested prompts once Slack says the app is not an agent app", async () => {
-    const handler = makeHandler();
-    const { socket, web } = await startSlackHarness({ handler, workspace });
-    vi.mocked(web.assistant.threads.setSuggestedPrompts).mockRejectedValue(
-      Object.assign(new Error("An API error occurred: not_agent_app"), {
-        data: { ok: false, error: "not_agent_app" },
-      }),
-    );
-    const open = () =>
-      socket.deliver("app_home_opened", {
-        event: { user: "U123", tab: "messages", channel: "D123" },
-        ack: makeAck(),
+  test.each([
+    "app_home_opened",
+    "app_context_changed",
+    "assistant_thread_started",
+    "assistant_thread_context_changed",
+  ])(
+    "%s from an app still subscribed to it is acknowledged and starts nothing, so Slack does not redeliver it",
+    async (event) => {
+      const handler = makeHandler();
+      const { socket, web } = await startSlackHarness({ handler, workspace });
+      const ack = makeAck();
+
+      await socket.deliver(event, {
+        event: {
+          user: "U123",
+          tab: "messages",
+          channel: "D123",
+          assistant_thread: { user_id: "U123", channel_id: "D123", thread_ts: "100.1" },
+        },
+        ack,
       });
 
-    await open();
-    await vi.waitFor(() =>
-      expect(web.assistant.threads.setSuggestedPrompts).toHaveBeenCalledTimes(1),
-    );
-    await open();
-    await open();
-    await new Promise((resolve) => setTimeout(resolve, 20));
-
-    expect(web.assistant.threads.setSuggestedPrompts).toHaveBeenCalledTimes(1);
-  });
+      expect(ack).toHaveBeenCalled();
+      expect(web.chat.postMessage).not.toHaveBeenCalled();
+      expect(handler.handleEvent).not.toHaveBeenCalled();
+    },
+  );
 
   test("a message Slack redelivers after a lost ack runs once", async () => {
     const handler = makeHandler();

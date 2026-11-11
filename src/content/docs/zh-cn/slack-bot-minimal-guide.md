@@ -60,7 +60,7 @@ Token 以 `xoxb-` 开头。
 
 1. 在 **Agents & AI Apps** 下启用 **Agent or Assistant**。
 
-这会启用 Slack 的 assistant UI。mikan 通过 `assistant:write` 写入 assistant 工作状态；订阅的 assistant context 事件仅用于 Slack 兼容性，不会单独触发代理。
+这会启用 Slack 的 assistant UI。mikan 通过 `assistant:write` 写入 assistant 工作状态；agent surface 的其余部分（问候语、suggested prompts、对话标题）不再使用。
 
 ## 5. 订阅 bot events
 
@@ -68,10 +68,7 @@ Token 以 `xoxb-` 开头。
 
 订阅以下 bot events：
 
-- `app_home_opened`
 - `app_mention`
-- `assistant_thread_context_changed`
-- `assistant_thread_started`
 - `message.channels`
 - `message.groups`
 - `message.im`

@@ -22,7 +22,7 @@ Slack adapter 主要處理：
 - `app_mention`
 - `message`
 - Block Kit actions
-- assistant thread / status APIs
+- assistant status API
 
 DM 會直接觸發 mikan。共享頻道訊息需要 mention 或互動。頻道 thread 中未 mention 的一般人類回覆會被記錄，但不會觸發執行；thread session 隔離不會繞過 trigger policy。
 

@@ -47,10 +47,6 @@ import type {
   SlackSocketEventArgs,
   SlackUser,
   SlackWebApi,
-  AgentContext,
-  AssistantSurfaceOps,
-  AssistantThreadPayload,
-  SuggestedPrompt,
 } from "./types.js";
 import { readTextFileNoFollowIfExists } from "../../file-guards.js";
 import { formatContinuingRun } from "../messages.js";
@@ -64,13 +60,6 @@ import {
 } from "../shared.js";
 import { matchMagicWord, processMessageIntake } from "../intake.js";
 import { readPlatformChannelKind, recordPlatformChannelKind } from "../../office/projection.js";
-import {
-  AssistantThreadRegistry,
-  handleAgentContextChanged,
-  handleAgentDmOpened,
-  handleAssistantThreadStarted,
-  titleAssistantThread,
-} from "./assistant.js";
 import { createSlackAdapters } from "./context.js";
 import { registerThreadSession } from "../../sessions/chat-history-sync.js";
 import {
@@ -87,9 +76,15 @@ import { querySlackTasks, formatTaskStatus, isTaskStatusQuestion } from "./task-
 import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
 import { buildTaskIntentState, classifyTaskIntent, type TaskIntent } from "./task-intent.js";
 import { StreamStartLimiter } from "./stream-limits.js";
-import { errorMessage, isRecord } from "../../unknown-values.js";
+import { errorMessage } from "../../unknown-values.js";
 
 const SLACK_EVENT_ANCHOR_TEXT = "Working on it...";
+const UNUSED_AGENT_EVENTS = [
+  "app_home_opened",
+  "app_context_changed",
+  "assistant_thread_started",
+  "assistant_thread_context_changed",
+];
 
 interface SlackIncomingMessage {
   text?: string;
@@ -143,11 +138,6 @@ export function chunkStreamText(text: string, limit = MAX_STREAM_TEXT_CHARS): st
     chunks.push(text.slice(index, index + limit));
   }
   return chunks;
-}
-
-function slackErrorCode(error: unknown): string | undefined {
-  if (!isRecord(error) || !isRecord(error.data)) return undefined;
-  return typeof error.data.error === "string" ? error.data.error : undefined;
 }
 
 function slackIsRateLimited(err: Error): boolean {
@@ -270,13 +260,11 @@ export class SlackMessagingBot implements MessagingBot {
 
   private users = new Map<string, SlackUser>();
   private channels = new Map<string, SlackChannel>();
-  private assistantThreads = new AssistantThreadRegistry();
   private streamStarts = new StreamStartLimiter();
   private stopped = false;
   private readonly queues = new MessagingQueueMap("Slack", () => this.stopped);
   private intake = new MessagingIntakeTracker("Slack");
   private readonly recentMessageKeys = new Set<string>();
-  private agentSurfaceUnavailable = false;
   private eventScheduler: EventScheduler | null = null;
 
   private office(channelId: string): Office {
@@ -652,79 +640,6 @@ export class SlackMessagingBot implements MessagingBot {
       await update;
     } finally {
       if (this.statusUpdates.get(key) === update) this.statusUpdates.delete(key);
-    }
-  }
-
-  async setAssistantSuggestedPrompts(
-    channel: string,
-    threadTs: string | undefined,
-    prompts: SuggestedPrompt[],
-  ): Promise<void> {
-    if (this.agentSurfaceUnavailable) return;
-    try {
-      await slackRetry(async () => {
-        await this.webClient.assistant.threads.setSuggestedPrompts({
-          channel_id: channel,
-          thread_ts: threadTs || undefined,
-          prompts,
-        });
-      });
-    } catch (error) {
-      if (slackErrorCode(error) !== "not_agent_app") throw error;
-      this.agentSurfaceUnavailable = true;
-      log.logInfo("Slack app is not an agent app; suggested prompts are disabled");
-    }
-  }
-
-  async setAssistantTitle(channel: string, threadTs: string, title: string): Promise<void> {
-    return slackRetry(async () => {
-      await this.webClient.assistant.threads.setTitle({
-        channel_id: channel,
-        thread_ts: threadTs,
-        title,
-      });
-    });
-  }
-
-  private assistantOps(): AssistantSurfaceOps {
-    return {
-      postInThread: (channel, threadTs, text) => this.postInThread(channel, threadTs, text),
-      setSuggestedPrompts: (channel, threadTs, prompts) =>
-        this.setAssistantSuggestedPrompts(channel, threadTs, prompts),
-      setTitle: (channel, threadTs, title) => this.setAssistantTitle(channel, threadTs, title),
-      channelName: (channelId) => this.channels.get(channelId)?.name,
-    };
-  }
-
-  private handleAssistantThreadStarted({ event, ack }: SlackSocketEventArgs): void {
-    ack();
-    const payload = event as { assistant_thread?: AssistantThreadPayload };
-    if (!payload.assistant_thread) return;
-    void handleAssistantThreadStarted(
-      this.assistantOps(),
-      this.assistantThreads,
-      payload.assistant_thread,
-    );
-  }
-
-  private handleAgentContextChangedEvent({ event, ack }: SlackSocketEventArgs): void {
-    ack();
-    const payload = event as {
-      assistant_thread?: AssistantThreadPayload;
-      channel_id?: string;
-      channel?: string;
-      context?: AgentContext;
-    };
-    if (payload.assistant_thread) {
-      handleAgentContextChanged(this.assistantThreads, payload.assistant_thread);
-      return;
-    }
-    const channelId = payload.channel_id ?? payload.channel;
-    if (channelId) {
-      handleAgentContextChanged(this.assistantThreads, {
-        channel_id: channelId,
-        context: payload.context,
-      });
     }
   }
 
@@ -1246,12 +1161,7 @@ export class SlackMessagingBot implements MessagingBot {
     on("app_mention", (payload) => this.handleAppMention(payload));
     on("message", (payload) => this.handleMessageEvent(payload));
     on("slash_commands", (payload) => this.handleSlashCommand(payload));
-    on("app_home_opened", (payload) => this.handleAppHomeOpened(payload));
-    on("assistant_thread_started", (payload) => this.handleAssistantThreadStarted(payload));
-    on("assistant_thread_context_changed", (payload) =>
-      this.handleAgentContextChangedEvent(payload),
-    );
-    on("app_context_changed", (payload) => this.handleAgentContextChangedEvent(payload));
+    for (const event of UNUSED_AGENT_EVENTS) on(event, ({ ack }) => void ack());
     const blockAction = ({ body, ack }: SlackSocketEventArgs) =>
       this.handleBlockAction({ body: body as SlackBlockActionBody, ack });
     on("block_actions", blockAction);
@@ -1504,16 +1414,6 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    if (isDM && e.thread_ts && e.text) {
-      void titleAssistantThread(
-        this.assistantOps(),
-        this.assistantThreads,
-        e.channel,
-        e.thread_ts,
-        this.stripOwnMention(e.text),
-      );
-    }
-
     const slackEvent = createConversationEvent({
       platform: "slack",
       conversationId: e.channel,
@@ -1582,13 +1482,6 @@ export class SlackMessagingBot implements MessagingBot {
     } catch (err) {
       log.logWarning("Slack slash command error", errorMessage(err));
     }
-  }
-
-  private handleAppHomeOpened({ event, ack }: SlackSocketEventArgs): void {
-    const e = event as { user: string; tab: string; channel?: string; context?: AgentContext };
-    ack();
-    if (e.tab !== "messages" || !e.channel) return;
-    void handleAgentDmOpened(this.assistantOps(), this.assistantThreads, e.channel, e.context);
   }
 
   private async handleBlockAction({

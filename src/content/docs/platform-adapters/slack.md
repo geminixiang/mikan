@@ -22,7 +22,7 @@ The Slack adapter mainly handles:
 - `app_mention`
 - `message`
 - Block Kit actions
-- assistant thread / status APIs
+- the assistant status API
 
 DMs trigger mikan directly. Shared-channel messages normally require a mention or interaction. `/pi-auto-reply` sets mention-free behavior for one shared conversation: `off` (default) requires explicit addressing, `on` treats every human message as addressed, and `jev` asks the Jev evaluation model per message, top-level or thread reply, using the surrounding channel or thread messages as context. Unaddressed thread replies are logged without triggering a run unless the mode admits them.
 

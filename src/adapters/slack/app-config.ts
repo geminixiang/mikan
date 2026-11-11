@@ -35,13 +35,7 @@ const BOT_SCOPES = [
   "users:read",
 ] as const;
 
-const BOT_EVENTS = [
-  "app_home_opened",
-  "app_mention",
-  "message.channels",
-  "message.groups",
-  "message.im",
-] as const;
+const BOT_EVENTS = ["app_mention", "message.channels", "message.groups", "message.im"] as const;
 
 const SlackAppCustomizationSchema = Type.Object(
   {

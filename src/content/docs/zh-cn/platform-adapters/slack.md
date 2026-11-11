@@ -22,7 +22,7 @@ Slack 适配器主要处理：
 - `app_mention`
 - `message`
 - Block Kit 操作
-- assistant 话题/状态 API
+- assistant 状态 API
 
 DM 会直接触发 mikan。共享频道消息需要提及、交互或匹配的自动回复策略。频道话题中普通的未提及人工回复会被记录，但不会触发运行；话题会话隔离不会绕过触发策略。
 
