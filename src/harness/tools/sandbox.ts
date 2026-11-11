@@ -76,9 +76,7 @@ export function createSandboxTool(controller: SandboxToolController): {
       }
 
       const status = controller.resourceController.getLimitStatus(containerKey);
-      return textResult(
-        `Sandbox limits for ${containerKey}: ${formatLimits(status.limits)}${status.boosted ? " (boosted)" : ""}.`,
-      );
+      return textResult(`Sandbox limits for ${containerKey}: ${formatLimits(status.limits)}.`);
     },
   };
 

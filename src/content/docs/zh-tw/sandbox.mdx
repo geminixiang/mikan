@@ -46,7 +46,7 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 | `MEMORY.md`、`skills/`——共用知識           | 可讀寫        | 唯讀           |
 | `public/<office-key>/`——所有 public office | 唯讀          | 唯讀           |
 
-沒有任何佈局會掛載 workspace root。admin portal 或 `/pi-sandbox visibility private` 可把公開頻道縮為 private；不能放寬超過 Slack 的設定。只有 `oci:*` 會強制執行 visibility；其他模式回報 `managedProjection: false`，private office 在這些模式下會照常服務並記錄一次警告。欄位語意與已退役的 door policy 設定見 [設定](/zh-tw/configuration/)。
+沒有任何佈局會掛載 workspace root。admin portal 可把公開頻道縮為 private；不能放寬超過 Slack 的設定。只有 `oci:*` 會強制執行 visibility；其他模式回報 `managedProjection: false`，private office 在這些模式下會照常服務並記錄一次警告。欄位語意與已退役的 door policy 設定見 [設定](/zh-tw/configuration/)。
 
 <Aside type="caution" title="visibility 不是額外的 sandbox">
   Visibility 決定哪些宿主機目錄會被投影進 runtime，它不是執行邊界：不論 office 的 visibility
@@ -87,7 +87,6 @@ runtime 能看到 workspace 的哪些部分，跟隨該 office 的 **visibility*
 | 強制執行 office visibility | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | idle auto-stop / recreate | 不適用 | ❌ | ✅ | ✅ | ❌ | ❌ |
 | CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | agent `sandbox` tool 設定 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | 推薦程度 | 本機開發 | legacy / 相容 | 主線 | 預覽 | alpha | 施工中 |
 

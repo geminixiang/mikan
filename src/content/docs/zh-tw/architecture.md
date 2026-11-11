@@ -204,7 +204,7 @@ state directory 是 `~/.mikan`。它必須位於 sandbox 可見的 workspace 路
 | `MEMORY.md`、`skills/`——共用知識              | 讀寫          | 唯讀           |
 | `public/<officeKey>/`——其他每個 public office | 唯讀          | 唯讀           |
 
-沒有任何佈局會掛載 workspace root，也沒有任何 office 能觸及另一個 private office。System prompt 的頻道表只會列出該 office 自己以及它所掛載的 public office。Visibility 是資料存取邊界，它絕不會改變執行環境或網路隔離。Admin 與 `/pi-sandbox visibility private` 可以把公開頻道縮為 private；沒有任何方式能放寬超過平台的設定——見[設定](/zh-tw/configuration/)。
+沒有任何佈局會掛載 workspace root，也沒有任何 office 能觸及另一個 private office。System prompt 的頻道表只會列出該 office 自己以及它所掛載的 public office。Visibility 是資料存取邊界，它絕不會改變執行環境或網路隔離。Admin portal 可以把公開頻道縮為 private；沒有任何方式能放寬超過平台的設定——見[設定](/zh-tw/configuration/)。
 
 ## 5. Login / Vault / Sandbox 關係
 

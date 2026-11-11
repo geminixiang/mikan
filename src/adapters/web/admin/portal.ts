@@ -587,8 +587,6 @@ function serveGlobalSettings(res: ServerResponse, workspace: Workspace): void {
       thinkingLevel: config.thinkingLevel,
       sandboxCpus: config.sandbox?.cpus ?? null,
       sandboxMemory: config.sandbox?.memory ?? null,
-      sandboxBoostCpus: config.sandbox?.boost?.cpus ?? null,
-      sandboxBoostMemory: config.sandbox?.boost?.memory ?? null,
       defaultSharedVault: config.sandbox?.defaultSharedVault ?? null,
       slack: {
         replyMode: config.slack?.replyMode ?? "top-level",
@@ -841,19 +839,9 @@ function serveGlobalSandboxUpdate(
 ): void {
   const cpus = typeof body.cpus === "string" ? body.cpus.trim() : "";
   const memory = typeof body.memory === "string" ? body.memory.trim() : "";
-  const boostCpus = typeof body.boostCpus === "string" ? body.boostCpus.trim() : "";
-  const boostMemory = typeof body.boostMemory === "string" ? body.boostMemory.trim() : "";
   const update: SandboxSettings = {
     ...(cpus ? { cpus } : {}),
     ...(memory ? { memory } : {}),
-    ...(boostCpus || boostMemory
-      ? {
-          boost: {
-            ...(boostCpus ? { cpus: boostCpus } : {}),
-            ...(boostMemory ? { memory: boostMemory } : {}),
-          },
-        }
-      : {}),
   };
 
   if (Object.keys(update).length === 0) {

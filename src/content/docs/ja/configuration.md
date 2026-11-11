@@ -48,10 +48,6 @@ conversation を生のプラットフォーム id 配下に保存していたリ
   "sandbox": {
     "cpus": "0.5",
     "memory": "1g",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -66,14 +62,12 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 | `llm.provider`               | `anthropic`             | メイン AI provider                                                                                                |
 | `llm.model`                  | `claude-sonnet-4-6`     | メイン model 名                                                                                                   |
 | `llm.thinkingLevel`          | `off`                   | `off`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max` のいずれか                                              |
-| `sandbox.boost.cpus`         | `2`                     | `/pi-sandbox boost` が適用する一時的な CPU 制限                                                                   |
-| `sandbox.boost.memory`       | `4g`                    | `/pi-sandbox boost` が適用する一時的なメモリ制限                                                                  |
 | `office.visibility`          | 未設定                  | conversation 限定の上書き。`private` は Slack public channel を private office に狭めます。広げることはできません |
 | `sandbox.defaultSharedVault` | 空                      | 対象となる membership-trust image conversations にコピーされる共有 vault                                          |
 | `github.*`                   | GitHub を選ぶと `repos` | GitHub adapter が応答する場所とトリガーできる人。[GitHub](/ja/platform-adapters/github/#設定) を参照              |
 | `slack.replyMode`            | `top-level`             | Slack 応答モード：`top-level` または `thread`                                                                     |
 
-`/pi-model` は conversation の部分的な上書きを書き込み、`/pi-sandbox visibility <private|default>` は conversation の `office.visibility` の上書きを書き込みます。admin portal にも同じスイッチがあります。
+`/pi-model` は conversation の部分的な上書きを書き込み、admin portal の office ごとのスイッチは conversation の `office.visibility` の上書きを書き込みます。
 
 Slack auto-reply は `/pi-auto-reply on|off|jev` で変更し、conversation office の `auto-reply`（on）または `auto-reply.jev`（jev）marker file に保存します。`off` は両方を削除します。Marker の内容は無視されます。`on` は channel 内の mikan 宛てでない human message すべてに応答し、`jev` は message ごとに mikan 宛てかどうかを Jev が判断します。廃止済みの `autoReply` と `llm.autoReply` JSON 設定は無視され、daemon は起動時にそれらを表示するので削除できます。
 

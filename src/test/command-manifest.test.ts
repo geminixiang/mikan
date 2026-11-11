@@ -57,7 +57,6 @@ describe("command manifest", () => {
         description: "Open this conversation's desktop to watch or use its sandbox",
       },
       { command: "model", description: "Switch this conversation's LLM model" },
-      { command: "sandbox", description: "Show or boost sandbox limits" },
       { command: "stop", description: "Stop ongoing conversation" },
       { command: "new", description: "Reset conversation history and start fresh" },
       { command: "compact", description: "Summarize older messages to free up context" },

@@ -35,10 +35,6 @@ const ONBOARD_SETTINGS: SettingsFileConfig = {
   sandbox: {
     cpus: "0.5",
     memory: "1g",
-    boost: {
-      cpus: "2",
-      memory: "4g",
-    },
     defaultSharedVault: "",
   },
 };
@@ -91,12 +87,6 @@ const SettingsFileSchema = Type.Object({
     Type.Object({
       cpus: Type.Optional(Type.String()),
       memory: Type.Optional(Type.String()),
-      boost: Type.Optional(
-        Type.Object({
-          cpus: Type.Optional(Type.String()),
-          memory: Type.Optional(Type.String()),
-        }),
-      ),
       defaultSharedVault: Type.Optional(Type.String()),
     }),
   ),
@@ -146,7 +136,6 @@ function normalizeSandboxSettings(sandbox: SandboxFileSettings): SandboxSettings
   return {
     ...(sandbox.cpus !== undefined ? { cpus: sandbox.cpus } : {}),
     ...(sandbox.memory !== undefined ? { memory: sandbox.memory } : {}),
-    ...(sandbox.boost !== undefined ? { boost: sandbox.boost } : {}),
     ...(defaultSharedVault ? { defaultSharedVault } : {}),
   };
 }
@@ -157,11 +146,7 @@ function mergeSandboxSettings(
 ): SandboxSettings | undefined {
   if (!base) return override;
   if (!override) return base;
-  return {
-    ...base,
-    ...override,
-    boost: base.boost || override.boost ? { ...base.boost, ...override.boost } : undefined,
-  };
+  return { ...base, ...override };
 }
 
 function unusedKeys(value: unknown, used: unknown, prefix: string): string[] {

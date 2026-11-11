@@ -41,7 +41,7 @@ description: mikan 管理、登录和会话 portal 使用的短期 capability to
 - 删除所选对话的事件
 - 为目标对话生成会话视图链接或登录/vault 链接
 
-办公室 visibility 也可以在聊天中用 `/pi-sandbox visibility private` 收窄，但绝不能由代理自己设置：对话设置之所以位于仅主机的 state dir 下，正是因为对话目录会以可读写方式 bind-mount 进沙箱，而 mount 内部的设置文件只会被迁移一次，之后再也不会被读取。
+办公室 visibility 只能在这里收窄，不能在聊天中设置，也绝不能由代理自己设置：对话设置之所以位于仅主机的 state dir 下，正是因为对话目录会以可读写方式 bind-mount 进沙箱，而 mount 内部的设置文件只会被迁移一次，之后再也不会被读取。
 
 管理 portal 不会直接写入机密值。即使它生成登录链接，真正的机密写入仍通过登录 / vault portal 的一次性 token 流程进行。
 

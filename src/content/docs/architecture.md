@@ -204,7 +204,7 @@ What an office's sandbox runtime actually sees is the _workspace projection_, re
 | `MEMORY.md`, `skills/` — shared knowledge         | read-write    | read-only      |
 | `public/<officeKey>/` — every other public office | read-only     | read-only      |
 
-Nothing mounts the workspace root, and no office reaches another private office. The system prompt's channel table names only the office itself and the public offices it mounts. Visibility is a data-access boundary; it never changes execution or network isolation. Admin and `/pi-sandbox visibility private` can narrow a public channel to private; nothing can widen beyond the platform — see [Configuration](/configuration/).
+Nothing mounts the workspace root, and no office reaches another private office. The system prompt's channel table names only the office itself and the public offices it mounts. Visibility is a data-access boundary; it never changes execution or network isolation. The Admin portal can narrow a public channel to private; nothing can widen beyond the platform — see [Configuration](/configuration/).
 
 ## 5. Login / Vault / Sandbox relationship
 

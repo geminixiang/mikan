@@ -1,29 +1,22 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import type { MessagingBot, ConversationResponder, SandboxResourceController } from "../types.js";
+import type { MessagingBot, ConversationResponder } from "../types.js";
 import { MikanModels } from "../harness/models.js";
 import { AdminCommandHandler } from "../adapters/commands/admin.js";
 import { AutoReplyCommandHandler } from "../adapters/commands/auto-reply.js";
-import {
-  slackConversationAutoReplyMode,
-  conversationSettingsPath,
-  createGlobalSettingsFile,
-  loadOfficeVisibilityOverride,
-} from "../settings/index.js";
+import { slackConversationAutoReplyMode } from "../settings/index.js";
 import { dispatchCommand } from "../adapters/commands/registry.js";
 import { COMMAND_MANIFEST } from "../adapters/commands/manifest.js";
 import { LoginCommandHandler, parseLoginCommand } from "../adapters/commands/login.js";
 import { ModelCommandHandler } from "../adapters/commands/model.js";
 import { NewCommandHandler } from "../adapters/commands/new.js";
-import { SandboxCommandHandler } from "../adapters/commands/sandbox.js";
 import { SessionViewCommandHandler } from "../adapters/commands/session-view.js";
 import { DesktopCommandHandler } from "../adapters/commands/desktop.js";
 import { OfficeDesktop } from "../sandbox/desktop.js";
 import { createDesktopOpener } from "../harness/desktop.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import { recordPlatformChannelKind } from "../office/projection.js";
 import { runtimeResourceKey } from "../sandbox/identity.js";
 import type {
   CommandContext,
@@ -134,19 +127,6 @@ function fakeProvisioner() {
   const provisioner = new DockerContainerManager("ubuntu:24.04");
   const remove = vi.spyOn(provisioner, "remove").mockResolvedValue();
   return { provisioner, remove };
-}
-
-function fakeResourceController(
-  overrides: Partial<SandboxResourceController> = {},
-): SandboxResourceController {
-  return {
-    boost: vi.fn(async () => ({ limits: undefined, boosted: true })),
-    setLimits: vi.fn(async () => ({ limits: undefined, boosted: false })),
-    getLimitStatus: () => ({ limits: undefined, boosted: false }),
-    getDefaultLimits: () => undefined,
-    getBoostLimits: () => undefined,
-    ...overrides,
-  };
 }
 
 function testWorkspace(root: string) {
@@ -605,163 +585,6 @@ describe("LoginCommandHandler", () => {
       },
     ]);
     expect(vaultManager.entries.size).toBe(0);
-  });
-});
-
-describe("SandboxCommandHandler", () => {
-  const handler = new SandboxCommandHandler();
-  let workingDir: string;
-  let sandboxStateDir: string;
-
-  beforeEach(() => {
-    workingDir = join(
-      tmpdir(),
-      `cmd-sandbox-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    );
-    mkdirSync(workingDir, { recursive: true });
-    sandboxStateDir = join(workingDir, "state");
-    mkdirSync(sandboxStateDir, { recursive: true });
-    createGlobalSettingsFile(sandboxStateDir);
-  });
-
-  afterEach(() => {
-    rmSync(workingDir, { recursive: true, force: true });
-  });
-
-  test("reports the current office policy", async () => {
-    const ctx = buildContext({
-      commandText: "/pi-sandbox",
-      conversationId: "C123",
-      services: {
-        workspace: testWorkspace(workingDir),
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
-        resourceController: fakeResourceController({
-          getLimitStatus: () => ({ limits: { cpus: "0.5", memory: "1g" }, boosted: false }),
-          getDefaultLimits: () => ({ cpus: "0.5", memory: "1g" }),
-          getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
-        }),
-      },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain(
-      "Office visibility: private（Slack 尚未回報頻道類型，預設 private）",
-    );
-  });
-
-  test.each(["private", "full"])("does not expose bare %s mutation through chat", async (mode) => {
-    const ctx = buildContext({
-      commandText: `/pi-sandbox ${mode}`,
-      conversationId: "C123",
-      services: {
-        workspace: testWorkspace(workingDir),
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
-        resourceController: fakeResourceController(),
-      },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(existsSync(conversationSettingsPath(doorOffice()))).toBe(true);
-    expect(JSON.parse(readFileSync(conversationSettingsPath(doorOffice()), "utf-8"))).toEqual({});
-    expect(ctx.responder.responses[0]).toContain("Office visibility: private");
-  });
-
-  function doorContext(commandText: string, refreshResult = true) {
-    return buildContext({
-      commandText,
-      conversationId: "C123",
-      services: {
-        workspace: testWorkspace(workingDir),
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
-        runtime: {
-          handleNewCommand: vi.fn(),
-          handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
-          refreshConversation: vi.fn().mockReturnValue(refreshResult),
-        },
-        resourceController: fakeResourceController(),
-      },
-    });
-  }
-
-  function doorOffice() {
-    return testWorkspace(workingDir).office(createOfficeAddress("slack", "C123"));
-  }
-
-  function doorSettingsFile(): string {
-    return conversationSettingsPath(doorOffice());
-  }
-
-  function doorOverride() {
-    return loadOfficeVisibilityOverride(doorOffice());
-  }
-
-  test("visibility without an argument shows usage and the current visibility", async () => {
-    recordPlatformChannelKind(doorOffice(), "public_channel");
-    const ctx = doorContext("/pi-sandbox visibility");
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("Current: public（依平台頻道類型）");
-    expect(ctx.responder.responses[0]).toContain("visibility <private|default>");
-    expect(doorOverride()).toBeNull();
-  });
-
-  test("visibility private narrows a public channel, clears the runner, and warns about the rebuild", async () => {
-    recordPlatformChannelKind(doorOffice(), "public_channel");
-    const ctx = doorContext("/pi-sandbox visibility private");
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    const written = JSON.parse(readFileSync(doorSettingsFile(), "utf-8"));
-    expect(written.office).toEqual({ visibility: "private" });
-    expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
-      createOfficeAddress("slack", "C123"),
-    );
-    expect(ctx.responder.responses[0]).toContain("Current: private（admin 覆寫）");
-    expect(ctx.responder.responses[0]).toContain("重建 sandbox 容器");
-  });
-
-  test("visibility default clears an existing override", async () => {
-    recordPlatformChannelKind(doorOffice(), "public_channel");
-    expect(await handler.tryHandle(doorContext("/pi-sandbox visibility private"))).toBe(true);
-    const clearCtx = doorContext("/pi-sandbox visibility default");
-    expect(await handler.tryHandle(clearCtx)).toBe(true);
-    expect(doorOverride()).toBeNull();
-    expect(clearCtx.responder.responses[0]).toContain("Current: public（依平台頻道類型）");
-  });
-
-  test("visibility refuses while the conversation is busy", async () => {
-    const ctx = doorContext("/pi-sandbox visibility private", false);
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("工作正在執行");
-    expect(doorOverride()).toBeNull();
-  });
-
-  test("visibility rejects unknown values with the accepted ones", async () => {
-    const ctx = doorContext("/pi-sandbox visibility banana");
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(ctx.responder.responses[0]).toContain("未知的值");
-    expect(ctx.responder.responses[0]).toContain("`private`、`default`");
-    expect(doorOverride()).toBeNull();
-  });
-
-  test("boosts an image-mode conversation", async () => {
-    const boost = vi.fn().mockResolvedValue({
-      limits: { cpus: "2", memory: "4g" },
-      boosted: true,
-    });
-    const ctx = buildContext({
-      commandText: "/pi-sandbox boost",
-      conversationId: "C123",
-      services: {
-        workspace: testWorkspace(workingDir),
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
-        resourceController: fakeResourceController({
-          boost,
-          getBoostLimits: () => ({ cpus: "2", memory: "4g" }),
-        }),
-      },
-    });
-
-    expect(await handler.tryHandle(ctx)).toBe(true);
-    expect(boost).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
-    expect(ctx.responder.responses[0]).toContain("CPU 2 / Memory 4g");
   });
 });
 

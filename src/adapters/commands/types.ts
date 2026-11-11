@@ -5,7 +5,6 @@ import type { Workspace } from "../../office/types.js";
 import type { DockerContainerManager } from "../../sandbox/provisioner.js";
 import type { SandboxConfig } from "../../sandbox/types.js";
 import type {
-  SandboxResourceController,
   ConversationContext,
   CompactOutcome,
   HandleCompactCommandOptions,
@@ -73,7 +72,6 @@ export interface CommandServices {
   sandbox: SandboxConfig;
   vaultManager: VaultManager;
   provisioner?: DockerContainerManager;
-  resourceController?: SandboxResourceController;
   linkTokenStore: LinkTokenStoreLike;
   sessionViewTokenStore: SessionViewTokenStoreLike;
   desktopTokenStore?: DesktopTokenStoreLike;
@@ -114,11 +112,6 @@ export interface ParsedModelCommand {
   thinkingLevelCandidate?: string;
   thinkingLevel?: ModelThinkingLevel;
   error?: "invalid_spec";
-}
-
-export interface ParsedSandboxCommand {
-  action?: "boost" | "visibility";
-  visibility?: string;
 }
 
 export type ParsedLoginCommand =

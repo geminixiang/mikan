@@ -81,25 +81,16 @@ mount が変わると（たとえば visibility の変更後）、次のメッ�
 {
   "sandbox": {
     "cpus": "0.5",
-    "memory": "512m",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    }
+    "memory": "512m"
   }
 }
 ```
 
-| フィールド             | 説明                                           | 例               |
-| ---------------------- | ---------------------------------------------- | ---------------- |
-| `sandbox.cpus`         | CPU コア数上限（浮動小数字列）                 | `"0.5"`, `"2"`   |
-| `sandbox.memory`       | メモリ上限（Docker memory 形式）               | `"512m"`, `"2g"` |
-| `sandbox.boost.cpus`   | `/pi-sandbox boost` が一時適用する CPU 上限    | `"2"`, `"4"`     |
-| `sandbox.boost.memory` | `/pi-sandbox boost` が一時適用する memory 上限 | `"4g"`, `"8g"`   |
+| フィールド       | 説明                             | 例               |
+| ---------------- | -------------------------------- | ---------------- |
+| `sandbox.cpus`   | CPU コア数上限（浮動小数字列）   | `"0.5"`, `"2"`   |
+| `sandbox.memory` | メモリ上限（Docker memory 形式） | `"512m"`, `"2g"` |
 
 - 新しい container 作成時、制限は `docker run` 引数へ直接追加されます
 - 実行中の container は次回 provision 時に `docker update` で新しい制限が即時適用され、再作成は不要です
-- `/pi-sandbox` は現在の conversation の有効な制限に加えて、その office visibility を表示します
-- `/pi-sandbox boost` は現在の conversation を一時的に `sandbox.boost` のスペックへ引き上げます。boost 状態は container に紐づき、container stop 後に終了します
-- `/pi-sandbox visibility <private|default>` は public channel を private office に狭めるか、その上書きを解除します。container は次のメッセージで新しい mount とともに再作成され、workspace と vault のファイルは保持されます
 - agent は組み込みの `sandbox` tool で現在の conversation の CPU / memory limit を確認または一時設定できます。この種の override も container stop 後に消去されます

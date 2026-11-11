@@ -37,12 +37,6 @@
         "should_escape": false
       },
       {
-        "command": "/pi-sandbox",
-        "description": "Show sandbox status or boost limits",
-        "usage_hint": "'boost' temporarily applies the configured boost limits",
-        "should_escape": false
-      },
-      {
         "command": "/pi-auto-reply",
         "description": "Enable, disable, or Jev-assist replies without mentions",
         "usage_hint": "on, off, or jev",

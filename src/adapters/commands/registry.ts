@@ -6,7 +6,6 @@ import { LoginCommandHandler } from "./login.js";
 import { COMMAND_MANIFEST } from "./manifest.js";
 import { ModelCommandHandler } from "./model.js";
 import { NewCommandHandler } from "./new.js";
-import { SandboxCommandHandler } from "./sandbox.js";
 import { SessionViewCommandHandler } from "./session-view.js";
 import type { CommandContext, CommandHandler, ModelRegistry } from "./types.js";
 
@@ -17,7 +16,6 @@ const HANDLER_FACTORIES: Record<string, (modelRegistry: ModelRegistry) => Comman
   session: () => new SessionViewCommandHandler(),
   desktop: () => new DesktopCommandHandler(),
   model: (modelRegistry) => new ModelCommandHandler(modelRegistry),
-  sandbox: () => new SandboxCommandHandler(),
   new: () => new NewCommandHandler(),
   compact: () => new CompactCommandHandler(),
 };

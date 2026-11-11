@@ -35,11 +35,10 @@ vault is not a per-conversation credential boundary.
 `container:*` cannot enforce a private office's visibility (ADR 0008) — `docker exec` cannot add
 mounts to a container mikan did not create, so every conversation sees whatever you mounted when you
 created the container. mikan still runs private offices and logs once per office that it cannot
-enforce their visibility. Mount the workspace yourself when you create the container; the
-`/pi-sandbox` chat command only serves managed sandboxes.
+enforce their visibility. Mount the workspace yourself when you create the container.
 
 ## Limitations
 
 - mikan injects env only during `docker exec`
 - `docker exec` cannot add bind mounts, so **file credentials are refused rather than skipped**: if this container's vault holds any file besides `env`, the run fails with `Sandbox type "container" does not support vault file mounts`. Keep credentials in `env` here.
-- mikan does not manage this container's lifecycle, resource limits, or `/pi-sandbox boost`
+- mikan does not manage this container's lifecycle or resource limits

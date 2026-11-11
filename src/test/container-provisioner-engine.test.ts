@@ -35,7 +35,6 @@ describe.runIf(available)(`DockerContainerManager on ${ENGINE}`, () => {
     const name = DockerContainerManager.containerName(key);
     const sandbox = new DockerContainerManager(IMAGE, {
       limits: { cpus: "1", memory: "256m" },
-      boostLimits: { cpus: "2", memory: "512m" },
       execFileImpl: promisify(execFile),
     });
     const logs = vi.spyOn(log, "logInfo").mockImplementation(() => {});
@@ -45,7 +44,7 @@ describe.runIf(available)(`DockerContainerManager on ${ENGINE}`, () => {
       await sandbox.provision(key, { mounts });
       expect(inContainer(name, "cat /root/marker")).toBe("kept");
 
-      await sandbox.boost(key);
+      await sandbox.setLimits(key, { cpus: "2", memory: "512m" });
       expect(inContainer(name, "cat /sys/fs/cgroup/cpu.max")).toBe("200000 100000");
 
       await sandbox.stop(key);

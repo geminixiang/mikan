@@ -37,10 +37,10 @@ vault key 由 container 名称派生——一个可读前缀加上该名称的�
 
 `container:*` 无法强制执行 private 办公室的 visibility（ADR 0008）——`docker exec` 无法为一个并非由 mikan 创建的 container
 添加 mount，因此每个对话看到的都是你创建 container 时挂载的内容。mikan 仍会运行 private 办公室，并对每个办公室记录一次
-无法强制执行其 visibility 的日志。请在创建 container 时自行挂载工作区；`/pi-sandbox` 聊天命令只服务于受管理的沙箱。
+无法强制执行其 visibility 的日志。请在创建 container 时自行挂载工作区。
 
 ## 限制
 
 - mikan 只在 `docker exec` 时注入 env
 - `docker exec` 不能新增 bind mount，因此**文件凭证会被拒绝，而不是被跳过**：如果该 container 的 vault 中除 `env` 外还存有任何文件，运行会以 `Sandbox type "container" does not support vault file mounts` 失败。在这里请把凭证保存在 `env` 中。
-- mikan 不管理该 container 的生命周期、资源限制或 `/pi-sandbox boost`
+- mikan 不管理该 container 的生命周期或资源限制

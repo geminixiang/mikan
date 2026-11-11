@@ -40,7 +40,7 @@ Admin portal でできること：
 - 選択した conversation の events を削除する。
 - 対象 conversation 用の session view link または login/vault link を生成する。
 
-Office visibility はチャットからも `/pi-sandbox visibility private` で狭められますが、agent 自身が変更することは決してできません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
+Office visibility を狭められるのはここだけで、チャットからも agent 自身からも変更できません。conversation settings が host 専用の state dir 配下にあるのは、まさに conversation directory が sandbox に読み書き可能で bind mount されるからです。mount 内の settings ファイルは一度だけ移行され、その後は二度と読まれません。
 
 Admin portal は secret values を直接書き込みません。admin portal から login link を生成した場合でも、実際の secret write は Login / vault portal の one-time token flow を通ります。
 

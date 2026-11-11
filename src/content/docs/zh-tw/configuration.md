@@ -48,10 +48,6 @@ Office key 無法反推回原始平台 id，因此 host 會在 `~/.mikan/office-
   "sandbox": {
     "cpus": "0.5",
     "memory": "1g",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -66,14 +62,12 @@ Office key 無法反推回原始平台 id，因此 host 會在 `~/.mikan/office-
 | `llm.provider`               | `anthropic`                | 主要 AI 供應商                                                                            |
 | `llm.model`                  | `claude-sonnet-4-6`        | 主要模型名稱                                                                              |
 | `llm.thinkingLevel`          | `off`                      | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                               |
-| `sandbox.boost.cpus`         | `2`                        | `/pi-sandbox boost` 套用的暫時 CPU 限制                                                   |
-| `sandbox.boost.memory`       | `4g`                       | `/pi-sandbox boost` 套用的暫時記憶體限制                                                  |
 | `office.visibility`          | 未設定                     | 僅限對話的覆寫：`private` 把 Slack 公開頻道縮為 private office；不能放寬                  |
 | `sandbox.defaultSharedVault` | 空白                       | 複製到符合資格之 membership-trust image 對話的共享 vault                                  |
 | `github.*`                   | 選擇 GitHub 時寫入 `repos` | GitHub adapter 要回應哪裡、誰可以觸發；見 [GitHub](/zh-tw/platform-adapters/github/#設定) |
 | `slack.replyMode`            | `top-level`                | Slack 回應模式：`top-level` 或 `thread`                                                   |
 
-`/pi-model` 會寫入部分對話覆寫；`/pi-sandbox visibility <private|default>` 會寫入該對話的 `office.visibility` 覆寫；admin portal 提供同一個開關。
+`/pi-model` 會寫入部分對話覆寫；admin portal 中每個 office 的開關會寫入該對話的 `office.visibility` 覆寫。
 
 Slack auto-reply 可透過 `/pi-auto-reply on|off|jev` 修改，並以 conversation office 裡的 `auto-reply`（on）或 `auto-reply.jev`（jev）marker 檔保存；`off` 會移除兩者。Marker 內容會被忽略：`on` 會回應該 channel 中每則未明確 address mikan 的 human message，`jev` 則由 Jev 逐則判斷訊息是否在對 mikan 說話。已退役的 `autoReply` 與 `llm.autoReply` JSON 設定會被忽略，daemon 啟動時會列出它們，方便刪除。
 

@@ -33,21 +33,10 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `stop` / `/stop`                                   | 一致する実行中の run を停止します。Slack では thread-local routing を正確に保つため、テキスト形式を優先してください。                                            |
 | `/pi-auto-reply <on\|off\|jev>`                    | 現在の Slack channel で、すべてのメッセージに応答する（`on`）、mention にだけ応答する（`off`）、または Jev がメッセージが mikan 宛てかを判断する（`jev`）。      |
 | `/admin` / `/pi-admin`                             | 30 分間有効な admin portal を開きます。                                                                                                                          |
-| `/sandbox` / `/pi-sandbox`                         | 現在の sandbox の制限と、この office の visibility を表示します。                                                                                                |
-| `/pi-sandbox boost`                                | managed sandbox runtime が停止するまで、設定された boost limits を適用します。                                                                                   |
-| `/pi-sandbox visibility`                           | office の実効 visibility とその由来を表示します。                                                                                                                |
-| `/pi-sandbox visibility <private\|default>`        | この public channel を private office に狭めるか、その override を解除します。下の [Office visibility](#office-visibility) を参照。                              |
 
 ### Office visibility
 
-visibility は Slack の conversation type に従います（ADR 0008）。public channel は public office で、他のすべての office が `/workspace/public/` で読み取り専用に参照でき、共有の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel は private office で、自分自身にだけ見えます。`/pi-sandbox visibility` は admin 向けの escape hatch で、モデルが許す唯一の調整——public channel を private として扱う——だけを行います。admin portal にも office ごとに同じスイッチがあります。
-
-| 単語      | 効果                                                                                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------ |
-| `default` | override を解除し、Slack の conversation type に従います。                                                         |
-| `private` | この public channel を private として扱います。DM や private channel は既に private なので追加の効果はありません。 |
-
-変更は次のメッセージから有効になり、その時点で sandbox container が新しい mount で置き換えられます。引き継がれるのは workspace と vault file だけです。conversation が実行中の場合、切り替えは拒否されます。背後にある `office.visibility` field は [設定](/ja/configuration/) を参照してください。
+visibility は Slack の conversation type に従います（ADR 0008）。public channel は public office で、他のすべての office が `/workspace/public/` で読み取り専用に参照でき、共有の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel は private office で、自分自身にだけ見えます。チャットコマンドでは変更できません。admin は admin portal（`/pi-admin`）で public channel を private office に狭めるか、その override を解除できます。Slack の conversation type より広げることはできません。背後にある `office.visibility` field は [設定](/ja/configuration/) を参照してください。
 
 <Aside type="note" title="プラットフォームへのコマンド登録">
   Native slash commands はプラットフォームにも登録する必要があります。コマンド一覧は
@@ -56,8 +45,8 @@ visibility は Slack の conversation type に従います（ADR 0008）。publi
   名を認識します。Discord は 100 文字を超える option description を拒否するため、manifest の引数
   description は command tests で長さが検証されます。Slack の
   `/pi-login`、`/pi-session`、`/pi-desktop`、
-  `/pi-new`、`/pi-compact`、`/pi-model`、`/pi-sandbox`、`/pi-auto-reply`、`/pi-admin` は Slack App
-  manifest にも登録する必要があります。
+  `/pi-new`、`/pi-compact`、`/pi-model`、`/pi-auto-reply`、`/pi-admin` は Slack App manifest
+  にも登録する必要があります。
 </Aside>
 
 ## 共有 vault コマンド

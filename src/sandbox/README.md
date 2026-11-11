@@ -67,8 +67,7 @@ flags depend on the office's visibility:
 
 Visibility follows the Slack conversation type: public channels are public;
 private channels, DMs, group DMs, externally shared channels, and unknown kinds
-are private. An operator may narrow a public channel with Admin or
-`/pi-sandbox visibility private`. Nothing mounts the workspace root; offices
+are private. An operator may narrow a public channel with Admin. Nothing mounts the workspace root; offices
 still declaring the retired `full` door policy get the same shape.
 
 Only the managed `oci:*` backend consumes and enforces these mount flags.

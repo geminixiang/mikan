@@ -50,8 +50,6 @@ export class DockerContainerManager {
   private static readonly IMAGE_ID_LABEL_KEY = "mikan.image-id";
 
   private readonly limits?: ResourceLimits;
-  private readonly boostLimits?: ResourceLimits;
-  private readonly boostedKeys = new Set<string>();
   private readonly retained = new Map<string, number>();
   private readonly overrideLimits = new Map<string, ResourceLimits>();
   private readonly execFileImpl: DockerExecFile;
@@ -64,7 +62,6 @@ export class DockerContainerManager {
     options: DockerContainerManagerOptions = {},
   ) {
     this.limits = options.limits;
-    this.boostLimits = options.boostLimits;
     this.execFileImpl = options.execFileImpl ?? execFileAsync;
     this.configuredEngine = options.engine;
     this.timeZone = options.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -140,22 +137,7 @@ export class DockerContainerManager {
     return containerName;
   }
 
-  async boost(containerKey: string): Promise<SandboxLimitStatus> {
-    if (!this.boostLimits?.cpus && !this.boostLimits?.memory) {
-      return this.getLimitStatus(containerKey);
-    }
-
-    this.overrideLimits.delete(containerKey);
-    this.boostedKeys.add(containerKey);
-    const state = this.state.get(containerKey);
-    if (state?.status === "running") {
-      await this.applyResourceLimits(containerKey);
-    }
-    return this.getLimitStatus(containerKey);
-  }
-
   async setLimits(containerKey: string, limits: ResourceLimits): Promise<SandboxLimitStatus> {
-    this.boostedKeys.delete(containerKey);
     this.overrideLimits.set(containerKey, { ...this.limits, ...limits });
     const state = this.state.get(containerKey);
     if (state?.status === "running") {
@@ -165,16 +147,7 @@ export class DockerContainerManager {
   }
 
   getLimitStatus(containerKey: string): SandboxLimitStatus {
-    const boosted = this.boostedKeys.has(containerKey);
-    return { limits: this.effectiveLimits(containerKey), boosted };
-  }
-
-  getDefaultLimits(): ResourceLimits | undefined {
-    return this.limits;
-  }
-
-  getBoostLimits(): ResourceLimits | undefined {
-    return this.boostLimits;
+    return { limits: this.effectiveLimits(containerKey) };
   }
 
   markUsed(containerKey: string): void {
@@ -208,7 +181,6 @@ export class DockerContainerManager {
     try {
       await this.run(["stop", containerName]);
       this.setState(containerKey, "stopped");
-      this.boostedKeys.delete(containerKey);
       this.overrideLimits.delete(containerKey);
       log.logInfo(`Container ${containerName} stopped (idle)`);
     } catch (err) {
@@ -241,7 +213,6 @@ export class DockerContainerManager {
     }
 
     this.state.delete(containerKey);
-    this.boostedKeys.delete(containerKey);
     this.overrideLimits.delete(containerKey);
   }
 
@@ -357,10 +328,7 @@ export class DockerContainerManager {
   }
 
   private effectiveLimits(containerKey: string): ResourceLimits | undefined {
-    const override = this.overrideLimits.get(containerKey);
-    if (override) return override;
-    if (!this.boostedKeys.has(containerKey)) return this.limits;
-    return { ...this.limits, ...this.boostLimits };
+    return this.overrideLimits.get(containerKey) ?? this.limits;
   }
 
   private resourceLimitArgs(limits: ResourceLimits | undefined): string[] {

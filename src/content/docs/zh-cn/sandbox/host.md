@@ -24,7 +24,6 @@ Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
 平台推导使这一点适用于 DM、Slack 私密频道、外部共享和未知对话，以及所有 Telegram、Discord 和 GitHub 对话。
-`/pi-sandbox` 聊天命令在 host 模式下不可用——它只服务于受管理的 `oci:*` 沙箱。
 
 适合：
 

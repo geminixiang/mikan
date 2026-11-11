@@ -40,20 +40,6 @@ export const COMMAND_MANIFEST: readonly CommandManifestEntry[] = [
     telegramMenu: {},
   },
   {
-    name: "sandbox",
-    description: "Show sandbox status or boost limits",
-    arg: {
-      name: "action",
-      description: "'boost' temporarily applies the configured boost limits",
-      required: false,
-    },
-    slackCommand: "/pi-sandbox",
-    slackRoute: { includeText: true },
-    discord: true,
-    telegramMenu: { description: "Show or boost sandbox limits" },
-    telegramCommand: true,
-  },
-  {
     name: "autoreply",
     aliases: ["auto-reply"],
     description: "Enable, disable, or Jev-assist replies without mentions",

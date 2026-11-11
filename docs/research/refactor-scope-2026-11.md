@@ -25,7 +25,7 @@ Evidence used during the review: [memory-capture-removal-2026-11.md](memory-capt
 | `host` and `container:` sandboxes                                   | Only `oci:` remains; tests need a local execution env of their own                                            |
 | Embedder package interface                                          | `src/index.ts` exports and `deploy/examples/embedder`; the package becomes the CLI                            |
 | Slack assistant pane                                                | Needs a paid plan; hardcoded greeting and suggested prompts. Removed 2026-11-11; the working status stays     |
-| `/sandbox` command                                                  | Status and boost for people; the agent keeps its `sandbox` tool                                               |
+| `/sandbox` command                                                  | Status and boost for people; the agent keeps its `sandbox` tool. Removed 2026-11-11 with `sandbox.boost`      |
 | The prompt line telling the model to use `jev` "whenever" it judges |                                                                                                               |
 
 ## Redesigned

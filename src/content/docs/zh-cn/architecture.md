@@ -204,7 +204,7 @@ state directory 为 `~/.mikan`。它必须位于沙箱可见的工作区路径�
 | `MEMORY.md`、`skills/`——共享知识              | 读写          | 只读           |
 | `public/<officeKey>/`——其他每个 public 办公室 | 只读          | 只读           |
 
-没有任何挂载会包含工作区根目录，也没有办公室能触及另一间 private 办公室。system prompt 中的频道表只列出办公室自身以及它挂载的 public 办公室。Visibility 是数据访问边界；它绝不改变执行或网络隔离。Admin portal 和 `/pi-sandbox visibility private` 可以把公开频道收窄为 private；任何设置都不能放宽超过平台本身——参阅[配置](/zh-cn/configuration/)。
+没有任何挂载会包含工作区根目录，也没有办公室能触及另一间 private 办公室。system prompt 中的频道表只列出办公室自身以及它挂载的 public 办公室。Visibility 是数据访问边界；它绝不改变执行或网络隔离。Admin portal 可以把公开频道收窄为 private；任何设置都不能放宽超过平台本身——参阅[配置](/zh-cn/configuration/)。
 
 ## 5. Login / Vault / Sandbox 关系
 

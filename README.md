@@ -74,23 +74,22 @@ Use `oci:<image>`: mikan starts one container and one credential vault per conve
 
 `host` (run directly on the machine) and `container:<name>` (one shared, existing container) still work but are not recommended: they give the agent the whole machine or one shared filesystem, skip `/login` credential injection, and do not enforce office visibility.
 
-Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal or `/pi-sandbox visibility private` can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
+Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
 
 For routing, mounts, vault behavior, and managed container details, see [src/content/docs/sandbox.mdx](src/content/docs/sandbox.mdx).
 
 ## Chat commands
 
-| Command                                          | Purpose                                                        |
-| ------------------------------------------------ | -------------------------------------------------------------- |
-| `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows                     |
-| `session` / `/session`                           | Open a read-only web view of the current session               |
-| `/new` / `/pi-new`                               | Reset the current session                                      |
-| `/compact` / `/pi-compact`                       | Summarize older messages to free up context                    |
-| `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation                    |
-| `/sandbox` / `/pi-sandbox [boost\|visibility …]` | Show sandbox status, boost limits, or narrow office visibility |
-| `/pi-auto-reply <on\|off\|jev>`                  | Set mention-free replies for the current Slack channel         |
-| `/admin` / `/pi-admin`                           | Open the admin portal                                          |
-| `stop` / `/stop`                                 | Stop the current run (works on every platform)                 |
+| Command                                          | Purpose                                                |
+| ------------------------------------------------ | ------------------------------------------------------ |
+| `/login` / `/pi-login`                           | Store API keys or run built-in OAuth flows             |
+| `session` / `/session`                           | Open a read-only web view of the current session       |
+| `/new` / `/pi-new`                               | Reset the current session                              |
+| `/compact` / `/pi-compact`                       | Summarize older messages to free up context            |
+| `/model` / `/pi-model provider/model[:thinking]` | Switch the LLM for the current conversation            |
+| `/pi-auto-reply <on\|off\|jev>`                  | Set mention-free replies for the current Slack channel |
+| `/admin` / `/pi-admin`                           | Open the admin portal                                  |
+| `stop` / `/stop`                                 | Stop the current run (works on every platform)         |
 
 `session` is the only command accepted without a leading slash. See [src/content/docs/commands.mdx](src/content/docs/commands.mdx) for the full command reference and web session viewer setup.
 

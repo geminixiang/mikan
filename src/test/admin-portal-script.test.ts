@@ -71,8 +71,6 @@ describe("admin embedded UI shared flows", () => {
             "g-thinking",
             "g-cpus",
             "g-mem",
-            "g-bcpus",
-            "g-bmem",
             "g-slack-reply-mode",
             "g-model-result",
             "g-sandbox-result",

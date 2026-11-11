@@ -203,7 +203,7 @@ office の sandbox runtime が実際に見るものは _workspace projection_ �
 | `MEMORY.md`、`skills/` — 共有知識                  | read-write    | read-only      |
 | `public/<officeKey>/` — 他のすべての public office | read-only     | read-only      |
 
-workspace root を mount するものはなく、どの office も別の private office には到達できません。system prompt の channel table が名前を挙げるのは、その office 自身と、mount している public office だけです。Visibility はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、platform の設定より広げることはできません — [設定](/ja/configuration/) を参照してください。
+workspace root を mount するものはなく、どの office も別の private office には到達できません。system prompt の channel table が名前を挙げるのは、その office 自身と、mount している public office だけです。Visibility はデータアクセスの境界であり、実行やネットワークの隔離を変えることはありません。admin portal で public channel を private に狭められますが、platform の設定より広げることはできません — [設定](/ja/configuration/) を参照してください。
 
 ## 5. Login / Vault / Sandbox の関係
 

@@ -32,23 +32,10 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `stop` / `/stop`                                   | 停止匹配的活动运行。在 Slack 上，优先使用文本形式，以保持话题本地路由准确。                                             |
 | `/pi-auto-reply <on\|off\|jev>`                    | 让当前的 Slack channel 回复每一条消息（`on`）、只回复 mention（`off`），或由 Jev 判断消息是否在对 mikan 说话（`jev`）。 |
 | `/admin` / `/pi-admin`                             | 打开有效期 30 分钟的管理 portal。                                                                                       |
-| `/sandbox` / `/pi-sandbox`                         | 显示当前沙箱限制，以及本办公室的 visibility。                                                                           |
-| `/pi-sandbox boost`                                | 应用配置的 boost 限制，直到管理的沙箱运行时停止。                                                                       |
-| `/pi-sandbox visibility`                           | 报告办公室生效的 visibility 及其来源。                                                                                  |
-| `/pi-sandbox visibility <private\|default>`        | 将本公开频道收窄为 private office，或清除该覆盖。参阅下方[办公室 visibility](#办公室-visibility)。                      |
-
-`/pi-sandbox` 仅适用于受管理的沙箱运行时：在 `host` 或 `container:<name>` 模式下，它会回复该命令需要 `oci:*`。
 
 ### 办公室 visibility
 
-Visibility 跟随 Slack 对话类型（ADR 0008）：公开频道是 public office，其他所有办公室都能在 `/workspace/public/` 只读它，且它可写入共享的 `MEMORY.md` 与 `skills/`；私有频道、DM、群组 DM 与外部共享频道是 private office，只有自己可见。`/pi-sandbox visibility` 是管理员的应急入口，只允许模型认可的唯一调整：把公开频道视为 private。管理 portal 中每个办公室也有同一个开关。
-
-| 取值      | 效果                                                                           |
-| --------- | ------------------------------------------------------------------------------ |
-| `default` | 清除覆盖值；跟随 Slack 对话类型。                                              |
-| `private` | 把本公开频道视为 private。对 DM 或私有频道没有额外效果，它们本来就是 private。 |
-
-更改在下一条消息时生效，届时沙箱容器会带着新的挂载被替换；只有工作区和 vault 文件会保留。对话正忙时切换会被拒绝。底层的 `office.visibility` 字段请参阅[配置](/zh-cn/configuration/)。
+Visibility 跟随 Slack 对话类型（ADR 0008）：公开频道是 public office，其他所有办公室都能在 `/workspace/public/` 只读它，且它可写入共享的 `MEMORY.md` 与 `skills/`；私有频道、DM、群组 DM 与外部共享频道是 private office，只有自己可见。聊天命令不能更改它。管理员可以在 admin portal（`/pi-admin`）中把公开频道收窄为 private office，或清除该覆盖；不能放宽超过 Slack 对话类型。底层的 `office.visibility` 字段请参阅[配置](/zh-cn/configuration/)。
 
 <Aside type="note" title="平台注册命令">
   原生 slash commands 也必须在平台中注册。命令清单位于 `src/adapters/commands/manifest.ts`：Discord

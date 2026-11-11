@@ -88,7 +88,6 @@ Token 會以 `xoxb-` 開頭。
 - `/pi-compact` → 摘要較早的訊息以騰出上下文
 - `/pi-session` → session viewer
 - `/pi-model` → 切換此 conversation 的 LLM（`provider/model[:thinking]`，例如 `anthropic/claude-sonnet-4-6:off`）
-- `/pi-sandbox` → 查看或調整此 conversation 的 sandbox
 - `/pi-admin` → 開啟管理後台
 
 Slash commands 是可選的，因為文字指令在支援的情境中也可使用。請將 `stop` 保留為文字指令（`stop` 或 `/stop`），讓 thread-local stop routing 能指向正確的 session。

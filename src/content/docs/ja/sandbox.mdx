@@ -52,7 +52,7 @@ runtime が workspace のどの部分を見るかは、その office の **visib
 | `MEMORY.md`、`skills/` — 共有知識               | 読み書き      | 読み取り専用   |
 | `public/<office-key>/` — すべての public office | 読み取り専用  | 読み取り専用   |
 
-workspace root を mount する layout はありません。admin portal または `/pi-sandbox visibility private` で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `oci:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
+workspace root を mount する layout はありません。admin portal で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `oci:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
 
 <Aside type="caution" title="visibility は追加の sandbox ではありません">
   visibility が決めるのは、どの host directory が runtime に投影されるかです。実行の境界では
@@ -98,7 +98,6 @@ workspace root を mount する layout はありません。admin portal また�
 | office visibility の強制 | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | idle auto-stop / recreate | 対象外 | ❌ | ✅ | ✅ | ❌ | ❌ |
 | CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| `/pi-sandbox boost` | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | agent `sandbox` tool 設定 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
 | 推奨度 | ローカル開発 | legacy / 互換 | 主流 | preview | alpha | 構築中 |
 

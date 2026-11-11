@@ -79,25 +79,16 @@ mount 改变时（例如 visibility 变更之后），下一条消息会用当�
 {
   "sandbox": {
     "cpus": "0.5",
-    "memory": "512m",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    }
+    "memory": "512m"
   }
 }
 ```
 
-| 字段                   | 说明                                    | 示例值           |
-| ---------------------- | --------------------------------------- | ---------------- |
-| `sandbox.cpus`         | CPU 核心限制（浮点数字符串）            | `"0.5"`, `"2"`   |
-| `sandbox.memory`       | 内存限制（Docker memory 格式）          | `"512m"`, `"2g"` |
-| `sandbox.boost.cpus`   | `/pi-sandbox boost` 应用的临时 CPU 限制 | `"2"`, `"4"`     |
-| `sandbox.boost.memory` | `/pi-sandbox boost` 应用的临时内存限制  | `"4g"`, `"8g"`   |
+| 字段             | 说明                           | 示例值           |
+| ---------------- | ------------------------------ | ---------------- |
+| `sandbox.cpus`   | CPU 核心限制（浮点数字符串）   | `"0.5"`, `"2"`   |
+| `sandbox.memory` | 内存限制（Docker memory 格式） | `"512m"`, `"2g"` |
 
 - 创建新容器时，限制直接添加到 `docker run`
 - 运行中的容器会在下次 provision 时通过 `docker update` 立即获得新限制，无需重新创建
-- `/pi-sandbox` 显示当前对话的有效限制，以及它的办公室 visibility
-- `/pi-sandbox boost` 临时将当前对话升级到 `sandbox.boost` 规格；boost 状态跟随容器，并在容器停止时结束
-- `/pi-sandbox visibility <private|default>` 把公开频道收窄为 private 办公室，或清除该覆盖；容器会在下一条消息时以新的 mount 重新创建，并保留工作区和 vault 文件
 - 代理可以使用内置 `sandbox` 工具检查或临时设置当前对话的 CPU/内存限制；这些覆盖也会在容器停止时清除

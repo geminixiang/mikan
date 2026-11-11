@@ -19,6 +19,16 @@ change in a minor release.
   status are unchanged. mikan's manifest no longer subscribes to `app_home_opened`; an app synced
   from a configuration token drops it on the next start, and an app configured by hand can drop it
   and the `assistant_thread_*` and `app_context_changed` events, which mikan now only acknowledges.
+- The `/sandbox` command (`/pi-sandbox` on Slack) and the `sandbox.boost` setting it applied. The
+  agent's `sandbox` tool still shows and raises a conversation's limits, and the admin portal still
+  narrows a public channel to a private office, which `/pi-sandbox visibility` also did. A
+  `sandbox.boost` entry left in `settings.json` is ignored. An app synced from a configuration token
+  loses the slash command on the next start; on an app configured by hand, remove `/pi-sandbox`,
+  which now does nothing.
+- For embedders: `SandboxResourceController.boost`, `getDefaultLimits`, and `getBoostLimits`,
+  `SandboxLimitStatus.boosted`, `DockerContainerManagerOptions.boostLimits`,
+  `SandboxSettings.boost`, `ConversationRuntimeOptions.resourceController`, and
+  `SlackWebApi.assistant`.
 
 ## [1.6.0-beta.0] - 2026-11-11
 

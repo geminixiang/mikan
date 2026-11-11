@@ -97,25 +97,16 @@ In `settings.json`, you can configure CPU and memory limits for each managed con
 {
   "sandbox": {
     "cpus": "0.5",
-    "memory": "512m",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    }
+    "memory": "512m"
   }
 }
 ```
 
-| Field                  | Description                                           | Example values   |
-| ---------------------- | ----------------------------------------------------- | ---------------- |
-| `sandbox.cpus`         | CPU core limit (floating-point string)                | `"0.5"`, `"2"`   |
-| `sandbox.memory`       | Memory limit (Docker memory format)                   | `"512m"`, `"2g"` |
-| `sandbox.boost.cpus`   | Temporary CPU limit applied by `/pi-sandbox boost`    | `"2"`, `"4"`     |
-| `sandbox.boost.memory` | Temporary memory limit applied by `/pi-sandbox boost` | `"4g"`, `"8g"`   |
+| Field            | Description                            | Example values   |
+| ---------------- | -------------------------------------- | ---------------- |
+| `sandbox.cpus`   | CPU core limit (floating-point string) | `"0.5"`, `"2"`   |
+| `sandbox.memory` | Memory limit (Docker memory format)    | `"512m"`, `"2g"` |
 
 - when creating a new container, limits are added directly to `docker run`
 - running containers receive new limits immediately through `docker update` on the next provision, without recreation
-- `/pi-sandbox` shows the current conversation's effective limits plus its office visibility
-- `/pi-sandbox boost` temporarily upgrades the current conversation to the `sandbox.boost` spec; boost state follows the container and ends when the container stops
-- `/pi-sandbox visibility <private|default>` narrows a public channel to a private office or clears that override; the container is recreated with the new mounts on the next message and keeps the workspace and vault files
 - the agent can use the built-in `sandbox` tool to inspect or temporarily set the current conversation's CPU / memory limit; these overrides are also cleared when the container stops

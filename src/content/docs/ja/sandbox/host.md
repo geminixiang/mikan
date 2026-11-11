@@ -25,8 +25,7 @@ Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
 platform による導出により、これは DM、Slack private channel、外部共有および種別不明の conversation、
-そしてすべての Telegram・Discord・GitHub の conversation に当てはまります。`/pi-sandbox` チャットコマンドは
-host mode では利用できません。管理型の `oci:*` sandbox 専用です。
+そしてすべての Telegram・Discord・GitHub の conversation に当てはまります。
 
 適している用途：
 

@@ -491,10 +491,10 @@ describe("SlackMessagingBot slash commands", () => {
     });
   });
 
-  test("/pi-sandbox in a shared channel routes to command handling ephemerally", async () => {
+  test("/pi-model in a shared channel routes to command handling ephemerally", async () => {
     const handler = makeHandler();
     handler.handleEvent = vi.fn(async (_event, _bot, context) => {
-      await context.responder.respond("sandbox status");
+      await context.responder.respond("model status");
     });
 
     const { web, socket } = await startSlackHarness({
@@ -505,8 +505,8 @@ describe("SlackMessagingBot slash commands", () => {
 
     await socket.deliver("slash_commands", {
       body: {
-        command: "/pi-sandbox",
-        text: "boost",
+        command: "/pi-model",
+        text: "faux/faux-1",
         channel_id: "C123",
         user_id: "U123",
         user_name: "alice",
@@ -520,13 +520,28 @@ describe("SlackMessagingBot slash commands", () => {
       address: { conversationId: "C123" },
       conversationKind: "shared",
       sessionKey: "C123",
-      text: "/pi-sandbox boost",
+      text: "/pi-model faux/faux-1",
     });
     expect(web.chat.postEphemeral).toHaveBeenCalledWith({
       channel: "C123",
       user: "U123",
-      text: "sandbox status",
+      text: "model status",
     });
+  });
+
+  test("/pi-sandbox from an app that still registers it is acknowledged and starts nothing", async () => {
+    const handler = makeHandler();
+    const { web, socket } = await startSlackHarness({ handler, workspace, members: [alice] });
+    const ack = makeAck();
+
+    await socket.deliver("slash_commands", {
+      body: { command: "/pi-sandbox", text: "", channel_id: "C123", user_id: "U123" },
+      ack,
+    });
+
+    expect(ack).toHaveBeenCalled();
+    expect(handler.handleEvent).not.toHaveBeenCalled();
+    expect(web.chat.postEphemeral).not.toHaveBeenCalled();
   });
 
   test("/pi-session in a shared channel returns the link ephemerally", async () => {

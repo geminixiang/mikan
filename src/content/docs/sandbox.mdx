@@ -54,7 +54,7 @@ only the read-only flags differ:
 | `MEMORY.md`, `skills/` — shared knowledge    | read-write    | read-only      |
 | `public/<office-key>/` — every public office | read-only     | read-only      |
 
-Nothing mounts the workspace root. The admin portal or `/pi-sandbox visibility private` can narrow a
+Nothing mounts the workspace root. The admin portal can narrow a
 public channel; nothing can widen beyond Slack. Only `oci:*` enforces visibility; the other modes
 report `managedProjection: false` and serve a private office with a one-time logged warning. Field
 semantics and the retired door-policy settings are documented in [Configuration](/configuration/).
@@ -104,7 +104,6 @@ office layout, together with their vaults, settings, sessions, and events; see
 | enforced office visibility                   | ❌             | ❌                     | ✅            |
 | idle auto-stop / recreate                    | not applicable | ❌                     | ✅            |
 | default CPU / memory limits                  | ❌             | ❌                     | ✅            |
-| `/pi-sandbox boost`                          | ❌             | ❌                     | ✅            |
 | agent `sandbox` tool sets limits             | ❌             | ❌                     | ✅            |
 | recommendation level                         | local dev      | legacy / compatibility | mainline      |
 

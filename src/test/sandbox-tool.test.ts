@@ -15,7 +15,6 @@ describe("createSandboxTool", () => {
   test("sets limits for the current image sandbox conversation", async () => {
     const setLimits = vi.fn().mockResolvedValue({
       limits: { cpus: "2", memory: "4g" },
-      boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "oci", image: "ubuntu:24.04" },
@@ -46,7 +45,6 @@ describe("createSandboxTool", () => {
   test("reports status for the current image sandbox conversation", async () => {
     const getLimitStatus = vi.fn().mockReturnValue({
       limits: { cpus: "0.5", memory: "1g" },
-      boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "oci", image: "ubuntu:24.04" },
@@ -72,7 +70,6 @@ describe("createSandboxTool", () => {
   test("sets limits for the current image-mode conversation", async () => {
     const setLimits = vi.fn().mockResolvedValue({
       limits: { cpus: "2", memory: "4g" },
-      boosted: false,
     });
     const { tool, setSandboxContext } = createSandboxTool({
       sandbox: { type: "oci", image: "ubuntu:24.04" },

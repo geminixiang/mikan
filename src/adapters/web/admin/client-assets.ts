@@ -1253,8 +1253,6 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
           renderConfigCard('Sandbox limits', [
             '<div class="config-row"><label>CPUs</label><input id="g-cpus" placeholder="0.5" value="' + escAttr(data.sandboxCpus || '') + '"></div>',
             '<div class="config-row"><label>Memory</label><input id="g-mem" placeholder="1g" value="' + escAttr(data.sandboxMemory || '') + '"></div>',
-            '<div class="config-row"><label>Boost CPUs</label><input id="g-bcpus" placeholder="2" value="' + escAttr(data.sandboxBoostCpus || '') + '"></div>',
-            '<div class="config-row"><label>Boost Mem</label><input id="g-bmem" placeholder="4g" value="' + escAttr(data.sandboxBoostMemory || '') + '"></div>',
           ].join(''), 'saveGlobalSandbox', 'Save sandbox', 'g-sandbox-result'),
           renderConfigCard('Slack', [
             '<div class="config-row"><label>Reply mode</label><select id="g-slack-reply-mode">' + replyModeOpts + '</select></div>',
@@ -1287,10 +1285,8 @@ export const adminViewFunctionsScript = `    let activeConversationKey = default
     async function saveGlobalSandbox(btn) {
       const cpus = document.getElementById('g-cpus').value.trim();
       const memory = document.getElementById('g-mem').value.trim();
-      const boostCpus = document.getElementById('g-bcpus').value.trim();
-      const boostMemory = document.getElementById('g-bmem').value.trim();
       const result = document.getElementById('g-sandbox-result');
-      await saveSetting(btn, result, 'settings/sandbox', { cpus, memory, boostCpus, boostMemory }, 'Save sandbox');
+      await saveSetting(btn, result, 'settings/sandbox', { cpus, memory }, 'Save sandbox');
     }
 
     async function saveGlobalSlack(btn) {

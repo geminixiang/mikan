@@ -205,7 +205,7 @@ function lines(values: string[]): string {
   return values.map((value) => `${value}\n`).join("");
 }
 
-function manager(engine: FakeEngine, options: { limits?: object; boostLimits?: object } = {}) {
+function manager(engine: FakeEngine, options: { limits?: object } = {}) {
   return new DockerContainerManager(IMAGE, {
     ...options,
     engine: "docker",
@@ -858,7 +858,7 @@ describe("DockerContainerManager", () => {
     await sandbox.provision("slack-u123");
     const status = await sandbox.setLimits("slack-u123", { cpus: "2", memory: "4g" });
 
-    expect(status).toEqual({ limits: { cpus: "2", memory: "4g" }, boosted: false });
+    expect(status).toEqual({ limits: { cpus: "2", memory: "4g" } });
     expect(engine.callsOf("update").at(-1)).toEqual([
       "update",
       "--cpu-period",
@@ -885,38 +885,17 @@ describe("DockerContainerManager", () => {
     );
   });
 
-  test("boost applies boost limits to a running container", async () => {
+  test("stopping a container returns it to the configured limits", async () => {
     const engine = new FakeEngine();
     engine.seed("mikan-sandbox-slack-u123", "slack-u123");
-    const sandbox = manager(engine, {
-      limits: { cpus: "0.5", memory: "1g" },
-      boostLimits: { cpus: "2", memory: "4g" },
-    });
+    const sandbox = manager(engine, { limits: { cpus: "0.5", memory: "1g" } });
 
     await sandbox.provision("slack-u123");
-    const status = await sandbox.boost("slack-u123");
-
-    expect(status).toEqual({ limits: { cpus: "2", memory: "4g" }, boosted: true });
-    expect(engine.callsOf("update").at(-1)?.join(" ")).toBe(
-      "update --cpu-period 100000 --cpu-quota 200000 --memory 4g --memory-swap 4g mikan-sandbox-slack-u123",
-    );
-  });
-
-  test("stopping a container clears boost state", async () => {
-    const engine = new FakeEngine();
-    engine.seed("mikan-sandbox-slack-u123", "slack-u123");
-    const sandbox = manager(engine, {
-      limits: { cpus: "0.5", memory: "1g" },
-      boostLimits: { cpus: "2", memory: "4g" },
-    });
-
-    await sandbox.provision("slack-u123");
-    await sandbox.boost("slack-u123");
+    await sandbox.setLimits("slack-u123", { cpus: "2", memory: "4g" });
     await sandbox.stop("slack-u123");
 
     expect(sandbox.getLimitStatus("slack-u123")).toEqual({
       limits: { cpus: "0.5", memory: "1g" },
-      boosted: false,
     });
   });
 

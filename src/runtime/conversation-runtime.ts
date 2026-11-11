@@ -117,7 +117,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       MikanModels.create({ modelsJsonPath: defaultModelsJsonPath(options.workspace.stateDir) });
     this.commandServices = {
       ...options,
-      resourceController: options.resourceController ?? options.provisioner,
       vaultManager: options.vaultManager ?? disabledVaultManager,
       linkTokenStore: options.linkTokenStore ?? portalNotConfiguredTokenStore("Login"),
       sessionViewTokenStore:
@@ -526,7 +525,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       signal,
       vaultManager: this.options.vaultManager,
       provisioner: this.options.provisioner,
-      resourceController: this.options.resourceController,
       sessionView: this.options.sessionViewTokenStore
         ? {
             tokenStore: this.options.sessionViewTokenStore,

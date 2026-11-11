@@ -205,7 +205,6 @@ export type WorkspaceVisibility = "public" | "private";
 export interface SandboxSettings {
   cpus?: string;
   memory?: string;
-  boost?: { cpus?: string; memory?: string };
   defaultSharedVault?: string;
 }
 
@@ -294,15 +293,11 @@ export interface ResourceLimits {
 
 export interface SandboxLimitStatus {
   limits?: ResourceLimits;
-  boosted: boolean;
 }
 
 export interface SandboxResourceController {
-  boost(key: string): Promise<SandboxLimitStatus>;
   setLimits(key: string, limits: ResourceLimits): Promise<SandboxLimitStatus>;
   getLimitStatus(key: string): SandboxLimitStatus;
-  getDefaultLimits(): ResourceLimits | undefined;
-  getBoostLimits(): ResourceLimits | undefined;
 }
 
 export interface ProvisionOptions {
@@ -313,7 +308,6 @@ export interface ProvisionOptions {
 export interface DockerContainerManagerOptions {
   engine?: string;
   limits?: ResourceLimits;
-  boostLimits?: ResourceLimits;
   execFileImpl?: DockerExecFile;
   timeZone?: string;
 }

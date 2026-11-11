@@ -25,8 +25,7 @@ Sandbox 'host' cannot enforce private office visibility for <office-key>
 ```
 
 Platform derivation makes this apply to DMs, Slack private channels, externally shared and unknown
-conversations, and every Telegram, Discord, and GitHub conversation. The `/pi-sandbox` chat command
-is not available in host mode — it only serves the managed `oci:*` sandboxes.
+conversations, and every Telegram, Discord, and GitHub conversation.
 
 Suitable for:
 

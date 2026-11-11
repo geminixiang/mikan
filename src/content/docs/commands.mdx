@@ -33,23 +33,10 @@ import { Aside, Badge, Card, CardGrid, Steps } from "@astrojs/starlight/componen
 | `stop` / `/stop`                                   | Stop the matching active run. On Slack, prefer text form so thread-local routing stays accurate.                                                          |
 | `/pi-auto-reply <on\|off\|jev>`                    | Reply to every message in the current Slack channel (`on`), only to mentions (`off`), or when Jev judges a message addresses mikan (`jev`).               |
 | `/admin` / `/pi-admin`                             | Open the 30-minute admin portal.                                                                                                                          |
-| `/sandbox` / `/pi-sandbox`                         | Show the current sandbox limits plus this office's visibility.                                                                                            |
-| `/pi-sandbox boost`                                | Apply configured boost limits until the managed sandbox runtime stops.                                                                                    |
-| `/pi-sandbox visibility`                           | Report the office's effective visibility and where it came from.                                                                                          |
-| `/pi-sandbox visibility <private\|default>`        | Narrow this public channel to a private office, or clear that override. See [Office visibility](#office-visibility) below.                                |
-
-`/pi-sandbox` applies to managed sandbox runtimes only: in `host` or `container:<name>` mode it replies that the command needs `oci:*`.
 
 ### Office visibility
 
-Visibility follows the Slack conversation type (ADR 0008): public channels are public offices, readable by every other office under `/workspace/public/` and allowed to write shared `MEMORY.md` and `skills/`; private channels, DMs, group DMs, and externally shared channels are private offices, visible only to themselves. `/pi-sandbox visibility` is the admin escape hatch for the one adjustment the model allows: treating a public channel as private. The same switch is in the admin portal per office.
-
-| Word      | Effect                                                                                                             |
-| --------- | ------------------------------------------------------------------------------------------------------------------ |
-| `default` | Clear the override; follow the Slack conversation type.                                                            |
-| `private` | Treat this public channel as private. Has no further effect on a DM or private channel, which are already private. |
-
-The change takes effect on the next message, when the sandbox container is replaced with the new mounts; only the workspace and vault files carry over. A switch is refused while the conversation is busy. See [Configuration](/configuration/) for the underlying `office.visibility` field.
+Visibility follows the Slack conversation type (ADR 0008): public channels are public offices, readable by every other office under `/workspace/public/` and allowed to write shared `MEMORY.md` and `skills/`; private channels, DMs, group DMs, and externally shared channels are private offices, visible only to themselves. No chat command changes it. An admin can narrow a public channel to a private office, or clear that override, in the admin portal (`/pi-admin`); nothing widens an office beyond its Slack conversation type. See [Configuration](/configuration/) for the underlying `office.visibility` field.
 
 <Aside type="note" title="Platform command registration">
   Native slash commands must also be registered with the platform. The command inventory lives in
@@ -57,8 +44,8 @@ The change takes effect on the next message, when the sandbox container is repla
   are derived from it at startup, and Slack's routing recognizes the manifest's `/pi-*` names.
   Because Discord rejects an option description longer than 100 characters, the manifest's argument
   descriptions are length-checked by the command tests. Slack commands (`/pi-login`, `/pi-session`,
-  `/pi-desktop`, `/pi-new`, `/pi-compact`, `/pi-model`, `/pi-sandbox`, `/pi-auto-reply`, and
-  `/pi-admin`) must also be registered in the Slack App manifest.
+  `/pi-desktop`, `/pi-new`, `/pi-compact`, `/pi-model`, `/pi-auto-reply`, and `/pi-admin`) must also
+  be registered in the Slack App manifest.
 </Aside>
 
 ## Shared vault commands

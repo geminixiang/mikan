@@ -48,10 +48,6 @@ office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-
   "sandbox": {
     "cpus": "0.5",
     "memory": "1g",
-    "boost": {
-      "cpus": "2",
-      "memory": "4g"
-    },
     "defaultSharedVault": ""
   }
 }
@@ -66,14 +62,12 @@ office key 无法反推回原始平台 id，因此主机会在 `~/.mikan/office-
 | `llm.provider`               | `anthropic`                | 主 AI 提供商                                                                              |
 | `llm.model`                  | `claude-sonnet-4-6`        | 主模型名称                                                                                |
 | `llm.thinkingLevel`          | `off`                      | `off`、`minimal`、`low`、`medium`、`high`、`xhigh` 或 `max`                               |
-| `sandbox.boost.cpus`         | `2`                        | `/pi-sandbox boost` 应用的临时 CPU 限制                                                   |
-| `sandbox.boost.memory`       | `4g`                       | `/pi-sandbox boost` 应用的临时内存限制                                                    |
 | `office.visibility`          | 未设置                     | 仅限对话的覆盖：`private` 将 Slack 公开频道收窄为 private office；不能放宽                |
 | `sandbox.defaultSharedVault` | 空                         | 复制到符合条件、基于成员身份信任的 image 对话中的共享 vault                               |
 | `github.*`                   | 选择 GitHub 时写入 `repos` | GitHub adapter 要回应哪里、谁可以触发；见 [GitHub](/zh-cn/platform-adapters/github/#配置) |
 | `slack.replyMode`            | `top-level`                | Slack 回复模式：`top-level` 或 `thread`                                                   |
 
-`/pi-model` 写入部分对话覆盖，`/pi-sandbox visibility <private|default>` 写入该对话的 `office.visibility` 覆盖；admin portal 提供同一个开关。
+`/pi-model` 写入部分对话覆盖，admin portal 中每个办公室的开关写入该对话的 `office.visibility` 覆盖。
 
 Slack auto-reply 可通过 `/pi-auto-reply on|off|jev` 修改，并以 conversation office 中的 `auto-reply`（on）或 `auto-reply.jev`（jev）标记文件保存；`off` 会移除两者。标记内容会被忽略：`on` 会回应该 channel 中每条未明确 address mikan 的 human message，`jev` 则由 Jev 逐条判断消息是否在对 mikan 说话。已退役的 `autoReply` 与 `llm.autoReply` JSON 设置会被忽略，daemon 启动时会列出它们，方便删除。
 

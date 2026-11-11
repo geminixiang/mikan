@@ -40,7 +40,7 @@ The admin portal can:
 - delete events for the selected conversation
 - generate a session view link or login/vault link for the target conversation
 
-Office visibility can also be narrowed from chat with `/pi-sandbox visibility private`, but never by the agent itself:
+Office visibility is narrowed only here, never from chat and never by the agent itself:
 conversation settings live under the host-only state dir precisely because conversation directories
 are bind-mounted read-write into the sandbox, and the settings file inside the mount is migrated
 once and then never read again.

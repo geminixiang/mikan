@@ -114,8 +114,6 @@ describe("loadGlobalSettings", () => {
     expect(config.thinkingLevel).toBe("off");
     expect(config.sandbox?.cpus).toBe("0.5");
     expect(config.sandbox?.memory).toBe("1g");
-    expect(config.sandbox?.boost?.cpus).toBe("2");
-    expect(config.sandbox?.boost?.memory).toBe("4g");
     expect(config.sandbox?.defaultSharedVault).toBeUndefined();
     expect(JSON.parse(readFileSync(settingsPath, "utf-8")).sandbox.defaultSharedVault).toBe("");
   });
@@ -167,19 +165,16 @@ describe("loadGlobalSettings", () => {
     ]);
   });
 
-  test("reads sandbox cpus, memory, and boost from settings.json", () => {
+  test("reads sandbox cpus and memory from settings.json", () => {
     updateGlobalSettings(stateDir, {
       sandbox: {
         cpus: "0.5",
         memory: "512m",
-        boost: { cpus: "2", memory: "4g" },
       },
     });
     const config = loadGlobalSettings(stateDir);
     expect(config.sandbox?.cpus).toBe("0.5");
     expect(config.sandbox?.memory).toBe("512m");
-    expect(config.sandbox?.boost?.cpus).toBe("2");
-    expect(config.sandbox?.boost?.memory).toBe("4g");
   });
 
   test("sandbox cpus and memory are undefined when omitted from settings", () => {
@@ -193,8 +188,6 @@ describe("loadGlobalSettings", () => {
     const config = loadGlobalSettings(stateDir);
     expect(config.sandbox?.cpus).toBeUndefined();
     expect(config.sandbox?.memory).toBeUndefined();
-    expect(config.sandbox?.boost?.cpus).toBeUndefined();
-    expect(config.sandbox?.boost?.memory).toBeUndefined();
   });
 
   test("provider and model come from settings.json, not env vars", () => {
@@ -313,23 +306,18 @@ describe("loadGlobalSettings", () => {
     expect(config.sandbox).toEqual({
       cpus: "0.5",
       memory: "2g",
-      boost: { cpus: "2", memory: "4g" },
     });
   });
 
   test("sandbox settings merge at the leaf level across global and conversation", () => {
     createGlobalSettingsFile(stateDir);
-    updateGlobalSettings(stateDir, { sandbox: { cpus: "1", boost: { cpus: "4" } } });
+    updateGlobalSettings(stateDir, { sandbox: { cpus: "1" } });
     const conversation = office();
-    updateConversationSettings(conversation, {
-      sandbox: { memory: "2g", boost: { memory: "8g" } },
-    });
+    updateConversationSettings(conversation, { sandbox: { memory: "2g" } });
 
     const config = resolveConversationSettings(conversation);
     expect(config.sandbox?.cpus).toBe("1");
     expect(config.sandbox?.memory).toBe("2g");
-    expect(config.sandbox?.boost?.cpus).toBe("4");
-    expect(config.sandbox?.boost?.memory).toBe("8g");
   });
 
   test("mcp servers merge per key: conversation overrides or disables one, keeps the rest", () => {
@@ -407,7 +395,6 @@ describe("updateGlobalSettings", () => {
       sandbox: {
         cpus: "0.5",
         memory: "1g",
-        boost: { cpus: "2", memory: "4g" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },
@@ -429,7 +416,6 @@ describe("updateGlobalSettings", () => {
       sandbox: {
         cpus: "0.5",
         memory: "1g",
-        boost: { cpus: "2", memory: "4g" },
         defaultSharedVault: "",
       },
       slack: { replyMode: "top-level" },

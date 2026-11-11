@@ -88,7 +88,6 @@ Socket Mode だけでローカル開発する場合、公開 request URL は不�
 - `/pi-compact` → 古いメッセージを要約して context を空ける
 - `/pi-session` → session viewer
 - `/pi-model` → この conversation の LLM を切り替え（`provider/model[:thinking]`、例：`anthropic/claude-sonnet-4-6:off`）
-- `/pi-sandbox` → この conversation の sandbox を確認・調整
 - `/pi-admin` → 管理ポータルを開く
 
 Slash commands は任意です。対応する状況ではテキスト指令も使えるためです。`stop` は文字指令（`stop` または `/stop`）として残してください。これにより thread-local stop routing が正しい session を指せます。

@@ -284,16 +284,11 @@ const sandboxLimits =
   sandboxSettings?.cpus || sandboxSettings?.memory
     ? { cpus: sandboxSettings?.cpus, memory: sandboxSettings?.memory }
     : undefined;
-const sandboxBoostLimits =
-  sandboxSettings?.boost?.cpus || sandboxSettings?.boost?.memory
-    ? { cpus: sandboxSettings?.boost?.cpus, memory: sandboxSettings?.boost?.memory }
-    : undefined;
 
 const provisioner =
   sandbox.type === "oci"
     ? new DockerContainerManager(sandbox.image, {
         limits: sandboxLimits,
-        boostLimits: sandboxBoostLimits,
       })
     : undefined;
 void provisioner?.prepareImage();
@@ -411,7 +406,6 @@ const handler = createConversationRuntime({
   sandbox,
   vaultManager,
   provisioner,
-  resourceController: provisioner,
   linkTokenStore,
   sessionViewTokenStore,
   desktopTokenStore,

@@ -40,7 +40,7 @@ Admin portal 可以：
 - 刪除所選 conversation 的 events。
 - 為目標 conversation 產生 session view link 或 login/vault link。
 
-Office visibility 也可以從聊天中用 `/pi-sandbox visibility private` 縮窄，但絕不會由 agent 自己設定：conversation 設定之所以放在僅限 host 的 state dir 底下，正是因為 conversation 目錄會以可讀寫的方式 bind mount 進 sandbox，而位於該 mount 內的設定檔只會被移轉一次，之後就再也不會被讀取。
+Office visibility 只能在這裡縮窄，不能從聊天設定，也絕不會由 agent 自己設定：conversation 設定之所以放在僅限 host 的 state dir 底下，正是因為 conversation 目錄會以可讀寫的方式 bind mount 進 sandbox，而位於該 mount 內的設定檔只會被移轉一次，之後就再也不會被讀取。
 
 Admin portal 不會直接寫入 secret values。即使從 admin portal 產生 login link，真正的 secret write 仍會走 Login / vault portal 的一次性 token flow。
 

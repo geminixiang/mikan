@@ -17,7 +17,7 @@ The global file is found through the caller's state dir: `office.workspace.state
 
 ## Scope rules
 
-- Office settings override global settings key by key; `sandbox.boost` and `mcpServers` merge per entry, and an office entry with `disabled: true` suppresses an inherited MCP server.
+- Office settings override global settings key by key; `mcpServers` merges per entry, and an office entry with `disabled: true` suppresses an inherited MCP server.
 - Office settings live at `conversationSettingsPath(office)` under the state dir, never inside the office's workspace directory, so sandboxed code cannot edit its own policy. `mikan migrate` moves a 0.5.3 in-workspace file there (`0003-conversation-settings`).
 - Keys outside the schema, such as the retired `llm.autoReply` and `sandbox.image`, still parse so old files load, but nothing reads them and nothing rewrites them on disk. The daemon logs each file's ignored keys at startup (`findUnusedSettings`) so the operator removes them.
 - Office visibility (`office.visibility`) has its own reader and writer rather than flowing through `AgentConfig`: it is a projection input (`src/office/projection.ts`), not an agent setting.

@@ -40,11 +40,10 @@ vault は conversation ごとの認証情報の境界ではありません。
 `container:*` は private office の visibility（ADR 0008）を強制できません。`docker exec` は mikan が
 作成していない container に mount を追加できないため、すべての conversation は container 作成時にあなたが
 mount したものをそのまま見ます。mikan は private office も実行し、visibility を強制できないことを office ごとに
-一度だけログに記録します。container を作成する際に workspace は自分で mount してください。`/pi-sandbox`
-チャットコマンドは管理型 sandbox 専用です。
+一度だけログに記録します。container を作成する際に workspace は自分で mount してください。
 
 ## 制限
 
 - mikan は `docker exec` 時にのみ env を注入します
 - `docker exec` では bind mount を追加できないため、**file credential は無視されるのではなく拒否されます**。この container の vault に `env` 以外のファイルが 1 つでもあると、実行は `Sandbox type "container" does not support vault file mounts` で失敗します。ここでは認証情報を `env` に留めてください
-- mikan はこの container の lifecycle、リソース制限、`/pi-sandbox boost` を管理しません
+- mikan はこの container の lifecycle とリソース制限を管理しません
