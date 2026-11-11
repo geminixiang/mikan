@@ -11,6 +11,14 @@ change in a minor release.
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-11-11
+
+### Fixed
+
+- A clean install of 1.5.1 failed to start, because its Pi packages were declared as version ranges
+  and a later Pi minor release removed exports mikan imports. The Pi packages are now pinned to the
+  exact versions 1.5.1 was tested with. Nothing else changes.
+
 ## [1.5.1] - 2026-10-14
 
 ### Changed
