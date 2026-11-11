@@ -84,8 +84,14 @@ The reference Slack eval (`.pi/skills/mikan-acceptance-eval/references`), run th
 | Unit and integration suite                | 1925 pass                 | all pass   | 1926 pass  |
 | Clean global install starts               | only with the pin         | starts     | starts     |
 
+## Real Slack run
+
+A local daemon on Pi 1.5.2 (`npm run test:e2e:slack:local`, host sandbox, an Anthropic model behind an OpenAI-compatible gateway) ran the whole `e2e/slack` suite against a QA workspace on 2026-11-11: 23 files, 26 cases, all passed in 213 s, with no error reply from the bot. The cases cover mentions, DMs, threads, streaming, stop, the busy queue, file and image uploads, `/new`, and scheduled events.
+
+An earlier run the same day passed 3 of 4 cases while every reply was the bot's error message, because the gateway rejected its key and each run ended with zero tokens. Those cases assert only that a reply arrives, so read the daemon log for usage before trusting a pass.
+
 ## Not verified
 
-- A run on a real platform with a local daemon, and the Slack E2E workflow. Both need the owner's approval.
+- The Slack E2E workflow (`slack-e2e.yml`), which needs the owner's approval. The local run below covers the same cases on the host sandbox only.
 - A production-sized state directory opened by 1.5.2. E7 and the migration tests cover small ones.
 - `auto_retry_start.attempt` now reports `pi.live.generation.attempt`. The retry tests pass, but the numbering against a real provider error was not compared.
