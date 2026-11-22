@@ -35,6 +35,7 @@ jobs:
           # Slower scenarios can take more than the 30s default wait before
           # the first tool call.
           SLACK_QA_TIMEOUT_MS: "60000"
+          CONTAINER_ENGINE: podman
         run: |
           set -euo pipefail
 
@@ -62,8 +63,10 @@ jobs:
           ' "$STATE_DIR/settings.json"
           # The daemon runs each office in the published sandbox image. Pull it
           # first: the first tool call would otherwise wait on the pull and
-          # outlast the reply timeout.
-          docker pull -q "$(node -e 'import("./dist/sandbox/published-image.js").then((m) => console.log(m.publishedSandboxImage()))')"
+          # outlast the reply timeout. Rootless Podman maps this user to the
+          # container's root, which the capability-less sandbox needs to use
+          # the office directory; rootful Docker would need mikan to run as root.
+          podman pull -q "$(node -e 'import("./dist/sandbox/published-image.js").then((m) => console.log(m.publishedSandboxImage()))')"
           HOME="$MIKAN_HOME" node dist/main.js "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 
