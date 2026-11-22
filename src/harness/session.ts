@@ -48,6 +48,7 @@ import type {
   HarnessSettings,
   MikanAgentSessionOptions,
   RetrySettings,
+  SubagentHost,
 } from "./types.js";
 
 import * as log from "../log.js";
@@ -167,6 +168,13 @@ export class MikanAgentSession {
 
   get isActiveRun(): boolean {
     return this.runActive;
+  }
+
+  subagentHost(): SubagentHost {
+    return {
+      instructions: () => this.systemPrompt,
+      acquireSlot: (signal) => this.sessionStore.acquireOwnedSlot(signal),
+    };
   }
 
   setSystemPrompt(prompt: string): void {

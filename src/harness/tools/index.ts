@@ -1,6 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } from "./attach.js";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
@@ -9,6 +8,8 @@ import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { createSandboxTools } from "./pi-tools.js";
 import { withSecretRedaction } from "./secret-redaction.js";
 import { createTaskTools } from "./task.js";
+import { createSubagentTool } from "./subagent.js";
+import type { MikanToolContext } from "../types.js";
 import { createJevTool } from "./jev.js";
 import { createReactTool } from "./react.js";
 import { createSandboxTool } from "./sandbox.js";
@@ -16,7 +17,7 @@ import { createWebFetchTool } from "./web-fetch.js";
 import type { MikanToolRunContext, PlatformToolPack } from "./types.js";
 
 export function createMikanTools(
-  env: () => ExecutionEnv | undefined,
+  toolContext: MikanToolContext,
   eventStore: EventStore,
   sandboxController: {
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
@@ -50,6 +51,7 @@ export function createMikanTools(
       jevTool,
       createWebFetchTool(),
       ...taskTools,
+      createSubagentTool(toolContext),
       ...packTools,
     ].map(withSecretRedaction),
     bindRun: ({ message, responder, platformName, runtimeWorkspaceRoot }) => {
@@ -63,7 +65,7 @@ export function createMikanTools(
       setSandboxContext({ address, userId });
       setUploadFunction(async (filePath, title) => {
         const runtimePath = normalizeAttachRuntimePath(filePath, runtimeWorkspaceRoot);
-        await withStagedRuntimeFile(env(), runtimePath, (stagedPath) =>
+        await withStagedRuntimeFile(toolContext.env(), runtimePath, (stagedPath) =>
           responder.uploadFile(stagedPath, title),
         );
       });

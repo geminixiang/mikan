@@ -11,6 +11,13 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Added
+
+- The `subagent` tool is back in a minimal form (ADR 0031): the model hands one task to a subagent
+  and gets its answer. A subagent has `read`, `bash`, `edit`, and `write`, cannot delegate, and at
+  most four run at once in a conversation's office. Profiles, `<workspace>/agents/`, task graphs,
+  per-call budgets, and the progress dashboard are not restored. 1.6.0-beta.0 removed the tool.
+
 ### Changed
 
 - `mikan` with no `--sandbox` flag now runs `--sandbox=oci`, mikan's published sandbox image, and

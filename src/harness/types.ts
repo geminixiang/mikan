@@ -266,8 +266,14 @@ export interface RunEventPublisher {
   publish(address: OfficeAddress, sessionKey: string, event: RunEvent): void;
 }
 
+export interface SubagentHost {
+  instructions(): string;
+  acquireSlot(signal?: AbortSignal): Promise<() => void>;
+}
+
 export interface MikanToolContext {
   env(): ExecutionEnv | undefined;
+  subagents?: SubagentHost;
 }
 
 export interface MikanAgentSessionOptions {

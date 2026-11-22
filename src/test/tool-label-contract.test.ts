@@ -40,7 +40,7 @@ const EXEMPT_TOOL_NAMES = new Set([
 describe("every agent-facing tool requires a label parameter", () => {
   test("across the full assembled tool list, including the GitHub platform pack", () => {
     const { tools } = createMikanTools(
-      () => undefined,
+      { env: () => undefined },
       mockEventStore(),
       {},
       [createGithubToolPack(mockGithubOps(), new Set(["triage", "push"]))],

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by [ADR 0031](0031-a-minimal-subagent.md)
 ---
 
 # Retire the subagent tool

@@ -62,6 +62,7 @@ import type { McpServerConfig, McpServerSummary, McpToolsResult } from "../harne
 import * as log from "../log.js";
 import { compactionSummaryOf, wrapCompactionSummary } from "./compaction-summary.js";
 import { isThreadSessionKey } from "./session-key.js";
+import { SlotPool } from "./slot-pool.js";
 import { errorMessage, isRecord, toJsonValue } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
@@ -234,6 +235,8 @@ const REQUEST_METHODS = new Set<PropertyKey>(["streamSimple", "completeSimple"])
 const CONTINUATION_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CONTINUATION_BIND_TIMEOUT_MS = 60_000;
 
+export const MAX_OWNED_CONVERSATIONS = 4;
+
 interface PlannedContinuation {
   unbound: Set<ConversationId>;
   started: Promise<void>;
@@ -255,6 +258,9 @@ class OfficeStorage {
   private continuation: PlannedContinuation | undefined;
   private readonly bindings = new Map<ConversationId, BoundSessionHarness>();
   private readonly writers = new Set<ConversationId>();
+  private readonly ownedSlots = new SlotPool(MAX_OWNED_CONVERSATIONS);
+  private readonly owners = new Map<ConversationId, ConversationId>();
+  private readonly ownedProviderSessions = new Map<string, ConversationId>();
 
   private constructor(private readonly path: string | null) {
     this.registry.install(TaskAnchors);
@@ -293,17 +299,51 @@ class OfficeStorage {
 
   async planContinuation(continues: (id: ConversationId) => boolean): Promise<ConversationId[]> {
     const unfinished = await this.unfinishedWork();
-    const kept = new Set(unfinished.map((task) => task.conversationId).filter(continues));
+    const sessions = new Set(unfinished.map((task) => task.conversationId).filter(continues));
+    const kept = new Set(sessions);
+    for (const { conversationId } of unfinished) {
+      if (kept.has(conversationId)) continue;
+      const owner = await this.ownerOf(conversationId);
+      if (owner === undefined || !sessions.has(owner)) continue;
+      kept.add(conversationId);
+      const provider = await this.harness.snapshot(ProviderDoc, conversationId, context);
+      this.recordOwned(conversationId, owner, provider?.sessionId);
+    }
     await this.abortUnfinishedWork((id) => !kept.has(id));
-    if (kept.size === 0) return [];
+    if (sessions.size === 0) return [];
     this.refs += 1;
     let start!: () => void;
     const started = new Promise<void>((resolve) => {
       start = resolve;
     });
     const timer = setTimeout(() => void this.startContinuation(), CONTINUATION_BIND_TIMEOUT_MS);
-    this.continuation = { unbound: new Set(kept), started, start, timer };
-    return [...kept];
+    this.continuation = { unbound: new Set(sessions), started, start, timer };
+    return [...sessions];
+  }
+
+  private recordOwned(
+    child: ConversationId,
+    owner: ConversationId,
+    providerSessionId: string | undefined,
+  ): void {
+    this.owners.set(child, owner);
+    if (providerSessionId !== undefined) this.ownedProviderSessions.set(providerSessionId, child);
+  }
+
+  private bindingOf(id: ConversationId | undefined): SessionHarnessBinding | undefined {
+    if (id === undefined) return undefined;
+    return (this.bindings.get(id) ?? this.bindings.get(this.owners.get(id) ?? id))?.binding;
+  }
+
+  private async ownerOf(id: ConversationId): Promise<ConversationId | undefined> {
+    const conversation = await this.harness.conversation(id, context);
+    if (!conversation) return undefined;
+    const watch = await conversation.watch(context);
+    try {
+      return watch.value.conversation.owner?.conversationId;
+    } finally {
+      await watch.stop();
+    }
   }
 
   async continueConversation(id: ConversationId): Promise<void> {
@@ -356,9 +396,12 @@ class OfficeStorage {
         if (!REQUEST_METHODS.has(property)) return bindModels(fallback(), property);
         return (...args: unknown[]) => {
           const sessionId = requestSessionId(args[2]);
-          const binding = [...this.bindings.values()].find(
-            (bound) => bound.providerSessionId === sessionId,
-          )?.binding;
+          const binding =
+            [...this.bindings.values()].find((bound) => bound.providerSessionId === sessionId)
+              ?.binding ??
+            this.bindingOf(
+              sessionId === undefined ? undefined : this.ownedProviderSessions.get(sessionId),
+            );
           if (!binding) throw new Error("Provider request has no active session binding");
           const target = binding.requestModels ?? binding.models;
           const method = Reflect.get(target, property, target) as (...input: unknown[]) => unknown;
@@ -392,8 +435,12 @@ class OfficeStorage {
           return settings()?.followUpMode;
         },
       },
-      env: (target, envContext) =>
-        this.bindings.get(target.conversationId)?.binding.env?.(target, envContext),
+      env: (target, envContext) => this.bindingOf(target.conversationId)?.env?.(target, envContext),
+      conversationCreated: async (tx, conversation) => {
+        if (!conversation.owner) return;
+        const { sessionId } = await tx.doc(ProviderDoc, conversation.id);
+        this.recordOwned(conversation.id, conversation.owner.conversationId, sessionId);
+      },
       onReport: (error) => {
         const report = latest()?.onReport;
         if (report) report(error);
@@ -451,6 +498,10 @@ class OfficeStorage {
 
   unbind(conversationId: ConversationId): void {
     this.bindings.delete(conversationId);
+  }
+
+  acquireOwnedSlot(signal?: AbortSignal): Promise<() => void> {
+    return this.ownedSlots.acquire(signal);
   }
 
   async release(): Promise<void> {
@@ -1165,6 +1216,10 @@ export class SessionStore implements SessionInspection {
 
   whenContinued(): Promise<void> {
     return this.storage.whenContinued();
+  }
+
+  acquireOwnedSlot(signal?: AbortSignal): Promise<() => void> {
+    return this.storage.acquireOwnedSlot(signal);
   }
 
   async bindHarness(binding: SessionHarnessBinding): Promise<AttachedSessionHarness> {

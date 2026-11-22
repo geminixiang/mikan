@@ -304,22 +304,32 @@ describe("PiAgentWrapper.run", () => {
     ]);
   });
 
-  test("the model is offered no subagent tool", async () => {
+  test("a subagent runs shell commands in the conversation's sandbox and returns its answer", async () => {
     const { runner, faux } = await createTestRunner();
-    let delegated: unknown;
+    let childSaw = "";
+    let parentSaw: unknown;
     faux.setResponses([
       fauxAssistantMessage(fauxToolCall("subagent", { task: "inspect", label: "Delegate" }), {
         stopReason: "toolUse",
       }),
+      fauxAssistantMessage(
+        fauxToolCall("bash", { command: "echo ran-in-$((40 + 2))", label: "Run" }),
+        { stopReason: "toolUse" },
+      ),
       (context) => {
-        delegated = context.messages.at(-1);
-        return fauxAssistantMessage("done myself");
+        childSaw = JSON.stringify(context.messages.at(-1));
+        return fauxAssistantMessage("inspected");
+      },
+      (context) => {
+        parentSaw = context.messages.at(-1);
+        return fauxAssistantMessage("done");
       },
     ]);
 
     await runner.run(makeMessage({ text: "delegate" }), makeResponder(), platform);
 
-    expect(JSON.stringify(delegated)).toContain("Tool subagent is not available");
+    expect(childSaw).toContain("ran-in-42");
+    expect(JSON.stringify(parentSaw)).toContain("inspected");
   });
 
   test("replaces the placeholder with the final assistant text", async () => {

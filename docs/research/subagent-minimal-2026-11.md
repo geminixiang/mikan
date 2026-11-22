@@ -1,6 +1,6 @@
 # A minimal subagent (2026-11)
 
-ADR 0028 removed the `subagent` tool. A deployment in use then showed it called on most days, so the owner keeps a weakened form: one level, a small cap on how many run at once, and no orchestration. This page records the research; the decision goes in an ADR once the open points below are closed.
+ADR 0028 removed the `subagent` tool. A deployment in use then showed it called on most days, so the owner keeps a weakened form: one level, a small cap on how many run at once, and no orchestration. This page records the research; the decision is [ADR 0031](../adr/0031-a-minimal-subagent.md).
 
 ## How the removed tool was used
 
@@ -35,10 +35,34 @@ pi-durable 1.5.2 documents the foreground pattern (README, "Abort and Subagents"
 - The child's model spend must reach the session's usage and budget, and a stop must end the child. Both are scoped to the session's own conversation today.
 - The child gets `read`, `bash`, `edit`, and `write`: what almost every call had. Without `subagent`, codemode, or tool search among its tools, one level holds by construction.
 
+## Implementation findings
+
+- `extensions: { remove }` in `configure()` edits the host's default selection, not the owner's: the child ended up with no extension and no tools. The child's extensions are the owner's stored selection (`AgentDoc`) without codemode and tool search, as an array.
+- Binding a child when the call starts is too late after a restart: the child's request resumes before the call runs again and fails with no binding. The storage records the owner when the child is created (`conversationCreated`) and again when a restart keeps it.
+- A restart aborted the child: unfinished work is kept only for conversations in the session index. A child is kept when its owner is.
+- A child's spend returned as the tool result's `usage` reaches the session's usage and budget with no other change; `jev` already does this.
+
+## Acceptance eval
+
+`.workspace/subagent-minimal-eval/subagent.eval.ts` drives the Slack bot and the conversation runtime with Pi's faux provider. Baseline is `main` at aa841b2d, where the model's call to `subagent` returns "Tool subagent is not available".
+
+| Case                                         | Baseline           | Expected                                   | After                                         |
+| -------------------------------------------- | ------------------ | ------------------------------------------ | --------------------------------------------- |
+| S1 One task delegated                        | Tool not available | The child's answer is the tool result      | The child's answer is the tool result         |
+| S2 The child calls `subagent`                | Tool not available | Refused; no third conversation             | "Tool subagent is not available" in the child |
+| S3 Six tasks in one turn                     | Tool not available | At most four children at once; six answers | Four at once; six answers                     |
+| S4 `stop` while a child works                | Stops (no child)   | Idle at once, no further model call        | Idle in 6 ms, no further model call           |
+| S5 Child writes about 1,000 output tokens    | Not counted        | Counted in the run's usage                 | 1,014 output tokens in the usage summary      |
+| S6 Sessions listed for the office afterwards | One                | One: the child is not a session            | One                                           |
+
+`src/test/subagent-tool.test.ts` covers the same at the session level, and a restart in the middle of a child: the run resumes the same child, which is asked once, and the parent receives one answer. `src/test/agent-runner.test.ts` runs a child's `bash` in the conversation's execution environment.
+
+## Verification on Slack
+
+A local daemon built from this change, on the `oci` sandbox, answered a direct message on a real Slack workspace that asked it to delegate: the model called `subagent`, the child created a file in the office's container and reported its path in 4.1 s, and the conversation then read the file itself with `bash`. The run cost $0.0019 on the model the Slack E2E uses. The same task done directly was not measured again; ADR 0028's comparison stands.
+
 ## Open points
 
-1. Budget and stop: how a child's model calls are counted and cut off; whether `maxTurns` alone bounds a runaway child.
-2. Restart in the middle of a child: the parent resumes once, the child is neither rerun nor presented as its own run.
-3. Where child conversations appear: the session viewer, admin, `/session`, history sync, idle disposal, `/new`.
-4. The cap: four per office needs state shared across runners, with a wait that ends on abort.
-5. Delegation should not grow: ADR 0028 measured that a simpler tool made the model delegate more. The description states the costs, no prompt section is added, and the eval compares cost against doing the work directly on a real model.
+1. A child's spend is counted when the call returns, so a budget cannot cut a child off in the middle; `maxTurns` and a stop bound it.
+2. A child conversation is not in the session index, so the session viewer, admin, and `/session` do not show its transcript. The parent's transcript has the call and its result.
+3. Delegation should not grow: ADR 0028 measured that a simpler tool made the model delegate more. The description states the costs, no prompt section is added, and the eval compares cost against doing the work directly on a real model.

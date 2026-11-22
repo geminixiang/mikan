@@ -590,6 +590,7 @@ async function finishRunnerCreation(params: {
       signal: options.signal,
     });
     options.signal?.throwIfAborted();
+    toolContext.subagents = session.subagentHost();
 
     const runState = createRunState();
     attachSessionEventHandlers({ session, runState, model, agentConfig, platformToolRoles });
@@ -655,7 +656,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const platformToolPacks = (platformToolPackFactories ?? []).map((createPack) => createPack());
   const toolBindings = createMikanTools(
-    execution.env,
+    toolContext,
     new OfficeEventStore(office, options.eventScheduler),
     { resourceController: resourceController ?? provisioner },
     platformToolPacks,
