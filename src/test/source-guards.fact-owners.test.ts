@@ -575,6 +575,21 @@ const guards: FactOwnerGuard[] = [
     ],
   },
   {
+    id: "telegram-suggested-reply-data",
+    owner: "the callback data in src/adapters/telegram/suggested-replies.ts",
+    ownerFiles: ["src/adapters/telegram/suggested-replies.ts"],
+    find: literalsMatching(/^(?:suggested_reply:|tapped_suggested_reply$)/, literalFragments),
+    copies: [
+      'const tapped = data.startsWith("suggested_reply:");',
+      "const data = `suggested_reply:${index + 1}:${suffix}`;",
+      'const inert = data === "tapped_suggested_reply";',
+    ],
+    legitimate: [
+      "const tapped = tappedSuggestedReplyOf(query);",
+      'import { suggestedReplyKeyboard } from "./suggested-replies.js";',
+    ],
+  },
+  {
     id: "tool-label-parameter",
     owner: "LABEL_PARAMETER in src/harness/tools/host-fn-tool.ts",
     ownerFiles: ["src/harness/tools/host-fn-tool.ts"],

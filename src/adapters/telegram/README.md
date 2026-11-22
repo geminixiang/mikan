@@ -17,3 +17,8 @@ This directory implements the Telegram platform adapter.
   `start()` hands that failure to `onPollingFailure`; `main.ts` logs it and exits
   with code 1 for the process manager to restart. A failure after `stop()` is the
   normal end of polling and is ignored.
+- Suggested replies (ADR 0034): `suggested-replies.ts` owns the inline keyboard.
+  A button's label is the line itself, because `callback_data` holds 64 bytes;
+  the data carries the thread part of the session key, because a tap does not
+  say which run wrote the tapped reply. Telegram cuts a label at 128 characters
+  without an error, so a longer line gets no button.

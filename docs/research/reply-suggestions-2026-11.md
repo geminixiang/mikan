@@ -160,4 +160,41 @@ A local daemon built from this change, on the model the deployment uses by defau
 
 After that check three things were added: the buttons become a line saying who tapped what, instead of vanishing; a subagent is told its answer ends without suggested replies; and a tap gets no acknowledging reaction, since its message has no Slack timestamp.
 
+## Telegram (2026-11-22)
+
+The recommendation above named a one-time reply keyboard for Telegram. Reading the adapter and probing the Bot API with a test bot overturned it:
+
+| Question                                                                 | Answer                                                                                                         | Source                                                                                                   |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Can the final write carry a reply keyboard?                              | No. The adapter posts a message and edits it; `editMessageText` accepts only an inline keyboard.               | `@grammyjs/types` `methods.d.ts`; `editMessageText` with `rich_message` and an inline keyboard succeeded |
+| Would a reply keyboard's tap reach mikan in a group?                     | No. The tap sends the bare line, and a group message that does not mention the bot is not addressed to it.     | `isAddressedToMessagingBot`                                                                              |
+| Does a rich message accept an inline keyboard when sent and when edited? | Yes, both.                                                                                                     | Probe: `sendRichMessage` and `editMessageText` returned the keyboard                                     |
+| How long can a button's label be?                                        | 128 characters; a longer one is accepted and cut to 128 without an error.                                      | Probe with 64, 200, 500, and 2,000 characters                                                            |
+| How much can `callback_data` hold?                                       | 64 bytes; 65 is refused with `BUTTON_DATA_INVALID`.                                                            | Probe                                                                                                    |
+| Does a tap say which session the reply belongs to?                       | No. In a group the session is named by the message that started it, which the reply's message does not record. | `resolveChatSessionKey`                                                                                  |
+
+Chosen: an inline keyboard with one row per suggestion. The label is the line, so a line over 128 characters gets no button. `callback_data` is `suggested_reply:<n>:<thread part of the session key>`; the tap's text is read back from the tapped button's label, and its session from the data. When the thread part does not fit in 64 bytes, as for a scheduled event's session, the reply has no buttons.
+
+| Candidate                                                 | Why not                                                                                                                                   |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Reply keyboard                                            | Cannot be set by an edit; its tap is not addressed to the bot in a group; it stays under the input field after the conversation moves on. |
+| The line in `callback_data`                               | 64 bytes hold about twenty CJK characters.                                                                                                |
+| Find the session by the reply's message ID in `log.jsonl` | A file scan per tap and a second source for the session, where the button can carry it.                                                   |
+| A map of sent keyboards kept in memory                    | Lost on restart; state the button can carry.                                                                                              |
+
+Acceptance eval (`.workspace/telegram-suggestions-eval`), the Telegram bot with a recording client:
+
+| Case                                       | Before                              | After (as expected)                                                                               |
+| ------------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Private chat, reply with two lines         | text without the lines, no keyboard | the same text with two buttons                                                                    |
+| Reply without lines                        | payload `6cec76c19ab4`              | identical payload                                                                                 |
+| Tap in a private chat                      | no handler                          | the tapper's message with the line, in the chat's session; buttons replaced by one naming the tap |
+| Tap by another person in a group           | no handler                          | that person's message, in the session of the run that wrote the reply                             |
+| Tap on the button that names the tap       | no handler                          | answered, nothing starts                                                                          |
+| A line of 129 characters and a short one   | no keyboard                         | one button, for the short line                                                                    |
+| Session whose thread part exceeds 64 bytes | text, no keyboard                   | unchanged                                                                                         |
+| System prompt                              | no section                          | Telegram gains it (rest identical, `dbb9adc77c18`); Discord identical                             |
+
+On a real Telegram private chat, with a local daemon: a request for a leave email drew a draft with two buttons; a tap sent its line and was answered with a formal version and two new buttons, and a tap there was answered again, all three runs in the chat's one session.
+
 The decision is [ADR 0034](../adr/0034-suggested-replies.md).

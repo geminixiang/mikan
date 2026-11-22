@@ -3,7 +3,7 @@ import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { Bot as GrammyMessagingBot, InputFile } from "grammy";
-import type { Message } from "grammy/types";
+import type { CallbackQuery, InlineKeyboardMarkup, Message } from "grammy/types";
 import type {
   ConversationEvent,
   MessagingEventHandler,
@@ -13,7 +13,11 @@ import type {
 } from "../../types.js";
 import type { TelegramClient, TelegramEvent, TelegramMessagingBotOptions } from "./types.js";
 import * as log from "../../log.js";
-import { resolveChatSessionKey, withScheduledEventSession } from "../../sessions/session-key.js";
+import {
+  makeThreadSessionKey,
+  resolveChatSessionKey,
+  withScheduledEventSession,
+} from "../../sessions/session-key.js";
 import {
   MessagingQueueMap,
   MessagingIntakeTracker,
@@ -26,6 +30,11 @@ import type { IncomingAttachment } from "../types.js";
 import { COMMAND_MANIFEST, telegramCommandMenu } from "../commands/manifest.js";
 import { processMessageIntake } from "../intake.js";
 import { createTelegramAdapters } from "./context.js";
+import {
+  tappedKeyboard,
+  tappedSuggestedReplyOf,
+  TELEGRAM_TAP_TS_PREFIX,
+} from "./suggested-replies.js";
 import { createConversationEvent, createOfficeAddress } from "../../office/index.js";
 import type { Workspace } from "../../office/types.js";
 import { errorMessage } from "../../unknown-values.js";
@@ -52,6 +61,14 @@ interface MessageContext {
 
 function richMessage(markdown: string): { markdown: string } {
   return { markdown };
+}
+
+function withKeyboard<T extends object>(
+  other: T | undefined,
+  keyboard: InlineKeyboardMarkup | undefined,
+): (T & { reply_markup?: InlineKeyboardMarkup })[] {
+  if (!keyboard) return other ? [other] : [];
+  return [{ ...other, reply_markup: keyboard } as T & { reply_markup: InlineKeyboardMarkup }];
 }
 
 export class TelegramMessagingBot implements MessagingBot {
@@ -124,10 +141,20 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
-  async updateMessage(channel: string, ts: string, text: string): Promise<void> {
+  async updateMessage(
+    channel: string,
+    ts: string,
+    text: string,
+    keyboard?: InlineKeyboardMarkup,
+  ): Promise<void> {
     return telegramRetry(async () => {
       try {
-        await this.client.api.editMessageText(parseInt(channel), parseInt(ts), richMessage(text));
+        await this.client.api.editMessageText(
+          parseInt(channel),
+          parseInt(ts),
+          richMessage(text),
+          ...withKeyboard(undefined, keyboard),
+        );
       } catch (err) {
         const msg = errorMessage(err);
         if (msg.includes("message is not modified")) return;
@@ -153,6 +180,7 @@ export class TelegramMessagingBot implements MessagingBot {
     return {
       name: "telegram",
       trustModel: "membership",
+      showsSuggestedReplies: true,
       formattingGuide:
         "## Telegram Formatting (Markdown)\nWrite ordinary Markdown — headings, lists, tables, code fences, quotes and links all render natively. Nothing needs converting by hand.",
       channels: [],
@@ -160,9 +188,17 @@ export class TelegramMessagingBot implements MessagingBot {
     };
   }
 
-  async postMessageRaw(chatId: number, text: string): Promise<number> {
+  async postMessageRaw(
+    chatId: number,
+    text: string,
+    keyboard?: InlineKeyboardMarkup,
+  ): Promise<number> {
     return telegramRetry(async () => {
-      const result = await this.client.api.sendRichMessage(chatId, richMessage(text));
+      const result = await this.client.api.sendRichMessage(
+        chatId,
+        richMessage(text),
+        ...withKeyboard(undefined, keyboard),
+      );
       return result.message_id;
     });
   }
@@ -173,11 +209,18 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
-  async postReply(chatId: number, replyToMessageId: number, text: string): Promise<number> {
+  async postReply(
+    chatId: number,
+    replyToMessageId: number,
+    text: string,
+    keyboard?: InlineKeyboardMarkup,
+  ): Promise<number> {
     return telegramRetry(async () => {
-      const result = await this.client.api.sendRichMessage(chatId, richMessage(text), {
-        reply_parameters: { message_id: replyToMessageId },
-      });
+      const result = await this.client.api.sendRichMessage(
+        chatId,
+        richMessage(text),
+        ...withKeyboard({ reply_parameters: { message_id: replyToMessageId } }, keyboard),
+      );
       return result.message_id;
     });
   }
@@ -305,7 +348,78 @@ export class TelegramMessagingBot implements MessagingBot {
     return text.replace(new RegExp(`@${this.botUsername}`, "gi"), "").trim();
   }
 
+  private async handleCallbackQuery(query: CallbackQuery): Promise<void> {
+    await this.client.api.answerCallbackQuery(query.id);
+    const tapped = tappedSuggestedReplyOf(query);
+    const tappedMessage = query.message;
+    if (!tapped || !tappedMessage) return;
+
+    const chatId = String(tappedMessage.chat.id);
+    const conversationKind = tappedMessage.chat.type === "private" ? "direct" : "shared";
+    const userId = String(query.from.id);
+    const userName = query.from.username ?? query.from.first_name;
+    const ts = `${TELEGRAM_TAP_TS_PREFIX}${query.id}`;
+    const threadTs = conversationKind === "shared" ? String(tappedMessage.message_id) : undefined;
+    const sessionKey = tapped.sessionSuffix
+      ? makeThreadSessionKey(chatId, tapped.sessionSuffix)
+      : chatId;
+
+    const eventBase = createConversationEvent({
+      platform: "telegram",
+      type: "message",
+      conversationId: chatId,
+      conversationKind,
+      ts,
+      thread_ts: threadTs,
+      sessionKey,
+      user: userId,
+      userName,
+      text: tapped.text,
+    }) as TelegramEvent;
+
+    await processMessageIntake({
+      eventBase,
+      addressed: true,
+      magicWord: { addressed: true, scopeFallback: "always" },
+      busyPolicy: "reject",
+      logEntryBase: {
+        date: new Date().toISOString(),
+        ts,
+        threadTs,
+        user: userId,
+        userName,
+        text: tapped.text,
+        isMessagingBot: false,
+      },
+      log: (entry) => this.logToFile(chatId, entry),
+      processAttachments: async () => [],
+      queueKey: sessionKey,
+      enqueue: (queueKey, work) => this.queues.get(queueKey).admit(work),
+      handler: this.handler,
+      bot: this,
+      createContext: (event) => createTelegramAdapters(event, this),
+    });
+
+    try {
+      await this.client.api.editMessageReplyMarkup(
+        tappedMessage.chat.id,
+        tappedMessage.message_id,
+        {
+          reply_markup: tappedKeyboard(userName, tapped.text),
+        },
+      );
+    } catch (err) {
+      log.logWarning("Could not replace the suggested replies after a tap", errorMessage(err));
+    }
+  }
+
   private setupEventHandlers(): void {
+    this.client.on("callback_query:data", (ctx) =>
+      this.intake.run(async () => {
+        if (ctx.callbackQuery) await this.handleCallbackQuery(ctx.callbackQuery);
+      }),
+    );
+
     for (const entry of COMMAND_MANIFEST) {
       if (!entry.telegramCommand || entry.magicWord) continue;
       this.client.command(entry.name, (ctx) =>

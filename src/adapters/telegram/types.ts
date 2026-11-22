@@ -1,5 +1,5 @@
 import type { Api, BotError } from "grammy";
-import type { Message } from "grammy/types";
+import type { CallbackQuery, Message } from "grammy/types";
 import type { ConversationEvent } from "../../types.js";
 import type { Workspace } from "../../office/types.js";
 import type { TelegramMessagingBot } from "./bot.js";
@@ -9,11 +9,12 @@ export interface TelegramEvent extends ConversationEvent {
   userName?: string;
 }
 
-interface TelegramMessageUpdate {
+interface TelegramUpdate {
   message: Message | undefined;
+  callbackQuery: CallbackQuery | undefined;
 }
 
-export type TelegramUpdateHandler = (ctx: TelegramMessageUpdate) => Promise<void>;
+export type TelegramUpdateHandler = (ctx: TelegramUpdate) => Promise<void>;
 
 export interface TelegramClient {
   api: Pick<
@@ -22,6 +23,8 @@ export interface TelegramClient {
     | "setMyCommands"
     | "setMessageReaction"
     | "editMessageText"
+    | "editMessageReplyMarkup"
+    | "answerCallbackQuery"
     | "sendRichMessage"
     | "sendMessage"
     | "deleteMessage"
@@ -33,7 +36,7 @@ export interface TelegramClient {
   start(): Promise<void>;
   stop(): Promise<void>;
   command(command: string, handler: TelegramUpdateHandler): unknown;
-  on(filter: "message", handler: TelegramUpdateHandler): unknown;
+  on(filter: "message" | "callback_query:data", handler: TelegramUpdateHandler): unknown;
 }
 
 export interface TelegramMessagingBotOptions {

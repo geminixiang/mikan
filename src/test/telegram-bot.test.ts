@@ -1,7 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Chat, Document, Message, PhotoSize, User, UserFromGetMe } from "grammy/types";
+import type {
+  CallbackQuery,
+  Chat,
+  Document,
+  InlineKeyboardMarkup,
+  Message,
+  PhotoSize,
+  User,
+  UserFromGetMe,
+} from "grammy/types";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ConversationEvent, MessagingEventHandler, OfficeAddress } from "../types.js";
 import {
@@ -14,6 +23,11 @@ import type { Workspace } from "../office/types.js";
 import { conversationIdOf } from "../sessions/session-key.js";
 
 import { TelegramMessagingBot } from "../adapters/telegram/bot.js";
+import { createTelegramAdapters } from "../adapters/telegram/context.js";
+import {
+  suggestedReplyKeyboard,
+  tappedSuggestedReplyOf,
+} from "../adapters/telegram/suggested-replies.js";
 import type { TelegramClient, TelegramUpdateHandler } from "../adapters/telegram/types.js";
 
 const officeOf = (sessionKey: string) =>
@@ -98,6 +112,7 @@ class FakeTelegramClient implements TelegramClient {
   readonly api: TelegramApi;
   private readonly commands = new Map<string, TelegramUpdateHandler>();
   private messageHandler: TelegramUpdateHandler | undefined;
+  private callbackQueryHandler: TelegramUpdateHandler | undefined;
 
   constructor(api: Partial<TelegramApi> = {}) {
     this.api = {
@@ -105,6 +120,8 @@ class FakeTelegramClient implements TelegramClient {
       setMyCommands: async () => true,
       setMessageReaction: unexpectedApiCall,
       editMessageText: unexpectedApiCall,
+      editMessageReplyMarkup: unexpectedApiCall,
+      answerCallbackQuery: unexpectedApiCall,
       sendRichMessage: unexpectedApiCall,
       sendMessage: unexpectedApiCall,
       deleteMessage: unexpectedApiCall,
@@ -125,19 +142,25 @@ class FakeTelegramClient implements TelegramClient {
     this.commands.set(command, handler);
   }
 
-  on(_filter: "message", handler: TelegramUpdateHandler): void {
-    this.messageHandler = handler;
+  on(filter: "message" | "callback_query:data", handler: TelegramUpdateHandler): void {
+    if (filter === "message") this.messageHandler = handler;
+    else this.callbackQueryHandler = handler;
+  }
+
+  deliverCallbackQuery(callbackQuery: CallbackQuery): Promise<void> {
+    if (!this.callbackQueryHandler) throw new Error("callback query handler not installed");
+    return this.callbackQueryHandler({ message: undefined, callbackQuery });
   }
 
   deliverCommand(command: string, message: Message | undefined): Promise<void> {
     const handler = this.commands.get(command);
     if (!handler) throw new Error(`${command} handler not installed`);
-    return handler({ message });
+    return handler({ message, callbackQuery: undefined });
   }
 
   deliverMessage(message: Message | undefined): Promise<void> {
     if (!this.messageHandler) throw new Error("message handler not installed");
-    return this.messageHandler({ message });
+    return this.messageHandler({ message, callbackQuery: undefined });
   }
 }
 
@@ -669,5 +692,146 @@ describe("TelegramMessagingBot scheduled events", () => {
       sessionKey: target.sessionKey,
       threadTs: target.thread,
     });
+  });
+});
+
+function tapOn(chat: Chat, keyboard: InlineKeyboardMarkup, row: number, from: User): CallbackQuery {
+  const button = keyboard.inline_keyboard[row]?.[0];
+  if (!button || !("callback_data" in button)) throw new Error(`no button in row ${row}`);
+  return {
+    id: "cb-1",
+    from,
+    chat_instance: "1",
+    data: button.callback_data,
+    message: { message_id: 500, date: 1, chat, reply_markup: keyboard },
+  };
+}
+
+describe("Telegram suggested replies", () => {
+  let workingDir: string;
+  let workspace: Workspace;
+
+  beforeEach(() => {
+    workingDir = join(tmpdir(), `mikan-telegram-suggestions-${Date.now()}`);
+    mkdirSync(workingDir, { recursive: true });
+    workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
+  });
+
+  afterEach(() => {
+    if (existsSync(workingDir)) rmSync(workingDir, { recursive: true, force: true });
+  });
+
+  const bob: User = { id: 8, is_bot: false, first_name: "Bob", username: "bob" };
+
+  test("a keyboard has one row per suggestion and carries the session's thread", () => {
+    expect(suggestedReplyKeyboard(["Make it shorter", "語氣正式一點"], "-100123:41")).toEqual({
+      inline_keyboard: [
+        [{ text: "Make it shorter", callback_data: "suggested_reply:1:41" }],
+        [{ text: "語氣正式一點", callback_data: "suggested_reply:2:41" }],
+      ],
+    });
+  });
+
+  test("a suggestion longer than Telegram keeps in a button label is left out", () => {
+    expect(suggestedReplyKeyboard(["長".repeat(129), "ok"], "123")).toEqual({
+      inline_keyboard: [[{ text: "ok", callback_data: "suggested_reply:1:" }]],
+    });
+  });
+
+  test("there is no keyboard when the session's thread does not fit in callback data", () => {
+    const sessionKey = `-100123:event:weekly-report:${"0".repeat(36)}`;
+    expect(suggestedReplyKeyboard(["Make it shorter"], sessionKey)).toBeUndefined();
+  });
+
+  test("a tap reads the line from the tapped button", () => {
+    const keyboard = suggestedReplyKeyboard(["Make it shorter", "More formal"], "-100123:41")!;
+    expect(tappedSuggestedReplyOf(tapOn(groupChat(-100123), keyboard, 1, bob))).toEqual({
+      text: "More formal",
+      sessionSuffix: "41",
+    });
+  });
+
+  test("the final reply is sent with the keyboard and a reply without suggestions as before", async () => {
+    const sendRichMessage = vi.fn().mockResolvedValue({ message_id: 500 });
+    const handler = makeHandler();
+    const { bot } = await startBot(handler, workspace, { sendRichMessage });
+    const event = createConversationEvent({
+      platform: "telegram",
+      type: "message",
+      conversationId: "123",
+      conversationKind: "direct",
+      ts: "41",
+      sessionKey: "123",
+      user: "7",
+      text: "draft",
+    });
+    const { responder } = createTelegramAdapters(event as never, bot);
+
+    await responder.replaceResponse("Draft.", { final: true, suggestions: ["Make it shorter"] });
+    await createTelegramAdapters(event as never, bot).responder.replaceResponse("Plain.", {
+      final: true,
+    });
+    await bot.stop();
+
+    expect(sendRichMessage.mock.calls).toEqual([
+      [
+        123,
+        { markdown: "Draft." },
+        {
+          reply_markup: {
+            inline_keyboard: [[{ text: "Make it shorter", callback_data: "suggested_reply:1:" }]],
+          },
+        },
+      ],
+      [123, { markdown: "Plain." }],
+    ]);
+  });
+
+  test("a tap in a group becomes the tapping person's message in the reply's session", async () => {
+    const answerCallbackQuery = vi.fn().mockResolvedValue(true);
+    const editMessageReplyMarkup = vi.fn().mockResolvedValue(true);
+    const handler = makeHandler();
+    const { bot, client } = await startBot(handler, workspace, {
+      answerCallbackQuery,
+      editMessageReplyMarkup,
+    });
+    const chat = groupChat(-100123);
+    const keyboard = suggestedReplyKeyboard(["Make it shorter", "More formal"], "-100123:41")!;
+
+    await client.deliverCallbackQuery(tapOn(chat, keyboard, 1, bob));
+    await bot.stop();
+
+    expect(handledEvent(handler)).toMatchObject({
+      type: "message",
+      text: "More formal",
+      user: "8",
+      conversationKind: "shared",
+      sessionKey: "-100123:41",
+      thread_ts: "500",
+    });
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb-1");
+    expect(editMessageReplyMarkup).toHaveBeenCalledWith(-100123, 500, {
+      reply_markup: {
+        inline_keyboard: [[{ text: "bob: More formal", callback_data: "tapped_suggested_reply" }]],
+      },
+    });
+  });
+
+  test("a tap on the line that replaced the buttons starts nothing", async () => {
+    const answerCallbackQuery = vi.fn().mockResolvedValue(true);
+    const handler = makeHandler();
+    const { bot, client } = await startBot(handler, workspace, { answerCallbackQuery });
+
+    await client.deliverCallbackQuery({
+      id: "cb-2",
+      from: bob,
+      chat_instance: "1",
+      data: "tapped_suggested_reply",
+      message: { message_id: 500, date: 1, chat: privateChat(123) },
+    });
+    await bot.stop();
+
+    expect(answerCallbackQuery).toHaveBeenCalledWith("cb-2");
+    expect(handler.handleEvent).not.toHaveBeenCalled();
   });
 });

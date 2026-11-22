@@ -64,6 +64,8 @@ function fakeTelegramClient(stop: TelegramClient["stop"] = async () => {}): Tele
       setMyCommands: unexpectedCall,
       setMessageReaction: unexpectedCall,
       editMessageText: unexpectedCall,
+      editMessageReplyMarkup: unexpectedCall,
+      answerCallbackQuery: unexpectedCall,
       sendRichMessage: unexpectedCall,
       sendMessage: unexpectedCall,
       deleteMessage: unexpectedCall,

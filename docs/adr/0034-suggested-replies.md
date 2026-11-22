@@ -54,7 +54,8 @@ The owner wanted the agent to offer, after a reply, the one or two things a pers
 - A long reply is continued in a thread under its first message, and the buttons are on the last continuation. A tap there is a message in that thread, so it reaches the thread's session, as a typed reply there would.
 - Two paths send the reply without buttons: Slack's `msg_too_long` fallback, which shortens the first message and continues in the thread, and replies to slash commands, which do not go through the progressive renderer.
 - A subagent inherits its parent's system prompt, section included, and its answer is a tool result, which the core does not parse. Its parent may read `↳` lines there.
-- Telegram, Discord, and GitHub ignore `suggestions`. Telegram is the next adapter to show them.
+- Telegram shows them as an inline keyboard under the final message, one row per line; a tap becomes the tapping person's message in the session of the run that wrote the reply, and the keyboard is replaced by one button naming who tapped what. A reply keyboard was not used: an edit cannot set one, and its tap is not addressed to the bot in a group. A line over 128 characters gets no button, and a reply whose session name does not fit in a button's 64 bytes of data, such as a scheduled event's, gets none. Telegram's log entries do not record `suggestions`, so the removal count below is Slack's.
+- Discord and GitHub ignore `suggestions`.
 - About 200 lines of production code, 820 characters in every Slack system prompt, and no new tool schema.
 
 ## Removal condition
