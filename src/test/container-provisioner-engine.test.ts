@@ -93,7 +93,12 @@ describe.runIf(available)(`DockerContainerManager on ${ENGINE}`, () => {
       { containers: sandbox, limitMs: 60_000, now: () => now },
     );
     const sleeping = () =>
-      Number(inContainer(name, "cat /proc/[0-9]*/comm 2>/dev/null | grep -c '^sleep$' || true"));
+      Number(
+        inContainer(
+          name,
+          "grep -l '^Name:.sleep$' /proc/[0-9]*/status 2>/dev/null | xargs -r grep -L '^State:.Z' 2>/dev/null | wc -l",
+        ),
+      );
     const logs = vi.spyOn(log, "logInfo").mockImplementation(() => {});
     try {
       await sandbox.provision(office.key, {
