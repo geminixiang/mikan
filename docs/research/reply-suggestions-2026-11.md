@@ -160,6 +160,12 @@ A local daemon built from this change, on the model the deployment uses by defau
 
 After that check three things were added: the buttons become a line saying who tapped what, instead of vanishing; a subagent is told its answer ends without suggested replies; and a tap gets no acknowledging reaction, since its message has no Slack timestamp.
 
+## The owner's decision on the criterion (2026-11-23)
+
+Asked whether the one model above the unwanted-suggestion criterion should hold the section back, the owner left the decision to the maintainer and named the two models that changes are judged on from now on: `gpt-6.2-sol` and `claude-opus-5-5`. The section stays as shipped: the model above the criterion is not one of the two, and its mistake is a follow-up button after an explanation, not a guessed answer.
+
+On the held-out messages, thirty runs a cell, `gpt-6.2-sol` gave a wanted suggestion on 30 of 30 and an unwanted one on 0 of 30, never more than two lines. `claude-opus-5-5` could not be measured: every request failed at the gateway used for the eval, whose credential for that provider had expired. It is measured when that route works again.
+
 ## Telegram (2026-11-22)
 
 The recommendation above named a one-time reply keyboard for Telegram. Reading the adapter and probing the Bot API with a test bot overturned it:
