@@ -48,6 +48,21 @@ Idle stop: the provisioner stops a managed container 10 minutes after its last e
 
 Same-session delivery: only Slack can queue a run into an existing session (`continueInterruptedRuns` → `enqueueContinuation`). Scheduled events open a new anchor thread on Slack and use other paths on Discord, Telegram and GitHub.
 
+### Repeated on the published image (2026-11-22)
+
+The experiments above ran on an old image without `bash`. On the image published for 1.6.0-beta.0 (Debian 13, `bash`, `setsid`, `tini`), in a container started the way the provisioner starts one (`--cap-drop ALL`, `no-new-privileges`), with the wrapper run through `bash`:
+
+| Experiment                                       | Result                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| E6 a second start with the same job directory    | `mkdir` exits 1 and nothing starts                                                          |
+| E5 the host reads the record                     | `pid`, `log`, and `exit` appear in the bind-mounted office directory; exit code 7 read as 7 |
+| E12 `kill -- -<pgid>` of the command's own group | The wrapper survives and writes exit 143                                                    |
+| E2 the job outlives the `exec` that started it   | It finishes and writes its exit file after the `exec` returned                              |
+
+## Owner's decision (2026-11-22)
+
+Task threads were removed first, without a replacement ([ADR 0032](../adr/0032-remove-task-threads.md)), because nothing in use called `start_task`. The owner then asked for the background job tool anyway, with [pi-bg-bash](https://github.com/geminixiang/pi-stuff/tree/main/packages/pi-bg-bash) as the reference for its core: start a job and get an ID at once, and when the job exits, post its exit code and the tail of its output to the session and give the agent a turn. Its other features (`notify_on`, `idle_warn`, `wait_until`, `at`, `fail_on`, `preflight`, approval) are not taken: schedules are the `event` tool's, and the rest can follow a measured need. C1 below is that core for a sandboxed office.
+
 ## Cases mikan has that the references do not
 
 | Case                                                           | Consequence                                                                                                                                                                                                      |
